@@ -1,0 +1,35 @@
+.searchContainer {
+  background-color: #c3c1cf;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  padding-right: 12px;
+  cursor: pointer;
+}
+.searchContainer button {
+  display: flex;
+}
+
+.searchContainer:hover .searchInput,
+.searchContainer:focus-within .searchInput {
+  width: 150px;
+}
+
+.searchInput:not(:placeholder-shown) {
+  width: 150px;
+}
+
+.searchContainer svg {
+  color: #ffffff;
+}
+
+.searchInput {
+  background-color: #c3c1cf;
+  padding: 7px;
+  font: normal normal 400 12px/16px Segoe UI;
+  letter-spacing: 0px;
+  color: #3d4359;
+  border-radius: 4px;
+  width: 0px;
+  transition-duration: 500ms;
+}

@@ -1,0 +1,13 @@
+.venv/
+env/
+new/
+sast/
+*__pycache__/
+
+*.db
+*.db-shm
+*.db-wal
+
+*.ipynb
+
+user_uploads/
