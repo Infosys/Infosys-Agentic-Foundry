@@ -139,3 +139,5 @@ For questions, issues, or feature requests, please open an issue in the [GitHub 
 ## Disclaimer
 
 This software is provided "as is", without warranty of any kind. See the [LICENSE.md](LICENSE.md) file for more details.
+
+© 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved. Infosys believes the information in this document is accurate as of its publication date; such information is subject to change without notice. Infosys acknowledges the proprietary rights of other companies to the trademarks, product names and such other intellectual property rights mentioned in this document. Except as expressly permitted, neither this documentation nor any part of it may be reproduced, stored in a retrieval system, or transmitted in any form or by any means, electronic, mechanical, printing, photocopying, recording or otherwise, without the prior permission of Infosys Limited and/or any named intellectual property rights holders under this document.
