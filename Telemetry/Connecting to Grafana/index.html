@@ -1,0 +1,1461 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../configurations/">
+      
+      
+        <link rel="next" href="../Arize_Phoenix/">
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+    
+    
+      
+        <title>Connecting to Grafana - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#connecting-to-grafana-and-creating-visualizations-from-elasticsearch" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Connecting to Grafana
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Definitions
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Definitions
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/Vocabulary%20-%20Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Vocabulary - Definitions
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Human in the loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Architecture
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Installation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Installation/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Installation/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Linux
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Installation/Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Azure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Database%20setup/Database%20Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    PostgreSQL setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agents Design
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Agents Design
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/Orchestration%20Meta%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Orchestration Meta Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tools Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Validation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool%20Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Interrupt
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agent Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Agent Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Inference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            Inference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Files
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Telemetry
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            Telemetry
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Open Telemetry
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configurations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Configurations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Connecting to Grafana
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Connecting to Grafana
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-provide-elasticsearch-endpoint-url-for-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Provide Elasticsearch Endpoint URL for Connection
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-provide-elasticsearch-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Provide Elasticsearch Details
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-adding-visualizations" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Adding Visualizations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-filters-and-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Filters and Variables
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-sample-final-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Sample Final Dashboard
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Arize Phoenix
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Evaluation Metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-provide-elasticsearch-endpoint-url-for-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Provide Elasticsearch Endpoint URL for Connection
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-provide-elasticsearch-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Provide Elasticsearch Details
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-adding-visualizations" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Adding Visualizations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-filters-and-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Filters and Variables
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-sample-final-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Sample Final Dashboard
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="connecting-to-grafana-and-creating-visualizations-from-elasticsearch">Connecting to Grafana and Creating Visualizations from Elasticsearch</h1>
+<p>This guide will walk you through the process of connecting Grafana to your Elasticsearch data source, configuring it, and creating visualizations and dashboards. Each step is broken down to help you set up the integration seamlessly.</p>
+<h2 id="1-provide-elasticsearch-endpoint-url-for-connection">1. <strong>Provide Elasticsearch Endpoint URL for Connection</strong></h2>
+<p><img alt="grafana1" src="../../images/grafana1.png" />
+To begin, you must specify the <strong>Elasticsearch Endpoint URL</strong>. This URL is where Grafana will look for your Elasticsearch instance. Grafana needs this URL to establish a connection and retrieve data from Elasticsearch.</p>
+<p><strong>Steps:</strong></p>
+<ul>
+<li>Open Grafana and navigate to the <strong>Data Sources</strong> section.</li>
+<li>Select <strong>Add Data Source</strong>, then choose <strong>Elasticsearch</strong> from the list of available sources.</li>
+<li>In the <strong>HTTP URL</strong> field, enter the endpoint URL of your Elasticsearch instance.</li>
+<li>Click <strong>Save &amp; Test</strong> to verify the connection.</li>
+</ul>
+<p>Once the connection is successful, Grafana will confirm that the endpoint is accessible and can pull data from your Elasticsearch server.</p>
+<h2 id="2-provide-elasticsearch-details">2. <strong>Provide Elasticsearch Details</strong></h2>
+<p><img alt="grafana2" src="../../images/grafana2.png" />
+After establishing the connection, you need to configure the details specific to your Elasticsearch data. These include the <strong>Index Name</strong>, <strong>Message Field Name</strong>, and <strong>Level Field Name</strong>.</p>
+<ul>
+<li>
+<p><strong>Index Name</strong>: The index name should exactly match the one defined in your Elasticsearch configuration. It tells Grafana which index to pull data from within your Elasticsearch cluster. If you have multiple indices or time-based indices (e.g., <code>agentic-foundry-tool-log</code>), specify the exact name or pattern here.</p>
+</li>
+<li>
+<p><strong>Message Field Name</strong>: This refers to the field in the Elasticsearch index that contains the actual log message or data content that you want to visualize in Grafana. For example, this might be <code>message</code> or <code>log</code> depending on your Elasticsearch mappings.</p>
+</li>
+<li>
+<p><strong>Level Field Name</strong>: The level field represents the severity level of logs or events, such as <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>, or any custom field you use for classification. Ensure the field you provide matches the one used in your Elasticsearch index for filtering and aggregation.</p>
+</li>
+</ul>
+<p><strong>Steps:</strong></p>
+<ul>
+<li>In Grafana's <strong>Data Source</strong> configuration page, you’ll see fields for <strong>Index Name</strong>, <strong>Message Field</strong>, and <strong>Level Field</strong>.</li>
+<li>Fill in the respective names that match your Elasticsearch configuration.</li>
+<li>After entering the information, click <strong>Save &amp; Test</strong> again to ensure everything is set up correctly.</li>
+</ul>
+<p>Once saved, Grafana will store these details and use them to pull the correct data during visualizations and dashboard creation.</p>
+<h2 id="3-adding-visualizations">3. <strong>Adding Visualizations</strong></h2>
+<p><img alt="grafana3" src="../../images/grafana3.png" />
+With the connection established and data source configured, you are now ready to add visualizations to your Grafana dashboard. Visualizations are charts, graphs, or tables that will display your data in meaningful ways.</p>
+<p><img alt="grafana4" src="../../images/grafana4.png" /></p>
+<p><strong>Steps:</strong></p>
+<ul>
+<li>From the Grafana homepage, click on the <strong>Plus (+)</strong> symbol located on the left-hand sidebar.</li>
+<li>Select <strong>Dashboard</strong> from the options that appear.</li>
+<li>A new, empty dashboard will open. Click on <strong>Add new panel</strong>.</li>
+<li>In the panel configuration page, select the <strong>Data Source</strong> you created in Step 2.</li>
+<li>Choose a visualization type (e.g., <strong>Graph</strong>, <strong>Time series</strong>, <strong>Table</strong>, etc.).</li>
+<li>Grafana will automatically query Elasticsearch using the configured <strong>Index Name</strong> and fields and display the results in the chosen visualization format.</li>
+</ul>
+<p>Once you’ve configured your panel, click <strong>Save</strong> to add it to your dashboard. You can repeat this process to add multiple visualizations to your dashboard, each representing different aspects of your data.</p>
+<p>After adding a data source, the dashboard will be updated to display the newly integrated data. From here, you can create a wide range of visualizations based on the available data.</p>
+<p><img alt="grafana5" src="../../images/grafana5.png" /></p>
+<p><strong>Additional Configurations:</strong></p>
+<ul>
+<li><strong>Filters</strong>: Grafana allows you to use <strong>Filters</strong> to narrow down the data displayed. For example, you can filter logs by date, severity level, or specific keywords.</li>
+<li><strong>Variables</strong>: You can define <strong>Variables</strong> (e.g., <code>session_id</code>, <code>action_id</code>, or <code>action_on</code>) that can be used as dynamic filters across multiple panels. This allows for interactive and flexible dashboards where users can change the value of a variable and see the dashboard update accordingly.</li>
+</ul>
+<h2 id="4-filters-and-variables">4. <strong>Filters and Variables</strong></h2>
+<p>To make your dashboards more dynamic, Grafana supports the use of <strong>Filters</strong> and <strong>Variables</strong>. These allow you to control what data is displayed in real-time, making it easy to customize and adjust visualizations on the fly.</p>
+<p><img alt="grafana6" src="../../images/grafana6.png" /></p>
+<p><strong>Filters:</strong>
+Filters are conditions that can be applied to specific fields in the Elasticsearch index. They are especially useful for narrowing down data, such as:</p>
+<ul>
+<li>Displaying only logs from a particular time range.</li>
+<li>Filtering logs based on severity level (e.g., showing only <code>ERROR</code> logs).</li>
+<li>Displaying data related to specific services or hosts.</li>
+</ul>
+<p><strong>Variables:</strong>
+Variables in Grafana let you create dynamic dashboards that can adapt based on user input. Once a variable is defined, it can be used in the queries that power your visualizations. This makes it easy for users to filter data on the fly without modifying the queries directly.</p>
+<p><strong>Steps:</strong></p>
+<ul>
+<li>Navigate to <strong>Dashboard Settings</strong> (the gear icon on the top-right corner of your dashboard).</li>
+<li>Select <strong>Variables</strong> from the menu.</li>
+<li>Create a new variable (e.g., <code>Host</code>, <code>Service</code>, <code>Log Level</code>) and define its options (e.g., available hosts or log levels).</li>
+<li>Use this variable in your queries to make your dashboards more interactive.</li>
+</ul>
+<p>For example, you could create a variable <code>Host</code> that lets users select the host from a dropdown, and the graphs on the dashboard will automatically update to show data for that selected host.</p>
+<h2 id="5-sample-final-dashboard">5. <strong>Sample Final Dashboard</strong></h2>
+<p>Once all the visualizations are configured, your Grafana dashboard should look something like the following example, where you can interact with various filters, variables, and different types of graphs.</p>
+<p><strong>Final Output:</strong>
+<img alt="final dashboard" src="../../images/final_dashborad.png" /></p>
+<p>By using the <strong>Filters</strong> and <strong>Variables</strong>, users can interactively explore the data, focusing on different aspects like time periods, severity levels, and specific hosts or services.</p>
+<p><strong>Dashboard Severity Filter Options</strong></p>
+<p>In the final dashboard, we have additional filtering capabilities under the <strong>Severity</strong> section. Instead of selecting all severity levels at once, users can filter and view the dashboard data separately based on the following four options:</p>
+<ul>
+<li><strong>Error</strong></li>
+<li><strong>Debug</strong></li>
+<li><strong>Info</strong></li>
+<li><strong>Warn</strong></li>
+</ul>
+<p><img alt="final dashboard Severity" src="../../images/final_dashborad_Severity.png" /></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+    
+  </body>
+</html>

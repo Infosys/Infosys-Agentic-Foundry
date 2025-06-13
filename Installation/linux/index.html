@@ -1,0 +1,2148 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../windows/">
+      
+      
+        <link rel="next" href="../Azure/">
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+    
+    
+      
+        <title>Linux - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#linux-vm-deployment-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Linux
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Definitions
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Definitions
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/Vocabulary%20-%20Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Vocabulary - Definitions
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Human in the loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Architecture
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Installation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Linux
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Linux
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#project-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Prerequisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-version-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python Version Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installing-python-with-pyenv-on-rhel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installing Python with pyenv on RHEL
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setting-up-proxy-in-linux-environment-if-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setting Up Proxy in Linux Environment (If Required)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#download-the-backend-project-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      Download the Backend Project Code
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backend Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frontend-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Frontend Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Environment Configuration
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-applications" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the Applications
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#accessing-the-applications" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accessing the Applications
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Service Deployment
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Configuration
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Testing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Structure
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Azure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Database%20setup/Database%20Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    PostgreSQL setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agents Design
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Agents Design
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents%20Design/Orchestration%20Meta%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Orchestration Meta Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tools Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Validation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool%20Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Interrupt
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agent Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Agent Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Inference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            Inference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Files
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Telemetry
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            Telemetry
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Open Telemetry
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/configurations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Configurations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/Connecting%20to%20Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Connecting to Grafana
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Arize Phoenix
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Evaluation Metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#project-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Prerequisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-version-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python Version Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installing-python-with-pyenv-on-rhel" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installing Python with pyenv on RHEL
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setting-up-proxy-in-linux-environment-if-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setting Up Proxy in Linux Environment (If Required)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#download-the-backend-project-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      Download the Backend Project Code
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backend Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frontend-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Frontend Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Environment Configuration
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-applications" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the Applications
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#accessing-the-applications" class="md-nav__link">
+    <span class="md-ellipsis">
+      Accessing the Applications
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Service Deployment
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Configuration
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network Testing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Structure
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="linux-vm-deployment-guide">Linux VM Deployment Guide</h1>
+<p>This guide provides detailed instructions for setting up and running the FastAPI backend and React frontend project on Linux Virtual Machines.</p>
+<h2 id="project-overview">Project Overview</h2>
+<p>This project consists of a backend server built with FastAPI and a frontend interface using React, designed for deployment on Linux VMs.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Ensure you have the following installed on your Linux system:</p>
+<p><strong>System Requirements</strong></p>
+<ul>
+<li><strong>sudo privileges</strong> (for installing system packages)</li>
+<li><strong>Python 3.11 or higher</strong> (for backend)</li>
+<li><strong>NodeJS version 22 or higher</strong>  </li>
+<li><strong>NPM version 10.9.2 or higher</strong> ( comes bundled with NodeJs) </li>
+<li><strong>Git</strong> (optional, for cloning the repository)</li>
+</ul>
+<h2 id="python-version-setup">Python Version Setup</h2>
+<p><strong>Check Your Python Version</strong></p>
+<p>First, verify your current Python version:</p>
+<pre><code class="language-bash">python --version
+# or
+python3 --version
+</code></pre>
+<p>Make sure it is <strong>3.11 or higher</strong>. If it's not, you'll need to update your Python version.</p>
+<p><strong>Python Installation Options</strong></p>
+<p>There are 2 ways to install the required Python version:</p>
+<ol>
+<li><strong>Install from CCD</strong> - Install a required greenlisted Python version</li>
+<li><strong>Use pyenv</strong> - Update the Python version using pyenv (recommended)</li>
+</ol>
+<h2 id="installing-python-with-pyenv-on-rhel">Installing Python with pyenv on RHEL</h2>
+<p>To install pyenv on Red Hat Enterprise Linux (RHEL), follow these steps. pyenv lets you easily install and switch between multiple Python versions.</p>
+<p><strong>Step 1: Install Required Dependencies</strong></p>
+<p>You'll need development tools and libraries for building Python:</p>
+<pre><code class="language-bash">sudo dnf groupinstall &quot;Development Tools&quot; -y
+sudo dnf install -y \
+    gcc zlib-devel bzip2 bzip2-devel readline-devel sqlite sqlite-devel \
+    openssl-devel libffi-devel wget make xz-devel \
+    git curl patch
+</code></pre>
+<p><strong>Step 2: Install pyenv</strong></p>
+<p>Clone the pyenv repository into your home directory:</p>
+<pre><code class="language-bash">git clone https://github.com/pyenv/pyenv.git ~/.pyenv
+</code></pre>
+<p><strong>Step 3: Set Up Shell Environment</strong></p>
+<p>Add the following to your shell config file (e.g., <code>~/.bashrc</code>, <code>~/.bash_profile</code>, or <code>~/.zshrc</code>):</p>
+<pre><code class="language-bash">export PYENV_ROOT=&quot;$HOME/.pyenv&quot;
+export PATH=&quot;$PYENV_ROOT/bin:$PATH&quot;
+eval &quot;$(pyenv init --path)&quot;
+eval &quot;$(pyenv init -)&quot;
+</code></pre>
+<p>Then apply the changes:</p>
+<pre><code class="language-bash">source ~/.bashrc
+# or
+exec &quot;$SHELL&quot;
+</code></pre>
+<p><strong>Step 4: Verify Installation</strong></p>
+<p>Run the following command to verify pyenv is installed correctly:</p>
+<pre><code class="language-bash">pyenv --version
+</code></pre>
+<p><strong>Step 5: Install Python Version</strong></p>
+<p>Install the required Python version (example with Python 3.11.8):</p>
+<pre><code class="language-bash">pyenv install 3.11.8
+</code></pre>
+<p>You can also install other versions as needed:</p>
+<pre><code class="language-bash"># List available Python versions
+pyenv install --list
+
+# Install specific version
+pyenv install 3.12.0
+</code></pre>
+<p><strong>Step 6: Set Global Python Version</strong></p>
+<p>Set the installed Python version as your global default:</p>
+<pre><code class="language-bash">pyenv global 3.11.8
+</code></pre>
+<p>Verify the installation:</p>
+<pre><code class="language-bash">python --version
+</code></pre>
+<p><strong>Verify Node.js and npm</strong></p>
+<p>To verify your Node.js and npm installations, open Terminal and run:</p>
+<pre><code class="language-bash">node -v
+npm -v
+</code></pre>
+<ul>
+<li>If Node.js is installed, running the version command will display the installed version.</li>
+<li>If Node.js is not installed, you will see an error in the terminal such as <code>"node" is not recognized as an internal or external command</code>.</li>
+<li>To install Node.js:<ol>
+<li>Go to <a href="https://nodejs.org/en/download">https://nodejs.org/en/download</a>.</li>
+<li>Choose version <strong>22.16.0</strong> or any higher stable version.</li>
+<li>Download and install Node.js (NPM comes bundled with Node.js).</li>
+</ol>
+</li>
+<li>After installation, open your command prompt or terminal.</li>
+<li>
+<p>Run <code>node -v</code> to confirm that it shows version 22 or higher.</p>
+</li>
+<li>
+<p><strong>JFrog Access for Node Dependencies:</strong></p>
+<ul>
+<li>You need JFrog access to download node dependencies for the React UI application.</li>
+<li>If you already have JFrog access, you can proceed.</li>
+<li>If not, follow these steps:<ol>
+<li>Ensure you are connected to the Infosys network or that Zscaler is enabled.</li>
+<li>Follow the instructions in the guide: <strong>NPM – Install and Publish with JFrog Artifactory SAAS and ZS</strong>.</li>
+<li>(Note: You may skip the 7th step mentioned in that guide.)</li>
+</ol>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="setting-up-proxy-in-linux-environment-if-required">Setting Up Proxy in Linux Environment (If Required)</h2>
+<p>If your network requires a proxy to access the internet, follow these steps to set proxy values as environment variables:</p>
+<p><strong>Steps:</strong></p>
+<p><strong>Set proxy environment variables temporarily:</strong></p>
+<pre><code class="language-bash"># Replace with your actual proxy server and port
+export http_proxy=http://your-proxy-server:your-proxy-port
+export https_proxy=http://your-proxy-server:your-proxy-port
+
+# Example (replace with your actual proxy details):
+# export http_proxy=http://blrproxy.ad.infosys.com:443
+# export https_proxy=http://blrproxy.ad.infosys.com:443
+</code></pre>
+<p><strong>To make proxy settings permanent, add to your shell profile:</strong></p>
+<pre><code class="language-bash"># Replace with your actual proxy server and port
+echo 'export http_proxy=http://your-proxy-server:your-proxy-port' &gt;&gt; ~/.bashrc
+echo 'export https_proxy=http://your-proxy-server:your-proxy-port' &gt;&gt; ~/.bashrc
+source ~/.bashrc
+</code></pre>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>💡 Always verify proxy details with your CCD or VM administrator and replace the example values with your actual proxy configuration.</p>
+</div>
+<h2 id="download-the-backend-project-code">Download the Backend Project Code</h2>
+<ul>
+<li>
+<p>To access the Agentic Foundry GitHub repository, you must have access to InfyGit.</p>
+</li>
+<li>
+<p>If you already have InfyGit access, click the link below and authenticate to gain access to the Agentic Foundry GitHub repository.  <a href="https://github.com/enterprises/infosys/sso">https://github.com/enterprises/infosys/sso</a></p>
+</li>
+</ul>
+<p>You can obtain the project files using one of the following methods:</p>
+<p><strong>Option 1: Clone Using Git</strong></p>
+<pre><code class="language-bash">git clone https://github.com/Infosys-Generative-AI/Infyagentframework
+cd Infyagentframework
+</code></pre>
+<p><strong>Option 2: Download Zip from GitHub</strong></p>
+<ol>
+<li>Navigate to: <a href="https://github.com/Infosys-Generative-AI/Infyagentframework">https://github.com/Infosys-Generative-AI/Infyagentframework</a></li>
+<li>Click "Code" → "Download Zip"</li>
+<li>Extract to your preferred location</li>
+</ol>
+<p><strong>Transferring Files to Linux VM (if needed)</strong></p>
+<p>If transferring from another machine, use SCP:</p>
+<pre><code class="language-bash"># Replace with your actual username, VM IP address, and file paths
+scp -r /path/to/your/local/project your-username@your-vm-ip-address:/home/your-username/
+
+# Example:
+# scp -r /Users/john/Infyagentframework projadmin@192.168.1.100:/home/projadmin/
+</code></pre>
+<h2 id="backend-setup">Backend Setup</h2>
+<p><strong>Setting Up the Backend Environment</strong></p>
+<ol>
+<li><strong>Navigate to Backend Directory:</strong></li>
+</ol>
+<pre><code class="language-bash">cd backend
+</code></pre>
+<ol>
+<li><strong>Create a Virtual Environment:</strong></li>
+</ol>
+<pre><code class="language-bash">python3 -m venv .venv
+</code></pre>
+<ol>
+<li><strong>Activate the Virtual Environment:</strong></li>
+</ol>
+<pre><code class="language-bash">source ./.venv/bin/activate
+</code></pre>
+<ol>
+<li><strong>Install Backend Dependencies:</strong></li>
+</ol>
+<pre><code class="language-bash">pip install -r requirements.txt
+</code></pre>
+<p>If you face any SSL error issue, use the below command:</p>
+<pre><code class="language-bash">pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org
+</code></pre>
+<h2 id="frontend-setup">Frontend Setup</h2>
+<p><strong>Setup on Linux VM</strong></p>
+<ol>
+<li><strong>Navigate to Frontend Directory:</strong></li>
+</ol>
+<pre><code class="language-bash">cd frontend
+</code></pre>
+<ol>
+<li><strong>Remove Existing Lock File (if present):</strong></li>
+</ol>
+<pre><code class="language-bash">rm -f package-lock.json
+</code></pre>
+<ol>
+<li><strong>Install Node Modules:</strong></li>
+</ol>
+<pre><code class="language-bash">npm install
+</code></pre>
+<p>If you encounter proxy issues during npm install, configure npm proxy:</p>
+<pre><code class="language-bash"># Replace with your actual proxy server and port
+npm config set proxy http://your-proxy-server:your-proxy-port
+npm config set https-proxy http://your-proxy-server:your-proxy-port
+
+# Then run npm install
+npm install
+</code></pre>
+<ol>
+<li><strong>Configure Port and Host in <code>package.json</code>:</strong></li>
+</ol>
+<p>Edit <code>package.json</code> to configure the development server:</p>
+<pre><code class="language-json">&quot;scripts&quot;: {
+  &quot;start&quot;: &quot;PORT=your-frontend-port HOST=0.0.0.0 react-scripts start&quot;,
+  &quot;build&quot;: &quot;PORT=your-frontend-port HOST=0.0.0.0 react-scripts build&quot;
+}
+</code></pre>
+<p><strong>Example configuration:</strong></p>
+<pre><code class="language-json">&quot;scripts&quot;: {
+  &quot;start&quot;: &quot;PORT=6002 HOST=0.0.0.0 react-scripts start&quot;,
+  &quot;build&quot;: &quot;PORT=6002 HOST=0.0.0.0 react-scripts build&quot;
+}
+</code></pre>
+<ol>
+<li><strong>Open Firewall Ports:</strong></li>
+</ol>
+<pre><code class="language-bash"># Replace with your actual frontend and backend port numbers
+sudo firewall-cmd --permanent --add-port=your-frontend-port/tcp
+sudo firewall-cmd --permanent --add-port=your-backend-port/tcp
+
+# Example with default ports:
+# sudo firewall-cmd --permanent --add-port=6002/tcp  # Frontend
+# sudo firewall-cmd --permanent --add-port=8000/tcp  # Backend
+
+# Reload firewall
+sudo firewall-cmd --reload
+
+# Verify ports are open
+sudo firewall-cmd --list-ports
+</code></pre>
+<h2 id="configuration-setup">Configuration Setup</h2>
+<p><strong>Frontend-Backend Connection Configuration</strong>:
+Configure Frontend to Connect to Backend</p>
+<ol>
+<li><strong>Edit Constants File:</strong></li>
+</ol>
+<pre><code class="language-bash">nano frontend/src/constants.js
+</code></pre>
+<ol>
+<li><strong>Update BASE_URL:</strong></li>
+</ol>
+<pre><code class="language-javascript">// Replace with your actual backend server IP address and port
+export const BASE_URL = &quot;http://your-backend-server-ip:your-backend-port&quot;;
+
+// Examples:
+// export const BASE_URL = &quot;http://192.168.1.100:8000&quot;;
+// export const BASE_URL = &quot;http://10.0.0.50:8000&quot;;
+// export const BASE_URL = &quot;http://localhost:8000&quot;;  // If frontend and backend are on same machine
+</code></pre>
+<p><strong>Configure Backend CORS Settings</strong></p>
+<p>Update the backend server file (typically <code>agentic_workflow_as_service_endpoints.py</code>):</p>
+<pre><code class="language-python">origins = [
+    # Replace with your actual frontend server IP and port
+    &quot;http://your-frontend-server-ip:your-frontend-port&quot;,
+    &quot;http://localhost:3000&quot;,
+    &quot;http://localhost:6002&quot;,
+    # Add additional origins as needed
+]
+
+# Examples:
+# origins = [
+#     &quot;http://192.168.1.101:6002&quot;,
+#     &quot;http://10.0.0.51:6002&quot;,
+#     &quot;http://localhost:3000&quot;,
+#     &quot;http://localhost:6002&quot;,
+# ]
+</code></pre>
+<h2 id="environment-configuration">Environment Configuration</h2>
+<p><strong>Backend Environment Variables</strong></p>
+<p>Create <code>.env</code> file in backend directory:</p>
+<pre><code class="language-bash">nano backend/.env
+</code></pre>
+<p>Add the following content (replace with your actual values):</p>
+<pre><code class="language-bash">DEBUG=False
+# Replace with your actual API keys and configuration
+API_KEY=your_actual_api_key_here
+DATABASE_URL=your_database_url_here
+SECRET_KEY=your_secret_key_here
+
+# Example:
+# API_KEY=sk-1234567890abcdef
+# DATABASE_URL=postgresql://user:password@localhost/dbname
+# SECRET_KEY=your-super-secret-key-here
+</code></pre>
+<p><strong>Frontend Environment Variables</strong></p>
+<p>Create <code>.env</code> file in frontend directory:</p>
+<pre><code class="language-bash">nano frontend/.env
+</code></pre>
+<p>Add the following content:</p>
+<pre><code class="language-bash"># Replace with your actual backend IP address and port
+REACT_APP_API_URL=http://your-backend-ip:your-backend-port
+REACT_APP_API_TIMEOUT=30000
+
+# Examples:
+# REACT_APP_API_URL=http://192.168.1.100:8000
+# REACT_APP_API_URL=http://10.0.0.50:8000
+# REACT_APP_API_URL=http://localhost:8000
+</code></pre>
+<h2 id="running-the-applications">Running the Applications</h2>
+<p><strong>Start the Backend Server</strong></p>
+<p>With the virtual environment activated:</p>
+<pre><code class="language-bash">cd backend
+# Replace port number if using a different backend port
+uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port your-backend-port --workers 4
+
+# Example:
+# uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4
+</code></pre>
+<p><strong>Start the Frontend</strong></p>
+<pre><code class="language-bash">cd frontend
+npm start
+</code></pre>
+<p>The React UI will be accessible at:
+- <code>http://your-vm-ip:your-frontend-port</code>
+- Example: <code>http://192.168.1.101:6002</code></p>
+<h2 id="accessing-the-applications">Accessing the Applications</h2>
+<p><strong>Frontend Access URLs:</strong></p>
+<ul>
+<li>Local access: <code>http://localhost:your-frontend-port</code></li>
+<li>Network access: <code>http://your-vm-ip:your-frontend-port</code></li>
+<li>Example: <code>http://192.168.1.101:6002</code></li>
+</ul>
+<p><strong>Backend API Access URLs:</strong></p>
+<ul>
+<li>Local access: <code>http://localhost:your-backend-port</code></li>
+<li>Network access: <code>http://your-vm-ip:your-backend-port</code></li>
+<li>Example: <code>http://192.168.1.100:8000</code></li>
+<li>API Documentation: <code>http://your-vm-ip:your-backend-port/docs</code></li>
+</ul>
+<h2 id="service-deployment">Service Deployment</h2>
+<ul>
+<li>Running as System Services</li>
+</ul>
+<p><strong>Backend Service</strong></p>
+<p>Create systemd service file:</p>
+<pre><code class="language-bash">sudo nano /etc/systemd/system/infyagent-backend.service
+</code></pre>
+<p>Add content (replace placeholders with your actual values):</p>
+<pre><code class="language-ini">[Unit]
+Description=FastAPI Application with Gunicorn
+After=network.target
+
+[Service]
+# Replace with your actual project path
+WorkingDirectory=/home/your-username/your-project-directory/backend
+# Replace with your actual paths, username, and port
+ExecStart=/home/your-username/your-project-directory/backend/.venv/bin/python -m gunicorn agentic_workflow_as_service_endpoints:app \
+  --workers 1 \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:your-backend-port
+Restart=always
+# Replace with your actual username
+User=your-username
+# Replace with your actual proxy settings (remove if not using proxy)
+Environment=&quot;http_proxy=http://your-proxy-server:your-proxy-port&quot;
+Environment=&quot;https_proxy=http://your-proxy-server:your-proxy-port&quot;
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p><strong>Example configuration:</strong></p>
+<pre><code class="language-ini">[Unit]
+Description=FastAPI Application with Gunicorn
+After=network.target
+
+[Service]
+WorkingDirectory=/home/projadmin/Infyagentframework/backend
+ExecStart=/home/projadmin/Infyagentframework/backend/.venv/bin/python -m gunicorn agentic_workflow_as_service_endpoints:app \
+  --workers 1 \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:8000
+Restart=always
+User=projadmin
+Environment=&quot;http_proxy=http://blrproxy.ad.infosys.com:443&quot;
+Environment=&quot;https_proxy=http://blrproxy.ad.infosys.com:443&quot;
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p><strong>Things You Need to Customize:</strong></p>
+<ol>
+<li>
+<p><strong>Project Path</strong><br />
+   Replace <code>/home/your-username/your-project-directory/</code> with your actual project path</p>
+</li>
+<li>
+<p><strong>Username</strong><br />
+   Replace <code>your-username</code> with your actual Linux username</p>
+</li>
+<li>
+<p><strong>Backend Port</strong><br />
+   Replace <code>your-backend-port</code> with your chosen backend port (e.g., 8000)</p>
+</li>
+<li>
+<p><strong>Proxy Settings</strong><br />
+   Replace <code>your-proxy-server:your-proxy-port</code> with actual proxy details, or remove if not using proxy</p>
+</li>
+<li>
+<p><strong>App Module Name</strong><br />
+   Change <code>agentic_workflow_as_service_endpoints:app</code> if your FastAPI app module has a different name</p>
+</li>
+</ol>
+<p>Enable and start the service:</p>
+<pre><code class="language-bash">sudo systemctl enable infyagent-backend.service
+sudo systemctl start infyagent-backend.service
+sudo systemctl status infyagent-backend.service
+</code></pre>
+<p><strong>Frontend Service (Optional)</strong></p>
+<p>Create systemd service file for frontend:</p>
+<pre><code class="language-bash">sudo nano /etc/systemd/system/infyagent-frontend.service
+</code></pre>
+<p>Add content:</p>
+<pre><code class="language-ini">[Unit]
+Description=React Frontend Application
+After=network.target
+
+[Service]
+# Replace with your actual project path
+WorkingDirectory=/home/your-username/your-project-directory/frontend
+# Replace with your actual paths and port
+ExecStart=/usr/bin/npm start
+Restart=always
+# Replace with your actual username
+User=your-username
+# Set environment variables
+Environment=NODE_ENV=production
+Environment=PORT=your-frontend-port
+Environment=HOST=0.0.0.0
+# Replace with your actual proxy settings (if needed)
+Environment=&quot;http_proxy=http://your-proxy-server:your-proxy-port&quot;
+Environment=&quot;https_proxy=http://your-proxy-server:your-proxy-port&quot;
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<h2 id="network-configuration">Network Configuration</h2>
+<p><strong>Port Configuration Summary</strong></p>
+<p><strong>Default Ports (customize as needed):</strong></p>
+<ul>
+<li>Frontend: <code>6002</code> (replace with <code>your-frontend-port</code>)</li>
+<li>Backend: <code>8000</code> (replace with <code>your-backend-port</code>)</li>
+</ul>
+<p><strong>Security Group / Firewall Rules</strong></p>
+<p>Ensure the following ports are open in your VM's security group or firewall:</p>
+<pre><code class="language-bash"># Replace with your actual port numbers
+sudo firewall-cmd --permanent --add-port=your-frontend-port/tcp
+sudo firewall-cmd --permanent --add-port=your-backend-port/tcp
+sudo firewall-cmd --permanent --add-port=22/tcp  # SSH access
+sudo firewall-cmd --reload
+</code></pre>
+<h2 id="network-testing">Network Testing</h2>
+<p>Test connectivity between frontend and backend:</p>
+<pre><code class="language-bash"># Test backend API from frontend server
+curl http://your-backend-server-ip:your-backend-port/health
+
+# Test frontend access
+curl http://your-frontend-server-ip:your-frontend-port
+</code></pre>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>Connection Issues</strong></p>
+<p><strong>1. Frontend cannot connect to Backend:</strong></p>
+<ul>
+<li>Verify <code>BASE_URL</code> in <code>frontend/src/constants.js</code></li>
+<li>Check CORS settings in backend</li>
+<li>Ensure backend server is running and accessible</li>
+<li>Test: <code>curl http://your-backend-ip:your-backend-port/health</code></li>
+</ul>
+<p><strong>2. Cannot access applications from external network:</strong></p>
+<ul>
+<li>Check firewall rules: <code>sudo firewall-cmd --list-ports</code></li>
+<li>Verify HOST is set to <code>0.0.0.0</code> (not <code>localhost</code>)</li>
+<li>Check VM security group settings</li>
+</ul>
+<p><strong>Service Issues</strong></p>
+<p><strong>3. Service fails to start:</strong></p>
+<ul>
+<li>Check service logs: <code>sudo journalctl -u infyagent-backend.service -f</code></li>
+<li>Verify file paths in service configuration</li>
+<li>Check user permissions</li>
+<li>Ensure virtual environment is properly configured</li>
+</ul>
+<p><strong>Proxy Issues</strong></p>
+<p><strong>4. Cannot install packages or clone repositories:</strong>
+   - Verify proxy settings: <code>echo $http_proxy</code>
+   - Check proxy configuration with your administrator
+   - Test proxy: <code>curl -I http://google.com</code></p>
+<p><strong>Log Locations</strong></p>
+<ul>
+<li><strong>Backend service logs:</strong> <code>sudo journalctl -u infyagent-backend.service</code></li>
+<li><strong>Frontend service logs:</strong> <code>sudo journalctl -u infyagent-frontend.service</code></li>
+<li><strong>System logs:</strong> <code>/var/log/messages</code></li>
+</ul>
+<p><strong>Maintenance</strong></p>
+<p>Keep your deployment updated:</p>
+<pre><code class="language-bash"># Update project (if using Git)
+git pull origin main
+
+# Update backend dependencies
+cd backend
+source ./.venv/bin/activate
+pip install -r requirements.txt
+
+# Update frontend dependencies
+cd frontend
+npm install
+
+# Restart services after updates
+sudo systemctl restart infyagent-backend.service
+sudo systemctl restart infyagent-frontend.service
+</code></pre>
+<h2 id="project-structure">Project Structure</h2>
+<p>The structure shown below is a sample. The full project includes additional files and directories not listed here.</p>
+<pre><code>Infyagentframework/
+├── backend/                  # Backend FastAPI application
+│   ├── .venv/                # Python virtual environment (generated)
+│   ├── requirements.txt      # Python dependencies
+│   ├── .env                  # Environment variables (create this)
+│   └── agentic_workflow_as_service_endpoints.py  # Main API file
+├── frontend/                 # React frontend application
+│   ├── node_modules/         # Node.js dependencies (generated)
+│   ├── public/               # Static assets
+│   ├── src/                  # React source code
+│   │   ├── components/       # React components
+│   │   ├── pages/            # Page components
+│   │   ├── services/         # API service functions
+│   │   ├── constants.js      # Configuration constants (update BASE_URL here)
+│   │   ├── App.js            # Main App component
+│   │   └── index.js          # Entry point
+│   ├── package.json          # Node.js dependencies and scripts (update PORT here)
+│   ├── package-lock.json     # Lock file for dependencies
+│   └── .env                  # Environment variables (create this)
+└── README.md                 # Project documentation
+</code></pre>
+<p><strong>Default Commands with Placeholders:</strong></p>
+<pre><code class="language-bash"># Backend startup
+uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port your-backend-port
+
+# Frontend access
+http://your-vm-ip:your-frontend-port
+
+# Backend API access
+http://your-vm-ip:your-backend-port/docs
+</code></pre>
+<p>Remember to replace all placeholder values with your actual IP addresses, ports, usernames, and paths before deployment!</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+    
+  </body>
+</html>
