@@ -1,0 +1,58 @@
+site_name: Agentic Foundry
+theme:
+    name: material
+    logo: images/logo.png
+    features:
+    - content.code.copy
+    - navigation.path
+markdown_extensions:
+- admonition
+extra_css:
+    - css/hide-footer.css
+
+# plugins:
+#     - search
+#     - mermaid2
+
+nav:
+  - Introduction: index.md
+  - Definitions:
+     - Vocabulary - Definitions: Definitions/Vocabulary - Definitions.md
+     - Human in the loop: Definitions/hitl.md
+  - Features: Features.md
+  - Architecture: Architecture.md
+  - Installation: 
+     - Windows: Installation/windows.md
+     - Linux: Installation/linux.md
+     - Azure : Installation/Azure.md
+  - PostgreSQL setup: Database setup/Database Setup.md
+  - Agents Design: 
+     - Overview: Agents Design/overview.md
+     - React Agent Design: Agents Design/React Agent Design.md
+     - Multi Agent Design: Agents Design/Multi Agent Design.md
+     - Orchestration Meta Agent Design: Agents Design/Orchestration Meta Agent Design.md
+  - Tools Configuration : tools_config/tools.md
+  - Tool Validation: Tool_Validation.md
+  - Tool Interrupt: Tool Interrupt.md
+  - Agent Configuration:
+      - Overview: agent_config/Overview.md
+      - React Agent Configuration: agent_config/reactAgent.md
+      - Multi Agent Configuration: agent_config/multiAgent.md
+      - Meta Agent Configuration: agent_config/metaAgent.md
+  - Inference:
+      - Overview: Inference/inference.md
+      - React Agent Inference: Inference/reactAgent_inference.md
+      - Multi Agent Inference: Inference/multiAgent_inference.md
+      - Meta Agent Inference: Inference/metaAgent_inference.md
+  - Files: files_upload/files.md
+  - Telemetry:
+      - Open Telemetry: Telemetry/telemetry.md
+      - Configurations: Telemetry/configurations.md
+      - Connecting to Grafana: Telemetry/Connecting to Grafana.md
+      - Arize Phoenix: Telemetry/Arize_Phoenix.md
+  - Evaluation Metrics: Evaluation/evaluation_metrics.md
+
+
+
+
+  
