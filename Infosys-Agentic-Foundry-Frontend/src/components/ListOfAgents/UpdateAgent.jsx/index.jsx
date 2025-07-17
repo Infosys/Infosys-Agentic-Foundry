@@ -8,7 +8,13 @@ import {
   META_AGENT,
   MULTI_AGENT,
   REACT_AGENT,
+ PLANNER_META_AGENT,
   SystemPromptsTypes,
+  SystemPromptsTypesPlanner,
+  REACT_CRITIC_AGENT,
+  PLANNER_EXECUTOR_AGENT,
+  systemPromptReactCriticAgents,
+  systemPromptPlannerExecutorAgents
 } from "../../../constant";
 import useFetch from "../../../Hooks/useAxios";
 import Loader from "../../commonComponents/Loader";
@@ -17,20 +23,18 @@ import Cookies from "js-cookie";
 import DeleteModal from "../../commonComponents/DeleteModal";
 import { useNavigate } from "react-router-dom";
 import ZoomPopup from "../../commonComponents/ZoomPopup";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faExpand } from "@fortawesome/free-solid-svg-icons";
 import InfoTag from "../../commonComponents/InfoTag";
 import ToolOnBoarding from "../../AvailableTools/ToolOnBoarding";
-import { getTools } from "../../../services/toolService";
 import { calculateDivs } from "../../../util";
-import { getToolsByPageLimit } from "../../../services/toolService";
-import { getAgentsByPageLimit} from "../../../services/agentService";
+import { getToolsSearchByPageLimit, getAgentsSearchByPageLimit,RecycleTools,deletedTools } from "../../../services/toolService";
+import { debounce } from "lodash"; 
  
 const UpdateAgent = (props) => {
   const loggedInUserEmail = Cookies.get("email");
   const userName = Cookies.get("userName");
+  const role = Cookies.get("role");
 
-  const { agentData, onClose, agentsListData, tags, fetchAgents } =
+  const { agentData, onClose, agentsListData, tags, fetchAgents,searchTerm ,RestoreAgent,deleteAgent} =
     props;
   const { fetchData, putData,postData } = useFetch();
   const [fullAgentData, setFullAgentData] = useState({});
@@ -39,6 +43,7 @@ const UpdateAgent = (props) => {
   const [remainingTools, setRemainingTools] = useState([]);
   const [remainingAgents, setRemainingAgents] = useState([]);
   const [agentType, setAgentType] = useState("");
+  const [selectedToolsLoading, setSelectedToolsLoading] = useState(true); // Added state
   const [addedToolsId, setAddedToolsId] = useState([]);
   const [removedToolsId, setremovedToolsId] = useState([]);
   const [addedAgentsId, setAddedAgentsId] = useState([]);
@@ -46,6 +51,9 @@ const UpdateAgent = (props) => {
   const [systemPromptType, setSystemPromptType] = useState(
     SystemPromptsTypes[0].value
   );
+  const[plannersystempromtType,setPlannersystempromptType]=useState(SystemPromptsTypesPlanner[0].value)
+  const[reactCriticSystemPromptType,setReactCriticSystemPromptType]=useState(systemPromptReactCriticAgents[0].value)
+  const[plannerExecutorSystemPromptType,setPlannerExecutorSystemPromptType]=useState(systemPromptPlannerExecutorAgents[0].value)
   const [systemPromptData, setSystemPromptData] = useState({});
   const [selectedPromptData, setSelectedPromptData] = useState({});
   const [selectedTag, setSelectedTags] = useState([]);
@@ -62,7 +70,6 @@ const UpdateAgent = (props) => {
   const toolListContainerRef = useRef(null);
   const pageRef = useRef(1);
   const hasLoadedOnce = useRef(false);
-  const [searchTerm, setSearchTerm] = useState("");
  
   const handleZoomClick = (title, content) => {
     setPopupTitle(title);
@@ -111,7 +118,8 @@ const UpdateAgent = (props) => {
   };
 
   const fetchAgentDetail = async () => {
-    if (loader) return; // Prevent concurrent requests
+    if(!props?.recycleBin){
+   if (loader) return; // Prevent concurrent requests
     setLoader(true);
     try {
       const data = await fetchData(
@@ -122,7 +130,6 @@ const UpdateAgent = (props) => {
       const agentType = data[0]?.agentic_application_type;
       const systemPrompts = JSON.parse(data[0]["system_prompt"], null, "\t");
       const selectedToolsId = JSON.parse(data[0]?.tools_id);
-     
       setFullAgentData(data[0]);
       setAgentType(agentType);
       setSystemPromptData(systemPrompts);
@@ -141,27 +148,40 @@ const UpdateAgent = (props) => {
      
       // Load tools separately
       if (agentType) {
+        setSelectedToolsLoading(true); 
         loadRelatedTools(agentType, selectedToolsId);
-      }
+      } else {
+        setSelectedToolsLoading(false); // If no agentType, nothing to load
+            }
     } catch {
       console.error("Details failed");
     } finally {
       setLoader(false);
+    }
+    }else{
+
+       setAgentType(agentData?.agentic_application_type)
+          setSystemPromptData(JSON.parse(agentData["system_prompt"], null, "\t"));
+        setFullAgentData(agentData)
+            loadRelatedTools(agentData?.agentic_application_type, JSON.parse(agentData.tools_id));
+ setLoader(false);
     }
   };
  
   // New function to handle tool loading
   const loadRelatedTools = async (type, selectedToolsId) => {
     try {
-      if (type === REACT_AGENT || type === MULTI_AGENT) {
+      if (type === REACT_AGENT || type === MULTI_AGENT || type === REACT_CRITIC_AGENT || type === PLANNER_EXECUTOR_AGENT) {
         const response = await postData("/get-tools-by-list",selectedToolsId);
         setSelectedTools(response);
-      } else if (type === META_AGENT) {
+      } else if ((type === META_AGENT || type === PLANNER_META_AGENT)) {
         const response = await postData("/get-agents-by-list",selectedToolsId);
         setSelectedAgents(response);
       }
     } catch {
       console.error("Check problem in Load Related Tools");
+    } finally {
+      setSelectedToolsLoading(false); // Set loading to false when done
     }
   };
  
@@ -175,34 +195,32 @@ const UpdateAgent = (props) => {
   }, []);
  
   const fetchToolsData = async (pageNumber, divsCount) => {
+    if(!props?.recycleBin){
     setLoader(true);
     try {
-      if (agentType === REACT_AGENT || agentType === MULTI_AGENT) {
-        const response = await getToolsByPageLimit({ page: pageNumber, limit: divsCount });
- 
-        const fetchedTools = response?.details || [];
- 
+      if (agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT) {
+        const response = await getToolsSearchByPageLimit({ page: pageNumber, limit: divsCount, search:"" });
+        const fetchedTools =  response || [];
         const filteredTools = fetchedTools.filter(
           (tool) => !selectedTools?.some(
             (selectedTool) => selectedTool.tool_id === tool.tool_id
           )
         );
- 
-        setRemainingTools((prev) => [...prev, ...filteredTools]);
-        setVisibleData((prev) => [...prev, ...filteredTools]);
-        setTotalCount(response?.total_count || 0);
-      } else if (agentType === META_AGENT) {
-        const response = await getAgentsByPageLimit({ page: pageNumber, limit: divsCount });
-        const fetchedAgents = response?.details || [];
+        setRemainingTools((prev) => pageNumber === 1 ? filteredTools : [...prev, ...filteredTools]);
+        setVisibleData((prev) => pageNumber === 1 ? filteredTools : [...prev, ...filteredTools]);
+        setTotalCount(fetchedTools.length || 0);
+      } else if ((agentType === META_AGENT || agentType=== PLANNER_META_AGENT)) {
+        const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: "" });
+        const fetchedAgents = response || [];
         const agents = fetchedAgents?.filter(
           (agent) => !selectedAgents?.some(
             (selectedTool) =>
               agent?.agentic_application_id === selectedTool.agentic_application_id
           )
         );
-        setRemainingAgents((prev) => [...prev, ...agents]);
-        setVisibleData((prev) => [...prev, ...agents]);
-        setTotalCount(response?.total_count || 0);
+        setRemainingAgents((prev) => pageNumber === 1 ? agents : [...prev, ...agents]);
+        setVisibleData((prev) => pageNumber === 1 ? agents : [...prev, ...agents]);
+        setTotalCount(fetchedAgents.length || 0);
       }
     } catch {
       console.error("Error fetching tools or agents");
@@ -210,12 +228,28 @@ const UpdateAgent = (props) => {
     finally{
       setLoader(false);
     }
+  }
   };
  
+  // useEffect(()=>{
+  //   const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
+  //   fetchToolsData(1,divsCount)
+  // },[agentType])
+  
   useEffect(()=>{
-    const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
-    fetchToolsData(1,divsCount)
-  },[agentType])
+  // Only proceed if agentType is known and the loading of selected tools/agents for that type is complete.
+    if (agentType && !selectedToolsLoading) {
+      const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
+      // Reset pagination and data for the list of remaining tools/agents
+      setPage(1);
+      pageRef.current = 1;
+      setVisibleData([]);
+      setRemainingAgents([]);
+      setRemainingTools([]);
+ 
+      fetchToolsData(1, divsCount); // Pass latest searchTerm
+    }
+  }, [agentType, selectedToolsLoading, selectedTools, selectedAgents]);
  
   const loadMoreData = useCallback(() => {
     if (loader || visibleData.length >= totalCount) return;
@@ -226,59 +260,48 @@ const UpdateAgent = (props) => {
     fetchToolsData(nextPage, divsCount);
   }, [loader, visibleData, totalCount]);
  
-  const lastScrollTop = useRef(0);
-  const scrollDirection = useRef('down');
- 
-  const handleScroll = () => {
-    const container = toolListContainerRef.current;
-    if (!container) return;
-   
-    const currentScrollTop = container.scrollTop;
-    scrollDirection.current = currentScrollTop > lastScrollTop.current ? 'down' : 'up';
-    lastScrollTop.current = currentScrollTop;
-   
-    const scrollThreshold = 20;
-    const isNearBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + scrollThreshold;
-   
-    if (isNearBottom && scrollDirection.current === 'down' && !searchTerm.trim() && !loader) {
-      loadMoreData();
-    }
-  };
- 
+    useEffect(() => {
+      const debouncedCheckAndLoad = debounce(() => {
+        if (!searchTerm?.trim() && tags?.length === 0) {
+          const container = toolListContainerRef.current;
+          if (
+            container &&
+            container.scrollHeight <= container.clientHeight &&
+            agentsListData.length < totalCount
+          ) {
+            loadMoreData();
+          }
+        }
+      }, 300);
+      const handleResize = () => {
+        debouncedCheckAndLoad();
+      };
+    
+      window.addEventListener('resize', handleResize);
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
+      };
+    }, [visibleData.length, totalCount, tags]);
   useEffect(() => {
-      if (!hasLoadedOnce.current) {
-        hasLoadedOnce.current = true;
-        const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
-        setPage(1);
-        pageRef.current = 1;
-        setVisibleData([]);
-        setRemainingAgents([])
-        setRemainingTools([]);
-        fetchToolsData(1, divsCount);
-      }
-    }, [agentType]);
- 
-  useEffect(() => {
-      const container = toolListContainerRef.current;
-      if (container) {
-        container.addEventListener("scroll", handleScroll);
-        return () => container.removeEventListener("scroll", handleScroll);
-      }
-    }, [visibleData, page, loader]);
- 
-  useEffect(() => {
+    if (agentType === PLANNER_META_AGENT) {
+    setSelectedPromptData(systemPromptData[plannersystempromtType]);
+    } else if (agentType === REACT_CRITIC_AGENT) {
+      setSelectedPromptData(systemPromptData[reactCriticSystemPromptType]);
+    } else if (agentType === PLANNER_EXECUTOR_AGENT) {
+      setSelectedPromptData(systemPromptData[plannerExecutorSystemPromptType]);
+    } else {
     setSelectedPromptData(systemPromptData[systemPromptType]);
-  }, [systemPromptType, systemPromptData]);
+}
+  }, [systemPromptType, systemPromptData, plannersystempromtType, reactCriticSystemPromptType, plannerExecutorSystemPromptType]);
 
   const onSubmit = async (e) => {
+    setLoader(true);
     e.preventDefault();
     if (userName === "Guest") {
       setShowUpdateModal(true);
       return;
     }
-    // const isSystemPromptChanged =
-    //   JSON.stringify(systemPromptData) !==
-    //   JSON.stringify(JSON.parse(fullAgentData?.system_prompt || "{}"));
 
       const isSystemPromptChanged = (() => {
         let parsedSystemPrompt = {};
@@ -296,14 +319,15 @@ const UpdateAgent = (props) => {
 
     const payload = {
       ...formData,
+      created_by: fullAgentData.created_by, // Always use creator email from fullAgentData
       updated_tag_id_list: selectedTag,
-      is_admin: false,
+      is_admin: role && role.toUpperCase() === "ADMIN",
       system_prompt: isSystemPromptChanged ? systemPromptData : {},
       user_email_id: formData?.created_by,
       agentic_application_id_to_modify: agentData?.agentic_application_id,
-      tools_id_to_add: agentType === META_AGENT ? addedAgentsId : addedToolsId,
+      tools_id_to_add: (agentType === META_AGENT || agentType === PLANNER_META_AGENT)? addedAgentsId : addedToolsId,
       tools_id_to_remove:
-        agentType === META_AGENT ? removedAgentsId : removedToolsId,
+        (agentType === META_AGENT || agentType === PLANNER_META_AGENT) ? removedAgentsId : removedToolsId,
     };
     try {
       let url = "";
@@ -317,13 +341,22 @@ const UpdateAgent = (props) => {
         case META_AGENT:
           url = APIs.UPADATE_META_AGENT;
           break;
+          case PLANNER_META_AGENT:
+            url =APIs.UPDATE_PLANNER_META_AGENT;
+            break;
+          case REACT_CRITIC_AGENT:
+          url = APIs.UPDATE_REACT_CRITIC_AGENT;
+          break;
+        case PLANNER_EXECUTOR_AGENT:
+          url = APIs.UPDATE_PLANNER_EXECUTOR_AGENT;
+            break;
         default:
           break;
       }
-      const res = await putData(url, payload);
+      const res = await putData(url, payload);      
       fetchAgentDetail();
       fetchAgents();
-      if (agentType === META_AGENT) {
+      if ((agentType === META_AGENT || agentType === PLANNER_META_AGENT)) {
         setAddedAgentsId([]);
         setRemovedAgentsId([]);
       } else {
@@ -337,7 +370,8 @@ const UpdateAgent = (props) => {
       }
     } catch {
       addMessage("Something went wrong!", "error");
-      console.error("Try Re-Submitting");
+    }finally{
+      setLoader(false);
     }
   };
 
@@ -347,6 +381,21 @@ const UpdateAgent = (props) => {
       setSystemPromptData({
         ...systemPromptData,
         [systemPromptType]: e?.target?.value,
+      });
+    } else if (agentType === PLANNER_META_AGENT) {
+ setSystemPromptData({
+   ...systemPromptData,
+        [plannersystempromtType]: e?.target?.value,
+      });
+    } else if (agentType === REACT_CRITIC_AGENT) {
+      setSystemPromptData({
+        ...systemPromptData,
+        [reactCriticSystemPromptType]: e?.target?.value,
+      });
+    } else if (agentType === PLANNER_EXECUTOR_AGENT) {
+      setSystemPromptData({
+        ...systemPromptData,
+        [plannerExecutorSystemPromptType]: e?.target?.value,
       });
     } else {
       setSystemPromptData({
@@ -358,7 +407,6 @@ const UpdateAgent = (props) => {
 
   const [updatedTags, setUpdatedTags] = useState([]);
   useEffect(() => {
-    console.log(fullAgentData)
     if (fullAgentData.tags && tags.length > 0) {
       const newTags = tags.map((tag) => {
         if (fullAgentData.tags.some((editTag) => editTag.tag_id === tag.tag_id)) {
@@ -395,9 +443,14 @@ const UpdateAgent = (props) => {
     }
   };
 
-  useEffect(() => {
-    fetchModels();
-  }, []);
+  // Use a ref to ensure models are fetched only once
+  const hasLoadedModelsOnce = useRef(false);
+ 
+   useEffect(() => {
+     if (hasLoadedModelsOnce.current) return;
+     hasLoadedModelsOnce.current = true;
+     fetchModels();
+   }, []);
 
   const navigate = useNavigate();
 
@@ -423,20 +476,34 @@ const UpdateAgent = (props) => {
         agentic_application_workflow_description: updatedContent,
       }));
     } else if (popupTitle === "System Prompt") {
-      setSystemPromptData((prev) => ({
-        ...prev,
-        [Object.keys(systemPromptData)[0]]: updatedContent,
-      }));
+      if (agentType === MULTI_AGENT ) {
+        setSystemPromptData((prev) => ({
+          ...prev,
+          [systemPromptType]: updatedContent,
+        }));
+      } else if (agentType === PLANNER_META_AGENT) {
+   setSystemPromptData((prev) => ({
+   ...prev,
+          [plannersystempromtType]: updatedContent,
+        }));
+      } else if (agentType === REACT_CRITIC_AGENT) {
+        setSystemPromptData((prev) => ({
+          ...prev,
+          [reactCriticSystemPromptType]: updatedContent,
+        }));
+      } else if (agentType === PLANNER_EXECUTOR_AGENT) {
+        setSystemPromptData((prev) => ({
+          ...prev,
+          [plannerExecutorSystemPromptType]: updatedContent,
+        }));
+    } else {
+        setSystemPromptData((prev) => ({
+          ...prev,
+          [Object.keys(systemPromptData)[0]]: updatedContent,
+        }));
+      }
     }
   };
-
-  // const handleCopy = (key, text) => {
-  //   navigator.clipboard.writeText(text);
-  //   setCopiedStates((prev) => ({ ...prev, [key]: true })); // Set copied state for the specific key
-  //   setTimeout(() => {
-  //     setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
-  //   }, 2000);
-  // };
 
 
   const handleCopy = (key, text) => {
@@ -477,6 +544,14 @@ const UpdateAgent = (props) => {
     }
   };
 
+  const fetchPaginatedTools = async (pageNumber = 1) => {
+      setVisibleData([]);
+      setPage(pageNumber);
+      pageRef.current = pageNumber;
+      const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+      await fetchToolsData(pageNumber, divsCount);
+    };
+ 
   return (
     <>
       <DeleteModal
@@ -491,7 +566,7 @@ const UpdateAgent = (props) => {
       </DeleteModal>
       <div className={styles.container}>
         <div className={styles.header}>
-          <h6>UPDATE AGENT</h6>
+           {props?.recycleBin ? <h6>{agentData?.agentic_application_name.toUpperCase()}</h6>:<h6>UPDATE AGENT</h6>}
           <p>
             AGENT TYPE: <span>{agentData?.agentic_application_type?.replace(/_/g," ")}</span>
           </p>
@@ -504,16 +579,11 @@ const UpdateAgent = (props) => {
             />
           </button>
         </div>
-        <form
+        <div
           className={styles.formContainer}
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onSubmit(e);
-          }}
         >
           <div className={styles.inputName}>
-            <label for="agentic_application_name">
+            <label htmlFor="agentic_application_name">
               AGENT NAME
               <InfoTag message="Provide name for the agent." />
             </label>
@@ -527,7 +597,7 @@ const UpdateAgent = (props) => {
             />
           </div>
           <div className={styles.selectContainer}>
-            <label for="model_name">
+            <label htmlFor="model_name">
               MODEL
               <InfoTag message="Select the model for the agent." />
             </label>
@@ -539,20 +609,21 @@ const UpdateAgent = (props) => {
               value={formData.model_name}
               onChange={handleChange}
               required
+               disabled={props?.recycleBin}
             />
           </div>
           <div className={styles.inputUserId}>
-            <label for="created_by">
-              USER EMAIL
+            <label htmlFor="created_by">
+              CREATED BY
               <InfoTag message="Provide email for the agent." />
             </label>
             <input
               type="email"
               id="created_by"
               name="created_by"
-              value={formData.created_by}
+              value={fullAgentData.created_by}
               onChange={handleChange}
-              required
+              disabled
             />
           </div>
           <div className={styles.inputGoal}>
@@ -568,12 +639,7 @@ const UpdateAgent = (props) => {
                 onChange={handleChange}
                 className={styles.agentTextArea}
                 required
-                onClick={() =>
-                  handleZoomClick(
-                    "Agent Goal",
-                    formData.agentic_application_description
-                  )
-                }
+                 disabled={props?.recycleBin}
               />
               <div className={styles.iconContainer}>
                 <button
@@ -594,6 +660,21 @@ const UpdateAgent = (props) => {
                     fill="#343741"
                   />
                 </button>
+                <div className={styles.iconGroup}>
+                <button
+                  type="button"
+                  className={styles.expandIcon}
+                  onClick={() => handleZoomClick("Agent Goal", formData.agentic_application_description)}
+                  title="Expand"
+                >
+                  <SVGIcons
+                    icon="fa-solid fa-up-right-and-down-left-from-center"
+                    width={16}
+                    height={16}
+                    fill="#343741"
+                  />
+                </button>
+                </div>
                 <span
                   className={`${styles.copiedText} ${
                     copiedStates["agentic_application_description"] ? styles.visible : styles.hidden
@@ -605,7 +686,7 @@ const UpdateAgent = (props) => {
             </div>
           </div>
           <div className={styles.inputDescription}>
-            <label for="agentic_application_workflow_description">
+            <label htmlFor="agentic_application_workflow_description">
               WORKFLOW DESCRIPTION
               <InfoTag message="Provide description for the agent." />
             </label>
@@ -617,12 +698,7 @@ const UpdateAgent = (props) => {
                 onChange={handleChange}
                 className={styles.agentTextArea}
                 required
-                onClick={() =>
-                  handleZoomClick(
-                    "Workflow Description",
-                    formData.agentic_application_workflow_description
-                  )
-                }
+                 disabled={props?.recycleBin}
               />
               <div className={styles.iconContainer}>
                 <button
@@ -643,6 +719,21 @@ const UpdateAgent = (props) => {
                     fill="#343741"
                   />
                 </button>
+                <div className={styles.iconGroup}>
+                <button
+                  type="button"
+                  className={styles.expandIcon}
+                  onClick={() => handleZoomClick("Workflow Description", formData.agentic_application_workflow_description)}
+                  title="Expand"
+                >
+                  <SVGIcons
+                    icon="fa-solid fa-up-right-and-down-left-from-center"
+                    width={16}
+                    height={16}
+                    fill="#343741"
+                  />
+                </button>
+                </div>
                 <span
                   className={`${styles.copiedText} ${
                     copiedStates["agentic_application_workflow_description"] ? styles.visible : styles.hidden
@@ -654,12 +745,42 @@ const UpdateAgent = (props) => {
             </div>
           </div>
           <div className={styles.inputSystemPrompt}>
-            {agentType === MULTI_AGENT ? (
+            {agentType === MULTI_AGENT || agentType === PLANNER_META_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT ? (
               <>
                 <DropDown
-                  options={SystemPromptsTypes}
-                  value={systemPromptType}
-                  onChange={(e) => setSystemPromptType(e?.target?.value)}
+                  options={
+                    agentType === MULTI_AGENT 
+                      ? SystemPromptsTypes 
+                      : agentType === PLANNER_META_AGENT 
+                      ? SystemPromptsTypesPlanner
+                      : agentType === REACT_CRITIC_AGENT
+                      ? systemPromptReactCriticAgents
+                      : agentType === PLANNER_EXECUTOR_AGENT
+                      ? systemPromptPlannerExecutorAgents
+                      : SystemPromptsTypes
+                  }
+                  value={
+                    agentType === MULTI_AGENT 
+                      ? systemPromptType 
+                      : agentType === PLANNER_META_AGENT 
+                        ? plannersystempromtType
+                        : agentType === REACT_CRITIC_AGENT
+                          ? reactCriticSystemPromptType
+                          : agentType === PLANNER_EXECUTOR_AGENT
+                            ? plannerExecutorSystemPromptType
+                            : systemPromptType
+                  }
+                  onChange={(e) => {
+                    if (agentType === MULTI_AGENT) {
+                      setSystemPromptType(e?.target?.value);
+                    } else if (agentType === PLANNER_META_AGENT) {
+                      setPlannersystempromptType(e?.target?.value);
+                    } else if (agentType === REACT_CRITIC_AGENT) {
+                      setReactCriticSystemPromptType(e?.target?.value);
+                    } else if (agentType === PLANNER_EXECUTOR_AGENT) {
+                      setPlannerExecutorSystemPromptType(e?.target?.value);
+                    }
+                  }}
                   selectStyle={styles.selectNoBorder}
                 />
                 <div className={styles.textAreaContainer}>
@@ -670,9 +791,7 @@ const UpdateAgent = (props) => {
                     onChange={handlePromptChange}
                     className={styles.agentTextArea}
                     required
-                    onClick={() =>
-                      handleZoomClick("System Prompt", selectedPromptData)
-                    }
+                     disabled={props?.recycleBin}
                   />
                   <div className={styles.iconContainer}>
                     <button
@@ -693,6 +812,22 @@ const UpdateAgent = (props) => {
                         fill="#343741"
                       />
                     </button>
+                    <div className={styles.iconGroup}>
+                    <button
+                      type="button"
+                      className={styles.expandIcon}
+                      onClick={() => handleZoomClick("System Prompt", selectedPromptData)}
+                      title="Expand"
+                       disabled={props?.recycleBin}
+                    >
+                      <SVGIcons
+                        icon="fa-solid fa-up-right-and-down-left-from-center"
+                        width={16}
+                        height={16}
+                        fill="#343741"
+                      />
+                    </button>
+                    </div>
                     <span
                       className={`${styles.copiedText} ${
                         copiedStates["system_prompt"] ? styles.visible : styles.hidden
@@ -705,7 +840,7 @@ const UpdateAgent = (props) => {
               </>
             ) : (
               <>
-                <label for="system_prompt">SYSTEM PROMPT</label>
+                <label htmlFor="system_prompt">SYSTEM PROMPT</label>
                 <div className={styles.textAreaContainer}>
                   <textarea
                     id="system_prompt"
@@ -714,12 +849,7 @@ const UpdateAgent = (props) => {
                     onChange={handlePromptChange}
                     className={styles.agentTextArea}
                     required
-                    onClick={() =>
-                      handleZoomClick(
-                        "System Prompt",
-                        systemPromptData[Object.keys(systemPromptData)[0]]
-                      )
-                    }
+                     disabled={props?.recycleBin}
                   />
                   <div className={styles.iconContainer}>
                     <button
@@ -740,6 +870,20 @@ const UpdateAgent = (props) => {
                         fill="#343741"
                       />
                     </button>
+                    <div className={styles.iconGroup}>
+                    <button
+                      type="button"
+                      className={styles.expandIcon}
+                      onClick={() => handleZoomClick("System Prompt", systemPromptData[Object.keys(systemPromptData)[0]])}
+                      title="Expand"                    >
+                      <SVGIcons
+                        icon="fa-solid fa-up-right-and-down-left-from-center"
+                        width={16}
+                        height={16}
+                        fill="#343741"
+                      />
+                    </button>
+                    </div>
                     <span
                       className={`${styles.copiedText} ${
                         copiedStates["system_prompt"] ? styles.visible : styles.hidden
@@ -752,6 +896,51 @@ const UpdateAgent = (props) => {
               </>
             )}
           </div>
+          {(props?.recycleBin) ?<>
+          {selectedToolsLoading && <Loader />}
+          <AddTools
+            styles={styles}
+            loader={loader}
+            addedToolsId={addedToolsId}
+            setAddedToolsId={setAddedToolsId}
+            removedToolsId={removedToolsId}
+            addedAgentsId={addedAgentsId}
+            setAddedAgentsId={setAddedAgentsId}
+            removedAgentsId={removedAgentsId}
+            setRemovedAgentsId={setRemovedAgentsId}
+            setremovedToolsId={setremovedToolsId}
+            selectedTools={selectedTools}
+            remainingTools={remainingTools}
+            selectedAgents={selectedAgents}
+            remainingAgents={remainingAgents}
+            agentType={agentType}
+            setSelectedTags={setSelectedTags}
+            tags={updatedTags}
+            setTags={setUpdatedTags}
+            setToggleSelected={setToggleSelected}
+            toggleSelected={toggleSelected}
+            selectedTags={selectedTag}
+            agentData={agentData}
+            tagsList={tags}
+            setShowForm={setShowForm}
+            editTool={editTool}
+            setEditTool={setEditTool}
+            toolListContainerRef={toolListContainerRef}
+            pageRef={pageRef}
+            fetchToolsData={(pageNumber, divsCount) => fetchToolsData(pageNumber, divsCount)}
+            setVisibleData={setVisibleData}
+            setLoader={setLoader}
+            setPage={setPage}
+            visibleData={visibleData}
+            recycleBin={true}
+          />
+          <div className={styles.btnsRestore}>
+            
+            <input type="button" value="RESTORE" className={styles.restoreBtn} onClick={RestoreAgent} />
+
+            <input type="button" value="DELETE" className={styles.submitBtn} onClick={deleteAgent} />
+          </div>
+          </>:<>
           {loader && <Loader />}
           <AddTools
             styles={styles}
@@ -780,15 +969,24 @@ const UpdateAgent = (props) => {
             editTool={editTool}
             setEditTool={setEditTool}
             toolListContainerRef={toolListContainerRef}
+            pageRef={pageRef}
+            fetchToolsData={(pageNumber, divsCount) => fetchToolsData(pageNumber, divsCount)}
+            setVisibleData={setVisibleData}
+            setLoader={setLoader}
+            setPage={setPage}
+            visibleData={visibleData}
+            recycleBin ={props?.recycleBin}
           />
 
           <div className={styles.btns}>
             <button onClick={handleClose} className={styles.closeBtn}>
               CLOSE
             </button>
-            <input type="submit" value="UPDATE" className={styles.submitBtn} />
+            <input type="submit" value="UPDATE" className={styles.submitBtn} onClick={onSubmit} />
           </div>
-        </form>
+          </>}
+         
+        </div>
         {loader && <Loader />}
         <ZoomPopup
           show={showZoomPopup}
@@ -796,6 +994,7 @@ const UpdateAgent = (props) => {
           title={popupTitle}
           content={popupContent}
           onSave={handleZoomSave}
+          recycleBin={props?.recycleBin}
         />
         {showForm && (
           <ToolOnBoarding
@@ -803,7 +1002,7 @@ const UpdateAgent = (props) => {
             isAddTool={false}
             editTool={editTool}
             tags={tags}
-            refreshData={false}
+            fetchPaginatedTools={fetchPaginatedTools}
           />
         )}
       </div>

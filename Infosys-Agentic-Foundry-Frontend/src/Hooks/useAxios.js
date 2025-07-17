@@ -36,11 +36,11 @@ export const getSessionId = () => {
 
 // Helper to add CSRF token to headers if available
 const addCsrfHeader = (headers = {}) => {
-  if (csrfToken) {
+  if (getCsrfToken()) {
     return {
       ...headers,
-      "csrf-token": csrfToken,
-      "session-id": sessionId, // added for CSRF token implementation
+      "csrf-token": getCsrfToken(),
+      "session-id": getSessionId(), // added for CSRF token implementation
     };
   }
   return headers;
@@ -150,7 +150,6 @@ const useFetch = () => {
         ...config,
         headers
       });
-      // if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       setError((prevError) => ({ ...prevError, put: null }));
       return data;

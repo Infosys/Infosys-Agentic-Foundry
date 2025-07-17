@@ -176,7 +176,7 @@
   flex-wrap: wrap;
   column-gap: 48px;
   row-gap: 26px;
-  max-height: 170px;
+  max-height: 164px;
   min-height: 90px;
   overflow-y: auto;
 }
@@ -251,10 +251,21 @@
   grid-area: btns;
   width: 100%;
 }
-
+.btnsRestore{
+   grid-area: btns;
+  width: 100%;
+  display: flex;
+  justify-content: end;
+}
 .closeBtn {
   grid-area: closeBtn;
   background-color: #3d4359;
+  margin-right: 25px;
+}
+.restoreBtn{
+   grid-area: submitBtn;
+  background-color: #007cc3;
+  cursor: pointer;
   margin-right: 25px;
 }
 
@@ -264,7 +275,7 @@
   cursor: pointer;
 }
 
-.closeBtn,
+.closeBtn,.restoreBtn,
 .submitBtn {
   border-radius: 5px;
   font: normal normal 600 12px/14px Segoe UI;
@@ -343,7 +354,6 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  z-index: 10;
 }
 
 .copyIcon svg {
@@ -374,4 +384,42 @@
 .copiedText.hidden {
   visibility: hidden;
   opacity: 0;
+}
+
+.iconGroup {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.expandIcon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 22px;
+  padding: 0;
+}
+
+.expandIcon svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.expandIcon:hover svg {
+  transform: scale(1.2);
+}
+.disabledButton {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+  background: #f8f9fa !important;
+  color: #6c757d !important;
+  border-color: #e9ecef !important;
 }

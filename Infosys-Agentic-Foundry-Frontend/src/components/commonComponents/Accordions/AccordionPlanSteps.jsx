@@ -35,21 +35,21 @@ const AccordionPlanSteps = (props) => {
               isOpen ? styles.arrow + " " + styles["open"] : styles.arrow
             }
           >
-            <img src={dropdownCircle} />
+            {/* <img src={dropdownCircle} /> */}
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 7 L10 13 L15 7 Z" fill="white" />
+            </svg>
           </span>
         </div>
       </div>
-      {isOpen && (
-        <div className={styles["accordion-content"]}>
-          <pre
-            className={styles["accordion-text"]}
-          >
+        <div className={`${styles["accordion-content"]} ${isOpen ? styles.open : ''}`}>
+          {isOpen && (<pre className={styles["accordion-text"]}>
             {/* Sanitize the message (with newlines already converted to <br />), 
               then parse the resulting safe HTML string into React elements. */}
             {parse(DOMPurify.sanitize(sanitizedContent))}
           </pre>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

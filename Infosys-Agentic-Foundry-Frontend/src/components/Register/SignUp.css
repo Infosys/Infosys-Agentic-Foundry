@@ -31,6 +31,14 @@
     display: inline-flex;
     justify-content: space-between;
     align-items: center;
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  }
+  
+  /* Add focus style for input fields */
+  .login-input:focus {
+    border-color: #0071b3;
+    box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
+    outline: none;
   }
 
   .login-input::placeholder {
@@ -110,8 +118,20 @@
   }
   
   .dropdown-menu li:hover {
-  
     background-color: #f0f0f0;
+  }
+  
+  /* Make focus effect match hover effect */
+  .dropdown-menu li:focus {
+    background-color: #f0f0f0; /* Same as hover */
+    outline: none; /* Remove default focus outline */
+  }
+  
+  /* Add focus style to match input fields */
+  .dropdown-toggle:focus {
+    outline: none;
+    border-color: #0071b3;
+    box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
   }
   
   .submit-style {
@@ -137,6 +157,14 @@
     text-transform: uppercase;
     opacity: 1;
     padding-right: 10px;
+    transition: color 0.2s ease-in-out, text-shadow 0.2s ease-in-out;
+  }
+  
+  /* Add focus style for hyperlinks */
+  .hyperlink:focus {
+    outline: none;
+    color: #0071b3;
+    text-shadow: 0 0 1px rgba(255, 255, 255, 0.5);
   }
   
   .button-style {
@@ -150,9 +178,18 @@
     background: #FFFFFF 0% 0% no-repeat padding-box;
     border-radius: 5px;
     opacity: 1;
+    border: 1px solid transparent;
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
     /* display:flex; */
   
     /* justify-content:space-around; */
+  }
+  
+  /* Add focus effect for the buttons that matches input fields */
+  .button-style:focus {
+    outline: none;
+    border-color: #0071b3;
+    box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
   }
   
   .signarrow {
@@ -201,8 +238,7 @@
     font-size: 12px;
     color: red;
   }
-  
-  .remember-style {
+    .remember-style {
     display: inline-flex;
     flex-direction: row;
     align-items: center;
@@ -218,7 +254,15 @@
     display: inline-block;
     position: relative;
     cursor: pointer;
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
     /* background-color: #fff; */
+  }
+  
+  /* Focus style for checkbox */
+  .checkbox:focus {
+    border-color: #0071b3;
+    box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
+    outline: none;
   }
   
   /* Checked state */

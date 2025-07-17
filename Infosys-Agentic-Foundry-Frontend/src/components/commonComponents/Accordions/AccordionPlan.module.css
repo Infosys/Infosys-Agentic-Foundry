@@ -1,36 +1,52 @@
 .accordion {
-  /* border: 1px solid #ccc; */
   border-radius: 5px;
-  /* margin: 10px 0; */
-  margin-bottom: 10px;
+  margin-bottom: 5px;
   overflow: visible;
-  width: 80%;
-  /*background: #f1f1f1 0% 0% no-repeat padding-box;*/
-  background: #e8f5e9 0% 0% no-repeat padding-box;
+  max-width: 92%;
+  width: fit-content;
+  background: none;
+  background: #eeeeee70;
 }
 
 .accordion-header {
-  
-  padding: 10px;
   display: flex;
-  /* justify-content: space-between; */
   align-items: center;
-  box-shadow: 0px 3px 6px #00000029;
   border-radius: 5px;
   position: relative;
+  border: 1px solid #ccc;
+  min-width: 180px;
 }
 
 .accordion-header p {
-  width: 80%;
   margin: 0;
 }
 
 .accordion-content {
-  padding: 10px;
+  padding: 0 10px;
   position: relative;
   z-index: 0;
-  background: #e0e0e0 0% 0% no-repeat padding-box;
+  background: #eeeeee70;
   font-family: Segoe UI;
+  /* max-height: 0; */
+  opacity: 0;
+  overflow: hidden;
+  overflow-y: auto;
+  transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
+}
+
+.accordion-content.open {
+  /* max-height: 500px; */
+  opacity: 1;
+  padding: 10px;
+  background-color: #f5f5f5;
+  border-bottom-right-radius: 15px;
+  border-bottom-left-radius: 15px;
+  scrollbar-width: thin;
+}
+
+/* Ensure MessagingboxToolcall content is visible when accordion is open */
+.accordion-content.OpacityVisible{
+  opacity: 1 !important;
 }
 
 .accordion-content pre {
@@ -40,12 +56,9 @@
   overflow-x: auto;
   margin-top: 10px;
   margin-bottom: 10px;
-  font: normal normal 400 15px/27px Segoe UI;
+  font: normal normal 400 13px/18px Segoe UI;
 }
- 
-.accordion-content code {
-  color: green;
-}
+
 
 .accordion-text {
   overflow-wrap: break-word;
@@ -57,8 +70,8 @@
   /* background: #007cc3 0% 0% no-repeat padding-box; */
   color: white;
   border-radius: 50%;
-  height: 20px;
-  width: 20px;
+  height: 18px;
+  width: 18px;
   text-align: center;
 }
 
@@ -68,7 +81,33 @@
 
 .accordionButton {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  font-family: Segoe UI;
+  font-weight: 600;
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0px;
+  color: #373737;
+  text-transform: uppercase;
+  position: absolute;
+  right: 5px;
+  bottom: -13px;
+  z-index: 1;
+  cursor: pointer;
+  background: #007cc3;
+  padding: 1px 6px;
+  padding-right: 0;
+  position: absolute;
+  border-radius: 11px;
+}
+
+.accordionButton span {
+  color: white
+}
+
+.accordionButtonSend {
+  display: flex;
+  /* flex-direction: column; */
   align-items: center;
   font-family: Segoe UI;
   font-weight: 600;
@@ -77,9 +116,49 @@
   letter-spacing: 0px;
   color: #373737;
   text-transform: uppercase;
-  position: absolute;
-  right: 10px;
-  bottom: -10px;
+  /* position: absolute; */
   z-index: 10;
   cursor: pointer;
+  right: 75px;
+    bottom: 7px;
+}
+.accordionContainerToolCall {
+  max-width: 100%;
+  padding: 3px;
+  position: relative;
+  background: #eeeeee70;
+  font-family: Segoe UI;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+.toolNameCss{
+  display: flex;
+  padding-bottom: 3px;
+
+}
+.toolCallCss{
+  padding-bottom: 3px;
+}
+.toolNameTextCss{
+  margin: -2px;
+  margin-left: 2px;
+  padding: 1px;
+}
+.argumentinputCss{
+  margin-bottom:12px;
+  display: flex;
+}
+.toolcalltextCss{
+       margin-bottom: 7px;
+}
+.submitButtonCss{
+  display: flex;
+  background-color: #007cc3;
+  margin-right: 2px;
+  border-radius: 3px;
+  padding: 2px;
+}
+.submitChanges{
+  color: white;
+  padding: 4px;
 }

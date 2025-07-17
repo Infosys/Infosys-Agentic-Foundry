@@ -19,7 +19,8 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
   };
 
   const handleSearchClick = () => {
-    const trimmedValue = localSearchValue.trim();
+    const trimmedValue = localSearchValue?.trim();
+
     if (trimmedValue) {
       handleSearch(trimmedValue);
     }

@@ -13,7 +13,7 @@ export const updateLocalStorageData = (key, newValue) => {
   if (localStorage.getItem(key)) {
     localStorage.setItem(key, JSON.stringify(newValue));
   } else {
-    console.warn(`No data found for key: ${key}`);
+    console.error(`No data found for key`);
   }
 };
 
@@ -38,7 +38,6 @@ export const calculateDivs = (containerRef, cardWidth, cardHeight, flexGap) => {
     );
 
     const totalDivs = maxDivsInRow * maxDivsInColumn;
-    console.log(totalDivs);
     return totalDivs;
   }
 };

@@ -1,6 +1,8 @@
 import "./App.css";
 import ListOfAgents from "./components/ListOfAgents/ListOfAgents";
 import AskAssistant from "./components/AskAssistant/AskAssistant";
+// import AgenticChat from "./components/AgenticChat/AgenticChat";
+import { AuditProvider } from "./context/AuditContext";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import AvailableTools from "./components/AvailableTools/AvailableTools";
@@ -12,6 +14,11 @@ import GlobalComponent from "./Hooks/GlobalComponent";
 import Register from "./components/Register/Index";
 import Cookies from "js-cookie";
 import ProtectedRoute from "./ProtectedRoute";
+import AdminScreen from "./components/AdminScreen/AdminScreen";
+import { ApiUrlProvider } from "./context/ApiUrlContext";
+import { VersionProvider } from "./context/VersionContext";
+import DataBase from "./components/DataBase/DataBase";
+
 
 function App() {
 
@@ -30,45 +37,77 @@ function App() {
     <>
       <BrowserRouter>
         <GlobalComponentProvider>
-          <GlobalComponent />
-          <MessageProvider>
+          <GlobalComponent />          <MessageProvider>
             <MessagePopup />
-            <Routes>
-            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-            <Route path="/infy-agent/service-register" element={<PublicRoute><Register /></PublicRoute>} />
-            <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <AvailableTools />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/agent"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <ListOfAgents />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/chat"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <AskAssistant />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          {/* default Route */}
-          <Route path="*" element={<Navigate to="/login" />} />
-        </Routes>
+            <VersionProvider>
+              <ApiUrlProvider>
+                <Routes>
+                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+                <Route path="/infy-agent/service-register" element={<PublicRoute><Register /></PublicRoute>} />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <AvailableTools />
+                      </Layout>
+                    </ProtectedRoute>
+                  }
+                />
+              <Route
+                path="/agent"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <ListOfAgents />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/chat"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <AskAssistant />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+               {/* <Route
+                path="/dataconnector"
+                element={
+                  <ProtectedRoute >
+                    <Layout>
+                      <DataBase/>
+                    </Layout>
+                  </ProtectedRoute>
+              }/>    */}
+              {/* <Route
+                path="/new-chat"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <AuditProvider>
+                        <AgenticChat />
+                      </AuditProvider>
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              /> */}
+              {/* default Route */}
+              <Route path="*" element={<Navigate to="/login" />} />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute requiredRole="ADMIN">
+                    <Layout>
+                      <AdminScreen />
+                    </Layout>
+                  </ProtectedRoute>
+              }/></Routes>
+              </ApiUrlProvider>
+            </VersionProvider>
           </MessageProvider>
         </GlobalComponentProvider>
       </BrowserRouter>

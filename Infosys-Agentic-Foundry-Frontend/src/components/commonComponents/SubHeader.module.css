@@ -101,3 +101,26 @@
 .clearSearchButton:hover {
   background-color: #005a99;
 }
+
+.dropdownContainer {
+  margin-left: 10px;
+}
+
+.agentTypeDropdown {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+  color: #333;
+  font-size: 14px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-weight: 400;
+  outline: none;
+  transition: border-color 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  height: 38px;
+}
+
+.agentTypeDropdown:focus {
+  border-color: #007cc3;
+}

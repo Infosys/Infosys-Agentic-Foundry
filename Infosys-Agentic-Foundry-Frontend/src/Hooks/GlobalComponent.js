@@ -1,6 +1,6 @@
 import { React, useEffect } from "react";
 import { useGlobalComponent } from "./GlobalComponentContext";
-import "./GlobalComponent.css"; // Add your CSS for styling
+import "./GlobalComponent.css";
 import MessageUpdateform from "../components/AskAssistant/MsgUpdateform";
 
 const GlobalComponent = () => {

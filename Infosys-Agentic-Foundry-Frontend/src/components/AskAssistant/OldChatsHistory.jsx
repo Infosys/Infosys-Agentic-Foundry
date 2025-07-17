@@ -3,8 +3,6 @@ import styles from "./OldChats.module.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown } from "@fortawesome/free-solid-svg-icons";
 import { faChevronUp } from "@fortawesome/free-solid-svg-icons";
-import clearChat from "../../Assets/clearchat.png";
-import { resetChat } from "../../services/chatService";
 
 const OldChats = (props) => {
   const {
@@ -12,8 +10,6 @@ const OldChats = (props) => {
     placeholder,
     onChange,
     value,
-    agentSelectValue,
-    fetchOldChatsData,
     fetchChatHistory,
     setOldSessionId,
   } = props;
@@ -46,28 +42,74 @@ const OldChats = (props) => {
     };
   }, []);
 
-  const handleDeleteChat = async (sessionId) => {
-    const data = {
-      session_id: sessionId,
-      agent_id: agentSelectValue,
-    };
-    const response = await resetChat(data);
-    if (response?.status === "success") {
-      fetchOldChatsData();
-    }
-  };
 
   return (
-    <div className={styles.dropdown} ref={dropdownRef}>
-      {isOpen && (
-        <>
-          <ul className={styles["dropdown-menu"]}>
+    // <div className={styles.dropdown} ref={dropdownRef}>
+    //   {!isOpen && (
+    //     <>
+    //       <ul className={styles["dropdown-menu"]}>
+    //         {data.length > 0 &&
+    //           data?.map((option) => {
+    //             const date = new Date(
+    //               option?.timestamp_start
+    //             ).toLocaleDateString();
+    //             return (
+    //               <li
+    //                 onClick={() =>
+    //                   handleOptionClick(option?.value, option?.session_id)
+    //                 }
+    //               >
+    //                 <div className={styles["dropdown-item"]}>
+    //                   <div className={styles.date}>
+    //                     <span className={styles["dropdown-text"]}>Date:</span>
+    //                     {date}
+    //                   </div>
+    //                   <div>
+    //                     <span className={styles["dropdown-text"]}>
+    //                       User Query:
+    //                     </span>
+    //                     {option?.user_input}
+    //                   </div>
+    //                   <div>
+    //                     <span className={styles["dropdown-text"]}>
+    //                       Response:
+    //                     </span>
+    //                     <span className={styles["response-text"]}>
+    //                       {option?.agent_response}
+    //                     </span>
+    //                   </div>
+    //                 </div>
+    //               </li>
+    //             );
+    //           })}
+    //       </ul>
+
+    //       {data.length === 0 && (
+    //         <span className={styles.noresultText}>No Chats</span>
+    //       )}
+    //     </>
+    //   )}
+    //   <div className={styles["dropdown-header"]} onClick={toggleDropdown}>
+    //     {placeholder}
+
+    //     <span className={styles["arrow"]}>
+    //       {isOpen ? (
+    //         <FontAwesomeIcon icon={faChevronDown} />
+    //       ) : (
+    //         <FontAwesomeIcon icon={faChevronUp} />
+    //       )}
+    //     </span>
+    //   </div>
+    // </div>
+    <>
+     <ul>
             {data.length > 0 &&
               data?.map((option) => {
                 const date = new Date(
                   option?.timestamp_start
                 ).toLocaleDateString();
                 return (
+                  <div className={styles?.OldChatsCss}>
                   <li
                     onClick={() =>
                       handleOptionClick(option?.value, option?.session_id)
@@ -93,10 +135,8 @@ const OldChats = (props) => {
                         </span>
                       </div>
                     </div>
-                    {/* <button onClick={() => handleDeleteChat(option?.session_id)}>
-              <img src={clearChat} alt="clearChat" />
-            </button> */}
                   </li>
+                  </div>
                 );
               })}
           </ul>
@@ -104,20 +144,7 @@ const OldChats = (props) => {
           {data.length === 0 && (
             <span className={styles.noresultText}>No Chats</span>
           )}
-        </>
-      )}
-      <div className={styles["dropdown-header"]} onClick={toggleDropdown}>
-        {placeholder}
-
-        <span className={styles["arrow"]}>
-          {isOpen ? (
-            <FontAwesomeIcon icon={faChevronDown} />
-          ) : (
-            <FontAwesomeIcon icon={faChevronUp} />
-          )}
-        </span>
-      </div>
-    </div>
+          </>
   );
 };
 

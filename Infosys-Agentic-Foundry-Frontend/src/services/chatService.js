@@ -80,7 +80,7 @@ export const getChatHistory = async (chatData) => {
 
 export const fetchFeedback = async (data, feedback) => {
   try {
-    const apiUrl = `${BASE_URL}/react-agent/get-feedback-response/feedback`;
+    const apiUrl = `${BASE_URL}/react-agent/get-feedback-response/${feedback}`;
     const response = await axios.request({
       method: postMethod,
       url: apiUrl,

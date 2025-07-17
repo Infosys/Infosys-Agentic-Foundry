@@ -20,7 +20,13 @@ text-transform: uppercase;
     font-family: 'Segoe UI';
     font-weight: 400;
 }  
- 
+.version_number{
+  font-size:10px;
+  color:#ccc;
+  position: absolute;
+  top: 1px;
+  right: 7px;
+}
 .div-login {
   position: absolute;
   top: 50%;

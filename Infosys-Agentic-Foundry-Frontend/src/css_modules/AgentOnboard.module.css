@@ -9,9 +9,6 @@ textarea {
   resize: none;
 }
 
-.container {
-  padding-bottom: 42px;
-}
 
 .header {
   display: flex;
@@ -159,7 +156,7 @@ textarea {
     "tags tags tags  tags"
     ". .  . closeAndAddBtn";
   column-gap: 20px;
-  row-gap: 28px;
+  row-gap: 12px;
 }
 
 .inputName,
@@ -199,7 +196,7 @@ textarea {
   background: #eaeaea;
   box-shadow: inset 0px 1px 4px #00000029;
   border-radius: 5px;
-  min-height: 120px;
+  min-height: 150px;
   padding: 8px;
 }
 
@@ -236,8 +233,7 @@ textarea {
 }
 
 .selectContainer {
-  grid-area: select;
-  width: 135%;
+  grid-area: email;
 }
 
 .closeBtn {
@@ -332,4 +328,42 @@ textarea {
 .copiedText.hidden {
   visibility: hidden;
   opacity: 0;
+}
+
+.iconGroup {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  z-index: 11;
+}
+
+.expandIcon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 22px;
+  padding: 0;
+}
+
+.expandIcon svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.expandIcon:hover svg {
+  transform: scale(1.2);
+}
+
+.copyIcon[disabled], .expandIcon[disabled] {
+  cursor: not-allowed !important;
+}
+.copyIcon[disabled] svg, .expandIcon[disabled] svg {
+  fill: #bdbdbd !important;
 }

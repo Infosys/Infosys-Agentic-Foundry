@@ -7,8 +7,6 @@ const Dropdown = (props) => {
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [filteredOptions, setFilteredOptions] = useState([]);
   const [isDropdownVisible, setIsDropdownVisible] = useState(false);
-  // const [dropdownPosition, setDropdownPosition] = useState(0);
-  // const inputContainerRef = useRef(null);
 
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
@@ -57,21 +55,6 @@ const Dropdown = (props) => {
   }, [props.tags]);
 
   useEffect(() => {
-    console.log("Changed");
-    console.log(
-      "Change Selected Options",
-      props.tags.filter((option) => option.selected)
-    );
-    console.log("selected Options", selectedOptions);
-    console.log(
-      "Change Filtered Options",
-      props.tags.filter(
-        (option) =>
-          option.tag_name?.toLowerCase().includes(searchTerm?.toLowerCase()) &&
-          !selectedOptions.some((opt) => opt.tag_id === option.tag_id) &&
-          !option?.selected
-      )
-    );
     setFilteredOptions(
       props.tags.filter(
         (option) =>
@@ -81,8 +64,6 @@ const Dropdown = (props) => {
       )
     );
   }, [selectedOptions, searchTerm]);
-  console.log("Selected Options", selectedOptions);
-  console.log("Filtered Options", filteredOptions);
   useEffect(() => {
     props.setSelectedTags(selectedOptions);
   }, [selectedOptions]);
@@ -124,9 +105,11 @@ const Dropdown = (props) => {
 
         {isDropdownVisible && filteredOptions?.length > 0 && (
           <ul className={styles.dropdownList}>
-            {filteredOptions.map((option) => (
+            {filteredOptions.map((option,index) => (
               <li
-                key={option.tag_id}
+                //key={option.tag_id}
+                key={`li-dropdown-${option.tag_id || option.tag_name || index}`}
+
                 onClick={() => handleSelectOption(option)}
               >
                 {option.tag_name}

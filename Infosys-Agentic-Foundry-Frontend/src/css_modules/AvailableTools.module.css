@@ -65,6 +65,8 @@
   border-radius: 4px;
   width: 200px;
   min-height: 140px;
+  height: 140px;
+  max-height: 160px;
   padding: 11px;
   color: white;
   position: relative;
@@ -107,38 +109,14 @@
   height: 0px;
   border: 2px solid #0071b3;
 }
-
 .btn-grp {
   display: flex;
   justify-content: end;
   position: absolute;
-  bottom: 6;
-  bottom: 6px;
+  bottom: 20px;
   right: 5px;
 }
 
-.btn-grp button {
-  /* height: 24px; */
-  background: #242735;
-  border: none;
-  display: flex;
-  align-items: center;
-}
-
-.delete-btn {
-  border-top-left-radius: 3px;
-  border-bottom-left-radius: 3px;
-  padding: 4px 8px 4px 10px;
-}
-
-.edit-btn {
-  border-top-right-radius: 3px;
-  border-bottom-right-radius: 3px;
-  padding: 4px 10px 4px 8px;
-}
-.fa-solid {
-  height: 16px;
-}
 
 .search-container {
   position: relative;
@@ -193,7 +171,7 @@
   color: black;
   border: none;
   font: normal normal normal 12px/14px Segoe UI;
-  padding: 19px 14px 21px 14px;
+  padding: 9px 14px 21px 14px;
 }
 
 .cancel-btn {
@@ -204,7 +182,7 @@
 
 .delete-btn-container {
   text-align: center;
-  margin-top: 15px;
+  margin-top: 0px;
   display: flex;
   justify-content: center;
 }
@@ -294,4 +272,46 @@
 .filteredToolText {
   margin-bottom: 16px;
   font-weight: bold;
+}
+
+.deleteBtn,
+.editBtn {
+  height: 24px;
+  position: absolute;
+  transform: translateY(50%);
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.deleteBtn {
+  width: 30px;
+  background-color: #6a2020;
+  right: 44px;
+  bottom: 0;
+}
+
+.editBtn {
+  width: 24px;
+  background-color: #007ac0;
+  right: 10px;
+  bottom: 0;
+}
+
+.action-info {
+  font-size: 13px;
+  font-weight: 400;
+  margin-bottom: 10px;
+  margin-left: 2px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center; 
+}
+.warningIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
 }

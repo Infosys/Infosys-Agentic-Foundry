@@ -3,6 +3,7 @@
   border-radius: 5px;
   margin: 10px 0;
   overflow: hidden;
+  background: #eeeeee70;
 }
 
 .accordion-header {
@@ -11,6 +12,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border: 1px solid #ccc;
 }
 
 .accordion-content {

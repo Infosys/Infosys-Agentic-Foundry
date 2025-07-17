@@ -1,23 +1,38 @@
 import Cookies from "js-cookie";
 
+import pkg from '../package.json';
+
+export const APP_VERSION = pkg.version;
+
 export const BOT = "bot";
 export const USER = "user";
 
 export const dropdown1 = [
   { label: "React Agent", value: "react_agent" },
-  { label: "Multi Agent", value: "multi_agent" }
+  { label: "Multi Agent", value: "multi_agent" },
+  { label: "Meta Agent", value: "meta_agent" },
+  {label:"Planner Meta Agent",value:"planner_meta_agent"},
+ {label: "React Critic Agent", value: "react_critic_agent"},
+  {label:"Planner Executor Agent",value:"planner_executor_agent"},
 ];
-
+//   { label: "Custom Template", value: "custom_template" }
 
 export const agentTypes = [
   { label: "React Agent", value: "react_agent" },
   { label: "Multi Agent", value: "multi_agent" },
+  { label: "Meta Agent", value: "meta_agent" },
+  {label:"Planner Meta Agent",value:"planner_meta_agent"},
+  {label: "React Critic Agent", value: "react_critic_agent"},
+  {label:"Planner Executor Agent",value:"planner_executor_agent"},
 ];
 
 export const REACT_AGENT = "react_agent";
 export const MULTI_AGENT = "multi_agent";
 export const META_AGENT = "meta_agent";
+export const PLANNER_META_AGENT="planner_meta_agent";
 export const CUSTOM_TEMPLATE = "custom_template";
+export const REACT_CRITIC_AGENT = "react_critic_agent";
+export const PLANNER_EXECUTOR_AGENT = "planner_executor_agent";
 
 export const like = "like";
 export const regenerate = "regenerate";
@@ -25,10 +40,14 @@ export const dislike = "feedback";
 
 export const CHAT_BOT_DATA = "CHAT_BOT_DATA";
 
-export const BASE_URL = "add your creadentials";
+
+export const mkDocs_baseURL = "add_mk_docs_url";
+
+export const liveTrackingUrl = "add_your_live_track_Url";
 
 export const APIs = {
   GET_AGENTS: "/get-agents/",
+  // DELETE_AGENT: "/delete-agent/",
   DELETE_AGENT: "/react-agent/delete-agent/",
   ONBOARD_AGENT: "/react-agent/onboard-agent",
   ONBOARD_MULTI_AGENT: "/planner-executor-critic-agent/onboard-agents",
@@ -52,10 +71,23 @@ export const APIs = {
   FILE_UPLOAD:'/files/user-uploads/delete-file/?file_path=',
   GET_TOOLS_BY_SEARCH:"/get-tools-by-search",
   GET_AGENTS_BY_SEARCH:"/get-agents-by-search",
+  GET_AGENTS_BY_DETAILS:"/get-agents-details-for-chat",
+  PLANNER_META_AGENT_QUERY:"/planner-meta-agent/get-query-response",
+  ONBOARD_PLANNER_META_AGENT:"/planner-meta-agent/onboard-agents",
+  UPDATE_PLANNER_META_AGENT:"/planner-meta-agent/update-agent",
+  UPDATE_PLANNER_SYSTEM_PROMT:"/planner-meta-agent/update-system-prompt",
+  ONBOARD_PLANNER_EXECUTOR_AGENT:"/planner-executor-agent/onboard-agents",
+  ONBOARD_REACT_CRITIC_AGENT:"/react-critic-agent/onboard-agent",
+  UPDATE_REACT_CRITIC_AGENT:"/react-critic-agent/update-agent",
+  UPDATE_PLANNER_EXECUTOR_AGENT:"/planner-executor-agent/update-agent",
+  PLANNER_EXECUTOR_AGENT_QUERY:"/planner-executor-agent/get-query-response-hitl-replanner",
+  UPDATE_PASWORD_ROLE:"/update-password-role",
+  RECYCLE_BIN:"/recycle-bin",
+  RESTORE_TOOL:"/restore/",
+  DELETE_TOOL:"/delete/"
 };
 
-
-
+// export const sessionId = "test_101";
 const session_id = Cookies.get("session_id");
 export const sessionId = session_id;
 
@@ -66,7 +98,11 @@ export const feedBackMessage =
 
 export const likeMessage =
   "Thanks for the like! We're glad you found the response helpful. If you have any more questions or need further assistance, feel free to ask!";
-
+export const SystemPromptsTypesPlanner=[
+  {label:"SYSTEM_PROMPT_META_AGENT_PLANNER", value:"SYSTEM_PROMPT_META_AGENT_PLANNER"},
+  {label:"SYSTEM_PROMPT_META_AGENT_RESPONDER", value:"SYSTEM_PROMPT_META_AGENT_RESPONDER"},
+  {label:"SYSTEM_PROMPT_META_AGENT_SUPERVISOR",value:"SYSTEM_PROMPT_META_AGENT_SUPERVISOR"}
+]
 export const SystemPromptsTypes = [
   { label: "SYSTEM PROMPT CRITIC AGENT", value: "SYSTEM_PROMPT_CRITIC_AGENT" },
   {
@@ -98,3 +134,21 @@ export const branchInteruptValue = "interrupt_node";
 export const customTemplatId = "custom_template_1";
 
 export const roleOptions = ["Admin", "Developer", "User"];
+
+export const systemPromptReactCriticAgents = 
+[
+  {label:"SYSTEM PROMPT EXECUTOR AGENT",value:"SYSTEM_PROMPT_EXECUTOR_AGENT"},
+  {label:"SYSTEM PROMPT CTRITIC AGENT",value:"SYSTEM_PROMPT_CRITIC_AGENT"}
+];
+
+export const systemPromptPlannerExecutorAgents =
+[
+  {label:"SYSTEM PROMPT GENERAL LLM",value:"SYSTEM_PROMPT_GENERAL_LLM"},
+  {label:"SYSTEM PROMPT RESPONSE GENERATOR AGENT",value:"SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT"},
+  {label:"SYSTEM PROMPT REPLANNER AGENT",value:"SYSTEM_PROMPT_REPLANNER_AGENT"},
+  {label:"SYSTEM PROMPT EXECUTOR AGENT",value:"SYSTEM_PROMPT_EXECUTOR_AGENT"},
+  {label:"SYSTEM PROMPT PLANNER AGENT",value:"SYSTEM_PROMPT_PLANNER_AGENT"}
+];
+
+
+

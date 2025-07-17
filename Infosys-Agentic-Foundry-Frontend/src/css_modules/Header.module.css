@@ -3,7 +3,6 @@
   justify-content: space-between;
   align-items: center;
   box-shadow: inset 0px 1px 4px #00000029;
-  padding: 18px 15px;
   z-index: 2;
   position: sticky;
   top: 0;
@@ -20,19 +19,25 @@
   text-transform: uppercase;
 }
 
-.brand span {
-  text-align: left;
-  font-weight: 300;
-  font-size: 18px;
-  line-height: 24px;
-  color: #707070;
-  text-transform: uppercase;
+.brand img{
+  width: 42%;
+  padding: 5px 0 0px 5px;
+  margin-left: 4px;
+  margin-top: 4px;
 }
-
+.version_number{
+  font-size:10px;
+  color: #bbb;
+  position: relative;
+  top: -2px;
+  right: 0px;
+  font-weight: 400;
+}
 .navbar .menu {
   display: flex;
   align-items: center;
   gap: 20px;
+  padding-right: 20px;
 }
 
 .navbar a {
@@ -73,8 +78,8 @@
 
 .profile_icon {
   position: relative;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 23px;
   border-radius: 50%;
   background-color: white;
   display: flex;
@@ -85,14 +90,15 @@
 }
 
 .faq_icon {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: #cccccc;
   display: flex;
   justify-content: center;
   align-items: center;
   color: white;
+  cursor: pointer;
 }
 
 .dropdown {

@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import style from "../../css_modules/ToolOnboarding.module.css";
-import { updateTools, addTool, getTools } from "../../services/toolService.js";
+import { updateTools, addTool,RecycleTools,deletedTools } from "../../services/toolService.js";
 import Loader from "../commonComponents/Loader.jsx";
 import DropDown from "../commonComponents/DropDowns/DropDown";
-import { APIs } from "../../constant";
+import { APIs,BASE_URL } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import Tag from "../Tag/Tag";
 import useFetch from "../../Hooks/useAxios.js";
@@ -14,10 +14,12 @@ import InfoTag from "../commonComponents/InfoTag.jsx";
 import MessageUpdateform from "../AskAssistant/MsgUpdateform.jsx";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
+import {WarningModal} from "../AvailableTools/WarningModal.jsx";
 
 function ToolOnBoarding(props) {
   const loggedInUserEmail = Cookies.get("email");
   const userName = Cookies.get("userName");
+  const role = Cookies.get("role");
 
   const formObject = {
     description: "",
@@ -30,9 +32,7 @@ function ToolOnBoarding(props) {
     isAddTool,
     setShowForm,
     editTool,
-    setToolList,
     tags,
-    setVisibleData,
     refreshData = true,
     fetchPaginatedTools
   } = props;
@@ -40,6 +40,9 @@ function ToolOnBoarding(props) {
   const [formData, setFormData] = useState({});
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorMessages, setErrorMessages] = useState([]);
+
 
   const [files, setFiles] = useState([]);
 
@@ -49,12 +52,6 @@ function ToolOnBoarding(props) {
   const [updateModal, setUpdateModal] = useState(false);
   const [responseData, setresponseData] = useState({});
 
-  const [inputValues, setInputValues] = useState({
-    subdirectory: "",
-    filepath: "",
-    reenterfilepath: "",
-  });
-
   const [hideCloseIcon, setHideCloseIcon] = useState(false);
 
   const [showZoomPopup, setShowZoomPopup] = useState(false);
@@ -62,13 +59,14 @@ function ToolOnBoarding(props) {
   const [popupContent, setPopupContent] = useState("");
 
   const [copiedStates, setCopiedStates] = useState({});
+  const [forceAdd, setForceAdd] = useState(false);
+
 
   const { fetchData } = useFetch();
 
   const fetchAgents = async (e) => {
     try {
       const data = await fetchData(APIs.GET_ALLUPLOADFILELIST);
-      console.log(data, "all files upload data");
       setresponseData(data?.user_uploads || {});
     } catch {
       console.error("Tool onboarding failed fetching agent");
@@ -89,7 +87,6 @@ function ToolOnBoarding(props) {
   }, [files, setFiles]);
 
   useEffect(() => {
-    fetchAgents();
     if (!isAddTool) {
       setFormData((values) => ({
         ...values,
@@ -98,22 +95,66 @@ function ToolOnBoarding(props) {
         code: editTool.code_snippet,
         model: editTool.model_name,
         userEmail: loggedInUserEmail,
+        name:editTool.tool_name,
         createdBy:
-          userName === "Guest" ? editTool.created_by : loggedInUserEmail,
+          userName === "Guest" ? null : editTool.created_by,
+      }));
+    }else if(props?.recycle){
+setFormData((values) => ({
+        ...values,
+        item_id: editTool.tool_id,
+        description: editTool.tool_description,
+        code: editTool.code_snippet,
+        model: editTool.model_name,
+        userEmail: loggedInUserEmail,
+        name:editTool.tool_name,
+        createdBy:
+          userName === "Guest" ? null : editTool.created_by,
       }));
     } else {
       setFormData(formObject);
     }
   }, []);
 
-  const handleChange = (event) => {
+  const handleChange =  (event) => {
     const { name, value } = event.target;
     setFormData((values) => ({ ...values, [name]: value }));
   };
+  const deleteTool=async()=>{
+     let response;
+      if(props?.recycle){
+const isAdmin = role && role.toUpperCase() === "ADMIN";
+      const toolsdata = {
+        model_name: formData.model,
+        is_admin: isAdmin,
+        tool_description: formData.description,
+        code_snippet: formData.code,
+        created_by: editTool.created_by, // Use creator email from editTool
+        user_email_id: formData.userEmail,
+        updated_tag_id_list: initialUpdateTags
+          .filter((e) => e.selected)
+          .map((e) => e.tagId),
+      };
+      
+      response = await deletedTools(toolsdata, editTool.tool_id,props?.selectedType);
+       if(response?.is_delete){
+          props?.setRestoreData(response)
+         addMessage("Tool has been Deleted successfully!", "success");
+         setLoading(false);
+         setShowForm(false)
+        }else{
+          addMessage(response?.status_message, "error");
+           setLoading(false);
+        //  setShowForm(false)
+        }
+      }
+  }
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
+  const handleSubmit = async (event, force = false) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     if (userName === "Guest") {
       setUpdateModal(true);
       return;
@@ -130,20 +171,49 @@ function ToolOnBoarding(props) {
           userName === "Guest" ? formData.createdBy : loggedInUserEmail,
         tag_ids: initialTags.filter((e) => e.selected).map((e) => e.tagId),
       };
-      response = await addTool(toolsdata);
-    } else {
+      response = await addTool(toolsdata,force);
+    } else if(!isAddTool && !props?.recycle){
+      const isAdmin = role && role.toUpperCase() === "ADMIN";
       const toolsdata = {
         model_name: formData.model,
-        is_admin: false,
+        is_admin: isAdmin,
         tool_description: formData.description,
         code_snippet: formData.code,
-        created_by: formData.createdBy,
+        created_by: editTool.created_by, // Use creator email from editTool
         user_email_id: formData.userEmail,
         updated_tag_id_list: initialUpdateTags
           .filter((e) => e.selected)
           .map((e) => e.tagId),
       };
-      response = await updateTools(toolsdata, editTool.tool_id);
+      response = await updateTools(toolsdata, editTool.tool_id,props?.selectedType);
+    }else{
+      if(props?.recycle){
+const isAdmin = role && role.toUpperCase() === "ADMIN";
+      const toolsdata = {
+        model_name: formData.model,
+        is_admin: isAdmin,
+        tool_description: formData.description,
+        code_snippet: formData.code,
+        created_by: editTool.created_by, // Use creator email from editTool
+        user_email_id: formData.userEmail,
+        updated_tag_id_list: initialUpdateTags
+          .filter((e) => e.selected)
+          .map((e) => e.tagId),
+      };
+      
+      response = await RecycleTools(toolsdata, editTool.tool_id,props?.selectedType);
+       if(response?.is_delete){
+          props?.setRestoreData(response)
+         addMessage("Tool has been restored successfully!", "success");
+         setLoading(false);
+         setShowForm(false)
+        }else{
+          addMessage(response?.status_message, "error");
+           setLoading(false);
+        //  setShowForm(false)
+        }
+      }
+
     }
     if (response?.is_created || response?.is_update) {
       if (isAddTool) {
@@ -155,12 +225,44 @@ function ToolOnBoarding(props) {
       if (refreshData && typeof fetchPaginatedTools === "function") {
         await props.fetchPaginatedTools(1);
       }
-    } else {
+      setShowForm(false);
+      setErrorModalVisible(false);
+      setForceAdd(false);
+    } else if(!props?.recycle) {
       setLoading(false);
+      if (response?.message?.includes("Verification failed:")) {
+        const match = response.message.match(/Verification failed:\s*\[(.*)\]/s);
+        if (match && match[1]) {
+          const raw = match[1];
+          let warnings = [];
+          try {
+            warnings = JSON.parse(`[${raw}]`);
+          } catch {
+            warnings = raw.split(/(?<!\\)',\s*|(?<!\\)"\,\s*/).map(s => s.replace(/^['"]|['"]$/g, ''));
+          }
+          setErrorMessages(warnings);
+          setErrorModalVisible(true);
+          setForceAdd(true);
+          return;
+        }
+      }
       if (response?.status && response?.response?.status !== 200) {
         addMessage(response?.response?.data?.detail, "error");
       } else {
-        addMessage((response?.message) ? response?.message : "No response received. Please try again." , "error");
+        addMessage((response?.message) ? response?.message : "No response received. Please try again.", "error");
+      }
+    }else{
+      if(props?.recycle){
+        if(response?.is_delete){
+          props?.setRestoreData(response)
+         addMessage("Tool has been restored successfully!", "success");
+         setLoading(false);
+         setShowForm(false)
+        }else{
+          addMessage(response?.status_message, "error");
+           setLoading(false);
+        //  setShowForm(false)
+        }
       }
     }
   };
@@ -192,7 +294,6 @@ function ToolOnBoarding(props) {
   }, [editTool.tags, initialTags]);
 
   const toggleTagSelection = (index) => {
-    console.log(index);
     if (isAddTool) {
       const newTags = [...initialTags];
       newTags[index].selected = !newTags[index].selected;
@@ -222,9 +323,18 @@ function ToolOnBoarding(props) {
     }
   };
 
+  const hasLoadedModelsOnce = useRef(false);
+  const hasLoadedAgentsOnce = useRef(false);
+
   useEffect(() => {
-    fetchModels();
-    fetchAgents();
+    if (!hasLoadedModelsOnce.current) {
+      hasLoadedModelsOnce.current = true;
+      fetchModels();
+    }
+    if (!hasLoadedAgentsOnce.current) {
+      hasLoadedAgentsOnce.current = true;
+      fetchAgents();
+    }
   }, []);
 
   const navigate = useNavigate();
@@ -238,24 +348,6 @@ function ToolOnBoarding(props) {
     Cookies.remove("role");
     navigate("/login");
   };
-
-
-  const filteredResponseData = Object.keys(responseData).reduce(
-    (acc, sectionKey) => {
-      const files =
-        responseData[sectionKey]?.__files__ || responseData[sectionKey];
-      if (Array.isArray(files)) {
-        const filteredFiles = files.filter((item) =>
-          item.toLowerCase().includes(inputValues.search)
-        );
-        if (filteredFiles.length > 0) {
-          acc[sectionKey] = filteredFiles;
-        }
-      }
-      return acc;
-    },
-    {}
-  );
 
   const handleZoomClick = (title, content) => {
     setPopupTitle(title);
@@ -277,13 +369,6 @@ function ToolOnBoarding(props) {
     }
   };
 
-  // const handleCopy = (key, text) => {
-  //   navigator.clipboard.writeText(text);
-  //   setCopiedStates((prev) => ({ ...prev, [key]: true })); // Set copied state for the specific key
-  //   setTimeout(() => {
-  //     setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
-  //   }, 2000);
-  // };
 
   const handleCopy = (key, text) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -346,11 +431,30 @@ function ToolOnBoarding(props) {
               <div className={style["nav"]}>
                 <div className={style["header"]}>
                   <h1 className={style["subText"]}>
+                    {props?.recycle ?<>
+                    {formData.name}
+                    </>:<>
                     {isAddTool ? "TOOL ONBOARDING" : "UPDATE TOOL"}
+                    </>}
+                    
                   </h1>
                   <div className={style["underline"]}></div>
                 </div>
-                <div className={style["sidebar"]}>
+                {props?.recycle ?<>
+                 <div className={style["sidebar"]}>
+                   <div className={style["toggle"]}>
+                    {!hideCloseIcon && (
+                      <button
+                        className={style["closebtn"]}
+                        onClick={() => setShowForm(false)}
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+                 </div>
+                </>:<>
+                 <div className={style["sidebar"]}>
                   <label className={style["toggle-switch"]}>
                     <input
                       checked={showKnowledge}
@@ -362,6 +466,7 @@ function ToolOnBoarding(props) {
                     />
                     <span className={style["slider"]}></span>
                   </label>
+                 
                   <div
                     className={
                       showKnowledge
@@ -371,7 +476,7 @@ function ToolOnBoarding(props) {
                   >
                     KNOWLEDGE
                   </div>
-                  <div className={style["toggle"]}>
+                <div className={style["toggle"]}>
                     {!hideCloseIcon && (
                       <button
                         className={style["closebtn"]}
@@ -382,9 +487,14 @@ function ToolOnBoarding(props) {
                     )}
                   </div>
                 </div>
+                </>}
+                
+                 
+                
+               
               </div>
               <form onSubmit={handleSubmit}>
-                <div className={style["form-content"]}>
+                <div className={`${style["form-content"]} ${props?.recycle ? style.disabledButton: ""}`}>
                   <div className={style["form-fields"]}>
                     <div className={style["description-container"]}>
                       <label className={style["label-desc"]}>
@@ -402,10 +512,8 @@ function ToolOnBoarding(props) {
                         type="text"
                         onChange={handleChange}
                         value={formData.description}
+                        
                         required
-                        onClick={() =>
-                          handleZoomClick("Description", formData.description)
-                        }
                       />
                       <button
                           type="button"
@@ -422,6 +530,21 @@ function ToolOnBoarding(props) {
                             fill="#343741"
                           />
                         </button>
+                       <div className={style.iconGroup}>
+                          <button
+                            type="button"
+                            className={style.expandIcon}
+                            onClick={() => handleZoomClick("Description", formData.description)}
+                            title="Expand"
+                          >
+                            <SVGIcons
+                              icon="fa-solid fa-up-right-and-down-left-from-center"
+                              width={16}
+                              height={16}
+                              fill="#343741"
+                            />
+                          </button>
+                        </div>
                         <span
                           className={`${style.copiedText} ${
                             copiedStates["desc"]
@@ -453,9 +576,6 @@ function ToolOnBoarding(props) {
                           onChange={handleChange}
                           value={formData.code}
                           required
-                          onClick={() =>
-                            handleZoomClick("Code Snippet", formData.code)
-                          }
                         />
                         <button
                           type="button"
@@ -472,6 +592,21 @@ function ToolOnBoarding(props) {
                             fill="#343741"
                           />
                         </button>
+                        <div className={style.iconGroup}>
+                          <button
+                            type="button"
+                            className={style.expandIcon}
+                            onClick={() => handleZoomClick("Code Snippet", formData.code)}
+                            title="Expand"
+                          >
+                            <SVGIcons
+                              icon="fa-solid fa-up-right-and-down-left-from-center"
+                              width={16}
+                              height={16}
+                              fill="#343741"
+                            />
+                          </button>
+                        </div>
                         <span
                           className={`${style.copiedText} ${
                             copiedStates["code-snippet"]
@@ -506,41 +641,25 @@ function ToolOnBoarding(props) {
                       </div>
                       <div className={style["left"]}>
                         <label className={style["label-desc"]}>
-                          {isAddTool ? "CREATED BY" : "USER EMAIL"}
+                          {isAddTool ? null : "CREATED BY" }
                         </label>
                         <div>
-                          {isAddTool ? (
-                            <input
-                              id="created-by"
-                              className={style["created-input"]}
-                              type="text"
-                              name="createdBy"
-                              value={formData.createdBy}
-                              disabled
-                              onChange={handleChange}
-                              required
-                            />
-                          ) : (
-                            <input
-                              id="created-by"
-                              className={style["created-input"]}
-                              type="text"
-                              name="userEmail"
-                              value={
-                                userName === "Guest"
-                                  ? editTool.created_by
-                                  : formData.userEmail
-                              }
-                              onChange={handleChange}
-                              required
-                            />
+                          {isAddTool ? null : (
+                              <input
+                                id="created-by"
+                                className={style["created-input"]}
+                                type="text"
+                                name="createdBy"
+                                value={editTool.created_by}
+                                disabled
+                              />
                           )}
                         </div>
                       </div>
                     </div>
-
-                    <div className={style["tagsMainContainer"]}>
-                      <label for="tags" className={style["label-desc"]}>
+{!props?.recycle &&(
+   <div className={style["tagsMainContainer"]}>
+                      <label htmlFor="tags" className={style["label-desc"]}>
                         Select Tags
                         <InfoTag message="Select the tags." />
                       </label>
@@ -548,7 +667,8 @@ function ToolOnBoarding(props) {
                         {isAddTool
                           ? initialTags.map((tag, index) => (
                               <Tag
-                                key={index}
+                                //key={index}
+                                key={"li-<ulName>-"+index}
                                 index={index}
                                 tag={tag.tag}
                                 selected={tag.selected}
@@ -557,7 +677,8 @@ function ToolOnBoarding(props) {
                             ))
                           : initialUpdateTags.map((tag, index) => (
                               <Tag
-                                key={index}
+                               // key={index}
+                               key={"li-<ulName>-"+index}
                                 index={index}
                                 tag={tag.tag}
                                 selected={tag.selected}
@@ -566,16 +687,33 @@ function ToolOnBoarding(props) {
                             ))}
                       </div>
                     </div>
+)}
+                 
                   </div>
                   {showKnowledge && (
                     <MessageUpdateform
-                      hideComponent={() => setShowForm(false)}
+                      hideComponent={() => {
+                        setShowKnowledge(false);
+                        setHideCloseIcon(false);
+                      }}
                       showKnowledge={showKnowledge}
                     />
                   )}
                 </div>
+{props?.recycle ?<>
+ <div className={style["modal-footer"]}>
+                  <div className={style["button-class"]}>
+                     <button type="submit" className={style["add-button"]}>
+                      {"RESTORE"}
+                    </button>
+                    <button type="button" className={style["add-button"]} onClick={deleteTool}>
+    {"DELETE"}
+  </button>
 
-                <div className={style["modal-footer"]}>
+                  </div>
+                </div>
+</>:<>
+ <div className={style["modal-footer"]}>
                   <div className={style["button-class"]}>
                     <button
                       onClick={() => setShowForm(false)}
@@ -586,8 +724,19 @@ function ToolOnBoarding(props) {
                     <button type="submit" className={style["add-button"]}>
                       {isAddTool ? "ADD TOOL" : "UPDATE"}
                     </button>
+                    {errorMessages.length > 0 && !errorModalVisible && !forceAdd && (
+                      <button
+                        type="button"
+                        className={style["viewWarningsButton"]}
+                        onClick={() => setErrorModalVisible(true)}
+                      >
+                        VIEW WARNINGS
+                      </button>
+                    )}
                   </div>
                 </div>
+</>}
+               
               </form>
             </div>
           </div>
@@ -600,8 +749,22 @@ function ToolOnBoarding(props) {
         content={popupContent}
         onSave={handleZoomSave}
       />
-    </>
-  );
+
+      <WarningModal
+        show={errorModalVisible}
+        messages={errorMessages}
+        onClose={() => {
+          setErrorModalVisible(false);
+          setForceAdd(false);
+        }}
+        onForceAdd={async() => {
+          setErrorModalVisible(false);
+          await handleSubmit(null, true); 
+        }}
+        showForceAdd={forceAdd}
+      />
+    </> 
+);
 }
 
 export default ToolOnBoarding;

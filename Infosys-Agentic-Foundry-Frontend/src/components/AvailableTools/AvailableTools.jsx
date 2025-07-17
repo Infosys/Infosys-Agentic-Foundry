@@ -2,20 +2,16 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import ToolOnBoarding from "./ToolOnBoarding.jsx";
 import style from "../../css_modules/AvailableTools.module.css";
 import ToolsCard from "./ToolsCard.jsx";
-import { getToolsByPageLimit } from "../../services/toolService.js";
+import { getToolsSearchByPageLimit } from "../../services/toolService.js";
 import Loader from "../commonComponents/Loader.jsx";
 import { APIs } from "../../constant";
 import useAxios from "../../Hooks/useAxios.js";
-import Cookies from "js-cookie";
-import DeleteModal from "../commonComponents/DeleteModal.jsx";
-import { useNavigate } from "react-router-dom";
 import FilterModal from "../commonComponents/FilterModal.jsx";
 import SubHeader from "../commonComponents/SubHeader.jsx";
 import { calculateDivs } from "../../util.js";
 import { debounce } from "lodash";
 
 const AvailableTools = () => {
-  const userName = Cookies.get("userName");
 
   const [toolList, setToolList] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -25,7 +21,6 @@ const AvailableTools = () => {
   const [loading, setLoading] = useState(false);
   const [visibleData, setVisibleData] = useState([]);
   const [page, setPage] = useState(1);
-  const [addModal, setAddModal] = useState(false);
   const [filterModal, setFilterModal] = useState(false);
   const [tags, setTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
@@ -33,20 +28,24 @@ const AvailableTools = () => {
   const toolListContainerRef = useRef(null);
   const { fetchData } = useAxios();
   const pageRef = useRef(1); 
+  const [loader, setLoaderState] = useState(false);
+  const isLoadingRef = React.useRef(false);
 
-  const handleSearch = async (searchValue) => {
-    setSearchTerm(searchValue || ""); // Update the search term state
-
+  const handleSearch = async (searchValue,divsCount,pageNumber) => {
+    setSearchTerm(searchValue || "");
+    setPage(1);
+    pageRef.current = 1;
+    setVisibleData([]);
     if (searchValue.trim()) {
       try {
-        setLoading(true); // Show loader while fetching data
-
-        // Fetch data from the API based on the search term
-        const response = await fetchData(`${APIs.GET_TOOLS_BY_SEARCH}/${searchValue}`);
-
-        let dataToSearch = response
-
-        // Filter by selected tags if applicable
+        setLoading(true);
+        // Use the new API endpoint for search
+        const response = await getToolsSearchByPageLimit({
+          page: pageNumber,
+          limit: divsCount,
+          search: searchValue,
+        });
+        let dataToSearch = response || [];
         if (selectedTags?.length > 0) {
           dataToSearch = dataToSearch.filter(
             (item) =>
@@ -69,23 +68,20 @@ const AvailableTools = () => {
     }
   };
 
-  const clearSearch = () => {
-    setSearchTerm(""); // Clear the search term
-    setVisibleData(toolList); // Reset to the initial list of tools
-  };
 
   const getToolsData = async (pageNumber, divsCount) => {
     setLoading(true);
     try {
-      const response = await getToolsByPageLimit({ page: pageNumber, limit: divsCount }); // API call with params
-      const { details, total_count } = response;
-
+      // Use the new API endpoint for paginated tools
+      const response = await getToolsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: "" });
+      const data = response || [];
       if (pageNumber === 1) {
-        setToolList(details); // Save the initial list of tools
+        setToolList(data);
+        setVisibleData(data); // Ensure initial load is rendered
+      } else {
+        setVisibleData((prev) => [...prev, ...data]);
       }
-
-      setVisibleData((prev) => [...prev, ...details]);
-      setTotalToolsCount(total_count);
+      setTotalToolsCount(data?.length || 0);
     } catch (error) {
       console.error("Error fetching tools:", error);
     } finally {
@@ -93,63 +89,86 @@ const AvailableTools = () => {
     }
   };
 
-  const loadMoreData = useCallback(() => {
-    if (loading || toolList.length >= totalToolsCount) return; // prevent overfetching
-  
-    const nextPage = pageRef.current + 1;
-    const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
-    pageRef.current = nextPage; // immediately update ref
-    setPage(nextPage);
-    getToolsData(nextPage, divsCount);
-  }, [toolList, totalToolsCount, loading]);
+   const clearSearch = () => {
+      setSearchTerm("");
+      setVisibleData([]);
+      // Trigger fetchToolsData with no search term (reset to first page)
+      const divsCount= calculateDivs(toolListContainerRef, 200, 141, 40)
+      setPage(1);
+      pageRef.current = 1;
+      getToolsData(1, divsCount);
+   }
+
+ 
 
   useEffect(() => {
-      const debouncedCheckAndLoad = debounce(() => {
-        if (!searchTerm.trim() && selectedTags.length === 0) {
-          const container = toolListContainerRef.current;
-          if (
-            container &&
-            container.scrollHeight <= container.clientHeight &&
-            toolList.length < totalToolsCount
-          ) {
-            loadMoreData();
-          }
-        }
-      }, 300);
-  
-      const handleResize = () => {
-        debouncedCheckAndLoad();
-      };
-    
-      window.addEventListener('resize', handleResize);
-      debouncedCheckAndLoad();
-      return () => {
-        window.removeEventListener('resize', handleResize);
-        debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
-      };
-    }, [toolList.length, totalToolsCount, searchTerm, selectedTags]);
+    const container = toolListContainerRef?.current;
+    if (!container) return;
 
-  function handleScroll() {
-    const container = toolListContainerRef.current;
-    if (
-      container.scrollHeight - container.scrollTop <=
-      container.clientHeight + 140
-    ) {
-      if (!searchTerm.trim()) {
-        loadMoreData();
+    // Extract the check logic into a separate function
+    const checkAndLoadMore = () => {
+      if (
+        container.scrollTop + container.clientHeight >= container.scrollHeight - 10 &&
+        !loading && !isLoadingRef.current // Prevent if already loading
+      ) {
+        handleScrollLoadMore();
       }
-    }
-  }
+    };
 
-  useEffect(() => {
-    const container = toolListContainerRef.current;
-    container?.addEventListener("scroll", handleScroll);
-    if (searchTerm.length > 0 || selectedTags.length > 0) {
-      container.style.maxHeight = "100%";
-      container.style.height = "auto";
-    }
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [loadMoreData, searchTerm, selectedTags]);
+    const debouncedCheckAndLoad = debounce(checkAndLoadMore, 200); // 200ms debounce
+
+    const handleResize = () => {
+      debouncedCheckAndLoad();
+    };
+
+    window.addEventListener('resize', handleResize);
+    container.addEventListener('scroll', debouncedCheckAndLoad);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
+      container.removeEventListener('scroll', debouncedCheckAndLoad);
+    };
+  }, [toolListContainerRef]);
+
+  const handleScrollLoadMore = async () => {
+      if (loader || isLoadingRef.current) return; // Prevent multiple calls
+      isLoadingRef.current = true;
+      const nextPage = pageRef.current + 1;
+      const divsCount= calculateDivs(toolListContainerRef, 200, 141, 40)
+        try {
+          setLoaderState(true);
+          setLoading && setLoading(true);
+          let newData = [];
+          if (searchTerm.trim()) {
+              const res = await getToolsSearchByPageLimit({
+                page: nextPage,
+                limit: divsCount,
+                search: searchTerm,
+              });
+            newData = res || [];
+            if (selectedTags?.length > 0) {
+              newData = newData.filter(
+                (item) =>
+                  item.tags &&
+                  item.tags.some((tag) => selectedTags.includes(tag?.tag_name))
+              );
+            }
+            setVisibleData((prev) => [...prev, ...newData]);
+          } else {
+            // Only call fetchToolsData if no searchTerm
+            await getToolsData(nextPage, divsCount);
+          }
+          setPage(nextPage);
+          pageRef.current = nextPage;
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoaderState(false);
+          setLoading && setLoading(false);
+          isLoadingRef.current = false;
+        }
+    };
 
   const handlePlusIconClick = () => {
     setShowForm(true);
@@ -169,9 +188,14 @@ const AvailableTools = () => {
     }
   };
 
-  useEffect(() => {
-    getTags();
-  }, [showForm]);
+  // Use a ref to ensure tags are fetched only once
+  const hasLoadedTagsOnce = useRef(false);
+  
+    useEffect(() => {
+      if (hasLoadedTagsOnce.current) return;
+      hasLoadedTagsOnce.current = true;
+      getTags();
+    }, [showForm]);
 
   const hasLoadedOnce = useRef(false);
 
@@ -185,17 +209,6 @@ const AvailableTools = () => {
     getToolsData(1, divsCount);
   }, []);
 
-  const navigate = useNavigate();
-
-  const handleLoginButton = (e) => {
-    e.preventDefault();
-    Cookies.remove("userName");
-    Cookies.remove("session_id");
-    Cookies.remove("csrf-token");
-    Cookies.remove("email");
-    Cookies.remove("role");
-    navigate("/login");
-  };
 
   const handleRefresh = () => {
       setPage(1);
@@ -232,13 +245,6 @@ const AvailableTools = () => {
 
   return (
     <>
-      <DeleteModal show={addModal} onClose={() => setAddModal(false)}>
-        <p>
-          You are not authorized to add a tool. Please login with registered
-          email.
-        </p>
-        <button onClick={(e) => handleLoginButton(e)}>Login</button>
-      </DeleteModal>
 
       <FilterModal
         show={filterModal}
@@ -254,9 +260,7 @@ const AvailableTools = () => {
           isAddTool={isAddTool}
           editTool={editTool}
           setIsAddTool={setIsAddTool}
-          setToolList={setToolList}
           tags={tags}
-          setVisibleData={setVisibleData}
           fetchPaginatedTools={fetchPaginatedTools}
         />
       )}
@@ -265,7 +269,7 @@ const AvailableTools = () => {
         <div className={style.subHeaderContainer}>
           <SubHeader
             heading={"LIST OF TOOLS"}
-            onSearch={handleSearch}
+            onSearch={(value) => handleSearch(value, calculateDivs(toolListContainerRef, 200, 141, 40), 1)}
             onSettingClick={onSettingClick}
             onPlusClick={handlePlusIconClick}
             handleRefresh={handleRefresh}
@@ -305,19 +309,17 @@ const AvailableTools = () => {
         <div className={style.visibleToolsContainer} ref={toolListContainerRef}>
           {visibleData?.length > 0 && (
             <div className={style.toolsList}>
-              {visibleData?.map((item) => (
+              {visibleData?.map((item,index) => (
                   <ToolsCard
                     tool={item}
                     setShowForm={setShowForm}
                     setIsAddTool={setIsAddTool}
                     isAddTool={isAddTool}
-                    key={item.id}
+                    //key={item.id}
+                    key={`tools-card-${index}`}
                     style={style}
                     setEditTool={setEditTool}
-                    setToolList={setToolList}
                     loading={loading}
-                    setLoading={setLoading}
-                    setVisibleData={setVisibleData}
                     fetchPaginatedTools={fetchPaginatedTools}
                   />
                 ))}

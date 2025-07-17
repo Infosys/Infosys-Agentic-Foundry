@@ -39,7 +39,7 @@ const SVGIcons = (props) => {
       return (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="ionicon"
+          className="ionicon"
           viewBox="0 0 512 512"
           {...svgStyle}
         >
@@ -50,7 +50,7 @@ const SVGIcons = (props) => {
       return (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="ionicon"
+          className="ionicon"
           viewBox="0 0 512 512"
           {...svgStyle}
         >
@@ -66,7 +66,7 @@ const SVGIcons = (props) => {
       return (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="ionicon"
+          className="ionicon"
           viewBox="0 0 512 512"
           {...svgStyle}
         >
@@ -77,16 +77,16 @@ const SVGIcons = (props) => {
       return (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="ionicon"
+          className="ionicon"
           viewBox="0 0 512 512"
           {...svgStyle}
         >
           <path
             fill="none"
             stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="32"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="32"
             d="M368 368L144 144M368 144L144 368"
           />
         </svg>
@@ -167,11 +167,25 @@ const SVGIcons = (props) => {
           </g>
         </svg>
       );
+    case "new-chat":
+      return (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="800px"
+          height="800px"
+          viewBox="0 0 24 24"
+          {...svgStyle}
+        >
+          <path
+            d="M12 2C6.48 2 2 5.58 2 10c0 2.39 1.39 4.53 3.54 6.03-.34 1.23-1.03 2.3-1.99 3.17-.2.18-.25.46-.13.7.12.24.37.38.63.38 1.52 0 3.04-.58 4.38-1.64C10.07 19.68 11.02 20 12 20c5.52 0 10-3.58 10-8s-4.48-8-10-8zm0 14c-.98 0-1.93-.32-2.74-.88-.2-.14-.47-.13-.66.02-1.06.84-2.3 1.34-3.6 1.47.56-.72.99-1.54 1.27-2.42.08-.26-.02-.54-.24-.7C4.4 12.9 3.5 11.5 3.5 10c0-3.31 3.58-6 8-6s8 2.69 8 6-3.58 6-8 6z"
+          />
+        </svg>
+      );
     case "search":
       return (
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          class="ionicon"
+          className="ionicon"
           viewBox="0 0 512 512"
           {...svgStyle}
         >
@@ -179,15 +193,15 @@ const SVGIcons = (props) => {
             d="M221.09 64a157.09 157.09 0 10157.09 157.09A157.1 157.1 0 00221.09 64z"
             fill="none"
             stroke="currentColor"
-            stroke-miterlimit="10"
-            stroke-width="32"
+            strokeMiterlimit="10"
+            strokeWidth="32"
           />
           <path
             fill="none"
             stroke="currentColor"
-            stroke-linecap="round"
-            stroke-miterlimit="10"
-            stroke-width="32"
+            strokeLinecap="round"
+            strokeMiterlimit="10"
+            strokeWidth="32"
             d="M338.29 338.29L448 448"
           />
         </svg>
@@ -344,11 +358,11 @@ const SVGIcons = (props) => {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+          <g id="SVGRepo_bgCarrier" strokeWidth="0"></g>
           <g
             id="SVGRepo_tracerCarrier"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           ></g>
           <g id="SVGRepo_iconCarrier">
             {" "}
@@ -371,11 +385,11 @@ const SVGIcons = (props) => {
           width={200}
           height={200}
         >
-          <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+          <g id="SVGRepo_bgCarrier" strokeWidth="0"></g>
           <g
             id="SVGRepo_tracerCarrier"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           ></g>
           <g id="SVGRepo_iconCarrier">
             {" "}
@@ -406,12 +420,12 @@ const SVGIcons = (props) => {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <g id="SVGRepo_bgCarrier" stroke-width="0" />
+          <g id="SVGRepo_bgCarrier" strokeWidth="0" />
 
           <g
             id="SVGRepo_tracerCarrier"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
 
           <g id="SVGRepo_iconCarrier">
@@ -454,12 +468,12 @@ const SVGIcons = (props) => {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <g id="SVGRepo_bgCarrier" stroke-width="0" />
+          <g id="SVGRepo_bgCarrier" strokeWidth="0" />
 
           <g
             id="SVGRepo_tracerCarrier"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
 
           <g id="SVGRepo_iconCarrier">
@@ -467,16 +481,16 @@ const SVGIcons = (props) => {
             <path
               d="M15.0007 12C15.0007 13.6569 13.6576 15 12.0007 15C10.3439 15 9.00073 13.6569 9.00073 12C9.00073 10.3431 10.3439 9 12.0007 9C13.6576 9 15.0007 10.3431 15.0007 12Z"
               stroke={svgStyle.fill}
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />{" "}
             <path
               d="M12.0012 5C7.52354 5 3.73326 7.94288 2.45898 12C3.73324 16.0571 7.52354 19 12.0012 19C16.4788 19 20.2691 16.0571 21.5434 12C20.2691 7.94291 16.4788 5 12.0012 5Z"
               stroke={svgStyle.fill}
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />{" "}
           </g>
         </svg>
@@ -538,6 +552,62 @@ const SVGIcons = (props) => {
               />
             </svg>
           );
+    case "metrics":
+      return (
+        <svg
+          {...svgStyle}
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+        >
+          <rect x="3" y="13" width="4" height="8" rx="1" fill={svgStyle.fill} />
+          <rect x="9" y="9" width="4" height="12" rx="1" fill={svgStyle.fill} />
+          <rect x="15" y="5" width="4" height="16" rx="1" fill={svgStyle.fill} />
+        </svg>
+      );
+    case "warnings":
+      return (
+        <svg
+          {...svgStyle}
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+        >
+          <polygon points="12,3 2,21 22,21" fill="#FFD600" stroke="#B8860B" strokeWidth="1.5"/>
+          <rect x="11" y="9" width="2" height="6" rx="1" fill="#B8860B"/>
+          <circle cx="12" cy="18" r="1.2" fill="#B8860B"/>
+        </svg>
+      );
+    case "tableIcon":
+      return (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="18" height="18" rx="2" stroke="#007cc3" stroke-width="2" fill="none"/>
+          <line x1="3" y1="9" x2="21" y2="9" stroke="#007cc3" stroke-width="2"/>
+          <line x1="3" y1="15" x2="21" y2="15" stroke="#007cc3" stroke-width="2"/>
+          <line x1="9" y1="3" x2="9" y2="21" stroke="#007cc3" stroke-width="2"/>
+          <line x1="15" y1="3" x2="15" y2="21" stroke="#007cc3" stroke-width="2"/>
+        </svg>
+      );
+    case "accordionIcon":
+      return(
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="5" width="18" height="3" rx="1" fill="#007cc3"/>
+          <rect x="3" y="10.5" width="18" height="3" rx="1" fill="#007cc3"/>
+          <rect x="3" y="16" width="18" height="3" rx="1" fill="#007cc3"/>
+          <polyline points="7,7 12,12 17,7" fill="none" stroke="#fff" stroke-width="2"/>
+        </svg>
+      );
+    case "fa-solid fa-up-right-and-down-left-from-center":
+      // FontAwesome expand icon (up-right-and-down-left-from-center)
+      return (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 512 512"
+          {...svgStyle}
+        >
+          <path d="M320 32c0-17.7 14.3-32 32-32h128c17.7 0 32 14.3 32 32v128c0 17.7-14.3 32-32 32s-32-14.3-32-32V83.3L329 234.3c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L434.7 64H352c-17.7 0-32-14.3-32-32zM192 480c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V352c0-17.7 14.3-32 32-32s32 14.3 32 32v44.7L183 277.7c12.5-12.5 32.8-12.5 45.3 0s12.5 32.8 0 45.3L77.3 448H160c17.7 0 32 14.3 32 32z" />
+        </svg>
+      );
     default:
       return <></>;
   }

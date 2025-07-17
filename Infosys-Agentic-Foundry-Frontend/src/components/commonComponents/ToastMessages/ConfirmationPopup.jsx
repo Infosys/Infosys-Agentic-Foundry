@@ -5,7 +5,6 @@ const ConfirmationModal = ({
   message,
   onConfirm,
   setShowConfirmation,
-  onCancel,
 }) => {
   const modalRef = useRef(null);
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import styles from "../../css_modules/ListOfAgents.module.css";
 import AgentCard from "./AgentCard";
-import { APIs, REACT_AGENT } from "../../constant";
+import { APIs, REACT_AGENT, agentTypes } from "../../constant";
 import SubHeader from "../commonComponents/SubHeader";
 import AgentOnboard from "../AgentOnboard";
 import UpdateAgent from "./UpdateAgent.jsx";
@@ -10,24 +10,30 @@ import Loader from "../commonComponents/Loader.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
 import FilterModal from "../commonComponents/FilterModal.jsx";
 import { calculateDivs } from "../../util";
-import { getAgentsByPageLimit } from "../../services/agentService.js";
+import { getAgentsSearchByPageLimit, exportAgents } from "../../services/toolService.js";
 import { debounce } from "lodash";
 
 const ListOfAgents = () => {
   const [plusBtnClicked, setPlusBtnClicked] = useState(false);
-  const [editAgentData, setEditAgentData] = useState(null);
+  const [editAgentData, setEditAgentData] = useState("");
   const [agentsListData, setAgentsListData] = useState([]);
   const [visibleData, setVisibleData] = useState([]);
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
-  const [initialAgentsList, setInitialAgentsList] = useState([]);
+  const [agentsList, setAgentsList] = useState([]);
   const [filterModal, setFilterModal] = useState(false);
   const [tags, setTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedAgentType, setSelectedAgentType] = useState("");
+  const selectedAgentTypeRef = useRef("");
+  const [selectedAgentIds, setSelectedAgentIds] = useState([]);
   const visibleAgentsContainerRef = useRef(null);
   const [totalAgentCount, setTotalAgentCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const { addMessage, setShowPopup } = useMessage();
+  const isLoadingRef = React.useRef(false);
+  const [loader, setLoaderState] = useState(false);
   const handleAddMessage = (message, type) => {
     addMessage(message, type);
   };
@@ -38,12 +44,16 @@ const ListOfAgents = () => {
     try {
       const data = await fetchData(APIs.GET_TAGS);
       setTags(data);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      console.error("Tags not fetched");
     }
   };
+  // Use a ref to ensure tags are fetched only once
+  const hasLoadedTagsOnce = useRef(false);
 
   useEffect(() => {
+    if (hasLoadedTagsOnce.current) return;
+    hasLoadedTagsOnce.current = true;
     getTags();
   }, [plusBtnClicked, editAgentData]);
 
@@ -58,218 +68,292 @@ const ListOfAgents = () => {
   const getAgentsData = async (pageNumber, divsCount) => {
     setLoading(true);
     try {
-      const response = await getAgentsByPageLimit({
-        page: pageNumber,
-        limit: divsCount,
-      });
-      const { details, total_count } = response;
+      const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: "" });
+      const data = response || [];
 
       if (pageNumber === 1) {
-        setInitialAgentsList(details); // Save the initial list of agents
+        setAgentsList(data); // Save the initial list of agents
+        setVisibleData(data); // Ensure initial load is rendered
+      }else{
+       setVisibleData((prev) => [...prev, ...data]);
       }
-
-      setAgentsListData((prev) => [...prev, ...details]);
-      setVisibleData((prev) => [...prev, ...details]);
-      setTotalAgentCount(total_count);
-    } catch (error) {
-      console.error("Error fetching tools:", error);
+     
+      setTotalAgentCount(data?.length || 0);
+    } catch {
+      console.error("Error fetching tools");
     } finally {
       setLoading(false);
     }
   };
-
+ 
   const fetchAgents = async () => {
     try {
-      if (hasLoadedOnce.current) return; // prevent duplicate initial load
-      hasLoadedOnce.current = true;
-
       const divsCount = calculateDivs(visibleAgentsContainerRef, 200, 128, 40);
-
+ 
       pageRef.current = 1;
       setPage(1);
-
+ 
       getAgentsData(1, divsCount);
     } catch (e) {
       const errorMsg = e?.response?.data?.message || e?.message;
       handleAddMessage(errorMsg, "error");
-      console.error("Fetch Agents Error:", errorMsg);
+      console.error("Fetch Agents Error");
     }
   };
-
-  const deleteAgent = async (id, email) => {
+ 
+  const deleteAgent = async (id, email, isAdmin = false) => {
     try {
       await deleteData(APIs.DELETE_AGENT + id, {
         user_email_id: email,
-        is_admin: false,
+        is_admin: isAdmin,
       });
       handleAddMessage("AGENT HAS BEEN DELETED SUCCESSFULLY !", "success");
       return true;
     } catch (error) {
       const errorMsg = error?.response?.data?.message || error?.message;
       handleAddMessage(errorMsg, "error");
-      console.error("Delete Agent Error:", errorMsg);
+      console.error("Delete Agent Error");
       return false;
     }
   };
-
-
-  const onSearch = async (searchValue) => {
-    setSearchTerm(searchValue || ""); // Update the search term state
-  
-    if (searchValue.trim()) {
+ 
+ 
+  const handleSearch = async (searchValue,divsCount,pageNumber) => {
+      setSearchTerm(searchValue || "");
+      setPage(1);
+      pageRef.current = 1;
+      setVisibleData([]);
+      if (searchValue.trim()) {
+        try {
+          setLoading(true);
+          // Use the new API endpoint for search
+          const response = await getAgentsSearchByPageLimit({
+            page: pageNumber,
+            limit: divsCount,
+            search: searchValue,
+          });
+          let dataToSearch = response || [];
+          if (selectedTags?.length > 0) {
+            dataToSearch = dataToSearch.filter(
+              (item) =>
+                item.tags &&
+                item.tags.some((tag) => selectedTags.includes(tag?.tag_name))
+            );
+          }
+ 
+          // Update visibleData with the filtered data
+          setVisibleData(dataToSearch);
+        } catch (error) {
+          console.error("Error fetching search results:", error);
+          setVisibleData([]); // Clear visibleData on error
+        } finally {
+          setLoading(false); // Hide loader
+        }
+      } else {
+        // If search term is empty, reset to default data
+        setVisibleData(agentsList); // Reset to the initial list of tools
+      }
+    };
+ 
+   const clearSearch = () => {
+        setSearchTerm("");
+        setVisibleData([]);
+        const divsCount = calculateDivs(visibleAgentsContainerRef, 200, 128, 40);
+        setPage(1);
+        pageRef.current = 1;
+        getAgentsData(1, divsCount);
+     }
+ 
+  const hasLoadedOnce = useRef(false);
+ 
+  useEffect(() => {
+    const container = visibleAgentsContainerRef?.current;
+    if (!container) return;
+ 
+    // Extract the check logic into a separate function
+    const checkAndLoadMore = () => {
+      if (
+        container.scrollTop + container.clientHeight >= container.scrollHeight - 10 &&
+        !loading && !isLoadingRef.current // Prevent if already loading
+      ) {
+        handleScrollLoadMore();
+      }
+    };
+ 
+    const debouncedCheckAndLoad = debounce(checkAndLoadMore, 200); // 200ms debounce
+ 
+    const handleResize = () => {
+      debouncedCheckAndLoad();
+    };
+ 
+    window.addEventListener('resize', handleResize);
+    container.addEventListener('scroll', debouncedCheckAndLoad);
+ 
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
+      container.removeEventListener('scroll', debouncedCheckAndLoad);
+    };
+  }, [visibleAgentsContainerRef]);
+ 
+const handleScrollLoadMore = async () => {
+      if (loader || isLoadingRef.current) return; // Prevent multiple calls
+      isLoadingRef.current = true;
+      const nextPage = pageRef.current + 1;
+      const divsCount = calculateDivs(visibleAgentsContainerRef, 200, 128, 40);
       try {
-        setLoading(true); // Show loader while fetching data
-  
-        // Fetch data from the API based on the search term
-        const response = await fetchData(`${APIs.GET_AGENTS_BY_SEARCH}/${searchValue}`);
-        let dataToSearch = response;
-  
-        // Filter by selected tags if applicable
+        setLoaderState(true);
+        setLoading && setLoading(true);
+        let newData = [];
+        if (searchTerm.trim()) {
+          const res = await getAgentsSearchByPageLimit({
+            page: nextPage,
+            limit: divsCount,
+            search: searchTerm,
+          });
+          newData = res || [];
+        } else if (selectedAgentTypeRef.current) {
+          const res = await getAgentsSearchByPageLimit({
+            page: nextPage,
+            limit: divsCount,
+            agent_type: selectedAgentTypeRef.current,
+          });
+          newData = res || [];
+        } else {
+          const res = await getAgentsSearchByPageLimit({
+            page: nextPage,
+            limit: divsCount,
+          });
+          newData = res || [];
+        }
         if (selectedTags?.length > 0) {
-          dataToSearch = dataToSearch.filter(
+          newData = newData.filter(
             (item) =>
               item.tags &&
               item.tags.some((tag) => selectedTags.includes(tag?.tag_name))
           );
         }
-  
-        // Update visibleData with the filtered data
-        setVisibleData(dataToSearch);
-      } catch (error) {
-        console.error("Error fetching search results:", error);
-        setVisibleData([]); // Clear visibleData on error
+        setVisibleData((prev) => [...prev, ...newData]);
+        setPage(nextPage);
+        pageRef.current = nextPage;
+      } catch (err) {
+        console.error(err);
       } finally {
-        setLoading(false); // Hide loader
+        setLoaderState(false);
+        setLoading && setLoading(false);
+        isLoadingRef.current = false;
       }
-    } else {
-      // If search term is empty, reset to default data
-      setVisibleData(initialAgentsList);
-    }
-  };
-  
-  const clearSearch = () => {
-    setSearchTerm("");
-    setVisibleData(initialAgentsList);
-  };
-
-  const hasLoadedOnce = useRef(false);
-
-  const loadMoreData = useCallback(() => {
-    if (loading || agentsListData.length >= totalAgentCount) return; // prevent overfetching
-
-    const nextPage = pageRef.current + 1;
-    const divsCount = calculateDivs(visibleAgentsContainerRef, 200, 128, 40);
-    pageRef.current = nextPage;
-    setPage(nextPage);
-    getAgentsData(nextPage, divsCount);
-  }, [page, agentsListData, selectedTags, loading]);
-
-  useEffect(() => {
-    const debouncedCheckAndLoad = debounce(() => {
-      if (!searchTerm.trim() && selectedTags.length === 0) {
-        const container = visibleAgentsContainerRef.current;
-        if (
-          container &&
-          container.scrollHeight <= container.clientHeight &&
-          agentsListData.length < totalAgentCount
-        ) {
-          loadMoreData();
-        }
-      }
-    }, 300);
-
-    const handleResize = () => {
-      debouncedCheckAndLoad();
     };
-  
-    window.addEventListener('resize', handleResize);
-    debouncedCheckAndLoad();
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
-    };
-  }, [agentsListData.length, totalAgentCount, searchTerm, selectedTags]);
-
-  function handleScroll() {
-    const container = visibleAgentsContainerRef.current;
-    if (
-      container.scrollHeight - container.scrollTop <=
-      container.clientHeight + 40
-    ) {
-      if (!searchTerm.trim()) {
-        loadMoreData();
-      }
-    }
-  }
-
+ 
   useEffect(() => {
+    if (hasLoadedOnce.current) return; // prevent duplicate initial load
+      hasLoadedOnce.current = true;
     fetchAgents();
   }, []);
-
+ 
   const handleRefresh = () => {
-    setPage(1);
-    pageRef.current = 1;
     clearSearch();
     setSelectedTags([]);
-    setVisibleData([]);
-    const divsCount = calculateDivs(visibleAgentsContainerRef, 200, 128, 40);
-    getAgentsData(1, divsCount);
+    setSelectedAgentType("");
+    selectedAgentTypeRef.current = "";
   };
-
-  useEffect(() => {
-    // Add scroll event listener to the scrollable div
-    const container = visibleAgentsContainerRef.current;
-    container.addEventListener("scroll", handleScroll);
-    if (searchTerm.length > 0 || selectedTags.length > 0) {
-      container.style.maxHeight = "100%";
-      container.style.height = "auto";
-    }
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [agentsListData, page, searchTerm, selectedTags]);
-
+ 
   const onSettingClick = () => {
     setFilterModal(true);
   };
-
+ 
   const onPlusClick = () => {
     setPlusBtnClicked(true);
   };
-
+ 
   const onOnboardClose = () => {
     setPlusBtnClicked(false);
   };
-
+ 
   const onAgentEdit = (data) => {
     setEditAgentData(data);
     setPlusBtnClicked(false);
   };
-
+ 
   const handleUpdateAgentClose = () => {
     setPlusBtnClicked(false);
     setEditAgentData(null);
   };
-
+ 
   const handleFilter = (selectedTags) => {
     setSelectedTags(selectedTags);
-
+ 
     if (selectedTags?.length > 0) {
-      const filteredData = agentsListData.filter(
+      const filteredData = agentsList.filter(
         (item) =>
           item.tags &&
           item.tags.some((tag) => selectedTags.includes(tag.tag_name))
       );
       setVisibleData(filteredData);
     } else {
-      setVisibleData(initialAgentsList);
+      setVisibleData(agentsList);
     }
   };
-
+ 
+  const handleAgentTypeChange = async (e) => {
+    const type = e.target.value;
+    setSelectedAgentType(type);
+    selectedAgentTypeRef.current = type;
+    setSearchTerm("");
+    setPage(1);
+    pageRef.current = 1;
+    setVisibleData([]);
+    const divsCount = calculateDivs(visibleAgentsContainerRef, 200, 128, 40);
+    setLoading(true);
+    try {
+      const response = await getAgentsSearchByPageLimit({
+        page: 1,
+        limit: divsCount,
+        agent_type: type,
+      });
+      setVisibleData(response || []);
+    } catch (error) {
+      setVisibleData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const handleAgentSelect = (agentId, checked) => {
+    setSelectedAgentIds((prev) =>
+      checked ? [...prev, agentId] : prev.filter((id) => id !== agentId)
+    );
+  };
+ 
+  const handleExportSelected = async () => {
+    if (selectedAgentIds.length === 0) return;
+    setExportLoading(true);
+    try {
+      const blob = await exportAgents(selectedAgentIds);
+      if (!blob) throw new Error('Failed to export agents');
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'agents_export.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      handleAddMessage("Agents exported successfully", "success");
+      setSelectedAgentIds([]); // Clear selection after successful export
+    } catch (err) {
+      let errorMsg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Export failed!';
+      handleAddMessage(errorMsg, "error");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+ 
   return (
     <div className={styles.container}>
-      {loading && <Loader />}
+      {(loading || exportLoading) && <Loader />}
       <div className={styles.subHeaderContainer}>
         <SubHeader
-          onSearch={onSearch}
+          onSearch={(value) => handleSearch(value, calculateDivs(visibleAgentsContainerRef, 200, 128, 40), 1)}
           onSettingClick={onSettingClick}
           onPlusClick={onPlusClick}
           selectedTags={selectedTags}
@@ -277,37 +361,56 @@ const ListOfAgents = () => {
           handleRefresh={handleRefresh}
           searchValue={searchTerm}
           clearSearch={clearSearch}
+          showAgentTypeDropdown={true}
+          agentTypes={agentTypes}
+          selectedAgentType={selectedAgentType}
+          handleAgentTypeChange={handleAgentTypeChange}
         />
+        <button
+          className={styles.exportSelectedBtn}
+          onClick={handleExportSelected}
+          disabled={selectedAgentIds.length === 0}
+          style={{ marginLeft: 16 }}
+        >
+          Export
+        </button>
       </div>
-
+ 
         {/* Display searched tool text if searchTerm exists and results are found */}
         {searchTerm.trim() && visibleData.length > 0 && (
           <div className={styles.searchedToolText}>
-            <p>Tools Found: {searchTerm}</p>
+            <p>Agents Found: {searchTerm}</p>
           </div>
         )}
-
+ 
         {/* Display filtered tools text if filters are applied */}
         {selectedTags.length > 0 && visibleData.length > 0 && (
           <div className={styles.filteredToolText}>
-            <p>Tools Found: {selectedTags.join(", ")}</p>
+            <p>Agents Found: {selectedTags.join(", ")}</p>
           </div>
         )}
-
-        {/* Display "No Tools Found" if no results are found after filtering */}
+ 
+        {/* Display "No Agents Found" if no results are found after filtering */}
         {selectedTags.length > 0 && visibleData.length === 0 && (
           <div className={styles.searchedToolText}>
-            <p>No Tools Found: {selectedTags.join(", ")}</p>
+            <p>No Agents Found: {selectedTags.join(", ")}</p>
           </div>
         )}
-
-        {/* Display "No Tools Found" if no results are found after searching */}
+ 
+        {/* Display "No Agents Found" if no results are found after searching */}
         {searchTerm.trim() && visibleData.length === 0 && (
           <div className={styles.filteredToolText}>
-            <p>No Tools Found: {searchTerm}</p>
+            <p>No Agents Found: {searchTerm}</p>
           </div>
         )}
 
+        {/* Display "No Agents found" if no results are found after selecting agent type */}
+        {selectedAgentType && !searchTerm.trim() && selectedTags.length === 0 && visibleData.length === 0 && (
+          <div className={styles.filteredToolText}>
+            <p>No Agents found</p>
+          </div>
+        )}
+ 
       <div
         className={styles.visibleAgentsContainer}
         ref={visibleAgentsContainerRef}
@@ -315,18 +418,19 @@ const ListOfAgents = () => {
         <div className={styles.agentsList}>
         {visibleData?.map((data) => (
           <AgentCard
-            key={data?.id}
+            key={data?.agentic_application_id}
             styles={styles}
             data={data}
             onAgentEdit={onAgentEdit}
             deleteAgent={deleteAgent}
             fetchAgents={fetchAgents}
+            isSelected={selectedAgentIds.includes(data.agentic_application_id)}
+            onSelect={handleAgentSelect}
           />
         ))}
         </div>
       </div>
-
-      {/* )} */}
+ 
       {plusBtnClicked && (
         <div className={styles.agentOnboardContainer}>
           <AgentOnboard
@@ -334,6 +438,9 @@ const ListOfAgents = () => {
             tags={tags}
             fetchAgents={fetchAgents}
             setNewAgentData={setEditAgentData}
+            agentsListData={agentsListData?.filter(
+              (agent) => agent?.agentic_application_type === REACT_AGENT
+            )}
           />
         </div>
       )}
@@ -347,10 +454,11 @@ const ListOfAgents = () => {
               (agent) => agent?.agentic_application_type === REACT_AGENT
             )}
             fetchAgents={fetchAgents}
+            searchTerm={searchTerm}
           />
         </div>
       )}
-
+ 
       <FilterModal
         show={filterModal}
         onClose={() => setFilterModal(false)}
@@ -361,5 +469,5 @@ const ListOfAgents = () => {
     </div>
   );
 };
-
+ 
 export default ListOfAgents;

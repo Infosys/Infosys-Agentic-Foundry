@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import style from "./ToastMessage.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 
 const ToastMessage = (props) => {
-  const { message, duration, setShowToast } = props;
+  const { message, setShowToast } = props;
   const handleClose = () => {
     setShowToast(false);
   };

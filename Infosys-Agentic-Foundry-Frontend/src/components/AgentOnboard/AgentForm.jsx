@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import DropDown from "../commonComponents/DropDowns/DropDown";
-import { APIs, META_AGENT } from "../../constant";
+import { APIs, META_AGENT, PLANNER_META_AGENT } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import Tag from "../../components/Tag/Tag";
 import useFetch from "../../Hooks/useAxios";
@@ -46,7 +46,7 @@ const AgentForm = (props) => {
 
   const { fetchData } = useFetch();
 
-  const { addMessage, setShowPopup } = useMessage();
+  const {setShowPopup } = useMessage();
 
   useEffect(() => {
     if (!loading) {
@@ -82,7 +82,7 @@ const AgentForm = (props) => {
   };
 
   useEffect(() => {
-    if (selectedAgent === META_AGENT)
+    if ((selectedAgent === META_AGENT||selectedAgent === PLANNER_META_AGENT))
       setIsFormDisabled(selectedAgents.length <= 0);
     else setIsFormDisabled(selectedTool.length <= 0);
   }, [selectedAgent, selectedAgents, selectedTool]);
@@ -127,15 +127,20 @@ const AgentForm = (props) => {
     }
   };
 
+  // Use a ref to ensure models are fetched only once
+  const hasLoadedModelsOnce = useRef(false);
+
   useEffect(() => {
+    if (hasLoadedModelsOnce.current) return;
+    hasLoadedModelsOnce.current = true;
     fetchModels();
   }, []);
 
   const resetSelectedCards = () => {
-    const selectedCards = document?.querySelectorAll("[data-isClicked=true]");
+    const selectedCards = document?.querySelectorAll("[data-isclicked=true]");
     if (selectedCards?.length > 0) {
       for (let card of selectedCards) {
-        card?.setAttribute("data-isClicked", false);
+        card?.setAttribute("data-isclicked", false);
         const button = card?.querySelector("[data-selected=true]");
         button?.setAttribute("data-selected", false);
       }
@@ -168,13 +173,6 @@ const AgentForm = (props) => {
     setShowZoomPopup(false);
   };
 
-  // const handleCopy = (key, text) => {
-  //   navigator.clipboard.writeText(text);
-  //   setCopiedStates((prev) => ({ ...prev, [key]: true })); // Set copied state for the specific key
-  //   setTimeout(() => {
-  //     setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
-  //   }, 2000);
-  // };
 
   const handleCopy = (key, text) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -219,7 +217,7 @@ const AgentForm = (props) => {
       {isFormDisabled && <div className={styles.coverLayer} />}
       <form className={styles.form} onSubmit={onSubmit}>
         <div className={styles.inputName}>
-          <label for="agent_name">
+          <label htmlFor="agent_name">
             AGENT NAME
             <InfoTag message="Provide name for the agent." />
           </label>
@@ -229,54 +227,60 @@ const AgentForm = (props) => {
             name="agent_name"
             disabled={!selectedTool}
             value={formData.agent_name}
-            onChange={handleChange}
-            required
-          />
-        </div>
-        <div className={styles.inputEmail}>
-          <label for="email_id">
-            USER EMAIL
-            <InfoTag message="Provide email for the agent." />
-          </label>
-          <input
-            type="email"
-            id="email_id"
-            name="email_id"
-            disabled={!selectedTool}
-            value={formData.email_id}
-            onChange={handleChange}
+            onChange={(e) => {
+              const value = e.target.value.replace(/[^a-zA-Z0-9_\s()-{}[\]]/g, "");
+              handleChange({
+                target: { name: "agent_name", value }
+              });
+            }}
             required
           />
         </div>
         <div className={styles.inputGoal}>
-          <label for="agent_goal">
+          <label htmlFor="agent_goal">
             AGENT GOAL
             <InfoTag message="Provide goal for the agent." />
           </label>
           <div className={styles.textAreaContainer}>
-          <textarea
-            id="agent_goal"
-            name="agent_goal"
-            disabled={!selectedTool}
-            value={formData.agent_goal}
-            onChange={handleChange}
-            required
-            className={styles.agentTextArea}
-            onClick={() => handleZoomClick("Agent Goal", formData.agent_goal)}
-          />
+            <textarea
+              id="agent_goal"
+              name="agent_goal"
+              disabled={!selectedTool}
+              value={formData.agent_goal}
+              onChange={handleChange}
+              required
+              className={styles.agentTextArea}
+            />
             <button
               type="button"
               className={styles.copyIcon}
-              onClick={() => handleCopy("agent_goal", formData.agent_goal)}
+              onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleCopy("agent_goal", formData.agent_goal)}
               title="Copy"
+              disabled={isFormDisabled}
             >
               <SVGIcons
                 icon="fa-regular fa-copy"
                 width={16}
                 height={16}
-                fill="#343741"
+                fill={isFormDisabled ? '#bdbdbd' : '#343741'}
               />
             </button>
+            <div className={styles.iconGroup}>
+              <button
+                type="button"
+                className={styles.expandIcon}
+                onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Agent Goal", formData.agent_goal)}
+                title="Expand"
+                disabled={isFormDisabled}
+              >
+                <SVGIcons
+                  icon="fa-solid fa-up-right-and-down-left-from-center"
+                  width={16}
+                  height={16}
+                  fill={isFormDisabled ? '#bdbdbd' : '#343741'}
+                />
+              </button>
+            </div>
             <span
               className={`${styles.copiedText} ${
                 copiedStates["agent_goal"] ? styles.visible : styles.hidden
@@ -287,44 +291,50 @@ const AgentForm = (props) => {
           </div>
         </div>
         <div className={styles.inputDescription}>
-          <label for="workflow_description">
+          <label htmlFor="workflow_description">
             WORKFLOW DESCRIPTION
             <InfoTag message="Provide description for the agent." />
           </label>
           <div className={styles.textAreaContainer}>
-          <textarea
-            id="workflow_description"
-            name="workflow_description"
-            disabled={!selectedTool}
-            value={formData.workflow_description}
-            onChange={handleChange}
-            required
-            className={styles.agentTextArea}
-            onClick={() =>
-              handleZoomClick(
-                "Workflow Description",
-                formData.workflow_description
-              )
-            }
-          />
+            <textarea
+              id="workflow_description"
+              name="workflow_description"
+              disabled={!selectedTool}
+              value={formData.workflow_description}
+              onChange={handleChange}
+              required
+              className={styles.agentTextArea}
+            />
             <button
               type="button"
               className={styles.copyIcon}
-              onClick={() =>
-                handleCopy(
-                  "workflow_description",
-                  formData.workflow_description
-                )
-              }
+              onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleCopy("workflow_description", formData.workflow_description)}
               title="Copy"
+              disabled={isFormDisabled}
             >
               <SVGIcons
                 icon="fa-regular fa-copy"
                 width={16}
                 height={16}
-                fill="#343741"
+                fill={isFormDisabled ? '#bdbdbd' : '#343741'}
               />
             </button>
+            <div className={styles.iconGroup}>
+              <button
+                type="button"
+                className={styles.expandIcon}
+                onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Workflow Description", formData.workflow_description)}
+                title="Expand"
+                disabled={isFormDisabled}
+              >
+                <SVGIcons
+                  icon="fa-solid fa-up-right-and-down-left-from-center"
+                  width={16}
+                  height={16}
+                  fill={isFormDisabled ? '#bdbdbd' : '#343741'}
+                />
+              </button>
+            </div>
             <span
               className={`${styles.copiedText} ${
                 copiedStates["workflow_description"]
@@ -337,7 +347,7 @@ const AgentForm = (props) => {
           </div>
         </div>
         <div className={styles.selectContainer}>
-          <label for="model_name">
+          <label htmlFor="model_name">
             MODEL
             <InfoTag message="Select model for the agent." />
           </label>
@@ -353,7 +363,7 @@ const AgentForm = (props) => {
           />
         </div>
         <div className={styles.inputTags}>
-          <label for="tags">
+          <label htmlFor="tags">
             Select Tags
             <InfoTag message="Select tags for the agent." />
           </label>

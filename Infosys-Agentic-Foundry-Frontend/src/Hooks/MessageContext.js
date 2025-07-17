@@ -5,7 +5,7 @@ const MessageContext = createContext();
 
 // Provider Component to wrap the entire application
 export const MessageProvider = ({ children }) => {
-  const [message, setMessage] = useState(null);
+  const [message, setMessage] = useState("");
   const [showPopup, setShowPopup] = useState(false);
 
   const addMessage = (message, type) => {

@@ -1,74 +1,65 @@
 .Messagingbox {
-  background-color: #e8f5e9;
-  width: 95%;
-  margin-bottom: 15px;
-  padding: 10px;
+  /* background-color: #e8f5e9; */
   border-radius: 5px;
   line-height: 1.8; /* Adjust line spacing */
   letter-spacing: 0.5px; /* Adjust letter spacing */
-  font-size: 1rem;
+  font-size: 14px;
   font-family: Segoe UI;
+  margin: 5px 10px;
+  width: 100%;
 }
 
 .Messagingbox h1 {
-  color: green;
   margin-bottom: 15px;
 }
 
 .Messagingbox h2 {
-  color: green;
   margin-top: 10px;
   margin-bottom: 15px;
 }
 
 .Messagingbox h3 {
-  color: green;
   margin-top: 10px;
   margin-bottom: 15px;
 }
 
 .Messagingbox h4 {
-  color: green;
   margin-top: 10px;
   margin-bottom: 15px;
 }
 
 .Messagingbox h5 {
-  color: green;
   margin-top: 10px;
   margin-bottom: 15px;
 }
 
 .Messagingbox h6 {
-  color: green;
   margin-top: 10px;
   margin-bottom: 15px;
 }
 
 .Messagingbox p {
-  color: green;
   margin: 10px 0;
   margin-bottom: 15px;
+  font-family: Segoe UI;
 }
 
 .Messagingbox ol {
   list-style-type: decimal;
   padding-left: 20px;
-  color: green;
-  margin-bottom: 15px;
+  margin-block: 8px;
   margin-left: 10px;
 }
 
 .Messagingbox ul {
   list-style-type: disc;
   padding-left: 20px;
-  color: green;
   margin-bottom: 15px;
   margin-left: 10px;
 }
 .Messagingbox ol li,
 .Messagingbox ul li {
-  margin-bottom: 10px;
+  margin-bottom: 2px;
 }
 
 .Messagingbox a {
@@ -92,7 +83,7 @@
 }
 
 .Messagingbox code {
-  color: green;
+  color: black; /* green */;
 }
 
 .Messagingbox table {
@@ -130,4 +121,67 @@
 .table-container td {
   border: 1px solid #ddd;
   padding: 8px;
+}
+.MessagingboxToolcall {
+  width: 95%;
+  padding: 10px;
+  border-radius: 5px;
+  line-height: 1.8; /* Adjust line spacing */
+  letter-spacing: 0.5px; /* Adjust letter spacing */
+  font-size: 14px;
+  font-family: Segoe UI;
+}
+.editBtn {
+  height: 24px;
+  position: absolute;
+  transform: translateY(50%);
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  fill:  blue !important;
+}
+
+.editBtn {
+  width: 24px;
+  background-color: #007ac0;
+  right: 10px;
+  bottom: 0;
+}
+.accordionButtonSend {
+  display: flex;
+  /* flex-direction: column; */
+  align-items: center;
+  font-family: Segoe UI;
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0px;
+  color: #373737;
+  text-transform: uppercase;
+  /* position: absolute; */
+  right: 10px;
+  bottom: -10px;
+  z-index: 10;
+  cursor: pointer;
+}
+.arrowOpen {
+  transform: rotate(-180deg);
+  margin-top: 6px
+}
+.sendButtonTool{
+display: flex;
+justify-content: center;
+}
+.argumentValueTextArea{
+  width: 100%;
+  display: flex;
+  padding-bottom: 20px;
+  padding-top: 5px;
+}
+.submitButtonCss{
+    display: flex;
+    background-color: #007cc3;
+
 }

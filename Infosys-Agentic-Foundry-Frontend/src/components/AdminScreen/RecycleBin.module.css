@@ -1,0 +1,54 @@
+.recycleBinContainer {
+  width: 100%;
+  height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+  background-color: #f8f9fa;
+}
+
+.toggleWrapper {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  justify-content: flex-end;
+}
+
+/* .switch {
+  position: relative;
+  display: inline-block;
+  width: 100px;
+  height: 36px;
+  background-color: #e0e0e0;
+  border-radius: 50px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: center;
+} */
+
+.switch input {
+  display: none;
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-weight: bold;
+  color: #333;
+  transition: 0.4s;
+}
+
+input:checked + .slider {
+  /* background-color: #007bff; */
+  color: #007bff;
+}
+
+.listArea {
+  /* height: calc(100% - 80px); */
+  overflow-y: auto;
+}
+
+.error {
+  color: red;
+}

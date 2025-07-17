@@ -180,7 +180,7 @@
   background: #007cc3 0% 0% no-repeat padding-box;
   opacity: 1;
   color: white;
-  margin-right: 2px;
+  margin-right: 22px;
   border-radius: 4px;
   padding: 8px;
   border: none;
@@ -586,4 +586,54 @@ width: 25%;
 .copiedText.hidden {
   visibility: hidden;
   opacity: 0;
+}
+
+.viewWarningsButton {
+ font-size: 12px;
+  background: #007cc3 0% 0% no-repeat padding-box;
+  opacity: 1;
+  color: white;
+  margin-right: 2px;
+  border-radius: 4px;
+  padding: 8px;
+  border: none;
+  float:left;
+}
+.iconGroup {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  z-index: 11;
+}
+
+.expandIcon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 22px;
+  padding: 0;
+}
+
+.expandIcon svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.expandIcon:hover svg {
+  transform: scale(1.2);
+}
+.disabledButton {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+  background: #f8f9fa !important;
+  color: #6c757d !important;
+  border-color: #e9ecef !important;
 }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import SVGIcons from "../../Icons/SVGIcons";
 
 const ToolCard = (props) => {
@@ -10,39 +10,42 @@ const ToolCard = (props) => {
     agent,
     agent_id,
     setSelectedAgents,
+    selectedTool,
+    selectedAgents,
   } = props;
 
-  const [addToolClicked, setAddToolClicked] = useState(false);
+  const isSelected = tool
+    ? selectedTool?.some((t) => t.tool_id === tool_id)
+    : selectedAgents?.some((a) => a.agentic_application_id === agent_id);
 
-  const handleAdd = () => {
-    if (addToolClicked) {
-      setAddToolClicked(false);
+    const handleAdd = () => {
       if (tool) {
-        setSelectedTool((prevProp) =>
-          prevProp.filter((data) => data?.tool_id !== tool_id)
-        );
+        if (isSelected) {
+          setSelectedTool((prev) => prev.filter((t) => t.tool_id !== tool_id));
+        } else {
+          setSelectedTool((prev) => [...prev, tool]);
+        }
       } else {
-        setSelectedAgents((prevProp) =>
-          prevProp.filter((data) => data?.agentic_application_id !== agent_id)
-        );
+        if (isSelected) {
+          setSelectedAgents((prev) =>
+            prev.filter((a) => a.agentic_application_id !== agent_id)
+          );
+        } else {
+          setSelectedAgents((prev) => [...prev, agent]);
+        }
       }
-    } else {
-      setAddToolClicked(true);
-      if (tool) setSelectedTool((prevProp) => [...prevProp, tool]);
-      else setSelectedAgents((prevProp) => [...prevProp, agent]);
-    }
-  };
+    };
 
   return (
-    <div className={styles.toolContainer} data-isClicked={addToolClicked}>
+    <div className={styles.toolContainer} data-isclicked={isSelected}>
       <p>{tool?.tool_name || agent?.agentic_application_name}</p>
       <div className={styles.line} />
       <button
         className={styles.addToolBtn}
         onClick={handleAdd}
-        data-selected={addToolClicked}
+        data-selected={isSelected}
       >
-        {addToolClicked ? (
+        {isSelected ? (
           <SVGIcons icon="fa-user-check" width={20} height={16} />
         ) : (
           <SVGIcons icon="fa-user-plus" width={20} height={16} />

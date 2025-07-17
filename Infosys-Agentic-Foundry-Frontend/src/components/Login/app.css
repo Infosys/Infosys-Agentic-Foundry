@@ -5,6 +5,13 @@
     background-size: cover;
     background-repeat: no-repeat;
 }
+.version_number{
+  font-size:10px;
+  color:#ccc;
+  position: absolute;
+  top: 1px;
+  right: 7px;
+}
 .page-title {
     /* font-family: 'Segoe UI';
     font-weight: bold;
@@ -27,6 +34,7 @@ text-transform: uppercase;
   left: 50%;
   transform: translate(-50%, -50%);
 }
+
 @media only screen and (max-width: 600px) {
     .page-title {
         font-size:25px;

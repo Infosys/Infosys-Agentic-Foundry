@@ -25,8 +25,10 @@ const DropDown = (props) => {
             {placeholder}
           </option>
         )}
-        {options.map((option) => (
-          <option value={option?.value || option}>
+        {options.map((option,index) => (
+         // <option value={option?.value || option}>
+           <option key={option.id || `option-${index}`} value={option.value}>
+
             {option?.label || option}
           </option>
         ))}

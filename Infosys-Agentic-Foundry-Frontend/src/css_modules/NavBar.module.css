@@ -1,21 +1,20 @@
 .navSection {
-  width: 60px;
+  width: 70px;
   height: 100vh;
   position: fixed;
   left: 0;
-  top: 0;
   transition: width 0.3s ease-in-out;
   overflow: hidden;
   z-index: 110;
-  top: 74px;
-  background-color: #f2f2f2;
+  top: 43px;
+  background-color: white;
   gap: 46px;
   box-shadow: inset 0px 2px 3px #00000029;
 }
 
-.navSection:hover {
+/* .navSection:hover {
   width: 200px;
-}
+} */
 
 .nav {
   display: flex;
@@ -31,7 +30,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 30px;
+  gap: 20px;
 }
 
 .nav li {
@@ -44,6 +43,8 @@
 .nav a,
 .nav button {
   display: flex;
+  flex-direction: column;
+  gap: 3px;
   align-items: center;
   text-decoration: none;
   font-size: 16px;
@@ -52,12 +53,19 @@
   background: none;
   text-align: left;
   color: #343741;
+  font-size: 13px;
+  transition: all 0.1s ease, transform 0.2s ease;
 }
 
-/* .nav a:hover,
-.nav button:hover {
-  color: #fff;
-} */
+.nav a svg,
+.nav button svg {
+  width: 45%;
+}
+
+.nav a:hover,
+.nav button:hover{
+  transform: scale(1.1);
+}
 
 .nav ul li a.active {
   color: #007bc1;
@@ -99,14 +107,3 @@
   margin-right: 10px;
 }
 
-/* Hide text by default */
-/* Hide text by default */
-.nav span {
-  display: none;
-  margin-left: 20px;
-}
-
-/* Show text when sidebar is hovered */
-.navSection:hover .nav span {
-  display: inline-block;
-}

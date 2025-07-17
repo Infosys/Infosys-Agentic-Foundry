@@ -31,6 +31,16 @@
   display: inline-flex;
   justify-content: space-between;
   align-items: center;
+  transition:
+    border-color 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
+}
+
+/* Add focus style for input fields */
+.loginPage-input:focus {
+  border-color: #0071b3;
+  box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
+  outline: none;
 }
 
 .loginPage-input::placeholder {
@@ -105,8 +115,20 @@
 }
 
 .dropdown-menu li:hover {
-
   background-color: #f0f0f0;
+}
+
+/* Make focus effect match hover effect */
+.dropdown-menu li:focus {
+  background-color: #f0f0f0; /* Same as hover */
+  outline: none; /* Remove default focus outline */
+}
+
+/* Add focus style to match input fields */
+.dropdown-toggle:focus {
+  outline: none;
+  border-color: #0071b3;
+  box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
 }
 
 .submit-style {
@@ -233,6 +255,20 @@
   transform: translate(-50%, -50%);
 }
 
+.validation-error {
+  color: #ff5252;
+  font-size: 0.875rem;
+  margin-top: 6px;
+  margin-bottom: 10px;
+  text-align: left;
+  width: 100%;
+}
+
+/* Add a little extra spacing when validation error appears */
+.validation-error + .space-devider {
+  height: 5px;
+}
+
 
 @media only screen and (max-width: 600px) {
   .login-input {
@@ -270,11 +306,22 @@
   position: relative;
 }
 
-.eye-icon {
+.password-container .input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-container .input-wrapper .eye-icon {
   position: absolute;
   right: 10px;
-  top: 37%;
+  top: 50%;
   transform: translateY(-50%);
   cursor: pointer;
-  color: #d9d9d9;
+}
+
+/* Add this to ensure focus works properly on password field */
+.password-container .loginPage-input:focus {
+  border-color: #0071b3;
+  box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
+  outline: none;
 }

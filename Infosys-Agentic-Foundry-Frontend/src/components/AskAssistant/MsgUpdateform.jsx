@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import style from "../../css_modules/InferenceUploadfile.module.css";
 import Loader from "../commonComponents/Loader.jsx";
-import { BASE_URL, sessionId } from "../../constant";
+import { BASE_URL } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import { APIs } from "../../constant";
 import SVGIcons from "../../Icons/SVGIcons";
@@ -45,11 +45,25 @@ function MessageUpdateform(props) {
     });
   };
 
+  const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img",".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar"];
+
+
+  const isSupportedFile = (file) => {
+    const fileName = file.name.toLowerCase();
+    return SUPPORTED_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+  };
+
   const handleFileChange = (event) => {
     const selectedFiles = event.target.files;
     if (selectedFiles && selectedFiles.length > 0) {
-      const newFiles = Array.from(selectedFiles);
-      setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+      const file = selectedFiles[0];
+      if (!isSupportedFile(file)) {
+        setErrorMessage("Unsupported file type");
+        setShowToast(true);
+        setFiles([]);
+        return;
+      }
+      setFiles([file]);
     }
   };
 
@@ -57,8 +71,14 @@ function MessageUpdateform(props) {
     event.preventDefault();
     const droppedFiles = event.dataTransfer.files;
     if (droppedFiles.length > 0) {
-      const newFiles = Array.from(droppedFiles);
-      setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+      const file = droppedFiles[0];
+      if (!isSupportedFile(file)) {
+        setErrorMessage("Unsupported file type");
+        setShowToast(true);
+        setFiles([]);
+        return;
+      }
+      setFiles([file]);
     }
   };
 
@@ -184,16 +204,13 @@ function MessageUpdateform(props) {
   const [viewUrl,setViewUrl]=useState("")
   const [showFile, setShowFile]=useState(false)
   const handleViewFile = async (event, paramone) => {
-    console.log(paramone)
     event.preventDefault();
     setViewUrl(`${BASE_URL}/download?filename=${paramone}`)
     setShowFile(true)
   };
   const handleViewFilewithuser = async (event, paramone, secondparam) => {
-    console.log(paramone)
-    console.log(secondparam)
     event.preventDefault();
-    setViewUrl(`${BASE_URL}/download?filename=${secondparam}%5C${paramone}`)
+    setViewUrl(`${BASE_URL}/download?filename=${paramone}&sub_dir_name=${secondparam}`)
     setShowFile(true)
   }
 
@@ -201,7 +218,7 @@ function MessageUpdateform(props) {
     event.preventDefault();
     try {
       const response = await axios.get(
-        `${BASE_URL}/download?filename=${secondparam}%5C${paramone}`,
+        `${BASE_URL}/download?filename=${paramone}&sub_dir_name=${secondparam}`,
         {
           responseType: "blob", // Ensure the response is a Blob
           headers: {
@@ -230,22 +247,24 @@ function MessageUpdateform(props) {
     }
   };
 
-  const filteredResponseData = Object.keys(responseData).reduce(
-    (acc, sectionKey) => {
-      const files =
-        responseData[sectionKey]?.__files__ || responseData[sectionKey];
-      if (Array.isArray(files)) {
-        const filteredFiles = files.filter((item) =>
-          item.toLowerCase().includes(inputValues.search)
-        );
-        if (filteredFiles.length > 0) {
-          acc[sectionKey] = filteredFiles;
-        }
+ const filteredResponseData = Object.keys(responseData || {}).reduce(
+  (acc, sectionKey) => {
+    const files =
+      responseData?.[sectionKey]?.__files__ || responseData?.[sectionKey];
+    if (Array.isArray(files)) {
+      const filteredFiles = files.filter(
+        (item) =>
+          typeof item === "string" &&
+          item.toLowerCase().includes(inputValues.search.toLowerCase() || "")
+      );
+      if (filteredFiles.length > 0) {
+        acc[sectionKey] = filteredFiles;
       }
-      return acc;
-    },
-    {}
-  );
+    }
+    return acc;
+  },
+  {}
+);
 
   return (
     <div id="myOverlay" className={style["overlay"]}>
@@ -257,6 +276,8 @@ function MessageUpdateform(props) {
             ? `${style["form-container"]} ${style["updateformonly"]} ${style["toolOnboardingForm"]}`
             : `${style["form-container"]} ${style["updateformonly"]}`
         }
+        onDrop={handleDrop}
+        onDragOver={(event) => event.preventDefault()}
       >
         <div className={style["container"]}>
           <div className={style["main"]}>
@@ -297,8 +318,6 @@ function MessageUpdateform(props) {
                       <section className={style["drag-drop"]}>
                         <div
                           className={style["drag-container"]}
-                          onDrop={handleDrop}
-                          onDragOver={(event) => event.preventDefault()}
                         >
                           <>
                             <div className={style["upload-info"]}>
@@ -312,8 +331,8 @@ function MessageUpdateform(props) {
                               hidden
                               id="browse"
                               onChange={handleFileChange}
-                              accept=".pdf,.docx,.pptx,.txt,.xlsx"
-                              multiple
+                              accept=".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar"
+                              multiple={false}
                             />
                             <label
                               htmlFor="browse"
@@ -406,8 +425,8 @@ function MessageUpdateform(props) {
                     <h3>{sectionKey}</h3>
                     <ul className={style["no-bullets"]}>
                       {Array.isArray(filteredResponseData[sectionKey]) ? (
-                        filteredResponseData[sectionKey].map((item) => (
-                          <div className={style["listitem"]}>
+                        filteredResponseData[sectionKey].map((item,index) => (
+                          <div className={style["listitem"]} key={`${sectionKey}-item-${index}`}>
                             <li>{item}</li>
                             <div className={style["optionscontainer"]}>
                             {item.includes(".pdf") || item.includes(".docx") ? (<button

@@ -17,6 +17,10 @@ const SubHeader = (props) => {
     heading,
     handleRefresh,
     clearSearch,
+    showAgentTypeDropdown = false,
+    agentTypes = [],
+    selectedAgentType = "",
+    handleAgentTypeChange = () => {},
   } = props;
 
   const userName = Cookies.get("userName");
@@ -53,8 +57,9 @@ const SubHeader = (props) => {
     <>
       <DeleteModal show={showAddModal} onClose={() => setShowAddModal(false)}>
         <p>
-          You are not authorized to add an agent. Please login with registered
-          email.
+          {heading && heading.toLowerCase().includes("tool")
+            ? "You are not authorized to add a tool. Please login with registered email."
+            : "You are not authorized to add an agent. Please login with registered email."}
         </p>
         {handleRefresh && (
           <button onClick={(e) => handleLoginButton(e)}>Login</button>
@@ -73,6 +78,24 @@ const SubHeader = (props) => {
         </div>
 
         <div className={styles.rightPart}>
+           {showAgentTypeDropdown && (
+            <div className={styles.dropdownContainer}>
+              <select
+                id="agentTypeDropdown"
+                className={styles.agentTypeDropdown}
+                value={selectedAgentType}
+                onChange={handleAgentTypeChange}
+              >
+
+                <option value="">All</option>
+                {agentTypes.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <SearchInputToolsAgents
             inputProps={{ placeholder: "SEARCH" }}
             handleSearch={handleSearch}

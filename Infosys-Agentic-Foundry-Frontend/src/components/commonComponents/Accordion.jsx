@@ -1,7 +1,5 @@
 import styles from "./Accordion.module.css";
 import React, { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import dropdownCircle from "../../Assets/dropdown-circle.png"
 
 const Accordion = (props) => {
   const [isOpen, setIsOpen] = useState(false);

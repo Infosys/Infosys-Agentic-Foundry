@@ -22,9 +22,9 @@
   .dropdownMenu {
     position: absolute;
     top: auto;
-    bottom: 100%;
+    bottom: 33px;
     left: 0;
-    width: 100%;
+    width: fit-content;
     background: #ccc;
     border: 1px solid #ccc;
     border-radius: 4px;
@@ -51,12 +51,12 @@
     padding: 8px;
     cursor: pointer;
     background-color: #f0f0f0;
-    color: black;
+  color: #0078d4;
+  background-color: #ffffff;
   }
   
   .dropdownOption:hover {
-    background-color: #888;
-    color: #fff;
+ background-color: #f0f0f0;;
   }
   
   .noOptions {
@@ -82,3 +82,20 @@
     font-size: 12px;
     color: #666;
   }
+  .dropdownOption {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.highlighted {
+  background-color: #e0e0e0;
+}
+.chevronCss{
+  padding-right: 5px;
+}
+.agentNodeCss{
+  padding-left: 3px;
+}
+.hoverEffectCss{
+  padding-right: 8px;
+}

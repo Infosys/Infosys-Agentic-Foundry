@@ -12,15 +12,18 @@ import {
   MULTI_AGENT,
   REACT_AGENT,
   META_AGENT,
+  PLANNER_META_AGENT,
+  REACT_CRITIC_AGENT,
+  PLANNER_EXECUTOR_AGENT
 } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import { calculateDivs } from "../../util";
-import { getAgentsByPageLimit } from "../../services/agentService";
-import { getToolsByPageLimit } from "../../services/toolService";
+import { getToolsSearchByPageLimit,getAgentsSearchByPageLimit } from "../../services/toolService";
 import SearchInputToolsAgents from "../commonComponents/SearchInputTools";
+import { debounce } from "lodash"; 
 
 const AgentOnboard = (props) => {
-  const { onClose, tags, setNewAgentData,fetchAgents} = props;
+  const { onClose, tags, setNewAgentData,fetchAgents,agentsListData} = props;
 
   const [tools, setTools] = useState([]);
   const [agents, setAgents] = useState([]);
@@ -32,9 +35,11 @@ const AgentOnboard = (props) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [loader, setLoaderState] = useState(false);
+    const isLoadingRef = React.useRef(false);
 
   const { addMessage } = useMessage();
-  const { fetchData, postData } = useFetch();
+  const { postData } = useFetch();
 
   const containerRef = useRef(null);
   const pageRef = useRef(1);
@@ -43,23 +48,25 @@ const AgentOnboard = (props) => {
   const fetchPaginatedData = async (pageNumber, divsCount) => {
     setLoading(true);
     try {
-      if (selectedAgent === META_AGENT) {
-        const response = await getAgentsByPageLimit({ page: pageNumber, limit: divsCount });
-        const allDetails = response?.details || [];
+      if (selectedAgent === META_AGENT || selectedAgent ===  PLANNER_META_AGENT) {
+        const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: searchTerm });
+        const allDetails = response || [];
         const filtered = allDetails.filter(
           (agent) =>
             agent.agentic_application_type === REACT_AGENT ||
-            agent.agentic_application_type === MULTI_AGENT 
+            agent.agentic_application_type === MULTI_AGENT ||
+            agent.agentic_application_type === REACT_CRITIC_AGENT ||
+            agent.agentic_application_type === PLANNER_EXECUTOR_AGENT
         );
-        setAgents((prev) => [...prev, ...filtered]);
-        setVisibleData((prev) => [...prev, ...filtered]);
-        setTotalCount(response?.total_count || 0);
+        setAgents((prev) => pageNumber === 1 ? filtered : [...prev, ...filtered]);
+        setVisibleData((prev) => pageNumber === 1 ? filtered : [...prev, ...filtered]);
+        setTotalCount(response?.length || 0);
       } else {
-        const response = await getToolsByPageLimit({ page: pageNumber, limit: divsCount });
-        const toolsData = response?.details || [];
-        setTools((prev) => [...prev, ...toolsData]);
-        setVisibleData((prev) => [...prev, ...toolsData]);
-        setTotalCount(response?.total_count || 0);
+        const response = await getToolsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: searchTerm });
+        const toolsData = response || [];
+        setTools((prev) => pageNumber === 1 ? toolsData : [...prev, ...toolsData]);
+        setVisibleData((prev) => pageNumber === 1 ? toolsData : [...prev, ...toolsData]);
+        setTotalCount(response?.length || 0);
       }
     } catch (e) {
       console.error(e);
@@ -81,57 +88,131 @@ const AgentOnboard = (props) => {
     }
   }, [selectedAgent]);
 
-  const loadMoreData = useCallback(() => {
-    if (loading || visibleData.length >= totalCount) return;
-    const nextPage = pageRef.current + 1;
-    const divsCount = calculateDivs(containerRef, 149, 57, 26);
-    setPage(nextPage);
-    pageRef.current = nextPage;
-    fetchPaginatedData(nextPage, divsCount);
-  }, [loading, visibleData, totalCount]);
-
-  const handleScroll = () => {
-    const container = containerRef.current;
-    if (
-      container.scrollHeight - container.scrollTop <=
-      container.clientHeight + 40
-    ) {
-      if (!searchTerm.trim()) {
-        loadMoreData();
-      }
-    }
-  };
 
   useEffect(() => {
     const container = containerRef.current;
-    if (container) {
-      container.addEventListener("scroll", handleScroll);
-      return () => container.removeEventListener("scroll", handleScroll);
-    }
-  }, [visibleData, page, searchTerm]);
+    if (!container) return;
+
+    // Extract the check logic into a separate function
+    const checkAndLoadMore = () => {
+      if (
+        container.scrollTop + container.clientHeight >= container.scrollHeight - 40 &&
+        !loading && !isLoadingRef.current // Prevent if already loading
+      ) {
+        handleScrollLoadMore();
+      }
+    };
+
+    const debouncedCheckAndLoad = debounce(checkAndLoadMore, 200); // 200ms debounce
+
+    const handleResize = () => {
+      debouncedCheckAndLoad();
+    };
+
+    window.addEventListener('resize', handleResize);
+    container.addEventListener('scroll', debouncedCheckAndLoad);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
+      container.removeEventListener('scroll', debouncedCheckAndLoad);
+    };
+  }, [ visibleData.length, totalCount, searchTerm]);
+
+   const handleScrollLoadMore = async () => {
+      if (loader || isLoadingRef.current) return; // Prevent multiple calls
+      isLoadingRef.current = true;
+      const nextPage = pageRef.current + 1;
+      const divsCount = calculateDivs(containerRef, 149, 57, 26);
+      
+        try {
+          setLoaderState(true);
+          setLoading && setLoading(true);
+          let newData = [];
+          if (searchTerm.trim()) {
+            // Only call search API if searchTerm is present
+            if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
+              const res = await getAgentsSearchByPageLimit({
+                page: nextPage,
+                limit: divsCount,
+                search: searchTerm,
+              });
+              newData = (res || []).filter(
+                (a) =>
+                  (a.agentic_application_type === REACT_AGENT ||
+                    a.agentic_application_type === MULTI_AGENT || 
+                    a.agentic_application_type === REACT_CRITIC_AGENT ||
+                    a.agentic_application_type === PLANNER_EXECUTOR_AGENT)
+              );
+            } else {
+              const res = await getToolsSearchByPageLimit({
+                page: nextPage,
+                limit: divsCount,
+                search: searchTerm,
+              });
+              newData = (res || [])
+            }
+            setVisibleData((prev) => [...prev, ...newData]);
+          } else {
+            // Only call fetchToolsData if no searchTerm
+            await fetchPaginatedData(nextPage, divsCount);
+          }
+          setPage(nextPage);
+          pageRef.current = nextPage;
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoaderState(false);
+          setLoading && setLoading(false);
+          isLoadingRef.current = false;
+        }
+    };
+
 
   const clearSearch = () => {
-    setSearchTerm("");
-    handleSearch("")
+     setSearchTerm("");
+     setVisibleData([]);
+     
+     const divsCount = calculateDivs(containerRef, 149, 57, 26);
+     setPage(1);
+     pageRef.current = 1;
+     fetchPaginatedData(1, divsCount);
   };
 
   const handleSearch = async (searchValue) => {
     setSearchTerm(searchValue);
+    setVisibleData([]);
+    setPage(1);
+    pageRef.current = 1;
     if (searchValue.trim()) {
       try {
         setLoading(true);
         let data = [];
-        if (selectedAgent === META_AGENT) {
-          const res = await fetchData(`${APIs.GET_AGENTS_BY_SEARCH}/${searchValue}`);
-          data = res?.filter(
+        const divsCount = calculateDivs(containerRef, 149, 57, 26);
+        if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
+          const response = await getAgentsSearchByPageLimit({
+            page: 1,
+            limit: divsCount,
+            search: searchValue,
+          });
+          data = response || [];
+          data = data.filter(
             (a) =>
               a.agentic_application_type === REACT_AGENT ||
-              a.agentic_application_type === MULTI_AGENT
-          ) || [];
+              a.agentic_application_type === MULTI_AGENT ||
+              a.agentic_application_type === REACT_CRITIC_AGENT ||
+              a.agentic_application_type === PLANNER_EXECUTOR_AGENT
+          );
         } else {
-          data = await fetchData(`${APIs.GET_TOOLS_BY_SEARCH}/${searchValue}`) || [];
+          const response = await getToolsSearchByPageLimit({
+            page: 1,
+            limit: divsCount,
+            search: searchValue,
+          });
+          data = response || [];
         }
         setVisibleData(data);
+        setTotalCount(data.length);
       } catch (err) {
         console.error(err);
         setVisibleData([]);
@@ -150,10 +231,11 @@ const AgentOnboard = (props) => {
 
 
   const submitForm = async (value, callBack) => {
+    setLoading(true);
     const payload = {
       ...value,
       tools_id:
-        selectedAgent === META_AGENT
+        (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)
           ? selectedAgents?.map((agent) => agent?.agentic_application_id)
           : selectedTool?.map((tool) => tool?.tool_id),
     };
@@ -170,9 +252,18 @@ const AgentOnboard = (props) => {
         case META_AGENT:
           url = APIs.ONBOARD_META_AGENT;
           break;
+           case PLANNER_META_AGENT:
+          url = APIs.ONBOARD_PLANNER_META_AGENT;
+          break;
+        case REACT_CRITIC_AGENT:
+          url = APIs.ONBOARD_REACT_CRITIC_AGENT;
+          break;
+        case PLANNER_EXECUTOR_AGENT:
+          url = APIs.ONBOARD_PLANNER_EXECUTOR_AGENT
+          break;
         default:
           break;
-      }
+      }      
       const response = await postData(url, payload);
       if (response?.result?.is_created) {
         setNewAgentData(response.result);
@@ -186,6 +277,9 @@ const AgentOnboard = (props) => {
       }
     } catch (e) {
       console.error(e);
+    }
+    finally{
+      setLoading(false);
     }
   };
 
@@ -205,7 +299,7 @@ const AgentOnboard = (props) => {
       <div className={styles.dashboardContainer}>
         <div className={styles.agentToolsContainer} ref={containerRef}>
           <div className={styles.subHeader}>
-            <p>{`SELECT ${selectedAgent === META_AGENT ? "AGENT" : "TOOL"} TO ADD AGENT`}</p>
+            <p>{`SELECT ${(selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)? "AGENT" : "TOOL"} TO ADD AGENT`}</p>
             <SearchInputToolsAgents
               inputProps={{ placeholder: "SEARCH" }}
               handleSearch={handleSearch}
@@ -224,17 +318,21 @@ const AgentOnboard = (props) => {
             />
           </div>
           <div className={styles.toolsCards}>
-            {selectedAgent !== META_AGENT &&
+            {((selectedAgent !== META_AGENT )&& (selectedAgent !== PLANNER_META_AGENT))&&
+            
               visibleData?.map((tool) => (
+                
                 <ToolCard
                   key={tool?.tool_id}
                   tool={tool}
                   tool_id={tool?.tool_id}
                   styles={styles}
                   setSelectedTool={setSelectedTool}
+                  selectedTool={selectedTool}
+                  selectedAgents={selectedAgents}
                 />
               ))}
-            {selectedAgent === META_AGENT &&
+            {(selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)   &&
               visibleData?.map((agent) => (
                 <ToolCard
                   key={agent?.agentic_application_id}
@@ -242,6 +340,8 @@ const AgentOnboard = (props) => {
                   agent_id={agent?.agentic_application_id}
                   styles={styles}
                   setSelectedAgents={setSelectedAgents}
+                  selectedTool={selectedTool}
+                  selectedAgents={selectedAgents}
                 />
               ))}
           </div>
@@ -253,7 +353,7 @@ const AgentOnboard = (props) => {
             selectedAgents={selectedAgents}
             handleClose={handleClose}
             submitForm={submitForm}
-            isMetaAgent={selectedAgent === META_AGENT}
+            isMetaAgent={(selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)}
             selectedAgent={selectedAgent}
             loading={loading}
             tags={tags}

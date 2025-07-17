@@ -7,9 +7,9 @@
 
 .container {
   display: flex;
-  margin-top: 72px;
-   height: 90vh;
-   overflow: hidden;
+  margin-top: 45px;
+  height: Calc(100vh - 45px);
+  overflow: hidden;
 }
 
 .dashboardContainer {

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import SVGIcons from "../../../Icons/SVGIcons";
-import { META_AGENT } from "../../../constant";
+import { META_AGENT, PLANNER_META_AGENT } from "../../../constant";
 import ToolDetailModal from "../../ToolDetailModal/ToolDetailModal";
 
 const ToolCard = (props) => {
@@ -95,7 +95,7 @@ const ToolCard = (props) => {
   return (
     <div className={styles.toolContainer}>
       <p>
-        {agentType === META_AGENT
+        {(agentType === META_AGENT || agentType === PLANNER_META_AGENT)
           ? tool?.agentic_application_name
           : tool?.tool_name}
       </p>
@@ -105,17 +105,17 @@ const ToolCard = (props) => {
         onClick={
           isMappedTool
             ? (e) =>
-                agentType === META_AGENT
+                (agentType === META_AGENT || agentType === PLANNER_META_AGENT)
                   ? updateRemoveAgentsId(e, tool?.agentic_application_id)
                   : updateRemoveToolsId(e, tool.tool_id)
             : (e) =>
-                agentType === META_AGENT
+                (agentType === META_AGENT || agentType === PLANNER_META_AGENT)
                   ? updateAddAgentsId(e, tool?.agentic_application_id)
                   : updateAddToolsId(e, tool.tool_id)
         }
         data-mapped={!!isMappedTool}
         data-selected={
-          agentType === META_AGENT ? !!isAgentSelected : !!isSelected
+         (agentType === META_AGENT || agentType === PLANNER_META_AGENT) ? !!isAgentSelected : !!isSelected
         }
       >
         {isMappedTool ? (
@@ -144,7 +144,7 @@ const ToolCard = (props) => {
           setOpen(false);
         }}
         description={
-          agentType === META_AGENT
+          (agentType === META_AGENT || agentType === PLANNER_META_AGENT)
             ? tool?.agentic_application_description
             : tool?.tool_description
         }

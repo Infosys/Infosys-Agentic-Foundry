@@ -6,7 +6,7 @@ export const useGlobalComponent = () => useContext(GlobalComponentContext);
 
 export const GlobalComponentProvider = ({ children }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const [componentContent, setComponentContent] = useState(null);
+  const [componentContent, setComponentContent] = useState("");
 
   const showComponent = (content) => {
     setComponentContent(content);
