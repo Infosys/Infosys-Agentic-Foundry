@@ -40,7 +40,7 @@ export const dislike = "feedback";
 
 export const CHAT_BOT_DATA = "CHAT_BOT_DATA";
 
-export const BASE_URL ="add_your_server_host_url";
+export const BASE_URL = "add_your_server_host_url";
 
 export const mkDocs_baseURL = "http://10.208.82.47:9000/";
 
