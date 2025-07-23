@@ -1,67 +1,63 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-import sqlite3
+import asyncpg
 import os
 
-def create_database(db_name):
+async def create_database(db_name: str):
     """
-    Create a new SQLite database.
+    Create a new PostgreSQL database using a connection string.
 
     Parameters:
-    db_name (str): The name of the database file to create.
+    db_name (str): The name of the database to create.
 
     Returns:
     None
     """
-    connection = sqlite3.connect(db_name)
-    connection.close()
+    dsn = os.getenv("POSTGRESQL_DATABASE_URL", "")
 
-def create_connection(db_name):
-    """
-    Connect to an SQLite database and return the connection object.
-    
-    The function arguments:
-        db_name: The name of the database file to connect to.
-    
-    The return value:
-        A connection object to the SQLite database.
-    """
-    def dict_factory(cursor, row):
-        d = {}
-        for idx, col in enumerate(cursor.description):
-            d[col[0]] = row[idx]
-        return d
+    conn = await asyncpg.connect(dsn)
 
-    conn = None #initailizing the variables
-    if os.path.exists(db_name):
-        try:
-            conn = sqlite3.connect(db_name)
-            conn.row_factory = dict_factory
-        except Exception as e:
-            pass
+    try:
+        await conn.execute(f'CREATE DATABASE "{db_name}";')
+    except asyncpg.DuplicateDatabaseError:
+        print(f"Database '{db_name}' already exists.")
+    except asyncpg.PostgresError as e:
+        print(f"Error creating database: {e}")
+    finally:
+        await conn.close()
+
+async def create_connection(dsn):
+    """
+    Connect to a PostgreSQL database using asyncpg and a DSN string.
+
+    Arguments:
+        dsn: A PostgreSQL DSN string like 'postgresql://user:password@host:port/database'
+
+    Returns:
+        An asyncpg connection object.
+    """
+    try:
+        conn = await asyncpg.connect(dsn)
         return conn
-    else:
-        raise ValueError('No such database exists')
+    except asyncpg.PostgresError as e:
+        print("PostgreSQL error occurred:", e)
         return None
 
 
-def close_connection(conn):
+async def close_connection(conn):
     """
-    Closes the database connection.
+    Closes the asyncpg database connection.
 
     Parameters:
-    conn (sqlite3.Connection): The SQLite connection object to be closed.
+    conn (asyncpg.Connection): The PostgreSQL connection object to be closed.
 
-    If the connection is not None, this function attempts to close it.
+    If the connection is not None, this function attempts to close it asynchronously.
     If an exception occurs during the closing process, an error message is printed.
-
-    Args:
-    conn (sqlite3.Connection): The connection object to close.
 
     Returns:
     None
     """
     if conn is not None:
         try:
-            conn.close()
+            await conn.close()
         except Exception as e:
-            pass
+            print("Unable to close the connection:", e)

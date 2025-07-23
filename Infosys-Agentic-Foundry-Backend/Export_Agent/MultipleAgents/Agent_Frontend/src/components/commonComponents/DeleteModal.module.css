@@ -1,0 +1,68 @@
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7); /* Darker background for better visibility */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  padding: 30px; /* Increased padding for better spacing */
+  border-radius: 10px; /* Slightly more rounded corners */
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2); /* Stronger shadow for better depth */
+  position: relative;
+  animation: fadeIn 0.3s ease-in-out; /* Fade-in animation */
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.closeBtn {
+  position: absolute;
+  top: 15px; /* Adjusted position for better alignment */
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 24px; /* Slightly larger font size */
+  cursor: pointer;
+  color: #333; /* Darker color for better visibility */
+}
+
+.modalContent {
+  margin-top: 20px;
+  text-align: center; /* Centered text for better readability */
+}
+
+.modalContent p {
+  margin-bottom: 20px; /* Spacing between text and button */
+}
+
+.modalContent button {
+  padding: 10px 20px;
+  background-color: #007bff; /* Blue background for the button */
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.modalContent button:hover {
+  background-color: #0056b3; /* Darker blue on hover */
+}

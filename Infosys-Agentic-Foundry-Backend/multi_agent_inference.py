@@ -1,44 +1,66 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-import os
 import ast
 import json
-import inspect
-import sqlite3
 import pandas as pd
-from datetime import datetime
-from fastapi import HTTPException
-from typing import Annotated, List, Any, Dict, Literal, Optional
-from pydantic import BaseModel, Field
-
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import interrupt, Command
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from contextlib import asynccontextmanager
 from langchain_core.prompts import PromptTemplate
 from typing_extensions import TypedDict
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, AnyMessage, ChatMessage
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.checkpoint.postgres import PostgresSaver
-
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from pydantic import BaseModel
+from datetime import datetime
+from fastapi import HTTPException
+from typing import Annotated, List, Any, Dict, Literal
+from pydantic import BaseModel, Field
+from phoenix.trace import using_project
 from langchain_core.tools.base import BaseTool
 from langchain_core.tools.structured import StructuredTool
+import inspect
+import asyncpg
 
-from src.models.model import load_model
+from database_manager import (
+    get_agents_by_id, get_tools_by_id,
+    insert_chat_history_in_database,
+    get_long_term_memory_from_database,
+    delete_by_session_id_from_database,
+    get_feedback_learning_data
+)
 from src.prompts.prompts import CONVERSATION_SUMMARY_PROMPT
 from src.utils.helper_functions import get_timestamp
-from database_manager import (
-    get_agents_by_id,
-    get_tools_by_id,
-    insert_chat_history_sqlite,
-    get_long_term_memory_sqlite,
-    delete_by_session_id_sqlite
-)
+from telemetry_wrapper import logger as log, update_session_context 
+from src.models.model import load_model
+import os
 
-DATABASE_URL = os.getenv("POSTGRESQL_DATABASE_URL")
+DB_URI = os.getenv("POSTGRESQL_DATABASE_URL", "")
+
+def format_feedback_learning_data(data: list) -> str:
+    """
+    Formats feedback learning data into a structured string.
+
+    Args:
+        data (list): List of feedback learning data.
+
+    Returns:
+        str: Formatted feedback learning data string.
+    """
+    formatted_data = ""
+    for item in data:
+        formatted_data += f"question: {item['query']}\n"
+        formatted_data += f"first_response: {item['old_steps']}\n"
+        formatted_data += f"user feedback: {item['feedback']}\n"
+        formatted_data += f"final approved response: {item['new_steps']}\n"
+        formatted_data += "------------------------\n"
+    log.info(f"Formatted Feedback Learning Data")
+    return formatted_data.strip()
 
 
-def json_repair_exception_llm(incorrect_json, exception, llm):
+async def json_repair_exception_llm(incorrect_json, exception, llm):
     """
     Attempts to repair an incorrect JSON response using an LLM.
 
@@ -77,7 +99,7 @@ Please review and fix the JSON response above based on the exception provided. R
         try:
             json_repair_prompt = PromptTemplate.from_template(json_repair_template, partial_variables={"format_instructions": json_correction_parser.get_format_instructions()})
             json_repair_chain = json_repair_prompt | llm | json_correction_parser
-            repaired_json = json_repair_chain.invoke({'json_response': incorrect_json, 'exception': exception})
+            repaired_json = await json_repair_chain.ainvoke({'json_response': incorrect_json, 'exception': exception})
             data = repaired_json['repaired_json']
             if isinstance(data, dict):
                 return data
@@ -93,7 +115,7 @@ Please review and fix the JSON response above based on the exception provided. R
         except Exception as e1:
             json_repair_prompt = PromptTemplate.from_template(json_repair_template)
             json_repair_chain = json_repair_prompt | llm | StrOutputParser()
-            repaired_json = json_repair_chain.invoke({'json_response': incorrect_json, 'exception': exception}).strip()
+            repaired_json = await json_repair_chain.ainvoke({'json_response': incorrect_json, 'exception': exception}).strip()
             repaired_json = repaired_json.replace('```json', '').replace('```', '')
             try:
                 try:
@@ -108,12 +130,12 @@ Please review and fix the JSON response above based on the exception provided. R
     except Exception as e4:
         return incorrect_json
 
-def output_parser(llm, chain_1, chain_2, invocation_input, error_return_key="Error"):
+async def output_parser(llm, chain_1, chain_2, invocation_input, error_return_key="Error"):
     try:
-        formatted_response = chain_1.invoke(invocation_input)
+        formatted_response = await chain_1.ainvoke(invocation_input)
     except Exception as e:
         try:
-            formatted_response = chain_2.invoke(invocation_input)
+            formatted_response = await chain_2.ainvoke(invocation_input)
             formatted_response = formatted_response.replace("```json", "").replace("```", "").replace('AI:', '').strip()
             try:
                 formatted_response = json.loads(formatted_response)
@@ -201,6 +223,7 @@ def render_text_description(tools: list[BaseTool]) -> str:
     """
     descriptions = []
     for tool in tools:
+
         signature = inspect.signature(tool)
         args_list = ""
 
@@ -210,11 +233,11 @@ def render_text_description(tools: list[BaseTool]) -> str:
         descriptions.append(description)
     return "\n".join(descriptions)
 
-def get_conversation_summary(conversation_summary_chain, table_name, session_id, limit=30) -> str:
+async def get_conversation_summary(conversation_summary_chain, table_name, session_id, limit=30, executor_messages=None) -> str:
     """Retrieves a summary of the conversation history for a given session ID."""
 
     conversation_history_df = pd.DataFrame(
-        get_long_term_memory_sqlite(
+        await get_long_term_memory_from_database(
                 session_id=session_id,
                 table_name=table_name
             )
@@ -235,15 +258,16 @@ AI Message: {AI_Message}"""
                 ].itertuples(index=False)
             ]
         )
-        conversation_summary = conversation_summary_chain.invoke(
+        chat_history += "\n\n" + "\n\n".join(format_messages(executor_messages))
+        conversation_summary = await conversation_summary_chain.ainvoke(
             {"chat_history": chat_history}
         )
     else:
         conversation_summary = ""
-
+    log.info(f"Conversation Summary retrieved for session {session_id}")
     return conversation_summary
 
-def get_agent_tool_config_planner_executor_critic(agentic_application_id):
+async def get_agent_tool_config_planner_executor_critic(agentic_application_id):
     """
     Retrieves the configuration for an agent and its associated tools.
 
@@ -255,15 +279,75 @@ def get_agent_tool_config_planner_executor_critic(agentic_application_id):
     """
     agent_tools_config = {}
     # Retrieve agent details from the database
-    result = get_agents_by_id(agentic_application_id=agentic_application_id)
+    result = await get_agents_by_id(agentic_application_id=agentic_application_id)
 
     if result:
         # Only extract 'SYSTEM_PROMPT_REACT_AGENT' from the system prompt JSON
         agent_tools_config["SYSTEM_PROMPT"] = json.loads(result[0]["system_prompt"])
         # Extract tools information
         agent_tools_config["TOOLS_INFO"] = json.loads(result[0]["tools_id"])
-
+    log.info(f"Agent Tools Config retrieved for agent {agentic_application_id}")
     return agent_tools_config
+
+async def update_preferences(prefernces: str, user_input: str, model_name: str) -> str:
+    """
+    Update the preferences based on user input.
+    """
+    llm = load_model(model_name=model_name)
+    prompt = f"""
+Current Preferences:
+{prefernces}
+
+User Input:
+{user_input}
+
+
+Instructions:
+- Understand the User query, now analyze is the user intention with query is to provide feedback or related to task.
+- Understand the feedback points from the given query and add them into the feedback.
+- Inputs related to any task are not preferences. Don't consider them.
+- If user intention is providing feed back then update the preferences based on below guidelines.
+- Update the preferences based on the user input.
+- If it's a new preference or feedback, add it as a new line.
+- If it modifies an existing preference or feedback, update the relevant line with detailed preference context.
+- User input can include new preferences, feedback on mistakes, or corrections to model behavior.
+- Store these preferences or feedback as lessons to help the model avoid repeating the same mistakes.
+- The output should contain only the updated preferences, with no extra explanation or commentary.
+- if no preferences are there then output should is "no preferences available".
+
+Examples:
+user query: output should in markdown format
+- the user query is related to preference and should be added to the preferences.
+user query: a person is running at 5km per hour how much distance he can cover by 2 hours
+- The user query is related to task and should not be added to the preferences.
+user query: give me the response in meters.
+- This is a perference and should be added to the preferences.
+"""+"""
+Output:
+```json
+{
+"preferences": "all new preferences with new line as separator are added here"
+}
+```
+
+"""
+
+    response = await llm.ainvoke(prompt)
+
+    response = response.content.strip()
+    if "```json" in response:
+        response = response[response.find("```json") + len("```json"):]
+    response = response.replace('```json', '').replace('```', '').strip()
+    try:
+        final_response = json.loads(response)["preferences"]
+    except json.JSONDecodeError:
+        log.error("Failed to decode JSON response from model.")
+        return response
+    except Exception as e:
+        log.error(f"Unexpected error while parsing preferences: {e}")
+        return response
+    log.info("Preferences updated successfully")
+    return final_response
 
 class MultiAgentInfernceChains():
     tool_list: List[str]
@@ -279,27 +363,35 @@ class MultiAgentInfernceChains():
     conversation_summary_chain: Any
     general_llm_chain: Any
 
-def build_planner_executor_critic_chains(llm, multi_agent_config):
+async def build_planner_executor_critic_chains(llm, multi_agent_config,checkpointer):
     # Setup Executor Tools
     data = MultiAgentInfernceChains()
     tool_list = []
+    local_var = {}
     for tool_id in multi_agent_config["TOOLS_INFO"]:
         try:
-            tool = get_tools_by_id(tool_id=tool_id)
+            tool = await get_tools_by_id(tool_id=tool_id)
             codes = tool[0]["code_snippet"]
             tool_name = tool[0]["tool_name"]
-            local_var = {}
             exec(codes, local_var)
             tool_list.append(local_var[tool_name])
         except Exception as e:
+            log.error(f"Error occurred while loading tool {tool_name}: {e}")
             raise HTTPException(status_code=500, detail=f"Error occurred while loading tool {tool_name}: {e}")
     data.tool_list = tool_list
 
+    ### Define the chains
+    # Executor Agent Chain (Graph)
     try:
-        agent_executor  = create_react_agent(model=llm,
-                                         state_modifier=multi_agent_config["SYSTEM_PROMPT"].get("SYSTEM_PROMPT_EXECUTOR_AGENT", ""),
-                                         tools=tool_list)
+        agent_executor = create_react_agent(
+            model=llm,
+            state_modifier=multi_agent_config["SYSTEM_PROMPT"].get("SYSTEM_PROMPT_EXECUTOR_AGENT", ""),
+            tools=tool_list,
+            checkpointer=checkpointer,
+            interrupt_before=["tools"]
+        )
     except Exception as e:
+        log.error(f"Error occurred while creating agent executor: {e}")
         raise HTTPException(status_code=500, detail=f"Error occurred while creating agent executor: {e}")
 
     data.agent_executor = agent_executor
@@ -381,9 +473,10 @@ def build_planner_executor_critic_chains(llm, multi_agent_config):
     conversation_summary_prompt_template = PromptTemplate.from_template(CONVERSATION_SUMMARY_PROMPT)
     conversation_summary_chain = conversation_summary_prompt_template | llm | StrOutputParser()
     data.conversation_summary_chain = conversation_summary_chain
+    log.info("Planner, Executor, Critic chains built successfully.")
     return data
 
-def build_planner_executor_critic_agent(llm, chains_and_tools_data: MultiAgentInfernceChains):
+async def build_planner_executor_critic_agent(llm, chains_and_tools_data: MultiAgentInfernceChains,interrupt_flag=False):
     class PlanExecuteCritic(TypedDict):
         query: str
         plan: List[str]
@@ -399,11 +492,32 @@ def build_planner_executor_critic_agent(llm, chains_and_tools_data: MultiAgentIn
         step_idx: int # App Related vars
         table_name: str
         session_id: str
-        start_timestamp: str
-        end_timestamp: str
+        start_timestamp: datetime
+        end_timestamp: datetime
+        preference: str
         reset_conversation: bool
+        feedback : str = None
+        is_interrupted : bool = False
+        model_name: str
 
-    def generate_past_conversation_summary(state: PlanExecuteCritic):
+    def add_prompt_for_feedback(query: str):
+
+        if query == "[regenerate:][:regenerate]":
+            prompt = "The previous response did not meet expectations. Please review the query and provide a new, more accurate response."
+            current_state_query = ChatMessage(role="feedback", content=prompt)
+        elif query.startswith("[feedback:]") and query.endswith("[:feedback]"):
+            prompt = f"""The previous response was not satisfactory. Here is the feedback on your previous response:
+{query[11:-11]}
+
+Please review the query and feedback, and provide an appropriate answer.
+"""
+            current_state_query = ChatMessage(role="feedback", content=prompt)
+        else:
+            current_state_query = HumanMessage(content=query, role="user_query")
+
+        return current_state_query
+
+    async def generate_past_conversation_summary(state: PlanExecuteCritic):
         """
         Generates a summary of the past conversation for the given state.
         Args:
@@ -413,19 +527,34 @@ def build_planner_executor_critic_agent(llm, chains_and_tools_data: MultiAgentIn
             and other relevant information.
         """
         strt_tmstp = get_timestamp()
-        conv_summary = get_conversation_summary(conversation_summary_chain=conversation_summary_chain,
-                                                table_name=state["table_name"],
-                                                session_id=state["session_id"]
-                                            )
         if str(state["reset_conversation"]).lower()=="true":
             state["ongoing_conversation"].clear()
             state["executor_messages"].clear()
+        conv_summary = await get_conversation_summary(conversation_summary_chain=conversation_summary_chain,
+                                                table_name=state["table_name"],
+                                                session_id=state["session_id"],
+                                                executor_messages = state["executor_messages"]
+                                            )
+        if "preference" not in state:
+            new_preference = await update_preferences(
+                "no preferences yet",
+                state["query"],
+                state["model_name"]
+            )
+        else:
+            new_preference = await update_preferences(
+                state["preference"],
+                state["query"],
+                state["model_name"]
+            )
         # Construct the return dictionary with the conversation summary and other relevant information
-        current_state_query = HumanMessage(content=state["query"], role="user_query")
+        current_state_query = add_prompt_for_feedback(state["query"])
+        log.info(f"Generating past conversation summary for session {state['session_id']}")
         return {
             'past_conversation_summary': conv_summary,
             'ongoing_conversation': current_state_query,
             'executor_messages': current_state_query,
+            'preference': new_preference,
             'response': None,
             'response_quality_score': None,
             'critique_points': None,
@@ -437,7 +566,7 @@ def build_planner_executor_critic_agent(llm, chains_and_tools_data: MultiAgentIn
             'start_timestamp': strt_tmstp
         }
 
-    def planner_agent(state: PlanExecuteCritic):
+    async def planner_agent(state: PlanExecuteCritic):
         """
         This function takes the current state of the conversation and generates a plan for the agent to follow.
 
@@ -447,6 +576,12 @@ def build_planner_executor_critic_agent(llm, chains_and_tools_data: MultiAgentIn
         Returns:
             dict: A dictionary containing the plan for the agent to follow.
         """
+        data = await get_feedback_learning_data(agent_id=state["table_name"][6:])
+        # data = ""
+        if data==[]:
+            feedback_msg = ""
+        else:
+            feedback_msg = format_feedback_learning_data(data)
         # Format the query for the planner
         formatted_query = f'''\
 Past Conversation Summary:
@@ -457,6 +592,17 @@ Ongoing Conversation:
 
 Tools Info:
 {render_text_description(tools)}
+
+
+Follow these preferences for every step:
+Preferences:
+{state["preference"]}
+- When applicable, use these instructions to guide your responses to the user's query.
+
+Review the previous feedback carefully and make sure the same mistakes are not repeated
+**FEEDBACK**
+{feedback_msg}
+**END FEEDBACK**
 
 Input Query:
 {state["query"]}
@@ -473,17 +619,20 @@ Input Query:
     ```
 '''
         invocation_input = {"messages": [("user", formatted_query)]}
-        planner_response = output_parser(llm=llm,
-                                         chain_1=planner_chain_1,
-                                         chain_2=planner_chain_2,
-                                        invocation_input=invocation_input,
-                                        error_return_key="plan")
+        planner_response = await output_parser(
+            llm=llm,
+            chain_1=planner_chain_1,
+            chain_2=planner_chain_2,
+            invocation_input=invocation_input,
+            error_return_key="plan"
+        )
         response_state = {"plan": planner_response['plan']}
         if planner_response['plan']:
             response_state["executor_messages"] = ChatMessage(content=planner_response['plan'], role="plan")
+        log.info(f"Planner agent generated plan for session {state['session_id']}")
         return response_state
 
-    def general_llm_call(state: PlanExecuteCritic):
+    async def general_llm_call(state: PlanExecuteCritic):
         """
         This function calls the LLM with the user's query and returns the LLM's response.
 
@@ -504,12 +653,13 @@ Note:
     -Only respond if the above User Query including greetings, feedback, and appreciation, engage in getting to know each other type of conversation, or queries related to the agent itself, such as its expertise or purpose.
     - If the query is not related to the agent's expertise, agent's goal, agent's role, workflow description, and tools it has access to and it requires external knowledge, DO NOT provide a answer to such a query, just politely inform the user that you are not capable to answer such queries.
 '''
-        response = general_llm_chain.invoke({"messages": [("user", formatted_query)]})
+        response = await general_llm_chain.ainvoke({"messages": [("user", formatted_query)]})
+        log.info(f"General LLM call made for session {state['session_id']}")
         return {
             "response": response
         }
 
-    def executor_agent(state: PlanExecuteCritic):
+    async def executor_agent(state: PlanExecuteCritic):
         """
         Executes the current step in the plan using the executor agent.
 
@@ -520,24 +670,45 @@ Note:
             A dictionary containing the response from the executor agent,
             the updated past steps, and the executor messages.
         """
+        thread = {"configurable": {"thread_id": "inside"+f"{state['table_name']}_{state['session_id']}"}}
         step = state["plan"][state["step_idx"]]
         completed_steps = []
         completed_steps_responses = []
+        data = await get_feedback_learning_data(agent_id=state["table_name"][6:])
+        # data = ""
+        if data==[]:
+            feedback_msg = ""
+        else:
+            feedback_msg = format_feedback_learning_data(data)
+
         task_formatted = ""
 
         # Include past conversation summary
         task_formatted += f"Past Conversation Summary:\n{state['past_conversation_summary']}\n\n"
         # Include ongoing conversation
         task_formatted += f"Ongoing Conversation:\n{format_messages(state['ongoing_conversation'])}\n\n"
+        task_formatted += f"""
 
+Review the previous feedback carefully and make sure the same mistakes are not repeated
+**FEEDBACK**
+{feedback_msg}
+**END FEEDBACK**
+
+"""
         if state["step_idx"]!=0:
             completed_steps = state["past_steps_input"][:state["step_idx"]]
             completed_steps_responses = state["past_steps_output"][:state["step_idx"]]
             task_formatted += f"Past Steps:\n{format_past_steps_list(completed_steps, completed_steps_responses)}"
         task_formatted += f"\n\nCurrent Step:\n{step}"
-        executor_agent_response = agent_executor.invoke({"messages": [("user", task_formatted.strip())]})
+
+        if state["is_interrupted"]:
+            executor_agent_response = await agent_executor.ainvoke(None,thread)
+        else:
+            executor_agent_response = await agent_executor.ainvoke({"messages": [("user", task_formatted.strip())]}, thread)
+
         completed_steps.append(step)
         completed_steps_responses.append(executor_agent_response["messages"][-1].content)
+        log.info(f"Executor agent executed step {state['step_idx']} for session {state['session_id']}")
         return {
             "response": completed_steps_responses[-1],
             "past_steps_input": completed_steps,
@@ -546,9 +717,10 @@ Note:
         }
 
     def increment_step(state: PlanExecuteCritic):
-        return {"step_idx": state["step_idx"]+1}
+        log.info(f"Incrementing step index for session {state['session_id']}")
+        return {"step_idx": state["step_idx"]+1, "is_interrupted": False}
 
-    def response_generator_agent(state: PlanExecuteCritic):
+    async def response_generator_agent(state: PlanExecuteCritic):
         """
         This function takes the current state of the conversation
         and generates a response using a response generation chain.
@@ -567,6 +739,12 @@ Past Conversation Summary:
 Ongoing Conversation:
 {format_messages(state["ongoing_conversation"])}
 
+Follow these preferences for every step:
+Preferences:
+{state["preference"]}
+- When applicable, use these instructions to guide your responses to the user's query.
+
+
 User Query:
 {state["query"]}
 
@@ -577,18 +755,25 @@ Final Response from Executor Agent:
 {state["response"]}
 '''
         invocation_input = {"messages": [("user", formatted_query)]}
-        response_gen_response = output_parser(llm=llm,
-                                              chain_1=response_gen_chain_1,
-                                              chain_2=response_gen_chain_2,
-                                              invocation_input=invocation_input,
-                                              error_return_key="response")
+        response_gen_response = await output_parser(
+            llm=llm,
+            chain_1=response_gen_chain_1,
+            chain_2=response_gen_chain_2,
+            invocation_input=invocation_input,
+            error_return_key="response"
+        )
         if isinstance(response_gen_response, dict):
             if "response" in response_gen_response:
+                log.info(f"Response generator agent generated response for session {state['session_id']}")
                 return {"response": response_gen_response["response"]}
             else:
-                return {"response": llm.invoke(f"Format the response in Markdown Format.\n\nResponse: {str(response_gen_response)}").content}
+                log.error(f"Response generator agent failed to generate response for session {state['session_id']}")
+                result = await llm.ainvoke(
+                    f"Format the response in Markdown Format.\n\nResponse: {str(response_gen_response)}"
+                )
+                return {"response": result.content}
 
-    def critic_agent(state: PlanExecuteCritic):
+    async def critic_agent(state: PlanExecuteCritic):
         """
         This function takes a state object containing information about the conversation and the generated response,
         formats it into a query for the critic model, and returns the critic's evaluation of the response.
@@ -619,7 +804,7 @@ Final Response:
 {state["response"]}
 '''
         invocation_input = {"messages": [("user", formatted_query)]}
-        critic_response = output_parser(llm=llm,
+        critic_response = await output_parser(llm=llm,
                                               chain_1=critic_chain_1,
                                               chain_2=critic_chain_2,
                                               invocation_input=invocation_input,
@@ -627,18 +812,21 @@ Final Response:
 
         if critic_response["critique_points"] and "error" in critic_response["critique_points"][0]:
             critic_response = {'response_quality_score': 0, 'critique_points': critic_response["critique_points"]}
+        log.info(f"Critic agent evaluated response for session {state['session_id']}")
         return {
             "response_quality_score": critic_response["response_quality_score"],
             "critique_points": critic_response["critique_points"],
             "executor_messages": ChatMessage(
-                content=critic_response["critique_points"],
-                critic_response_quality_score=critic_response["response_quality_score"],
+                content=[{
+                        "response_quality_score": critic_response["response_quality_score"],
+                        "critique_points": critic_response["critique_points"]
+                    }],
                 role="critic-response"
             ),
             "epoch": state["epoch"]+1
         }
 
-    def critic_based_planner_agent(state: PlanExecuteCritic):
+    async def critic_based_planner_agent(state: PlanExecuteCritic):
         """
         This function takes a state object containing information about the current conversation, tools, and past steps,
         and uses a critic-based planner to generate a plan for the next step.
@@ -675,18 +863,19 @@ Critique Points:
 {format_list_str(state["critique_points"])}
 '''
         invocation_input = {"messages": [("user", formatted_query)]}
-        critic_planner_response = output_parser(llm=llm,
+        critic_planner_response = await output_parser(llm=llm,
                                               chain_1=critic_planner_chain_1,
                                               chain_2=critic_planner_chain_2,
                                               invocation_input=invocation_input,
                                               error_return_key="plan")
+        log.info(f"Critic-based planner agent generated plan for session {state['session_id']}")
         return {
             "plan": critic_planner_response["plan"],
             "executor_messages": ChatMessage(content=critic_planner_response['plan'], role="critic-plan"),
             "step_idx": 0
         }
 
-    def final_response(state: PlanExecuteCritic):
+    async def final_response(state: PlanExecuteCritic):
         """
         This function handles the final response of the conversation.
         Args:
@@ -699,7 +888,7 @@ Critique Points:
         # primary_key = generate_primary_key(session_id=state["session_id"], timestamp=state["start_timestamp"])
         # Insert the chat history into the PostgreSQL database
 
-        insert_chat_history_sqlite(table_name=state["table_name"],
+        await insert_chat_history_in_database(table_name=state["table_name"],
                                      session_id=state["session_id"],
                                      start_timestamp=state["start_timestamp"],
                                      end_timestamp=end_timestamp,
@@ -707,6 +896,7 @@ Critique Points:
                                      ai_message=state["response"],
                                     )
         final_response_message = AIMessage(content=state["response"])
+        log.info(f"Final response generated for session {state['session_id']}")
         return {
             "ongoing_conversation": final_response_message,
             "executor_messages": final_response_message,
@@ -774,6 +964,105 @@ Critique Points:
     conversation_summary_chain = chains_and_tools_data.conversation_summary_chain
     general_llm_chain = chains_and_tools_data.general_llm_chain
 
+    async def final_decision(state: PlanExecuteCritic):
+        thread = {"configurable": {"thread_id": "inside"+f"{state['table_name']}_{state['session_id']}"}}
+        a = await agent_executor.aget_state(thread)
+        if a.tasks == ():
+            response = a.values["messages"][-1].content
+            # checking_res = reversed(state["executor_messages"])
+            # for i in checking_res:
+            #     if i.type == "tool":
+            #         if i.status == "error":
+            #             is_successful = "no"
+            #             break
+            #         else:
+            #             is_successful = "yes"
+            checking_promopt = f"""
+            You are a critic agent, your task is to check if the tool call is 
+            successful or not. If the tool call is successful, return "yes", otherwise return "no".
+            Tool Call Response: {response}
+            Instructions:
+            - If the response content "ERROR" or something similar to error or something like Null value or undefined value or something that indicates failure, then return "no".
+            - If the response content is a valid response, then return "yes".
+
+            output should be only one word either "yes" or "no"
+            Do not return any other text or explanation.
+            """
+            is_successful = llm.invoke(checking_promopt).content.strip().lower()
+            if "yes" in is_successful:
+                return "increment_step" 
+            else:
+                return "final_response"
+        else:
+            
+            return "interrupt_node" #Command(goto="interrupt_node")
+            
+        
+    async def interrupt_node(state: PlanExecuteCritic):
+        """Asks the human if the plan is ok or not"""
+        if interrupt_flag:
+            is_approved = interrupt("approved?(yes/feedback)") 
+        else:
+            is_approved= "yes"
+        state["feedback"] = is_approved
+        return {"feedback": is_approved, "is_interrupted": True}
+
+
+    async def interrupt_node_decision(state: PlanExecuteCritic):
+        if state["feedback"]=='yes':
+            return "executor_agent" #Command(goto="executor_agent")
+        else:
+            return "tool_interrupt" #Command(goto="feedback_collector")
+        
+    async def tool_interrupt(agent_state: PlanExecuteCritic):
+        # Step 1: Get the current state of the agent
+        thread = {"configurable": {"thread_id": "inside"+f"{agent_state['table_name']}_{agent_state['session_id']}"}}
+            # Check if the agent is in a state where it can be interrupted
+        state = await agent_executor.aget_state(thread)
+        model = agent_state["model_name"]
+        model_name = model.split("-")[0]
+        value = state.values["messages"][-1]
+        if model_name == "gemini":
+            tool_call_id = value.tool_calls[-1]["id"]
+            tool_name = value.additional_kwargs["function_call"]["name"]
+        else:
+            tool_call_id = value.additional_kwargs["tool_calls"][-1]["id"]
+            tool_name = value.additional_kwargs["tool_calls"][0]["function"]["name"]
+            # old_arg = value.additional_kwargs["tool_calls"][0]["function"]["arguments"]
+        response_metadata = value.response_metadata
+        id = value.id
+        usage_metadata = value.usage_metadata
+        feedback = agent_state["feedback"]
+        feedback_dict = json.loads(feedback)
+        new_ai_msg = AIMessage(
+                        # content=f"user modified the tool values, consider the new values. the old values are {old_arg}, and user modified values are {feedback} for the tool {tool_name}",
+                        content="",
+                        additional_kwargs={"tool_calls": [{"id": tool_call_id, "function": {"arguments": feedback, "name": tool_name}, "type": "function"}], "refusal": None},
+                        response_metadata=response_metadata,
+                        id=id,
+                        tool_calls=[{'name': tool_name, 'args': feedback_dict, 'id': tool_call_id, 'type': 'tool_call'}],
+                        usage_metadata=usage_metadata
+                    )
+
+                # Modify the thread with the new input
+        await agent_executor.aupdate_state(
+            thread,
+            {
+                "messages": [
+                    new_ai_msg
+                ]
+            }
+        )
+        # agent_state["executor_messages"].append(new_ai_msg)
+        executor_agent_response = await agent_executor.ainvoke(None, thread)
+        # for i in executor_agent_response['messages']:
+        #     i.pretty_print()
+                    
+        return {
+            "response": executor_agent_response["messages"][-1].content,
+            "executor_messages": executor_agent_response["messages"],
+        }
+
     ### Build Graph
     workflow = StateGraph(PlanExecuteCritic)
     workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
@@ -786,6 +1075,10 @@ Critique Points:
     workflow.add_node("critic_based_planner_agent", critic_based_planner_agent)
     workflow.add_node("final_response", final_response)
 
+    workflow.add_node("final_decision", final_decision)
+    workflow.add_node("interrupt_node", interrupt_node)
+    workflow.add_node("tool_interrupt", tool_interrupt)
+
     workflow.add_edge(START, "generate_past_conversation_summary")
     workflow.add_edge("generate_past_conversation_summary", "planner_agent")
     workflow.add_conditional_edges(
@@ -793,7 +1086,23 @@ Critique Points:
         route_general_question,
         ["general_llm_call", "executor_agent"],
     )
-    workflow.add_edge("executor_agent", "increment_step")
+    workflow.add_conditional_edges(
+    "executor_agent",
+    final_decision,
+    ["interrupt_node", "increment_step","final_response"],
+    )
+    workflow.add_conditional_edges(
+    "interrupt_node",
+    interrupt_node_decision,
+    ["executor_agent", "tool_interrupt"],
+    )
+    workflow.add_conditional_edges(
+    "tool_interrupt",
+    final_decision,
+    ["interrupt_node", "increment_step","final_response"],
+    )
+
+    # workflow.add_edge("executor_agent", "increment_step")
     workflow.add_conditional_edges(
         "increment_step",
         check_plan_execution_status,
@@ -808,54 +1117,72 @@ Critique Points:
     workflow.add_edge("critic_based_planner_agent", "executor_agent")
     workflow.add_edge("general_llm_call", "final_response")
     workflow.add_edge("final_response", END)
-
+    log.info("Planner, Executor, Critic agent workflow built successfully.")
     return workflow
 
-def generate_response_planner_executor_critic_agent(query,
+
+async def generate_response_planner_executor_critic_agent(query,
                                                     multi_agent_config,
                                                     session_id,
                                                     table_name,
-                                                    sqlite_identifier,
+                                                    db_identifier,
                                                     reset_conversation,
-                                                    model_name
+                                                    model_name,
+                                                    project_name,
+                                                    interrupt_flag=False,
+                                                    feedback=None
                                                     ):
     # Loading the model
     llm = load_model(model_name=model_name)
     agent_resp = {}
-    try:
+    async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:
+        try:
 
-        # Build the planner, executor, and critic chains
-        chains_and_tools_data = build_planner_executor_critic_chains(llm=llm,
-                                                                     multi_agent_config=multi_agent_config)
+            # Build the planner, executor, and critic chains
+            chains_and_tools_data = await build_planner_executor_critic_chains(llm=llm,
+                                                                        multi_agent_config=multi_agent_config,checkpointer=checkpointer,)
 
-        workflow = build_planner_executor_critic_agent(llm,
-                                                chains_and_tools_data=chains_and_tools_data
-                                                )
+            workflow = await build_planner_executor_critic_agent(llm,
+                                                    chains_and_tools_data=chains_and_tools_data,
+                                                    interrupt_flag=interrupt_flag)
+            # Set up the graph configuration
+            graph_config = {"configurable": {"thread_id": f"{db_identifier}_{session_id}"}, "recursion_limit": 100}
 
-        # Set up the graph configuration
-        graph_config = {"configurable": {"thread_id": f"{sqlite_identifier}_{session_id}"}, "recursion_limit": 100}
+            if str(reset_conversation).lower()=="true":
+                try:
+                    # Delete the conversation history from the database
+                    await delete_by_session_id_from_database(
+                        table_name=table_name,
+                        session_id=session_id
+                        )
+                except Exception as e:
+                    log.error(f"Error deleting conversation history for session {session_id}: {e}")
+                    pass
 
-        if str(reset_conversation).lower()=="true":
-            try:
-                # Delete the conversation history from the database
-                delete_by_session_id_sqlite(table_name=table_name,
-                                            session_id=session_id
-                                            )
-            except Exception as e:
-                pass
-        # Invoke the agent and get the response
 
-        with PostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
+
             app=workflow.compile(checkpointer=checkpointer)
-            agent_resp = app.invoke(input={
-                                        'query': query,
-                                        'table_name': table_name,
-                                        'session_id': session_id,
-                                        'reset_conversation': reset_conversation,
-                                    },
-                                    config=graph_config)
+            log.info(f"Invoking agent for session {session_id} with query: {query}")
+            with using_project(project_name):
+                try:
+                    if feedback:
+                        agent_resp = await app.ainvoke(Command(resume=feedback),config=graph_config)
+                    else:
+                        agent_resp = await app.ainvoke(input={
+                                    'query': query,
+                                    'table_name': table_name,
+                                    'session_id': session_id,
+                                    'reset_conversation': reset_conversation,
+                                    'model_name': model_name,
+                                    'is_interrupted': False
+                                },
+                                config=graph_config)
+                except Exception as e:
+                    agent_resp =  {"error": f"Error Occurred while inferring:\n{e}"}
 
-    except Exception as e:
-        agent_resp = {"error": f"Error occurred:\n{e}"}
-        raise HTTPException(status_code=500, detail=f"Error occurred:\n{e}")
-    return agent_resp
+        except Exception as e:
+            log.error(f"Error occurred during agent invocation for session {session_id}: {e}")
+            agent_resp = {"error": f"Error occurred:\n{e}"}
+            raise HTTPException(status_code=500, detail=f"Error occurred:\n{e}")
+        return agent_resp
+

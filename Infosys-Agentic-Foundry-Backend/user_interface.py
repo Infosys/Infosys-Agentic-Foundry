@@ -15,7 +15,7 @@ try:
     model_options = requests.get(f"{ENDPOINT_URL_PREFIX}/get-models").json()
     model_options = model_options['models']
 except:
-    model_options = ["gpt-4o","gemini-1.5-flash"]
+    model_options = ["gpt-4o"]
 
 st.set_page_config(
     page_title="Agentic Workflow As Service",
@@ -341,7 +341,7 @@ def onboard_tool():
             )
             code_snippet = st.text_area(
                 "Code Snippet", placeholder="Paste your code here", height=200)
-            
+
             col1, col2 = st.columns([1, 2])
             with col1:
                 model_name = st.selectbox("Model",
@@ -654,7 +654,7 @@ def display_agents(params=None, payload_tags=None):
             f"{ENDPOINT_URL_PREFIX}/tags/get-agents-by-tag", json=payload_tags)
     else:
         agents = requests.get(
-            f"{ENDPOINT_URL_PREFIX}/react-agent/get-agents", params=params, timeout=None)
+            f"{ENDPOINT_URL_PREFIX}/get-agents", params=params, timeout=None)
     agents = agents.json()
     agents_df = pd.DataFrame(agents)
     if params:
@@ -695,10 +695,6 @@ def select_agent(params=None, payload_tags=None):
     selected_agents = agents_df[agents_df['Selected'] == True]
     return selected_agents, agents_df
 
-def get_agent_id_and_session_id_from_thread_id(thread_id: str):
-    agent_id = thread_id[6:42].replace("_", "-")
-    session_id = thread_id[43:]
-    return { "agent_id": agent_id, "session_id": session_id }
 
 def define_agent():
     """
@@ -711,7 +707,10 @@ def define_agent():
         action = st.selectbox(
             "Select Action", ["Create Agent", "Update Agent", "Delete Agent"])
     with col3:
-        manage_tags()
+        try:
+            manage_tags()
+        except Exception as e:
+            st.toast(f"Unable to fetch available tags: {e}")
 
     if action == "Create Agent":
         st.markdown("<h2 style='text-align: left; font-weight: bold; margin-bottom: 30px;'>Onboard Agent</h2>",
@@ -720,7 +719,11 @@ def define_agent():
         with cols[0]:
             agent_template = st.selectbox("Agent Template",
                                       options=["React Agent",
-                                               "Multi Agent"],
+                                               "Multi Agent",
+                                               "Planner Executor Agent",
+                                               "React Critic Agent",
+                                               "Meta Agent",
+                                               "Planner Meta Agent"],
                                       index=None,
                                       placeholder="--Select--",
                                       help="Choose the agent template")
@@ -736,7 +739,7 @@ def define_agent():
             )
 
             payload_tags={"tag_names": selected_tags_tool_to_onboarding_agent}
-            if agent_template == "Meta Agent":
+            if agent_template == "Meta Agent" or agent_template == "Planner Meta Agent":
                 params = {"agentic_application_type": ["react_agent", "multi_agent"]}
                 selected_agents_df, agents_df_editor = select_agent(
                                                             params=params,
@@ -827,10 +830,23 @@ def define_agent():
                         status = requests.post(
                             f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/onboard-agents", json=agent, timeout=None)
                         status = status.json()
+                    elif agent_template == "Planner Executor Agent":
+                        status = requests.post(
+                            f"{ENDPOINT_URL_PREFIX}/planner-executor-agent/onboard-agents", json=agent, timeout=None)
+                        status = status.json()
+                    elif agent_template == "React Critic Agent":
+                        status = requests.post(
+                            f"{ENDPOINT_URL_PREFIX}/react-critic-agent/onboard-agent", json=agent, timeout=None)
+                        status = status.json()
                     elif agent_template == "Meta Agent":
                         status = requests.post(
                             f"{ENDPOINT_URL_PREFIX}/meta-agent/onboard-agents", json=agent, timeout=None)
                         status = status.json()
+                    elif agent_template == "Planner Meta Agent":
+                        status = requests.post(
+                            f"{ENDPOINT_URL_PREFIX}/planner-meta-agent/onboard-agents", json=agent, timeout=None)
+                        status = status.json()
+
                 if status:
                     if "result" in status and status["result"]["is_created"]:
                         st.success("✅ Agent created successfully!")
@@ -876,7 +892,7 @@ def define_agent():
                     updated_name = st.text_input(
                         "Agent Name", selected_agents.iloc[0]['agentic_application_name'],
                           placeholder="Enter a New name for the Agent", disabled=True)
-                    
+
                     updated_tag_name_list = st.multiselect(
                         "Selected Tags",
                         options=available_tags_df['tag_name'].tolist(),
@@ -918,8 +934,8 @@ def define_agent():
                         user_email = st.text_input(
                             "User ID", placeholder="Enter your email (example@infosys.com)")
                     try:
-                        response = requests.get(f'{ENDPOINT_URL_PREFIX}/react-agent/get-agent/{agent_id[0]}').json()
-                        if agentic_application_type == "meta_agent":
+                        response = requests.get(f'{ENDPOINT_URL_PREFIX}/get-agent/{agent_id[0]}').json()
+                        if agentic_application_type == "meta_agent" or agentic_application_type == "planner_meta_agent":
                             available_tools = requests.get(f"{ENDPOINT_URL_PREFIX}/get-agents", params={"agentic_application_type": ["react_agent", "multi_agent"]}).json()
                         else:
                             available_tools = requests.get(f"{ENDPOINT_URL_PREFIX}/get-tools", timeout=None).json()
@@ -930,7 +946,7 @@ def define_agent():
                     disabled_columns = available_tools_df.columns
 
                     tools_ids = ast.literal_eval(agent_info['tools_id'].loc[0])
-                    tool_or_agent_id = 'agentic_application_id' if agentic_application_type=="meta_agent" else "tool_id"
+                    tool_or_agent_id = 'agentic_application_id' if agentic_application_type=="meta_agent" or agentic_application_type=="planner_meta_agent" else "tool_id"
                     tools_info_df = available_tools_df[available_tools_df[tool_or_agent_id].isin(tools_ids)]
                     columns_to_show = list(tools_info_df.columns)
                     columns_to_show.remove(tool_or_agent_id)
@@ -988,22 +1004,21 @@ def define_agent():
                             if updated_agent_system_prompts == old_system_prompts and (
                                 tool_ids_to_add or tool_ids_to_remove or current_agent_description!=updated_agent_description or current_application_workflow_description!=updated_agent_workflow_description
                             ):
-                                if agentic_application_type == "react_agent":
-                                    new_system_prompt = requests.put(f"{ENDPOINT_URL_PREFIX}/react-agent/update-system-prompt", json=update_details, timeout=None)
-                                elif agentic_application_type == "multi_agent":
-                                    new_system_prompt = requests.put(f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/update-system-prompt", json=update_details, timeout=120)
-                                elif agentic_application_type == "meta_agent":
-                                    new_system_prompt = requests.put(f"{ENDPOINT_URL_PREFIX}/meta-agent/update-system-prompt", json=update_details, timeout=120)
-                                new_system_prompt = new_system_prompt.json()
-                                update_details["system_prompt"] = new_system_prompt
+                                update_details["system_prompt"] = {}
 
                             #if user_email:
                             if agentic_application_type == "react_agent":
                                 result = requests.put(f"{ENDPOINT_URL_PREFIX}/react-agent/update-agent", json=update_details, timeout=None)
                             elif agentic_application_type == "multi_agent":
                                 result = requests.put(f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/update-agent", json=update_details, timeout=None)
+                            elif agentic_application_type == "planner_executor_agent":
+                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/planner-executor-agent/update-agent", json=update_details, timeout=None)
+                            elif agentic_application_type == "react_critic_agent":
+                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/react-critic-agent/update-agent", json=update_details, timeout=None)
                             elif agentic_application_type == "meta_agent":
                                 result = requests.put(f"{ENDPOINT_URL_PREFIX}/meta-agent/update-agent", json=update_details, timeout=None)
+                            elif agentic_application_type == "planner_meta_agent":
+                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/planner-meta-agent/update-agent", json=update_details, timeout=None)
                             result = result.json()
                             st.write(result)
 
@@ -1043,7 +1058,7 @@ def define_agent():
                         }
 
                         response = requests.delete(
-                            f"{ENDPOINT_URL_PREFIX}/react-agent/delete-agent/{selected_id[0]}", json=details, timeout=None).json()
+                            f"{ENDPOINT_URL_PREFIX}/delete-agent/{selected_id[0]}", json=details, timeout=None).json()
                         st.write(response)
                         st.write('Updated Agents:')
                         new_agent_list = display_agents()
@@ -1089,7 +1104,7 @@ def render_chat(chat_box):
                 "agentic_application_id": st.session_state["agent_id"],
                 "session_id": st.session_state['session_id'],
                 "model_name": st.session_state["model_name"],
-                "query": "",
+                "query": chat["user_query"],
                 "reset_conversation": False
             }
 
@@ -1126,10 +1141,10 @@ def render_chat(chat_box):
 
                     if agent_steps:
                         with st.expander("Steps"):
-                            for step in agent_steps:
-                                st.write(step)
+                            # st.text(agent_steps)
+                            st.text(agent_steps.replace("\\n","\n"))
 
-            elif "planner_agent" in st.session_state['chat_history'] or "replanner_agent" in st.session_state['chat_history']:
+            elif st.session_state['chat_history'].get("current_query_status", None) == "plan":
                 with st.expander("Plan", expanded=True):
                     for plan_step in st.session_state['chat_history'].get('plan', []):
                         st.info(plan_step)
@@ -1140,16 +1155,23 @@ def render_chat(chat_box):
                             st.session_state.pop("thumbs_feedback", None)
                             payload["approval"] = "yes" if plan_approved else "no"
                             try:
-                                response = requests.post(
-                                        f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/get-query-response-hitl-replanner",
+                                response = {}
+                                if st.session_state.selected_agent_type == "Planner Executor Agent":
+                                    response = requests.post(
+                                        f"{ENDPOINT_URL_PREFIX}/planner-executor-agent/get-query-response-hitl-replanner",
                                         json=payload,
                                         timeout=None).json()
+                                elif st.session_state.selected_agent_type == "Multi Agent":
+                                    response = requests.post(
+                                            f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/get-query-response-hitl-replanner",
+                                            json=payload,
+                                            timeout=None).json()
                                 st.session_state['chat_history'] = response
                                 st.rerun()
                             except Exception as e:
                                 st.write(f"Error:\n{e}")
 
-            elif "branch:interrupt_node:interrupt_node_decision:feedback_collector" in st.session_state['chat_history']:
+            elif st.session_state['chat_history'].get("current_query_status", None) == "feedback":
                 with st.expander("Plan", expanded=True):
                     for plan_step in st.session_state['chat_history'].get('plan', []):
                         st.info(plan_step)
@@ -1159,7 +1181,14 @@ def render_chat(chat_box):
                         if plan_feedback:
                             payload['approval'] = "no"
                             payload['feedback'] = plan_feedback
-                            response = requests.post(
+                            response = {}
+                            if st.session_state.selected_agent_type == "Planner Executor Agent":
+                                response = requests.post(
+                                    f"{ENDPOINT_URL_PREFIX}/planner-executor-agent/get-query-response-hitl-replanner",
+                                    json=payload,
+                                    timeout=None).json()
+                            elif st.session_state.selected_agent_type == "Multi Agent":
+                                response = requests.post(
                                     f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/get-query-response-hitl-replanner",
                                     json=payload,
                                     timeout=None).json()
@@ -1185,7 +1214,7 @@ def inference():
     """
     st.title("Inference")
     try:
-        st.session_state['session_id'] = 'test_101'
+        st.session_state['session_id'] = 'user@example.com_1234'
 
         agents_df = display_agents()
         agents_df['tags'] = agents_df['tags'].apply(lambda x: str([tag['tag_name'] for tag in x]))
@@ -1198,18 +1227,14 @@ def inference():
                 available_tags = []
 
             agentic_application_types = agents_df["agentic_application_type"].unique().tolist()
-
-            agentic_application_types = list(
-                map(lambda x: x.replace("_", " ").title(), filter(None, agentic_application_types))
-            )
-
+            agentic_application_types = list(map(lambda x: x.replace("_", " ").title(), agentic_application_types))
             all_options = ["---AGENT TYPE---"] + agentic_application_types + ["--------TAGS--------"] + available_tags
             select_agent_filter = st.selectbox("Select Agent Filter", all_options, index=1)
             if select_agent_filter.startswith("--") and select_agent_filter.endswith("--"):
                 with cols[2]:
                     st.warning(f'Select a Valid {select_agent_filter.replace("-", "")}')
                 return
-            
+
             if select_agent_filter in agentic_application_types:
                 selected_agent_type = select_agent_filter
                 selected_agent_tag = ""
@@ -1247,7 +1272,7 @@ def inference():
             "session_id": st.session_state['session_id'],
             "agent_id": agent_id,
         }
-        response = requests.post(f"{ENDPOINT_URL_PREFIX}/react-agent/get-chat-history", json=payload, timeout=None).json()
+        response = requests.post(f"{ENDPOINT_URL_PREFIX}/get-chat-history", json=payload, timeout=None).json()
         if st.session_state.setdefault("reset_chat", None) is None:
             st.session_state['chat_history'] = response
         col_1, col_2, col_3=st.columns([1,1,0.25])
@@ -1267,12 +1292,13 @@ def inference():
                     "agent_id": agent_id
                 }
 
-                response = requests.post(f"{ENDPOINT_URL_PREFIX}/react-agent/get-chat-history", json=payload, timeout=None).json()
+                response = requests.post(f"{ENDPOINT_URL_PREFIX}/get-chat-history", json=payload, timeout=None).json()
+
                 if st.session_state.setdefault("reset_chat", None) is None:
                     st.session_state['chat_history'] = response
                 st.session_state['Inference_clicked'] = True
         with col_3:
-            if selected_agent_type == "Multi Agent":
+            if selected_agent_type == "Multi Agent" or selected_agent_type == "Planner Executor Agent":
                 st.session_state.hitl_toggle = st.toggle(" ",
                             key="hitl_toggle_button",
                             help="Human in the Loop (Verify Plan)."
@@ -1317,9 +1343,15 @@ def inference():
                     if selected_agent_type == "Meta Agent":
                         response = requests.post(
                             f"{ENDPOINT_URL_PREFIX}/meta-agent/get-query-response", json=inputs).json()
+                    elif selected_agent_type == "Planner Meta Agent":
+                        response = requests.post(
+                            f"{ENDPOINT_URL_PREFIX}/planner-meta-agent/get-query-response", json=inputs).json()
                     elif selected_agent_type == "Multi Agent" and st.session_state.hitl_toggle:
                         response = requests.post(
                             f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/get-query-response-hitl-replanner", json=inputs).json()
+                    elif selected_agent_type == "Planner Executor Agent" and st.session_state.hitl_toggle:
+                        response = requests.post(
+                            f"{ENDPOINT_URL_PREFIX}/planner-executor-agent/get-query-response-hitl-replanner", json=inputs).json()
                     else:
                         response = requests.post(
                             f"{ENDPOINT_URL_PREFIX}/get-query-response", json=inputs, timeout=None).json()
@@ -1327,6 +1359,8 @@ def inference():
                     st.rerun()
                 except Exception as e:
                     st.write(f"Error: {e}")
+
+                st.write(response)
 
 
                 # Re-render chat messages
@@ -1451,7 +1485,7 @@ def main():
         st.markdown(
             "<h3 style='text-align: center; padding: 1rem 0;'>Navigation</h3>", unsafe_allow_html=True)
         selected_tab = st.radio(
-            label="Navigation Option", 
+            label="Navigation Option",
             options=["Tool Onboard", "Agent Onboard", "Inference", "Upload Documents"],
             label_visibility="hidden")
 
@@ -1466,8 +1500,10 @@ def main():
 
     elif selected_tab == "Upload Documents":
         file_uploading_ui()
+    # elif selected_tab == "Previous Chats":
+    #     old_chats()
+
 
 
 if __name__ == "__main__":
     main()
-

@@ -1,52 +1,63 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import os
 import json
+import asyncpg
+import time
+from datetime import datetime, timezone
+import io
+import re
+import asyncio
 import pandas as pd
-from typing import Annotated, List, Any
-from typing_extensions import TypedDict
-import sqlite3
-import datetime
 from fastapi import HTTPException
 from pydantic import BaseModel
-import time
-import psycopg2
+from typing import Annotated, List, Any
+from typing_extensions import TypedDict
+from copy import deepcopy
+from phoenix.otel import register
+from phoenix.trace import using_project
 
-from psycopg import Connection
+#conn_string = "postgres://postgres:postgres@10.208.85.72:5432/agentic_workflow_as_service_database"
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.types import interrupt, Command
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, RemoveMessage, AnyMessage, ChatMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, AnyMessage, ChatMessage
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 
-from database_manager import get_agents_by_id, get_tools_by_id, get_long_term_memory_sqlite, delete_by_session_id_sqlite, insert_chat_history_sqlite, log_telemetry, update_token_usage
-from multi_agent_inference import generate_response_planner_executor_critic_agent
 from src.models.model import load_model
+from src.utils.helper_functions import get_timestamp
 from src.prompts.prompts import conversation_summary_prompt
-
-
-
-# Connection string format:
-POSTGRESQL_HOST = os.getenv("POSTGRESQL_HOST", "")
-POSTGRESQL_USER = os.getenv("POSTGRESQL_USER", "")
-POSTGRESQL_PASSWORD = os.getenv("POSTGRESQL_PASSWORD", "")
-DATABASE = os.getenv("DATABASE", "")
+from multi_agent_inference import generate_response_planner_executor_critic_agent
+from planner_executor_inference import generate_response_planner_executor_agent
+from database_manager import (
+    get_agents_by_id, get_tools_by_id,get_long_term_memory_from_database, delete_by_session_id_from_database,
+    insert_chat_history_in_database, log_telemetry, update_token_usage, get_feedback_learning_data,
+    insert_into_evaluation_data
+)
+from react_critic_inference import generate_response_executor_critic_agent
+from src.utils.secrets_handler import get_user_secrets, current_user_email
+from telemetry_wrapper import logger as log, update_session_context
 
 connection_kwargs = {
     "autocommit": True,
     "prepare_threshold": 0,
 }
+# DB_URI = POSTGRESQL_DATABASE_URL
+POSTGRESQL_HOST = os.getenv("POSTGRESQL_HOST", "")
+POSTGRESQL_USER = os.getenv("POSTGRESQL_USER", "")
+POSTGRESQL_PASSWORD = os.getenv("POSTGRESQL_PASSWORD", "")
+DATABASE = os.getenv("DATABASE", "")
 
-DATABASE_URL = os.getenv("POSTGRESQL_DATABASE_URL")
+DB_URI = os.getenv("POSTGRESQL_DATABASE_URL", "")
 
-def get_conversation_summary(conversation_summary_chain, table_name, session_id, conversation_limit=30) -> str:
+async def get_conversation_summary(conversation_summary_chain, table_name, session_id, conversation_limit=30) -> str:
     # Retrieve long-term memory (chat history) from Postgres
 
     conversation_history_df = pd.DataFrame(
-        get_long_term_memory_sqlite(
+        await get_long_term_memory_from_database(
                 session_id=session_id,
                 table_name=table_name,
                 conversation_limit=conversation_limit
@@ -67,11 +78,12 @@ AI Message: {AI_Message}"""
                 ].itertuples(index=False)
             ]
         )
-        conversation_summary = conversation_summary_chain.invoke(
+        conversation_summary = await conversation_summary_chain.ainvoke(
             {"chat_history": chat_history}
         )
     else:
         conversation_summary = ""
+    log.info(f"Conversation Summary generated for session {session_id} in table {table_name}")
     return conversation_summary
 
 def format_messages(messages: List[Any], msg_limit: int = 30) -> str:
@@ -101,7 +113,7 @@ def format_messages(messages: List[Any], msg_limit: int = 30) -> str:
             msg_formatted += tool_msg_format + "\n\n"
     return msg_formatted.strip()
 
-def build_executor_chains(llm, agent_config):
+async def build_executor_chains(llm, agent_config, checkpointer):
     """
     Sets up the tools and chains for the executor agent.
 
@@ -114,41 +126,113 @@ def build_executor_chains(llm, agent_config):
     """
     tools_info = agent_config.get("TOOLS_INFO", "")
     tool_list = []
+    local_var = {"get_user_secrets": get_user_secrets, "current_user_email": current_user_email}
     for tool_id in tools_info:
-        tool = get_tools_by_id(tool_id=tool_id)
-        codes = tool[0]["code_snippet"]
-        tool_name = tool[0]["tool_name"]
-        local_var = {}
-        exec(codes, local_var)
-        tool_list.append(local_var[tool_name])
+        try:
+            tool = await get_tools_by_id(tool_id=tool_id)
+            codes = tool[0]["code_snippet"]
+            tool_name = tool[0]["tool_name"]
+            exec(codes, local_var)
+            tool_list.append(local_var[tool_name])
+        except Exception as e:
+            log.error(f"Error occurred while loading tool {tool_name}: {e}")
+            raise HTTPException(status_code=500, detail=f"Error occurred while loading tool {tool_name}: {e}")
+ 
 
     # Executor Agent Chain (Graph)
-
+    #async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:
     agent_executor = create_react_agent(
         llm,
-        tool_list,
+        tools=tool_list,
+        checkpointer=checkpointer,
+        interrupt_before=["tools"],
         state_modifier=agent_config["SYSTEM_PROMPT"]
     )
 
-    # Chat summarization chain
+# Chat summarization chain
     conversation_summary_prompt_template = PromptTemplate.from_template(conversation_summary_prompt)
     conversation_summary_chain = conversation_summary_prompt_template | llm | StrOutputParser()
+    log.info("Executor Agent and Conversation Summary Chain built successfully")
     return agent_executor, conversation_summary_chain
 
-def get_timestamp() -> str:
-    """
-    Generates the current timestamp in a formatted string.
 
-    This can be useful for logging, debugging, or attaching metadata to outputs.
+def format_feedback_learning_data(data: list) -> str:
+    """
+    Formats feedback learning data into a structured string.
+
+    Args:
+        data (list): List of feedback learning data.
 
     Returns:
-        str: The formatted timestamp in 'YYYY-MM-DD HH:MM:SS' format.
+        str: Formatted feedback learning data string.
     """
-    current_time = datetime.datetime.now()
-    formatted_timestamp = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    return formatted_timestamp
+    formatted_data = ""
+    for item in data:
+        formatted_data += f"question: {item['query']}\n"
+        formatted_data += f"first_response: {item['old_steps']}\n"
+        formatted_data += f"user feedback: {item['feedback']}\n"
+        formatted_data += f"final approved response: {item['new_steps']}\n"
+        formatted_data += "------------------------\n"
+    log.info("Feedback learning data formatted successfully")
+    return formatted_data.strip()
 
-def build_executor_agent(agent_executor, conversation_summary_chain):
+async def update_preferences(prefernces: str, user_input: str, model_name: str) -> str:
+    """
+    Update the preferences based on user input.
+    """
+    llm = load_model(model_name=model_name)
+
+    prompt = f"""
+Current Preferences:
+{prefernces}
+
+User Input:
+{user_input}
+
+
+Instructions:
+- Understand the User query, now analyze is the user intention with query is to provide feedback or related to task.
+- Understand the feedback points from the given query and add them into the feedback.
+- Inputs related to any task are not preferences. Don't consider them.
+- If user intention is providing feed back then update the preferences based on below guidelines.
+- Update the preferences based on the user input.
+- If it's a new preference or feedback, add it as a new line.
+- If it modifies an existing preference or feedback, update the relevant line with detailed preference context.
+- User input can include new preferences, feedback on mistakes, or corrections to model behavior.
+- Store these preferences or feedback as lessons to help the model avoid repeating the same mistakes.
+- The output should contain only the updated preferences, with no extra explanation or commentary.
+- if no preferences are there then output should is "no preferences available".
+
+Examples:
+user query: output should in markdown format
+- the user query is related to preference and should be added to the preferences.
+user query: a person is running at 5km per hour how much distance he can cover by 2 hours
+- The user query is related to task and should not be added to the preferences.
+user query: give me the response in meters.
+- This is a perference and should be added to the preferences.
+"""+"""
+Output:
+```json
+{
+"preferences": "all new preferences with new line as separator are added here"
+}
+```
+
+"""
+    response = await llm.ainvoke(prompt)
+    response = response.content.strip()
+    if "```json" in response:
+        response = response[response.find("```json") + len("```json"):]
+    response = response.replace('```json', '').replace('```', '').strip()
+    try:
+        final_response = json.loads(response)["preferences"]
+    except json.JSONDecodeError:
+        log.error("Failed to decode JSON response from model.")
+        return response
+    log.info("Preferences updated successfully")
+    return final_response
+
+async def build_executor_agent(agent_executor, conversation_summary_chain,interrupt_flag):
     class Execute(TypedDict):
         # Definition of execution state parameters
         query: str
@@ -158,14 +242,17 @@ def build_executor_agent(agent_executor, conversation_summary_chain):
         ongoing_conversation: Annotated[List[AnyMessage], add_messages]
         table_name: str
         session_id: str
-        start_timestamp: str
-        end_timestamp: str
+        start_timestamp: datetime
+        end_timestamp: datetime
         reset_conversation: bool
         gen_summary_time: float
         executor_agent_time: float
         final_response_time: float
         errors: list[str]
         model_name: str
+        preference: str
+        feedback : str = None
+        is_interrupted : bool = False
 
     def add_prompt_for_feedback(query: str):
 
@@ -184,30 +271,48 @@ Please review the query and feedback, and provide an appropriate answer.
 
         return current_state_query
 
-    def generate_past_conversation_summary(state: Execute):
+    async def generate_past_conversation_summary(state: Execute):
         """Generates past conversation summary from the conversation history."""
         try:
             errors = []
             start_time = time.time()
             strt_tmstp = get_timestamp()
-            conv_summary = get_conversation_summary(conversation_summary_chain=conversation_summary_chain,
+            conv_summary = await get_conversation_summary(conversation_summary_chain=conversation_summary_chain,
                                                     table_name=state["table_name"],
                                                     session_id=state["session_id"]
                                                 )
+
+            
+
             if state["reset_conversation"]:
                 state["ongoing_conversation"].clear()
                 state["executor_messages"].clear()
             end_time = time.time()
+            if "preference" not in state:
+                new_preference = await update_preferences(
+                    "no preferences yet",
+                    state["query"],
+                    state["model_name"]
+                )
+            else:
+                new_preference = await update_preferences(
+                    state["preference"],
+                    state["query"],
+                    state["model_name"]
+                )
 
         except Exception as e:
+            log.error(f"Error occurred while generating past conversation summary: {e}")
             error = "Error Occurred in generate past conversation summary. Error: "
-            error+=e
+            error+=str(e)
             errors.append(error)
 
         current_state_query = add_prompt_for_feedback(state["query"])
 
+        log.info("Executor Agent past conversation summary generated successfully")
         return {
             'past_conversation_summary': conv_summary,
+            'preference': new_preference,
             'ongoing_conversation': current_state_query,
             'executor_messages': current_state_query,
             'response': None,
@@ -216,29 +321,59 @@ Please review the query and feedback, and provide an appropriate answer.
             'errors':errors
         }
 
-    def executor_agent(state: Execute):
+    async def executor_agent(state: Execute):
         query = add_prompt_for_feedback(state["query"]).content
         """Handles query execution and returns the agent's response."""
+        thread = {"configurable": {"thread_id": "inside"+f"{state['table_name']}_{state['session_id']}"}}
         try:
             errors = state["errors"]
             start_time = time.time()
+            # loop = asyncio.get_running_loop()
+            data = await get_feedback_learning_data(agent_id=state["table_name"][6:])
+            # data = ""
+            if data==[]:
+                feedback_msg = ""
+            else:
+                feedback_msg = format_feedback_learning_data(data)
+
             formatted_query = f'''\
-    Past Conversation Summary:
-    {state["past_conversation_summary"]}
+Past Conversation Summary:
+{state["past_conversation_summary"]}
 
-    Ongoing Conversation:
-    {format_messages(state["ongoing_conversation"])}
+Ongoing Conversation:
+{format_messages(state["ongoing_conversation"])}
 
-    User Query:
-    {query}
+
+Follow these preferences for every step:
+Preferences:
+{state["preference"]}
+- When applicable, use these instructions to guide your responses to the user's query.
+
+
+Review the previous feedback carefully and make sure the same mistakes are not repeated
+**FEEDBACK**
+{feedback_msg}
+**END FEEDBACK**
+
+
+
+User Query:
+{query}
     '''
-
-            executor_agent_response = agent_executor.invoke({"messages": [("user", formatted_query.strip())]})
+            # async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:
+            if state["is_interrupted"]:
+                executor_agent_response = await agent_executor.ainvoke(None,thread)
+            else:
+                executor_agent_response = await agent_executor.ainvoke({"messages": [("user", formatted_query.strip())]}, thread)
+            # executor_agent_response = agent_executor.invoke({"messages": [("user", formatted_query.strip())]})
             end_time = time.time()
         except Exception as e:
+            log.error(f"Error Occurred in Executor Agent: {e}")
             error = "Error Occurred in Executor Agent. Error: "
-            error+=e
+            error+=str(e)
             errors.append(error)
+            return {"errors":errors}
+        log.info("Executor Agent response generated successfully")
         return {
             "response": executor_agent_response["messages"][-1].content,
             "executor_messages": executor_agent_response["messages"],
@@ -246,13 +381,13 @@ Please review the query and feedback, and provide an appropriate answer.
             "errors": errors,
         }
 
-    def final_response(state: Execute):
+    async def final_response(state: Execute):
         """Stores the final response and updates the conversation history."""
         try:
             start_time = time.time()
             end_timestamp = get_timestamp()
             errors = []
-            insert_chat_history_sqlite(table_name=state["table_name"],
+            await insert_chat_history_in_database(table_name=state["table_name"],
                                     session_id=state["session_id"],
                                     start_timestamp=state["start_timestamp"],
                                     end_timestamp=end_timestamp,
@@ -260,27 +395,127 @@ Please review the query and feedback, and provide an appropriate answer.
                                     ai_message=state["response"])
             end_time = time.time()
         except Exception as e:
+            log.error(f"Error occurred in Final response: {e}")
             error = "Error Occurred in Final response. Error: "
             error+=e
             errors.append(error)
 
+        log.info("Executor Agent Final response stored successfully") 
         return {"ongoing_conversation": AIMessage(content=state["response"]),
                 "end_timestamp": end_timestamp,
                 "final_response_time":end_time - start_time,
                 "errors":errors}
+
+    async def interrupt_node(state: Execute):
+        """Asks the human if the plan is ok or not"""
+        if interrupt_flag:
+            is_approved = interrupt("approved?(yes/feedback)")
+            log.info(f"is_approved {is_approved}")
+        else:
+            is_approved= "yes"
+        state["feedback"] = is_approved
+        return {"feedback": is_approved,"is_interrupted": True}
+
+
+    async def interrupt_node_decision(state: Execute):
+        if state["feedback"]=='yes':
+            return "executor_agent" #Command(goto="executor_agent")
+        else:
+            return "tool_interrupt" #Command(goto="feedback_collector")
+
+    async def final_decision(state: Execute):
+        thread = {"configurable": {"thread_id": "inside"+f"{state['table_name']}_{state['session_id']}"}}
+        a=await agent_executor.aget_state(thread)
+        if a.tasks == ():
+            return "final_response" #Command(goto="final_response")
+        else:
+            # print(agent.get_state(thread).tasks)
+            return "interrupt_node" #Command(goto="interrupt_node")
+
+    async def tool_interrupt(agent_state: Execute):
+        # Step 1: Get the current state of the agent
+        thread = {"configurable": {"thread_id": "inside"+f"{agent_state['table_name']}_{agent_state['session_id']}"}}
+            # Check if the agent is in a state where it can be interrupted
+        state = await agent_executor.aget_state(thread)
+        model = agent_state["model_name"]
+        model_name = model.split("-")[0]
+        value = state.values["messages"][-1]
+        if model_name == "gemini":
+            tool_call_id = value.tool_calls[-1]["id"]
+            tool_name = value.additional_kwargs["function_call"]["name"]
+        else:
+            tool_call_id = value.additional_kwargs["tool_calls"][-1]["id"]
+            tool_name = value.additional_kwargs["tool_calls"][0]["function"]["name"]
+            old_arg = value.additional_kwargs["tool_calls"][0]["function"]["arguments"]
+        response_metadata = value.response_metadata
+        id = value.id
+        usage_metadata = value.usage_metadata
+        feedback = agent_state["feedback"]
+        feedback_dict = json.loads(feedback)
+        new_ai_msg = AIMessage(
+                        content=f"user modified the tool values, consider the new values. the old values are {old_arg}, and user modified values are {feedback} for the tool {tool_name}",
+                        # content="",
+                        additional_kwargs={"tool_calls": [{"id": tool_call_id, "function": {"arguments": feedback, "name": tool_name}, "type": "function"}], "refusal": None},
+                        response_metadata=response_metadata,
+                        id=id,
+                        tool_calls=[{'name': tool_name, 'args': feedback_dict, 'id': tool_call_id, 'type': 'tool_call'}],
+                        usage_metadata=usage_metadata
+                    )
+                #hiiiii
+
+                # Modify the thread with the new input
+
+        await agent_executor.aupdate_state(
+            thread,
+            {
+                "messages": [
+                    new_ai_msg
+                ]
+            }
+        )
+        # agent_state["executor_messages"].append(new_ai_msg)
+        executor_agent_response = await agent_executor.ainvoke(None, thread)
+        # executor_agent_response["messages"].pop()
+        for i in executor_agent_response['messages']:
+            i.pretty_print()
+
+        return {
+            "response": executor_agent_response["messages"][-1].content,
+            "executor_messages": executor_agent_response["messages"],
+        }
+
+    ### Build Graph (Workflow)
 
     workflow = StateGraph(Execute)
     workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
     workflow.add_node("executor_agent", executor_agent)
     workflow.add_node("final_response", final_response)
 
+    workflow.add_node("interrupt_node", interrupt_node)
+    workflow.add_node("tool_interrupt", tool_interrupt)
+
     # Define the workflow sequence
     workflow.add_edge(START, "generate_past_conversation_summary")
     workflow.add_edge("generate_past_conversation_summary", "executor_agent")
-    workflow.add_edge("executor_agent", "final_response")
-    workflow.add_edge("final_response", END)
-    return workflow
 
+    workflow.add_conditional_edges(
+    "executor_agent",
+    final_decision,
+    ["interrupt_node", "final_response"],
+    )
+    workflow.add_conditional_edges(
+    "interrupt_node",
+    interrupt_node_decision,
+    ["executor_agent", "tool_interrupt"],
+    )
+    workflow.add_conditional_edges(
+    "tool_interrupt",
+    final_decision,
+    ["interrupt_node", "final_response"],
+    )
+    workflow.add_edge("final_response", END)
+    log.info("Executor Agent workflow built successfully")
+    return workflow
 
 def only_tool_name(tool_call_details):
     tool_names = []
@@ -288,7 +523,9 @@ def only_tool_name(tool_call_details):
         tool_names.append(tool["name"])
     return tool_names
 
-def cost_calc(input_tokens, output_tokens, model_name):
+
+
+async def cost_calc(input_tokens, output_tokens, model_name):
     total_cost = 0
     input_token_cost = 0
     output_token_cost = 0
@@ -296,71 +533,91 @@ def cost_calc(input_tokens, output_tokens, model_name):
         input_token_cost = 0.03*0.001
         output_token_cost = 0.06*0.001
     elif model_name=="gemini-1.5-flash":
-        conn = sqlite3.connect('telemetry_logs.db')
-        cursor = conn.cursor()
-        cursor.execute("select tokens_used from token_usage where model_name = 'gemini-1.5-flash';")
-        data = cursor.fetchall()
-        current_used_tokens = data[0][0]
-        cursor.close()
-        conn.close()
-        if current_used_tokens<128_000:
-            input_token_cost = 0.075*0.000001
-            output_token_cost = 0.03*0.000001
+        conn = await asyncpg.connect(dsn=DB_URI)
+        data = await conn.fetchrow("""
+            SELECT tokens_used
+            FROM token_usage
+            WHERE model_name = 'gemini-1.5-flash'
+        """)
+        await conn.close()
+
+        current_used_tokens = data['tokens_used'] if data else 0
+
+        if current_used_tokens < 128_000:
+            input_token_cost = 0.075 * 0.000001
+            output_token_cost = 0.03 * 0.000001
         else:
-            input_token_cost = 0.15*0.000001
-            output_token_cost = 0.06*0.000001
-    cost = input_token_cost*input_tokens + output_token_cost* output_tokens
+            input_token_cost = 0.15 * 0.000001
+            output_token_cost = 0.06 * 0.000001
+
+    cost = input_token_cost * input_tokens + output_token_cost * output_tokens
+    log.info(f"Cost calculated for {model_name}: Input Tokens Cost: {input_token_cost*input_tokens}, Output Tokens Cost: {output_token_cost*output_tokens}, Total Cost: {cost}")
     return cost
 
-def generate_response_executor_agent(query,
-                                     agent_config,
-                                     model_name,
-                                     session_id,
-                                     table_name,
-                                     reset_conversation):
+async def generate_response_executor_agent(query,
+                                    agent_config,
+                                    model_name,
+                                    session_id,
+                                    table_name,
+                                    reset_conversation,
+                                    project_name,
+                                    interrupt_flag=False,
+                                    feedback=None):
     # Load the language model based on provided use case and context
     llm = load_model(model_name=model_name)
+    async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:
 
-    # Build executor chains and conversation summarization chain
-    agent_executor, conversation_summary_chain = build_executor_chains(llm, agent_config)
-
-    # Build the complete executor agent
-    if reset_conversation:
-        try:
-            delete_by_session_id_sqlite(
-                table_name=table_name,
-                session_id=session_id
-                )
-        except Exception as e:
-            pass
-    workflow = build_executor_agent(agent_executor=agent_executor, conversation_summary_chain=conversation_summary_chain)
-    with PostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
+        # Build executor chains and conversation summarization chain
+        agent_executor, conversation_summary_chain = await build_executor_chains(llm, agent_config,checkpointer=checkpointer)
+        # Build the complete executor agent
+        if reset_conversation:
+            try:
+                await delete_by_session_id_from_database(
+                    table_name=table_name,
+                    session_id=session_id
+                    )
+            except Exception as e:
+                log.error(f"Error Occurred while deleting session data: {e}")
+                pass
+        workflow = await build_executor_agent(agent_executor=agent_executor, conversation_summary_chain=conversation_summary_chain, interrupt_flag=interrupt_flag)
+        #with PostgresSaver.from_conn_string(DB_URI) as checkpointer:
+        #async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:
         app = workflow.compile(checkpointer=checkpointer)
 
         # Configuration for the workflow
         graph_config = {"configurable": {"thread_id": f"{table_name}_{session_id}"}, "recursion_limit": 100}
         try:
+            log.info(f"Invoking executor agent for query: {query} with session ID: {session_id} and table name: {table_name}")
+            if feedback:
+                agent_resp = await app.ainvoke(Command(resume=feedback),config=graph_config)
+
+            else:
             # Invoke the executor agent and get the response
-            agent_resp = app.invoke(input={'query': query.encode("latin-1").decode("utf-8"),
-                                    'table_name': table_name,
-                                    'session_id': session_id,
-                                    'reset_conversation': reset_conversation,
-                                    'model_name': model_name
-                                    },
-                                config=graph_config)
+                with using_project(project_name):
+                    agent_resp = await app.ainvoke(input={'query': query.encode("latin-1").decode("utf-8"),
+                                            'table_name': table_name,
+                                            'session_id': session_id,
+                                            'reset_conversation': reset_conversation,
+                                            'model_name': model_name,
+                                            'is_interrupted': False,
+                                            },
+                                        config=graph_config)
+            log.info(f"Executor agent invoked successfully for query: {query} with session ID: {session_id}")
             return agent_resp
         except Exception as e:
-            with PostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
-                checkpointer.setup()
-                response = checkpointer.get(graph_config)
-                try:
-                    if response.get("channel_values","").get("executor_messages",""):
-                        error_trace = response["channel_values"]["executor_messages"][-1]
-                        return f"Error Occurred while inferring .Error Trace:\n{error_trace}"
-                except Exception as e:
-                    return "Error Occurred while inferring"
 
-def get_agent_tool_config_react_agent(agentic_application_id):
+            await checkpointer.setup()
+            response = await checkpointer.aget(graph_config)
+            try:
+                if response.get("channel_values","").get("executor_messages",""):
+                    error_trace = response["channel_values"]["executor_messages"][-1]
+                    log.error(f"Error Occurred while inferring: {e}\nError Trace: {error_trace}")
+                    return f"Error Occurred while inferring .Error Trace:\n{error_trace}"
+            except Exception as e:
+                log.error(f"Error Occurred while retrieving error trace: {e}")
+                return "Error Occurred while inferring"
+
+async def get_agent_tool_config_react_agent(agentic_application_id):
     """
     Retrieves the configuration for an agent and its associated tools.
 
@@ -373,22 +630,17 @@ def get_agent_tool_config_react_agent(agentic_application_id):
     """
     agent_tools_config = {}
     # Retrieve agent details from the database
-    result = get_agents_by_id(agentic_application_id=agentic_application_id)
-    # agent_tools_config["SYSTEM_PROMPT"] = json.loads(
-    #     result[0]["system_prompt"]
-    # )["SYSTEM_PROMPT_REACT_AGENT"]
+    result = await get_agents_by_id(agentic_application_id=agentic_application_id)
 
-    agent_tools_config["SYSTEM_PROMPT"] = result[0]["system_prompt"]["SYSTEM_PROMPT_REACT_AGENT"]
-    # agent_tools_config["TOOLS_INFO"] = json.loads(
-    #     result[0]["tools_id"]
-    # )
-    agent_tools_config["SYSTEM_PROMPT"] = result[0]["system_prompt"]["SYSTEM_PROMPT_REACT_AGENT"]
-    agent_tools_config["TOOLS_INFO"] = result[0]["tools_id"]
+    agent_tools_config["SYSTEM_PROMPT"] = json.loads(result[0]["system_prompt"])["SYSTEM_PROMPT_REACT_AGENT"]
+    agent_tools_config["TOOLS_INFO"] = json.loads(
+        result[0]["tools_id"]
+    )
     agent_tools_config["AGENT_TYPE"] = result[0]['agentic_application_type']
-
+    log.info(f"Agent tools configuration retrieved for Agentic Application ID: {agentic_application_id}")
     return agent_tools_config
 
-def get_agent_tool_config_planner_executor_critic(agentic_application_id):
+async def get_agent_tool_config_planner_executor_critic(agentic_application_id):
     """
     Retrieves the configuration for an agent and its associated tools.
 
@@ -400,13 +652,14 @@ def get_agent_tool_config_planner_executor_critic(agentic_application_id):
     """
     agent_tools_config = {}
     # Retrieve agent details from the database
-    result = get_agents_by_id(agentic_application_id=agentic_application_id)
+    result = await get_agents_by_id(agentic_application_id=agentic_application_id)
 
     if result:
         # Only extract 'SYSTEM_PROMPT_REACT_AGENT' from the system prompt JSON
-        agent_tools_config["SYSTEM_PROMPT"] = result[0]["system_prompt"]
+        agent_tools_config["SYSTEM_PROMPT"] = json.loads(result[0]["system_prompt"])
         # Extract tools information
-        agent_tools_config["TOOLS_INFO"] = result[0]["tools_id"] 
+        agent_tools_config["TOOLS_INFO"] = json.loads(result[0]["tools_id"])
+    log.info(f"Agent tools configuration retrieved for Agentic Application ID: {agentic_application_id}")
     return agent_tools_config
 
 class AgentInferenceRequest(BaseModel):
@@ -420,11 +673,12 @@ class AgentInferenceRequest(BaseModel):
     session_id: str  # Unique session identifier
     model_name: str  # Name of the llm model
     reset_conversation: bool
+    feedback: str = None  # Optional feedback for the agent
+    interrupt_flag: bool = False
 
-def update_telemetry(state, agentic_application_id, session_id):
+async def update_telemetry(state, agentic_application_id, session_id):
     try:
-        response_time = datetime.datetime.now() - datetime.datetime.strptime(
-                state["start_timestamp"],"%Y-%m-%d %H:%M:%S")
+        response_time = datetime.now() - state["start_timestamp"]
         input_tokens = 0
         total_tokens = 0
         tool_calls = 0
@@ -454,10 +708,12 @@ def update_telemetry(state, agentic_application_id, session_id):
         new_msgs = list(reversed(new_msgs))
 
         # Updating token usage table
-        update_token_usage(total_tokens=total_tokens, model_name=state["model_name"])
-        processing_cost = cost_calc(input_tokens, total_tokens-input_tokens, state["model_name"])
+        await update_token_usage(total_tokens=total_tokens, model_name=state["model_name"])
+        processing_cost = await cost_calc(input_tokens, total_tokens-input_tokens, state["model_name"])
+
         tool_response_time = state['executor_agent_time']/tool_calls
-        log_telemetry(application_id=agentic_application_id,
+
+        await log_telemetry(application_id=agentic_application_id,
                         session_id=session_id,
                         total_token_usage=total_tokens,
                         input_tokens=input_tokens,
@@ -481,10 +737,47 @@ def update_telemetry(state, agentic_application_id, session_id):
 
 
     except Exception as e:
-        # Raise the exception with a clear message
-        raise RuntimeError(f"An error occurred while updating telemetry: {e}") from e
+        log.error(f"Exception {e}")
 
 def segregate_conversation_from_chat_history(response):
+    if "error" in response:
+        log.error(f"Error in response")
+        return [response]
+    error_message = [{"error": "Chat History not compatable with the new version. Please reset your chat."}]
+    executor_messages = response.get("executor_messages", [{}])
+    # return executor_messages
+    if not executor_messages[0] or not hasattr(executor_messages[0], 'role') or executor_messages[0].role != "user_query":
+        return error_message
+
+    conversation_list = []
+    agent_steps = []
+
+    for message in reversed(executor_messages):
+        agent_steps.append(message)
+        if message.type == "human" and hasattr(message, 'role') and message.role=="user_query":
+            data = ""
+
+            # Pretty-print each message to the buffer
+            for msg in list(reversed(agent_steps)):
+                data += "\n"+ msg.pretty_repr()
+
+
+            new_conversation = {
+                "user_query": message.content,
+                "final_response": agent_steps[0].content if (agent_steps[0].type == "ai") and ("tool_calls" not in agent_steps[0].additional_kwargs) and ("function_call" not in agent_steps[0].additional_kwargs) else "",
+                "agent_steps": data,
+                "additional_details": agent_steps
+            }
+            conversation_list.append(new_conversation)
+            agent_steps = []
+    log.info("Conversation segregated from chat history successfully")
+    return list(reversed(conversation_list))
+
+
+def segregate_conversation_in_json_format(response):
+    if "error" in response:
+        log.error(f"Error in response")
+        return [response]
     error_message = [{"error": "Chat History not compatable with the new version. Please reset your chat."}]
     executor_messages = response.get("executor_messages", [{}])
     # return executor_messages
@@ -499,16 +792,17 @@ def segregate_conversation_from_chat_history(response):
         if message.type == "human" and hasattr(message, 'role') and message.role=="user_query":
             new_conversation = {
                 "user_query": message.content,
-                "final_response": agent_steps[0].content if agent_steps[0].type == "ai" else "",
-                "agent_steps": list(reversed(agent_steps))
+                "final_response": agent_steps[0].content if (agent_steps[0].type == "ai") and ("tool_calls" not in agent_steps[0].additional_kwargs) and ("function_call" not in agent_steps[0].additional_kwargs) else "",
+                "agent_steps": list(reversed(agent_steps)),
+
             }
             conversation_list.append(new_conversation)
             agent_steps = []
-
+    log.info("Conversation segregated in JSON format successfully")
     return list(reversed(conversation_list))
 
 
-def agent_inference(request: AgentInferenceRequest):
+async def agent_inference(request: AgentInferenceRequest):
     """
     Endpoint for processing agent inference requests.
 
@@ -529,22 +823,162 @@ def agent_inference(request: AgentInferenceRequest):
         session_id = request.session_id
         model_name = request.model_name
         reset_conversation = request.reset_conversation
+        feedback = request.feedback
+        interrupt_flag = request.interrupt_flag
 
         # Format table name based on the agentic application ID
         table_name = f'table_{agentic_application_id.replace("-", "_")}'
 
         # Retriving the agent Type
-        agent_details = get_agents_by_id(agentic_application_id=agentic_application_id)
+        agent_details = await get_agents_by_id(agentic_application_id=agentic_application_id)
+        match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
+        user_name = match.group(0) if match else "guest"
+        agent_name = agent_details[0]['agentic_application_name']
+        project_name=agent_name+'_'+user_name
+        register(
+            project_name=project_name,
+            auto_instrument=True,
+            set_global_tracer_provider=False,
+            batch=True
+        )
+
+        update_session_context(agent_type=agent_details[0]["agentic_application_type"],agent_name=agent_details[0]["agentic_application_name"])
+        config={}
         if len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="react_agent":
             try:
                 # Retrieve agent configuration based on the application ID
-                agent_config = get_agent_tool_config_react_agent(agentic_application_id=agentic_application_id)
+                agent_config = await get_agent_tool_config_react_agent(agentic_application_id=agentic_application_id)
+                config = agent_config
+            except Exception:
+                # Return a message if the application is not found
+                log.error(f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID")
+                return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID"}
+            log.info(f"Agent configuration retrieved for Agentic Application ID: {agentic_application_id}")
+            # Call generate_response function
+            response = await generate_response_executor_agent(query=query,
+                                                    agent_config=agent_config,
+                                                    session_id=session_id,
+                                                    table_name=table_name,                # Use specified Table ID
+                                                    model_name=model_name,
+                                                    reset_conversation=reset_conversation,
+                                                    project_name=project_name,
+                                                    interrupt_flag=request.interrupt_flag,
+                                                    feedback=feedback
+                                                    )
+        elif len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="multi_agent":
+            try:
+                multi_agent_config = await get_agent_tool_config_planner_executor_critic(agentic_application_id)
+                config = multi_agent_config
+            except Exception as e:
+                log.error(f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID")
+                return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID", "state": {}}
+
+            reset_conversation = str(request.reset_conversation).lower() == "true"
+            # Generate response using the agent
+            response = await generate_response_planner_executor_critic_agent(
+                query=query,
+                multi_agent_config=multi_agent_config,
+                session_id=session_id,
+                table_name=table_name,
+                db_identifier=table_name,
+                reset_conversation=reset_conversation,
+                model_name=model_name,
+                project_name=project_name,
+                interrupt_flag=interrupt_flag,
+                feedback=feedback
+            )
+
+        elif len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="planner_executor_agent":
+            try:
+                multi_agent_config = await get_agent_tool_config_planner_executor_critic(agentic_application_id)
+                config = multi_agent_config
+            except Exception as e:
+                log.error(f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID")
+                return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID", "state": {}}
+
+            reset_conversation = str(request.reset_conversation).lower() == "true"
+            # Generate response using the agent
+            response = await generate_response_planner_executor_agent(
+                query=query,
+                multi_agent_config=multi_agent_config,
+                session_id=session_id,
+                table_name=table_name,
+                db_identifier=table_name,
+                reset_conversation=reset_conversation,
+                model_name=model_name,
+                project_name=project_name,
+                interrupt_flag=interrupt_flag,
+                feedback=feedback
+            )
+        elif len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="react_critic_agent":
+            try:
+                # Retrieve agent configuration based on the application ID
+                agent_config = await get_agent_tool_config_planner_executor_critic(agentic_application_id=agentic_application_id)
+                config = agent_config
+            except Exception:
+                # Return a message if the application is not found
+                log.error(f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID")
+                return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID"}
+            # Call generate_response function
+            response = await generate_response_executor_critic_agent(query=query,
+                                                    multi_agent_config=agent_config,
+                                                    session_id=session_id,
+                                                    table_name=table_name, 
+                                                    db_identifier=table_name,# Use specified Table ID
+                                                    model_name=model_name,
+                                                    reset_conversation=reset_conversation,
+                                                    project_name=project_name,
+                                                    interrupt_flag=request.interrupt_flag,
+                                                    feedback=feedback
+                                                    )
+        if isinstance(response, str):
+            update_session_context(response=response)
+            response = {"error": response}
+        else:
+            update_session_context(response=response['response'])
+            response_evaluation = deepcopy(response)
+            response_evaluation["executor_messages"] = segregate_conversation_in_json_format(response)
+            response["executor_messages"] = segregate_conversation_from_chat_history(response)
+        try:
+            await insert_into_evaluation_data(session_id, agentic_application_id, config, response_evaluation, model_name)
+        except Exception as e:
+            log.error(f"Error Occurred while inserting into evaluation data: {e}")
+        return response
+    except Exception as e:
+        # Catch any unhandled exceptions and raise a 500 internal server error
+        log.error(f"Error Occurred in agent inference: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal Server Error: {str(e)}")
+
+
+async def evaluation_agent_inference(request: AgentInferenceRequest):
+    try:
+        # Extract the details from the request
+        agentic_application_id = request.agentic_application_id
+        query = request.query
+        session_id = request.session_id
+        model_name = request.model_name
+        reset_conversation = request.reset_conversation
+
+        # Format table name based on the agentic application ID
+        table_name = f'table_{agentic_application_id.replace("-", "_")}'
+
+        # Retriving the agent Type
+        agent_details = await get_agents_by_id(agentic_application_id=agentic_application_id)
+        update_session_context(agent_type=agent_details[0]["agentic_application_type"],agent_name=agent_details[0]["agentic_application_name"])
+        config={}
+        if len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="react_agent":
+            try:
+                # Retrieve agent configuration based on the application ID
+                agent_config = await get_agent_tool_config_react_agent(agentic_application_id=agentic_application_id)
+                config=agent_config
             except Exception:
                 # Return a message if the application is not found
                 return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID"}
 
             # Call generate_response function
-            response = generate_response_executor_agent(query=query,
+            response = await generate_response_executor_agent(query=query,
                                                     agent_config=agent_config,
                                                     session_id=session_id,
                                                     table_name=table_name,                # Use specified Table ID
@@ -553,30 +987,110 @@ def agent_inference(request: AgentInferenceRequest):
                                                     )
         elif len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="multi_agent":
             try:
-                multi_agent_config = get_agent_tool_config_planner_executor_critic(agentic_application_id)
+                multi_agent_config = await get_agent_tool_config_planner_executor_critic(agentic_application_id)
+                config=multi_agent_config
             except Exception as e:
                 return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID", "state": {}}
 
             reset_conversation = str(request.reset_conversation).lower() == "true"
             # Generate response using the agent
-            response = generate_response_planner_executor_critic_agent(
+            response = await generate_response_planner_executor_critic_agent(
                 query=query,
                 multi_agent_config=multi_agent_config,
                 session_id=session_id,
                 table_name=table_name,
-                sqlite_identifier=table_name,
+                db_identifier=table_name,
                 reset_conversation=reset_conversation,
                 model_name=model_name
             )
 
+        if isinstance(response, str):
+            update_session_context(response=response)
+            response = {"error": response}
+        else:
+            update_session_context(response=response['response'])
+            response["executor_messages"] = segregate_conversation_from_chat_history(response)
 
-        response["executor_messages"] = segregate_conversation_from_chat_history(response)
+        log.info(f"Evaluation agent inference completed successfully for query: {query} with session ID: {session_id} and table name: {table_name}")
         return response
     except Exception as e:
+        # Catch any unhandled exceptions and raise a 500 internal server error
+        log.error(f"Error Occurred in evaluation agent inference: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal Server Error: {str(e)}")
 
+
+async def evaluation_agent_inference(request: AgentInferenceRequest):
+    try:
+        # Extract the details from the request
+        agentic_application_id = request.agentic_application_id
+        query = request.query
+        session_id = request.session_id
+        model_name = request.model_name
+        reset_conversation = request.reset_conversation
+
+        # Format table name based on the agentic application ID
+        table_name = f'table_{agentic_application_id.replace("-", "_")}'
+
+        # Retriving the agent Type
+        agent_details = await get_agents_by_id(agentic_application_id=agentic_application_id)
+        update_session_context(agent_type=agent_details[0]["agentic_application_type"],agent_name=agent_details[0]["agentic_application_name"])
+        config={}
+        if len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="react_agent":
+            try:
+                # Retrieve agent configuration based on the application ID
+                agent_config = await get_agent_tool_config_react_agent(agentic_application_id=agentic_application_id)
+                config=agent_config
+            except Exception:
+                # Return a message if the application is not found
+                return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID"}
+
+            # Call generate_response function
+            response = await generate_response_executor_agent(query=query,
+                                                    agent_config=agent_config,
+                                                    session_id=session_id,
+                                                    table_name=table_name,                # Use specified Table ID
+                                                    model_name=model_name,
+                                                    reset_conversation=reset_conversation,
+                                                    project_name='evaluation-metrics'
+                                                    )
+        elif len(agent_details)>0 and agent_details[0]["agentic_application_type"]=="multi_agent":
+            try:
+                multi_agent_config = await get_agent_tool_config_planner_executor_critic(agentic_application_id)
+                config=multi_agent_config
+            except Exception as e:
+                return {"response": f"Could not find an application with Agentic Application ID: {agentic_application_id}. Please validate the provided Agentic Application ID", "state": {}}
+
+            reset_conversation = str(request.reset_conversation).lower() == "true"
+            # Generate response using the agent
+            response = await generate_response_planner_executor_critic_agent(
+                query=query,
+                multi_agent_config=multi_agent_config,
+                session_id=session_id,
+                table_name=table_name,
+                db_identifier=table_name,
+                reset_conversation=reset_conversation,
+                model_name=model_name,
+                project_name='evaluation-metrics'
+            )
+           
+        if isinstance(response, str):
+            update_session_context(response=response)
+            response = {"error": response}
+        else:
+            update_session_context(response=response['response'])
+            response["executor_messages"] = segregate_conversation_from_chat_history(response)
+        
+        log.info(f"Evaluation agent inference completed successfully for query: {query} with session ID: {session_id} and table name: {table_name}")
+        return response
+    except Exception as e:
+        # Catch any unhandled exceptions and raise a 500 internal server error
+        log.error(f"Error Occurred in evaluation agent inference: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal Server Error: {str(e)}")
+    
 
 class PrevSessionRequest(BaseModel):
     """
@@ -586,7 +1100,8 @@ class PrevSessionRequest(BaseModel):
     agent_id: str  # agent id user is working on
 
 
-def retrive_previous_conversation(request: PrevSessionRequest):
+
+async def retrive_previous_conversation(request: PrevSessionRequest):
     """
     Takes the request and returns the conversation list.
     """
@@ -595,79 +1110,22 @@ def retrive_previous_conversation(request: PrevSessionRequest):
         agent_id = request.agent_id
         table_name = f'table_{agent_id.replace("-", "_")}'
 
-        with PostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
-            checkpointer.setup()
+        async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:
+            await checkpointer.setup()
             #memory.setup()
             config = {"configurable": {"thread_id": f"{table_name}_{session_id}"}}
-            data =  checkpointer.get(config)
+            data =  await checkpointer.aget(config)
             if data:
             # data = data.channel_values
                 data = data["channel_values"]
                 data["executor_messages"] = segregate_conversation_from_chat_history(data)
+                log.info(f"Previous conversation retrieved successfully for session ID: {session_id} and agent ID: {agent_id}")
                 return data
+            log.warning(f"No previous conversation found for session ID: {session_id} and agent ID: {agent_id}")
             return {}
     except Exception as e:
-        return {"error": f"Unknown error occurred: {e}"}
-
-
-def delete_chat_history_by_session_id(request: PrevSessionRequest):
-    """
-    Takes the request and deletes the conversation history.
-    """
-    try:
-        session_id = request.session_id
-        agent_id = request.agent_id
-        table_name = f'table_{agent_id.replace("-", "_")}'
-        # connection = sqlite3.connect("agentic_workflow_as_service_database.db", check_same_thread=False)
-        connection = psycopg2.connect(
-        host=POSTGRESQL_HOST,
-        database=DATABASE,
-        user=POSTGRESQL_USER,
-        password=POSTGRESQL_PASSWORD
-    )
-
-        # Clear the data from the table
-        cursor = connection.cursor()
-        cursor.execute(f"DELETE FROM checkpoints WHERE thread_id = %s", (f"{table_name}_{session_id}",))
-
-        # Commit the changes
-        connection.commit()
-
-        return {"status": "success", "message": "Memory history deleted successfully."}
-    except Exception as e:
-        return {"error": f"Unknown error occurred: {e}"}
+        log.error(f"Error Occurred while retrieving previous conversation: {e}")
+        return { "error": f"Unknow error occured: {e}" }
     finally:
-        if "cursor" in locals():
-            cursor.close()
-        if "connection" in locals():
-            connection.close()
+        update_session_context(session_id='Unassigned',agent_id='Unassigned')
 
-
-def get_all_chat_sessions():
-    import sqlite3
-    try:
-        # conn = sqlite3.Connection("agentic_workflow_as_service_database.db")
-        conn = psycopg2.connect(
-        host=POSTGRESQL_HOST,
-        database=DATABASE,
-        user=POSTGRESQL_USER,
-        password=POSTGRESQL_PASSWORD
-    )
-        cur = conn.cursor()
-        cur.execute("SELECT DISTINCT thread_id FROM checkpoints;")
-        res = cur.fetchall()
-        columns = [column[0] for column in cur.description]
-        data = [dict(zip(columns, row)) for row in res]
-        return data
-    except Exception as e:
-        return []
-    finally:
-        if "cur" in locals():
-            cur.close()
-        if "conn" in locals():
-            conn.close()
-
-def get_agent_id_and_session_id_from_thread_id(thread_id: str):
-    agent_id = thread_id[6:42].replace("_", "-")
-    session_id = thread_id[43:]
-    return { "agent_id": agent_id, "session_id": session_id }

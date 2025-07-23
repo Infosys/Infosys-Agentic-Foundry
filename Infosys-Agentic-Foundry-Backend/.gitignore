@@ -1,7 +1,6 @@
 .venv/
 env/
 new/
-sast/
 *__pycache__/
 
 *.db
@@ -10,4 +9,16 @@ sast/
 
 *.ipynb
 
+.vscode/
+
 user_uploads/
+
+./sdlc/
+./use_cases_endpoints.py
+
+./personal_learning.py
+./index.html
+./index2.html
+new_env
+my_env
+

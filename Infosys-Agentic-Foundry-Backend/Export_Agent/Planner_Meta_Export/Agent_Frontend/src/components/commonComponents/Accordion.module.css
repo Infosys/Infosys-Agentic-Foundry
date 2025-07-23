@@ -1,0 +1,31 @@
+.accordion {
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  margin: 10px 0;
+  overflow: hidden;
+}
+
+.accordion-header {
+  cursor: pointer;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.accordion-content {
+  padding: 10px;
+}
+
+.accordion-text {
+  overflow-wrap: break-word;
+  text-wrap: auto;
+}
+
+.arrow {
+  transition: transform 0.3s;
+}
+
+.arrow.open {
+  transform: rotate(180deg);
+}

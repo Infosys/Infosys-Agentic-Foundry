@@ -1,19 +1,11 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-import datetime
-def get_timestamp() -> str:
+from datetime import datetime, timezone
+def get_timestamp() -> datetime:
     """
-    Returns the current timestamp in a formatted string.
+    Returns the current UTC datetime as a naive datetime object.
 
-    Returns:
-        str: The formatted timestamp.
+    This strips the timezone info after retrieving the UTC time.
     """
-    current_time = datetime.datetime.now()
-    formatted_timestamp = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    return formatted_timestamp
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
-def dict_factory(cursor, row):
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col[0]] = row[idx]
-    return d
 

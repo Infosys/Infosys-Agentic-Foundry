@@ -1,0 +1,84 @@
+.popup-message-modal{
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.253);
+  display: flex;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.message-container {
+  width: 383px;
+  max-width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.message-popup {
+  background: #FFFFFF 0% 0% no-repeat padding-box;
+  color: #333;
+  padding: 10px;
+  padding-left: 12.5px;
+  padding-right: 5px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: flex;
+  font: normal normal normal 14px/19px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  opacity: 1;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 3px;
+  width: 100%;
+}
+
+.message-popup.success {
+  border: 1px solid #8EAA20;
+}
+
+.message-popup.error {
+  border: 1px solid #B32B2B;
+}
+
+.icon-container{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.icon-container.error{
+  background-color: #B32B2B;
+  padding: 8.5px;
+}
+
+.icon-container.success{
+  background-color: #8EAA20;
+  padding: 5px;
+}
+
+.close-btn{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 28%;
+  cursor: pointer;
+  padding: 0;
+}
+
+.icon-message{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
