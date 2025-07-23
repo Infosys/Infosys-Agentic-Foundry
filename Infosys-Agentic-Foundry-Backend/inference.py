@@ -16,8 +16,6 @@ from copy import deepcopy
 from phoenix.otel import register
 from phoenix.trace import using_project
 
-#conn_string = "postgres://postgres:postgres@10.208.85.72:5432/agentic_workflow_as_service_database"
-
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.types import interrupt, Command
 from langchain_core.output_parsers import StrOutputParser

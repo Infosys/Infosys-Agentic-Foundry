@@ -1693,10 +1693,10 @@ uv pip install -r requirements.txt
 <h2 id="configuration-setup">Configuration Setup</h2>
 <p><strong>Frontend Configuration</strong></p>
 <p>Open <code>src/constants.js</code> and update it according to your VM configuration:</p>
-<pre><code class="language-bash">export const BASE_URL = &quot;http://10.77.18.62:8000&quot;; // Windows
+<pre><code class="language-bash">export const BASE_URL = &quot;http://10.779.18.602:8000&quot;; // Windows
 </code></pre>
 <ul>
-<li>10.77.18.62 is the IP address of the VM.</li>
+<li>10.779.18.602 is the IP address of the VM.</li>
 <li>8000 is the port where the FastAPI backend is running.</li>
 </ul>
 <p><strong>Backend Configuration (CORS)</strong></p>
@@ -1704,14 +1704,14 @@ uv pip install -r requirements.txt
 <pre><code class="language-python">origins = [
     &quot;http://localhost&quot;,              # Allow localhost
     &quot;http://localhost:3000&quot;,        # Frontend running on port 3000
-    &quot;http://10.77.18.62&quot;,           # Local network IP
-    &quot;http://10.77.18.62:3000&quot;,      # Local network IP with port
+    &quot;http://10.779.18.602&quot;,           # Local network IP
+    &quot;http://10.779.18.602:3000&quot;,      # Local network IP with port
     &quot;null&quot;,                         # For file:// or sandboxed environments
     # Add other origins as needed, such as your deployed frontend URL
 ]
 </code></pre>
 <ul>
-<li>Instead of 10.77.18.62 you can have your own VM IP address.</li>
+<li>Instead of 10.779.18.602 you can have your own VM IP address.</li>
 <li>Instead of 3000 mention the port number where the frontend is running.</li>
 </ul>
 <p>Make sure to update the .env file with your API keys.</p>

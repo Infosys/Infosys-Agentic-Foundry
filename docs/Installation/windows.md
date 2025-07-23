@@ -225,10 +225,10 @@ npm i
 Open `src/constants.js` and update it according to your VM configuration:
 
 ```bash
-export const BASE_URL = "http://10.77.18.62:8000"; // Windows
+export const BASE_URL = "http://10.779.18.602:8000"; // Windows
 ```
 
-- 10.77.18.62 is the IP address of the VM.
+- 10.779.18.602 is the IP address of the VM.
 - 8000 is the port where the FastAPI backend is running.
 
 **Backend Configuration (CORS)**
@@ -239,14 +239,14 @@ Make sure your backend allows requests from the frontend. You will find these li
 origins = [
     "http://localhost",              # Allow localhost
     "http://localhost:3000",        # Frontend running on port 3000
-    "http://10.77.18.62",           # Local network IP
-    "http://10.77.18.62:3000",      # Local network IP with port
+    "http://10.779.18.602",           # Local network IP
+    "http://10.779.18.602:3000",      # Local network IP with port
     "null",                         # For file:// or sandboxed environments
     # Add other origins as needed, such as your deployed frontend URL
 ]
 ```
 
-- Instead of 10.77.18.62 you can have your own VM IP address.
+- Instead of 10.779.18.602 you can have your own VM IP address.
 - Instead of 3000 mention the port number where the frontend is running.
 
 Make sure to update the .env file with your API keys.

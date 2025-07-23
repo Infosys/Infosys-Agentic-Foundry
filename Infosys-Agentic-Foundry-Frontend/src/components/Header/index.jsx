@@ -60,11 +60,9 @@ export default function Header() {
             )}
           </div>
         </div>
-        {/* <a href="http://10.208.85.72:9000/" target="_blank"> */}
           <div className={styles.faq_icon} onClick={handleFaqclick}>
             <SVGIcons icon="fa-question" width={14} height={14} />
           </div>
-        {/* </a> */}
       </div>
     </div>
   );
