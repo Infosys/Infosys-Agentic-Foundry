@@ -11,9 +11,9 @@ export const dropdown1 = [
   { label: "React Agent", value: "react_agent" },
   { label: "Multi Agent", value: "multi_agent" },
   { label: "Meta Agent", value: "meta_agent" },
-  {label:"Planner Meta Agent",value:"planner_meta_agent"},
-  {label: "React Critic Agent", value: "react_critic_agent"},
-  {label:"Planner Executor Agent",value:"planner_executor_agent"},
+  { label:"Planner Meta Agent",value:"planner_meta_agent"},
+  { label: "React Critic Agent", value: "react_critic_agent"},
+  { label:"Planner Executor Agent",value:"planner_executor_agent"},
 ];
 //   { label: "Custom Template", value: "custom_template" }
 
