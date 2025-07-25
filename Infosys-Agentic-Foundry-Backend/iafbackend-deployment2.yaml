@@ -1,0 +1,70 @@
+# © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iafbackend2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iafbackend2
+  template:
+    metadata:
+      labels:
+        app: iafbackend2
+    spec:
+      hostAliases:
+      - ip: "POSTGRES_DB_IP"  # Replace with actual IP of your PostgreSQL server # add your posgtgres IP
+        hostnames:
+        - "b2172283516e.postgresql-srv-10052.private.postgres.database.azure.com"
+      initContainers:
+      - name: host-check
+        image: busybox
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Checking host resolution..."
+          nslookup b2172283516e.postgresql-srv-10052.private.postgres.database.azure.com || echo "DNS lookup failed"
+          ping -c 3 b2172283516e.postgresql-srv-10052.private.postgres.database.azure.com || echo "Ping failed"
+          echo "Host check completed"
+      containers:
+        - name: iafbackend2
+          image: acr10052.azurecr.io/iafbackend:08jul
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://iafpgadmin:PASSWORD@POSTGRES_DB_IP:5432/postgres" # add your posgtgres IP, add your POSTGRES PASSWORD
+            - name: POSTGRESQL_HOST
+              value: POSTGRES_DB_IP # add your posgtgres IP
+            - name: POSTGRESQL_USER
+              value: iafpgadmin
+            - name: POSTGRESQL_PASSWORD
+              value: PASSWORD # add your POSTGRES PASSWORD
+            - name: DATABASE
+              value: agentic_workflow_as_service_database
+            - name: POSTGRESQL_DATABASE_URL
+              value: "postgresql://iafpgadmin:PASSWORD@POSTGRES_DB_IP:5432/agentic_workflow_as_service_database?sslmode=require" # add your posgtgres IP, add your POSTGRES PASSWORD
+            - name: PHOENIX_SQL_DATABASE_URL
+              value: 'postgresql://iafpgadmin:PASSWORD@POSTGRES_DB_IP:5432/arize_traces' # add your posgtgres IP, add your POSTGRES PASSWORD
+            - name: PHOENIX_COLLECTOR_ENDPOINT
+              value: "http://POSTGRES_DB_IP:6006" # add your posgtgres IP
+            - name: PHOENIX_GRPC_PORT
+              value: "50051"
+            - name: NO_PROXY_HOSTS
+              value: "localhost,127.0.0.1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iafbackend2
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+spec:
+  selector:
+    app: iafbackend2
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: LoadBalancer

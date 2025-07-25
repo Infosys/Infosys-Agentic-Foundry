@@ -1,74 +1,85 @@
 # Changelog
 
 
-## [1.0.7]
+## Release [2.1.0] - (Jul 25, 2025)
 
-### Changes
-- **Recycle Bin Logic Improved:** Fixed the process so that an agent or tool is deleted from its original table before being inserted into the recycle bin, and similarly, during restore, it is first deleted from the recycle bin before being restored to the main table.
-- **Markdown Files Listing Endpoints:** Added new API endpoints to list markdown files related to the project.
+### New Features & Enhancements
 
+#### Code Architecture & Modernization
+- **OOP Refactoring:** Complete restructuring of the codebase following Object-Oriented Programming principles for better maintainability and scalability.
+- **Service Layer Implementation:** Introduced modular service layers including AgentService, ToolService, and TagService to encapsulate business logic.
+- **Repository Pattern:** Created dedicated repositories for each database table to manage data access and persistence cleanly.
+- **Database Connection Pooling:** Replaced repeated database connections with a connection pool for improved performance and resource management.
 
-## [1.0.6]
+#### Enhanced Agent Templates
+- **Multi-Agent (Planner & Executor):** Added streamlined template with only planner and executor agents.
+- **Multi-Agent (React & Critic):** Introduced template with react agent and critic agent for focused evaluation and feedback cycles.
 
-### Changes
-- **Updated Secrets Handler Module:** Introduced a new `secrets_handler.py` module to centralize the management of sensitive information such as API keys and other secrets. This enhancement improves both the security and maintainability of the Agentic Workflow as a Service project.
-- **Added Secrets Endpoints:** Implemented new API endpoints to handle all secrets-related functionality, enabling secure storage, retrieval, and management of sensitive information.
+#### Advanced Features
+- **Ground Truth Based Evaluation:** New evaluation mechanism comparing agent outputs against predefined ground truth data.
+- **Knowledge Base Integration:** Added support for integrating knowledge base with React agent for accessing stored information.
 
+#### Database & Connectivity
+- **Data Connector for Multiple Databases:** Users can connect to SQLite, PostgreSQL for specific use cases.
+- **PostgreSQL Migration:** Updated function names and removed SQLite references following migration to PostgreSQL.
 
-## [1.0.5]
+#### Security & Management
+- **Secrets Handler Module:** Centralized management of sensitive information with secure storage, retrieval, and management capabilities.
+- **Public Secrets Handler:** Users can create public secrets accessible by all users, stored in encrypted format.
 
-### Changes
-- **Removed SQLite import statements:** Cleaned up codebase by eliminating unused SQLite imports following the migration to PostgreSQL.
+#### Monitoring & Performance
+- **Enhanced Telemetry:** Fixed trace ID recording issues and implemented session tracking for improved monitoring and diagnostics.
+- **Chat Service Integration:** Modularized chat-related logic with dedicated service and repository layers.
 
-
-## [1.0.4]
-
-### Changes
-- **Fixed upload document issue:** Resolved problems related to uploading documents within the framework.
-- **Improved multi-agent export:** Fixed and enhanced the export functionality for multiple agents to ensure smoother setup and deployment.
-
-
-## [1.0.3]
-
-### Changes
-- **New Agent Templates:**
-  - **Multi-Agent (Planner & Executor):** Added a template featuring only planner and executor agents for streamlined multi-agent workflows.
-  - **Multi-Agent (React & Critic):** Introduced a template with just a react agent and a critic agent, enabling focused evaluation and feedback cycles.
-  - **Function Renaming:** Updated function names to reflect the migration from SQLite to PostgreSQL. Any references to "sqlite" in function names have been changed to "database" for clarity and accuracy.
-
-
-## [1.0.2]
-
-### Changes
-- **Export Agent Functionality:** Users can now export any agent created within the framework. This allows agents to be easily set up and deployed on other machines.
+#### Administrative Tools
+- **Improved Recycle Bin Logic:** Enhanced deletion/restoration process between main tables and recycle bin.
+- **Markdown Files Listing:** Added API endpoints to list project-related markdown files.
 
 
-## [1.0.1]
 
-### Changes
-- **Recycle Bin Feature:** Added a recycle bin for agents and tools. When users delete an agent or tool, it is now moved to the recycle bin instead of being permanently deleted. Admins can restore or permanently delete items from the recycle bin.
+## Release [2.0.0] - (Jul 23, 2025)
+
+### New Features & Enhancements
+
+#### Admin Panel
+- **User Registration:** Dedicated tab for registering new users.
+- **User Update:** Functionality to update user password or profile.
+- **Recycle Bin:** View and manage deleted agents or tools.
+- **Evaluation Dashboard:** Displays evaluation results, including data used for evaluation, tool utilization scores, and agent efficiency scores.
+- **Metrics & Evaluation:** Admins can trigger evaluations using the "LLM as a Judge" approach.
+- **Feedback Management:** Admins can review and approve user feedback before it is used for agent training.
+
+#### New Agent Templates
+- **Meta Agent (Supervisor Agent):** Template where a supervisor agent delegates tasks to worker agents.
+- **Planner Meta Agent:** Two-stage workflow—planner node generates a step-by-step plan, then each step is executed sequentially by the meta/supervisor agent.
+- **Planner-Executor Agent:** Added templates with and without human-in-the-loop.
+- **React Critic Agent:** New template for agent reasoning and critique.
+
+#### Agent Creation & Export
+- Users can create agents on the server and export code for any agent to run locally and modify as needed.
+
+#### Feedback Learning
+- Agents (React and Multi-Agent) now learn from user feedback to improve future responses. All feedback is subject to admin approval via the Admin Panel before being used for training.
+
+#### Tool Interrupt Support
+- Added tool interrupt capability for React Agent and Multi-Agent workflows, allowing dynamic intervention and correction during tool execution.
+
+#### Async/Await Refactoring
+- Refactored core functions to use async/await for efficient handling of concurrent requests and improved scalability.
+
+#### Improved Feedback Handling
+- Enhanced multi-agent system to better process and incorporate user feedback during task execution.
+
+#### Telemetry & Tracing
+- Enabled OpenTelemetry to monitor agent activities and system performance for diagnostics, analytics, and debugging.
+- Integrated Arize Phoenix for detailed agent tracing and monitoring.
+
+#### Evaluation Metrics
+- Introduced evaluation metrics to assess performance and efficiency of AI agents, focusing on the "LLM as Judge" approach.
 
 
-## [1.0.0] - Second Release
 
-### Added
-- **New Agent Templates:**
-  - **Meta Agent (Supervisor Agent):** A template where a supervisor agent delegates tasks to worker agents.
-  - **Planner Meta Agent:** A two-stage workflow where a planner node generates a plan, and a meta/supervisor agent executes each step.
-- **Feedback Learning:** Agents (React and Multi-Agent) now learn from user feedback. Implemented a workflow requiring admin approval for feedback before it is used for training.
-- **Tool Interrupt Support:** Added tool interrupt capability for React and Multi-Agent workflows for dynamic intervention.
-- **Async/Await Refactoring:** Core functions now use `async`/`await` to handle multiple concurrent requests efficiently.
-- **Improved Feedback Handling:** Enhanced the multi-agent system to better process and incorporate user feedback.
-- **Telemetry & Tracing:**
-  - Enabled OpenTelemetry to monitor agent activities and system performance for improved diagnostics, analytics, and framework-level debugging.
-  - Integrated Arize Phoenix for detailed agent tracing and monitoring.
-- **Evaluation & Metrics:**
-  - Introduced evaluation metrics to assess agent performance using the "LLM as Judge" approach.
-  - Added an API to trigger evaluations.
-  - Implemented endpoints to expose evaluation data, including tool utilization and agent efficiency scores.
-
-
-## [0.0.1] - First Release
+## Release [1.0.0] - (May 30, 2025)
 
 ### Initial Features
 - **Tool Management:** Implemented functionality to create and onboard custom tools (Python functions) for LLM agents. Tools are saved in a database, making them reusable across multiple agents.
@@ -76,4 +87,6 @@
   - **React Agent:** A template for a single agent that can reason and act to accomplish tasks.
   - **Multi-Agent:** A template for a team of agents using a Planner-Executor-Critic framework. Includes an optional "human-in-the-loop" mode where users can verify the generated plan and provide feedback for replanning before execution.
 - **Memory:** Enabled simple memory for agents to maintain conversation history.
+- **Inference & Chat:** Users can interact with agents via chat, enabling real-time inference and task execution.
+- **File Upload & Tool Integration:** Users can upload files to the server, and agents can utilize the file content through integrated tools.
 

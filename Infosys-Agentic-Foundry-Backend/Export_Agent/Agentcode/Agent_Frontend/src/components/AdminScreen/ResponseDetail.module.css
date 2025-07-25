@@ -1,0 +1,130 @@
+/* Container for the detail card */
+.container {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  transition: all 0.3s ease;
+}
+
+.headerActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.heading {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  background-color: white;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.label {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.textarea {
+  min-height: 60px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  background-color: #ffffff;
+  transition: border-color 0.2s;
+  resize: vertical;
+  width: 100%;
+}
+
+.textarea:focus {
+  border-color: #0078d4;
+  outline: none;
+}
+
+.checkboxLabel {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #0078d4;
+  cursor: pointer;
+}
+
+.submitButton {
+  padding: 8px 16px;
+  background-color: #0078d4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.submitButton:hover {
+  background-color: #005a9e;
+}
+
+.backButton {
+  padding: 8px 16px;
+  background-color: #f0f0f0;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.backButton:hover {
+  background-color: #e5e5e5;
+}
+
+.buttonRow {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  justify-content: flex-start;
+  align-items: center;
+  margin-top: 20px;
+}
+
+/* Add field groups for better organization */
+.fieldGroup {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background-color: #f9f9f9;
+}
+
+.fieldGroupTitle {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #ddd;
+}

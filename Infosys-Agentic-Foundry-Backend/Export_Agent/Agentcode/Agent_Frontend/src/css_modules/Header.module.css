@@ -1,0 +1,124 @@
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: inset 0px 1px 4px #00000029;
+  z-index: 2;
+  position: sticky;
+  top: 0;
+  background-color: white;
+  font-family: Segoe UI;
+}
+
+.navbar .brand {
+  text-align: left;
+  font-weight: bold;
+  font-size: 18px;
+  line-height: 24px;
+  color: #0071b3;
+  text-transform: uppercase;
+}
+
+.brand img{
+  width: 42%;
+  padding: 5px 0 0px 5px;
+  margin-left: 4px;
+  margin-top: 4px;
+}
+.version_number{
+  font-size:10px;
+  color: #bbb;
+  position: relative;
+  top: -2px;
+  right: 0px;
+  font-weight: 400;
+}
+.navbar .menu {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding-right: 20px;
+}
+
+.navbar a {
+  text-decoration: none;
+  font-size: 1em;
+}
+
+.profile-pic {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.user_info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logged_in_user {
+  text-align: left;
+  font-weight: 300;
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0px;
+  color: #5e5e5e;
+  text-transform: uppercase;
+}
+
+.user_name {
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 16px;
+  color: #007cc3;
+  text-transform: uppercase;
+}
+
+.profile_icon {
+  position: relative;
+  width: 22px;
+  height: 23px;
+  border-radius: 50%;
+  background-color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #333;
+  border: 1px solid black;
+}
+
+.faq_icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #cccccc;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  cursor: pointer;
+}
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  background-color: white;
+  border: 1px solid #ccc;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  width: 90px;
+}
+
+.dropdown_item {
+  padding: 10px 20px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  text-align: left;
+}
+
+.dropdown_item:hover {
+  background-color: #f0f0f0;
+}

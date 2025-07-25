@@ -1,55 +1,91 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-import re
 import os
 import ast
+import time
 import shutil
+
+from urllib import response
+from bson import ObjectId
+from langchain_openai import AzureChatOpenAI
+
 import asyncpg
+from MultiDBConnection_Manager import get_connection_manager
 import asyncio
 import bcrypt
 import uuid
 import secrets
 import warnings
 from dotenv import load_dotenv
+from sqlalchemy import text
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
+from motor.motor_asyncio import AsyncIOMotorClient
+
 
 from typing import List, Dict, Optional, Union
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, WebSocket, WebSocketDisconnect, Query, BackgroundTasks
+from fastapi import (
+    FastAPI, UploadFile, File, HTTPException, Request, Response, WebSocket, WebSocketDisconnect, Query,
+    BackgroundTasks, Depends, Form
+)
 from pathlib import Path
 from fastapi_ws_router import WSRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.encoders import jsonable_encoder
+
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import TextLoader
+from langchain.text_splitter import CharacterTextSplitter
+from langchain_pymupdf4llm import PyMuPDF4LLMLoader
+
 from contextlib import asynccontextmanager
 from contextlib import closing
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from phoenix.otel import register
 from phoenix.trace import using_project
-from inference_planner_meta import meta_agent_with_planner_inference
-from src.agent_templates.meta_agent_with_planner_onboarding import onboard_meta_agent_with_planner
 from tool_validation import graph
 from src.models.model import load_model
-from src.agent_templates.react_agent_onboarding import react_system_prompt_gen_func
-from inference import PrevSessionRequest, retrive_previous_conversation, agent_inference
-from replanner_multi_agent_inference import human_in_the_loop_replanner_inference, ReplannerAgentInferenceRequest
 from src.utils.secrets_handler import current_user_email
-from replanner_planner_executor import human_in_the_loop_replanner_inference_pe, ReplannerAgentInferenceRequest
 from typing import Literal
-from inference_meta import meta_agent_inference
-#from ainference import (aagent_inference)
+from groundtruth import evaluate_ground_truth_file
+
+from src.database.database_manager import DatabaseManager, REQUIRED_DATABASES
+from src.database.repositories import (
+    TagRepository, TagToolMappingRepository, TagAgentMappingRepository,
+    ToolRepository, ToolAgentMappingRepository, RecycleToolRepository,
+    AgentRepository, RecycleAgentRepository, ChatHistoryRepository
+)
+from src.tools.tool_code_processor import ToolCodeProcessor
+from src.database.services import (
+    TagService, ToolService, AgentService, ChatService
+)
+
+from src.inference.inference_utils import InferenceUtils
+from src.inference.base_agent_inference import (
+    AgentInferenceRequest, AgentInferenceHITLRequest, BaseAgentInference
+)
+from src.inference.react_agent_inference import ReactAgentInference
+from src.inference.planner_executor_critic_agent_inference import MultiAgentInference
+from src.inference.planner_executor_agent_inference import PlannerExecutorAgentInference
+from src.inference.react_critic_agent_inference import ReactCriticAgentInference
+from src.inference.meta_agent_inference import MetaAgentInference
+from src.inference.planner_meta_agent_inference import PlannerMetaAgentInference
+
+from src.agent_templates.react_agent_onboard import ReactAgentOnboard
+from src.agent_templates.planner_executor_critic_agent_onboard import MultiAgentOnboard
+from src.agent_templates.planner_executor_agent_onboard import PlannerExecutorAgentOnboard
+from src.agent_templates.react_critic_agent_onboard import ReactCriticAgentOnboard
+from src.agent_templates.meta_agent_onboard import MetaAgentOnboard
+from src.agent_templates.planner_meta_agent_onboard import PlannerMetaAgentOnboard
+
 from database_creation import initialize_tables
-from database_manager import (check_and_create_databases,
-    meta_agent_onboarding, meta_agent_with_planner_onboarding, update_agent_by_id_meta, delete_agent_by_id, get_agents_by_id, get_tools_by_id,
-    assign_general_tag_to_untagged_items, get_tags_by_id_or_name, insert_into_tool_table, get_tools,
-    update_tool_by_id, extract_tools_using_tools_id, generate_tool_prompt,delete_tools_by_id,
-    planner_executor_critic_builder, worker_agents_config_prompt, meta_agent_system_prompt_gen_func,
-    react_agent_onboarding, react_multi_agent_onboarding, get_agents, get_agents_by_id_studio, update_agent_by_id,
-    update_latest_query_response_with_tag, insert_into_tags_table, get_tags, update_tag_name_by_id_or_name,
-    delete_tag_by_id_or_name, get_tags_by_agent, get_tags_by_tool, get_agents_by_tag, get_tools_by_tag,
-    delete_chat_history_by_session_id, get_all_chat_sessions, insert_into_feedback_table,
-    get_approvals, get_approval_agents, update_feedback_response, get_response_data, get_tools_by_page, get_agents_by_page,
-    react_multi_pe_agent_onboarding,react_critic_agent_onboarding,
-    get_agents_details_for_chat, get_evaluation_data_by_agent_names, get_agent_metrics_by_agent_names,
-    get_tool_metrics_by_agent_names, get_tool_tags_from_mapping_as_dict, get_agent_tags_from_mapping_as_dict,restore_recycle_agent_by_id,
-    restore_recycle_tool_by_id,delete_recycle_agent_by_id,delete_recycle_tool_by_id, get_tool_data
+from database_manager import (
+    get_agents_by_id, assign_general_tag_to_untagged_items, insert_into_db_connections_table, insert_into_feedback_table,
+    get_approvals, get_approval_agents, update_feedback_response, get_response_data,
+    get_evaluation_data_by_agent_names, get_agent_metrics_by_agent_names,
+    get_tool_metrics_by_agent_names, get_tool_data
 )
 
 from evaluation_metrics import process_unprocessed_evaluations
@@ -67,7 +103,13 @@ from src.utils.secrets_handler import (
     delete_user_secret, 
     list_user_secrets, 
     get_user_secrets_dict,
-    current_user_email
+    current_user_email,
+    create_public_key,
+    update_public_key,
+    get_public_key,
+    get_all_public_keys,
+    delete_public_key,
+    list_public_keys,
 )
 
 load_dotenv()
@@ -84,26 +126,260 @@ os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = os.getenv("PHOENIX_COLLECTOR_ENDPOINT
 os.environ["PHOENIX_GRPC_PORT"] = os.getenv("PHOENIX_GRPC_PORT",'50051')
 os.environ["PHOENIX_SQL_DATABASE_URL"] = os.getenv("PHOENIX_SQL_DATABASE_URL")
 
-# os.environ["LANGSMITH_TRACING"]="true"
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGSMITH_ENDPOINT"]="https://api.smith.langchain.com"
-os.environ["LANGSMITH_API_KEY"]="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"
-os.environ["LANGSMITH_PROJECT"]="meta agent"
-os.environ["LANGCHAIN_CALLBACKS_BACKGROUND"] = "true"
+
+# --- Global Instances (initialized in lifespan) ---
+# These will hold the single instances of managers and services.
+# They are declared globally so FastAPI's Depends can access them.
+db_manager: DatabaseManager = None
+
+# Repositories (usually not directly exposed via Depends, but used by services)
+tag_repo: TagRepository = None
+tag_tool_mapping_repo: TagToolMappingRepository = None
+tag_agent_mapping_repo: TagAgentMappingRepository = None
+tool_repo: ToolRepository = None
+tool_agent_mapping_repo: ToolAgentMappingRepository = None
+recycle_tool_repo: RecycleToolRepository = None
+agent_repo: AgentRepository = None
+recycle_agent_repo: RecycleAgentRepository = None
+chat_history_repo: ChatHistoryRepository = None
+
+# Utility Processors
+tool_code_processor: ToolCodeProcessor = None
+
+# Services (these are typically exposed via Depends for endpoints)
+tag_service: TagService = None
+tool_service: ToolService = None
+agent_service: AgentService = None
+chat_service: ChatService = None
+
+# Specific Agent Services (these are typically exposed via Depends for endpoints)
+react_agent_service: ReactAgentOnboard = None
+multi_agent_service: MultiAgentOnboard = None
+planner_executor_agent_service: PlannerExecutorAgentOnboard = None
+react_critic_agent_service: ReactCriticAgentOnboard = None
+meta_agent_service: MetaAgentOnboard = None
+planner_meta_agent_service: PlannerMetaAgentOnboard = None
+
+# Inference
+inference_utils: InferenceUtils = None
+react_agent_inference: ReactAgentInference = None
+multi_agent_inference: MultiAgentInference = None
+planner_executor_agent_inference: PlannerExecutorAgentInference = None
+react_critic_agent_inference : ReactCriticAgentInference = None
+meta_agent_inference: MetaAgentInference = None
+planner_meta_agent_inference: PlannerMetaAgentInference = None
+
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await check_and_create_databases()
-    await initialize_tables()
-    await assign_general_tag_to_untagged_items()
-    yield
+    """
+    Manages the startup and shutdown events for the FastAPI application.
+    - On startup: Initializes database connections, creates tables, and sets up service instances.
+    - On shutdown: Closes database connections.
+    """
+    global db_manager, tag_repo, tag_tool_mapping_repo, tag_agent_mapping_repo, \
+           tool_repo, tool_agent_mapping_repo, recycle_tool_repo, \
+           agent_repo, recycle_agent_repo, chat_history_repo, \
+           tool_code_processor, tag_service, tool_service, agent_service, \
+           react_agent_service, multi_agent_service, planner_executor_agent_service, \
+           react_critic_agent_service, meta_agent_service, planner_meta_agent_service, \
+           chat_service, inference_utils, react_agent_inference, multi_agent_inference, \
+           planner_executor_agent_inference, react_critic_agent_inference, meta_agent_inference, \
+           planner_meta_agent_inference
 
-app = FastAPI(lifespan=lifespan)
+    log.info("Application startup initiated.")
+
+    try:
+        # 1. Initialize DatabaseManager
+        # The alias 'db_main' is used for the primary database pool, so both alias or main database
+        # name can be used to connect, get or close the connection pool for main database.
+        db_manager = DatabaseManager(alias_to_main_db='db_main')
+
+        # 2. Check and Create Databases (Administrative Task)
+        # This ensures the databases exist before we try to connect pools to them.
+        await db_manager.check_and_create_databases(required_db_names=REQUIRED_DATABASES)
+        log.info("All required databases checked/created.")
+
+        # 3. Connect to all required database pools
+        # Pass the list of all databases to connect to.
+        DB_USED = [REQUIRED_DATABASES[0], REQUIRED_DATABASES[6]]
+        await db_manager.connect(db_names=DB_USED,
+                                 min_size=3, max_size=5, # Default pool sizes
+                                 db_main_min_size=5, db_main_max_size=7) # Custom sizes for main DB or agentic_workflow_as_service_database
+        log.info("All database connection pools established.")
+
+        # 4. Initialize Repositories (Pass the correct pool to each)
+        # Repositories only handle raw DB operations.
+        main_pool = await db_manager.get_pool('db_main')
+        recycle_pool = await db_manager.get_pool('recycle')
+
+        tag_repo = TagRepository(pool=main_pool)
+        tag_tool_mapping_repo = TagToolMappingRepository(pool=main_pool)
+        tag_agent_mapping_repo = TagAgentMappingRepository(pool=main_pool)
+        tool_repo = ToolRepository(pool=main_pool)
+        tool_agent_mapping_repo = ToolAgentMappingRepository(pool=main_pool)
+        recycle_tool_repo = RecycleToolRepository(pool=recycle_pool)
+        agent_repo = AgentRepository(pool=main_pool)
+        recycle_agent_repo = RecycleAgentRepository(pool=recycle_pool)
+        chat_history_repo = ChatHistoryRepository(pool=main_pool)
+        log.info("All repositories initialized.")
+
+        # 5. Initialize Utility Processors
+        tool_code_processor = ToolCodeProcessor()
+        log.info("Utility processors initialized.")
+
+        # 6. Initialize Services (Pass their required repositories and other services)
+        # Services contain business logic and orchestrate repository calls.
+        tag_service = TagService(
+            tag_repo=tag_repo,
+            tag_tool_mapping_repo=tag_tool_mapping_repo,
+            tag_agent_mapping_repo=tag_agent_mapping_repo
+        )
+        tool_service = ToolService(
+            tool_repo=tool_repo,
+            recycle_tool_repo=recycle_tool_repo,
+            tool_agent_mapping_repo=tool_agent_mapping_repo,
+            tag_service=tag_service, # ToolService needs TagService
+            tool_code_processor=tool_code_processor,
+            agent_repo=agent_repo # ToolService needs AgentRepository for dependency checks
+        )
+        agent_service = AgentService(
+            agent_repo=agent_repo,
+            recycle_agent_repo=recycle_agent_repo,
+            tool_service=tool_service, # AgentService needs ToolService
+            tag_service=tag_service # AgentService needs TagService
+        )
+        react_agent_service = ReactAgentOnboard(
+            agent_repo=agent_repo,
+            recycle_agent_repo=recycle_agent_repo,
+            tool_service=tool_service,
+            tag_service=tag_service
+        )
+        multi_agent_service = MultiAgentOnboard(
+            agent_repo=agent_repo,
+            recycle_agent_repo=recycle_agent_repo,
+            tool_service=tool_service,
+            tag_service=tag_service
+        )
+        planner_executor_agent_service = PlannerExecutorAgentOnboard(
+            agent_repo=agent_repo,
+            recycle_agent_repo=recycle_agent_repo,
+            tool_service=tool_service,
+            tag_service=tag_service
+        )
+        react_critic_agent_service = ReactCriticAgentOnboard(
+            agent_repo=agent_repo,
+            recycle_agent_repo=recycle_agent_repo,
+            tool_service=tool_service,
+            tag_service=tag_service
+        )
+        meta_agent_service = MetaAgentOnboard(
+            agent_repo=agent_repo,
+            recycle_agent_repo=recycle_agent_repo,
+            tool_service=tool_service,
+            tag_service=tag_service
+        )
+        planner_meta_agent_service = PlannerMetaAgentOnboard(
+            agent_repo=agent_repo,
+            recycle_agent_repo=recycle_agent_repo,
+            tool_service=tool_service,
+            tag_service=tag_service
+        )
+        chat_service = ChatService(chat_history_repo=chat_history_repo)
+
+        log.info("All services initialized.")
+
+        # 7. Initialize Inference Services
+        inference_utils = InferenceUtils()
+        react_agent_inference = ReactAgentInference(
+            chat_service=chat_service,
+            tool_service=tool_service,
+            agent_service=agent_service,
+            inference_utils=inference_utils
+        )
+        multi_agent_inference = MultiAgentInference(
+            chat_service=chat_service,
+            tool_service=tool_service,
+            agent_service=agent_service,
+            inference_utils=inference_utils
+        )
+        planner_executor_agent_inference = PlannerExecutorAgentInference(
+            chat_service=chat_service,
+            tool_service=tool_service,
+            agent_service=agent_service,
+            inference_utils=inference_utils
+        )
+        react_critic_agent_inference = ReactCriticAgentInference(
+            chat_service=chat_service,
+            tool_service=tool_service,
+            agent_service=agent_service,
+            inference_utils=inference_utils
+        )
+        meta_agent_inference = MetaAgentInference(
+            chat_service=chat_service,
+            tool_service=tool_service,
+            agent_service=agent_service,
+            inference_utils=inference_utils
+        )
+        planner_meta_agent_inference = PlannerMetaAgentInference(
+            chat_service=chat_service,
+            tool_service=tool_service,
+            agent_service=agent_service,
+            inference_utils=inference_utils
+        )
+
+        # 8. Create Tables (if they don't exist)
+        # Call create_tables_if_not_exists for each service/repository that manages tables.
+        # Order matters for foreign key dependencies.
+        await tag_repo.create_table_if_not_exists()
+        await tool_repo.create_table_if_not_exists()
+        await agent_repo.create_table_if_not_exists()
+
+        # Mapping tables (depend on main tables)
+        await tag_tool_mapping_repo.create_table_if_not_exists()
+        await tag_agent_mapping_repo.create_table_if_not_exists()
+        await tool_agent_mapping_repo.create_table_if_not_exists() # This one had the FK removed
+
+        # Recycle tables (depend on nothing but their pool)
+        await recycle_tool_repo.create_table_if_not_exists()
+        await recycle_agent_repo.create_table_if_not_exists()
+
+        # Remaining tables
+        await initialize_tables()
+        log.info("All database tables checked/created.")
+
+        # 9. Running necessary data migrations/fixes
+        await tool_service.fix_tool_agent_mapping_for_meta_agents() # Ensure FK is dropped
+        log.info("Database data migrations/fixes completed.")
+
+        await assign_general_tag_to_untagged_items()
+        asyncio.create_task(cleanup_old_files())
+
+        log.info("Application startup complete. FastAPI is ready to serve requests.")
+
+        # 10. Yield control to the application (FastAPI starts serving requests)
+        yield
+
+    except Exception as e:
+        log.critical(f"Critical error during application startup: {e}", exc_info=True)
+        # In a real application, you might want to exit here or put the app in a degraded state.
+        # For now, re-raising will prevent the app from starting.
+        raise
+
+    finally:
+        # 10. Close database connections on shutdown
+        log.info("Application shutdown initiated. Closing database connections.")
+        if db_manager:
+            await db_manager.close()
+        log.info("Application shutdown complete. Database connections closed.")
+
+
+
+app = FastAPI(lifespan=lifespan, title="Infosys Agentic Foundry API")
 router = WSRouter()
 
 
@@ -126,6 +402,59 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+
+# --- Dependency Injection Functions ---
+# These functions provide the service instances to your endpoints.
+# FastAPI will call these when an endpoint declares a dependency on them.
+
+def get_tag_service() -> TagService:
+    """Returns the global TagService instance."""
+    return tag_service
+
+def get_tool_service() -> ToolService:
+    """Returns the global ToolService instance."""
+    return tool_service
+
+def get_agent_service() -> AgentService:
+    """Returns the global AgentService instance."""
+    return agent_service
+
+def get_specialized_agent_service(agent_type: str):
+    """Return the appropriate specialized service instance"""
+    if agent_type == "react_agent":
+        return react_agent_service
+    if agent_type == "multi_agent":
+        return multi_agent_service
+    if agent_type == "planner_executor_agent":
+        return planner_executor_agent_service
+    if agent_type == "react_critic_agent":
+        return react_critic_agent_service
+    if agent_type == "meta_agent":
+        return meta_agent_service
+    if agent_type == "planner_meta_agent":
+        return planner_meta_agent_service
+    raise HTTPException(status_code=400, detail=f"Unsupported agent type: {agent_type}")
+
+def get_chat_service() -> ChatService:
+    """Returns the global ChatService instance."""
+    return chat_service
+
+def get_specialized_inference_service(agent_type: str) -> BaseAgentInference:
+    """Return the appropriate inference service instance based on agent type."""
+    if agent_type == "react_agent":
+        return react_agent_inference
+    if agent_type == "multi_agent":
+        return multi_agent_inference
+    if agent_type == "planner_executor_agent":
+        return planner_executor_agent_inference
+    if agent_type == "react_critic_agent":
+        return react_critic_agent_inference
+    if agent_type == "meta_agent":
+        return meta_agent_inference
+    if agent_type == "planner_meta_agent":
+        return planner_meta_agent_inference
+    raise HTTPException(status_code=400, detail=f"Unsupported agent type: {agent_type}")
 
 
 class GetAgentRequest(BaseModel):
@@ -190,10 +519,11 @@ class AgentOnboardingRequest(BaseModel):
     agent_name: str
     agent_goal: str
     workflow_description: str
+    agent_type: Optional[str] = None
     model_name: str
     tools_id: List[str]
-    tag_ids: Optional[Union[str, List[str]]] = None
     email_id: str
+    tag_ids: Optional[Union[str, List[str]]] = None
 
 
 
@@ -243,18 +573,12 @@ class UpdateAgentRequest(BaseModel):
 
     Attributes:
     ----------
+    agentic_application_id_to_modify : str
+        The ID of the agentic application to be modified.
     model_name : str
         The name of the model to be updated.
     user_email_id : str
         The email ID of the user requesting the update.
-    agentic_application_id_to_modify : str
-        The ID of the agentic application to be modified.
-    agentic_application_type : str
-        The type of the agentic application.
-    agentic_application_name_to_modify : str, optional
-        The name of the agentic application to be modified (default is an empty string).
-    is_admin : bool, optional
-        Indicates if the user has admin privileges (default is False).
     agentic_application_description : str, optional
         A description of the agentic application (default is an empty string).
     agentic_application_workflow_description : str, optional
@@ -265,19 +589,19 @@ class UpdateAgentRequest(BaseModel):
         A list of tool IDs to be added (default is an empty list).
     tools_id_to_remove : List[str], optional
         A list of tool IDs to be removed (default is an empty list).
+    is_admin : bool, optional
+        Indicates if the user has admin privileges (default is False).
     """
+    agentic_application_id_to_modify: str
     model_name: str
     user_email_id: str
-    agentic_application_id_to_modify: str
-    agentic_application_type: str
-    agentic_application_name_to_modify: str = ""
-    is_admin: bool = False
     agentic_application_description: str = ""
     agentic_application_workflow_description: str = ""
     system_prompt: dict
     tools_id_to_add: List[str] = []
     tools_id_to_remove: List[str] = []
     updated_tag_id_list: Optional[Union[str, List[str]]] = None
+    is_admin: bool = False
 
 
 class DeleteAgentRequest(BaseModel):
@@ -295,20 +619,13 @@ class DeleteAgentRequest(BaseModel):
     is_admin: bool = False
 
 
-class AgentInferenceRequest(BaseModel):
+class PrevSessionRequest(BaseModel):
     """
-    Pydantic model representing the input request for agent inference.
-    This model captures the necessary details for querying the agent,
-    including the application ID, query, session ID, and model-related information.
+    Pydantic model representing the input request for retriving previous conversations.
     """
-    agentic_application_id: str  # ID of the agentic application
-    query: str  # The query to be processed by the agent
-    session_id: str  # Unique session identifier
-    model_name: str  # Name of the llm model
-    prev_response: Dict = None# Previous response from the agent
-    feedback: str = "" # Feedback from the user
-    reset_conversation: bool = False# If true need to reset the conversation
-    interrupt_flag:bool=False
+    agent_id: str  # agent id user is working on
+    session_id: str  # session id of the user
+
 
 class TagData(BaseModel):
     tag_name: str
@@ -324,14 +641,6 @@ class DeleteTagData(BaseModel):
     tag_id: Optional[str] = None
     tag_name: Optional[str] = None
     created_by: str
-
-class AgentIdName(BaseModel):
-    agentic_application_id: Optional[str] = None
-    agent_name: Optional[str] = None
-
-class ToolIdName(BaseModel):
-    tool_id: Optional[str] = None
-    tool_name: Optional[str] = None
 
 class TagIdName(BaseModel):
     tag_ids: Optional[Union[str, List[str]]] = None
@@ -355,8 +664,16 @@ class SecretCreateRequest(BaseModel):
     secret_name: str
     secret_value: str
 
+class PublicSecretCreateRequest(BaseModel):
+    secret_name: str
+    secret_value: str
+
 class SecretUpdateRequest(BaseModel):
     user_email: str
+    secret_name: str
+    secret_value: str
+
+class PublicSecretUpdateRequest(BaseModel):
     secret_name: str
     secret_value: str
 
@@ -364,58 +681,36 @@ class SecretDeleteRequest(BaseModel):
     user_email: str
     secret_name: str
 
+class PublicSecretDeleteRequest(BaseModel):
+    secret_name: str
+
 class SecretGetRequest(BaseModel):
     user_email: str
     secret_name: Optional[str] = None
     secret_names: Optional[List[str]] = None
 
+class PublicSecretGetRequest(BaseModel):
+    secret_name: Optional[str] = None
+
 class SecretListRequest(BaseModel):
     user_email: str
 
-def extract_fn_name(code_str: str):
-    """
-        Using the ast module syntax check the function and
-        return the function name in the code snippet.
-    """
 
-    try:
-        parsed_code = ast.parse(code_str)
-    except Exception as e:
-        log.error(f"Tool Onboarding Failed: Function parsing error.\n{e}")
-        err = f"Tool Onboarding Failed: Function parsing error.\n{e}"
-        return ""
-
-    try:
-        for node in parsed_code.body:
-            if isinstance(node, ast.FunctionDef):
-                for arg in node.args.args:
-                    if arg.annotation is None:
-                        raise ValueError("Data Types Not Mentioned for the arguments of the function")
-
-        function_names = [
-            node.name
-            for node in ast.walk(parsed_code)
-            if isinstance(node, ast.FunctionDef)
-        ]
-        return function_names[0] if function_names else ""
-    except (SyntaxError, ValueError, IndexError) as e:
-        log.error(f"Tool Onboarding Failed: Syntax error in function definition.\n{e}")
-        err = f"There is a syntax mistake in it: {e}"
-        return ""
-
-
-def get_agents_by_ids_studio(agentic_application_ids: List[str]) -> List[dict]:
-    agents = []
-    for agent_id in agentic_application_ids:
-        # Simulated data for agents
-        agents.append({"agent_id": agent_id, "name": f"Agent {agent_id}"})
-    log.debug(f"Agents retrieved successfully: {agents}")
-    return agents
+class GroundTruthEvaluationRequest(BaseModel):
+    model_name: str
+    agent_type: str
+    agent_name: str
+    agentic_application_id: str
+    session_id: str
+    use_llm_grading: Optional[bool] = False
 
 
 
 @app.post('/evaluate')
-async def evaluate(evaluating_model1,evaluating_model2):
+async def evaluate(fastapi_request: Request, evaluating_model1, evaluating_model2):
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     register(
             project_name='add-tool',
             auto_instrument=True,
@@ -423,7 +718,11 @@ async def evaluate(evaluating_model1,evaluating_model2):
             batch=True
         )
     with using_project('evaluation-metrics'):
-        return await process_unprocessed_evaluations(model1=evaluating_model1,model2=evaluating_model2)
+        return await process_unprocessed_evaluations(
+            model1=evaluating_model1,
+            model2=evaluating_model2,
+            get_specialized_inference_service=get_specialized_inference_service
+        )
 
 
  
@@ -446,11 +745,14 @@ def parse_agent_names(agent_input: Optional[List[str]]) -> Optional[List[str]]:
 
 
 @app.get("/evaluations")
-async def get_evaluation_data(
+async def get_evaluation_data(fastapi_request: Request,
     agent_names: Optional[List[str]] = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=100)
 ):
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     parsed_names = parse_agent_names(agent_names)
     data = await get_evaluation_data_by_agent_names(parsed_names, page, limit)
     if not data:
@@ -459,11 +761,14 @@ async def get_evaluation_data(
 
 
 @app.get("/agent-metrics")
-async def get_agent_metrics(
+async def get_agent_metrics(fastapi_request: Request,
     agent_names: Optional[List[str]] = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=10, ge=1, le=100)
 ):
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     parsed_names = parse_agent_names(agent_names)
     data = await get_agent_metrics_by_agent_names(parsed_names, page, limit)
     if not data:
@@ -473,10 +778,14 @@ async def get_agent_metrics(
 
 @app.get("/tool-metrics")
 async def get_tool_metrics(
+    fastapi_request: Request,
     agent_names: Optional[List[str]] = Query(default=None),
     page: int = Query(default=1, ge=1, description="Page number (starts from 1)"),
     limit: int = Query(default=10, ge=1, le=100, description="Number of records per page (max 100)")
 ):
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     parsed_names = parse_agent_names(agent_names)
     data = await get_tool_metrics_by_agent_names(parsed_names, page, limit)
     if not data:
@@ -485,7 +794,11 @@ async def get_tool_metrics(
 
 
 @app.get('/get-models')
-async def get_available_models():
+async def get_available_models(fastapi_request: Request):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
         # Use 'with' for automatic cleanup
         connection = await asyncpg.connect(DB_URI)
@@ -505,13 +818,20 @@ async def get_available_models():
 
 
 @app.get('/get-version')
-def get_version():
+def get_version(fastapi_request: Request):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     with open(os.path.join(os.path.dirname(__file__), 'VERSION')) as f:
         return f.read().strip()
 
 
 @app.post("/add-tool")
-async def add_tool(tool_data: ToolData):
+async def add_tool_endpoint(fastapi_request: Request,
+    tool_data: ToolData,
+    tool_service: ToolService = Depends(get_tool_service)
+):
     """
     Adds a new tool to the tool table.
 
@@ -536,8 +856,11 @@ async def add_tool(tool_data: ToolData):
     - is_created : bool
         Indicates whether the tool was successfully created.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
     update_session_context(model_used=tool_data.model_name,
-                            tags=tool_data.tag_ids,)
+                            tags=tool_data.tag_ids,user_session=user_session, user_id=user_id)
     register(
             project_name='add-tool',
             auto_instrument=True,
@@ -545,58 +868,7 @@ async def add_tool(tool_data: ToolData):
             batch=True
         )
     with using_project('add-tool'):
-        tool_list = dict(tool_data)
-        tool_list["tool_name"] = extract_fn_name(code_str=tool_list["code_snippet"])
-        if tool_list["tool_name"]:
-            update_session_context(tool_name=tool_list["tool_name"])
-            if not tool_list.get("tag_ids", None):
-                tag_data = await get_tags_by_id_or_name(tag_name="General")
-                tool_list['tag_ids'] = tag_data.get("tag_id", None)
-    #         initial_state = {
-    #             "code": tool_list["code_snippet"],
-    #             "validation_case1": None,
-    #             "feedback_case1": None,
-    #             "validation_case3": None,
-    #             "feedback_case3": None,
-    #             "validation_case4": None,
-    #             "feedback_case4": None,
-    #             "validation_case5": None,
-    #             "feedback_case5": None,
-    #             "validation_case6": None,
-    #             "feedback_case6": None,
-    #             "validation_case7": None,
-    #             "feedback_case7": None
-    #         }
-
-    #         workflow_result = await graph.ainvoke(input=initial_state)
-    #         validation_cases = [
-    #             "validation_case1", "validation_case3",
-    #             "validation_case4", "validation_case5","validation_case6", "validation_case7"
-    #         ]
-
-    #         failed_feedback = {}
-    #         for case in validation_cases:
-    #             if not workflow_result.get(case):
-    #                 feedback_key = case.replace("validation_", "feedback_")
-    #                 failed_feedback[case] = workflow_result.get(feedback_key)
-    #         if not failed_feedback or force_add:
-            status = await insert_into_tool_table(tool_list)
-    #         else:
-    #             verify=list(failed_feedback.values())
-    #             status = {
-    #                 "message": ("Verification failed: "+str(verify)),
-    #                 "tool_id": "",
-    #                 "is_created": False
-    #             }
-        else:
-            status = {
-                "message": (
-                    "The code is having invalid syntax or "
-                    "you forgot adding data types to the parameters"
-                ),
-                "tool_id": "",
-                "is_created": False
-            }
+        status = await tool_service.create_tool(tool_data=dict(tool_data))
         log.debug(f"Tool creation status: {status}")
 
     update_session_context(model_used='Unassigned', 
@@ -607,7 +879,7 @@ async def add_tool(tool_data: ToolData):
 
 
 @app.get("/get-tools/")
-async def get_tools_endpoint():
+async def get_tools_endpoint(fastapi_request: Request, tool_service: ToolService = Depends(get_tool_service)):
     """
     Retrieves all tools from the tool table.
 
@@ -616,14 +888,18 @@ async def get_tools_endpoint():
     list
         A list of tools. If no tools are found, raises an HTTPException with status code 404.
     """
-    tools = await get_tools()
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    tools = await tool_service.get_all_tools()
     if not tools:
         raise HTTPException(status_code=404, detail="No tools found")
     return tools
 
 
 @app.get("/get-tool/{tool_id}")
-async def get_tool_by_id(tool_id: str):
+async def get_tool_by_id_endpoint(fastapi_request: Request, tool_id: str, tool_service: ToolService = Depends(get_tool_service)):
     """
     Retrieves a tool by its ID.
 
@@ -638,8 +914,11 @@ async def get_tool_by_id(tool_id: str):
         A dictionary containing the tool's details.
         If the tool is not found, raises an HTTPException with status code 404.
     """
-    update_session_context(tool_id=tool_id)
-    tool = await get_tools_by_id(tool_id=tool_id)
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(tool_id=tool_id, user_session=user_session, user_id=user_id)
+    tool = await tool_service.get_tool(tool_id=tool_id)
     if not tool:
         raise HTTPException(status_code=404, detail="Tool not found")
     update_session_context(tool_id='Unassigned')
@@ -647,7 +926,7 @@ async def get_tool_by_id(tool_id: str):
 
 
 @app.put("/update-tool/{tool_id}")
-async def update_tool_endpoint(tool_id: str, request: UpdateToolRequest):
+async def update_tool_endpoint(fastapi_request: Request, tool_id: str, request: UpdateToolRequest, tool_service: ToolService = Depends(get_tool_service)):
     """
     Updates a tool by its ID.
 
@@ -665,9 +944,13 @@ async def update_tool_endpoint(tool_id: str, request: UpdateToolRequest):
         If the update is unsuccessful, raises an HTTPException with
         status code 400 and the status message.
     """
+    previous_value = await tool_service.get_tool(tool_id=tool_id) 
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
     update_session_context(tool_id=tool_id,tags=request.updated_tag_id_list,model_used=request.model_name,
-                            action_type='update',action_on='tool',previous_value=get_tools_by_id(tool_id=tool_id))
-        
+                            action_type='update',action_on='tool',previous_value=previous_value, user_session=user_session, user_id=user_id)
+
     register(
             project_name='update-tool',
             auto_instrument=True,
@@ -675,26 +958,32 @@ async def update_tool_endpoint(tool_id: str, request: UpdateToolRequest):
             batch=True
         )
     with using_project('update-tool'):
-        response = await update_tool_by_id(
+        response = await tool_service.update_tool(
+            tool_id=tool_id,
             model_name=request.model_name,
-            user_email_id=request.user_email_id,
-            is_admin=request.is_admin,
-            tool_id_to_modify=tool_id,
-            tool_description=request.tool_description,
             code_snippet=request.code_snippet,
-            updated_tag_id_list=request.updated_tag_id_list
+            tool_description=request.tool_description,
+            updated_tag_id_list=request.updated_tag_id_list,
+            user_id=request.user_email_id,
+            is_admin=request.is_admin
         )
-    if not response["is_update"]:
-        raise HTTPException(status_code=400, detail=response["status_message"])
-    update_session_context(new_value=get_tools_by_id(tool_id=tool_id))
-    log.debug(f"Tool update status: {response}")
+
+    if response["is_update"]:
+        new_value=await tool_service.get_tool(tool_id=tool_id)
+        update_session_context(new_value=new_value)
+        log.debug(f"Tool update status: {response}")
+        update_session_context(new_value='Unassigned')
     update_session_context(tool_id='Unassigned',tags='Unassigned',model_used='Unassigned',action_type='Unassigned',
                         action_on='Unassigned',previous_value='Unassigned',new_value='Unassigned')
+
+    if not response["is_update"]:
+        log.error(f"Tool update failed: {response['status_message']}")
+        raise HTTPException(status_code=400, detail=response["status_message"])
     return response
 
 
 @app.delete("/delete-tool/{tool_id}")
-async def delete_tool(tool_id: str, request: DeleteToolRequest):
+async def delete_tool_endpoint(fastapi_request: Request,tool_id: str, request: DeleteToolRequest, tool_service: ToolService = Depends(get_tool_service)):
     """
     Deletes a tool by its ID.
 
@@ -710,18 +999,24 @@ async def delete_tool(tool_id: str, request: DeleteToolRequest):
     dict
         A dictionary containing the status of the deletion operation.
     """
-    update_session_context(tool_id=tool_id,action_on='tool', action_type='delete',previous_value=get_tools_by_id(tool_id=tool_id))
-    status = await delete_tools_by_id(user_email_id=request.user_email_id,
-                                is_admin=request.is_admin,
-                                tool_id=tool_id)
+    previous_value = await tool_service.get_tool(tool_id=tool_id)
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id,tool_id=tool_id,action_on='tool', action_type='delete',previous_value=previous_value)
+    status = await tool_service.delete_tool(
+        tool_id=tool_id,
+        user_id=request.user_email_id,
+        is_admin=request.is_admin
+    )
     update_session_context(tool_id='Unassigned',action_on='Unassigned', action_type='Unassigned',previous_value='Unassigned')
     return status
 
 
-@app.post("/react-agent/onboard-agent")
-async def onboard_react_agent(request: AgentOnboardingRequest):
+@app.post("/onboard-agent")
+async def onboard_agent_endpoint(fastapi_request: Request,request: AgentOnboardingRequest):
     """
-    Onboards a new React agent.
+    Onboards a new agent.
 
     Parameters:
     ----------
@@ -735,32 +1030,53 @@ async def onboard_react_agent(request: AgentOnboardingRequest):
         If an error occurs, raises an HTTPException with
         status code 500 and the error message.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    if not request.agent_type:
+        raise HTTPException(status_code=400, detail="Agent type is required for onboarding.")
+    specialized_agent_service = get_specialized_agent_service(agent_type=request.agent_type)
     update_session_context(model_used=request.model_name,
                            agent_name=request.agent_name,
-                           agent_type="react",
+                           agent_type=request.agent_type,
                            tools_binded=request.tools_id)
+    project_name = f"onboard-{request.agent_type.replace('_', '-')}"
     try:
         register(
-            project_name='onboard-react-agent',
+            project_name=project_name,
             auto_instrument=True,
             set_global_tracer_provider=False,
             batch=True
         )
-        with using_project('onboard-react-agent'):
-            if not request.tag_ids:
-                tag_data = await get_tags_by_id_or_name(tag_name="General")
-                request.tag_ids = tag_data.get("tag_id", None)
-            update_session_context(tags=request.tag_ids)
-                # can't use get directly with await function call.
-            result = await react_agent_onboarding(
+        with using_project(project_name):
+            update_session_context(
+                model_used=request.model_name,
                 agent_name=request.agent_name,
-                agent_goal=request.agent_goal,
-                workflow_description=request.workflow_description,
-                model_name=request.model_name,
-                tools_id=request.tools_id,
-                user_email_id=request.email_id,
-                tag_ids=request.tag_ids
+                agent_type=request.agent_type,
+                tools_binded=request.tools_id
             )
+            if request.agent_type in specialized_agent_service.meta_type_templates:
+                result = await specialized_agent_service.onboard_agent(
+                    agent_name=request.agent_name,
+                    agent_goal=request.agent_goal,
+                    workflow_description=request.workflow_description,
+                    model_name=request.model_name,
+                    worker_agents_id=request.tools_id,
+                    user_id=request.email_id,
+                    tag_ids=request.tag_ids
+                )
+            else:
+                result = await specialized_agent_service.onboard_agent(
+                    agent_name=request.agent_name,
+                    agent_goal=request.agent_goal,
+                    workflow_description=request.workflow_description,
+                    model_name=request.model_name,
+                    tools_id=request.tools_id,
+                    user_id=request.email_id,
+                    tag_ids=request.tag_ids
+                )
         update_session_context(model_used='Unassigned',
                             agent_name='Unassigned',
                             agent_id='Unassigned',
@@ -774,8 +1090,9 @@ async def onboard_react_agent(request: AgentOnboardingRequest):
             detail=f"Error during agent onboarding: {str(e)}"
         ) from e
 
-@app.post("/react-critic-agent/onboard-agent")
-async def onboard_react_agent(request: AgentOnboardingRequest):
+
+@app.post("/react-agent/onboard-agent")
+async def onboard_react_agent(fastapi_request: Request, request: AgentOnboardingRequest):
     """
     Onboards a new React agent.
 
@@ -791,10 +1108,14 @@ async def onboard_react_agent(request: AgentOnboardingRequest):
         If an error occurs, raises an HTTPException with
         status code 500 and the error message.
     """
-    update_session_context(model_used=request.model_name,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id,model_used=request.model_name,
                            agent_name=request.agent_name,
                            agent_type="react",
                            tools_binded=request.tools_id)
+    react_agent_service = get_specialized_agent_service(agent_type="react_agent")
     try:
         register(
             project_name='onboard-react-agent',
@@ -803,18 +1124,69 @@ async def onboard_react_agent(request: AgentOnboardingRequest):
             batch=True
         )
         with using_project('onboard-react-agent'):
-            if not request.tag_ids:
-                tag_data = await get_tags_by_id_or_name(tag_name="General")
-                request.tag_ids = tag_data.get("tag_id", None)
-            update_session_context(tags=request.tag_ids)
-                # can't use get directly with await function call.
-            result = await react_critic_agent_onboarding(
+            result = await react_agent_service.onboard_agent(
                 agent_name=request.agent_name,
                 agent_goal=request.agent_goal,
                 workflow_description=request.workflow_description,
                 model_name=request.model_name,
                 tools_id=request.tools_id,
-                user_email_id=request.email_id,
+                user_id=request.email_id,
+                tag_ids=request.tag_ids
+            )
+        update_session_context(model_used='Unassigned',
+                            agent_name='Unassigned',
+                            agent_id='Unassigned',
+                            agent_type='Unassigned',
+                            tools_binded='Unassigned',
+                            tags='Unassigned')
+        return {"status": "success", "result": result}
+    except Exception as e:
+        log.error(f"Error during React agent onboarding: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error during agent onboarding: {str(e)}"
+        ) from e
+
+@app.post("/react-critic-agent/onboard-agent")
+async def onboard_react_agent(fastapi_request: Request,request: AgentOnboardingRequest):
+    """
+    Onboards a new React agent.
+
+    Parameters:
+    ----------
+    request : AgentOnboardingRequest
+        The request body containing the agent's details.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the status of the onboarding operation.
+        If an error occurs, raises an HTTPException with
+        status code 500 and the error message.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id,model_used=request.model_name,
+                           agent_name=request.agent_name,
+                           agent_type="react",
+                           tools_binded=request.tools_id)
+    react_critic_agent_service = get_specialized_agent_service(agent_type="react_critic_agent")
+    try:
+        register(
+            project_name='onboard-react-agent',
+            auto_instrument=True,
+            set_global_tracer_provider=False,
+            batch=True
+        )
+        with using_project('onboard-react-agent'):
+            result = await react_critic_agent_service.onboard_agent(
+                agent_name=request.agent_name,
+                agent_goal=request.agent_goal,
+                workflow_description=request.workflow_description,
+                model_name=request.model_name,
+                tools_id=request.tools_id,
+                user_id=request.email_id,
                 tag_ids=request.tag_ids
             )
         update_session_context(model_used='Unassigned',
@@ -831,12 +1203,11 @@ async def onboard_react_agent(request: AgentOnboardingRequest):
         ) from e
 
 @app.post("/planner-executor-critic-agent/onboard-agents")
-async def onboard_pec_agent(request: AgentOnboardingRequest):
+async def onboard_pec_agent(fastapi_request: Request, request: AgentOnboardingRequest):
     """
     Onboards multiple agents in one go.
-eters:
-    -------
-    Param---
+    Parameters:
+    ----------
     request :  AgentOnboardingRequest
         The request body containing a list of agents' onboarding details.
 
@@ -846,10 +1217,14 @@ eters:
         A dictionary containing the status of the onboarding operation for each agent.
         If an error occurs, raises an HTTPException with error details.
     """
-    update_session_context(model_used=request.model_name,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id,model_used=request.model_name,
                             agent_name=request.agent_name,
                             agent_type="planner-executor-critic",
                             tools_binded=request.tools_id)
+    multi_agent_service = get_specialized_agent_service(agent_type="multi_agent")
     try:
         register(
             project_name='onboard-pec-agent',
@@ -858,17 +1233,13 @@ eters:
             batch=True
         )
         with using_project('onboard-pec-agent'):
-            if not request.tag_ids:
-                tag_data=await get_tags_by_id_or_name(tag_name="General")
-                request.tag_ids = tag_data.get("tag_id", None)
-            update_session_context(tags=request.tag_ids)
-            result = await react_multi_agent_onboarding(
+            result = await multi_agent_service.onboard_agent(
                 agent_name=request.agent_name,
                 agent_goal=request.agent_goal,
                 workflow_description=request.workflow_description,
                 model_name=request.model_name,
                 tools_id=request.tools_id,
-                user_email_id=request.email_id,
+                user_id=request.email_id,
                 tag_ids=request.tag_ids
             )
         update_session_context(model_used='Unassigned',
@@ -885,12 +1256,11 @@ eters:
 
 
 @app.post("/planner-executor-agent/onboard-agents")
-async def onboard_pe_agent(request: AgentOnboardingRequest):
+async def onboard_pe_agent(fastapi_request: Request,request: AgentOnboardingRequest):
     """
     Onboards multiple agents in one go.
-eters:
-    -------
-    Param---
+    Parameters:
+    ----------
     request :  AgentOnboardingRequest
         The request body containing a list of agents' onboarding details.
 
@@ -900,10 +1270,14 @@ eters:
         A dictionary containing the status of the onboarding operation for each agent.
         If an error occurs, raises an HTTPException with error details.
     """
-    update_session_context(model_used=request.model_name,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id,model_used=request.model_name,
                             agent_name=request.agent_name,
                             agent_type="planner-executor",
                             tools_binded=request.tools_id)
+    planner_executor_agent_service = get_specialized_agent_service(agent_type="planner_executor_agent")
     try:
         register(
             project_name='onboard-pe-agent',
@@ -912,17 +1286,13 @@ eters:
             batch=True
         )
         with using_project('onboard-pe-agent'):
-            if not request.tag_ids:
-                tag_data=await get_tags_by_id_or_name(tag_name="General")
-                request.tag_ids = tag_data.get("tag_id", None)
-            update_session_context(tags=request.tag_ids)
-            result = await react_multi_pe_agent_onboarding(
+            result = await planner_executor_agent_service.onboard_agent(
                 agent_name=request.agent_name,
                 agent_goal=request.agent_goal,
                 workflow_description=request.workflow_description,
                 model_name=request.model_name,
                 tools_id=request.tools_id,
-                user_email_id=request.email_id,
+                user_id=request.email_id,
                 tag_ids=request.tag_ids
             )
         update_session_context(model_used='Unassigned',
@@ -936,11 +1306,11 @@ eters:
         raise HTTPException(
             status_code=500,
             detail=f"Error during agent onboarding: {str(e)}") from e
-        
+
 
 # Define the API endpoint for onboarding a meta-agent
 @app.post("/meta-agent/onboard-agents")
-async def onboard_meta_agent(request: AgentOnboardingRequest):
+async def onboard_meta_agent(fastapi_request: Request, request: AgentOnboardingRequest):
     """
     Onboards a meta-agent.
 
@@ -955,10 +1325,14 @@ async def onboard_meta_agent(request: AgentOnboardingRequest):
         A dictionary containing the status of the onboarding operation.
         If an error occurs, raises an HTTPException with error details.
     """
-    update_session_context(model_used=request.model_name,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, model_used=request.model_name,
                            agent_name=request.agent_name,
                            agent_type="meta-agent",
                            agents_binded=request.tools_id)
+    meta_agent_service = get_specialized_agent_service(agent_type="meta_agent")
     try:
         register(
             project_name='onboard-meta-agent',
@@ -967,21 +1341,15 @@ async def onboard_meta_agent(request: AgentOnboardingRequest):
             batch=True
         )
         with using_project('onboard-meta-agent'):
-        # Call the onboarding function
-            if not request.tag_ids:
-                tag_data= await get_tags_by_id_or_name(tag_name="General")
-                request.tag_ids = tag_data.get("tag_id", None)
-            update_session_context(tags=request.tag_ids)
-            result = await meta_agent_onboarding(
+            result = await meta_agent_service.onboard_agent(
                 agent_name=request.agent_name,
                 agent_goal=request.agent_goal,
                 workflow_description=request.workflow_description,
                 model_name=request.model_name,
-                agentic_app_ids=request.tools_id,
-                user_email_id=request.email_id,
+                worker_agents_id=request.tools_id,
+                user_id=request.email_id,
                 tag_ids=request.tag_ids
             )
-            
         update_session_context(model_used='Unassigned',
                             agent_name='Unassigned',
                             agent_id='Unassigned',
@@ -1001,7 +1369,7 @@ async def onboard_meta_agent(request: AgentOnboardingRequest):
 
 # Define the API endpoint for onboarding a planner-meta-agent
 @app.post("/planner-meta-agent/onboard-agents")
-async def onboard_planner_meta_agent(request: AgentOnboardingRequest):
+async def onboard_planner_meta_agent(fastapi_request: Request, request: AgentOnboardingRequest):
     """
     Onboards a planner-meta-agent.
 
@@ -1016,10 +1384,14 @@ async def onboard_planner_meta_agent(request: AgentOnboardingRequest):
         A dictionary containing the status of the onboarding operation.
         If an error occurs, raises an HTTPException with error details.
     """
-    update_session_context(model_used=request.model_name,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, model_used=request.model_name,
                            agent_name=request.agent_name,
                            agent_type="planner-meta-agent",
                            agents_binded=request.tools_id)
+    planner_meta_agent_service = get_specialized_agent_service(agent_type="planner_meta_agent")
     try:
         register(
             project_name='onboard-planner-meta-agent',
@@ -1028,19 +1400,14 @@ async def onboard_planner_meta_agent(request: AgentOnboardingRequest):
             batch=True
         )
         with using_project('onboard-planner-meta-agent'):
-        # Call the onboarding function
-            if not request.tag_ids:
-                tag_data= await get_tags_by_id_or_name(tag_name="General")
-                request.tag_ids = tag_data.get("tag_id", None)
-            update_session_context(tags=request.tag_ids)
 
-            result = await meta_agent_with_planner_onboarding(
+            result = await planner_meta_agent_service.onboard_agent(
                 agent_name=request.agent_name,
                 agent_goal=request.agent_goal,
                 workflow_description=request.workflow_description,
                 model_name=request.model_name,
-                agentic_app_ids=request.tools_id,
-                user_email_id=request.email_id,
+                worker_agents_id=request.tools_id,
+                user_id=request.email_id,
                 tag_ids=request.tag_ids
             )
 
@@ -1063,7 +1430,10 @@ async def onboard_planner_meta_agent(request: AgentOnboardingRequest):
 
 
 @app.get("/get-agents/")
-async def get_agents_endpoint(agentic_application_type:  Optional[Union[str, List[str]]] = None):
+async def get_agents_endpoint(fastapi_request: Request,
+    agentic_application_type:  Optional[Union[str, List[str]]] = None,
+    agent_service: AgentService = Depends(get_agent_service)
+):
     """
     Retrieves agents from the specified agent table.
 
@@ -1079,8 +1449,13 @@ async def get_agents_endpoint(agentic_application_type:  Optional[Union[str, Lis
     list
         A list of agents. If no agents are found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     try:
-        response = await get_agents(agentic_application_type)
+        response = await agent_service.get_all_agents(agentic_application_type=agentic_application_type)
 
         if not response:
             raise HTTPException(status_code=404, detail="No agents found")
@@ -1092,7 +1467,7 @@ async def get_agents_endpoint(agentic_application_type:  Optional[Union[str, Lis
 
 
 @app.get("/get-agent/{agent_id}")
-async def get_agent_by_id_endpoint(agent_id: str):
+async def get_agent_by_id_endpoint(fastapi_request: Request,agent_id: str, agent_service: AgentService = Depends(get_agent_service)):
     """
     Retrieves an agent by its ID.
 
@@ -1107,11 +1482,12 @@ async def get_agent_by_id_endpoint(agent_id: str):
         A dictionary containing the agent's details.
         If no agent is found, raises an HTTPException with status code 404.
     """
-    update_session_context(agent_id=agent_id)
-    response = await get_agents_by_id(
-        agentic_application_id=agent_id
-    )
-  
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
+    response = await agent_service.get_agent(agentic_application_id=agent_id)
+
     if not response:
         raise HTTPException(status_code=404, detail="No agents found")
     update_session_context(agent_id='Unassigned')
@@ -1119,7 +1495,7 @@ async def get_agent_by_id_endpoint(agent_id: str):
 
 
 @app.get("/agent-details/{agent_id}")
-async def get_agent_details(agent_id: str):
+async def get_agent_details(fastapi_request: Request, agent_id: str, agent_service: AgentService = Depends(get_agent_service)):
     """
     Retrieves detailed information about an agent by its ID.
 
@@ -1134,21 +1510,26 @@ async def get_agent_details(agent_id: str):
         A dictionary containing the agent's detailed information.
         If the agent is not found, raises an HTTPException with status code 404.
     """
-    update_session_context(agent_id=agent_id)
-  
-    response = await get_agents_by_id_studio(
-        agentic_application_id=agent_id
-    )
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
+
+    response = await agent_service.get_agent_details_studio(agentic_application_id=agent_id)
     if not response:
         raise HTTPException(status_code=404, detail="Agent not found")
     update_session_context(agent_id='Unassigned')
     return response
 
+
+@app.put("/planner-meta-agent/update-agent")
+@app.put("/meta-agent/update-agent")
 @app.put("/react-critic-agent/update-agent")
 @app.put("/planner-executor-critic-agent/update-agent")
 @app.put("/planner-executor-agent/update-agent")
 @app.put("/react-agent/update-agent")
-async def update_agent(request: UpdateAgentRequest):
+@app.put("/update-agent")
+async def update_agent_endpoint(fastapi_request: Request, request: UpdateAgentRequest, agent_service: AgentService = Depends(get_agent_service)):
     """
     Updates an agent by its ID.
 
@@ -1164,38 +1545,70 @@ async def update_agent(request: UpdateAgentRequest):
         If the update is unsuccessful, raises an HTTPException with
         status code 400 and the status message.
     """
-    update_session_context(model_used=request.model_name,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    
+    agent_current_data = await agent_service.get_agent(
+        agentic_application_id=request.agentic_application_id_to_modify
+    )
+    if not agent_current_data:
+        log.error(f"Agent not found: {request.agentic_application_id_to_modify}")
+        raise HTTPException(status_code=404, detail="Agent not found")
+    agent_current_data = agent_current_data[0]
+    agent_type = agent_current_data["agentic_application_type"]
+
+    update_session_context(user_session=user_session, user_id=user_id, model_used=request.model_name,
                            agent_id=request.agentic_application_id_to_modify,
-                           agent_name=request.agentic_application_name_to_modify,
-                           agent_type=request.agentic_application_type,
+                           agent_name=agent_current_data["agentic_application_name"],
+                           agent_type=agent_type,
                            tools_binded=request.tools_id_to_remove,
                            tags=request.updated_tag_id_list,
                            action_type='update',
                            action_on='agent',
-                           previous_value=get_agents_by_id(agentic_application_id=request.agentic_application_id_to_modify))
+                           previous_value=agent_current_data)
+    project_name = f"update-{agent_type.replace('_', '-')}"
     register(
-            project_name='update-react-pec-agent',
+            project_name=project_name,
             auto_instrument=True,
             set_global_tracer_provider=False,
             batch=True
         )
-    with using_project('update-react-pec-agent'):
-        response = await update_agent_by_id(
-            model_name=request.model_name,
-            user_email_id=request.user_email_id,
-            agentic_application_type=request.agentic_application_type,
-            is_admin=request.is_admin,
-            agentic_application_id_to_modify=request.agentic_application_id_to_modify,
-            agentic_application_name_to_modify=request.agentic_application_name_to_modify,
-            agentic_application_description=request.agentic_application_description,
-            agentic_application_workflow_description=request.agentic_application_workflow_description,
-            system_prompt=request.system_prompt,
-            tools_id_to_add=request.tools_id_to_add,
-            tools_id_to_remove=request.tools_id_to_remove,
-            updated_tag_id_list=request.updated_tag_id_list)
+
+    specialized_agent_service = get_specialized_agent_service(agent_type=agent_type)
+
+    with using_project(project_name):
+        if agent_type in specialized_agent_service.meta_type_templates:
+            response = await specialized_agent_service.update_agent(
+                agentic_application_id=request.agentic_application_id_to_modify,
+                agentic_application_description=request.agentic_application_description,
+                agentic_application_workflow_description=request.agentic_application_workflow_description,
+                model_name=request.model_name,
+                created_by=request.user_email_id,
+                system_prompt=request.system_prompt,
+                is_admin=request.is_admin,
+                worker_agents_id_to_add=request.tools_id_to_add,
+                worker_agents_id_to_remove=request.tools_id_to_remove,
+                updated_tag_id_list=request.updated_tag_id_list
+            )
+        else:
+            response = await specialized_agent_service.update_agent(
+                agentic_application_id=request.agentic_application_id_to_modify,
+                agentic_application_description=request.agentic_application_description,
+                agentic_application_workflow_description=request.agentic_application_workflow_description,
+                model_name=request.model_name,
+                created_by=request.user_email_id,
+                system_prompt=request.system_prompt,
+                is_admin=request.is_admin,
+                tools_id_to_add=request.tools_id_to_add,
+                tools_id_to_remove=request.tools_id_to_remove,
+                updated_tag_id_list=request.updated_tag_id_list
+            )
+        log.info(f"Agent update response: {response}")
         if not response["is_update"]:
             raise HTTPException(status_code=400, detail=response["status_message"])
-        update_session_context(new_value=get_agents_by_id(agentic_application_id=request.agentic_application_id_to_modify))
+        new_value = await agent_service.get_agent(agentic_application_id=request.agentic_application_id_to_modify)
+        update_session_context(new_value=new_value[0])
     log.debug(f"Agent update status: {response}")
     update_session_context(model_used='Unassigned', agent_id='Unassigned', agent_name='Unassigned',
                         agent_type='Unassigned', tools_binded='Unassigned', tags='Unassigned', 
@@ -1203,81 +1616,10 @@ async def update_agent(request: UpdateAgentRequest):
     return response
 
 
-@app.put("/planner-meta-agent/update-agent")
-@app.put("/meta-agent/update-agent")
-async def update_agent_meta(request: UpdateAgentRequest):
-    """
-    Updates a meta-agent by its ID.
-
-    Parameters:
-    ----------
-    request : UpdateAgentRequest
-        The request body containing the update details for a meta-agent.
-
-    Returns:
-    -------
-    dict
-        A dictionary containing the status of the update operation.
-        If the update is unsuccessful, raises an HTTPException with
-        status code 400 and the status message.
-    """
-    update_session_context(model_used=request.model_name,
-                           agent_id=request.agentic_application_id_to_modify,
-                           agent_name=request.agentic_application_name_to_modify,
-                           agent_type=request.agentic_application_type,
-                           agents_binded=request.tools_id_to_remove,
-                           tags=request.updated_tag_id_list,
-                           action_type='update',
-                           action_on='agent',
-                           previous_value=get_agents_by_id(agentic_application_id=request.agentic_application_id_to_modify))
-    register(
-            project_name='update-meta-agent',
-            auto_instrument=True,
-            set_global_tracer_provider=False,
-            batch=True
-        )
-    with using_project('update-meta-agent'):
-        # Call the update function with parameters coming from the request
-        response = await update_agent_by_id_meta(
-            model_name=request.model_name,
-            user_email_id=request.user_email_id,
-            agentic_application_type=request.agentic_application_type,
-            is_admin=request.is_admin,
-            agentic_application_id_to_modify=request.agentic_application_id_to_modify,
-            agentic_application_name_to_modify=request.agentic_application_name_to_modify,
-            agentic_application_description=request.agentic_application_description,
-            agentic_application_workflow_description=request.agentic_application_workflow_description,
-            system_prompt=request.system_prompt,
-            worker_agents_id_to_add=request.tools_id_to_add,
-            worker_agents_id_to_remove=request.tools_id_to_remove,
-            updated_tag_id_list=request.updated_tag_id_list
-        )
-
-        # Check if the update was successful
-        if not response["is_update"]:
-            # If the update was unsuccessful, raise an HTTPException with status code 400
-            raise HTTPException(status_code=400, detail=response["status_message"])
-        update_session_context(new_value=get_agents_by_id(agentic_application_id=request.agentic_application_id_to_modify))
-    log.debug(f"Meta-agent update status: {response}")
-    update_session_context(model_used='Unassigned',
-                           agent_id='Unassigned',
-                           agent_name='Unassigned',
-                           agent_type='Unassigned',
-                           agents_binded='Unassigned',
-                           tags='Unassigned',
-                           action_on='Unassigned',
-                           action_type='Unassigned',
-                           previous_value='Unassigned',
-                           new_value='Unassigned')
-    # If update is successful, return the response with the updated data
-    return response
-
-
-
 
 @app.delete("/react-agent/delete-agent/{agent_id}")
 @app.delete("/delete-agent/{agent_id}")
-async def delete_agent(agent_id: str, request: DeleteAgentRequest):
+async def delete_agent(fastapi_request: Request, agent_id: str, request: DeleteAgentRequest, agent_service: AgentService = Depends(get_agent_service)):
     """
     Deletes an agent by its ID.
 
@@ -1295,15 +1637,23 @@ async def delete_agent(agent_id: str, request: DeleteAgentRequest):
         If the deletion is unsuccessful, raises an HTTPException
         with status code 400 and the status message.
     """
-    update_session_context(agent_id=agent_id,
+    previous_value = await agent_service.get_agent(agentic_application_id=agent_id)
+    if not previous_value:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    previous_value = previous_value[0]
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id,
                            action_on='agent',
                            action_type='delete',
-                           previous_value=get_agents_by_id(agentic_application_id=agent_id))
-    response = await delete_agent_by_id(
-        user_email_id=request.user_email_id,
-        is_admin=request.is_admin,
-        agentic_application_id=agent_id
+                           previous_value=previous_value)
+    response = await agent_service.delete_agent(
+        agentic_application_id=agent_id,
+        user_id=request.user_email_id,
+        is_admin=request.is_admin
     )
+
     if not response["is_delete"]:
         raise HTTPException(status_code=400, detail=response["status_message"])
     update_session_context(agent_id='Unassigned',action_on='Unassigned', action_type='Unassigned',previous_value='Unassigned')
@@ -1312,7 +1662,7 @@ async def delete_agent(agent_id: str, request: DeleteAgentRequest):
 @app.post("/meta-agent/get-chat-history")
 @app.post("/react-agent/get-chat-history")
 @app.post("/get-chat-history")
-async def get_history(request: PrevSessionRequest):
+async def get_history(fastapi_request: Request, request: PrevSessionRequest, chat_service: ChatService = Depends(get_chat_service)):
     """
     Retrieves the chat history of a previous session.
 
@@ -1326,12 +1676,19 @@ async def get_history(request: PrevSessionRequest):
     dict
         A dictionary containing the previous conversation history.
     """
-    update_session_context(session_id=request.session_id,agent_id=request.agent_id)
-    return await retrive_previous_conversation(request=request)
+
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, session_id=request.session_id,agent_id=request.agent_id)
+    return await chat_service.get_chat_history_from_short_term_memory(
+        agentic_application_id=request.agent_id,
+        session_id=request.session_id,
+    )
 
 
 @app.post("/get-query-response")
-async def get_react_and_pec_and_pe_rc_agent_response(request: AgentInferenceRequest):
+async def get_react_and_pec_and_pe_rc_agent_response(fastapi_request: Request, request: AgentInferenceRequest):
     """
     Gets the response for a query using agent inference.
 
@@ -1345,6 +1702,11 @@ async def get_react_and_pec_and_pe_rc_agent_response(request: AgentInferenceRequ
     dict
         A dictionary containing the response generated by the agent.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
     session_id = request.session_id
     log.info(f"[{session_id}] Received new request.")
     current_user_email.set(request.session_id.split("_")[0])
@@ -1369,10 +1731,14 @@ async def get_react_and_pec_and_pe_rc_agent_response(request: AgentInferenceRequ
 
     log.info(f"[{session_id}] Starting agent inference...")
 
+    agent_inference: BaseAgentInference = get_specialized_inference_service("react_agent")
+    agent_config = await agent_inference._get_agent_config(request.agentic_application_id)
+    agent_inference: BaseAgentInference = get_specialized_inference_service(agent_config["AGENT_TYPE"])
+
     # Define and create the inference task
     async def do_inference():
         try:
-            result = await agent_inference(request)
+            result = await agent_inference.run(request, agent_config=agent_config)
             log.info(f"[{session_id}] Inference completed.")
             return result
         except asyncio.CancelledError:
@@ -1404,7 +1770,7 @@ async def get_react_and_pec_and_pe_rc_agent_response(request: AgentInferenceRequ
     return response
 
 @app.post("/react-agent/get-feedback-response/{feedback}")
-async def get_react_feedback_response(feedback: str, request: AgentInferenceRequest):
+async def get_react_feedback_response(fastapi_request: Request, feedback: str, request: AgentInferenceRequest, chat_service: ChatService = Depends(get_chat_service)):
     """
     Gets the response for the feedback using agent inference.
 
@@ -1420,17 +1786,19 @@ async def get_react_feedback_response(feedback: str, request: AgentInferenceRequ
     dict
         A dictionary containing the response generated by the agent.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     try:
         current_user_email.set(request.session_id.split("_")[0])
         query = request.query
         if feedback == "like":
-            update_status = await update_latest_query_response_with_tag(agentic_application_id=request.agentic_application_id, session_id=request.session_id)
-            if update_status is True:
-                return {"message": "Thanks for the like! We're glad you found the response helpful. If you have any more questions or need further assistance, feel free to ask!"}
-            elif update_status is False:
-                return {"message": "Your like has been removed. If you have any more questions or need further assistance, feel free to ask!"}
-            else:
-                return {"message": "Sorry, we couldn't update your request at the moment. Please try again later."}
+            return await chat_service.handle_like_feedback_message(
+                agentic_application_id=request.agentic_application_id,
+                session_id=request.session_id
+            )
         elif feedback == "regenerate":
             request.query = "[regenerate:][:regenerate]"
         elif feedback == "feedback":
@@ -1442,8 +1810,10 @@ async def get_react_feedback_response(feedback: str, request: AgentInferenceRequ
         request.feedback=None
 
         request.reset_conversation = False
-
-        response = await agent_inference(request)
+        agent_inference: BaseAgentInference = get_specialized_inference_service("react_agent")
+        agent_config = await agent_inference._get_agent_config(request.agentic_application_id)
+        agent_inference: BaseAgentInference = get_specialized_inference_service(agent_config["AGENT_TYPE"])
+        response = await agent_inference.run(request)
         try:
             final_response = response["response"]
             steps = response["executor_messages"][-1]["agent_steps"]
@@ -1469,7 +1839,7 @@ async def get_react_feedback_response(feedback: str, request: AgentInferenceRequ
 
 
 @app.get("/get-approvals-list")
-async def get_approvals_list():
+async def get_approvals_list(fastapi_request: Request):
     """
     Retrieves the list of approvals.
 
@@ -1478,13 +1848,18 @@ async def get_approvals_list():
     list
         A list of approvals. If no approvals are found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     approvals = await get_approval_agents()
     if not approvals:
         raise HTTPException(status_code=404, detail="No approvals found")
     return approvals
 
 @app.get("/get-responses-data/{response_id}")
-async def get_responses_data_endpoint(response_id):
+async def get_responses_data_endpoint(response_id, fastapi_request: Request):
     """
     Retrieves the list of approvals.
 
@@ -1493,13 +1868,18 @@ async def get_responses_data_endpoint(response_id):
     list
         A list of approvals. If no approvals are found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     approvals = await get_response_data(response_id=response_id)
     if not approvals:
         raise HTTPException(status_code=404, detail="No Response found")
     return approvals
 
 @app.get("/get-approvals-by-id/{agent_id}")
-async def get_approval_by_id(agent_id: str):
+async def get_approval_by_id(agent_id: str, fastapi_request: Request):
     """
     Retrieves an approval by its ID.
 
@@ -1514,13 +1894,18 @@ async def get_approval_by_id(agent_id: str):
         A dictionary containing the approval details.
         If no approval is found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     approval = await get_approvals(agent_id=agent_id)
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
     return approval
 
 @app.post("/update-approval-response")
-async def update_approval_response(request: ApprovalRequest):
+async def update_approval_response(fastapi_request: Request, request: ApprovalRequest):
     """
     Updates the approval response.
 
@@ -1536,6 +1921,11 @@ async def update_approval_response(request: ApprovalRequest):
         If the update is unsuccessful, raises an HTTPException with
         status code 400 and the status message.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     response = await update_feedback_response(
         response_id=request.response_id,
         data_dictionary={
@@ -1554,7 +1944,7 @@ async def update_approval_response(request: ApprovalRequest):
     return response
 
 @app.post("/meta-agent/get-query-response")
-async def get_meta_agent_response(request: AgentInferenceRequest):
+async def get_meta_agent_response(fastapi_request: Request, request: AgentInferenceRequest):
     """
     Gets the response for a query using agent inference.
 
@@ -1568,20 +1958,24 @@ async def get_meta_agent_response(request: AgentInferenceRequest):
     dict
         A dictionary containing the response generated by the agent.
     """
-    update_session_context(agent_id=request.agentic_application_id,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=request.agentic_application_id,
                             session_id=request.session_id,
                             model_used=request.model_name,
                             user_query=request.query,
                             response='Processing...')
     
     current_user_email.set(request.session_id.split("_")[0])
-    response = await meta_agent_inference(request)
+    meta_agent_inference: MetaAgentInference = get_specialized_inference_service("meta_agent")
+    response = await meta_agent_inference.run(inference_request=request)
     update_session_context(agent_id='Unassigned',session_id='Unassigned',
                            model_used='Unassigned',user_query='Unassigned',response='Unassigned')
     return response
 
 @app.post("/planner-meta-agent/get-query-response")
-async def get_planner_meta_agent_response(request: AgentInferenceRequest):
+async def get_planner_meta_agent_response(fastapi_request: Request, request: AgentInferenceRequest):
     """
     Gets the response for a query using agent inference.
 
@@ -1595,13 +1989,17 @@ async def get_planner_meta_agent_response(request: AgentInferenceRequest):
     dict
         A dictionary containing the response generated by the agent.
     """
-    update_session_context(agent_id=request.agentic_application_id,
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=request.agentic_application_id,
                             session_id=request.session_id,
                             model_used=request.model_name,
                             user_query=request.query,
                             response='Processing...')
     current_user_email.set(request.session_id.split("_")[0])
-    response = await meta_agent_with_planner_inference(request)
+    planner_meta_agent_inference: PlannerMetaAgentInference = get_specialized_inference_service("planner_meta_agent")
+    response = await planner_meta_agent_inference.run(request)
     update_session_context(agent_id='Unassigned',session_id='Unassigned',
                            model_used='Unassigned',user_query='Unassigned',response='Unassigned')
     return response
@@ -1609,11 +2007,19 @@ async def get_planner_meta_agent_response(request: AgentInferenceRequest):
 
 @app.delete("/react-agent/clear-chat-history")
 @app.delete("/clear-chat-history")
-async def clear_chat_history(request: PrevSessionRequest):
-    return await delete_chat_history_by_session_id(agentic_application_id=request.agent_id, session_id=request.session_id)
+async def clear_chat_history(fastapi_request: Request, request: PrevSessionRequest, chat_service: ChatService = Depends(get_chat_service)):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    return await chat_service.delete_session(
+        agentic_application_id=request.agent_id,
+        session_id=request.session_id
+    )
 
 @app.get("/react-agent/get-chat-sessions")
-async def get_chat_sessions():
+async def get_chat_sessions(fastapi_request: Request, chat_service: ChatService = Depends(get_chat_service)):
     """
     Retrieves all tools from the tool table.
 
@@ -1622,14 +2028,19 @@ async def get_chat_sessions():
     list
         A list of all thread ids. If not found, raises an HTTPException with status code 404.
     """
-    sessions= await get_all_chat_sessions()
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    sessions = await chat_service.get_all_sessions()
+
     if not sessions:
         raise HTTPException(status_code=404, detail="No thread id found")
     return sessions
 
 
 @app.get("/react-agent/create-new-session")
-async def create_new_session():
+async def create_new_session(fastapi_request: Request):
     """
     Create a new session id
 
@@ -1638,22 +2049,25 @@ async def create_new_session():
     str
         A string containing new session ID. If not found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
     import uuid
     session=str(uuid.uuid4())
     if not session:
         raise HTTPException(status_code=404, detail="Some problem occured while creating a new session")
-    update_session_context(session_id=session)
+    update_session_context(user_session=user_session, user_id=user_id, session_id=session)
     return session
 
 
 
 @app.post("/planner-executor-agent/get-query-response-hitl-replanner")
-async def generate_response_replanner_executor_critic_agent_main(request: ReplannerAgentInferenceRequest):
+async def generate_response_replanner_executor_agent_main(fastapi_request: Request, request: AgentInferenceHITLRequest):
     """
     Handles the inference request for the Planner-Executor-Critic-replanner agent.
 
     Args:
-        request (ReplannerAgentInferenceRequest): The request object containing the query, session ID, and other parameters.
+        request (AgentInferenceHITLRequest): The request object containing the query, session ID, and other parameters.
 
     Returns:
         JSONResponse: A JSON response containing the agent's response and state.
@@ -1661,11 +2075,18 @@ async def generate_response_replanner_executor_critic_agent_main(request: Replan
     Raises:
         HTTPException: If an error occurs during processing.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    planner_executor_agent_inference: PlannerExecutorAgentInference = get_specialized_inference_service("planner_executor_agent")
+
     query = request.query
     response = {}
     try:
         current_user_email.set(request.session_id.split("_")[0])
-        response =  await human_in_the_loop_replanner_inference_pe(request)
+        response = await planner_executor_agent_inference.run(request, hitl_flag=True)
         final_response = "\n".join(i for i in response["plan"])
         steps = ""
         old_response = "\n".join(i for i in request.prev_response["plan"])
@@ -1680,19 +2101,18 @@ async def generate_response_replanner_executor_critic_agent_main(request: Replan
         new_steps=steps)
     except Exception as e:
         response["error"] = f"An error occurred while processing the response: {str(e)}"
-        # print(request.prev_response)
     
     
     return response
 
 
 @app.post("/planner-executor-critic-agent/get-query-response-hitl-replanner")
-async def generate_response_replanner_executor_critic_agent_main(request: ReplannerAgentInferenceRequest):
+async def generate_response_replanner_executor_critic_agent_main(fastapi_request: Request, request: AgentInferenceHITLRequest):
     """
     Handles the inference request for the Planner-Executor-Critic-replanner agent.
 
     Args:
-        request (ReplannerAgentInferenceRequest): The request object containing the query, session ID, and other parameters.
+        request (AgentInferenceHITLRequest): The request object containing the query, session ID, and other parameters.
 
     Returns:
         JSONResponse: A JSON response containing the agent's response and state.
@@ -1700,11 +2120,18 @@ async def generate_response_replanner_executor_critic_agent_main(request: Replan
     Raises:
         HTTPException: If an error occurs during processing.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    multi_agent_inference: MultiAgentInference = get_specialized_inference_service("multi_agent")
+
     query = request.query
     response = {}
     try:
         current_user_email.set(request.session_id.split("_")[0])
-        response =  await human_in_the_loop_replanner_inference(request)
+        response = await multi_agent_inference.run(request, hitl_flag=True)
         final_response = "\n".join(i for i in response["plan"])
         steps = ""
         old_response = "\n".join(i for i in request.prev_response["plan"])
@@ -1728,85 +2155,115 @@ async def generate_response_replanner_executor_critic_agent_main(request: Replan
 
 
 @app.post("/tags/create-tag")
-async def create_tag(tag_data: TagData):
+async def create_tag_endpoint(fastapi_request: Request, tag_data: TagData, tag_service: TagService = Depends(get_tag_service)):
     """
     Inserts data into the tags table.
     """
-    result = await insert_into_tags_table(dict(tag_data))
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    result = await tag_service.create_tag(tag_name=tag_data.tag_name, created_by=tag_data.created_by)
     return result
 
 @app.get("/tags/get-available-tags")
-async def get_available_tags():
+async def get_available_tags_endpoint(fastapi_request: Request, tag_service: TagService = Depends(get_tag_service)):
     """
     Retrieves tags from the tags table.
     """
-    return await get_tags()
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    return await tag_service.get_all_tags()
 
 @app.get("/tags/get-tag/{tag_id}")
-async def read_tag_by_id(tag_id: str):
+async def read_tag_by_id_endpoint(fastapi_request: Request, tag_id: str, tag_service: TagService = Depends(get_tag_service)):
     """
     Retrieves tags from the database based on provided parameters.
     """
-    result = await get_tags_by_id_or_name(tag_id=tag_id)
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    result = await tag_service.get_tag(tag_id=tag_id)
     if not result:
         raise HTTPException(status_code=404, detail="Tag not found")
     return result
 
 @app.put("/tags/update-tag")
-async def update_tag(update_data: UpdateTagData):
+async def update_tag_endpoint(fastapi_request: Request, update_data: UpdateTagData, tag_service: TagService = Depends(get_tag_service)):
     """
     Updates the tag name in the tags table if the given tag ID or tag name is present and created by the given user ID.
     """
-    result = await update_tag_name_by_id_or_name(**dict(update_data))
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    result = await tag_service.update_tag(
+        new_tag_name=update_data.new_tag_name,
+        created_by=update_data.created_by,
+        tag_id=update_data.tag_id,
+        tag_name=update_data.tag_name
+    )
     return result
 
 @app.delete("/tags/delete-tag")
-async def delete_tag(delete_data: DeleteTagData):
+async def delete_tag_endpoint(fastapi_request: Request, delete_data: DeleteTagData, tag_service: TagService = Depends(get_tag_service)):
     """
     Deletes a tag from the tags table if the given tag ID or tag name is present and created by the given user ID.
     """
-    result = await delete_tag_by_id_or_name(**dict(delete_data))
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    result = await tag_service.delete_tag(
+        created_by=delete_data.created_by,
+        tag_id=delete_data.tag_id,
+        tag_name=delete_data.tag_name
+    )
     return result
 
-@app.post("/tags/get-tags-by-agent")
-async def read_tags_by_agent(agent_data: AgentIdName):
+@app.post("/tags/get-tools-by-tag")
+async def read_tools_by_tag_endpoint(fastapi_request: Request, tag_data: TagIdName, tool_service: ToolService = Depends(get_tool_service)):
     """
-    Retrieves tags associated with a given agent ID or agent name.
+    Retrieves tools associated with a given tag ID or tag name.
     """
-    result = await get_tags_by_agent(agent_id=agent_data.agentic_application_id, agent_name=agent_data.agent_name)
-    if not result:
-        raise HTTPException(status_code=404, detail="Tags not found")
-    return result
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
 
-@app.post("/tags/get-tags-by-tool")
-async def read_tags_by_tool(tool_data: ToolIdName):
-    """
-    Retrieves tags associated with a given tool ID or tool name.
-    """
-    result = await get_tags_by_tool(**(dict(tool_data)))
+    result = await tool_service.get_tools_by_tags(
+        tag_ids=tag_data.tag_ids,
+        tag_names=tag_data.tag_names
+    )
     if not result:
-        raise HTTPException(status_code=404, detail="Tags not found")
+        raise HTTPException(status_code=404, detail="Tools not found")
     return result
 
 @app.post("/tags/get-agents-by-tag")
-async def read_agents_by_tag(tag_data: TagIdName):
+async def read_agents_by_tag_endpoint(fastapi_request: Request, tag_data: TagIdName, agent_service: AgentService = Depends(get_agent_service)):
     """
     Retrieves agents associated with a given tag ID or tag name.
     """
-    result = await get_agents_by_tag(**dict(tag_data))
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    result = await agent_service.get_agents_by_tag(
+        tag_ids=tag_data.tag_ids,
+        tag_names=tag_data.tag_names
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Agents not found")
     return result
 
-@app.post("/tags/get-tools-by-tag")
-async def read_tools_by_tag(tag_data: TagIdName):
-    """
-    Retrieves tools associated with a given tag ID or tag name.
-    """
-    result = await get_tools_by_tag(**dict(tag_data))
-    if not result:
-        raise HTTPException(status_code=404, detail="Tools not found")
-    return result
 
 
 
@@ -1815,7 +2272,8 @@ async def read_tools_by_tag(tag_data: TagIdName):
 
 # Base directory for uploads
 BASE_DIR = "user_uploads"
-
+TRUE_BASE_DIR = os.path.dirname(BASE_DIR)  # This will now point to the folder that contains both `user_uploads` and `evaluation_uploads`
+EVALUATION_UPLOAD_DIR = os.path.join(TRUE_BASE_DIR, "evaluation_uploads")
 
 # Function to save uploaded files
 def save_uploaded_file(uploaded_file: UploadFile, save_path: str):
@@ -1847,7 +2305,12 @@ def generate_file_structure(directory="user_uploads"):
     return file_struct
 
 @app.post("/files/user-uploads/upload-file/")
-async def upload_file(file: UploadFile = File(...), subdirectory: str = ""):
+async def upload_file(fastapi_request: Request, file: UploadFile = File(...), subdirectory: str = ""):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     if subdirectory.startswith("/") or subdirectory.startswith("\\"):
         subdirectory = subdirectory[1:]
 
@@ -1873,13 +2336,23 @@ async def upload_file(file: UploadFile = File(...), subdirectory: str = ""):
     return {"info": f"File '{file.filename}' saved at '{file_location}'"}
 
 @app.get("/files/user-uploads/get-file-structure/")
-async def get_file_structure():
+async def get_file_structure(fastapi_request: Request):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     file_structure = generate_file_structure(BASE_DIR)
     log.info("File structure retrieved successfully")
     return JSONResponse(content=file_structure)
 
 @app.delete("/files/user-uploads/delete-file/")
-async def delete_file(file_path: str):
+async def delete_file(fastapi_request: Request, file_path: str):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     full_path = os.path.join(BASE_DIR, file_path)
     if os.path.exists(full_path):
         if os.path.isfile(full_path):
@@ -1911,10 +2384,15 @@ def list_markdown_files(directory: Path) -> List[str]:
     return files
 
 @app.get("/list_markdown_files/")
-def list_all_files():
+def list_all_files(fastapi_request: Request):
     """
     Lists all Markdown files in the docs folder (including subfolders).
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     try:
         files = list_markdown_files(DOCS_ROOT)
         return {"files": files}
@@ -1922,10 +2400,14 @@ def list_all_files():
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.get("/list_markdown_files/{dir_name}")
-def list_files_in_directory(dir_name: str):
+def list_files_in_directory(fastapi_request: Request, dir_name: str):
     """
     Lists all Markdown files in a specific subdirectory under the docs folder.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     target_dir = DOCS_ROOT / dir_name
     print(f"Target directory: {target_dir.resolve()}") 
     if not target_dir.exists() or not target_dir.is_dir():
@@ -1953,7 +2435,7 @@ class registration_data(BaseModel):
 
 
 @app.post("/login")
-async def login(data: login_data):
+async def login(data: login_data, response: Response):
     update_session_context(user_id=data.email_id)
     log.info(f"Login attempt for user: {data.email_id} with role: {data.role}")
     conn = await asyncpg.connect(
@@ -1987,7 +2469,10 @@ async def login(data: login_data):
                 return {"approval": False, "message": f"You are not authorized as {data.role}"}
 
             session_id = login_data['mail_id'] + "_" + str(uuid.uuid4()).replace("-", "_")
-            update_session_context(session_id=session_id)
+            user_session = login_data['mail_id'] + "_" + str(uuid.uuid4()).replace("-", "_")
+            update_session_context(session_id=session_id, user_session=user_session, user_id=login_data['mail_id'])
+            response.set_cookie(key="user_id", value=login_data['mail_id'], httponly=True, max_age=10800)
+            response.set_cookie(key="user_session", value=user_session, httponly=True, max_age=10800)
             log.info(f"Login successful for user: {data.email_id} with session ID: {session_id} and role: {data.role}")
 
             csrf_token = secrets.token_hex(32)
@@ -2007,6 +2492,13 @@ async def login(data: login_data):
 
     finally:
         await conn.close()
+
+#changed 
+@app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie(key="user_id")
+    response.delete_cookie(key="user_session")
+    return {"message": "Logged out successfully"}
 
 @app.post("/registration")
 async def registration(data: registration_data):
@@ -2055,7 +2547,7 @@ async def registration(data: registration_data):
 
 @app.post("/update-password-role")
 # Assuming you are using asyncpg for database interaction
-async def update_user_password(email_id, new_password=None,role=None):
+async def update_user_password(fastapi_request: Request, email_id, new_password=None,role=None):
     """
     Updates the password for a user in the login_credential table.
 
@@ -2066,6 +2558,10 @@ async def update_user_password(email_id, new_password=None,role=None):
     Returns:
         dict: A dictionary indicating approval and a message.
     """
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     conn = await asyncpg.connect(
         host=POSTGRESQL_HOST,
         database='login',
@@ -2139,8 +2635,12 @@ async def update_user_password(email_id, new_password=None,role=None):
 
 
 @app.get("/login_guest")
-async def login_guest():
+async def login_guest(response: Response):
     update_session_context(user_id="Guest", session_id="test_101")
+    user_session = "Guest" + "_" + str(uuid.uuid4()).replace("-", "_")
+    update_session_context(session_id="test_101", user_session=user_session, user_id="Guest")
+    response.set_cookie(key="user_id", value="Guest", httponly=True, max_age=10800)
+    response.set_cookie(key="user_session", value=user_session, httponly=True, max_age=10800)
     log.info("Guest login successful")
     return {"approval": True, "email": "test", "session_id":"test_101", "user_name":"Guest", "message": "Guest Login Successful"}
 
@@ -2150,7 +2650,12 @@ class old_session_request(BaseModel):
     agent_id: str
 
 @app.post("/old-chats")
-async def get_old_chats(request: old_session_request):
+async def get_old_chats(fastapi_request: Request, request: old_session_request):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     user_email = request.user_email
     agent_id = request.agent_id
     table_name = f'table_{agent_id.replace("-", "_")}'
@@ -2195,17 +2700,26 @@ async def get_old_chats(request: old_session_request):
     return JSONResponse(content=jsonable_encoder(result))
 
 @app.get("/new_chat/{email}")
-async def new_chat(email:str):
+async def new_chat(fastapi_request: Request, email:str):
     import uuid
 
     id = str(uuid.uuid4()).replace("-","_")
     session_id = email + "_" + id
-    update_session_context(session_id=session_id) 
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    
+    update_session_context(user_session=user_session, user_id=user_id, session_id=session_id) 
     log.info(f"New chat session created for user: {email} with session ID: {session_id}")
     return session_id
 
 @app.get('/download')
-async def download(filename: str = Query(...), sub_dir_name: str = Query(None)):
+async def download(fastapi_request: Request, filename: str = Query(...), sub_dir_name: str = Query(None)):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     base_path = Path("user_uploads")
 
     # Compose the path safely
@@ -2221,19 +2735,28 @@ async def download(filename: str = Query(...), sub_dir_name: str = Query(None)):
     else:
         return {"error": f"File not found: {file_path}"}
 
-@router.receive(AgentInferenceRequest)
-async def websocket_endpoint(websocket: WebSocket, request: AgentInferenceRequest):
-    try:
-        current_user_email.set(request.session_id.split("_")[0])
-        await agent_inference(request, websocket)
-    except Exception as e:
-        return f"Exception is {e}"
+# @router.receive(AgentInferenceRequest)
+# async def websocket_endpoint(fastapi_request: Request, websocket: WebSocket, request: AgentInferenceRequest):
+#     #changed
+#     user_id = fastapi_request.cookies.get("user_id")
+#     user_session = fastapi_request.cookies.get("user_session")
+#     update_session_context(user_session=user_session, user_id=user_id)
+
+#     try:
+#         current_user_email.set(request.session_id.split("_")[0])
+#         await agent_inference(request, websocket)
+#     except Exception as e:
+#         return f"Exception is {e}"
 
 
 app.include_router(router, prefix="/ws")
 
 @app.get("/get-tools-by-pages/{page}")
-async def get_tools_by_pages(page: int = 1, limit : int = Query(20, ge=1)):
+async def get_tools_by_pages_endpoint(fastapi_request: Request, 
+    page: int = 1,
+    limit : int = Query(20, ge=1),
+    tool_service: ToolService = Depends(get_tool_service)
+):
     """
     Retrieves tools from the database with pagination.
 
@@ -2249,14 +2772,19 @@ async def get_tools_by_pages(page: int = 1, limit : int = Query(20, ge=1)):
     list
         A list of tools for the specified page.
     """
-    tools = await get_tools_by_page(page=page, limit=limit)
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    tools = await tool_service.get_tools_by_search_or_page(page=page, limit=limit)
     if not tools:
         raise HTTPException(status_code=404, detail="No tools found")
     return tools
 
 
 @app.get("/get-agents-by-pages/{page}")
-async def get_agents_by_pages(page: int = 1, user_email: str= None, agent_type: str = None, limit: int = 10, is_admin: bool = True):
+async def get_agents_by_pages_endpoint(fastapi_request: Request, page: int = 1, user_email: str= None, agent_type: str = None, limit: int = 10, agent_service: AgentService = Depends(get_agent_service)):
     """
     Retrieves agents from the database with pagination.
 
@@ -2270,13 +2798,18 @@ async def get_agents_by_pages(page: int = 1, user_email: str= None, agent_type: 
     list
         A list of agents for the specified page.
     """
-    agents = await get_agents_by_page(page=page, limit = limit, user_email_id=user_email, agentic_application_type=agent_type, is_admin=is_admin)
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    agents = await agent_service.get_agents_by_search_or_page(page=page, limit=limit, created_by=user_email, agentic_application_type=agent_type)
     if not agents:
         raise HTTPException(status_code=404, detail="No agents found")
     return agents
 
 @app.get("/get-tools-by-search/{tool_name}")
-async def get_tools_by_search(tool_name):
+async def get_tools_by_search(fastapi_request: Request, tool_name: str, tool_service: ToolService = Depends(get_tool_service)):
     """
     Retrieves tools from the tool table in PostgreSQL.
 
@@ -2286,108 +2819,65 @@ async def get_tools_by_search(tool_name):
     Returns:
         list: A list of tools from the tool table, represented as dictionaries.
     """
-    # Connect to the PostgreSQL database asynchronously
-    connection = await asyncpg.connect(
-        host=POSTGRESQL_HOST,
-        database=DATABASE,
-        user=POSTGRESQL_USER,
-        password=POSTGRESQL_PASSWORD
-    )
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
 
-    try:
-        # Build the query with a LIKE search for the tool_name
-        query = f"SELECT * FROM tool_table WHERE tool_name LIKE $1 ORDER BY created_on DESC;"
-        parameters = (f"{tool_name}%",)  # Ensure this is a tuple for parameterization
+    results = await tool_service.get_tools_by_search_or_page(search_value=tool_name, limit=1_000_000_000, page=1)
+    log.info(f"Retrieved {len(results['details'])} tools matching search term {tool_name}")
+    return results["details"]
 
-        # Execute the query asynchronously
-        rows = await connection.fetch(query, *parameters)
-
-        # Convert the result rows into a list of dictionaries
-        results_as_dicts = [dict(row) for row in rows]
-
-        # Add tags for each result
-        tool_id_to_tags = await get_tool_tags_from_mapping_as_dict()
-        for result in results_as_dicts:
-            result['tags'] = tool_id_to_tags.get(result['tool_id'], [])
-
-        return results_as_dicts
-
-    except asyncpg.PostgresError as e:
-        return []
-
-    finally:
-        # Close the connection asynchronously
-        await connection.close()
 
 @app.get("/get-agents-by-search/{agent_name}")
-async def get_agents_by_search(agentic_application_type=None, agent_table_name="agent_table", agent_name: str = None):
-    # Connect to the PostgreSQL database asynchronously
-    connection = await asyncpg.connect(
-        host=POSTGRESQL_HOST,
-        database=DATABASE,
-        user=POSTGRESQL_USER,
-        password=POSTGRESQL_PASSWORD
-    )
+async def get_agents_by_search(fastapi_request: Request, agent_name: str = None, agentic_application_type=None, agent_service: AgentService = Depends(get_agent_service)):
+    """
+    Retrieves agents from the agent table in PostgreSQL.
 
-    try:
-        # Build the query based on whether a filter is provided
-        if agentic_application_type:
-            if isinstance(agentic_application_type, str):
-                agentic_application_type = [agentic_application_type]
+    Args:
+        agent_name (str): The name of the agent to search for.
 
-            # Create placeholders for the IN clause
-            placeholders = ', '.join(f'${i + 1}' for i in range(len(agentic_application_type)))
-            query = f"""
-                SELECT *
-                FROM {agent_table_name}
-                WHERE agentic_application_type IN ({placeholders})
-                ORDER BY created_on DESC
-            """
-            parameters = tuple(agentic_application_type)
-        else:
-            query = f"SELECT * FROM {agent_table_name} WHERE agentic_application_name LIKE $1;"
-            parameters = (f"{agent_name}%",)  # Make sure it's a tuple for the query
+    Returns:
+        list: A list of agents from the agent table, represented as dictionaries.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
 
-        # Execute the query asynchronously
-        rows = await connection.fetch(query, *parameters)
+    results = await agent_service.get_agents_by_search_or_page(search_value=agent_name, limit=1_000_000_000, page=1, agentic_application_type=agentic_application_type)
+    log.info(f"Retrieved {len(results['details'])} agents matching search term {agent_name}")
+    return results["details"]
 
-        # Convert the result into a list of dictionaries
-        results_as_dicts = [dict(row) for row in rows]
-
-        # Add tags for each result
-        agent_id_to_tags = await get_agent_tags_from_mapping_as_dict()
-        for result in results_as_dicts:
-            result['tags'] = agent_id_to_tags.get(result['agentic_application_id'], [])
-
-        return results_as_dicts
-
-    except asyncpg.PostgresError as e:
-        return []
-
-    finally:
-        # Close the connection asynchronously
-        await connection.close()
 
 @app.post("/get-tools-by-list")
-async def get_tools_by_list(tool_ids: list[str]):
+async def get_tools_by_list(fastapi_request: Request, tool_ids: list[str], tool_service: ToolService = Depends(get_tool_service)):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     tools = []
     for tool_id in tool_ids:
-        tool = await get_tools_by_id(tool_id=tool_id)
+        tool = await tool_service.get_tool(tool_id=tool_id)
         if tool:
             tools.append(tool[0])
     return tools
 
 @app.post("/get-agents-by-list")
-async def get_agents_by_list(agent_ids: list[str]):
-    agents=[]
+async def get_agents_by_list(fastapi_request: Request, agent_ids: list[str], agent_service: AgentService = Depends(get_agent_service)):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    agents = []
     for agent_id in agent_ids:
-        agent = await get_agents_by_id(agentic_application_id=agent_id)
+        agent = await agent_service.get_agent(agentic_application_id=agent_id)
         if agent:
             agents.append(agent[0])
     return agents
 
 @app.get("/get-tools-search-paginated/")
-async def get_tools_by_search_paginated(search_value: str = None, page_number: int = 1, page_size: int = 10, connection=None):
+async def get_tools_by_search_paginated(fastapi_request: Request, search_value: str = None, page_number: int = 1, page_size: int = 10, tool_service: ToolService = Depends(get_tool_service)):
     """
     Fetches tools from the database with pagination, filtering by tool_name.
 
@@ -2400,65 +2890,20 @@ async def get_tools_by_search_paginated(search_value: str = None, page_number: i
     Returns:
         list[dict]: A list of dictionaries, where each dictionary represents a tool.
     """
-    connection = await asyncpg.connect(
-        host=POSTGRESQL_HOST,
-        database=DATABASE,
-        user=POSTGRESQL_USER,
-        password=POSTGRESQL_PASSWORD
-    )
-
-    # Calculate OFFSET based on page_number and page_size
-    # OFFSET is 0-indexed, so for page 1, offset is 0; for page 2, offset is page_size, etc.
-    offset = (page_number - 1) * page_size
-
-    # The query now includes LIMIT and OFFSET clauses
-    # We use $1 for tool_name, $2 for page_size (LIMIT), and $3 for offset (OFFSET)
-    if search_value is not None:
-        query = f"""
-            SELECT * FROM tool_table
-            WHERE tool_name ILIKE $1 -- Using ILIKE for case-insensitive search
-            ORDER BY created_on DESC
-            LIMIT $2 OFFSET $3;
-        """
-        parameters = (f"{search_value}%", page_size, offset)
-
-    else:
-        # If no tool_name is provided, fetch all tools with pagination
-        query = """
-            SELECT * FROM tool_table
-            ORDER BY created_on DESC
-            LIMIT $1 OFFSET $2;
-        """
-        parameters = (page_size, offset)
-
-    try:
-        # Execute the query asynchronously
-        rows = await connection.fetch(query, *parameters)
-
-        # Convert the result rows into a list of dictionaries
-        results_as_dicts = [dict(row) for row in rows]
-
-        # Add tags for each result
-        tool_id_to_tags = await get_tool_tags_from_mapping_as_dict()
-        for result in results_as_dicts:
-            result['tags'] = tool_id_to_tags.get(result['tool_id'], [])
-
-        return results_as_dicts
-
-    except Exception as e:
-        log.error(f"Error fetching tools with pagination: {e}")
-        return []
-    finally:
-        # Close the connection asynchronously
-        await connection.close()
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    results = await tool_service.get_tools_by_search_or_page(search_value=search_value, page=page_number, limit=page_size)
+    return results['details']
 
 @app.get("/get-agents-search-paginated/")
-async def get_agents_by_search_paginated(
+async def get_agents_by_search_paginated(fastapi_request: Request, 
     agentic_application_type=None,
-    agent_table_name="agent_table",
     search_value: str = None,
-    page_number: int = 1,  # New parameter for pagination
-    page_size: int = 10    # New parameter for pagination
+    page_number: int = 1,
+    page_size: int = 10,
+    agent_service: AgentService = Depends(get_agent_service)
 ):
     """
     Fetches agents from the database with pagination, filtering by agentic_application_type
@@ -2476,92 +2921,22 @@ async def get_agents_by_search_paginated(
     Returns:
         list[dict]: A list of dictionaries, where each dictionary represents an agent.
     """
-    # Calculate OFFSET based on page_number and page_size
-    # OFFSET is 0-indexed: for page 1, offset is 0; for page 2, offset is page_size, etc.
-    offset = (page_number - 1) * page_size
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
 
-    # Connect to the PostgreSQL database asynchronously
-    # In a production environment, consider using an asyncpg connection pool
-    # instead of creating a new connection for each call.
-    connection = await asyncpg.connect(
-        host=POSTGRESQL_HOST,
-        database=DATABASE,
-        user=POSTGRESQL_USER,
-        password=POSTGRESQL_PASSWORD
+    results = await agent_service.get_agents_by_search_or_page(
+        search_value=search_value,
+        limit=page_size,
+        page=page_number,
+        agentic_application_type=agentic_application_type
     )
-
-    try:
-        query = ""
-        parameters = ()
-        param_counter = 1 # To manage parameter indexing ($1, $2, etc.)
-
-        # Build the query based on whether agentic_application_type filter is provided
-        if agentic_application_type:
-            if isinstance(agentic_application_type, str):
-                agentic_application_type = [agentic_application_type]
-
-            # Create placeholders for the IN clause
-            placeholders = ', '.join(f'${i + param_counter}' for i in range(len(agentic_application_type)))
-            parameters = tuple(agentic_application_type)
-            param_counter += len(agentic_application_type)
-
-            query = f"""
-                SELECT *
-                FROM {agent_table_name}
-                WHERE agentic_application_type IN ({placeholders})
-                ORDER BY created_on DESC
-                LIMIT ${param_counter} OFFSET ${param_counter + 1};
-            """
-            parameters += (page_size, offset)
-
-        elif search_value is not None: # Use elif agent_name is not None to handle explicit search
-            # If agentic_application_type is not provided, filter by agent_name
-            # Using ILIKE for case-insensitive search in PostgreSQL
-            query = f"""
-                SELECT *
-                FROM {agent_table_name}
-                WHERE agentic_application_name ILIKE $1 -- Using ILIKE for case-insensitive search
-                ORDER BY created_on DESC
-                LIMIT $2 OFFSET $3;
-            """
-            parameters = (f"{search_value}%", page_size, offset)
-        else:
-            # If no filter is provided, fetch all agents with pagination
-            query = f"""
-                SELECT *
-                FROM {agent_table_name}
-                ORDER BY created_on DESC
-                LIMIT $1 OFFSET $2;
-            """
-            parameters = (page_size, offset)
-
-
-        # Execute the query asynchronously
-        rows = await connection.fetch(query, *parameters)
-
-        # Convert the result into a list of dictionaries
-        results_as_dicts = [dict(row) for row in rows]
-
-        # Add tags for each result
-        agent_id_to_tags = await get_agent_tags_from_mapping_as_dict()
-        for result in results_as_dicts:
-            result['tags'] = agent_id_to_tags.get(result['agentic_application_id'], [])
-
-        return results_as_dicts
-
-    except asyncpg.PostgresError as e:
-        log.error(f"PostgreSQL error: {e}")
-        return []
-    except Exception as e:
-        log.error(f"An unexpected error occurred: {e}")
-        return []
-    finally:
-        # Close the connection asynchronously
-        await connection.close()
+    return results["details"]
 
 
 @app.get("/get-agents-details-for-chat")
-async def get_agents_details():
+async def get_agents_details(fastapi_request: Request, agent_service: AgentService = Depends(get_agent_service)):
     """
     Retrieves detailed information about agents for chat purposes.
     Returns:
@@ -2570,12 +2945,16 @@ async def get_agents_details():
         A list of dictionaries containing agent details.
         If no agents are found, raises an HTTPException with status code 404.
     """
-    agent_details = await get_agents_details_for_chat()
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    agent_details = await agent_service.get_agents_details_for_chat()
     return agent_details
 
 
 @app.post("/secrets/create")
-async def create_user_secret(request: SecretCreateRequest):
+async def create_user_secret(fastapi_request: Request, request: SecretCreateRequest):
     """
     Create or update a user secret.
     
@@ -2588,6 +2967,10 @@ async def create_user_secret(request: SecretCreateRequest):
     Raises:
         HTTPException: If secret creation fails.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
         # Set the user context
         current_user_email.set(request.user_email)
@@ -2596,7 +2979,7 @@ async def create_user_secret(request: SecretCreateRequest):
         secrets_manager = setup_secrets_manager()
         
         # Store the secret
-        success = secrets_manager.store_user_secret(
+        success = secrets_manager.create_user_secret(
             user_email=request.user_email,
             secret_name=request.secret_name,
             secret_value=request.secret_value
@@ -2624,8 +3007,43 @@ async def create_user_secret(request: SecretCreateRequest):
             detail=f"Internal server error: {str(e)}"
         )
 
+@app.post("/secrets/public/create")
+async def create_public_secret(fastapi_request: Request, request: PublicSecretCreateRequest):
+    """
+    Create or update a public secret.
+    
+    Args:
+        request (PublicSecretCreateRequest): The request containing secret name and value.
+    
+    Returns:
+        dict: Success or error response.
+    
+    Raises:
+        HTTPException: If public secret creation fails.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    try:
+        create_public_key(
+            key_name=request.secret_name,
+            key_value=request.secret_value
+        )
+        log.info(f"Public key '{request.secret_name}' created/updated successfully")
+        return {
+            "success": True,
+            "message": f"Public key '{request.secret_name}' created/updated successfully"
+        }
+    except Exception as e:
+        log.error(f"Error creating public key '{request.secret_name}': {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
 @app.post("/secrets/get")
-async def get_user_secret(request: SecretGetRequest):
+async def get_user_secret(fastapi_request: Request, request: SecretGetRequest):
     """
     Retrieve user secrets by name or get all secrets.
     
@@ -2638,6 +3056,10 @@ async def get_user_secret(request: SecretGetRequest):
     Raises:
         HTTPException: If secret retrieval fails or secrets not found.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
         # Set the user context
         current_user_email.set(request.user_email)
@@ -2703,8 +3125,51 @@ async def get_user_secret(request: SecretGetRequest):
             detail=f"Internal server error: {str(e)}"
         )
 
+@app.post("/secrets/public/get")
+async def get_public_secret(fastapi_request: Request, request: PublicSecretGetRequest):
+    """
+    Retrieve a public secret by name.
+    
+    Args:
+        request (PublicSecretGetRequest): The request containing the secret name.
+    
+    Returns:
+        dict: The requested public secret value.
+    
+    Raises:
+        HTTPException: If public secret retrieval fails or not found.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    try:
+        # Get the public key
+        public_key_value = get_public_key(request.secret_name)
+        
+        if public_key_value is not None:
+            log.info(f"Public key '{request.secret_name}' retrieved successfully")
+            return {
+                "success": True,
+                "key_name": request.secret_name,
+                "key_value": public_key_value
+            }
+        else:
+            log.warning(f"Public key '{request.secret_name}' not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Public key '{request.secret_name}' not found"
+            )
+            
+    except Exception as e:
+        log.error(f"Error retrieving public key '{request.secret_name}': {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
 @app.put("/secrets/update")
-async def update_user_secret(request: SecretUpdateRequest):
+async def update_user_secret(fastapi_request: Request, request: SecretUpdateRequest):
     """
     Update an existing user secret.
     
@@ -2717,6 +3182,10 @@ async def update_user_secret(request: SecretUpdateRequest):
     Raises:
         HTTPException: If secret update fails or secret doesn't exist.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
         # Set the user context
         current_user_email.set(request.user_email)
@@ -2738,7 +3207,7 @@ async def update_user_secret(request: SecretUpdateRequest):
             )
         
         # Update the secret
-        success = secrets_manager.store_user_secret(
+        success = secrets_manager.update_user_secret(
             user_email=request.user_email,
             secret_name=request.secret_name,
             secret_value=request.secret_value
@@ -2768,8 +3237,53 @@ async def update_user_secret(request: SecretUpdateRequest):
             detail=f"Internal server error: {str(e)}"
         )
 
+@app.put("/secrets/public/update")
+async def update_public_secret(fastapi_request: Request, request: PublicSecretUpdateRequest):
+    """
+    Update an existing public secret.
+    
+    Args:
+        request (PublicSecretUpdateRequest): The request containing secret name and new value.
+    
+    Returns:
+        dict: Success or error response.
+    
+    Raises:
+        HTTPException: If public secret update fails or secret doesn't exist.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    try:
+        # Update the public key
+        success = update_public_key(
+            key_name=request.secret_name,
+            key_value=request.secret_value
+        )
+        
+        if success:
+            log.info(f"Public key '{request.secret_name}' updated successfully")
+            return {
+                "success": True,
+                "message": f"Public key '{request.secret_name}' updated successfully"
+            }
+        else:
+            log.error(f"Failed to update public key '{request.secret_name}'")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to update public key '{request.secret_name}'"
+            )
+            
+    except Exception as e:
+        log.error(f"Error updating public key '{request.secret_name}': {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
 @app.delete("/secrets/delete")
-async def delete_user_secret_endpoint(request: SecretDeleteRequest):
+async def delete_user_secret_endpoint(fastapi_request: Request, request: SecretDeleteRequest):
     """
     Delete a user secret.
     
@@ -2782,6 +3296,11 @@ async def delete_user_secret_endpoint(request: SecretDeleteRequest):
     Raises:
         HTTPException: If secret deletion fails or secret doesn't exist.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
     try:
         # Set the user context
         current_user_email.set(request.user_email)
@@ -2819,8 +3338,52 @@ async def delete_user_secret_endpoint(request: SecretDeleteRequest):
             detail=f"Internal server error: {str(e)}"
         )
 
+@app.delete("/secrets/public/delete")
+async def delete_public_secret_endpoint(fastapi_request: Request, request: PublicSecretDeleteRequest):
+    """
+    Delete a public secret.
+
+    Args:
+        request (PublicSecretDeleteRequest): The request containing secret name.
+
+    Returns:
+        dict: Success or error response.
+
+    Raises:
+        HTTPException: If public secret deletion fails or secret doesn't exist.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    try:
+        # Delete the public key
+        success = delete_public_key(
+            key_name=request.secret_name
+        )
+
+        if success:
+            log.info(f"Public key '{request.secret_name}' deleted successfully")
+            return {
+                "success": True,
+                "message": f"Public key '{request.secret_name}' deleted successfully"
+            }
+        else:
+            log.error(f"Failed to delete public key '{request.secret_name}'")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete public key '{request.secret_name}'"
+            )
+
+    except Exception as e:
+        log.error(f"Error deleting public key '{request.secret_name}': {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
 @app.post("/secrets/list")
-async def list_user_secrets_endpoint(request: SecretListRequest):
+async def list_user_secrets_endpoint(fastapi_request: Request, request: SecretListRequest):
     """
     List all secret names for a user (without values).
     
@@ -2833,6 +3396,10 @@ async def list_user_secrets_endpoint(request: SecretListRequest):
     Raises:
         HTTPException: If listing secrets fails.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
         # Set the user context
         current_user_email.set(request.user_email)
@@ -2860,96 +3427,34 @@ async def list_user_secrets_endpoint(request: SecretListRequest):
             detail=f"Internal server error: {str(e)}"
         )
 
-# Alternative GET endpoint for retrieving a single secret
-@app.get("/secrets/{user_email}/{secret_name}")
-async def get_single_user_secret(user_email: str, secret_name: str):
+@app.post("/secrets/public/list")
+async def list_public_secrets_endpoint(fastapi_request: Request):
     """
-    Retrieve a single user secret by URL parameters.
-    
-    Args:
-        user_email (str): The user's email address.
-        secret_name (str): The name of the secret to retrieve.
+    List all public secret names (without values).
     
     Returns:
-        dict: The requested secret or error response.
+        dict: List of public secret names or error response.
     
     Raises:
-        HTTPException: If secret retrieval fails or secret not found.
+        HTTPException: If listing public secrets fails.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
-        # Set the user context
-        current_user_email.set(user_email)
+        # Get list of public key names
+        public_key_names = list_public_keys()
         
-        # Initialize secrets manager
-        secrets_manager = setup_secrets_manager()
-        
-        # Get the secret
-        secret_value = secrets_manager.get_user_secret(
-            user_email=user_email,
-            secret_name=secret_name
-        )
-        
-        if secret_value is not None:
-            log.info(f"Secret '{secret_name}' retrieved successfully for user: {user_email}")
-            return {
-                "success": True,
-                "user_email": user_email,
-                "secret_name": secret_name,
-                "secret_value": secret_value
-            }
-        else:
-            log.warning(f"Secret '{secret_name}' not found for user: {user_email}")
-            raise HTTPException(
-                status_code=404,
-                detail=f"Secret '{secret_name}' not found for user"
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Error retrieving secret for user {user_email}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
-
-# Alternative GET endpoint for listing all secret names
-@app.get("/secrets/{user_email}/list")
-async def list_user_secrets_get(user_email: str):
-    """
-    List all secret names for a user using GET endpoint.
-    
-    Args:
-        user_email (str): The user's email address.
-    
-    Returns:
-        dict: List of secret names or error response.
-    
-    Raises:
-        HTTPException: If listing secrets fails.
-    """
-    try:
-        # Set the user context
-        current_user_email.set(user_email)
-        
-        # Initialize secrets manager
-        secrets_manager = setup_secrets_manager()
-        
-        # Get list of secret names
-        secret_names = secrets_manager.list_user_secret_names(
-            user_email=user_email
-        )
-        
-        log.info(f"Secret names listed successfully for user: {user_email}")
+        log.info("Public key names listed successfully")
         return {
             "success": True,
-            "user_email": user_email,
-            "secret_names": secret_names,
-            "count": len(secret_names)
+            "public_key_names": public_key_names,
+            "count": len(public_key_names)
         }
         
     except Exception as e:
-        log.error(f"Error listing secrets for user {user_email}: {str(e)}")
+        log.error(f"Error listing public keys: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
@@ -2957,13 +3462,17 @@ async def list_user_secrets_get(user_email: str):
 
 # Health check endpoint for secrets functionality
 @app.get("/secrets/health")
-async def secrets_health_check():
+async def secrets_health_check(fastapi_request: Request):
     """
     Health check endpoint for secrets management functionality.
     
     Returns:
         dict: Health status of the secrets management system.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
         # Try to initialize secrets manager
         secrets_manager = setup_secrets_manager()
@@ -2983,7 +3492,7 @@ async def secrets_health_check():
 
 
 @app.get("/recycle-bin/{param}")
-async def restore_tools(param:Literal["tools", "agents"],user_email_id: str):
+async def restore_tools(fastapi_request: Request, param:Literal["tools", "agents"], user_email_id: str):
     """
     Restores tools from the recycle bin.
 
@@ -2992,6 +3501,10 @@ async def restore_tools(param:Literal["tools", "agents"],user_email_id: str):
     list
         A list of restored tools. If no tools are found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     connection_login = await asyncpg.connect(
         host=POSTGRESQL_HOST,
         database="login",
@@ -3035,7 +3548,7 @@ async def restore_tools(param:Literal["tools", "agents"],user_email_id: str):
 
 
 @app.post("/restore/{param}")
-async def restore(param: Literal["tools", "agents"], item_id: str,user_email_id):
+async def restore(fastapi_request: Request, param: Literal["tools", "agents"], item_id: str, user_email_id: str, agent_service: AgentService = Depends(get_agent_service)):
     """
     Restores a tool or agent from the recycle bin.
 
@@ -3052,6 +3565,10 @@ async def restore(param: Literal["tools", "agents"], item_id: str,user_email_id)
         A dictionary containing the restored item details.
         If the item is not found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     connection_login = await asyncpg.connect(
         host=POSTGRESQL_HOST,
         database="login",
@@ -3066,14 +3583,14 @@ async def restore(param: Literal["tools", "agents"], item_id: str,user_email_id)
     if user_role.lower() != "admin":
         return HTTPException(status_code=403, detail="You are not authorized to access this resource")
     if param == "tools":
-        return await restore_recycle_tool_by_id(item_id)
+        return await agent_service.tool_service.restore_tool(tool_id=item_id)
     elif param == "agents":
-        return await restore_recycle_agent_by_id(item_id)
+        return await agent_service.restore_agent(agentic_application_id=item_id)
     else:
         raise HTTPException(status_code=400, detail="Invalid parameter. Use 'tools' or 'agents'.")
     
 @app.delete("/delete/{param}")
-async def delete(param: Literal["tools", "agents"], item_id: str,user_email_id):
+async def delete(fastapi_request: Request, param: Literal["tools", "agents"], item_id: str, user_email_id: str, agent_service: AgentService = Depends(get_agent_service)):
     """
     Deletes a tool or agent permanently from the recycle bin.
 
@@ -3090,6 +3607,10 @@ async def delete(param: Literal["tools", "agents"], item_id: str,user_email_id):
         A dictionary containing the deleted item details.
         If the item is not found, raises an HTTPException with status code 404.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     connection_login = await asyncpg.connect(
         host=POSTGRESQL_HOST,
         database="login",
@@ -3104,49 +3625,44 @@ async def delete(param: Literal["tools", "agents"], item_id: str,user_email_id):
     if user_role.lower() != "admin":
         return HTTPException(status_code=403, detail="You are not authorized to access this resource")
     if param == "tools":
-        return await delete_recycle_tool_by_id(item_id)
+        return await agent_service.tool_service.delete_tool_from_recycle_bin(tool_id=item_id)
     elif param == "agents":
-        return await delete_recycle_agent_by_id(item_id)
+        return await agent_service.delete_agent_from_recycle_bin(agentic_application_id=item_id)
     else:
         raise HTTPException(status_code=400, detail="Invalid parameter. Use 'tools' or 'agents'.")
 
 
 @app.get("/export-agents")
-async def download_multipleagent_export(
+async def download_multipleagent_export(fastapi_request: Request,
     agent_ids: List[str] = Query(..., description="List of agent IDs to export"),
+    user_email: Optional[str] = Query(None, description="Email of the user requesting the export"),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """
     Downloads a zip archive of the specified agent's data and associated files.
     """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
     try:
-        zip_file_path = await export_agent_by_id(agent_ids)
+        zip_file_path = await export_agent_by_id(agent_ids,user_email)
 
         if not os.path.exists(zip_file_path):
             raise HTTPException(status_code=500, detail="Generated zip file not found.")
-
         filename = os.path.basename(zip_file_path)
         media_type = "application/zip"
-
-        # Define the cleanup function
         async def cleanup_files():
-            print(f"Cleanup: Starting background task for {zip_file_path}")
             temp_base_dir = "temp_agent_exports"
             temp_working_dir = os.path.join(temp_base_dir, f"export")
             try:
                 if os.path.exists(zip_file_path):
                     os.remove(zip_file_path)
-                    print(f"Cleanup: Removed zip file: {zip_file_path}")
                 if os.path.exists(temp_working_dir):
                     shutil.rmtree(temp_working_dir)
-                    print(f"Cleanup: Removed temp working directory: {temp_working_dir}")
             except Exception as e:
-                print(f"Cleanup Error: Failed to clean up files: {e}")
-
-        # Add the cleanup function to background tasks
+                pass
         background_tasks.add_task(cleanup_files)
-
-        # Return the FileResponse
         return FileResponse(
             path=zip_file_path,
             media_type=media_type,
@@ -3156,84 +3672,97 @@ async def download_multipleagent_export(
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Error serving file: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-async def export_agent_by_id(agent_ids: List[str]) -> str:
-
+           
+async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
+    STATIC_EXPORTING_FOLDER="Export_Agent/Agentcode"
     if len(agent_ids)==1:
         adict={}
         agent_data_list = await get_agents_by_id(agentic_application_id=agent_ids[0])
         if not agent_data_list or not isinstance(agent_data_list, list) or len(agent_data_list) == 0:
             raise HTTPException(status_code=404, detail=f"Agent ID: '{agent_ids[0]}' not found.")
-
         agent_dict = agent_data_list[0]
         agent_for_json_dump = agent_dict.copy()
         for key, value in agent_for_json_dump.items():
             if isinstance(value, datetime):
                 agent_for_json_dump[key] = value.isoformat()
         adict[agent_ids[0]]=agent_for_json_dump
-        if agent_dict.get('agentic_application_type') == 'react_agent':
-
-            STATIC_EXPORTING_FOLDER = "Export_Agent/React_Export"
-
-            if not os.path.isdir(STATIC_EXPORTING_FOLDER):
-                os.makedirs(STATIC_EXPORTING_FOLDER, exist_ok=True)
-        if agent_dict.get('agentic_application_type') == 'meta_agent':
-
-            STATIC_EXPORTING_FOLDER = "Export_Agent/Meta_Export"
-
-            if not os.path.isdir(STATIC_EXPORTING_FOLDER):
-                os.makedirs(STATIC_EXPORTING_FOLDER, exist_ok=True)
-        if agent_dict.get('agentic_application_type') == 'multi_agent':
-
-            STATIC_EXPORTING_FOLDER = "Export_Agent/Multi_Export"
-
-            if not os.path.isdir(STATIC_EXPORTING_FOLDER):
-                os.makedirs(STATIC_EXPORTING_FOLDER, exist_ok=True)
-        if agent_dict.get('agentic_application_type') == 'planner_meta_agent':
-
-            STATIC_EXPORTING_FOLDER = "Export_Agent/Planner_Meta_Export"
-
-            if not os.path.isdir(STATIC_EXPORTING_FOLDER):
-                os.makedirs(STATIC_EXPORTING_FOLDER, exist_ok=True)
-
         temp_base_dir = os.path.join(tempfile.gettempdir(), "your_app_agent_exports")
-
         unique_export_id = os.urandom(8).hex() # Re-add your unique export ID here
         temp_working_dir = os.path.join(temp_base_dir, f"{agent_ids[0]}_{unique_export_id}") # Append unique ID here
         final_zip_content_folder_name = agent_dict.get('agentic_application_name')
         target_export_folder_path = os.path.join(temp_working_dir, final_zip_content_folder_name)
-
         zip_file_full_path = None
 
         try:
             if os.path.exists(temp_working_dir):
                 shutil.rmtree(temp_working_dir)
-                print(f"Cleaned up existing unique temp directory: {temp_working_dir}")
-
-
             os.makedirs(os.path.dirname(target_export_folder_path), exist_ok=True)
             shutil.copytree(STATIC_EXPORTING_FOLDER, target_export_folder_path)
-            print(f"Copied static folder from '{STATIC_EXPORTING_FOLDER}' to '{target_export_folder_path}'")
-            agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/agent_data.py')
+            env_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/.env')
+            conn = await asyncpg.connect(
+                host=POSTGRESQL_HOST,
+                database='login',
+                user=POSTGRESQL_USER,
+                password=POSTGRESQL_PASSWORD
+            )
+            user_data = await conn.fetchrow(
+                    "SELECT mail_id, user_name, role FROM login_credential WHERE mail_id = $1",
+                    user_email
+                )
+            user=user_data[1] if user_data else None
+            role=user_data[2] if user_data else None
+            with open(env_file_path, 'a') as f: 
+                f.write(f"\nUSER_EMAIL={user_email or ''}\n")
+                f.write(f"\nUSER_NAME={user or ''}\n")
+                f.write(f"\nROLE={role or ''}\n")
+            agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/agent_config.py')
             with open(agent_data_file_path, 'w') as f:
                 f.write('agent_data = ')
                 json.dump(adict, f, indent=4)
-            print(f"agent_data.py saved to: {agent_data_file_path}")
-            if agent_dict.get('agentic_application_type') == 'react_agent' or agent_dict.get('agentic_application_type') == 'multi_agent':
+            inference_path = os.path.join(target_export_folder_path, 'Agent_Backend/src/inference')
+            destination_file = os.path.join(target_export_folder_path,'Agent_Backend/agent_endpoints.py')
+            backend_path=os.path.join(target_export_folder_path,'Agent_Backend')
+            shutil.copy('src/inference/inference_utils.py', inference_path)
+            shutil.copy('telemetry_wrapper.py',backend_path)
+            shutil.copy('evaluation_metrics.py',backend_path)
+            shutil.copy('src/inference/react_agent_inference.py', inference_path)
+            shutil.copy('requirements.txt',backend_path)
+            if agent_dict.get('agentic_application_type') in ['react_agent','react_critic_agent','planner_executor_agent','planner_executor_critic_agent']:
+                if agent_dict.get('agentic_application_type') == 'react_agent':
+                    source_file = 'Export_Agent/endpoints/react_agent_endpoints.py'
+                    shutil.copyfile(source_file, destination_file)
+                elif agent_dict.get('agentic_application_type') == 'react_critic_agent':
+                    shutil.copy('src/inference/react_critic_agent_inference.py', inference_path)
+                    source_file = 'Export_Agent/endpoints/react_critic_agent_endpoints.py'
+                    shutil.copyfile(source_file, destination_file)
+                elif agent_dict.get('agentic_application_type') == 'planner_executor_agent':
+                    shutil.copy('src/inference/planner_executor_agent_inference.py', inference_path)
+                    source_file = 'Export_Agent/endpoints/planner_executor_agent_endpoints.py'
+                    shutil.copyfile(source_file, destination_file)
+                elif agent_dict.get('agentic_application_type') == 'planner_executor_critic_agent':
+                    shutil.copy('src/inference/planner_executor_critic_agent_inference.py', inference_path)
+                    source_file = 'Export_Agent/endpoints/planner_executor_critic_agent_endpoints.py'
+                    shutil.copyfile(source_file, destination_file)
                 await get_tool_data(agent_dict, export_path=target_export_folder_path)
-
-                output_zip_name = f"agent_export"
-                # The zip file will also be created in the system temp directory
+                worker_agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/worker_agents_config.py')
+                with open(worker_agent_data_file_path, 'w') as f:
+                    f.write('worker_agents = ')
+                    json.dump({}, f, indent=4)
+                output_zip_name = f"EXPORTAGENT"
                 zip_base_name = os.path.join(temp_base_dir, output_zip_name)
                 zip_file_full_path = shutil.make_archive(zip_base_name, 'zip', temp_working_dir)
-
-                print(f"Created zip file: {zip_file_full_path}")
                 return zip_file_full_path
             if agent_dict.get('agentic_application_type') in ['meta_agent','planner_meta_agent']:
+                if agent_dict.get('agentic_application_type') == 'meta_agent':
+                    shutil.copy('src/inference/meta_agent_inference.py', inference_path)
+                    source_file = 'Export_Agent/endpoints/meta_agent_endpoints.py'
+                    shutil.copyfile(source_file, destination_file)
+                elif agent_dict.get('agentic_application_type') == 'planner_meta_agent':
+                    shutil.copy('src/inference/planner_meta_agent_inference.py', inference_path)
+                    source_file = 'Export_Agent/endpoints/planner_meta_agent_endpoints.py'
+                    shutil.copyfile(source_file, destination_file)
                 worker_agent_ids=agent_dict.get("tools_id")
-                print(worker_agent_ids)
                 worker_agents={}
                 for agent in json.loads(worker_agent_ids):
                     agent_data = await get_agents_by_id(agentic_application_id=agent)
@@ -3248,7 +3777,7 @@ async def export_agent_by_id(agent_ids: List[str]) -> str:
                         worker_agents[agent] = processed_agent_dict
                     else:
                         worker_agents[agent] = None
-                worker_agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/worker_agents_data.py')
+                worker_agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/worker_agents_config.py')
                 with open(worker_agent_data_file_path, 'w') as f:
                     f.write('worker_agents = ')
                     json.dump(worker_agents, f, indent=4)
@@ -3256,19 +3785,13 @@ async def export_agent_by_id(agent_ids: List[str]) -> str:
                 for i in worker_agents:
                     tool_list=tool_list+(json.loads(worker_agents[i]["tools_id"]))
                 await get_tool_data(agent_dict, export_path=target_export_folder_path,tools=tool_list)
-                output_zip_name = f"agent_export"
-                # The zip file will also be created in the system temp directory
+                output_zip_name = f"EXPORTAGENT"
                 zip_base_name = os.path.join(temp_base_dir, output_zip_name)
                 zip_file_full_path = shutil.make_archive(zip_base_name, 'zip', temp_working_dir)
-
-                print(f"Created zip file: {zip_file_full_path}")
                 return zip_file_full_path
-
         except Exception as e:
-            print(f"An error occurred during export: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to export agent: {str(e)}")
     else:
-        STATIC_EXPORTING_FOLDER = "Export_Agent/MultipleAgents"
         workerids=set()
         app_types=set()
         toolids=set()
@@ -3277,7 +3800,6 @@ async def export_agent_by_id(agent_ids: List[str]) -> str:
             agent_data_list = await get_agents_by_id(agentic_application_id=agent_id)
             if not agent_data_list or not isinstance(agent_data_list, list) or len(agent_data_list) == 0:
                 raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
-
             agent_dict = agent_data_list[0]
             agent_for_json_dump = agent_dict.copy()
             for key, value in agent_for_json_dump.items():
@@ -3294,41 +3816,53 @@ async def export_agent_by_id(agent_ids: List[str]) -> str:
                 for i in ids:
                     toolids.add(i)
         temp_base_dir = os.path.join(tempfile.gettempdir(), "your_app_agent_exports")
-
         unique_export_id = os.urandom(8).hex() # Re-add your unique export ID here
         temp_working_dir = os.path.join(temp_base_dir, f"exportagent_{unique_export_id}") # Append unique ID here
-        final_zip_content_folder_name = "MultipleAgents"#agent_dict.get('agentic_application_name')
+        final_zip_content_folder_name = "MultipleAgents"
         target_export_folder_path = os.path.join(temp_working_dir, final_zip_content_folder_name)
-
         zip_file_full_path = None
 
         try:
             if os.path.exists(temp_working_dir):
                 shutil.rmtree(temp_working_dir)
-                print(f"Cleaned up existing unique temp directory: {temp_working_dir}")
-
-
             os.makedirs(os.path.dirname(target_export_folder_path), exist_ok=True)
             shutil.copytree(STATIC_EXPORTING_FOLDER, target_export_folder_path)
-            backendfile_path = os.path.join(target_export_folder_path, 'Agent_Backend')
-            for i in app_types:
-                if i=='react_agent':
-                    shutil.copy('Export_Agent/React_Export/Agent_Backend/react_inference.py', backendfile_path)                
-                elif i=='meta_agent':
-                    shutil.copy('Export_Agent/Meta_Export/Agent_Backend/meta_inference.py', backendfile_path)
-                elif i=='multi_agent':
-                    shutil.copy('Export_Agent/Multi_Export/Agent_Backend/multi_inference.py', backendfile_path)
-                    shutil.copy('Export_Agent/Multi_Export/Agent_Backend/multiagent_without_hitl.py', backendfile_path)
-                    shutil.copy('Export_Agent/Multi_Export/Agent_Backend/multiagent_with_hitl.py', backendfile_path)
-                elif i=='planner_meta_agent':
-                    shutil.copy('Export_Agent/Planner_Meta_Export/Agent_Backend/plannermeta_inference.py', backendfile_path)
-                    
-            print(f"Copied static folder from '{STATIC_EXPORTING_FOLDER}' to '{target_export_folder_path}'")
-            agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/agent_data.py')
+            env_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/.env')
+            conn = await asyncpg.connect(
+                host=POSTGRESQL_HOST,
+                database='login',
+                user=POSTGRESQL_USER,
+                password=POSTGRESQL_PASSWORD
+            )
+            user_data = await conn.fetchrow(
+                    "SELECT mail_id, user_name, role FROM login_credential WHERE mail_id = $1",
+                    user_email
+                )
+            user=user_data[1] if user_data else None
+            role=user_data[2] if user_data else None
+            with open(env_file_path, 'a') as f: 
+                f.write(f"\nUSER_EMAIL={user_email or ''}\n")
+                f.write(f"\nUSER_NAME={user or ''}\n")
+                f.write(f"\nROLE={role or ''}\n")
+            inference_path = os.path.join(target_export_folder_path, 'Agent_Backend/src/inference')
+            destination_file = os.path.join(target_export_folder_path,'Agent_Backend/agent_enpoints.py')
+            backend_path=os.path.join(target_export_folder_path,'Agent_Backend')
+            shutil.copy('src/inference/inference_utils.py', inference_path)
+            shutil.copy('telemetry_wrapper.py',backend_path)
+            shutil.copy('evaluation_metrics.py',backend_path)
+            shutil.copy('src/inference/react_agent_inference.py', inference_path)
+            shutil.copy('src/inference/meta_agent_inference.py', inference_path)
+            shutil.copy('src/inference/react_critic_agent_inference.py', inference_path)
+            shutil.copy('src/inference/planner_executor_agent_inference.py', inference_path)
+            shutil.copy('src/inference/planner_executor_critic_agent_inference.py', inference_path)
+            shutil.copy('src/inference/planner_meta_agent_inference.py', inference_path)
+            shutil.copy('requirements.txt',backend_path)
+            source_file = 'Export_Agent/endpoints/multiple_agent_endpoints.py'
+            shutil.copyfile(source_file, destination_file)
+            agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/agent_config.py')
             with open(agent_data_file_path, 'w') as f:
                 f.write('agent_data = ')
                 json.dump(adict, f, indent=4)
-            print(f"agent_data.py saved to: {agent_data_file_path}")
             worker_agents={}
             for agent in list(workerids):
                 agent_data = await get_agents_by_id(agentic_application_id=agent)
@@ -3343,7 +3877,7 @@ async def export_agent_by_id(agent_ids: List[str]) -> str:
                     worker_agents[agent] = processed_agent_dict
                 else:
                     worker_agents[agent] = None
-            worker_agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/worker_agents_data.py')
+            worker_agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/worker_agents_config.py')
             with open(worker_agent_data_file_path, 'w') as f:
                 f.write('worker_agents = ')
                 json.dump(worker_agents, f, indent=4)
@@ -3353,15 +3887,1044 @@ async def export_agent_by_id(agent_ids: List[str]) -> str:
             for i in tool_list:
                 toolids.add(i)
             await get_tool_data(adict, export_path=target_export_folder_path,tools=list(toolids))
-            output_zip_name = f"agent_export"
-                # The zip file will also be created in the system temp directory
+            output_zip_name = f"EXPORTAGENTS"
             zip_base_name = os.path.join(temp_base_dir, output_zip_name)
             zip_file_full_path = shutil.make_archive(zip_base_name, 'zip', temp_working_dir)
-
-            print(f"Created zip file: {zip_file_full_path}")
-            return zip_file_full_path
-                
+            return zip_file_full_path               
         except Exception as e:
-            print(f"An error occurred during export: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to export agent: {str(e)}")        
-                   
+
+
+
+@app.get("/kb_list")
+async def list_kb_directories(fastapi_request: Request):
+    """
+    Lists vectorstore directories in KB_DIR.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    KB_DIR = "KB_DIR"
+    kb_path = Path(KB_DIR)
+
+    if not kb_path.exists():
+        raise HTTPException(status_code=404, detail="Knowledge base directory does not exist.")
+
+    directories = [d.name for d in kb_path.iterdir() if d.is_dir()]
+
+    if not directories:
+        return {"message": "No knowledge bases found."}
+
+    return {"knowledge_bases": directories}
+
+
+
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "no-api-key-set")
+GOOGLE_EMBEDDING_MODEL = os.environ.get("GOOGLE_EMBEDDING_MODEL", "models/embedding-001")
+
+
+@app.post("/kbdocuments")
+async def upload_files(fastapi_request: Request, session_id: str = Form(...), kb_name:str = 'temp', files: List[UploadFile] = File(...)):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    if GOOGLE_API_KEY == "no-api-key-set":
+        raise ValueError("GOOGLE_API_KEY environment variable is not set.")
+
+    # Initialize Google Embeddings
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model=GOOGLE_EMBEDDING_MODEL,
+        google_api_key=GOOGLE_API_KEY
+    )
+
+    # Create temp directory
+    temp_dir = os.path.join('TEMPFILE_DIR', f"session_{session_id}")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    file_paths = []
+
+    for file in files:
+        file_path = os.path.join(temp_dir, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        file_paths.append(file_path)
+
+    # Load text files and split into documents
+    documents = []
+    for path in file_paths:
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == ".txt":
+                loader = TextLoader(path, encoding='utf-8')
+            elif ext == ".pdf":
+                loader = PyMuPDF4LLMLoader(path)
+            else:
+                continue  # Skip unsupported file types
+            documents.extend(loader.load())
+        except Exception as e:
+            print(f"Failed to load {path}: {e}")
+
+    # Split documents
+    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=300)
+    docs = text_splitter.split_documents(documents)
+
+    # Create vector store
+    vectorstore = FAISS.from_documents(docs, embeddings)
+
+    # Save vector store to session-specific FAISS index folder
+    faiss_path = os.path.join('KB_DIR', kb_name)
+    vectorstore.save_local(faiss_path)
+
+    return {
+        "message": f"Uploaded {len(files)} files. Embeddings created and stored for session {session_id}.",
+        "storage_path": faiss_path
+    }
+ 
+
+async def evaluate_agent_performance(request: GroundTruthEvaluationRequest, file_path: str):
+    """
+    Internal function to evaluate an agent against a ground truth file.
+    Returns evaluation results, file paths, and summary.
+    """
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    if not file_path.lower().endswith((".csv", ".xlsx", ".xls")):
+        raise ValueError("File must be a CSV or Excel file.")
+
+    llm = load_model(request.model_name)
+    agent_type=request.agent_type
+    specialized_agent_inference: BaseAgentInference = get_specialized_inference_service(agent_type=agent_type)
+
+    avg_scores, summary, excel_path = await evaluate_ground_truth_file(
+        model_name=request.model_name,
+        agent_type=agent_type,
+        file_path=file_path,  # ✅ Use here
+        agentic_application_id=request.agentic_application_id,
+        session_id=request.session_id,
+        specialized_agent_inference=specialized_agent_inference,
+        llm=llm,
+        use_llm_grading=request.use_llm_grading
+    )
+
+    return avg_scores, summary, excel_path
+
+@app.get("/download-evaluation-result")
+async def download_evaluation_result(fastapi_request: Request, file_name: str):
+    """
+    Endpoint to download the evaluation result file.
+    
+    Query Parameters:
+    - file_name (str): The name of the result file to download.
+
+    Returns:
+    - FileResponse: Returns the file as a downloadable response.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    # Full path to file
+    file_path = os.path.join(Path.cwd(), 'outputs', file_name)
+
+    if not os.path.exists(file_path):
+        log.error(f"File not found: {file_path}")
+        raise HTTPException(status_code=404, detail="❌ File not found")
+    log.info(f"Downloading evaluation result file: {file_path}")
+    return FileResponse(path=file_path, filename=file_name, media_type="application/octet-stream")
+
+
+async def upload_evaluation_file(file: UploadFile = File(...), subdirectory: str = ""):
+    if subdirectory.startswith("/") or subdirectory.startswith("\\"):
+        subdirectory = subdirectory[1:]
+
+    save_path = os.path.join(EVALUATION_UPLOAD_DIR, subdirectory) if subdirectory else EVALUATION_UPLOAD_DIR
+    os.makedirs(save_path, exist_ok=True)
+
+    # Ensure unique filename using UUID
+    name, ext = os.path.splitext(file.filename)
+    safe_filename = f"{name}_{uuid.uuid4().hex[:8]}{ext}"
+    full_file_path = os.path.join(save_path, safe_filename)
+
+    # Save file
+    with open(full_file_path, "wb") as f:
+        f.write(await file.read())
+
+    log.info(f"Evaluation file '{file.filename}' uploaded as '{safe_filename}' at '{full_file_path}'")
+
+    relative_path = os.path.relpath(full_file_path, start=os.getcwd())
+    return {
+        "info": f"File '{file.filename}' saved as '{safe_filename}' at '{relative_path}'",
+        "file_path": relative_path
+    }
+
+
+@app.post("/upload-and-evaluate/")
+async def upload_and_evaluate(fastapi_request: Request,
+    file: UploadFile = File(...),
+    subdirectory: str = "",
+    request: GroundTruthEvaluationRequest = Depends()
+):
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    # Step 1: Upload file
+    upload_resp = await upload_evaluation_file(file, subdirectory)
+
+    if "file_path" not in upload_resp:
+        raise HTTPException(status_code=400, detail="File upload failed.")
+
+    file_path = upload_resp["file_path"]
+
+    try:
+        avg_scores, summary, excel_path = await evaluate_agent_performance(request ,file_path)
+
+        file_name = os.path.basename(excel_path)
+
+        # ✅ Return the Excel file as response with custom headers
+        summary_safe = summary.encode("ascii", "ignore").decode().replace("\n", " ")
+        log.info(f"Evaluation completed successfully. Download URL: {file_name}")
+        return FileResponse(
+            path=excel_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=file_name,
+            headers={
+                "X-Message": "Evaluation completed successfully",
+                "X-Average-Scores": str(avg_scores),
+                "X-Diagnostic-Summary": summary_safe
+            }
+        )
+
+    except Exception as e:
+        log.error(f"Evaluation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
+
+
+@app.post("/upload-and-evaluate-json/")
+async def upload_and_evaluate_json(
+    fastapi_request: Request,
+    file: UploadFile = File(...),
+    subdirectory: str = "",
+    request: GroundTruthEvaluationRequest = Depends(),
+    # fastapi_request: Request = None
+):
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    # Upload the file
+    upload_resp = await upload_evaluation_file(file, subdirectory)
+
+    if "file_path" not in upload_resp:
+        raise HTTPException(status_code=400, detail="File upload failed.")
+
+    file_path = upload_resp["file_path"]
+
+    try:
+        # Evaluate using new function that accepts file_path separately
+        avg_scores, summary, excel_path = await evaluate_agent_performance(
+            request,
+            file_path=file_path
+        )
+
+        file_name = os.path.basename(excel_path)
+        download_url = f"{fastapi_request.base_url}download-evaluation-result?file_name={file_name}"
+        log.info(f"Evaluation completed successfully. Download URL: {download_url}")
+        return {
+            "message": "Evaluation completed successfully",
+            "download_url": download_url,
+            "average_scores": avg_scores,
+            "diagnostic_summary": summary
+        }
+
+    except Exception as e:
+        log.error(f"Evaluation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
+
+
+
+async def cleanup_old_files(directories=["outputs", "evaluation_uploads"], expiration_hours=24):
+    log.debug("Starting cleanup task for old files...")
+    while True:
+        try:
+            now = time.time()
+            cutoff = now - (expiration_hours * 60 * 60)
+
+            for directory in directories:
+                abs_path = os.path.abspath(directory)
+                deleted_files = []
+
+                log.debug(f"🔍 [Cleanup Task] Scanning '{abs_path}' for files older than {expiration_hours} hours...")
+
+                if not os.path.exists(abs_path):
+                    log.warning(f"⚠️ [Cleanup Task] Directory does not exist: {abs_path}")
+                    continue
+
+                for filename in os.listdir(abs_path):
+                    file_path = os.path.join(abs_path, filename)
+                    if os.path.isfile(file_path):
+                        file_mtime = os.path.getmtime(file_path)
+                        if file_mtime < cutoff:
+                            try:
+                                os.remove(file_path)
+                                deleted_files.append(filename)
+                                log.debug(f"[Cleanup Task] Deleted expired file: {filename}")
+                            except Exception as e:
+                                log.error(f"[Cleanup Task] Failed to delete '{filename}': {e}")
+
+                if not deleted_files:
+                    log.info(f"[Cleanup Task] No expired files found in '{abs_path}'.")
+                else:
+                    log.info(f"[Cleanup Task] Deleted {len(deleted_files)} file(s) from '{abs_path}': {deleted_files}")
+
+        except Exception as e:
+            log.error(f"[Cleanup Task] Error during cleanup: {e}")
+
+        await asyncio.sleep(3600)  # Wait 1 hour before next cleanup cycle
+
+
+
+# @app.on_event("startup")
+# async def start_cleanup_task(fastapi_request: Request):
+#     user_id = fastapi_request.cookies.get("user_id")
+#     user_session = fastapi_request.cookies.get("user_session")
+#     update_session_context(user_session=user_session, user_id=user_id)
+#     log.debug(" [Startup] Launching background file cleanup task...")
+#     asyncio.create_task(cleanup_old_files())
+
+
+
+# data connector start
+# ==================== Global Variables ====================  
+connected_databases: Dict[str, dict] = {}
+
+# ==================== Data_connector Models ====================
+class ConnectionSchema(BaseModel):
+    connection_name: str = Field(..., example="My SQLite DB")
+    connection_database_type: str = Field(..., example="sqlite")  # postgresql, mysql, sqlite, mongodb, azuresql
+    connection_host: Optional[str] = ""
+    connection_port: Optional[int] = 0
+    connection_username: Optional[str] = ""
+    connection_password: Optional[str] = ""
+    connection_database_name: str  # DB name, file path, or URI
+
+    @validator('connection_database_type')
+    def valid_db_type(cls, v):
+        valid_types = ["postgresql", "mysql", "sqlite", "mongodb", "azuresql"]
+        if v.lower() not in valid_types:
+            raise ValueError(f"Database type must be one of {valid_types}")
+        return v.lower()
+    
+class DBConnectionRequest(BaseModel):
+    name: str
+    db_type: str  
+    host: str
+    port: int
+    username: str
+    password: str
+    database: str
+    flag_for_insert_into_db_connections_table: str
+ 
+class QueryGenerationRequest(BaseModel):
+    database_type: str
+    natural_language_query: str
+ 
+class QueryExecutionRequest(BaseModel):
+    name: str
+    query: str
+ 
+class CRUDRequest(BaseModel):
+    name: str
+    operation: str
+    table: str
+    data: dict = {}
+    condition: str = ""
+
+class ToolRequestModel(BaseModel):
+    tool_description: str
+    code_snippet: str
+    model_name: str
+    created_by: str
+    tag_ids: List[int]
+    db_connection_name: Optional[str] = None
+
+
+# ==================== Utilities ===================================================================================================================#
+ 
+def build_connection_string(config: dict) -> str:
+    db_type = config["db_type"].lower()
+
+    if db_type == "mysql":
+        return f"mysql+mysqlconnector://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
+    elif db_type == "postgresql":
+        return f"postgresql+psycopg2://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
+    elif db_type == "azuresql":
+        return f"mssql+pyodbc://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}?driver=ODBC+Driver+17+for+SQL+Server"
+    elif db_type == "sqlite":
+        return f"sqlite:///{config['database']}"
+    elif db_type == "mongodb":
+        host = config["host"]
+        port = config["port"]
+        db_name = config["database"]
+        username = config.get("username")
+        password = config.get("password")
+        if username and password:
+            return f"mongodb://{username}:{password}@{host}:{port}/?authSource={db_name}"
+        else:
+            return f"mongodb://{host}:{port}/{db_name}"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported database type: {config['db_type']}")
+
+def get_engine(config):
+    db_type = config["db_type"].lower()
+
+    if db_type == "mongodb":
+        # Return Motor client for MongoDB
+
+        mongo_uri = build_connection_string(config)
+        if not mongo_uri:
+            raise HTTPException(status_code=400, detail="MongoDB URI missing in 'database' field.")
+        return AsyncIOMotorClient(mongo_uri)
+    else:
+        connection_str = build_connection_string(config)
+        return create_engine(connection_str)
+
+def create_database_if_not_exists(config):
+    db_type = config["db_type"].lower()
+    db_name = config["database"]
+
+    # SQLite DB creation not needed
+    if db_type == "sqlite":
+        return
+
+    # MongoDB DB creation is implicit in connection, so skip
+    if db_type == "mongodb":
+        return
+
+    # For SQL DBs, connect to admin DB for creation
+    config_copy = config.copy()
+    if db_type == "postgresql":
+        config_copy["database"] = "postgres"
+    elif db_type == "mysql":
+        config_copy["database"] = ""
+
+    engine = create_engine(build_connection_string(config_copy), isolation_level="AUTOCOMMIT")
+    
+
+    with engine.connect() as conn:
+        if db_type == "mysql":
+            conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{db_name}`"))
+        elif db_type == "postgresql":
+            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": db_name})
+            if not result.fetchone():
+                conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+        elif db_type == "azuresql":
+            # Add Azure SQL DB creation logic here if needed
+            pass
+        else:
+            raise HTTPException(status_code=400, detail=f"Database creation not supported for {config['db_type']}")
+        
+
+
+
+from fastapi import HTTPException
+
+async def check_connection_name_exists(name: str, table_name="db_connections_table") -> bool:
+    connection = None
+    try:
+        connection = await asyncpg.connect(
+            host=POSTGRESQL_HOST,
+            database=DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD
+        )
+        query = f"SELECT 1 FROM {table_name} WHERE connection_name = $1 LIMIT 1"
+        result = await connection.fetchrow(query, name)
+        return result is not None
+    except Exception as e:
+        # Log or handle error if necessary
+        raise HTTPException(status_code=500, detail=f"Error checking connection name: {e}")
+    finally:
+        if connection:
+            await connection.close()
+
+@app.post("/connect")
+async def connect_to_database(req: DBConnectionRequest):
+    if req.flag_for_insert_into_db_connections_table == "1":
+            name_exists = await check_connection_name_exists(req.name)
+            if name_exists:
+                raise HTTPException(status_code=400, detail=f"Connection name '{req.name}' already exists.")
+
+
+    try:
+        config = req.dict()
+
+
+        # Adjust config based on DB type:
+        if req.db_type == "sqlite":
+            # For SQLite, host/port/user/pass not needed, database is file path
+            config["host"] = "Na"
+            config["port"] = 0
+            config["username"] = "Na"
+            config["password"] = "Na"
+            create_database_if_not_exists(config)
+            manager = get_connection_manager()
+            manager.add_sql_database(config.get("name",""),build_connection_string(config))
+            # session_sql = manager.get_sql_session(config.get("name",""))
+            # session_sql.execute(text("CREATE TABLE IF NOT EXISTS ab (age INTEGER)"))
+            # session_sql.commit()
+            # session_sql.close()
+
+        elif req.db_type == "mongodb":
+            manager = get_connection_manager()
+            manager.add_mongo_database(config.get("name",""),build_connection_string(config),config.get("database",""))
+            mongo_db = manager.get_mongo_database(config.get("name",""))
+            # sample_doc = await mongo_db.test_collection.find_one()
+            try:
+                await mongo_db.command("ping")
+                print("[MongoDB] Connection test successful.")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"MongoDB ping failed: {str(e)}")
+            connected_databases[req.name] = config
+
+        elif req.db_type == "postgresql" or req.db_type == "mysql":
+            create_database_if_not_exists(config)
+            manager = get_connection_manager()
+            manager.add_sql_database(config.get("name",""),build_connection_string(config))
+            # session_postgres = manager.get_sql_session(config.get("name",""))
+            # session_db1.execute(text("select * from ab;"))
+            connected_databases[req.name] = config
+            # session_postgres.close()
+
+
+        
+
+        if req.flag_for_insert_into_db_connections_table == "1":
+            connection_data = {
+                "connection_id": str(uuid.uuid4()),
+                "connection_name": req.name,
+                "connection_database_type": req.db_type,
+                "connection_host": config.get("host", ""),
+                "connection_port": config.get("port", ),
+                "connection_username": config.get("username", ""),
+                "connection_password": config.get("password", ""),
+                "connection_database_name": config.get("database", "")
+            }
+
+        
+            result = await insert_into_db_connections_table(connection_data)
+
+            if result.get("is_created"):
+                return {
+                    "message": f"✅ Connected to {req.db_type} database '{req.database}' and saved configuration.",
+                    **result
+                }
+            else:
+                return {
+                    "message": f"⚠️ Connected to {req.db_type} database '{req.database}', but failed to save configuration.",
+                    # **result
+                }
+        else:
+            return {
+                    "message": f"✅ Connected to {req.db_type} database '{req.database}'."
+                }
+            
+
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+class DBDisconnectRequest(BaseModel):
+    name: str
+    db_type: str
+
+
+
+async def delete_connection_by_name(name: str, table_name="db_connections_table"):
+    connection = None
+    try:
+        connection = await asyncpg.connect(
+            host=POSTGRESQL_HOST,
+            database=DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD
+        )
+
+        delete_query = f"DELETE FROM {table_name} WHERE connection_name = $1"
+        result = await connection.execute(delete_query, name)
+
+        return {"message": f"Deleted: {name}", "result": result}
+    
+    except Exception as e:
+        return {"error": str(e)}
+    
+    finally:
+        if connection:
+            await connection.close()
+
+
+@app.post("/disconnect")
+async def disconnect_database(req: DBDisconnectRequest):
+    manager = get_connection_manager()
+    name = req.name
+    db_type = req.db_type.lower()
+
+    # Get current active connections
+    active_sql_connections = list(manager.sql_engines.keys())
+    active_mongo_connections = list(manager.mongo_clients.keys())
+    delete_result = await delete_connection_by_name(name)
+
+
+    try:
+        if db_type == "mongodb":
+            if name in active_mongo_connections:
+                await manager.close_mongo_client(name)
+                return {"message": f"Disconnected MongoDB connection '{name}' successfully and the details are deleted from the table.."}
+            else:
+                # Your custom logic here
+                return {"message": f"ℹMongoDB connection '{name}' was not active but the details are deleted from the table."}
+
+        else:  # SQL
+            if name in active_sql_connections:
+                manager.dispose_sql_engine(name)
+                return {"message": f"Disconnected SQL connection '{name}' successfully and the details are deleted from the table."}
+            else:
+                # Your custom logic here
+                return {"message": f"ℹSQL connection '{name}' was not active but the details are deleted from the table.."}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error while disconnecting: {str(e)}")
+ 
+
+@app.post("/generate_query")
+async def generate_query(req: QueryGenerationRequest):
+    try:
+        llm = AzureChatOpenAI(
+            azure_endpoint=os.getenv("AZURE_ENDPOINT"),
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),  # ❗ Replace with env variable
+            openai_api_version='2023-05-15',
+            azure_deployment='gpt-4o',
+            temperature=0.7,
+            max_tokens=2000
+        )
+ 
+        prompt = f"""
+        🔧 Prompt Template:
+        You are an intelligent query generation assistant.
+        I will provide you with:
+   
+        The type of database (e.g., MySQL, PostgreSQL, MongoDB, etc.)
+   
+        A query in natural language
+   
+        Your task is to:
+   
+        Convert the natural language query into a valid query in the specified database’s query language.
+   
+        Ensure the syntax is appropriate for the chosen database.
+   
+        Do not include explanations or extra text.
+   
+        Do not include any extra quotes, punctuation marks, or explanations. Provide only the final query in the output field, without any additional text or symbols (e.g., no quotation marks, commas, or colons).
+   
+        Database: {req.database_type}
+        Natural Language Query: {req.natural_language_query}
+        🔄 Example Input:
+        Database: PostgreSQL
+        Natural Language Query: Show the top 5 customers with the highest total purchases.
+   
+        ✅ Expected Output:
+        SELECT customer_id, SUM(purchase_amount) AS total_purchases
+        FROM purchases
+        GROUP BY customer_id
+        ORDER BY total_purchases DESC
+        LIMIT 5;
+   
+        🔄 Example 2 (MongoDB)
+        Database: MongoDB
+        Natural Language Query: Get all orders placed by customer with ID "12345" from the "orders" collection.
+   
+        ✅ Expected Output:
+        db.orders.find({{ customer_id: "12345" }})
+        """
+ 
+        response = llm.invoke([
+            {"role": "system", "content": "You generate clean and executable database queries from user input."},
+            {"role": "user", "content": prompt}
+        ])
+        return {"generated_query": response.content.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query generation failed: {e}")
+ 
+ 
+ 
+ 
+from typing import List, Dict
+
+@app.post("/run_query")
+async def run_query(req: QueryExecutionRequest):
+    # Ensure the connection exists in the dictionary
+    # if req.name not in connected_databases:
+    #     raise HTTPException(status_code=404, detail="Connection not found.")
+ 
+    config = await get_connection_config(req.name)
+
+   
+    # Log the query for debugging purposes (sanitize or remove sensitive information before logging in production)
+    print(f"Running query: {req.query}")
+    session = None
+ 
+    try:
+        # Get the engine for the specific database connection
+        # engine = get_engine(config)
+        manager=get_connection_manager()
+        manager.add_sql_database(req.name,build_connection_string(config))
+        session = manager.get_sql_session(req.name)
+
+        # with engine.connect() as conn:
+        # Log query execution start
+        print(f"Executing query on connection {req.name}")
+        
+        # Check if it's a DDL query (CREATE, ALTER, DROP)
+        if any(word in req.query.upper() for word in ["CREATE", "ALTER", "DROP"]):
+            print("Executing DDL Query")
+            session.execute(text(req.query))  # Execute DDL queries directly
+            session.commit()  # Commit after DDL queries
+            return {"message": "DDL Query executed successfully."}
+
+        # Handle SELECT queries
+        if req.query.strip().upper().startswith("SELECT"):
+            print("Executing SELECT Query")
+            result = session.execute(text(req.query))  # Execute SELECT query
+            
+            # Fetch the column names
+            columns = list(result.keys()) # This gives us the column names
+            rows = result.fetchall()  # Get all rows
+
+            # Convert rows into dictionaries with column names as keys
+            rows_dict = [{columns[i]: row[i] for i in range(len(columns))} for row in rows]
+
+            return {"columns": columns, "rows": rows_dict}
+
+        # Handle DML queries (INSERT, UPDATE, DELETE)
+        print("Executing DML Query")
+        result = session.execute(text(req.query))  # Execute DML query
+        session.commit()  # Commit the transaction
+
+        # Log how many rows were affected
+        print(f"Rows affected: {result.rowcount}")
+        
+        return {"message": f"Query executed successfully, {result.rowcount} rows affected."}
+ 
+    except SQLAlchemyError as e:
+        # Log the exception for debugging
+        print(f"Query failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Query failed: {str(e)}")
+ 
+    except Exception as e:
+        # Catch all other exceptions (e.g., connection issues, etc.)
+        print(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    
+    finally:
+        if session:
+            session.close()
+ 
+ 
+ 
+@app.post("/crud")
+def crud_operation(req: CRUDRequest):
+    if req.name not in connected_databases:
+        raise HTTPException(status_code=404, detail="Connection not found.")
+    config = connected_databases[req.name]
+ 
+    try:
+        engine = get_engine(config)
+        with engine.connect() as conn:
+            op = req.operation.lower()
+ 
+            if op == "create":
+                columns = ', '.join(req.data.keys())
+                placeholders = ', '.join(f":{k}" for k in req.data)
+                query = f"INSERT INTO {req.table} ({columns}) VALUES ({placeholders})"
+                conn.execute(text(query), req.data)
+ 
+            elif op == "read":
+                query = f"SELECT * FROM {req.table}"
+                if req.condition:
+                    query += f" WHERE {req.condition}"
+                result = conn.execute(text(query))
+                rows = [dict(row) for row in result]
+                return {"columns": result.keys(), "rows": rows}
+ 
+            elif op == "update":
+                if not req.condition:
+                    raise HTTPException(status_code=400, detail="Condition required for update.")
+                set_clause = ', '.join(f"{k} = :{k}" for k in req.data)
+                query = f"UPDATE {req.table} SET {set_clause} WHERE {req.condition}"
+                conn.execute(text(query), req.data)
+ 
+            # elif op == "delete":
+            #     if not req.condition:
+            #         raise HTTPException(status_code=400, detail="Condition required for delete.")
+            #     query = f"DELETE FROM {req.table} WHERE {req.condition}"
+            #     conn.execute(text(query))
+ 
+            else:
+                raise HTTPException(status_code=400, detail="Invalid operation.")
+ 
+            return {"message": f"{op.upper()} operation completed on table '{req.table}'."}
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=f"CRUD operation failed: {e}")
+
+@app.get("/connections")
+async def get_connections():
+    try:
+        conn = await asyncpg.connect(
+            host=POSTGRESQL_HOST,
+            database=DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD
+        )
+        rows = await conn.fetch("SELECT connection_name, connection_database_type, connection_host, connection_port, connection_username , connection_password, connection_database_name FROM db_connections_table")
+        connections = [
+            {
+                "connection_name": row["connection_name"],
+                "connection_database_type": row["connection_database_type"],
+                "connection_host": row["connection_host"],
+                "connection_port": row["connection_port"],
+                "connection_username": row["connection_username"],
+                "connection_password": row["connection_password"],
+                "connection_database_name": row["connection_database_name"]
+            }
+            for row in rows
+        ]
+        await conn.close()
+        return {"connections": connections}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/connection/{connection_name}")
+async def get_connection_config(connection_name: str):
+    try:
+        conn = await asyncpg.connect(
+            host=POSTGRESQL_HOST,
+            database=DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD
+        )
+
+        query = """
+            SELECT connection_name, connection_database_type, connection_host,
+                   connection_port, connection_username, connection_password,connection_database_name
+            FROM db_connections_table
+            WHERE connection_name = $1
+        """
+        row = await conn.fetchrow(query, connection_name)
+
+        await conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Connection not found")
+
+        config = {
+            "name": row["connection_name"],
+            "db_type": row["connection_database_type"],
+            "host": row["connection_host"],
+            "port": row["connection_port"],
+            "username": row["connection_username"],
+            "password": row["connection_password"],
+            "database": row["connection_database_name"]
+        }
+
+        return config
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/connections_sql")
+async def get_connections_sql():
+    try:
+        conn = await asyncpg.connect(
+            host=POSTGRESQL_HOST,
+            database=DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD
+        )
+        rows = await conn.fetch("SELECT connection_name,connection_database_type FROM db_connections_table where connection_database_type='mysql' or connection_database_type='postgresql' or connection_database_type='sqlite'")
+        connections = [
+            {
+                "connection_name": row["connection_name"],
+                "connection_database_type": row["connection_database_type"]
+            }
+            for row in rows
+        ]
+        await conn.close()
+        return {"connections": connections}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/connections_mongodb")
+async def get_connections_mongodb():
+    try:
+        conn = await asyncpg.connect(
+            host=POSTGRESQL_HOST,
+            database=DATABASE,
+            user=POSTGRESQL_USER,
+            password=POSTGRESQL_PASSWORD
+        )
+        rows = await conn.fetch("SELECT connection_name , connection_database_type FROM db_connections_table where connection_database_type='mongodb'")
+        connections = [
+            {
+                "connection_name": row["connection_name"],
+                "connection_database_type": row["connection_database_type"]
+                
+            }
+            for row in rows
+        ]
+        await conn.close()
+        return {"connections": connections}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+#this below code is for mongo db crud operations
+
+# Allow CORS for Streamlit
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# MongoDB setup
+# MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+# client = AsyncIOMotorClient(MONGO_URI)
+# db = client["test_db"]  # Change this to your DB name
+# class DBConnection(BaseModel):
+#     connection_name: str
+#     connection_database_type: str
+#     connection_host: str
+#     connection_port: Union[str, int]
+#     connection_username: Optional[str]
+#     connection_password: Optional[str]
+#     connection_database_name: str
+
+# Pydantic model
+class MONGODBOperation(BaseModel):
+    conn_name: str
+    collection: str
+    operation: Literal["find", "insert", "update", "delete"]
+    mode: Literal["one", "many"]
+    query: Optional[dict] = {}
+    data: Optional[Union[dict, List[dict]]] = None
+    update_data: Optional[dict] = None
+
+# Helper to clean MongoDB ObjectId
+def clean_document(doc):
+    if not doc:
+        return None
+    doc["_id"] = str(doc["_id"])
+    for k, v in doc.items():
+        if isinstance(v, ObjectId):
+            doc[k] = str(v)
+    return doc
+
+# Main endpoint
+@app.post("/mongodb-operation/")
+async def mongodb_operation(op: MONGODBOperation):
+    
+
+    # Ensure the connection exists in the dictionary
+    # if op.conn_name not in connected_databases:
+    #     raise HTTPException(status_code=404, detail="Connection not found.")
+    
+    
+ 
+    # config = connected_databases[op.conn_name]
+    # conn = await asyncpg.connect(
+    #     host=POSTGRESQL_HOST,
+    #     database=DATABASE,
+    #     user=POSTGRESQL_USER,
+    #     password=POSTGRESQL_PASSWORD
+    # )
+    
+    
+        # Get the engine for the specific database connection
+        # engine = get_engine(config)
+    config = await get_connection_config(op.conn_name)
+    manager=get_connection_manager()
+    manager.add_mongo_database(config.get("name",""),build_connection_string(config),config.get("database",""))
+    mongo_db = manager.get_mongo_database(op.conn_name)
+    collection = mongo_db["users"] 
+    # sample_doc = await mongo_db.test_collection.find_one()
+    try:
+        # FIND
+        if op.operation == "find":
+            if op.mode == "one":
+                doc = await collection.find_one(op.query)
+                return {"status": "success", "data": clean_document(doc)}
+            else:
+                docs = await collection.find(op.query).to_list(100)
+                return {"status": "success", "data": [clean_document(d) for d in docs]}
+
+        # INSERT
+        elif op.operation == "insert":
+            if op.mode == "one":
+                result = await collection.insert_one(op.data)
+                return {"status": "success", "inserted_id": str(result.inserted_id)}
+            else:
+                result = await collection.insert_many(op.data)
+                return {"status": "success", "inserted_ids": [str(_id) for _id in result.inserted_ids]}
+
+        # UPDATE
+        elif op.operation == "update":
+            if op.mode == "one":
+                result = await collection.update_one(op.query, {"$set": op.update_data})
+            else:
+                result = await collection.update_many(op.query, {"$set": op.update_data})
+            return {
+                "status": "success",
+                "matched_count": result.matched_count,
+                "modified_count": result.modified_count
+            }
+
+        # DELETE
+        elif op.operation == "delete":
+            if op.mode == "one":
+                result = await collection.delete_one(op.query)
+            else:
+                result = await collection.delete_many(op.query)
+            return {"status": "success", "deleted_count": result.deleted_count}
+
+        else:
+            raise HTTPException(status_code=400, detail="Invalid operation")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/get-active-connection-names")
+def get_active_connection_names():
+    manager = get_connection_manager()
+
+    active_sql_connections = list(manager.sql_engines.keys())
+    active_mongo_connections = list(manager.mongo_clients.keys())
+
+    return {
+        "active_sql_connections": active_sql_connections,
+        "active_mongo_connections": active_mongo_connections
+    }
+
+
+
+
+
+# data connector end
+

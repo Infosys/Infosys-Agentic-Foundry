@@ -200,7 +200,7 @@ class SessionContext:
     @classmethod
     def set(
         cls,
-        user_id=None, session_id=None, agent_id=None,
+        user_id=None, session_id=None, user_session=None, agent_id=None,
         tool_id=None, tool_name=None, model_used=None,
         tags=None, agent_name=None, agent_type=None, tools_binded=None,
         agents_binded=None, user_query=None, response=None,
@@ -209,6 +209,7 @@ class SessionContext:
         """Update specific fields, JSON serializing complex types."""
         if user_id is not None: cls._context['user_id'] = user_id
         if session_id is not None: cls._context['session_id'] = session_id
+        if user_session is not None: cls._context['user_session'] = user_session
         if agent_id is not None: cls._context['agent_id'] = agent_id
         if agent_name is not None: cls._context['agent_name'] = agent_name
         if tool_id is not None: cls._context['tool_id'] = tool_id
@@ -235,6 +236,7 @@ class SessionContext:
         return (
             cls._context.get('user_id', 'Unassigned'),
             cls._context.get('session_id', 'Unassigned'),
+            cls._context.get('user_session', 'Unassigned'),
             cls._context.get('agent_id', 'Unassigned'),
             cls._context.get('agent_name', 'Unassigned'),
             cls._context.get('tool_id', 'Unassigned'),
@@ -254,13 +256,13 @@ class SessionContext:
  
 # --- update_session_context function (Keep as is, uses SessionContext.set) ---
 def update_session_context(
-        user_id=None, session_id=None, agent_id=None,agent_name=None, tool_id=None, tool_name=None,
+        user_id=None, session_id=None, user_session=None, agent_id=None,agent_name=None, tool_id=None, tool_name=None,
         model_used=None, tags=None, agent_type=None,
         tools_binded=None, agents_binded=None, user_query=None, response=None,
         action_type=None, action_on=None, previous_value=None, new_value=None
     ):
     SessionContext.set(
-        user_id=user_id, session_id=session_id, agent_id=agent_id, agent_name=agent_name,
+        user_id=user_id, session_id=session_id, user_session=user_session,agent_id=agent_id, agent_name=agent_name,
         tool_id=tool_id, tool_name=tool_name, model_used=model_used, tags=tags,
         agent_type=agent_type, tools_binded=tools_binded, agents_binded=agents_binded,
         user_query=user_query, response=response, action_type=action_type, action_on=action_on,
@@ -271,7 +273,7 @@ def update_session_context(
 class CustomFilter(logging.Filter):
     def filter(self, record):
         (
-            user_id, session_id, agent_id, agent_name,
+            user_id, session_id, user_session, agent_id, agent_name,
             tool_id, tool_name, model_used, tags,
             agent_type, tools_binded, agents_binded, user_query, response,
             action_type, action_on, previous_value, new_value
@@ -291,6 +293,7 @@ class CustomFilter(logging.Filter):
  
         record.user_id = user_id
         record.session_id = session_id
+        record.user_session = user_session
         record.agent_id = agent_id
         record.agent_name = agent_name
         record.tool_id = tool_id

@@ -2,7 +2,7 @@
 import re
 import ast
 import json
-
+from typing import Callable
 
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -13,10 +13,7 @@ from src.prompts.prompts import (
     agent_evaluation_prompt3,
     tool_eval_prompt)
 
-from inference import (
-    AgentInferenceRequest,
-    evaluation_agent_inference
-)
+from src.inference.base_agent_inference import AgentInferenceRequest, BaseAgentInference
 from src.models.model import load_model
 from database_manager import fetch_next_unprocessed_evaluation, insert_evaluation_metrics, insert_tool_evaluation_metrics, update_processing_status_id
 from telemetry_wrapper import logger as log
@@ -32,6 +29,7 @@ async def evaluate_agent_performance(
     model_used,
     agent_id,
     session_id,
+    specialized_agent_inference: BaseAgentInference,
     weights=None  # Optional: pass custom weights as a dict
 ):
     # Step 1: Fetch evaluation context
@@ -69,7 +67,7 @@ async def evaluate_agent_performance(
             reset_conversation=True
         )
         try:
-            response = await evaluation_agent_inference(req)
+            response = await specialized_agent_inference.run(req, insert_into_eval_flag=False)
             result = response if isinstance(response, dict) else {"response": f"Error: {response}"}
         except Exception as e:
             result = {"response": f"Exception: {str(e)}"}
@@ -118,7 +116,7 @@ async def evaluate_agent_performance(
     match_robustness = re.search(r"```(?:python)?\s*(.*?)\s*```", raw_response_robustness, re.DOTALL)
     clean_response_robustness = match_robustness.group(1) if match_robustness else raw_response_robustness
 
-# Strip out variable assignment if it exists
+    # Strip out variable assignment if it exists
     if "=" in clean_response_robustness:
         clean_response_robustness = clean_response_robustness.split("=", 1)[1].strip()
 
@@ -137,7 +135,7 @@ async def evaluate_agent_performance(
             reset_conversation=True
         )
         try:
-            response = await evaluation_agent_inference(req)
+            response = await specialized_agent_inference.run(req, insert_into_eval_flag=False)
             result = response if isinstance(response, dict) else {"response": f"Error: {response}"}
         except Exception as e:
             result = {"response": f"Exception: {str(e)}"}
@@ -404,7 +402,7 @@ async def tool_utilization_efficiency(llm, agent_name, agent_goal, workflow_desc
         return {"error": f"Failed to process tool evaluation: {e}"}
 
 
-async def process_unprocessed_evaluations(model1,model2):
+async def process_unprocessed_evaluations(model1, model2, get_specialized_inference_service: Callable[[str], BaseAgentInference]):
     # llm = load_model(model_name=model1)
     
     while True:
@@ -416,9 +414,11 @@ async def process_unprocessed_evaluations(model1,model2):
 
         evaluation_id = data["id"]
         log.info(f"Processing evaluation_id: {evaluation_id}")
-        model= model2 if data['model_used']==model1 else model1
-        llm=load_model(model_name=model)
+        model = model2 if data['model_used'] == model1 else model1
+        llm = load_model(model_name=model)
+        agent_type = data["agent_type"]
         try:
+            specialized_agent_inference: BaseAgentInference = get_specialized_inference_service(agent_type)
             # === Agent Evaluation ===
             # Call evaluate_agent_performance and unpack both scores and justifications
             scores, justifications, consistency_queries, robustness_queries = await evaluate_agent_performance(
@@ -430,7 +430,8 @@ async def process_unprocessed_evaluations(model1,model2):
                 data["workflow_description"],
                 data["model_used"],
                 data['agent_id'],
-                data['session_id']
+                data['session_id'],
+                specialized_agent_inference=specialized_agent_inference
             )
 
             # Ensure agent_result contains justification and score fields

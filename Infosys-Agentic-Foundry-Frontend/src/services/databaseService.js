@@ -107,7 +107,7 @@ export const fetchConnections = async () => {
  */
 export const fetchSqlConnections = async () => {
   try {
-    const response = await axios.get('http://10.77.82.120:5001/connections_sql', {
+    const response = await axios.get('http://10.779.18.602:5001/connections_sql', {
       headers: {
         'accept': 'application/json'
       }
@@ -132,7 +132,7 @@ export const fetchSqlConnections = async () => {
  */
 export const fetchMongodbConnections = async () => {
   try {
-    const response = await axios.get('http://10.77.82.120:5001/connections_mongodb', {
+    const response = await axios.get('http://10.779.18.602:5001/connections_mongodb', {
       headers: {
         'accept': 'application/json'
       }
@@ -158,7 +158,7 @@ export const fetchMongodbConnections = async () => {
  */
 export const executeMongodbOperation = async (operationData) => {
   try {
-    const url = 'http://10.77.82.120:5001/mongodb-operation/';
+    const url = 'http://10.779.18.602:5001/mongodb-operation/';
     
     // Validate payload before sending
     const requiredFields = ['conn_name', 'collection', 'operation', 'mode'];
@@ -187,7 +187,7 @@ export const executeMongodbOperation = async (operationData) => {
     if (error.code === 'ECONNREFUSED') {
       errorMessage = 'Connection refused. The MongoDB operation endpoint may not be available.';
     } else if (error.code === 'ENOTFOUND') {
-      errorMessage = 'Network error. Cannot reach the server at http://10.77.82.120:5001';
+      errorMessage = 'Network error. Cannot reach the server at http://10.779.18.602:5001';
     } else if (error.code === 'ECONNABORTED') {
       errorMessage = 'Request timeout. The MongoDB operation took too long to complete.';
     } else if (error.response?.status === 404) {
