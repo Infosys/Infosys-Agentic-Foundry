@@ -20,8 +20,11 @@ import {
   PLANNER_META_AGENT,
   liveTrackingUrl,
   REACT_CRITIC_AGENT,
-  PLANNER_EXECUTOR_AGENT
+  PLANNER_EXECUTOR_AGENT,
+  KB_LIST,
+  BASE_URL
 } from "../../constant";
+import axios from "axios";
 import SVGIcons from "../../Icons/SVGIcons";
 import {
   resetChat,
@@ -49,7 +52,8 @@ import {
   faScrewdriverWrench,
   faGlobe,
   faArrowUp,
-  faCommentMedical
+  faCommentMedical,
+  faBookOpenReader
 } from "@fortawesome/free-solid-svg-icons";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext.js";
 import Loader from "../commonComponents/Loader";
@@ -89,6 +93,7 @@ const AskAssistant = () => {
   const [likeIcon, setLikeIcon] = useState(false);
   const [showInputSendIcon, setShowInputSendIcon] = useState(false);
   const [isOldChatOpen, setIsOldChatOpen] = useState(false);
+  const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false)
   const [showVerifierSettings, setShowVerifierSettings] = useState(false);
   const handleToggle2 = async (e) => {
     if (agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT) {
@@ -112,7 +117,7 @@ const AskAssistant = () => {
     };
   }, [showVerifierSettings]);
   const handleToggle = (e) => {
-    if (agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT){
+    if (agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT) {
       handleHumanInLoop(e.target.checked);
     } else {
       handleToolInterrupt(e.target.checked);
@@ -122,10 +127,13 @@ const AskAssistant = () => {
     setShowVerifierSettings((prev) => !prev);
   };
   const oldChatRef = useRef(null);
+  const knowledgeRef = useRef(null)
   const toggleDropdown = () => {
     setIsOldChatOpen((prev) => !prev);
   };
-
+  const toggleKnowledge = () => {
+    setIsKnowledgeOpen((prev) => !prev)
+  }
   useEffect(() => {
     function handleClickOutside(event) {
       if (oldChatRef.current && !oldChatRef.current.contains(event.target)) {
@@ -137,10 +145,20 @@ const AskAssistant = () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (knowledgeRef.current && !knowledgeRef.current.contains(event.target)) {
+        setIsKnowledgeOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
   const { showComponent } = useGlobalComponent();
   let messageDisable = messageData.some((msg) => msg?.message.trim() === "");
   useEffect(() => {
-    // Remove the dynamic height adjustment since we're using flexbox layout
   }, []);
 
   const { fetchData, postData } = useFetch();
@@ -182,6 +200,7 @@ const AskAssistant = () => {
     if (!allOptionsSelected) {
       fetchChatHistory();
       fetchOldChatsData();
+      knowledgeBaseData()
     } else {
       setMessageData([]);
     }
@@ -271,8 +290,8 @@ const AskAssistant = () => {
         agentType === CUSTOM_TEMPLATE
           ? APIs.CUSTOME_TEMPLATE_QUERY
           :agentType === PLANNER_EXECUTOR_AGENT
-           ? APIs.PLANNER_EXECUTOR_AGENT_QUERY
-          : APIs.PLANNER;
+            ? APIs.PLANNER_EXECUTOR_AGENT_QUERY
+            : APIs.PLANNER;
       response = await postData(url, payload);
       setLastResponse(response);
       setPlanData(response?.plan);
@@ -284,6 +303,11 @@ const AskAssistant = () => {
   };
 
   const sendUserMessage = async () => {
+    let selectedString;
+    if(selectedValues){
+    selectedString = selectedValues?selectedValues?.join(','):"";
+
+    }
     setFetching(true);
     resetHeight();
     if (!userChat || generating) return;
@@ -300,6 +324,7 @@ const AskAssistant = () => {
       model_name: model,
       reset_conversation: false,
       ...(toolInterrupt ? { interrupt_flag: true } : { interrupt_flag: false }),
+      knowledgebase_name: JSON.stringify(selectedString)
     };
     if (isHuman) {
       await sendHumanInLoop("", "", userText);
@@ -308,22 +333,23 @@ const AskAssistant = () => {
         agentType === META_AGENT
           ? APIs.META_AGENT_QUERY
           : agentType === PLANNER_META_AGENT
-          ? APIs.PLANNER_META_AGENT_QUERY
-          : APIs.REACT_MULTI_AGENT_QUERY;
+            ? APIs.PLANNER_META_AGENT_QUERY
+            : APIs.REACT_MULTI_AGENT_QUERY;
 
       const response = await getChatQueryResponse(payload, url);
       setLastResponse(response);
-          if (response === null ) {
-      setShowToast(true);
-      setTimeout(() => {
-        setShowToast(false);
-      }, 5000);
-    }
-      
+      if (response === null) {
+        setShowToast(true);
+        setTimeout(() => {
+          setShowToast(false);
+        }, 5000);
+      }
+
       setMessageData(converToChatFormat(response) || []);
     }
     setGenerating(false);
     setFetching(false);
+    setSelectedValues("")
   };
 
   const handleKeyDown = (event) => {
@@ -413,10 +439,24 @@ const AskAssistant = () => {
     }
     setOldChats(temp);
   };
+  const [knowledgeResponse, serKnowledgeResponse] = useState(false)
+  const knowledgeBaseData = async () => {
+    const url = `${BASE_URL}${APIs.KB_LIST}`
+    const response = await axios.request({
+      method: "GET",
+      url: url,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    serKnowledgeResponse(response?.data?.knowledge_bases)
+    console.log(response?.data?.knowledge_bases, "response1111");
+  }
 
   const handleNewChat = async () => {
     const sessionId = await fetchNewChats(loggedInUserEmail);
     fetchOldChatsData();
+    knowledgeBaseData()
     setOldSessionId("");
     setSessionId(sessionId);
     fetchChatHistory(sessionId);
@@ -459,7 +499,39 @@ const AskAssistant = () => {
   let fieldData = messageData?.map((item, index) => {
     return <>{item?.message}</>;
   });
+  const [selectedValues, setSelectedValues] = useState([]);
+  const handleCheckboxChange = (e) => {
+    const value = e.target.value;
+    const isChecked = e.target.checked;
+    if (isChecked) {
+      setSelectedValues((prevValues) => [...prevValues, value]); // Add value if checked
+    } else {
+      setSelectedValues((prevValues) => prevValues.filter(item => item !== value)); // Remove if unchecked
+    }
+    if (isChecked) {
+      console.log(`Selected: ${value}`);
+    } else {
+      console.log(`Unselected: ${value}`);
+    }
+  };
+    const [searchTerm, setSearchTerm] = useState("");
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
+  };
+   const highlightText = (text) => {
+    if (!searchTerm) return text;
 
+    const parts = text.split(new RegExp(`(${searchTerm})`, "gi"));
+    return parts.map((part, index) =>
+      part.toLowerCase() === searchTerm.toLowerCase() ? (
+        <span key={index} style={{color:"#0078d4"}}>
+          {part}
+        </span>
+      ) : (
+        part
+      )
+    );
+  };
   return (
     <>
       <div className={styles.outerContainer}>
@@ -468,7 +540,7 @@ const AskAssistant = () => {
           <div className={styles.messageContainer} ref={msgContainerRef}>
             {showToast && (
               <ToastMessage
-                message={lastResponse === null ?"Internal Server error":likeMessage}
+                message={lastResponse === null ? "Internal Server error" : likeMessage}
                 showToast={showToast}
                 setShowToast={setShowToast}
               />
@@ -524,322 +596,382 @@ const AskAssistant = () => {
             />
           </div>
           {/* {feedBack !== dislike && feedBack !== "no" && ( */}
-            <div className={styles.messageInput}>
-              <textarea
-                type="text"
-                ref={textareaRef}
-                placeholder="TYPE"
-                className={styles.chat}
-                onChange={handleChange}
-                value={userChat}
-                onKeyDown={handleKeyDown}
-                disabled={
-                  generating ||
-                  allOptionsSelected ||
-                  fetching ||
-                  feedBack === dislike ||
-                  isEditable || messageDisable
-                }
-              ></textarea>
-              <div className={styles.chatIconWrapper}>
-                <div className={styles.inferenceIconGroupLeft}>
-                  <span
-                    className={`${styles.inferenceIcon} ${
-                      messageDisable || fetching || generating || isEditable
-                        ? styles.disabledButton
-                        : ""
+          <div className={styles.messageInput}>
+            <textarea
+              type="text"
+              ref={textareaRef}
+              placeholder="TYPE"
+              className={styles.chat}
+              onChange={handleChange}
+              value={userChat}
+              onKeyDown={handleKeyDown}
+              disabled={
+                generating ||
+                allOptionsSelected ||
+                fetching ||
+                feedBack === dislike ||
+                isEditable || messageDisable
+              }
+            ></textarea>
+            <div className={styles.chatIconWrapper}>
+              <div className={styles.inferenceIconGroupLeft}>
+                <span
+                  className={`${styles.inferenceIcon} ${messageDisable || fetching || generating || isEditable
+                    ? styles.disabledButton
+                    : ""
                     }`}
-                    title="Select Agent Type"
-                  >
-                    {/* <span className={styles.hoverEffectCss}>
+                  title="Select Agent Type"
+                >
+                  {/* <span className={styles.hoverEffectCss}>
                       <FontAwesomeIcon icon={faRobot} />
                     </span> */}
-                    <CustomDropdown
-                      onChange={handleTypeChange}
-                      options={dropdown1}
-                      placeholder={"AGENT TYPE"}
-                      value={agentType}
-                      text={"Agent Type"}
-                      agentType={agentType}
-                      disabled={generating || fetching || isEditable}
-                    ></CustomDropdown>
-                  </span>
+                  <CustomDropdown
+                    onChange={handleTypeChange}
+                    options={dropdown1}
+                    placeholder={"AGENT TYPE"}
+                    value={agentType}
+                    text={"Agent Type"}
+                    agentType={agentType}
+                    disabled={generating || fetching || isEditable}
+                  ></CustomDropdown>
+                </span>
 
-                  <span
-                    className={`${styles.inferenceIcon} ${
-                      messageDisable || fetching || generating || isEditable
-                        ? styles.disabledButton
-                        : ""
+                <span
+                  className={`${styles.inferenceIcon} ${messageDisable || fetching || generating || isEditable
+                    ? styles.disabledButton
+                    : ""
                     }`}
-                    title="Select Model"
-                  >
-                    {/* <FontAwesomeIcon icon={faGlobe} /> */}
-                    <CustomDropdown
-                      onChange={(selectedOption) => {
-                        setModel(selectedOption);
-                        setLikeIcon(false);
-                      }}
-                      options={selectedModels}
-                      placeholder={"Model"}
-                      value={model}
-                      text={"Model"}
-                      disabled={generating || fetching || isEditable}
-                    ></CustomDropdown>
-                  </span>
-                  <span
-                    className={`${styles.inferenceIcon} ${
-                      messageDisable || fetching || generating || isEditable
-                        ? styles.disabledButton
-                        : ""
+                  title="Select Model"
+                >
+                  {/* <FontAwesomeIcon icon={faGlobe} /> */}
+                  <CustomDropdown
+                    onChange={(selectedOption) => {
+                      setModel(selectedOption);
+                      setLikeIcon(false);
+                    }}
+                    options={selectedModels}
+                    placeholder={"Model"}
+                    value={model}
+                    text={"Model"}
+                    disabled={generating || fetching || isEditable}
+                  ></CustomDropdown>
+                </span>
+                <span
+                  className={`${styles.inferenceIcon} ${messageDisable || fetching || generating || isEditable
+                    ? styles.disabledButton
+                    : ""
                     }`}
-                  >
-                    {/* <FontAwesomeIcon icon={faHexagonNodes} /> */}
-                    <AskAssistantDropdown
-                      options={agentListDropdown.map((list) => ({
-                        value: list.agentic_application_id,
-                        label: list.agentic_application_name,
-                      }))}
-                      placeholder={"Agent"}
-                      text={"Agent"}
-                      value={agentSelectValue}
-                      onChange={(value) => {
-                        setAgentSelectValue(value);
-                        setFeedback("");
-                        setOldSessionId("");
-                        setLikeIcon(false);
-                      }}
-                      isSearch={true}
-                      disabled={generating || fetching || isEditable}
-                    />
-                  </span>
-                </div>
-                <div className={styles?.inferenceIconGroupRight}>
-                  <span
-                    className={`${styles.inferenceIcon} ${
-                      messageDisable || fetching || generating || isEditable ||allOptionsSelected
-                        ? styles.disabledButton
-                        : ""
+                >
+                  {/* <FontAwesomeIcon icon={faHexagonNodes} /> */}
+                  <AskAssistantDropdown
+                    options={agentListDropdown.map((list) => ({
+                      value: list.agentic_application_id,
+                      label: list.agentic_application_name,
+                    }))}
+                    placeholder={"Agent"}
+                    text={"Agent"}
+                    value={agentSelectValue}
+                    onChange={(value) => {
+                      setAgentSelectValue(value);
+                      setFeedback("");
+                      setOldSessionId("");
+                      setLikeIcon(false);
+                    }}
+                    isSearch={true}
+                    disabled={generating || fetching || isEditable}
+                  />
+                </span>
+              </div>
+              <div className={styles?.inferenceIconGroupRight}>
+                <span
+                  className={`${styles.inferenceIcon} ${messageDisable || fetching || generating || isEditable || allOptionsSelected
+                    ? styles.disabledButton
+                    : ""
                     }`}
-                    title="Verifier Settings"
-                    onClick={handleIconClick}
-                    style={{ cursor: "pointer" }}
-                    // Optional styling
-                  >
-                    <FontAwesomeIcon icon={faScrewdriverWrench} />
-                  </span>
+                  title="Verifier Settings"
+                  onClick={handleIconClick}
+                  style={{ cursor: "pointer" }}
+                // Optional styling
+                >
+                  <FontAwesomeIcon icon={faScrewdriverWrench} />
+                </span>
 
-                  {showVerifierSettings && (
-                    <>
-                      <div className={styles.popoverBox} ref={popoverRef}>
-                        {!isShowIsHuman &&
+                {showVerifierSettings && (
+                  <>
+                    <div className={styles.popoverBox} ref={popoverRef}>
+                      {!isShowIsHuman &&
                         (agentType === "react_agent" ||
                           agentType === REACT_AGENT) ? (
-                          <div
-                            className={`${styles.toogleToolVerifier} ${
-                              isTool ? styles.selected : ""
+                        <div
+                          className={`${styles.toogleToolVerifier} ${isTool ? styles.selected : ""
                             }`}
-                          >
-                            <label>Tool Verifier</label>
-                            <span className={styles.toogleData}>
-                              <Toggle
-                                onChange={handleToggle2}
-                                value={toolInterrupt}
-                                disabled={
-                                  messageDisable ||
-                                  generating ||
-                                  fetching ||
-                                  isEditable
-                                }
-                              />
-                            </span>
-                          </div>
-                        ) : (
-                          isShowIsHuman && (
-                            <div className={styles.toogle2}>
-                              {agentType === "MULTI_AGENT" || agentType === PLANNER_EXECUTOR_AGENT ||
+                        >
+                          <label>Tool Verifier</label>
+                          <span className={styles.toogleData}>
+                            <Toggle
+                              onChange={handleToggle2}
+                              value={toolInterrupt}
+                              disabled={
+                                messageDisable ||
+                                generating ||
+                                fetching ||
+                                isEditable
+                              }
+                            />
+                          </span>
+                        </div>
+                      ) : (
+                        isShowIsHuman && (
+                          <div className={styles.toogle2}>
+                            {agentType === "MULTI_AGENT" || agentType === PLANNER_EXECUTOR_AGENT ||
                               agentType === "multi_agent" ? (
-                                <>
-                                  <div
-                                    className={`${styles.toogleToolVerifier} ${
-                                      isHuman ? styles.selected : ""
+                              <>
+                                <div
+                                  className={`${styles.toogleToolVerifier} ${isHuman ? styles.selected : ""
                                     }`}
-                                  >
-                                    <label>Plan Verifier</label>
-                                    <span className={styles.toogleData}>
-                                      <Toggle
-                                        onChange={handleToggle}
-                                        value={isHuman}
-                                        disabled={
-                                          messageDisable ||
-                                          generating ||
-                                          fetching ||
-                                          isEditable
-                                        }
-                                      />
-                                    </span>
-                                  </div>
-                                  <div
-                                    className={`${styles.toogleToolVerifier} ${
-                                      isTool ? styles.selected : ""
+                                >
+                                  <label>Plan Verifier</label>
+                                  <span className={styles.toogleData}>
+                                    <Toggle
+                                      onChange={handleToggle}
+                                      value={isHuman}
+                                      disabled={
+                                        messageDisable ||
+                                        generating ||
+                                        fetching ||
+                                        isEditable
+                                      }
+                                    />
+                                  </span>
+                                </div>
+                                <div
+                                  className={`${styles.toogleToolVerifier} ${isTool ? styles.selected : ""
                                     }`}
-                                  >
-                                    <label>Tool Verifier</label>
-                                    <span className={styles.toogleData}>
-                                      <Toggle
-                                        onChange={handleToggle2}
-                                        value={toolInterrupt}
-                                        disabled={
-                                          messageDisable ||
-                                          generating ||
-                                          fetching ||
-                                          isEditable
-                                        }
-                                      />
-                                    </span>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className={styles.toogleToolVerifier}>
-                                    <label>Tool Verifier</label>
-                                    <span className={styles.toogleData}>
-                                      <Toggle
-                                        onChange={handleToggle2}
-                                        value={toolInterrupt}
-                                        disabled={
-                                          messageDisable ||
-                                          generating ||
-                                          fetching ||
-                                          isEditable
-                                        }
-                                      />
-                                    </span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )
-                        )}
-                      </div>
-                    </>
-                  )}
-                  {!allOptionsSelected && (
-                    <>
-                      <span
-                        className={`${styles.inferenceIcon} ${
-                          fetching || generating ? styles.disabledButton : ""
+                                >
+                                  <label>Tool Verifier</label>
+                                  <span className={styles.toogleData}>
+                                    <Toggle
+                                      onChange={handleToggle2}
+                                      value={toolInterrupt}
+                                      disabled={
+                                        messageDisable ||
+                                        generating ||
+                                        fetching ||
+                                        isEditable
+                                      }
+                                    />
+                                  </span>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className={styles.toogleToolVerifier}>
+                                  <label>Tool Verifier</label>
+                                  <span className={styles.toogleData}>
+                                    <Toggle
+                                      onChange={handleToggle2}
+                                      value={toolInterrupt}
+                                      disabled={
+                                        messageDisable ||
+                                        generating ||
+                                        fetching ||
+                                        isEditable
+                                      }
+                                    />
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </>
+                )}
+                {!allOptionsSelected && (
+                  <>
+                    <span
+                      className={`${styles.inferenceIcon} ${fetching || generating ? styles.disabledButton : ""
                         }`}
-                        onClick={handleNewChat}
-                        title={"New Chat"}
-                      >
-                        <FontAwesomeIcon icon={faCommentMedical} />
-                      </span>
-                      <div className={styles.relativeWrapper} ref={oldChatRef}>
+                      onClick={handleNewChat}
+                      title={"New Chat"}
+                    >
+                      <FontAwesomeIcon icon={faCommentMedical} />
+                    </span>
+                    {agentType === REACT_AGENT && (
+                      <div className={styles.relativeWrapper} ref={knowledgeRef}>
                         <span
-                          className={`${styles.inferenceIcon} ${
-                            messageDisable ||
+                          className={`${styles.inferenceIcon} ${messageDisable ||
                             fetching ||
                             generating ||
                             allOptionsSelected ||
                             isEditable
-                              ? styles.disabledButton
-                              : ""
-                          }`}
-                          title="Old Chat"
-                          onClick={toggleDropdown}
+                            ? styles.disabledButton
+                            : ""
+                            }`}
+                          title="Knowledge Base"
+                          onClick={toggleKnowledge}
                         >
-                          <FontAwesomeIcon icon={faChartPie} />
+                          <FontAwesomeIcon icon={faBookOpenReader} />
                         </span>
 
-                        {isOldChatOpen && (
-                          <div className={styles.popoverBox}>
-                            <OldChatsHistory
-                              onChange={() => {}}
-                              data={oldChats}
-                              agentSelectValue={agentSelectValue}
-                              fetchOldChatsData={fetchOldChatsData}
-                              fetchChatHistory={fetchChatHistory}
-                              setOldSessionId={setOldSessionId}
-                              isOpen={isOldChatOpen}
-                              setIsOpen={setIsOldChatOpen}
-                            />
-                          </div>
+                        {isKnowledgeOpen && (
+                          // <div className={styles.popoverBox}>
+                          //   {knowledgeResponse.map((option, index) => (
+                          //     <div key={index} className={styles.optionWrapper}>
+                          //       <input
+                          //         type="checkbox"
+                          //         id={`checkbox-${index}`}
+                          //         value={option}
+                          //         onChange={handleCheckboxChange}
+                          //         checked={selectedValues.includes(option)}
+                          //       />
+                          //       <span className={styles.knowledgeBaseCss}><label htmlFor={`checkbox-${index}`}>{option}</label></span>
+                          //     </div>
+                          //   ))}
+                          //   <div>
+                          //   </div>
+                          // </div>
+                           <div className={styles.popoverBox}>
+         
+          <div className={styles.checklistContainer}>
+            {knowledgeResponse
+              .filter((response) =>
+                response.toLowerCase().includes(searchTerm.toLowerCase())
+              )
+              .map((response, index) => (
+                <div key={index} className={styles.checkboxContainer}>
+                   <input
+                                  type="checkbox"
+                                  id={`checkbox-${index}`}
+                                  value={response}
+                                  onChange={handleCheckboxChange}
+                                  checked={selectedValues.includes(response)}
+                                />
+                  <label htmlFor={`checkbox-${index}`} className={styles.labelOption}>
+                    {/* {highlightText(response)} */}
+                    {response.toUpperCase()}
+                  </label>
+                </div>
+              ))}
+          </div>
+           <div className={styles.searchContainer}>
+            <input
+              type="text"
+              placeholder="Search...."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              className={styles.searchInputsss}
+            />
+          </div>
+          </div>
+          
+          
                         )}
                       </div>
-                    </>
-                  )}
-                  <span
-                    className={`${styles.inferenceIcon} ${
-                      messageDisable || fetching || generating || isEditable || allOptionsSelected
-                        ? styles.disabledButton
-                        : ""
-                    }`}
-                    onClick={handleFileClick}
-                    title="Attach Files"
-                  >
-                    <FontAwesomeIcon icon={faPaperclip} />
-                  </span>
-                  <span
-                    className={`${styles.inferenceIcon} ${
-                      allOptionsSelected ||
-                      fetching ||
-                      messageDisable ||
-                      messageData.length === 0
-                        ? styles.disabledButton
-                        : ""
-                    }`}
-                    title="Reset Chat"
-                    onClick={(e) => {
-                      if (
-                        allOptionsSelected ||
-                        fetching ||
-                        messageData.length === 0
-                      ) {
-                        e.preventDefault();
-                        return;
-                      }
-                      handleResetChat();
-                    }}
-                  >
-                    <FontAwesomeIcon icon={faTrash} />
-                  </span>
-                  <span
-                    className={`${styles.inferenceIcon} ${
-                      messageDisable || fetching || generating || isEditable || allOptionsSelected
-                        ? styles.disabledButton
-                        : ""
-                    }`}
-                    title={"Live Tracking"}
-                    onClick={() => {
-                      window.open(liveTrackingUrl, "_blank");
-                    }}
-                  >
-                    <FontAwesomeIcon icon={faArrowTrendUp} />
-                  </span>
-                  
+                    )}
+                    <div className={styles.relativeWrapper} ref={oldChatRef}>
+                      <span
+                        className={`${styles.inferenceIcon} ${messageDisable ||
+                          fetching ||
+                          generating ||
+                          allOptionsSelected ||
+                          isEditable
+                          ? styles.disabledButton
+                          : ""
+                          }`}
+                        title="Old Chat"
+                        onClick={toggleDropdown}
+                      >
+                        <FontAwesomeIcon icon={faChartPie} />
+                      </span>
 
-                  <button
-                    onClick={sendUserMessage}
-                    disabled={
-                      generating ||
+                      {isOldChatOpen && (
+                        <div className={styles.popoverBox}>
+                          <OldChatsHistory
+                            onChange={() => { }}
+                            data={oldChats}
+                            agentSelectValue={agentSelectValue}
+                            fetchOldChatsData={fetchOldChatsData}
+                            fetchChatHistory={fetchChatHistory}
+                            setOldSessionId={setOldSessionId}
+                            isOpen={isOldChatOpen}
+                            setIsOpen={setIsOldChatOpen}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+                <span
+                  className={`${styles.inferenceIcon} ${messageDisable || fetching || generating || isEditable || allOptionsSelected
+                    ? styles.disabledButton
+                    : ""
+                    }`}
+                  onClick={handleFileClick}
+                  title="Attach Files"
+                >
+                  <FontAwesomeIcon icon={faPaperclip} />
+                </span>
+                <span
+                  className={`${styles.inferenceIcon} ${allOptionsSelected ||
+                    fetching ||
+                    messageDisable ||
+                    messageData.length === 0
+                    ? styles.disabledButton
+                    : ""
+                    }`}
+                  title="Reset Chat"
+                  onClick={(e) => {
+                    if (
                       allOptionsSelected ||
                       fetching ||
-                      feedBack === dislike ||
-                      userChat.trim() === "" ||
-                      isEditable
+                      messageData.length === 0
+                    ) {
+                      e.preventDefault();
+                      return;
                     }
-                    className={styles.sendIcon}
-                  >
-                    <SVGIcons
-                      icon="ionic-ios-send"
-                      fill="#007CC3"
-                      width={20}
-                      height={20}
-                    />
-                  </button>
-                </div>
+                    handleResetChat();
+                  }}
+                >
+                  <FontAwesomeIcon icon={faTrash} />
+                </span>
+                <span
+                  className={`${styles.inferenceIcon} ${messageDisable || fetching || generating || isEditable || allOptionsSelected
+                    ? styles.disabledButton
+                    : ""
+                    }`}
+                  title={"Live Tracking"}
+                  onClick={() => {
+                    window.open(liveTrackingUrl, "_blank");
+                  }}
+                >
+                  <FontAwesomeIcon icon={faArrowTrendUp} />
+                </span>
+
+
+                <button
+                  onClick={sendUserMessage}
+                  disabled={
+                    generating ||
+                    allOptionsSelected ||
+                    fetching ||
+                    feedBack === dislike ||
+                    userChat.trim() === "" ||
+                    isEditable
+                  }
+                  className={styles.sendIcon}
+                >
+                  <SVGIcons
+                    icon="ionic-ios-send"
+                    fill="#007CC3"
+                    width={20}
+                    height={20}
+                  />
+                </button>
               </div>
             </div>
+          </div>
           {/* // )} */}
         </div>
       </div>

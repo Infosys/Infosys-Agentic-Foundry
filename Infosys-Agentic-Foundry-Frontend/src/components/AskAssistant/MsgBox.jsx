@@ -337,8 +337,6 @@ const MsgBox = (props) => {
           ? APIs.META_AGENT_QUERY
           : agentType === PLANNER_META_AGENT
           ? APIs.PLANNER_META_AGENT_QUERY
-          :agentType === PLANNER_EXECUTOR_AGENT
-          ? APIs.PLANNER_EXECUTOR_AGENT_QUERY
           : APIs.REACT_MULTI_AGENT_QUERY;
       response = await getChatQueryResponse(payload, url);
     }
@@ -378,8 +376,6 @@ const MsgBox = (props) => {
           ? APIs.META_AGENT_QUERY
           : agentType === PLANNER_META_AGENT
           ? APIs.PLANNER_META_AGENT_QUERY
-          :agentType === PLANNER_EXECUTOR_AGENT
-          ? APIs.PLANNER_EXECUTOR_AGENT_QUERY
           : APIs.REACT_MULTI_AGENT_QUERY;
       response = await getChatQueryResponse(payload, url);
     }

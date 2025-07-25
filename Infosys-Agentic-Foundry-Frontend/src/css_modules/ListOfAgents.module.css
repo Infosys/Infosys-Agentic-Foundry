@@ -19,6 +19,17 @@ button {
     width: 100%;
     overflow: hidden;
   }
+  .containerCss{
+     display: flex;
+    flex-direction: column;
+    height: 90vh;
+    padding: 30px 40px;
+    padding-right: 0px;
+    padding-bottom: 0px;
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+  }
 
   .subHeaderContainer{
     display: flex;
@@ -261,6 +272,8 @@ button {
     font-size: 1rem;
     cursor: pointer;
     transition: background 0.2s;
+    margin-left: 16px;
+    margin-right: 16px;
   }
   .exportSelectedBtn:disabled {
     background: #ccc;

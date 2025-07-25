@@ -5,6 +5,8 @@ import SVGIcons from "../../Icons/SVGIcons";
 import { NavLink } from "react-router-dom";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext";
 import Cookies from "js-cookie";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faKey } from "@fortawesome/free-solid-svg-icons";
 
 export default function NavBar() {
   const { showComponent } = useGlobalComponent();
@@ -38,14 +40,24 @@ export default function NavBar() {
               <span>Chat</span>
             </NavLink>
           </li>
-          {/* <li>
-            <NavLink to="/dataconnector" activeclassname="active">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
-    <path d="M12 2C6.48 2 2 4.24 2 7v10c0 2.76 4.48 5 10 5s10-2.24 10-5V7c0-2.76-4.48-5-10-5zm0 2c4.41 0 8 1.57 8 3s-3.59 3-8 3-8-1.57-8-3 3.59-3 8-3zm0 16c-4.41 0-8-1.57-8-3v-1.17c1.83 1.11 5.06 1.67 8 1.67s6.17-.56 8-1.67V17c0 1.43-3.59 3-8 3zm0-5c-4.41 0-8-1.57-8-3v-1.17c1.83 1.11 5.06 1.67 8 1.67s6.17-.56 8-1.67V12c0 1.43-3.59 3-8 3zm0-5c-4.41 0-8-1.57-8-3V7.83c1.83 1.11 5.06 1.67 8 1.67s6.17-.56 8-1.67V8c0 1.43-3.59 3-8 3z"/>
-  </svg>
-              <span>Data</span>
+           <li>
+            <NavLink to="/secret" activeclassname="active">
+              <FontAwesomeIcon icon={faKey}/>
+              <span>Vault</span>
             </NavLink>
-          </li> */}
+          </li>
+          <li>
+            <NavLink to="/groundtruth" activeclassname="active">
+              <SVGIcons icon="ground-truth" color="#343741" />
+              <span>Ground Truth</span>
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/dataconnector" activeclassname="active">
+             <SVGIcons icon="data-connectors" fill="#343741"/>
+              <span>Data Connectors</span>
+            </NavLink>
+          </li>
           <li>
             <button onClick={handleFileClick}
               className={activeButton === "files" ? "active" : ""}

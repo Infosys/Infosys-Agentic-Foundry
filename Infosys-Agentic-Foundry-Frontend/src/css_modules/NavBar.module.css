@@ -4,25 +4,32 @@
   position: fixed;
   left: 0;
   transition: width 0.3s ease-in-out;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   z-index: 110;
   top: 43px;
   background-color: white;
-  gap: 46px;
   box-shadow: inset 0px 2px 3px #00000029;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera */
+.navSection::-webkit-scrollbar {
+  display: none;
+}
+ 
 /* .navSection:hover {
   width: 200px;
 } */
-
+ 
 .nav {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 20px;
+  padding-top: 10px; /* Further reduced from 15px */
 }
-
+ 
 .nav ul {
   list-style: none;
   padding: 0;
@@ -30,55 +37,66 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 8px; /* Further reduced from 15px */
 }
-
+ 
 .nav li {
   display: flex;
   align-items: center;
-  padding: 15px;
+  padding: 8px 5px; /* Reduced padding to fit more items */
   cursor: pointer;
+  min-height: 60px; /* Ensure minimum height for visibility */
+  justify-content: center;
 }
-
+ 
 .nav a,
 .nav button {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px; /* Reduced from 3px */
   align-items: center;
   text-decoration: none;
-  font-size: 16px;
+  font-size: 12px; /* Consistent font size */
   width: 100%;
   border: none;
   background: none;
-  text-align: left;
+  text-align: center;
   color: #343741;
-  font-size: 13px;
   transition: all 0.1s ease, transform 0.2s ease;
 }
-
+ 
 .nav a svg,
 .nav button svg {
   width: 45%;
+  height: auto;
+  max-width: 24px;
+  max-height: 24px;
 }
 
+/* FontAwesome icon styling */
+.nav a .fa-icon,
+.nav button .fa-icon {
+  font-size: 20px;
+  margin-bottom: 2px;
+}
+ 
 .nav a:hover,
 .nav button:hover{
   transform: scale(1.1);
 }
-
+ 
 .nav ul li a.active {
   color: #007bc1;
 }
-
+ 
 .nav ul li a[class="active"] {
   position: relative;
 }
-
+ 
 .nav ul li a[class="active"] svg {
   fill: #007bc1;
 }
-
+ 
 .nav ul li a[class="active"] svg,
  .nav ul li a.active span,
  .nav ul li a[class="active"] span,
@@ -86,7 +104,7 @@
    color: #007bc1;
    fill: #007bc1;
  }
-
+ 
 /* .nav ul li a[class="active"]::before {
   content: "";
   position: absolute;
@@ -100,10 +118,30 @@
   border-left: 5px solid #007bc1;
   z-index: 100;
 } */
-
+ 
 /* Icon styling */
 .icon {
   font-size: 20px;
   margin-right: 10px;
 }
 
+/* FontAwesome icon specific styling */
+.nav a .fa-icon,
+.nav button .fa-icon,
+.nav a [data-icon],
+.nav button [data-icon] {
+  font-size: 18px;
+  margin-bottom: 2px;
+  color: #343741;
+}
+
+/* Ensure span text is visible */
+.nav a span,
+.nav button span {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.2;
+  text-align: center;
+  word-wrap: break-word;
+  max-width: 60px;
+}

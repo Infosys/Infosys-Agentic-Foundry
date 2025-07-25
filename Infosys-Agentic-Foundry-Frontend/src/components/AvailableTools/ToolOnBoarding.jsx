@@ -139,7 +139,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
       response = await deletedTools(toolsdata, editTool.tool_id,props?.selectedType);
        if(response?.is_delete){
           props?.setRestoreData(response)
-         addMessage("Tool has been Deleted successfully!", "success");
+         addMessage(response?.status_message, "success");
          setLoading(false);
          setShowForm(false)
         }else{
@@ -202,9 +202,9 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
       };
       
       response = await RecycleTools(toolsdata, editTool.tool_id,props?.selectedType);
-       if(response?.is_delete){
+       if(response?.is_restored){
           props?.setRestoreData(response)
-         addMessage("Tool has been restored successfully!", "success");
+         addMessage(response?.status_message, "success");
          setLoading(false);
          setShowForm(false)
         }else{
@@ -253,9 +253,9 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
       }
     }else{
       if(props?.recycle){
-        if(response?.is_delete){
+        if(response?.is_restored){
           props?.setRestoreData(response)
-         addMessage("Tool has been restored successfully!", "success");
+         addMessage(response?.status_message, "success");
          setLoading(false);
          setShowForm(false)
         }else{

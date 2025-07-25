@@ -17,7 +17,9 @@ import ProtectedRoute from "./ProtectedRoute";
 import AdminScreen from "./components/AdminScreen/AdminScreen";
 import { ApiUrlProvider } from "./context/ApiUrlContext";
 import { VersionProvider } from "./context/VersionContext";
-import DataBase from "./components/DataBase/DataBase";
+import SecretKeys from "./components/AskAssistant/SecretKeys";
+import GroundTruth from "./components/GroundTruth/GroundTruth";
+import DataConnectors from "./components/DataConnectors/DataConnectors";
 
 
 function App() {
@@ -74,15 +76,35 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-               {/* <Route
+              <Route
+                path="/secret"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      {/* <AskAssistant /> */}
+                      <SecretKeys />
+                      </Layout>
+                        </ProtectedRoute>
+                }/>
+               <Route
+                path="/groundtruth"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <GroundTruth />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+               <Route
                 path="/dataconnector"
                 element={
                   <ProtectedRoute >
                     <Layout>
-                      <DataBase/>
+                      <DataConnectors/>
                     </Layout>
                   </ProtectedRoute>
-              }/>    */}
+                }/>
               {/* <Route
                 path="/new-chat"
                 element={

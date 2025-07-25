@@ -52,3 +52,21 @@ input:checked + .slider {
 .error {
   color: red;
 }
+  .cardNoData{
+    background: #f1f1f18e 0% 0% no-repeat padding-box;
+    box-shadow: 5px 15px 6px #00000029;
+    border-radius: 4px;
+    width: 100%;
+    /* min-height: 140px; */
+    height: 140px;
+    /* max-height: 160px; */
+    /* padding: 11px; */
+    /* color: white; */
+    position: relative;
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+  }
+  .discriptionNoData{
+    margin-top: 60px;
+  }

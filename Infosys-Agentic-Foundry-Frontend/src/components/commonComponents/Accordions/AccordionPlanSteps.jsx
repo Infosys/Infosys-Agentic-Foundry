@@ -6,6 +6,8 @@ import "../../../css_modules/MsgBox.css";
 import dropdownCircle from "../../../Assets/dropdown-circle.png";
 import remarkGfm from "remark-gfm";
 import parse from "html-react-parser";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const AccordionPlanSteps = (props) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -23,7 +25,28 @@ const AccordionPlanSteps = (props) => {
       <div className={styles["accordion-header"]}>
         <div className="Messagingbox">
           <div className="table-container">
-            <ReactMarkdown rehypePlugins={[remarkGfm]}>
+            <ReactMarkdown 
+              rehypePlugins={[remarkGfm]}
+              components={{
+                code({node, inline, className, children, ...props}) {
+                  const match = /language-(\w+)/.exec(className || '');
+                  return !inline && match ? (
+                    <SyntaxHighlighter
+                      style={oneDark}
+                      language={match[1]}
+                      PreTag="div"
+                      {...props}
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  ) : (
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
+                  );
+                }
+              }}
+            >
               {props.response}
             </ReactMarkdown>
           </div>

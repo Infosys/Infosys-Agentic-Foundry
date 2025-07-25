@@ -103,10 +103,12 @@
         <div
           key={tool.tool_id}
           className={
-            isDeleteClicked
-              ? style["card"] + " " + style["delete-card"]
-              : style["card"]
-          }
+  isDeleteClicked
+    ? style["card"] + " " + style["delete-card"]
+    : props?.recycle
+    ? style["cardRecycle"]
+    : style["card"]
+}
         >
           {!isDeleteClicked && (
             <>

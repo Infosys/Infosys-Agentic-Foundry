@@ -69,7 +69,7 @@
 }
 
 .description-container input {
-  /* height: 32px; */
+  height: 70px;
 }
 .label-desc {
   /* UI Properties */
@@ -107,7 +107,6 @@
   opacity: 1;
   border: none;
   padding: 10px;
-  /* height: 232px; */
 }
 
 .other {

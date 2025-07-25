@@ -8,7 +8,7 @@ import Loader from "../commonComponents/Loader";
 const roleOptions = ["Admin", "Developer", "User"];
 
 const UpdatePassword = () => {
-  const [email, setEmail] = useState(Cookies?.get("email") || "");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [retypePassword, setRetypePassword] = useState("");
   const [selectedOption, setSelectedOption] = useState("Select role");

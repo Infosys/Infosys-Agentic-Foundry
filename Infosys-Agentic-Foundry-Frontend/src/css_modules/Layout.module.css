@@ -17,6 +17,7 @@
   width: calc(100% - 52px);
   /* transition: margin-left 0.3s ease; */
   min-height: 100vh;
+  overflow: auto;
 }
 
 .header {

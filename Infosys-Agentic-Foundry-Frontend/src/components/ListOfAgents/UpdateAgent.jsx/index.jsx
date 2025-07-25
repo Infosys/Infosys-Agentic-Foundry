@@ -128,8 +128,12 @@ const UpdateAgent = (props) => {
      
       // Batch your state updates where possible
       const agentType = data[0]?.agentic_application_type;
-      const systemPrompts = JSON.parse(data[0]["system_prompt"], null, "\t");
-      const selectedToolsId = JSON.parse(data[0]?.tools_id);
+      const systemPrompts = typeof data[0]["system_prompt"] === "string"
+        ? JSON.parse(data[0]["system_prompt"], null, "\t")
+        : data[0]["system_prompt"];
+      const selectedToolsId = typeof data[0]["tools_id"] === "string"
+        ? JSON.parse(data[0]["tools_id"])
+        : data[0]["tools_id"];
       setFullAgentData(data[0]);
       setAgentType(agentType);
       setSystemPromptData(systemPrompts);

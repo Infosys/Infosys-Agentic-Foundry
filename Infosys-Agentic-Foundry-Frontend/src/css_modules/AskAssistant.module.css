@@ -2,6 +2,7 @@ button {
   all: unset;
   cursor: pointer;
 }
+
 .outerContainer {
   padding: 10px 20px 0 20px;
   margin-top: 15px;
@@ -32,6 +33,7 @@ input,
 textarea {
   border: unset;
   outline: unset;
+
   &:disabled {
     cursor: not-allowed;
   }
@@ -59,7 +61,7 @@ textarea {
   text-transform: uppercase;
 }
 
-.headerContainer > h6 {
+.headerContainer>h6 {
   font-weight: 600;
   font-size: 16px;
   line-height: 21px;
@@ -125,7 +127,7 @@ textarea {
   overflow-y: auto;
   position: relative;
   /* display: flex; */
-    flex-direction: column;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   padding-bottom: 0;
@@ -274,7 +276,8 @@ textarea {
 }
 
 .button i {
-  margin-right: 5px; /* Space between icon and text */
+  margin-right: 5px;
+  /* Space between icon and text */
 }
 
 .warning {
@@ -358,7 +361,7 @@ textarea {
   font-size: 15px;
 }
 
-.planContainer p{
+.planContainer p {
   font-size: 14px;
 }
 
@@ -395,7 +398,8 @@ textarea {
 }
 
 .toogle.selected label {
-  color: black; /* Change the label color to blue */
+  color: black;
+  /* Change the label color to blue */
 }
 
 .toogle.selected {
@@ -413,14 +417,17 @@ textarea {
   padding: 0;
   padding-top: 4px;
 }
+
 .editBtn {
   fill: #007ac0 !important;
 }
+
 .toogleCss {
   font: normal normal normal 12px/16px Segoe UI;
   display: flex;
   justify-content: end;
 }
+
 .toogleData {
   font: normal normal normal 12px/16px Segoe UI;
   display: flex;
@@ -430,9 +437,11 @@ textarea {
 .toogleData label {
   margin-right: 5px;
 }
+
 .toolData {
   cursor: none;
 }
+
 /* .continueButton{
   background-color: 
 } */
@@ -444,6 +453,7 @@ textarea {
   cursor: pointer;
   color: #007ac0;
 }
+
 .inferenceIcon {
   cursor: pointer;
   padding: 8px 10px;
@@ -452,7 +462,7 @@ textarea {
   align-items: center;
   gap: 6px;
   transition: all 0.2s ease;
-  color:#0071b3c2;
+  color: #0071b3c2;
   background: transparent;
   border: 1px solid transparent;
   font-size: 14px;
@@ -471,6 +481,7 @@ textarea {
   transform: translateY(0);
   background: #e9ecef;
 }
+
 .inferenceIconGroupRight {
   display: flex;
   align-items: center;
@@ -491,14 +502,15 @@ textarea {
   border-color: #dadce0;
 }
 
-.inferenceIcon[title="New Chat"]{
+.inferenceIcon[title="New Chat"] {
   padding-top: 10px;
   font-size: 16px;
 }
 
 .popoverList {
   position: relative;
-  top: 45px; /* adjust as needed */
+  top: 45px;
+  /* adjust as needed */
   right: 0;
   background-color: #fff;
   border: 1px solid #ccc;
@@ -529,8 +541,10 @@ textarea {
 /* Popover container */
 .popover-container {
   position: relative;
-  bottom: 20px; /* Adjust based on the button's position */
-  left: 0; /* Adjust based on the button's position */
+  bottom: 20px;
+  /* Adjust based on the button's position */
+  left: 0;
+  /* Adjust based on the button's position */
   background: white;
   border: 1px solid #ddd;
   border-radius: 5px;
@@ -538,7 +552,8 @@ textarea {
   z-index: 1000;
   padding: 10px;
   width: 200px;
-  transform: translateY(-10px); /* Slight upward offset for better appearance */
+  transform: translateY(-10px);
+  /* Slight upward offset for better appearance */
   animation: fadeIn 0.2s ease-in-out;
 }
 
@@ -548,6 +563,7 @@ textarea {
     opacity: 0;
     transform: translateY(0);
   }
+
   to {
     opacity: 1;
     transform: translateY(-10px);
@@ -584,6 +600,7 @@ textarea {
   position: absolute;
   right: 2px;
 }
+
 .disabledButton {
   /* opacity: 0.8; */
   pointer-events: none;
@@ -592,6 +609,7 @@ textarea {
   color: #6c757d !important;
   border-color: #e9ecef !important;
 }
+
 .searchInput {
   width: 100%;
   padding: 6px 8px;
@@ -601,6 +619,7 @@ textarea {
   font-size: 14px;
   margin: 2px;
 }
+
 .verifierPopover {
   position: absolute;
   right: 60px;
@@ -624,6 +643,7 @@ textarea {
   font-size: 13px;
   color: #888;
 }
+
 .dropdownViewCss {
   display: flex;
   justify-content: flex-start;
@@ -634,14 +654,18 @@ textarea {
   display: inline-block;
 }
 
-.stepsContent{
+.stepsContent {
   margin-bottom: 5px;
+}
+
+.knowledgeBaseCss {
+  margin-left: 4px;
 }
 
 .popoverBox {
   position: absolute;
-  top: 45px;
-  right: 80px;
+  /* top: 45px;
+  right: 80px; */
   transform: translateY(-100%);
   z-index: 1000;
   background: white;
@@ -649,24 +673,28 @@ textarea {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   padding: 10px;
   border-radius: 4px;
-  width: 250px; /* adjust as needed */
+  width: 250px;
+  /* adjust as needed */
   max-height: 250px;
   overflow-y: auto;
 }
+
 .popoverBox {
   transition: all 0.2s ease-in-out;
   opacity: 1;
 }
+
 .toogleToolVerifier {
   display: flex;
   /* justify-content: flex-start; */
   justify-content: space-between;
 }
 
-.popoverBox .toogleToolVerifier{
+.popoverBox .toogleToolVerifier {
   margin-top: 10px;
 }
-.popoverBox .toogleToolVerifier:first-child{
+
+.popoverBox .toogleToolVerifier:first-child {
   margin-top: 0;
 }
 
@@ -725,19 +753,19 @@ textarea {
 /* Ensure send icon stays properly aligned */
 .sendIcon {
   flex-shrink: 0;
-    margin-left: 12px;
-    padding: 8px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #007cc3 0%, #005a8b 100%);
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 8px rgba(0, 124, 195, 0.3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 20px;
-    min-height: 20px;
+  margin-left: 12px;
+  padding: 8px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #007cc3 0%, #005a8b 100%);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 124, 195, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
 }
 
 .sendIcon:hover:not(:disabled) {
@@ -777,7 +805,7 @@ textarea {
   color: inherit;
 }
 
-.msgBoxWrapper{
+.msgBoxWrapper {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -786,7 +814,7 @@ textarea {
 }
 
 
-.msgBoxPlaceHolder{
+.msgBoxPlaceHolder {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -802,17 +830,18 @@ textarea {
 }
 
 @keyframes fadeIn {
-  from { 
-    opacity: 0; 
-    transform: translateY(20px); 
+  from {
+    opacity: 0;
+    transform: translateY(20px);
   }
-  to { 
-    opacity: 1; 
-    transform: translateY(0); 
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.msgBoxPlaceHolder h2{
+.msgBoxPlaceHolder h2 {
   color: #007CC3;
   font-size: 24px;
   font-weight: 600;
@@ -826,7 +855,8 @@ textarea {
   max-width: 600px;
   text-align: left;
   padding: 10px 0;
-  overflow: hidden; /* Prevent text jumping */
+  overflow: hidden;
+  /* Prevent text jumping */
   margin-top: 5px;
 }
 
@@ -836,8 +866,10 @@ textarea {
   color: #666;
   line-height: 1.6;
   font-weight: 400;
-  white-space: nowrap; /* Prevent text wrapping during typing */
-  transition: none; /* Remove any transitions that might cause jerking */
+  white-space: nowrap;
+  /* Prevent text wrapping during typing */
+  transition: none;
+  /* Remove any transitions that might cause jerking */
 }
 
 /* Typewriter cursor animation */
@@ -854,6 +886,59 @@ textarea {
 }
 
 @keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+
+  0%,
+  50% {
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.searchContainer {
+  display: "flex";
+  margin-top: 11px;
+  border-top: 1px solid #ccc;
+
+}
+
+.searchInputsss {
+  /* width: 100%; */
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  /* border-radius: 4px; */
+  /* font-size: 14px; */
+  margin: 2px;
+}
+
+.labelOption,
+.checkbox {
+  color: #0078d4;
+  margin-left: 4px;
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: auto;
+  bottom: 33px;
+  left: 0;
+  width: fit-content;
+  background: #ccc;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 105;
+  display: flex;
+  flex-direction: column;
+  max-height: 25rem;
+  overflow: hidden;
+  text-transform: uppercase;
+  font: normal normal normal 12px/16px Segoe UI;
+}
+
+.dropdownMenu.withSearch {
+  max-height: 26.5rem;
 }

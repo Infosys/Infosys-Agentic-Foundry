@@ -36,9 +36,9 @@ const onAgentEdit = (data) => {
  const RestoreAgent=async(e)=>{
    setLoader(true)
        let response = await RecycleTools("",editAgentData?.agentic_application_id,selectedType);
-       if(response?.is_delete){
+       if(response?.is_restored){
           setLoader(false)
-         addMessage("Agent Restored Successfully", "success");
+         addMessage(response?.status_message, "success");
          setEditAgentData(false)
          setRestoreData(response)
  
@@ -107,7 +107,7 @@ const onAgentEdit = (data) => {
           setRestoreData={setRestoreData}
         />
       )}
-       <div className={style.container}>
+       <div className={style.containerCss}>
     {/* <div className={styles.recycleBinContainer}> */}
       <div className={styles.toggleWrapper}>
         <label className={styles.switch}>
@@ -141,7 +141,15 @@ const onAgentEdit = (data) => {
         className={styles.visibleAgentsContainer}
        
       >
+        {!data.length >0?<>
         <div className={style.agentsList} >
+          <div className={styles.cardNoData}>
+            <div className={styles.discriptionNoData}>{"No Deleted Agents To Display"}</div>
+
+          </div>
+        </div>
+        </>:<>
+          <div className={style.agentsList} >
        {data.length >0 && data?.map((data1) => (
           <AgentCard
             recycle={"recycle"}
@@ -154,9 +162,20 @@ const onAgentEdit = (data) => {
           />
        ))}
        </div>
+        
+        </>}
+      
        </div>
         </>}
         {!loading && !error && selectedType === "tools" && <>
+         {!data.length >0?<>
+        <div className={style.agentsList} >
+          <div className={styles.cardNoData}>
+            <div className={styles.discriptionNoData}>{"No Deleted Tools To Display"}</div>
+
+          </div>
+        </div>
+        </>:<>
         <div className={style2.toolsList}>
               {data.length>0 &&data?.map((item,index) => (
                   <ToolsCard
@@ -169,10 +188,11 @@ const onAgentEdit = (data) => {
                     setEditTool={setEditTool}
                     loading={loading}
                     fetchPaginatedTools={""}
-                    recycle={"recycle"}
+                    recycle={true}
                   />
                 ))}
             </div>
+            </>}
         </>}
       </div>
        

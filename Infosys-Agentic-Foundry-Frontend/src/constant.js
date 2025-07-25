@@ -85,7 +85,30 @@ export const APIs = {
   UPDATE_PASWORD_ROLE:"/update-password-role",
   RECYCLE_BIN:"/recycle-bin",
   RESTORE_TOOL:"/restore/",
-  DELETE_TOOL:"/delete/"
+  DELETE_TOOL:"/delete/",
+  KNOWLEDGE_BASE_FILE_UPLOAD:"/kbdocuments",
+  KB_LIST:"/kb_list",
+  GET_ACTIVE_CONNECTIONS:"/get-active-connection-names",
+  CONNECT_DATABASE:"/connect",
+  GENERATE_QUERY:"/generate_query",
+  RUN_QUERY:"/run_query",
+  DISCONNECT_DATABASE:"/disconnect",
+  CRUD_CONNECTIONS:"/crud-connections",
+  AVAILABLE_CONNECTIONS:"/connections",
+  SQL_CONNECTIONS:"/connections_sql",
+  MONGODB_CONNECTIONS:"/connections_mongodb",
+  MONGODB_OPERATION: "/mongodb-operation/",
+  ADD_SECRET:"/secrets/create",
+  DELETE_SECRET:"/secrets/delete",
+  UPDATE_SECRET:"/secrets/update",
+  PUBLIC_ADD_SECRET:"/secrets/public/create",
+  PUBLIC_UPDATE_SECRET:"/secrets/public/update",
+  PUBLIC_DELETE_SECRET:"/secrets/public/delete",
+  GET_SECRETS:"/secrets/list",
+  GET_PUBLIC_SECRETS:"/secrets/public/list",
+  SECRETS_GET:'/secrets/get',
+  PUBLIC_SECRETS_GET:'/secrets/public/get',
+  HEALTH_SECRETS:'/secrets/health'
 };
 
 // export const sessionId = "test_101";

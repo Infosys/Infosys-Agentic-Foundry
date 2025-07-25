@@ -12,7 +12,7 @@ import FilterModal from "../commonComponents/FilterModal.jsx";
 import { calculateDivs } from "../../util";
 import { getAgentsSearchByPageLimit, exportAgents } from "../../services/toolService.js";
 import { debounce } from "lodash";
-
+import Cookies from "js-cookie";
 const ListOfAgents = () => {
   const [plusBtnClicked, setPlusBtnClicked] = useState(false);
   const [editAgentData, setEditAgentData] = useState("");
@@ -328,7 +328,8 @@ const handleScrollLoadMore = async () => {
     if (selectedAgentIds.length === 0) return;
     setExportLoading(true);
     try {
-      const blob = await exportAgents(selectedAgentIds);
+      const userEmail = Cookies.get("email");
+      const blob = await exportAgents(selectedAgentIds, userEmail);
       if (!blob) throw new Error('Failed to export agents');
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -370,7 +371,6 @@ const handleScrollLoadMore = async () => {
           className={styles.exportSelectedBtn}
           onClick={handleExportSelected}
           disabled={selectedAgentIds.length === 0}
-          style={{ marginLeft: 16 }}
         >
           Export
         </button>

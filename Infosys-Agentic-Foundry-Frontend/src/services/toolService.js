@@ -185,11 +185,12 @@ export const deleteTool = async (toolData, toolId) => {
   }
 };
 
-export const exportAgents = async (agentIds) => {
+export const exportAgents = async (agentIds, userEmail) => {
   try {
-    // Build URL with multiple agent_ids params
+    // Build URL with multiple agent_ids params and user email
     const params = agentIds.map(id => `agent_ids=${encodeURIComponent(id)}`).join('&');
-    const apiUrl = `${BASE_URL}/export-agents?${params}`;
+    const emailParam = userEmail ? `&user_email=${encodeURIComponent(userEmail)}` : '';
+    const apiUrl = `${BASE_URL}/export-agents?${params}${emailParam}`;
     const response = await axios.request({
       method: "GET",
       url: apiUrl,
