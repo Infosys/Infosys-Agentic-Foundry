@@ -1,0 +1,425 @@
+.container {
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 36px;
+}
+
+.header h6 {
+  font: normal normal 400 20px/27px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+}
+
+.header p {
+  font: normal normal 600 16px/21px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  margin-left: auto;
+}
+
+.header p span {
+  font-weight: normal;
+}
+
+.header button {
+  display: flex;
+  align-items: center;
+  margin-left: 48px;
+}
+
+.formContainer {
+  display: grid;
+  /* 12 parts */
+  grid-template-areas:
+    "name name name name select select select userId userId userId userId ."
+    "goal goal goal goal description description description description systemPrompt systemPrompt systemPrompt systemPrompt"
+    "addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool "
+    "tagDropdown tagDropdown tagDropdown tagDropdown . . . . . . btns btns";
+  column-gap: 35px;
+  row-gap: 19px;
+  margin-bottom: 25px;
+}
+
+.inputName {
+  grid-area: name;
+}
+.inputUserId {
+  grid-area: userId;
+}
+.inputGoal {
+  grid-area: goal;
+}
+.inputDescription {
+  grid-area: description;
+}
+.selectContainer {
+  grid-area: select;
+}
+.inputSystemPrompt {
+  grid-area: systemPrompt;
+}
+
+.dropdownContainer {
+  grid-area: tagDropdown;
+  position: relative;
+  width: 40%;
+}
+
+.inputName,
+.inputUserId,
+.inputGoal,
+.inputDescription,
+.selectContainer,
+.inputSystemPrompt {
+  display: flex;
+  flex-direction: column;
+}
+
+.inputName label,
+.inputUserId label,
+.inputGoal label,
+.inputDescription label,
+.selectContainer label,
+.inputSystemPrompt label {
+  text-align: left;
+  font: normal normal 400 12px/16px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  margin-bottom: 7px;
+}
+
+.inputName input,
+.inputUserId input {
+  background: #eaeaea;
+  box-shadow: inset 0px 1px 4px #00000029;
+  border-radius: 5px;
+  padding: 8px;
+  font: normal normal 400 12px/16px Segoe UI;
+}
+
+.inputGoal textarea,
+.inputDescription textarea,
+.inputSystemPrompt textarea {
+  background: #eaeaea;
+  box-shadow: inset 0px 1px 4px #00000029;
+  border-radius: 5px;
+  min-height: 120px;
+  padding: 8px;
+}
+
+.selectStyle {
+  width: 100%;
+}
+
+.selectNoBorder {
+  border: none;
+  box-shadow: none;
+  margin-bottom: 5px;
+  padding: 0px 0px 2px 0px;
+  background: none;
+  border-bottom: 2px solid #00000029;
+}
+
+.addToolContainer {
+  grid-area: addTool;
+}
+
+.addTools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 22px;
+}
+
+.addNewTool,
+.removeTool {
+  font: normal normal 600 12px/16px Segoe UI;
+  letter-spacing: 0px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.addNewTool {
+  color: #007ac0;
+}
+
+.removeTool {
+  color: #a1a1a1;
+}
+
+.addTools[data-selected="true"] .addNewTool {
+  color: #a1a1a1;
+}
+
+.addTools[data-selected="true"] .addNewTool svg {
+  fill: #a1a1a1;
+}
+
+.addTools[data-selected="true"] .removeTool {
+  color: #851e1e;
+}
+
+.addTools[data-selected="true"] .removeTool svg {
+  fill: #851e1e;
+}
+
+.toolsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 48px;
+  row-gap: 26px;
+  max-height: 164px;
+  min-height: 90px;
+  overflow-y: auto;
+}
+
+.toolContainer {
+  background-color: #3d4359;
+  box-shadow: 5px 15px 6px #00000029;
+  border-radius: 4px;
+  padding: 10px;
+  padding-right: 20px;
+  width: calc(25% - 48px);
+  height: 70px;
+  position: relative;
+}
+
+.toolContainer p {
+  font: normal normal 600 14px/14px Segoe UI;
+  letter-spacing: -0.7px;
+  color: #ffffff;
+  text-transform: uppercase;
+  margin: 0px;
+  overflow-wrap: break-word;
+}
+
+.line {
+  width: 28px;
+  height: 2px;
+  background-color: #0071b3;
+  margin-top: 5px;
+}
+
+.toolBtn {
+  display: flex;
+  align-items: center;
+  position: absolute;
+  right: 0;
+  top: 4px;
+  padding: 5px;
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  transform: translateX(50%);
+}
+
+.toolBtn2 {
+  display: flex;
+  align-items: center;
+  position: absolute;
+  right: 0;
+  top: 38px;
+  padding: 5px;
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  transform: translateX(50%);
+  background-color: #007cc3;
+  width: 20px;
+  height: 16px;
+}
+
+.toolBtn[data-mapped="true"] {
+  background-color: #6a2020;
+}
+
+.toolBtn[data-mapped="false"] {
+  background-color: #007ac0;
+}
+
+.toolBtn[data-selected="true"] {
+  background-color: #5f8103;
+}
+
+.btns {
+  grid-area: btns;
+  width: 100%;
+}
+.btnsRestore{
+   grid-area: btns;
+  width: 100%;
+  display: flex;
+  justify-content: end;
+}
+.closeBtn {
+  grid-area: closeBtn;
+  background-color: #3d4359;
+  margin-right: 25px;
+}
+.restoreBtn{
+   grid-area: submitBtn;
+  background-color: #007cc3;
+  cursor: pointer;
+  margin-right: 25px;
+}
+
+.submitBtn {
+  grid-area: submitBtn;
+  background-color: #007cc3;
+  cursor: pointer;
+}
+
+.closeBtn,.restoreBtn,
+.submitBtn {
+  border-radius: 5px;
+  font: normal normal 600 12px/14px Segoe UI;
+  letter-spacing: 0px;
+  color: #ffffff;
+  text-transform: uppercase;
+  height: 32px;
+  padding: 0px 11px;
+  align-self: end;
+}
+.styledtextarea {
+  width: 99%;
+  height: 110px;
+  padding: 15px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.8;
+  background-color: #fff;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap; /* Preserve whitespace and line breaks */
+  font: Segoe UI;
+}
+
+.styledtextarea:focus {
+  outline: none;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.searchBar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.searchInput {
+  width: 200px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* Container for the textarea and zoom icon */
+
+.inputGoal {
+  position: relative;
+  overflow: visible;
+}
+
+.textAreaContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.agentTextArea {
+  font: normal normal 400 12px / 20px Segoe UI;
+  width:100%;
+  padding-right: 40px;
+  box-sizing: border-box;
+  resize: none;
+}
+
+.copyIcon {
+  position: absolute;
+  right: 14px;
+  top: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.copyIcon svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.copyIcon:hover svg {
+  transform: scale(1.2);
+}
+
+.copiedText {
+  position: absolute;
+  top: -20px;
+  right: 40px;
+  font-size: 12px;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+}
+
+.copiedText.visible {
+  visibility: visible;
+  opacity: 1;
+}
+
+.copiedText.hidden {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.iconGroup {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.expandIcon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 22px;
+  padding: 0;
+}
+
+.expandIcon svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.expandIcon:hover svg {
+  transform: scale(1.2);
+}
+.disabledButton {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+  background: #f8f9fa !important;
+  color: #6c757d !important;
+  border-color: #e9ecef !important;
+}

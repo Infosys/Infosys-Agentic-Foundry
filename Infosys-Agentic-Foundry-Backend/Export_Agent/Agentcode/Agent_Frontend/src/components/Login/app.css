@@ -1,0 +1,47 @@
+.app-container {
+    background-image: url('../../Assets/backgroundimage.png');
+    padding:20px;
+    height:100vh;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+.version_number{
+  font-size:10px;
+  color:#ccc;
+  position: absolute;
+  top: 1px;
+  right: 7px;
+}
+.page-title {
+    /* font-family: 'Segoe UI';
+    font-weight: bold;
+    color:#000;
+    text-transform: uppercase;
+    letter-spacing: -1.5px; */
+    font: normal normal bold 30px/40px Segoe UI;
+letter-spacing: -1.5px;
+color: #FFFFFF;
+text-transform: uppercase;
+}  
+.page-subtitle {
+    font-family: 'Segoe UI';
+    font-weight: 400;
+}  
+ 
+.div-login {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+@media only screen and (max-width: 600px) {
+    .page-title {
+        font-size:25px;
+        text-align: center;
+    }
+    .div-login {
+        margin-top:10px
+    }
+  }
+ 

@@ -176,7 +176,7 @@ export const executeMongodbOperation = async (operationData) => {
     if (error.code === 'ECONNREFUSED') {
       errorMessage = 'Connection refused. The MongoDB operation endpoint may not be available.';
     } else if (error.code === 'ENOTFOUND') {
-      errorMessage = 'Network error. Cannot reach the server at http://10.77.82.120:5001';
+      errorMessage = 'Network error. Cannot reach the server at http://10.779.18.602:5001';
     } else if (error.code === 'ECONNABORTED') {
       errorMessage = 'Request timeout. The MongoDB operation took too long to complete.';
     } else if (error.response?.status === 404) {

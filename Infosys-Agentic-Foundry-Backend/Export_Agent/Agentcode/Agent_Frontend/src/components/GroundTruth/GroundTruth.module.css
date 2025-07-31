@@ -1,0 +1,480 @@
+.groundTruthWrapper {
+  width: 100%;
+  min-height: 100vh;
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: #f8f9fa;
+}
+
+.groundTruthContainer {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  overflow: visible;
+  width: 100%;
+  height: auto;
+  min-height: fit-content;
+  position: relative;
+  margin-bottom: 40px;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 500;
+  color: #2c3e50;
+  text-align: center;
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formRow {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.formRow .formGroup {
+  flex: 1;
+  min-width: 0;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.instructionText {
+  font-weight: 400;
+  font-size: 12px;
+  color: #777;
+  font-style: italic;
+}
+
+.required {
+  color: #e74c3c;
+  font-weight: bold;
+}
+
+.input,
+.select {
+  padding: 12px 16px;
+  border: 2px solid #e1e5e9;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  background-color: #fff;
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.input::placeholder {
+  color: #999;
+}
+
+.select {
+  cursor: pointer;
+}
+
+.select:disabled {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+.input:disabled,
+.input[readonly] {
+  background-color: #f8f9fa;
+  border-color: #e1e5e9;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+.input:disabled::placeholder,
+.input[readonly]::placeholder {
+  color: #adb5bd;
+}
+
+.checkboxGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #007bff;
+}
+
+.checkboxLabel {
+  font-size: 14px;
+  color: #555;
+  cursor: pointer;
+  margin: 0;
+}
+
+.buttonGroup {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.submitButton {
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-right: 16px;
+}
+
+.submitButton:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.labelWithButton {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.labelWithInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.fileUploadContainer {
+  position: relative;
+  border: 2px dashed #aaaaaa;
+  border-radius: 6px;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fileUploadContainer:hover {
+  border-color: #007bff;
+  background-color: rgba(0, 123, 255, 0.02);
+}
+
+.fileInput {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.uploadPrompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #6c757d;
+  width: 100%;
+  padding: 20px;
+}
+
+.uploadIcon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  color: #aaaaaa;
+}
+
+.uploadPrompt small {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 5px;
+}
+
+.fileInfo {
+  padding: 10px;
+  height: 20%;
+  border: 1px solid #007cc3;
+  background: #ffffff 0% 0% no-repeat padding-box;
+  border-radius: 50px;
+  justify-content: center;
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.fileName {
+  font-weight: 500;
+  color: #007bff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.evaluationResults {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  overflow: visible; /* Changed from having separate overflow settings */
+  max-width: 100%;
+  word-break: break-word;
+}
+
+.diagnosticSummary {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.diagnosticSummary h4 {
+  margin-top: 0;
+  color: #495057;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.diagnosticSummary p {
+  margin: 0;
+  line-height: 1.6;
+  color: #212529;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.averageScores {
+  padding: 15px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.averageScores h4 {
+  margin-top: 0;
+  color: #495057;
+  font-size: 16px;
+  margin-bottom: 15px;
+}
+
+.scoresGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.scoreItem {
+  padding: 10px 0;
+}
+
+.scoreLabel {
+  font-size: 14px;
+  color: #495057;
+  text-transform: capitalize;
+  margin-bottom: 5px;
+}
+
+.scoreValue {
+  font-size: 16px;
+  font-weight: 500;
+  color: #212529;
+  margin-bottom: 5px;
+}
+
+.form, 
+.formGroup,
+.evaluationResults,
+.diagnosticSummary,
+.averageScores{
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+ pre {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  white-space: normal;
+  display: block;
+}
+
+.dragging {
+  border: 2px dashed #007bff !important;
+  background-color: rgba(0, 123, 255, 0.05);
+  box-shadow: 0 0 10px rgba(0, 123, 255, 0.2);
+}
+
+.fileUploadContainer.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+  background-color: #f8f9fa;
+  border-color: #cccccc;
+}
+
+/* Searchable dropdown styles */
+.searchableDropdown {
+  position: relative;
+  width: 100%;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e1e5e9;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  background-color: #fff;
+  box-sizing: border-box;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.searchInput:disabled {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+  border-color: #e1e5e9;
+}
+
+.searchInput::placeholder {
+  color: #999;
+}
+
+.dropdownList {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e1e5e9;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  margin-top: 2px;
+}
+
+.dropdownItem {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 14px;
+  color: #555;
+}
+
+.dropdownItem:hover {
+  background-color: #f8f9fa;
+}
+
+.dropdownItem.selected {
+  background-color: #6c757d;
+  color: white;
+}
+
+.dropdownItem.highlighted {
+  background-color: #e9ecef;
+  color: #495057;
+}
+
+.dropdownItem.selected.highlighted {
+  background-color: #6c757d;
+  color: white;
+}
+
+.dropdownItem:last-child {
+  border-bottom: none;
+}
+
+.dropdownList::-webkit-scrollbar {
+  width: 10px;
+}
+
+.dropdownList::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.dropdownList::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.dropdownList::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Responsive styles for file instructions */
+@media (max-width: 768px) {
+  .groundTruthWrapper {
+    padding: 15px;
+  }
+  
+  .groundTruthContainer {
+    margin-bottom: 30px;
+  }
+  
+  .labelWithInfo {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .groundTruthWrapper {
+    padding: 10px;
+  }
+  
+  .groundTruthContainer {
+    margin-bottom: 20px;
+    padding: 15px;
+  }
+  
+  .labelWithInfo {
+    gap: 4px;
+  }
+}

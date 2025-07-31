@@ -2,14 +2,19 @@
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+import httpx
 import streamlit as st
 import pandas as pd
 import json
 import requests
 import ast
-
+from MultiDBConnection_Manager import get_connection_manager
 load_dotenv()
 ENDPOINT_URL_PREFIX = os.getenv("ENDPOINT_URL_PREFIX")
+
+#Directory to store the DB file for sqlite in dataconnector
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploaded_sqlite_dbs")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 try:
     model_options = requests.get(f"{ENDPOINT_URL_PREFIX}/get-models").json()
@@ -18,7 +23,7 @@ except:
     model_options = ["gpt-4o"]
 
 st.set_page_config(
-    page_title="Agentic Workflow As Service",
+    page_title="Infosys Agentic Foundry",
     layout="wide"
 )
 
@@ -606,6 +611,7 @@ def select_tool(payload_tags=None):
     Returns:
         list: A list of tool IDs for the tools that the user selected.
     """
+    tools = []
     try:
         if isinstance(payload_tags, dict) and payload_tags.get('tag_names', None):
             tools = requests.post(
@@ -614,7 +620,7 @@ def select_tool(payload_tags=None):
             tools = requests.get(f"{ENDPOINT_URL_PREFIX}/get-tools", timeout=None).json()
         tool_df = pd.DataFrame(tools)
     except Exception as e:
-        st.write(f"Error occured: {e}")
+        # st.write(f"Error occured: {e}")
         return []
     tool_df['tags'] = tool_df['tags'].apply(lambda x: str([tag['tag_name'] for tag in x]))
     tool_df.insert(2, 'tags', tool_df.pop('tags'))
@@ -760,7 +766,7 @@ def define_agent():
         except ValueError as e:
             st.write("No Tools Available.")
         except Exception as e:
-            st.write(e)
+            st.write(f"Error: {e}")
 
       # Form inputs with columns
         col1, col2 = st.columns(2)
@@ -821,31 +827,8 @@ def define_agent():
                     "tag_ids": tag_id_list
                 }
                 with st.spinner('Creating agent...'):
-                    status = None
-                    if agent_template == "React Agent":
-                        status = requests.post(
-                            f"{ENDPOINT_URL_PREFIX}/react-agent/onboard-agent", json=agent, timeout=None)
-                        status = status.json()
-                    elif agent_template == "Multi Agent":
-                        status = requests.post(
-                            f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/onboard-agents", json=agent, timeout=None)
-                        status = status.json()
-                    elif agent_template == "Planner Executor Agent":
-                        status = requests.post(
-                            f"{ENDPOINT_URL_PREFIX}/planner-executor-agent/onboard-agents", json=agent, timeout=None)
-                        status = status.json()
-                    elif agent_template == "React Critic Agent":
-                        status = requests.post(
-                            f"{ENDPOINT_URL_PREFIX}/react-critic-agent/onboard-agent", json=agent, timeout=None)
-                        status = status.json()
-                    elif agent_template == "Meta Agent":
-                        status = requests.post(
-                            f"{ENDPOINT_URL_PREFIX}/meta-agent/onboard-agents", json=agent, timeout=None)
-                        status = status.json()
-                    elif agent_template == "Planner Meta Agent":
-                        status = requests.post(
-                            f"{ENDPOINT_URL_PREFIX}/planner-meta-agent/onboard-agents", json=agent, timeout=None)
-                        status = status.json()
+                    agent["agent_type"] = agent_template.lower().replace(" ", "_")
+                    status = requests.post(f"{ENDPOINT_URL_PREFIX}/onboard-agent", json=agent, timeout=None).json()
 
                 if status:
                     if "result" in status and status["result"]["is_created"]:
@@ -907,9 +890,7 @@ def define_agent():
                     updated_agent_workflow_description = st.text_area(
                         "Workflow Description", current_application_workflow_description,
                         placeholder="Enter a New Workflow description of the Agent", height=200)
-                    old_system_prompts = json.loads(
-                            selected_agents.iloc[0]['system_prompt']
-                        )
+                    old_system_prompts = ast.literal_eval(selected_agents.iloc[0]['system_prompt'])
                     selected_agents_current_tags = selected_agents['tags_details'].tolist()[0]
                     remaining_tags_for_selected_agent = [tag_data for tag_data in available_tags if tag_data not in selected_agents_current_tags]
 
@@ -945,7 +926,7 @@ def define_agent():
                     available_tools_df = pd.DataFrame(available_tools)
                     disabled_columns = available_tools_df.columns
 
-                    tools_ids = ast.literal_eval(agent_info['tools_id'].loc[0])
+                    tools_ids = agent_info['tools_id'].loc[0]
                     tool_or_agent_id = 'agentic_application_id' if agentic_application_type=="meta_agent" or agentic_application_type=="planner_meta_agent" else "tool_id"
                     tools_info_df = available_tools_df[available_tools_df[tool_or_agent_id].isin(tools_ids)]
                     columns_to_show = list(tools_info_df.columns)
@@ -978,26 +959,20 @@ def define_agent():
                         selected_tools_to_add = rest_tools_info_df[rest_tools_info_df['Selected'] == True]
                         tool_ids_to_add = selected_tools_to_add[tool_or_agent_id].tolist()
 
-                    new_tool_lists = tool_ids_to_add + list(set(tools_ids) - set(tool_ids_to_remove))
-
-
                     submitted = st.form_submit_button("Update Agent")
                     if submitted:
                         if user_email:
                             updated_tag_id_list = available_tags_df[available_tags_df['tag_name'].isin(updated_tag_name_list)]['tag_id'].tolist()
                             update_details = {
+                                "agentic_application_id_to_modify": agent_id[0],
                                 "model_name": model,
                                 "user_email_id": user_email,
-                                "agentic_application_id_to_modify": agent_id[0],
-                                "agentic_application_type": agentic_application_type,
-                                "agentic_application_name_to_modify": updated_name,
-                                "is_admin": False,
                                 "agentic_application_description": updated_agent_description,
                                 "agentic_application_workflow_description": updated_agent_workflow_description,
                                 "system_prompt": updated_agent_system_prompts,
                                 "tools_id_to_add": tool_ids_to_add,
                                 "tools_id_to_remove": tool_ids_to_remove,
-                                "new_tool_lists": new_tool_lists,
+                                "is_admin": False,
                                 "updated_tag_id_list": updated_tag_id_list
                             }
 
@@ -1006,20 +981,7 @@ def define_agent():
                             ):
                                 update_details["system_prompt"] = {}
 
-                            #if user_email:
-                            if agentic_application_type == "react_agent":
-                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/react-agent/update-agent", json=update_details, timeout=None)
-                            elif agentic_application_type == "multi_agent":
-                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/planner-executor-critic-agent/update-agent", json=update_details, timeout=None)
-                            elif agentic_application_type == "planner_executor_agent":
-                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/planner-executor-agent/update-agent", json=update_details, timeout=None)
-                            elif agentic_application_type == "react_critic_agent":
-                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/react-critic-agent/update-agent", json=update_details, timeout=None)
-                            elif agentic_application_type == "meta_agent":
-                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/meta-agent/update-agent", json=update_details, timeout=None)
-                            elif agentic_application_type == "planner_meta_agent":
-                                result = requests.put(f"{ENDPOINT_URL_PREFIX}/planner-meta-agent/update-agent", json=update_details, timeout=None)
-                            result = result.json()
+                            result = requests.put(f"{ENDPOINT_URL_PREFIX}/update-agent", json=update_details, timeout=None).json()
                             st.write(result)
 
                         else:
@@ -1460,6 +1422,411 @@ def file_uploading_ui():
                 else:
                     delete_file_from_fastapi(delete_path)
 
+# data connector part start
+def data_connector():
+    
+
+    st.header("🧠 Natural Language to SQL Query Runner")
+    step = st.selectbox("Choose Action", ["Connect to a Database", "Generate and Run Query for sql databases", "Manual CRUD Operations for mongodb" , "Active connections"])
+
+    if step == "Connect to a Database":
+        st.subheader("🔌 Connect to a Database")
+
+        display_to_internal = {
+            "MySQL": "mysql",
+            "PostgreSQL": "postgresql",
+            "MongoDB": "mongodb",
+            # "AzureSQL": "azuresql",
+            "SQLite": "sqlite"
+        }
+
+        # Default port and username mapping
+        default_config = {
+            "mysql": {"port": 3306, "username": "root"},
+            "postgresql": {"port": 5432, "username": "postgres"},
+            "mongodb": {"port": 27017, "username": "myuser"},
+            # "azuresql": {"port": 1433, "username": "azureuser"},  # Adjust as needed
+            "sqlite": {"port": None, "username": None}
+        }
+
+        db_display = st.selectbox("Database Type", list(display_to_internal.keys()), index=1)
+        db_type = display_to_internal[db_display]
+        database = ""
+        uploaded_file = None  # Make it accessible outside the form
+
+        # Retrieve default values
+        defaults = default_config.get(db_type, {"port": None, "username": ""})
+        default_port = defaults["port"]
+        default_username = defaults["username"]
+
+        # FORM START
+        with st.form("db_connection_form"):
+            name = st.text_input("Connection Name", " ")
+            host = port = username = password = ""
+
+            if db_type == "sqlite":
+                st.write("Either upload an existing SQLite DB file or create a new one by entering a filename.")
+
+                new_db_name = st.text_input("New SQLite DB Filename (with .sqlite or .db extension)", key="new_db_name")
+                uploaded_file = st.file_uploader("Upload SQLite DB File", type=["sqlite", "db", "sqlite3"], key="upload_file")
+
+                database = ""
+
+                # Validation: make sure only one option is chosen
+                if new_db_name and uploaded_file:
+                    st.error("Please either upload a file or enter a new filename, not both.")
+                    connect_btn = False  # disable connect button if you want
+                elif new_db_name:
+                    # Validate filename extension
+                    if not (new_db_name.endswith(".sqlite") or new_db_name.endswith(".db")):
+                        st.error("Filename should end with .sqlite or .db")
+                        connect_btn = False
+                    else:
+                        file_path = os.path.join(UPLOAD_DIR, new_db_name)
+                        # Create empty SQLite file if it doesn't exist
+                        if not os.path.exists(file_path):
+                            import sqlite3
+                            conn = sqlite3.connect(file_path)
+                            conn.close()
+                            st.info(f"New SQLite DB file created at: `{file_path}`")
+                        database = file_path
+                elif uploaded_file:
+                    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    database = file_path
+                    st.info(f"SQLite file saved at: `{database}`")
+                else:
+                    st.warning("Please upload a file or enter a new filename.")
+                    connect_btn = False
+            else:
+                host = st.text_input("Host", value="localhost")
+                if default_port:
+                    port = st.number_input("Port", value=default_port, format="%d")
+                else:
+                    port = st.number_input("Port", format="%d")
+                username = st.text_input("Username", value=default_username)
+                password = st.text_input("Password", type="password")
+                database = st.text_input("Database Name", "test_db")
+
+            connect_btn = st.form_submit_button("Connect")
+        # FORM END
+
+        # Outside form: handle download and submission
+        if db_type == "sqlite" and uploaded_file:
+            with open(database, "rb") as f:
+                st.download_button("⬇️ Download SQLite File", f, file_name=uploaded_file.name)
+
+        if connect_btn:
+            
+            if db_type == "sqlite" and not database:
+                st.error("❌ Please upload a valid SQLite database file.")
+                return
+
+            # if db_type == "mongodb" and not database.strip().startswith("mongodb://"):
+            #     st.error("❌ Please enter a valid MongoDB URI.")
+            #     return
+
+            if db_type == "sqlite":
+                port = 0
+            flag="1"
+            payload = {
+                "name": name.strip(),
+                "db_type": db_type,
+                "host": host,
+                "port": port,
+                "username": username,
+                "password": password,
+                "database": database,
+                "flag_for_insert_into_db_connections_table": flag
+            }
+
+            try:
+                # logger.info("printing payload")
+                # logger.info(payload)
+                res = requests.post(f"{ENDPOINT_URL_PREFIX}/connect", json=payload)
+                if res.status_code == 200:
+                    st.success(res.json()["message"])
+                else:
+                    st.error(f"❌ {res.json().get('detail', 'Connection failed.')}")
+            except Exception as e:
+                st.error(f"❌ Request failed: {e}") 
+
+        
+        # logger.info("inside disconnect")
+        # logger.info(name)
+        try:
+            response = requests.get(f"{ENDPOINT_URL_PREFIX}/connections")
+            response.raise_for_status()
+            connections_list = response.json().get("connections", [])
+        except Exception:
+            connections_list = []
+
+        if connections_list:
+            # Build a mapping from connection name to full connection info
+            connection_map = {conn["connection_name"]: conn for conn in connections_list}
+
+            selected_name = st.selectbox("Select previously Connected DB", list(connection_map.keys()))
+            selected_connection = connection_map[selected_name]
+            name=selected_name
+            # logger.info(selected_connection)
+            db_type=selected_connection["connection_database_type"]
+            
+            disconnect_btn = st.button("Disconnect & forget the details of the connection")
+            activate_btn=st.button("activate")
+            if disconnect_btn:
+                if not name:
+                    st.error("❌ Please enter the connection name to disconnect.")
+                else:
+                    payload = {
+                        "name": name,
+                        "db_type": db_type,
+                    }
+                    # logger.info(payload)
+                    try:
+                        res = requests.post(f"{ENDPOINT_URL_PREFIX}/disconnect", json=payload)
+                        if res.status_code == 200:
+                            st.success(res.json()["message"])
+                        else:
+                            st.error(f"❌ {res.json().get('detail', 'Disconnection failed.')}")
+                    except Exception as e:
+                        st.error(f"❌ Request failed: {e}")
+
+            if activate_btn:
+                try:
+                    if selected_connection["connection_database_type"] == "sqlite":
+                        port = 0
+
+                    flag="0"
+                    
+                    payload = {
+                        "name": selected_connection["connection_name"],
+                        "db_type": selected_connection["connection_database_type"],
+                        "host": selected_connection["connection_host"],
+                        "port": selected_connection["connection_port"],
+                        "username": selected_connection["connection_username"],
+                        "password": selected_connection["connection_password"],
+                        "database": selected_connection["connection_database_name"],
+                        "flag_for_insert_into_db_connections_table":flag
+                    }
+                    # logger.info("printing payload")
+                    # logger.info(payload)
+                    res = requests.post(f"{ENDPOINT_URL_PREFIX}/connect", json=payload)
+                    if res.status_code == 200:
+                        st.success(res.json()["message"])
+                    else:
+                        st.error(f"❌ {res.json().get('detail', 'Connection failed.')}")
+                except Exception as e:
+                    st.error(f"❌ Request failed: {e}")
+
+
+    # --- Step 2: Generate and Run Query ---
+    elif step == "Generate and Run Query for sql databases":
+        try:
+            response = requests.get(f"{ENDPOINT_URL_PREFIX}/connections_sql")
+            response.raise_for_status()
+            connections_list = response.json().get("connections", [])
+        except Exception:
+            connections_list = []
+
+        if connections_list:
+            # Build a mapping from connection name to full connection info
+            connection_map = {conn["connection_name"]: conn for conn in connections_list}
+
+            selected_name = st.selectbox("Select Connected DB", list(connection_map.keys()))
+            selected_connection = connection_map[selected_name]
+
+            db_type = selected_connection["connection_database_type"]
+            st.write(f"ℹ️ Selected DB Type: {db_type}")
+            nl_query = st.text_area("Enter Natural Language Query")
+
+            if st.button("🔍 Generate Query"):
+                if not nl_query.strip():
+                    st.warning("Please enter a query.")
+                else:
+                    with st.spinner("Generating query..."):
+                        gen_payload = {
+                            "database_type": db_type,
+                            "natural_language_query": nl_query
+                        }
+                        try:
+                            res = requests.post(f"{ENDPOINT_URL_PREFIX}/generate_query", json=gen_payload)
+                            if res.status_code == 200:
+                                generated_query = res.json()["generated_query"]
+                                st.session_state.generated_query = generated_query
+                                st.success("✅ Query Generated. You can review and edit it before running.")
+                            else:
+                                st.error(f"❌ Query generation failed: {res.json().get('detail')}")
+                        except Exception as e:
+                            st.error(f"❌ Failed to generate query: {e}")
+
+            if "generated_query" in st.session_state:
+                updated_query = st.text_area("🛠️ Review or Edit the Generated Query", value=st.session_state.generated_query, height=150)
+
+                if st.button("▶ Run Query"):
+                    if not updated_query.strip():
+                        st.warning("Query cannot be empty.")
+                    else:
+                        with st.spinner("Executing query..."):
+                            run_payload = {"name": selected_name, "query": updated_query}
+                            try:
+                                run_res = requests.post(f"{ENDPOINT_URL_PREFIX}/run_query", json=run_payload)
+                                if run_res.status_code == 200:
+                                    data = run_res.json()
+                                    if "message" in data:
+                                        st.success(data["message"])
+                                    elif data["rows"]:
+                                        df = pd.DataFrame(data["rows"], columns=data["columns"])
+                                        st.success("✅ Query executed successfully.")
+                                        st.dataframe(df)
+                                    else:
+                                        st.info("✅ Query ran successfully, but no rows were returned.")
+                                else:
+                                    st.error(f"❌ Query failed: {run_res.json().get('detail')}")
+                            except Exception as e:
+                                st.error(f"❌ Request failed: {e}")
+
+        else:
+            st.warning("⚠️ No connected databases. Connect to a database first.")
+
+    # --- Step 3: Manual CRUD Operations ---
+    elif step == "Manual CRUD Operations for mongodb":
+        try:
+            # logger.info("in manual crud")
+            response = requests.get(f"{ENDPOINT_URL_PREFIX}/connections_mongodb")
+            # logger.info(response)
+            response.raise_for_status()
+            connections_list = response.json().get("connections", [])
+            # logger.info(connections_list)
+        except Exception:
+            connections_list = []
+
+        if connections_list:
+            # Build a map from connection_name to full connection data
+            connection_map = {conn["connection_name"]: conn for conn in connections_list}
+
+            selected_name = st.selectbox("Select Connected DB", list(connection_map.keys()))
+            selected_connection = connection_map[selected_name]
+
+     
+            collection = st.text_input("Collection Name", "users")
+            operation = st.selectbox("Operation", ["find", "insert", "update", "delete"])
+            mode = st.selectbox("Mode", ["one", "many"])
+
+            query_input = st.text_area("Query (JSON)", '{ "name": "Alice" }')
+
+            data_input = ""
+            if operation in ["insert"]:
+                data_input = st.text_area("Data (JSON)", '{ "name": "Alice", "age": 30 }')
+            elif operation == "update":
+                update_input = st.text_area("Update Data (JSON)", '{ "age": 31 }')
+
+            if st.button("Execute"):
+                try:
+                    query = json.loads(query_input) if query_input else {}
+                    data = json.loads(data_input) if data_input else None
+                    update_data = json.loads(update_input) if operation == "update" else None
+
+                    payload = {
+                        "conn_name": selected_name,
+                        "collection": collection,
+                        "operation": operation,
+                        "mode": mode,
+                        "query": query,
+                        "data": data,
+                        "update_data": update_data
+                    }
+                    # logger.info(payload)
+                    # logger.info(crud_connection)
+
+                    with st.spinner("Executing..."):
+                        response = httpx.post(f"{ENDPOINT_URL_PREFIX}/mongodb-operation/", json=payload)
+                        response.raise_for_status()
+                        result = response.json()
+
+                    st.success("Operation successful!")
+                    st.json(result)
+
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    elif step == "Active connections":
+        st.title("Active Connections Dashboard")
+        if st.button("Show Active Connections"):
+            try:
+                response = requests.get(f"{ENDPOINT_URL_PREFIX}/get-active-connection-names")
+                response.raise_for_status()
+                data = response.json()
+                
+                st.subheader("Active SQL Connections")
+                if data["active_sql_connections"]:
+                    for conn in data["active_sql_connections"]:
+                        st.write(f"- {conn}")
+                else:
+                    st.write("No active SQL connections.")
+                
+                st.subheader("Active Mongo Connections")
+                if data["active_mongo_connections"]:
+                    for conn in data["active_mongo_connections"]:
+                        st.write(f"- {conn}")
+                else:
+                    st.write("No active Mongo connections.")
+            except Exception as e:
+                st.error(f"Failed to fetch active connections: {e}")
+
+        # # Placeholder for your logic
+        # st.title("Activate a previous connection")
+
+        # # Step 1: Fetch connections when button is clicked
+        # if st.button("Fetch Connections"):
+        #     try:
+        #         response = requests.get(f"{ENDPOINT_URL_PREFIX}/connections")
+        #         response.raise_for_status()
+        #         connections = response.json().get("connections", [])
+        #     except Exception as e:
+        #         st.error(f"Failed to fetch connections: {e}")
+        #         connections = []
+            
+        #     if connections:
+        #         connection_map = {conn["connection_name"]: conn for conn in connections}
+        #         selected_name = st.selectbox("Select a connection", list(connection_map.keys()))
+                
+        #         selected_conn = connection_map[selected_name]
+        #         db_type = selected_conn["connection_database_type"]
+                
+        #         # Prepare payload
+        #         payload = {
+        #             "name": selected_conn["connection_name"],
+        #             "db_type": db_type,
+        #             "host": selected_conn["connection_host", ""],
+        #             "port": selected_conn["connection_port", 0],
+        #             "username": selected_conn["connection_username", ""],
+        #             "password": selected_conn["connection_password", ""],
+        #             "database": selected_conn["connection_database_name", ""]
+        #         }
+
+
+        #         if db_type.lower() == "sqlite":
+        #             payload["host"] = "Na"
+        #             payload["port"] = 0
+        #             payload["username"] = "Na"
+        #             payload["password"] = "Na"
+                
+        #         logger.info(payload)
+
+        #         # Step 2: Button to activate selected connection
+        #         if st.button("Activate Selected Connection"):
+        #             try:
+        #                 connect_resp = requests.post(f"{ENDPOINT_URL_PREFIX}/connect", json=payload)
+        #                 connect_resp.raise_for_status()
+        #                 result = connect_resp.json()
+        #                 st.success(result.get("message", "Connection activated successfully."))
+        #             except Exception as e:
+        #                 st.error(f"Failed to activate connection: {e}")
+        #     else:
+        #         st.warning("No connections available.")
+
+#dataconnector part end
 
 # Main function
 def main():
@@ -1486,7 +1853,7 @@ def main():
             "<h3 style='text-align: center; padding: 1rem 0;'>Navigation</h3>", unsafe_allow_html=True)
         selected_tab = st.radio(
             label="Navigation Option",
-            options=["Tool Onboard", "Agent Onboard", "Inference", "Upload Documents"],
+            options=["Tool Onboard", "Agent Onboard", "Inference", "Upload Documents","Data Connector"],
             label_visibility="hidden")
 
     if selected_tab == "Tool Onboard":
@@ -1500,6 +1867,9 @@ def main():
 
     elif selected_tab == "Upload Documents":
         file_uploading_ui()
+
+    elif selected_tab == "Data Connector":
+        data_connector()
     # elif selected_tab == "Previous Chats":
     #     old_chats()
 
