@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, ChatMessage
 
 from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
-from src.database.services import ChatService, ToolService, AgentService
+from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService
 from src.inference.base_agent_inference import BaseWorkflowState, BaseMetaTypeAgentInference
 from telemetry_wrapper import logger as log
 
@@ -35,9 +35,11 @@ class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
         chat_service: ChatService,
         tool_service: ToolService,
         agent_service: AgentService,
-        inference_utils: InferenceUtils
+        inference_utils: InferenceUtils,
+        feedback_learning_service: FeedbackLearningService,
+        evaluation_service: EvaluationService
     ):
-        super().__init__(chat_service, tool_service, agent_service, inference_utils)
+        super().__init__(chat_service, tool_service, agent_service, inference_utils, feedback_learning_service, evaluation_service)
 
 
     async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None):

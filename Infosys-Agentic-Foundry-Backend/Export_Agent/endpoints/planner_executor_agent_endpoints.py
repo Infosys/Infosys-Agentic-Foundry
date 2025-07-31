@@ -43,7 +43,7 @@ from contextlib import closing
 from pydantic import BaseModel, Field, validator
 from src.models.model import load_model
 from typing import Literal
-
+from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import AgentInferenceRequest, AgentInferenceHITLRequest,BaseAgentInference
 from src.inference.planner_executor_agent_inference import PlannerExecutorAgentInference
@@ -52,11 +52,10 @@ from src.inference.react_agent_inference import ReactAgentInference
 
 from src.database.database_manager import DatabaseManager, REQUIRED_DATABASES
 from src.database.repositories import ( ToolRepository, 
-    AgentRepository, ChatHistoryRepository
+    AgentRepository, ChatHistoryRepository,FeedbackLearningRepository,EvaluationDataRepository,ToolEvaluationMetricsRepository,AgentEvaluationMetricsRepository
 )
-
-from src.database.services import (ToolService, AgentService, ChatService)
-
+from src.database.services import (ToolService, AgentService, ChatService,FeedbackLearningService, EvaluationService)
+from database_creation import initialize_tables
 from database_creation import initialize_tables
 from database_manager import  insert_into_feedback_table
 
@@ -84,21 +83,26 @@ DB_URI = os.getenv("POSTGRESQL_DATABASE_URL", "")
 db_manager: DatabaseManager = None
 
 # Repositories (usually not directly exposed via Depends, but used by services)
-
 tool_repo: ToolRepository = None
 agent_repo: AgentRepository = None
 chat_history_repo: ChatHistoryRepository = None
-
+feedback_learning_repo: FeedbackLearningRepository = None
+evaluation_data_repo: EvaluationDataRepository = None
+tool_evaluation_metrics_repo: ToolEvaluationMetricsRepository = None
+agent_evaluation_metrics_repo: AgentEvaluationMetricsRepository = None
 
 # Services (these are typically exposed via Depends for endpoints)
 tool_service: ToolService = None
 agent_service: AgentService = None
 chat_service: ChatService = None
+feedback_learning_service: FeedbackLearningService = None
+evaluation_service: EvaluationService = None
 
 # Inference
 inference_utils: InferenceUtils = None
-planner_executor_agent_inference: PlannerExecutorAgentInference = None
 react_agent_inference: ReactAgentInference = None
+centralized_agent_inference: CentralizedAgentInference = None
+planner_executor_agent_inference: PlannerExecutorAgentInference = None
 
 
 if sys.platform.startswith("win"):
@@ -113,7 +117,9 @@ async def lifespan(app: FastAPI):
     - On shutdown: Closes database connections.
     """
     global db_manager, tool_repo, agent_repo,chat_history_repo, tool_service, agent_service, \
-           chat_service, inference_utils, react_agent_inference, planner_executor_agent_inference
+           chat_service, inference_utils, react_agent_inference, planner_executor_agent_inference,feedback_learning_repo, \
+           evaluation_data_repo, tool_evaluation_metrics_repo, agent_evaluation_metrics_repo,\
+           feedback_learning_service, evaluation_service, core_evaluation_service,centralized_agent_inference
 
     log.info("Application startup initiated.")
 
@@ -142,6 +148,10 @@ async def lifespan(app: FastAPI):
         tool_repo = ToolRepository(pool=main_pool)
         agent_repo = AgentRepository(pool=main_pool)
         chat_history_repo = ChatHistoryRepository(pool=main_pool)
+        feedback_learning_repo = FeedbackLearningRepository(pool=main_pool)
+        evaluation_data_repo = EvaluationDataRepository(pool=main_pool)
+        tool_evaluation_metrics_repo = ToolEvaluationMetricsRepository(pool=main_pool)
+        agent_evaluation_metrics_repo = AgentEvaluationMetricsRepository(pool=main_pool)
         log.info("All repositories initialized.")
 
 
@@ -158,6 +168,17 @@ async def lifespan(app: FastAPI):
 
         )
         chat_service = ChatService(chat_history_repo=chat_history_repo)
+        feedback_learning_service = FeedbackLearningService(
+            feedback_learning_repo=feedback_learning_repo,
+            agent_service=agent_service
+        )
+        evaluation_service = EvaluationService(
+            evaluation_data_repo=evaluation_data_repo,
+            tool_evaluation_metrics_repo=tool_evaluation_metrics_repo,
+            agent_evaluation_metrics_repo=agent_evaluation_metrics_repo,
+            tool_service=tool_service,
+            agent_service=agent_service
+        )
 
         log.info("All services initialized.")
 
@@ -167,13 +188,21 @@ async def lifespan(app: FastAPI):
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
         )
         react_agent_inference = ReactAgentInference(
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
+        )
+        centralized_agent_inference = CentralizedAgentInference(
+            react_agent_inference=react_agent_inference,
+            planner_executor_agent_inference=planner_executor_agent_inference
         )
     
 
@@ -186,14 +215,27 @@ async def lifespan(app: FastAPI):
         await agent_repo.create_table_if_not_exists()
         await agent_repo.save_agent_record()
 
+        # Feedback Learning tables
+        await feedback_learning_repo.create_tables_if_not_exists()
+
+        # Evaluation Tables
+        await evaluation_service.create_evaluation_tables_if_not_exists()
+
         # Remaining tables
-        await initialize_tables()
+        # await initialize_tables()
         log.info("All database tables checked/created.")
 
+        # 9. Running necessary data migrations/fixes
+        # await tool_service.fix_tool_agent_mapping_for_meta_agents() # Ensure FK is dropped
+        # log.info("Database data migrations/fixes completed.")
+
+        # await assign_general_tag_to_untagged_items()
+        await feedback_learning_repo.migrate_agent_ids_to_hyphens()
         asyncio.create_task(cleanup_old_files())
 
         log.info("Application startup complete. FastAPI is ready to serve requests.")
 
+        # 10. Yield control to the application (FastAPI starts serving requests)
         yield
 
     except Exception as e:
@@ -317,7 +359,31 @@ def get_specialized_inference_service(agent_type: str):
     if agent_type == "planner_meta_agent":
         return planner_meta_agent_inference # type: ignore
     raise HTTPException(status_code=400, detail=f"Unsupported agent type: {agent_type}")
+def get_feedback_learning_service() -> FeedbackLearningService:
+    """Returns the global FeedbackLearningService instance."""
+    return feedback_learning_service
 
+def get_specialized_inference_service(agent_type: str) -> BaseAgentInference:
+    """Return the appropriate inference service instance based on agent type."""
+    if agent_type == "react_agent":
+        return react_agent_inference
+    if agent_type == "multi_agent":
+        return multi_agent_inference # type: ignore
+    if agent_type == "planner_executor_agent":
+        return planner_executor_agent_inference # type: ignore
+    if agent_type == "react_critic_agent":
+        return react_critic_agent_inference # type: ignore
+    if agent_type == "meta_agent":
+        return meta_agent_inference # type: ignore
+    if agent_type == "planner_meta_agent":
+        return planner_meta_agent_inference # type: ignore
+    raise HTTPException(status_code=400, detail=f"Unsupported agent type: {agent_type}")
+
+def get_centralized_agent_inference() -> CentralizedAgentInference:
+    """Returns the global CentralizedAgentInference instance."""
+    if centralized_agent_inference is None:
+        raise RuntimeError("CentralizedAgentInference not initialized yet.")
+    return centralized_agent_inference
 @app.get("/fetchuser", response_model=Dict[str, Any])
 async def fetch_user_data(request: Request):
     load_dotenv(override=True)
@@ -339,7 +405,14 @@ async def fetch_user_data(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error while fetching user data.")
 
 @app.post("/react-agent/get-feedback-response/{feedback}")
-async def get_react_feedback_response(fastapi_request: Request, feedback: str, request: AgentInferenceRequest, chat_service: ChatService = Depends(get_chat_service)):
+async def get_react_feedback_response(
+                            fastapi_request: Request,
+                            feedback: str,
+                            request: AgentInferenceRequest,
+                            agent_inference: CentralizedAgentInference = Depends(get_centralized_agent_inference),
+                            chat_service: ChatService = Depends(get_chat_service),
+                            feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)
+                        ):
     """
     Gets the response for the feedback using agent inference.
 
@@ -361,6 +434,7 @@ async def get_react_feedback_response(fastapi_request: Request, feedback: str, r
     update_session_context(user_session=user_session, user_id=user_id)
 
     try:
+        # current_user_email.set(request.session_id.split("_")[0])
         query = request.query
         if feedback == "like":
             return await chat_service.handle_like_feedback_message(
@@ -378,8 +452,6 @@ async def get_react_feedback_response(fastapi_request: Request, feedback: str, r
         request.feedback=None
 
         request.reset_conversation = False
-        agent_config = await react_agent_inference._get_agent_config(request.agentic_application_id)
-        agent_inference = get_specialized_inference_service(agent_config["AGENT_TYPE"])
         response = await agent_inference.run(request)
         try:
             final_response = response["response"]
@@ -387,14 +459,15 @@ async def get_react_feedback_response(fastapi_request: Request, feedback: str, r
             old_response = request.prev_response["response"]
             old_steps = request.prev_response["executor_messages"][-1]["agent_steps"]
             
-            await insert_into_feedback_table(
-                agent_id=request.agentic_application_id.replace("-","_"),
+            await feedback_learning_service.save_feedback(
+                agent_id=request.agentic_application_id,
                 query=query,
                 old_final_response= old_response,
                 old_steps=old_steps,
                 new_final_response=final_response,
                 feedback=user_feedback, 
-                new_steps=steps)
+                new_steps=steps
+            )
         except Exception as e:
             response["error"] = f"An error occurred while processing the response: {str(e)}"
         
@@ -403,6 +476,7 @@ async def get_react_feedback_response(fastapi_request: Request, feedback: str, r
         return response
     except Exception as e:
         return {"error": f"An error occurred while processing the request: {str(e)}"}
+
 
 @app.post("/meta-agent/get-chat-history")
 @app.post("/react-agent/get-chat-history")
@@ -446,12 +520,16 @@ async def clear_chat_history(fastapi_request: Request, request: PrevSessionReque
     )
 
 @app.post("/planner-executor-agent/get-query-response-hitl-replanner")
-async def generate_response_replanner_executor_agent_main(fastapi_request: Request, request: AgentInferenceHITLRequest):
+async def generate_response_replanner_executor_agent_main(
+                                            fastapi_request: Request,
+                                            request: AgentInferenceHITLRequest,
+                                            feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)
+                                        ):
     """
     Handles the inference request for the Planner-Executor-Critic-replanner agent.
 
     Args:
-        request (ReplannerAgentInferenceRequest): The request object containing the query, session ID, and other parameters.
+        request (AgentInferenceHITLRequest): The request object containing the query, session ID, and other parameters.
 
     Returns:
         JSONResponse: A JSON response containing the agent's response and state.
@@ -469,23 +547,107 @@ async def generate_response_replanner_executor_agent_main(fastapi_request: Reque
     query = request.query
     response = {}
     try:
+        # current_user_email.set(request.session_id.split("_")[0])
         response = await planner_executor_agent_inference.run(request, hitl_flag=True)
         final_response = "\n".join(i for i in response["plan"])
         steps = ""
         old_response = "\n".join(i for i in request.prev_response["plan"])
         old_steps = ""
-        await insert_into_feedback_table(
-        agent_id=request.agentic_application_id.replace("-","_"),
-        query=query,
-        old_final_response= old_response,
-        old_steps=old_steps,
-        new_final_response=final_response,
-        feedback=request.feedback, 
-        new_steps=steps)
+        await feedback_learning_service.save_feedback(
+            agent_id=request.agentic_application_id,
+            query=query,
+            old_final_response= old_response,
+            old_steps=old_steps,
+            new_final_response=final_response,
+            feedback=request.feedback, 
+            new_steps=steps
+        )
     except Exception as e:
         response["error"] = f"An error occurred while processing the response: {str(e)}"
     
     
+    return response
+
+@app.post("/get-query-response")
+async def get_react_and_pec_and_pe_rc_agent_response(
+                                fastapi_request: Request,
+                                request: AgentInferenceRequest,
+                                agent_inference: CentralizedAgentInference = Depends(get_centralized_agent_inference)
+                            ):
+    """
+    Gets the response for a query using agent inference.
+
+    Parameters:
+    ----------
+    request : AgentInferenceRequest
+        The request body containing the query details.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the response generated by the agent.
+    """
+    #changed
+    user_id = fastapi_request.cookies.get("user_id")
+    user_session = fastapi_request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    session_id = request.session_id
+    log.info(f"[{session_id}] Received new request.")
+    # current_user_email.set(request.session_id.split("_")[0])
+    # Cancel existing task for the session if it exists
+    existing_task = task_tracker.get(session_id)
+    if existing_task and not existing_task.done():
+        log.info(f"[{session_id}] Cancelling existing task...")
+        existing_task.cancel()
+        try:
+            await existing_task
+        except asyncio.CancelledError:
+            log.warning(f"[{session_id}] Previous task cancelled.")
+
+    # Update context to "processing"
+    update_session_context(
+        agent_id=request.agentic_application_id,
+        session_id=session_id,
+        model_used=request.model_name,
+        user_query=request.query,
+        response="Processing..."
+    )
+
+    log.info(f"[{session_id}] Starting agent inference...")
+
+    # Define and create the inference task
+    async def do_inference():
+        try:
+            result = await agent_inference.run(request)
+            log.info(f"[{session_id}] Inference completed.")
+            return result
+        except asyncio.CancelledError:
+            log.warning(f"[{session_id}] Task was cancelled during execution.")
+            raise
+
+    new_task = asyncio.create_task(do_inference())
+    task_tracker[session_id] = new_task
+
+    try:
+        response = await new_task
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Request was cancelled")
+
+    # Clear the context
+    update_session_context(
+        agent_id="Unassigned",
+        session_id="Unassigned",
+        model_used="Unassigned",
+        user_query="Unassigned",
+        response="Unassigned"
+    )
+
+    # Optionally: clean up finished task
+    if session_id in task_tracker and task_tracker[session_id].done():
+        del task_tracker[session_id]
+        log.info(f"[{session_id}] Task cleaned up from tracker.")
+
     return response
 
 @app.get('/get-models')

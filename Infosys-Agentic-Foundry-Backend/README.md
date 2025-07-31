@@ -5,7 +5,7 @@
 
 
 
-2. Installation 
+2. Installation and Setup
 
     # To run the project locally
     ## In command prompt run the following commands
@@ -21,6 +21,23 @@
         - pip install uv
         - uv pip install -r requirements.txt
 
+    ### 4. Setup SBERT Model (`all-MiniLM-L6-v2`)
+
+    > If you face SSL issues while connecting to the model from Hugging Face, follow the manual setup below:
+
+    #### Steps:
+
+    1. Download the **`all-MiniLM-L6-v2`** model manually : [[all-MiniLM-L6-v2](https://infosystechnologies.sharepoint.com/:u:/s/AgenticAI104/EZ6FQn8GaQFEs8NVuRPcl1sBkWzuH0-imLBjMzkXAIdpDw?e=JjK7nJ)]
+
+    2. Extract the downloaded folder to a local directory.
+
+    3. Update your `.env` file with the local model path:
+
+    ```env
+    SBERT_MODEL_PATH=path/to/your/local/all-MiniLM-L6-v2
+    ```
+
+    > ✅ Replace `path/to/your/local/all-MiniLM-L6-v2` with the actual folder path where you extracted the model.
 
 
 3. Usage
@@ -114,6 +131,7 @@
         PHOENIX_SQL_DATABASE_URL=your_phoenix_sql_database_url
         PHOENIX_COLLECTOR_ENDPOINT=your_phoenix_collector_endpoint
         PHOENIX_GRPC_PORT=your_phoenix_grpc_port
+        SBERT_MODEL_PATH=path_to_your_local_all-MiniLM-L6-v2
         ```
 
     - Replace the placeholder values with your actual credentials and endpoints.

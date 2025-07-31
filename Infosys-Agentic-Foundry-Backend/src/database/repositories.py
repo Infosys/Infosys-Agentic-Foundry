@@ -1,6 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import os
 import uuid
+import json
 import asyncpg
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
@@ -604,7 +605,7 @@ class ToolRepository(BaseRepository):
             log.error(f"Error saving tool record {tool_data.get('tool_name')}: {e}")
             return False
 
-    async def get_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> Dict[str, Any] | None:
+    async def get_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieves a single tool record by its ID or name.
 
@@ -613,7 +614,7 @@ class ToolRepository(BaseRepository):
             tool_name (Optional[str]): The name of the tool.
 
         Returns:
-            Dict[str, Any] | None: A dictionary representing the tool record, or None if not found.
+            List[Dict[str, Any]]: A list of dictionary representing the tool record, or an empty list if not found.
         """
         query = f"SELECT * FROM {self.table_name} WHERE "
         params = []
@@ -625,7 +626,7 @@ class ToolRepository(BaseRepository):
             params.append(tool_name)
         else:
             log.warning("No tool_id or tool_name provided to get_tool_record.")
-            return None
+            return []
 
         try:
             async with self.pool.acquire() as conn:
@@ -635,10 +636,10 @@ class ToolRepository(BaseRepository):
                 return [dict(row) for row in rows]
             else:
                 log.info(f"Tool record '{tool_id or tool_name}' not found.")
-                return None
+                return []
         except Exception as e:
             log.error(f"Error retrieving tool record '{tool_id or tool_name}': {e}")
-            return None
+            return []
 
     async def get_all_tool_records(self) -> List[Dict[str, Any]]:
         """
@@ -1198,7 +1199,7 @@ class AgentRepository(BaseRepository):
             log.error(f"Error saving agent record {agent_data.get('agentic_application_name')}: {e}")
             return False
 
-    async def get_agent_record(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None, agentic_application_type: Optional[str] = None, created_by: Optional[str] = None) -> Dict[str, Any] | None:
+    async def get_agent_record(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None, agentic_application_type: Optional[str] = None, created_by: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieves a single agent record by ID, name, type, or creator.
 
@@ -1209,7 +1210,7 @@ class AgentRepository(BaseRepository):
             created_by (Optional[str]): The creator's email ID.
 
         Returns:
-            Dict[str, Any] | None: A dictionary representing the agent record, or None if not found.
+            List[Dict[str, Any]]: A list of dictionary representing the agent records, or an empty list if not found.
         """
         query = f"SELECT * FROM {self.table_name}"
         where_clauses = []
@@ -1230,7 +1231,7 @@ class AgentRepository(BaseRepository):
             query += " WHERE " + " AND ".join(where_clauses)
         else:
             log.warning("No filter criteria provided to get_agent_record.")
-            return None
+            return []
 
         try:
             async with self.pool.acquire() as conn:
@@ -1243,7 +1244,7 @@ class AgentRepository(BaseRepository):
 
         except Exception as e:
             log.error(f"Error retrieving agent record '{agentic_application_id or agentic_application_name}': {e}")
-            return None
+            return []
 
     async def get_all_agent_records(self, agentic_application_type: Optional[Union[str, List[str]]] = None) -> List[Dict[str, Any]]:
         """
@@ -1864,5 +1865,565 @@ class ChatHistoryRepository(BaseRepository):
             log.error(f"Error updating message tag record in '{table_name}': {e}")
             return False
 
+
+
+# --- FeedbackLearningRepository ---
+
+class FeedbackLearningRepository(BaseRepository):
+    """
+    Repository for feedback data. Handles direct database interactions for
+    'feedback_response' and 'agent_feedback' tables.
+    """
+
+    def __init__(self, pool: asyncpg.Pool,
+                 feedback_table_name: str = "feedback_response",
+                 agent_feedback_table_name: str = "agent_feedback"):
+        super().__init__(pool, table_name=feedback_table_name)
+        self.feedback_table_name = feedback_table_name
+        self.agent_feedback_table_name = agent_feedback_table_name
+
+
+    async def create_tables_if_not_exists(self):
+        """
+        Creates the 'feedback_response' and 'agent_feedback' tables if they don't exist.
+        """
+        create_feedback_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.feedback_table_name} (
+            response_id TEXT PRIMARY KEY,
+            query TEXT,
+            old_final_response TEXT,
+            old_steps TEXT,
+            old_response TEXT,
+            feedback TEXT,
+            new_final_response TEXT,
+            new_steps TEXT,
+            new_response TEXT,
+            approved BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        create_agent_feedback_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.agent_feedback_table_name} (
+            agent_id TEXT,
+            response_id TEXT,
+            PRIMARY KEY (agent_id, response_id),
+            FOREIGN KEY (response_id) REFERENCES {self.feedback_table_name}(response_id) ON DELETE CASCADE
+        );
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_feedback_table_query)
+                await conn.execute(create_agent_feedback_table_query)
+            log.info("Feedback storage tables created successfully or already exist.")
+        except Exception as e:
+            log.error(f"Error creating feedback storage tables: {e}")
+            raise # Re-raise for service to handle
+
+    async def insert_feedback_record(self, response_id: str, query: str, old_final_response: str, old_steps: str, feedback: str, new_final_response: str, new_steps: str, approved: bool = False) -> bool:
+        """
+        Inserts a new feedback response record.
+        """
+        insert_query = f"""
+        INSERT INTO {self.feedback_table_name} (
+            response_id, query, old_final_response, old_steps, feedback, new_final_response, new_steps, approved
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(insert_query, response_id, query, old_final_response, old_steps, feedback, new_final_response, new_steps, approved)
+            return True
+        except Exception as e:
+            log.error(f"Error inserting feedback record for response_id '{response_id}': {e}")
+            return False
+
+    async def insert_agent_feedback_mapping(self, agent_id: str, response_id: str) -> bool:
+        """
+        Inserts a mapping between an agent and a feedback response.
+        """
+        insert_query = f"""
+        INSERT INTO {self.agent_feedback_table_name} (agent_id, response_id)
+        VALUES ($1, $2);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(insert_query, agent_id, response_id)
+            return True
+        except Exception as e:
+            log.error(f"Error inserting agent feedback mapping for agent_id '{agent_id}', response_id '{response_id}': {e}")
+            return False
+
+    async def get_approved_feedback_records(self, agent_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves approved feedback records for a specific agent.
+        """
+        select_query = f"""
+        SELECT fr.* FROM {self.feedback_table_name} fr
+        JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id
+        WHERE af.agent_id = $1 AND fr.approved = TRUE;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_query, agent_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error retrieving approved feedback records for agent '{agent_id}': {e}")
+            return []
+
+    async def get_all_feedback_records_by_agent(self, agent_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all feedback records (regardless of approval status) for a given agent.
+        """
+        select_query = f"""
+        SELECT af.response_id, fr.feedback, fr.approved
+        FROM {self.feedback_table_name} fr
+        JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id
+        WHERE af.agent_id = $1;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_query, agent_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error retrieving all feedback records for agent '{agent_id}': {e}")
+            return []
+
+    async def get_feedback_record_by_response_id(self, response_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves a single feedback record by its response_id.
+        """
+        select_query = f"""
+        SELECT fr.*, af.agent_id FROM {self.feedback_table_name} fr
+        JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id
+        WHERE fr.response_id = $1;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_query, response_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error retrieving feedback record for response_id '{response_id}': {e}")
+            return []
+
+    async def get_distinct_agents_with_feedback(self) -> List[str]:
+        """
+        Retrieves a list of distinct agent_ids that have associated feedback.
+        """
+        select_query = f"SELECT DISTINCT agent_id FROM {self.agent_feedback_table_name};"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_query)
+            return [row['agent_id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error retrieving distinct agents with feedback: {e}")
+            return []
+
+    async def update_feedback_record(self, response_id: str, update_data: Dict[str, Any]) -> bool:
+        """
+        Updates fields in a feedback_response record.
+        `update_data` should be a dictionary of column_name: new_value.
+        """
+        if not update_data:
+            return False
+
+        set_clause = ', '.join([f"{key} = ${i+1}" for i, key in enumerate(update_data.keys())])
+        values = list(update_data.values())
+        values.append(response_id) # response_id is the last parameter
+
+        update_query = f"""
+        UPDATE {self.feedback_table_name}
+        SET {set_clause}
+        WHERE response_id = ${len(values)};
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_query, *values)
+            return result != "UPDATE 0"
+        except Exception as e:
+            log.error(f"Error updating feedback record for response_id '{response_id}': {e}")
+            return False
+        
+    async def migrate_agent_ids_to_hyphens(self) -> Dict[str, Any]:
+        """
+        Migrates agent_id values in the agent_feedback table, replacing all underscores (_) with hyphens (-).
+        This is useful for consistency if agent IDs are stored with hyphens elsewhere.
+
+        Returns:
+            Dict[str, Any]: A dictionary indicating the status of the migration.
+        """
+        log.info(f"Starting migration of agent_id underscores to hyphens in '{self.agent_feedback_table_name}'.")
+        
+        # The REPLACE function will replace ALL occurrences of '_' with '-'
+        # The WHERE clause ensures we only attempt to update rows that actually contain an underscore.
+        update_query = f"""
+        UPDATE {self.agent_feedback_table_name}
+        SET agent_id = REPLACE(agent_id, '_', '-')
+        WHERE agent_id LIKE '%\\_%' ESCAPE '\\';
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                # Execute the update query
+                result = await conn.execute(update_query)
+                
+                # The result string will be like "UPDATE N" where N is the number of rows updated
+                rows_updated = int(result.split()[-1])
+                
+                log.info(f"Migration complete for '{self.agent_feedback_table_name}'. {rows_updated} rows updated.")
+                return {"status": "success", "message": f"Successfully migrated {rows_updated} agent_id records."}
+        except Exception as e:
+            log.error(f"Error during agent_id migration in '{self.agent_feedback_table_name}': {e}", exc_info=True)
+            return {"status": "error", "message": f"Failed to migrate agent_id records: {e}"}
+
+
+
+# --- EvaluationDataRepository ---
+
+class EvaluationDataRepository(BaseRepository):
+    """
+    Repository for 'evaluation_data' table. Handles direct database interactions.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, table_name: str = "evaluation_data"):
+        super().__init__(pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """Creates the 'evaluation_data' table if it does not exist."""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id SERIAL PRIMARY KEY,
+            time_stamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            session_id TEXT,
+            query TEXT,
+            response TEXT,
+            model_used TEXT,
+            agent_id TEXT,
+            agent_name TEXT,
+            agent_type TEXT,
+            agent_goal TEXT,
+            workflow_description TEXT,
+            tool_prompt TEXT,
+            steps JSONB,
+            executor_messages JSONB,
+            evaluation_status TEXT DEFAULT 'unprocessed'
+        );
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+            raise
+
+    async def insert_evaluation_record(self, data: Dict[str, Any]) -> bool:
+        """
+        Inserts a new evaluation data record.
+        """
+        insert_query = f"""
+        INSERT INTO {self.table_name} (
+            session_id, query, response, model_used,
+            agent_id, agent_name, agent_type, agent_goal,
+            workflow_description, tool_prompt, steps, executor_messages
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    insert_query,
+                    data.get("session_id"), data.get("query"), data.get("response"), data.get("model_used"),
+                    data.get("agent_id"), data.get("agent_name"), data.get("agent_type"), data.get("agent_goal"),
+                    data.get("workflow_description"), data.get("tool_prompt"),
+                    data.get("steps"),
+                    data.get("executor_messages")
+                )
+            return True
+        except Exception as e:
+            log.error(f"Error inserting evaluation record: {e}")
+            return False
+
+    async def get_unprocessed_record(self) -> Dict[str, Any] | None:
+        """
+        Retrieves the next unprocessed evaluation record.
+        """
+        query = f"""
+            SELECT
+                id, query, response, agent_goal, agent_name,
+                workflow_description, steps, executor_messages, tool_prompt, model_used,
+                session_id, agent_id
+            FROM {self.table_name}
+            WHERE evaluation_status = 'unprocessed'
+            ORDER BY time_stamp
+            LIMIT 1;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query)
+            return dict(row) if row else None
+        except Exception as e:
+            log.error(f"Error fetching unprocessed evaluation record: {e}")
+            return None
+
+    async def update_status(self, evaluation_id: int, status: str) -> bool:
+        """
+        Updates the processing status of an evaluation record.
+        """
+        update_query = f"""
+        UPDATE {self.table_name}
+        SET evaluation_status = $1
+        WHERE id = $2;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_query, status, evaluation_id)
+            return result != "UPDATE 0"
+        except Exception as e:
+            log.error(f"Error updating evaluation status for ID {evaluation_id}: {e}")
+            return False
+
+    async def get_records_by_agent_names(self, agent_names: Optional[List[str]] = None, page: int = 1, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves evaluation data records, optionally filtered by agent names, with pagination.
+        """
+        offset = (page - 1) * limit
+        query = f"""
+            SELECT session_id, query, response, model_used, agent_id, agent_name, agent_type
+            FROM {self.table_name}
+        """
+        params = []
+        if agent_names:
+            query += " WHERE agent_name = ANY($1::text[])"
+            params.append(agent_names)
+        
+        query += f" ORDER BY id DESC LIMIT ${len(params) + 1} OFFSET ${len(params) + 2};"
+        params.extend([limit, offset])
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching evaluation data records: {e}")
+            return []
+
+
+
+# --- ToolEvaluationMetricsRepository ---
+
+class ToolEvaluationMetricsRepository(BaseRepository):
+    """
+    Repository for 'tool_evaluation_metrics' table. Handles direct database interactions.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, table_name: str = "tool_evaluation_metrics"):
+        super().__init__(pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """Creates the 'tool_evaluation_metrics' table if it does not exist."""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id SERIAL PRIMARY KEY,
+            evaluation_id INTEGER REFERENCES evaluation_data(id) ON DELETE CASCADE,
+            user_query TEXT,
+            agent_response TEXT,
+            model_used TEXT,
+            tool_selection_accuracy REAL,
+            tool_usage_efficiency REAL,
+            tool_call_precision REAL,
+            tool_call_success_rate REAL,
+            tool_utilization_efficiency REAL,
+            tool_utilization_efficiency_category TEXT,
+            tool_selection_accuracy_justification TEXT,
+            tool_usage_efficiency_justification TEXT,
+            tool_call_precision_justification TEXT,
+            model_used_for_evaluation TEXT,
+            time_stamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+            raise
+
+    async def insert_metrics_record(self, metrics_data: Dict[str, Any]) -> bool:
+        """
+        Inserts a new tool evaluation metrics record.
+        """
+        insert_query = f"""
+        INSERT INTO {self.table_name} (
+            evaluation_id, user_query, agent_response, model_used,
+            tool_selection_accuracy, tool_usage_efficiency, tool_call_precision,
+            tool_call_success_rate, tool_utilization_efficiency,
+            tool_utilization_efficiency_category,
+            tool_selection_accuracy_justification,
+            tool_usage_efficiency_justification,
+            tool_call_precision_justification,
+            model_used_for_evaluation
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        );
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    insert_query,
+                    metrics_data.get("evaluation_id"), metrics_data.get("user_query"), metrics_data.get("agent_response"), metrics_data.get("model_used"),
+                    metrics_data.get("tool_selection_accuracy"), metrics_data.get("tool_usage_efficiency"), metrics_data.get("tool_call_precision"),
+                    metrics_data.get("tool_call_success_rate"), metrics_data.get("tool_utilization_efficiency"),
+                    metrics_data.get("tool_utilization_efficiency_category"),
+                    metrics_data.get("tool_selection_accuracy_justification"),
+                    metrics_data.get("tool_usage_efficiency_justification"),
+                    metrics_data.get("tool_call_precision_justification"),
+                    metrics_data.get("model_used_for_evaluation")
+                )
+            return True
+        except Exception as e:
+            log.error(f"Error inserting tool evaluation metrics record: {e}")
+            return False
+
+    async def get_metrics_by_agent_names(self, agent_names: Optional[List[str]] = None, page: int = 1, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves tool evaluation metrics records, optionally filtered by agent names, with pagination.
+        """
+        offset = (page - 1) * limit
+        query = f"""
+            SELECT tem.*
+            FROM {self.table_name} tem
+            JOIN evaluation_data ed ON tem.evaluation_id = ed.id
+        """
+        params = []
+        if agent_names:
+            query += " WHERE ed.agent_name = ANY($1::text[])"
+            params.append(agent_names)
+        
+        query += f" ORDER BY tem.id DESC LIMIT ${len(params) + 1} OFFSET ${len(params) + 2};"
+        params.extend([limit, offset])
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching tool evaluation metrics records: {e}")
+            return []
+
+
+
+# --- AgentEvaluationMetricsRepository ---
+
+class AgentEvaluationMetricsRepository(BaseRepository):
+    """
+    Repository for 'agent_evaluation_metrics' table. Handles direct database interactions.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, table_name: str = "agent_evaluation_metrics"):
+        super().__init__(pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """Creates the 'agent_evaluation_metrics' table if it does not exist."""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id SERIAL PRIMARY KEY,
+            evaluation_id INTEGER REFERENCES evaluation_data(id) ON DELETE CASCADE,
+            user_query TEXT,
+            response TEXT,
+            model_used TEXT,
+            task_decomposition_efficiency REAL,
+            task_decomposition_justification TEXT,
+            reasoning_relevancy REAL,
+            reasoning_relevancy_justification TEXT,
+            reasoning_coherence REAL,
+            reasoning_coherence_justification TEXT,
+            answer_relevance REAL,
+            answer_relevance_justification TEXT,
+            groundedness REAL,
+            groundedness_justification TEXT,
+            response_fluency REAL,
+            response_fluency_justification TEXT,
+            response_coherence REAL,
+            response_coherence_justification TEXT,
+            efficiency_category TEXT,
+            model_used_for_evaluation TEXT,
+            time_stamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+            raise
+
+    async def insert_metrics_record(self, metrics_data: Dict[str, Any]) -> bool:
+        """
+        Inserts a new agent evaluation metrics record into the database.
+        """
+        insert_query = f"""
+        INSERT INTO {self.table_name} (
+            evaluation_id, user_query, response, model_used,
+            task_decomposition_efficiency, task_decomposition_justification,
+            reasoning_relevancy, reasoning_relevancy_justification,
+            reasoning_coherence, reasoning_coherence_justification,
+            answer_relevance, answer_relevance_justification,
+            groundedness, groundedness_justification,
+            response_fluency, response_fluency_justification,
+            response_coherence, response_coherence_justification,
+            efficiency_category, model_used_for_evaluation
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18,
+            $19, $20
+        );
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    insert_query,
+                    metrics_data.get("evaluation_id"), metrics_data.get("user_query"), metrics_data.get("response"), metrics_data.get("model_used"),
+                    metrics_data.get("task_decomposition_efficiency"), metrics_data.get("task_decomposition_justification"),
+                    metrics_data.get("reasoning_relevancy"), metrics_data.get("reasoning_relevancy_justification"),
+                    metrics_data.get("reasoning_coherence"), metrics_data.get("reasoning_coherence_justification"),
+                    metrics_data.get("answer_relevance"), metrics_data.get("answer_relevance_justification"),
+                    metrics_data.get("groundedness"), metrics_data.get("groundedness_justification"),
+                    metrics_data.get("response_fluency"), metrics_data.get("response_fluency_justification"),
+                    metrics_data.get("response_coherence"), metrics_data.get("response_coherence_justification"),
+                    metrics_data.get("efficiency_category"), metrics_data.get("model_used_for_evaluation")
+                )
+            return True
+        except Exception as e:
+            log.error(f"Error inserting agent evaluation metrics record: {e}", exc_info=True)
+            return False
+
+    async def get_metrics_by_agent_names(self, agent_names: Optional[List[str]] = None, page: int = 1, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves agent evaluation metrics records, optionally filtered by agent names, with pagination.
+        """
+        offset = (page - 1) * limit
+        query = f"""
+            SELECT aem.*
+            FROM {self.table_name} aem
+            JOIN evaluation_data ed ON aem.evaluation_id = ed.id
+        """
+        params = []
+        if agent_names:
+            query += " WHERE ed.agent_name = ANY($1::text[])"
+            params.append(agent_names)
+        
+        query += f" ORDER BY aem.id DESC LIMIT ${len(params) + 1} OFFSET ${len(params) + 2};"
+        params.extend([limit, offset])
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching agent evaluation metrics records: {e}")
+            return []
 
 

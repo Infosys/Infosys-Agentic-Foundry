@@ -21,7 +21,7 @@ import uuid
 _otel_logger_provider = None
 _otel_tracer_provider = None
 _tracer = None
-USE_OTEL_LOGGING = False # keep it as True in VM for Otel Collector, False in local dev
+USE_OTEL_LOGGING = os.getenv("USE_OTEL_LOGGING", "False").lower() == "true" # keep it as True in VM for Otel Collector, False in local dev
 
 # --- Function for one-time OTel tracing setup ---
 def setup_otel_tracing(service_name="agentic-workflow-service"):

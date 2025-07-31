@@ -3,10 +3,12 @@ import os
 import ast
 import time
 import shutil
+import sqlite3
 
 from urllib import response
 from bson import ObjectId
 from langchain_openai import AzureChatOpenAI
+import speech_recognition as sr
 
 import asyncpg
 from MultiDBConnection_Manager import get_connection_manager
@@ -55,13 +57,16 @@ from src.database.database_manager import DatabaseManager, REQUIRED_DATABASES
 from src.database.repositories import (
     TagRepository, TagToolMappingRepository, TagAgentMappingRepository,
     ToolRepository, ToolAgentMappingRepository, RecycleToolRepository,
-    AgentRepository, RecycleAgentRepository, ChatHistoryRepository
+    AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
+    FeedbackLearningRepository, EvaluationDataRepository,
+    ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository
 )
 from src.tools.tool_code_processor import ToolCodeProcessor
 from src.database.services import (
-    TagService, ToolService, AgentService, ChatService
+    TagService, ToolService, AgentService, ChatService,
+    FeedbackLearningService, EvaluationService
 )
-
+from src.database.core_evaluation_service import CoreEvaluationService
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import (
     AgentInferenceRequest, AgentInferenceHITLRequest, BaseAgentInference
@@ -72,6 +77,7 @@ from src.inference.planner_executor_agent_inference import PlannerExecutorAgentI
 from src.inference.react_critic_agent_inference import ReactCriticAgentInference
 from src.inference.meta_agent_inference import MetaAgentInference
 from src.inference.planner_meta_agent_inference import PlannerMetaAgentInference
+from src.inference.centralized_agent_inference import CentralizedAgentInference
 
 from src.agent_templates.react_agent_onboard import ReactAgentOnboard
 from src.agent_templates.planner_executor_critic_agent_onboard import MultiAgentOnboard
@@ -82,13 +88,10 @@ from src.agent_templates.planner_meta_agent_onboard import PlannerMetaAgentOnboa
 
 from database_creation import initialize_tables
 from database_manager import (
-    get_agents_by_id, assign_general_tag_to_untagged_items, insert_into_db_connections_table, insert_into_feedback_table,
-    get_approvals, get_approval_agents, update_feedback_response, get_response_data,
-    get_evaluation_data_by_agent_names, get_agent_metrics_by_agent_names,
-    get_tool_metrics_by_agent_names, get_tool_data
+    assign_general_tag_to_untagged_items, insert_into_db_connections_table,
+    get_tool_data
 )
 
-from evaluation_metrics import process_unprocessed_evaluations
 from telemetry_wrapper import logger as log, update_session_context
 import asyncio
 import sys
@@ -127,6 +130,7 @@ os.environ["PHOENIX_GRPC_PORT"] = os.getenv("PHOENIX_GRPC_PORT",'50051')
 os.environ["PHOENIX_SQL_DATABASE_URL"] = os.getenv("PHOENIX_SQL_DATABASE_URL")
 
 
+
 # --- Global Instances (initialized in lifespan) ---
 # These will hold the single instances of managers and services.
 # They are declared globally so FastAPI's Depends can access them.
@@ -142,6 +146,10 @@ recycle_tool_repo: RecycleToolRepository = None
 agent_repo: AgentRepository = None
 recycle_agent_repo: RecycleAgentRepository = None
 chat_history_repo: ChatHistoryRepository = None
+feedback_learning_repo: FeedbackLearningRepository = None
+evaluation_data_repo: EvaluationDataRepository = None
+tool_evaluation_metrics_repo: ToolEvaluationMetricsRepository = None
+agent_evaluation_metrics_repo: AgentEvaluationMetricsRepository = None
 
 # Utility Processors
 tool_code_processor: ToolCodeProcessor = None
@@ -151,6 +159,9 @@ tag_service: TagService = None
 tool_service: ToolService = None
 agent_service: AgentService = None
 chat_service: ChatService = None
+feedback_learning_service: FeedbackLearningService = None
+evaluation_service: EvaluationService = None
+core_evaluation_service: CoreEvaluationService = None
 
 # Specific Agent Services (these are typically exposed via Depends for endpoints)
 react_agent_service: ReactAgentOnboard = None
@@ -168,6 +179,7 @@ planner_executor_agent_inference: PlannerExecutorAgentInference = None
 react_critic_agent_inference : ReactCriticAgentInference = None
 meta_agent_inference: MetaAgentInference = None
 planner_meta_agent_inference: PlannerMetaAgentInference = None
+centralized_agent_inference: CentralizedAgentInference = None
 
 
 if sys.platform.startswith("win"):
@@ -183,13 +195,15 @@ async def lifespan(app: FastAPI):
     """
     global db_manager, tag_repo, tag_tool_mapping_repo, tag_agent_mapping_repo, \
            tool_repo, tool_agent_mapping_repo, recycle_tool_repo, \
-           agent_repo, recycle_agent_repo, chat_history_repo, \
-           tool_code_processor, tag_service, tool_service, agent_service, \
+           agent_repo, recycle_agent_repo, chat_history_repo, feedback_learning_repo, \
+           evaluation_data_repo, tool_evaluation_metrics_repo, agent_evaluation_metrics_repo, \
+           tool_code_processor, tag_service, tool_service, agent_service, feedback_learning_service, \
            react_agent_service, multi_agent_service, planner_executor_agent_service, \
            react_critic_agent_service, meta_agent_service, planner_meta_agent_service, \
-           chat_service, inference_utils, react_agent_inference, multi_agent_inference, \
+           chat_service, evaluation_service, core_evaluation_service, \
+           inference_utils, react_agent_inference, multi_agent_inference, \
            planner_executor_agent_inference, react_critic_agent_inference, meta_agent_inference, \
-           planner_meta_agent_inference
+           planner_meta_agent_inference, centralized_agent_inference
 
     log.info("Application startup initiated.")
 
@@ -206,7 +220,7 @@ async def lifespan(app: FastAPI):
 
         # 3. Connect to all required database pools
         # Pass the list of all databases to connect to.
-        DB_USED = [REQUIRED_DATABASES[0], REQUIRED_DATABASES[6]]
+        DB_USED = REQUIRED_DATABASES[:4]
         await db_manager.connect(db_names=DB_USED,
                                  min_size=3, max_size=5, # Default pool sizes
                                  db_main_min_size=5, db_main_max_size=7) # Custom sizes for main DB or agentic_workflow_as_service_database
@@ -214,8 +228,10 @@ async def lifespan(app: FastAPI):
 
         # 4. Initialize Repositories (Pass the correct pool to each)
         # Repositories only handle raw DB operations.
-        main_pool = await db_manager.get_pool('db_main')
-        recycle_pool = await db_manager.get_pool('recycle')
+        main_pool = await db_manager.get_pool(DB_USED[0])
+        feedback_learning_pool = await db_manager.get_pool(DB_USED[1])
+        logs_pool = await db_manager.get_pool(DB_USED[2])
+        recycle_pool = await db_manager.get_pool(DB_USED[3])
 
         tag_repo = TagRepository(pool=main_pool)
         tag_tool_mapping_repo = TagToolMappingRepository(pool=main_pool)
@@ -226,6 +242,11 @@ async def lifespan(app: FastAPI):
         agent_repo = AgentRepository(pool=main_pool)
         recycle_agent_repo = RecycleAgentRepository(pool=recycle_pool)
         chat_history_repo = ChatHistoryRepository(pool=main_pool)
+        feedback_learning_repo = FeedbackLearningRepository(pool=feedback_learning_pool)
+        evaluation_data_repo = EvaluationDataRepository(pool=logs_pool)
+        tool_evaluation_metrics_repo = ToolEvaluationMetricsRepository(pool=logs_pool)
+        agent_evaluation_metrics_repo = AgentEvaluationMetricsRepository(pool=logs_pool)
+
         log.info("All repositories initialized.")
 
         # 5. Initialize Utility Processors
@@ -290,6 +311,17 @@ async def lifespan(app: FastAPI):
             tag_service=tag_service
         )
         chat_service = ChatService(chat_history_repo=chat_history_repo)
+        feedback_learning_service = FeedbackLearningService(
+            feedback_learning_repo=feedback_learning_repo,
+            agent_service=agent_service
+        )
+        evaluation_service = EvaluationService(
+            evaluation_data_repo=evaluation_data_repo,
+            tool_evaluation_metrics_repo=tool_evaluation_metrics_repo,
+            agent_evaluation_metrics_repo=agent_evaluation_metrics_repo,
+            tool_service=tool_service,
+            agent_service=agent_service
+        )
 
         log.info("All services initialized.")
 
@@ -299,37 +331,62 @@ async def lifespan(app: FastAPI):
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
         )
         multi_agent_inference = MultiAgentInference(
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
         )
         planner_executor_agent_inference = PlannerExecutorAgentInference(
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
         )
         react_critic_agent_inference = ReactCriticAgentInference(
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
         )
         meta_agent_inference = MetaAgentInference(
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
         )
         planner_meta_agent_inference = PlannerMetaAgentInference(
             chat_service=chat_service,
             tool_service=tool_service,
             agent_service=agent_service,
-            inference_utils=inference_utils
+            inference_utils=inference_utils,
+            feedback_learning_service=feedback_learning_service,
+            evaluation_service=evaluation_service
+        )
+        centralized_agent_inference = CentralizedAgentInference(
+            react_agent_inference=react_agent_inference,
+            multi_agent_inference=multi_agent_inference,
+            planner_executor_agent_inference=planner_executor_agent_inference,
+            react_critic_agent_inference=react_critic_agent_inference,
+            meta_agent_inference=meta_agent_inference,
+            planner_meta_agent_inference=planner_meta_agent_inference
+        )
+
+        core_evaluation_service = CoreEvaluationService(
+            evaluation_service=evaluation_service,
+            centralized_agent_inference=centralized_agent_inference
         )
 
         # 8. Create Tables (if they don't exist)
@@ -339,14 +396,20 @@ async def lifespan(app: FastAPI):
         await tool_repo.create_table_if_not_exists()
         await agent_repo.create_table_if_not_exists()
 
-        # Mapping tables (depend on main tables)
+        # Mapping tables
         await tag_tool_mapping_repo.create_table_if_not_exists()
         await tag_agent_mapping_repo.create_table_if_not_exists()
         await tool_agent_mapping_repo.create_table_if_not_exists() # This one had the FK removed
 
-        # Recycle tables (depend on nothing but their pool)
+        # Recycle tables
         await recycle_tool_repo.create_table_if_not_exists()
         await recycle_agent_repo.create_table_if_not_exists()
+
+        # Feedback Learning tables
+        await feedback_learning_repo.create_tables_if_not_exists()
+
+        # Evaluation Tables
+        await evaluation_service.create_evaluation_tables_if_not_exists()
 
         # Remaining tables
         await initialize_tables()
@@ -357,6 +420,7 @@ async def lifespan(app: FastAPI):
         log.info("Database data migrations/fixes completed.")
 
         await assign_general_tag_to_untagged_items()
+        await feedback_learning_repo.migrate_agent_ids_to_hyphens()
         asyncio.create_task(cleanup_old_files())
 
         log.info("Application startup complete. FastAPI is ready to serve requests.")
@@ -385,16 +449,16 @@ router = WSRouter()
 
 # Configure CORS
 origins = [
-    "",  # Add your frontend IP address
-    "",  # Add you frontend Ip with port number being
+    os.getenv("UI_CORS_IP", ""),
+    os.getenv("UI_CORS_IP_WITH_PORT", ""),
     "http://127.0.0.1", # Allow 127.0.0.1
     "http://127.0.0.1:3000", #If your frontend runs on port 3000
     "http://localhost",
     "http://localhost:3000"
 ]
 
- 
- 
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -440,6 +504,10 @@ def get_chat_service() -> ChatService:
     """Returns the global ChatService instance."""
     return chat_service
 
+def get_feedback_learning_service() -> FeedbackLearningService:
+    """Returns the global FeedbackLearningService instance."""
+    return feedback_learning_service
+
 def get_specialized_inference_service(agent_type: str) -> BaseAgentInference:
     """Return the appropriate inference service instance based on agent type."""
     if agent_type == "react_agent":
@@ -455,6 +523,26 @@ def get_specialized_inference_service(agent_type: str) -> BaseAgentInference:
     if agent_type == "planner_meta_agent":
         return planner_meta_agent_inference
     raise HTTPException(status_code=400, detail=f"Unsupported agent type: {agent_type}")
+
+def get_centralized_agent_inference() -> CentralizedAgentInference:
+    """Returns the global CentralizedAgentInference instance."""
+    if centralized_agent_inference is None:
+        raise RuntimeError("CentralizedAgentInference not initialized yet.")
+    return centralized_agent_inference
+
+def get_evaluation_service() -> EvaluationService:
+    """Returns the global EvaluationService instance."""
+    if evaluation_service is None:
+        raise RuntimeError("EvaluationService not initialized yet.")
+    return evaluation_service
+
+def get_core_evaluation_service() -> CoreEvaluationService:
+    """Returns the global CoreEvaluationService instance."""
+    if core_evaluation_service is None:
+        raise RuntimeError("CoreEvaluationService not initialized yet.")
+    return core_evaluation_service
+
+
 
 
 class GetAgentRequest(BaseModel):
@@ -707,21 +795,25 @@ class GroundTruthEvaluationRequest(BaseModel):
 
 
 @app.post('/evaluate')
-async def evaluate(fastapi_request: Request, evaluating_model1, evaluating_model2):
+async def evaluate(
+            fastapi_request: Request,
+            evaluating_model1,
+            evaluating_model2,
+            core_evaluation_service: CoreEvaluationService = Depends(get_core_evaluation_service)
+        ):
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
     register(
-            project_name='add-tool',
+            project_name='evaluation-metrics',
             auto_instrument=True,
             set_global_tracer_provider=False,
             batch=True
         )
     with using_project('evaluation-metrics'):
-        return await process_unprocessed_evaluations(
+        return await core_evaluation_service.process_unprocessed_evaluations(
             model1=evaluating_model1,
-            model2=evaluating_model2,
-            get_specialized_inference_service=get_specialized_inference_service
+            model2=evaluating_model2
         )
 
 
@@ -744,53 +836,63 @@ def parse_agent_names(agent_input: Optional[List[str]]) -> Optional[List[str]]:
     return agent_input
 
 
+
 @app.get("/evaluations")
-async def get_evaluation_data(fastapi_request: Request,
-    agent_names: Optional[List[str]] = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=10, ge=1, le=100)
-):
+async def get_evaluation_data(
+        fastapi_request: Request,
+        agent_names: Optional[List[str]] = Query(default=None),
+        page: int = Query(default=1, ge=1),
+        limit: int = Query(default=10, ge=1, le=100),
+        evaluation_service: EvaluationService = Depends(get_evaluation_service)
+    ):
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
+
     parsed_names = parse_agent_names(agent_names)
-    data = await get_evaluation_data_by_agent_names(parsed_names, page, limit)
+    data = await evaluation_service.get_evaluation_data(parsed_names, page, limit)
     if not data:
         raise HTTPException(status_code=404, detail="No evaluation data found")
-    return data  # Just return the data, no pagination metadata
+    return data
 
 
 @app.get("/agent-metrics")
-async def get_agent_metrics(fastapi_request: Request,
-    agent_names: Optional[List[str]] = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=10, ge=1, le=100)
-):
+async def get_agent_metrics(
+        fastapi_request: Request,
+        agent_names: Optional[List[str]] = Query(default=None),
+        page: int = Query(default=1, ge=1),
+        limit: int = Query(default=10, ge=1, le=100),
+        evaluation_service: EvaluationService = Depends(get_evaluation_service)
+    ):
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
+
     parsed_names = parse_agent_names(agent_names)
-    data = await get_agent_metrics_by_agent_names(parsed_names, page, limit)
+    data = await evaluation_service.get_agent_metrics(parsed_names, page, limit)
     if not data:
-        raise HTTPException(status_code=404, detail="No agent metrics found")   
+        raise HTTPException(status_code=404, detail="No agent metrics found")
     return data
 
 
 @app.get("/tool-metrics")
 async def get_tool_metrics(
-    fastapi_request: Request,
-    agent_names: Optional[List[str]] = Query(default=None),
-    page: int = Query(default=1, ge=1, description="Page number (starts from 1)"),
-    limit: int = Query(default=10, ge=1, le=100, description="Number of records per page (max 100)")
-):
+        fastapi_request: Request,
+        agent_names: Optional[List[str]] = Query(default=None),
+        page: int = Query(default=1, ge=1, description="Page number (starts from 1)"),
+        limit: int = Query(default=10, ge=1, le=100, description="Number of records per page (max 100)"),
+        evaluation_service: EvaluationService = Depends(get_evaluation_service)
+    ):
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
+
     parsed_names = parse_agent_names(agent_names)
-    data = await get_tool_metrics_by_agent_names(parsed_names, page, limit)
+    data = await evaluation_service.get_tool_metrics(parsed_names, page, limit)
     if not data:
-        raise HTTPException(status_code=404, detail="No tool metrics found")  
+        raise HTTPException(status_code=404, detail="No tool metrics found")
     return data
+
 
 
 @app.get('/get-models')
@@ -1688,7 +1790,11 @@ async def get_history(fastapi_request: Request, request: PrevSessionRequest, cha
 
 
 @app.post("/get-query-response")
-async def get_react_and_pec_and_pe_rc_agent_response(fastapi_request: Request, request: AgentInferenceRequest):
+async def get_react_and_pec_and_pe_rc_agent_response(
+                                fastapi_request: Request,
+                                request: AgentInferenceRequest,
+                                agent_inference: CentralizedAgentInference = Depends(get_centralized_agent_inference)
+                            ):
     """
     Gets the response for a query using agent inference.
 
@@ -1731,14 +1837,10 @@ async def get_react_and_pec_and_pe_rc_agent_response(fastapi_request: Request, r
 
     log.info(f"[{session_id}] Starting agent inference...")
 
-    agent_inference: BaseAgentInference = get_specialized_inference_service("react_agent")
-    agent_config = await agent_inference._get_agent_config(request.agentic_application_id)
-    agent_inference: BaseAgentInference = get_specialized_inference_service(agent_config["AGENT_TYPE"])
-
     # Define and create the inference task
     async def do_inference():
         try:
-            result = await agent_inference.run(request, agent_config=agent_config)
+            result = await agent_inference.run(request)
             log.info(f"[{session_id}] Inference completed.")
             return result
         except asyncio.CancelledError:
@@ -1770,7 +1872,14 @@ async def get_react_and_pec_and_pe_rc_agent_response(fastapi_request: Request, r
     return response
 
 @app.post("/react-agent/get-feedback-response/{feedback}")
-async def get_react_feedback_response(fastapi_request: Request, feedback: str, request: AgentInferenceRequest, chat_service: ChatService = Depends(get_chat_service)):
+async def get_react_feedback_response(
+                            fastapi_request: Request,
+                            feedback: str,
+                            request: AgentInferenceRequest,
+                            agent_inference: CentralizedAgentInference = Depends(get_centralized_agent_inference),
+                            chat_service: ChatService = Depends(get_chat_service),
+                            feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)
+                        ):
     """
     Gets the response for the feedback using agent inference.
 
@@ -1810,9 +1919,6 @@ async def get_react_feedback_response(fastapi_request: Request, feedback: str, r
         request.feedback=None
 
         request.reset_conversation = False
-        agent_inference: BaseAgentInference = get_specialized_inference_service("react_agent")
-        agent_config = await agent_inference._get_agent_config(request.agentic_application_id)
-        agent_inference: BaseAgentInference = get_specialized_inference_service(agent_config["AGENT_TYPE"])
         response = await agent_inference.run(request)
         try:
             final_response = response["response"]
@@ -1820,14 +1926,15 @@ async def get_react_feedback_response(fastapi_request: Request, feedback: str, r
             old_response = request.prev_response["response"]
             old_steps = request.prev_response["executor_messages"][-1]["agent_steps"]
             
-            await insert_into_feedback_table(
-                agent_id=request.agentic_application_id.replace("-","_"),
+            await feedback_learning_service.save_feedback(
+                agent_id=request.agentic_application_id,
                 query=query,
                 old_final_response= old_response,
                 old_steps=old_steps,
                 new_final_response=final_response,
                 feedback=user_feedback, 
-                new_steps=steps)
+                new_steps=steps
+            )
         except Exception as e:
             response["error"] = f"An error occurred while processing the response: {str(e)}"
         
@@ -1839,7 +1946,7 @@ async def get_react_feedback_response(fastapi_request: Request, feedback: str, r
 
 
 @app.get("/get-approvals-list")
-async def get_approvals_list(fastapi_request: Request):
+async def get_approvals_list(fastapi_request: Request, feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)):
     """
     Retrieves the list of approvals.
 
@@ -1853,13 +1960,13 @@ async def get_approvals_list(fastapi_request: Request):
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
-    approvals = await get_approval_agents()
+    approvals = await feedback_learning_service.get_agents_with_feedback()
     if not approvals:
         raise HTTPException(status_code=404, detail="No approvals found")
     return approvals
 
 @app.get("/get-responses-data/{response_id}")
-async def get_responses_data_endpoint(response_id, fastapi_request: Request):
+async def get_responses_data_endpoint(response_id, fastapi_request: Request, feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)):
     """
     Retrieves the list of approvals.
 
@@ -1873,13 +1980,13 @@ async def get_responses_data_endpoint(response_id, fastapi_request: Request):
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
-    approvals = await get_response_data(response_id=response_id)
+    approvals = await feedback_learning_service.get_feedback_details_by_response_id(response_id=response_id)
     if not approvals:
         raise HTTPException(status_code=404, detail="No Response found")
     return approvals
 
 @app.get("/get-approvals-by-id/{agent_id}")
-async def get_approval_by_id(agent_id: str, fastapi_request: Request):
+async def get_approval_by_id(agent_id: str, fastapi_request: Request, feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)):
     """
     Retrieves an approval by its ID.
 
@@ -1899,13 +2006,17 @@ async def get_approval_by_id(agent_id: str, fastapi_request: Request):
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
-    approval = await get_approvals(agent_id=agent_id)
+    approval = await feedback_learning_service.get_all_approvals_for_agent(agent_id=agent_id)
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
     return approval
 
 @app.post("/update-approval-response")
-async def update_approval_response(fastapi_request: Request, request: ApprovalRequest):
+async def update_approval_response(
+                                fastapi_request: Request,
+                                request: ApprovalRequest,
+                                feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)
+                            ):
     """
     Updates the approval response.
 
@@ -1926,9 +2037,9 @@ async def update_approval_response(fastapi_request: Request, request: ApprovalRe
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
-    response = await update_feedback_response(
+    response = await feedback_learning_service.update_feedback_status(
         response_id=request.response_id,
-        data_dictionary={
+        update_data={
         "query": request.query,
         "old_final_response": request.old_final_response,
         "old_steps": request.old_steps,
@@ -2062,7 +2173,11 @@ async def create_new_session(fastapi_request: Request):
 
 
 @app.post("/planner-executor-agent/get-query-response-hitl-replanner")
-async def generate_response_replanner_executor_agent_main(fastapi_request: Request, request: AgentInferenceHITLRequest):
+async def generate_response_replanner_executor_agent_main(
+                                            fastapi_request: Request,
+                                            request: AgentInferenceHITLRequest,
+                                            feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)
+                                        ):
     """
     Handles the inference request for the Planner-Executor-Critic-replanner agent.
 
@@ -2091,14 +2206,15 @@ async def generate_response_replanner_executor_agent_main(fastapi_request: Reque
         steps = ""
         old_response = "\n".join(i for i in request.prev_response["plan"])
         old_steps = ""
-        await insert_into_feedback_table(
-        agent_id=request.agentic_application_id.replace("-","_"),
-        query=query,
-        old_final_response= old_response,
-        old_steps=old_steps,
-        new_final_response=final_response,
-        feedback=request.feedback, 
-        new_steps=steps)
+        await feedback_learning_service.save_feedback(
+            agent_id=request.agentic_application_id,
+            query=query,
+            old_final_response= old_response,
+            old_steps=old_steps,
+            new_final_response=final_response,
+            feedback=request.feedback, 
+            new_steps=steps
+        )
     except Exception as e:
         response["error"] = f"An error occurred while processing the response: {str(e)}"
     
@@ -2107,7 +2223,11 @@ async def generate_response_replanner_executor_agent_main(fastapi_request: Reque
 
 
 @app.post("/planner-executor-critic-agent/get-query-response-hitl-replanner")
-async def generate_response_replanner_executor_critic_agent_main(fastapi_request: Request, request: AgentInferenceHITLRequest):
+async def generate_response_replanner_executor_critic_agent_main(
+                                                fastapi_request: Request,
+                                                request: AgentInferenceHITLRequest,
+                                                feedback_learning_service: FeedbackLearningService = Depends(get_feedback_learning_service)
+                                            ):
     """
     Handles the inference request for the Planner-Executor-Critic-replanner agent.
 
@@ -2136,18 +2256,18 @@ async def generate_response_replanner_executor_critic_agent_main(fastapi_request
         steps = ""
         old_response = "\n".join(i for i in request.prev_response["plan"])
         old_steps = ""
-        await insert_into_feedback_table(
-        agent_id=request.agentic_application_id.replace("-","_"),
-        query=query,
-        old_final_response= old_response,
-        old_steps=old_steps,
-        new_final_response=final_response,
-        feedback=request.feedback, 
-        new_steps=steps)
+        await feedback_learning_service.save_feedback(
+            agent_id=request.agentic_application_id,
+            query=query,
+            old_final_response= old_response,
+            old_steps=old_steps,
+            new_final_response=final_response,
+            feedback=request.feedback, 
+            new_steps=steps
+        )
     except Exception as e:
         response["error"] = f"An error occurred while processing the response: {str(e)}"
-    
-    
+
     return response
 
 
@@ -2735,18 +2855,6 @@ async def download(fastapi_request: Request, filename: str = Query(...), sub_dir
     else:
         return {"error": f"File not found: {file_path}"}
 
-# @router.receive(AgentInferenceRequest)
-# async def websocket_endpoint(fastapi_request: Request, websocket: WebSocket, request: AgentInferenceRequest):
-#     #changed
-#     user_id = fastapi_request.cookies.get("user_id")
-#     user_session = fastapi_request.cookies.get("user_session")
-#     update_session_context(user_session=user_session, user_id=user_id)
-
-#     try:
-#         current_user_email.set(request.session_id.split("_")[0])
-#         await agent_inference(request, websocket)
-#     except Exception as e:
-#         return f"Exception is {e}"
 
 
 app.include_router(router, prefix="/ws")
@@ -3674,26 +3782,28 @@ async def download_multipleagent_export(fastapi_request: Request,
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
            
-async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
+async def export_agent_by_id(agent_ids: List[str], user_email:str) -> str:
     STATIC_EXPORTING_FOLDER="Export_Agent/Agentcode"
     if len(agent_ids)==1:
         adict={}
-        agent_data_list = await get_agents_by_id(agentic_application_id=agent_ids[0])
+        agent_data_list = await agent_service.get_agent(agentic_application_id=agent_ids[0])
         if not agent_data_list or not isinstance(agent_data_list, list) or len(agent_data_list) == 0:
             raise HTTPException(status_code=404, detail=f"Agent ID: '{agent_ids[0]}' not found.")
         agent_dict = agent_data_list[0]
-        agent_for_json_dump = agent_dict.copy()
-        for key, value in agent_for_json_dump.items():
-            if isinstance(value, datetime):
-                agent_for_json_dump[key] = value.isoformat()
+        agent_for_json_dump = {}#agent_dict.copy()
+        for key, value in agent_dict.items():
+            if key not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                if isinstance(value, datetime):
+                    agent_for_json_dump[key] = value.isoformat()
+                else:
+                    agent_for_json_dump[key] = value
         adict[agent_ids[0]]=agent_for_json_dump
         temp_base_dir = os.path.join(tempfile.gettempdir(), "your_app_agent_exports")
         unique_export_id = os.urandom(8).hex() # Re-add your unique export ID here
         temp_working_dir = os.path.join(temp_base_dir, f"{agent_ids[0]}_{unique_export_id}") # Append unique ID here
-        final_zip_content_folder_name = agent_dict.get('agentic_application_name')
+        final_zip_content_folder_name = agent_dict.get('agentic_application_type')
         target_export_folder_path = os.path.join(temp_working_dir, final_zip_content_folder_name)
         zip_file_full_path = None
-
         try:
             if os.path.exists(temp_working_dir):
                 shutil.rmtree(temp_working_dir)
@@ -3721,30 +3831,50 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
                 f.write('agent_data = ')
                 json.dump(adict, f, indent=4)
             inference_path = os.path.join(target_export_folder_path, 'Agent_Backend/src/inference')
+            database_path=os.path.join(target_export_folder_path,'Agent_Backend/src/database')
             destination_file = os.path.join(target_export_folder_path,'Agent_Backend/agent_endpoints.py')
+            d2 = os.path.join(target_export_folder_path,'Agent_Backend/src/inference/centralized_agent_inference.py')
             backend_path=os.path.join(target_export_folder_path,'Agent_Backend')
             shutil.copy('src/inference/inference_utils.py', inference_path)
             shutil.copy('telemetry_wrapper.py',backend_path)
-            shutil.copy('evaluation_metrics.py',backend_path)
+            # shutil.copy('evaluation_metrics.py',backend_path)
+            shutil.copy('src/database/core_evaluation_service.py', database_path)
             shutil.copy('src/inference/react_agent_inference.py', inference_path)
             shutil.copy('requirements.txt',backend_path)
-            if agent_dict.get('agentic_application_type') in ['react_agent','react_critic_agent','planner_executor_agent','planner_executor_critic_agent']:
+            # cai='Agent_Backend/src/inference/multiple.py'
+            # shutil.copy('src/inference/centralized_agent_inference.py', cai)
+            # print(agent_dict.get('agentic_application_type'))
+            if agent_dict.get('agentic_application_type') in ['react_agent','react_critic_agent','planner_executor_agent','multi_agent']:
                 if agent_dict.get('agentic_application_type') == 'react_agent':
                     source_file = 'Export_Agent/endpoints/react_agent_endpoints.py'
+                    s2='Export_Agent/endpoints/react.py'
+                    shutil.copyfile(s2, d2)
                     shutil.copyfile(source_file, destination_file)
+                    shutil.copy('src/inference/inference_utils.py', inference_path)
+                    # shutil.copyfile('Export_Agent/endpoints/react.py','Export_Agent/Agentcode/Agent_Backend/src/inference/centralized_agent_inference.py')
+                    
                 elif agent_dict.get('agentic_application_type') == 'react_critic_agent':
                     shutil.copy('src/inference/react_critic_agent_inference.py', inference_path)
                     source_file = 'Export_Agent/endpoints/react_critic_agent_endpoints.py'
                     shutil.copyfile(source_file, destination_file)
+                    s2='Export_Agent/endpoints/react_critic.py'
+                    shutil.copyfile(s2, d2)
+                    # shutil.copyfile('Export_Agent/endpoints/react_critic.py','Export_Agent/Agentcode/Agent_Backend/src/inference/centralized_agent_inference.py')
                 elif agent_dict.get('agentic_application_type') == 'planner_executor_agent':
                     shutil.copy('src/inference/planner_executor_agent_inference.py', inference_path)
                     source_file = 'Export_Agent/endpoints/planner_executor_agent_endpoints.py'
                     shutil.copyfile(source_file, destination_file)
-                elif agent_dict.get('agentic_application_type') == 'planner_executor_critic_agent':
+                    s2='Export_Agent/endpoints/planner_exec.py'
+                    shutil.copyfile(s2, d2)
+                    # shutil.copyfile('Export_Agent/endpoints/planner_exec.py','Export_Agent/Agentcode/Agent_Backend/src/inference/centralized_agent_inference.py')
+                elif agent_dict.get('agentic_application_type') == 'multi_agent':
                     shutil.copy('src/inference/planner_executor_critic_agent_inference.py', inference_path)
                     source_file = 'Export_Agent/endpoints/planner_executor_critic_agent_endpoints.py'
                     shutil.copyfile(source_file, destination_file)
-                await get_tool_data(agent_dict, export_path=target_export_folder_path)
+                    s2='Export_Agent/endpoints/planner_exec_critic.py'
+                    shutil.copyfile(s2, d2)
+                    # shutil.copyfile('Export_Agent/endpoints/planner_exec_critic.py','Export_Agent/Agentcode/Agent_Backend/src/inference/centralized_agent_inference.py')
+                await get_tool_data(agent_dict, export_path=target_export_folder_path, tool_service=tool_service)
                 worker_agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/worker_agents_config.py')
                 with open(worker_agent_data_file_path, 'w') as f:
                     f.write('worker_agents = ')
@@ -3758,22 +3888,29 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
                     shutil.copy('src/inference/meta_agent_inference.py', inference_path)
                     source_file = 'Export_Agent/endpoints/meta_agent_endpoints.py'
                     shutil.copyfile(source_file, destination_file)
+                    s2='Export_Agent/endpoints/meta.py'
+                    shutil.copyfile(s2, d2)
+                    # shutil.copyfile('Export_Agent/endpoints/meta.py','Export_Agent/Agentcode/Agent_Backend/src/inference/centralized_agent_inference.py')
                 elif agent_dict.get('agentic_application_type') == 'planner_meta_agent':
                     shutil.copy('src/inference/planner_meta_agent_inference.py', inference_path)
                     source_file = 'Export_Agent/endpoints/planner_meta_agent_endpoints.py'
                     shutil.copyfile(source_file, destination_file)
+                    s2='Export_Agent/endpoints/planner_meta.py'
+                    shutil.copyfile(s2, d2)
+                    # shutil.copyfile('Export_Agent/endpoints/planner_meta.py','Export_Agent/Agentcode/Agent_Backend/src/inference/centralized_agent_inference.py')
                 worker_agent_ids=agent_dict.get("tools_id")
                 worker_agents={}
-                for agent in json.loads(worker_agent_ids):
-                    agent_data = await get_agents_by_id(agentic_application_id=agent)
+                for agent in worker_agent_ids:
+                    agent_data = await agent_service.get_agent(agentic_application_id=agent)
                     if agent_data:
                         agent_dict= agent_data[0]
                         processed_agent_dict = {}
                         for key, value in agent_dict.items():
-                            if isinstance(value, datetime):
-                                processed_agent_dict[key] = value.isoformat()
-                            else:
-                                processed_agent_dict[key] = value
+                            if key not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                                if isinstance(value, datetime):
+                                    processed_agent_dict[key] = value.isoformat()
+                                else:
+                                    processed_agent_dict[key] = value
                         worker_agents[agent] = processed_agent_dict
                     else:
                         worker_agents[agent] = None
@@ -3783,8 +3920,8 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
                     json.dump(worker_agents, f, indent=4)
                 tool_list=[]
                 for i in worker_agents:
-                    tool_list=tool_list+(json.loads(worker_agents[i]["tools_id"]))
-                await get_tool_data(agent_dict, export_path=target_export_folder_path,tools=tool_list)
+                    tool_list=tool_list+(worker_agents[i]["tools_id"])
+                await get_tool_data(agent_dict, export_path=target_export_folder_path, tools=tool_list, tool_service=tool_service)
                 output_zip_name = f"EXPORTAGENT"
                 zip_base_name = os.path.join(temp_base_dir, output_zip_name)
                 zip_file_full_path = shutil.make_archive(zip_base_name, 'zip', temp_working_dir)
@@ -3797,22 +3934,25 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
         toolids=set()
         adict={}
         for agent_id in agent_ids:
-            agent_data_list = await get_agents_by_id(agentic_application_id=agent_id)
+            agent_data_list = await agent_service.get_agent(agentic_application_id=agent_id)
             if not agent_data_list or not isinstance(agent_data_list, list) or len(agent_data_list) == 0:
                 raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
             agent_dict = agent_data_list[0]
-            agent_for_json_dump = agent_dict.copy()
-            for key, value in agent_for_json_dump.items():
-                if isinstance(value, datetime):
-                    agent_for_json_dump[key] = value.isoformat()
+            agent_for_json_dump = {}#agent_dict.copy()
+            for key, value in agent_dict.items():
+                if key not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                    if isinstance(value, datetime):
+                        agent_for_json_dump[key] = value.isoformat()
+                    else:
+                        agent_for_json_dump[key] = value
             adict[agent_id]=agent_for_json_dump
             app_types.add(agent_for_json_dump['agentic_application_type'])
             if agent_dict.get("agentic_application_type") in ["meta_agent","planner_meta_agent"]:
-                ids=json.loads(agent_dict.get('tools_id'))
+                ids=agent_dict.get('tools_id')
                 for i in ids:
                     workerids.add(i)
             else:
-                ids=json.loads(agent_dict.get('tools_id'))
+                ids=agent_dict.get('tools_id')
                 for i in ids:
                     toolids.add(i)
         temp_base_dir = os.path.join(tempfile.gettempdir(), "your_app_agent_exports")
@@ -3845,11 +3985,14 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
                 f.write(f"\nUSER_NAME={user or ''}\n")
                 f.write(f"\nROLE={role or ''}\n")
             inference_path = os.path.join(target_export_folder_path, 'Agent_Backend/src/inference')
-            destination_file = os.path.join(target_export_folder_path,'Agent_Backend/agent_enpoints.py')
+            database_path=os.path.join(target_export_folder_path,'Agent_Backend/src/database')
+            destination_file = os.path.join(target_export_folder_path,'Agent_Backend/agent_endpoints.py')
             backend_path=os.path.join(target_export_folder_path,'Agent_Backend')
+            d2 = os.path.join(target_export_folder_path,'Agent_Backend/src/inference/centralized_agent_inference.py')
             shutil.copy('src/inference/inference_utils.py', inference_path)
             shutil.copy('telemetry_wrapper.py',backend_path)
-            shutil.copy('evaluation_metrics.py',backend_path)
+            # shutil.copy('evaluation_metrics.py',backend_path)
+            shutil.copy('src/database/core_evaluation_service.py', database_path)
             shutil.copy('src/inference/react_agent_inference.py', inference_path)
             shutil.copy('src/inference/meta_agent_inference.py', inference_path)
             shutil.copy('src/inference/react_critic_agent_inference.py', inference_path)
@@ -3857,23 +4000,27 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
             shutil.copy('src/inference/planner_executor_critic_agent_inference.py', inference_path)
             shutil.copy('src/inference/planner_meta_agent_inference.py', inference_path)
             shutil.copy('requirements.txt',backend_path)
+            s2='Export_Agent/endpoints/multiple.py'
+            shutil.copyfile(s2, d2)
             source_file = 'Export_Agent/endpoints/multiple_agent_endpoints.py'
             shutil.copyfile(source_file, destination_file)
+
             agent_data_file_path = os.path.join(target_export_folder_path, 'Agent_Backend/agent_config.py')
             with open(agent_data_file_path, 'w') as f:
                 f.write('agent_data = ')
                 json.dump(adict, f, indent=4)
             worker_agents={}
             for agent in list(workerids):
-                agent_data = await get_agents_by_id(agentic_application_id=agent)
+                agent_data = await agent_service.get_agent(agentic_application_id=agent)
                 if agent_data:
                     agent_dict= agent_data[0]
                     processed_agent_dict = {}
                     for key, value in agent_dict.items():
-                        if isinstance(value, datetime):
-                            processed_agent_dict[key] = value.isoformat()
-                        else:
-                            processed_agent_dict[key] = value
+                        if key not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                            if isinstance(value, datetime):
+                                processed_agent_dict[key] = value.isoformat()
+                            else:
+                                processed_agent_dict[key] = value
                     worker_agents[agent] = processed_agent_dict
                 else:
                     worker_agents[agent] = None
@@ -3883,10 +4030,10 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
                 json.dump(worker_agents, f, indent=4)
             tool_list=[]
             for i in worker_agents:
-                tool_list=tool_list+(json.loads(worker_agents[i]["tools_id"]))
+                tool_list=tool_list+(worker_agents[i]["tools_id"])
             for i in tool_list:
                 toolids.add(i)
-            await get_tool_data(adict, export_path=target_export_folder_path,tools=list(toolids))
+            await get_tool_data(adict, export_path=target_export_folder_path, tools=list(toolids), tool_service=tool_service)
             output_zip_name = f"EXPORTAGENTS"
             zip_base_name = os.path.join(temp_base_dir, output_zip_name)
             zip_file_full_path = shutil.make_archive(zip_base_name, 'zip', temp_working_dir)
@@ -3897,19 +4044,15 @@ async def export_agent_by_id(agent_ids: List[str],user_email:str) -> str:
 
 
 @app.get("/kb_list")
-async def list_kb_directories(fastapi_request: Request):
+async def list_kb_directories():
     """
     Lists vectorstore directories in KB_DIR.
     """
-    #changed
-    user_id = fastapi_request.cookies.get("user_id")
-    user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
     KB_DIR = "KB_DIR"
     kb_path = Path(KB_DIR)
 
     if not kb_path.exists():
-        raise HTTPException(status_code=404, detail="Knowledge base directory does not exist.")
+        return {"message": "No knowledge bases found."}
 
     directories = [d.name for d in kb_path.iterdir() if d.is_dir()]
 
@@ -3917,6 +4060,7 @@ async def list_kb_directories(fastapi_request: Request):
         return {"message": "No knowledge bases found."}
 
     return {"knowledge_bases": directories}
+ 
 
 
 
@@ -4001,7 +4145,7 @@ async def evaluate_agent_performance(request: GroundTruthEvaluationRequest, file
     avg_scores, summary, excel_path = await evaluate_ground_truth_file(
         model_name=request.model_name,
         agent_type=agent_type,
-        file_path=file_path,  # ✅ Use here
+        file_path=file_path,  #  Use here
         agentic_application_id=request.agentic_application_id,
         session_id=request.session_id,
         specialized_agent_inference=specialized_agent_inference,
@@ -4084,7 +4228,7 @@ async def upload_and_evaluate(fastapi_request: Request,
 
         file_name = os.path.basename(excel_path)
 
-        # ✅ Return the Excel file as response with custom headers
+        #  Return the Excel file as response with custom headers
         summary_safe = summary.encode("ascii", "ignore").decode().replace("\n", " ")
         log.info(f"Evaluation completed successfully. Download URL: {file_name}")
         return FileResponse(
@@ -4159,7 +4303,7 @@ async def cleanup_old_files(directories=["outputs", "evaluation_uploads"], expir
                 log.debug(f"🔍 [Cleanup Task] Scanning '{abs_path}' for files older than {expiration_hours} hours...")
 
                 if not os.path.exists(abs_path):
-                    log.warning(f"⚠️ [Cleanup Task] Directory does not exist: {abs_path}")
+                    log.warning(f"[Cleanup Task] Directory does not exist: {abs_path}")
                     continue
 
                 for filename in os.listdir(abs_path):
@@ -4186,13 +4330,6 @@ async def cleanup_old_files(directories=["outputs", "evaluation_uploads"], expir
 
 
 
-# @app.on_event("startup")
-# async def start_cleanup_task(fastapi_request: Request):
-#     user_id = fastapi_request.cookies.get("user_id")
-#     user_session = fastapi_request.cookies.get("user_session")
-#     update_session_context(user_session=user_session, user_id=user_id)
-#     log.debug(" [Startup] Launching background file cleanup task...")
-#     asyncio.create_task(cleanup_old_files())
 
 
 
@@ -4255,7 +4392,7 @@ class ToolRequestModel(BaseModel):
  
 def build_connection_string(config: dict) -> str:
     db_type = config["db_type"].lower()
-
+ 
     if db_type == "mysql":
         return f"mysql+mysqlconnector://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
     elif db_type == "postgresql":
@@ -4294,25 +4431,44 @@ def get_engine(config):
 def create_database_if_not_exists(config):
     db_type = config["db_type"].lower()
     db_name = config["database"]
-
+ 
     # SQLite DB creation not needed
     if db_type == "sqlite":
+       
+ 
+        # Connect to the database file (creates it if it doesn't exist)
+        conn = sqlite3.connect(f'uploaded_sqlite_dbs/{db_name}')
+ 
+        # Close the connection immediately to keep it empty
+        conn.close()
+       
         return
-
+ 
+        # try:
+        #     # Create SQLite file (even if empty)
+        #     conn = sqlite3.connect(file_path)
+        #     conn.close()
+        #     return {"message": f" Database '{filename}' created successfully."}
+        # except Exception as e:
+        #     raise HTTPException(status_code=500, detail=f"Error creating DB file: {str(e)}")
+       
+       
+       
+ 
     # MongoDB DB creation is implicit in connection, so skip
     if db_type == "mongodb":
         return
-
+ 
     # For SQL DBs, connect to admin DB for creation
     config_copy = config.copy()
     if db_type == "postgresql":
         config_copy["database"] = "postgres"
     elif db_type == "mysql":
         config_copy["database"] = ""
-
+ 
     engine = create_engine(build_connection_string(config_copy), isolation_level="AUTOCOMMIT")
-    
-
+   
+ 
     with engine.connect() as conn:
         if db_type == "mysql":
             conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{db_name}`"))
@@ -4325,11 +4481,12 @@ def create_database_if_not_exists(config):
             pass
         else:
             raise HTTPException(status_code=400, detail=f"Database creation not supported for {config['db_type']}")
-        
 
 
 
-from fastapi import HTTPException
+
+UPLOAD_DIR = "uploaded_sqlite_dbs"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 async def check_connection_name_exists(name: str, table_name="db_connections_table") -> bool:
     connection = None
@@ -4351,17 +4508,16 @@ async def check_connection_name_exists(name: str, table_name="db_connections_tab
             await connection.close()
 
 @app.post("/connect")
-async def connect_to_database(req: DBConnectionRequest):
+async def connect_to_database(req :DBConnectionRequest):
+   
     if req.flag_for_insert_into_db_connections_table == "1":
             name_exists = await check_connection_name_exists(req.name)
             if name_exists:
                 raise HTTPException(status_code=400, detail=f"Connection name '{req.name}' already exists.")
-
-
+ 
     try:
         config = req.dict()
-
-
+ 
         # Adjust config based on DB type:
         if req.db_type == "sqlite":
             # For SQLite, host/port/user/pass not needed, database is file path
@@ -4369,26 +4525,42 @@ async def connect_to_database(req: DBConnectionRequest):
             config["port"] = 0
             config["username"] = "Na"
             config["password"] = "Na"
-            create_database_if_not_exists(config)
+            # if  sql_file is not None:
+            #     logger.info("printing file name:")
+            #     logger.info(sql_file.filename)
+            #     config["database"]=sql_file.filename
+            #     filename = os.path.basename(sql_file.filename)
+            #     if not (filename.endswith(".db") or filename.endswith(".sqlite")):
+            #         raise HTTPException(status_code=400, detail="Only .db or .sqlite files are allowed")
+ 
+            #     file_path = os.path.join(UPLOAD_DIR, filename)
+ 
+            #     with open(file_path, "wb") as f:
+            #         content = await sql_file.read()
+            #         f.write(content)
+            # else:
+                # create_database_if_not_exists(config)
+            # logger.info("config print")
+            # logger.info(config)
             manager = get_connection_manager()
             manager.add_sql_database(config.get("name",""),build_connection_string(config))
-            # session_sql = manager.get_sql_session(config.get("name",""))
+ 
+            session_sql = manager.get_sql_session(config.get("name",""))
             # session_sql.execute(text("CREATE TABLE IF NOT EXISTS ab (age INTEGER)"))
-            # session_sql.commit()
-            # session_sql.close()
-
+            session_sql.commit()
+            session_sql.close()
+ 
         elif req.db_type == "mongodb":
             manager = get_connection_manager()
             manager.add_mongo_database(config.get("name",""),build_connection_string(config),config.get("database",""))
             mongo_db = manager.get_mongo_database(config.get("name",""))
-            # sample_doc = await mongo_db.test_collection.find_one()
             try:
                 await mongo_db.command("ping")
                 print("[MongoDB] Connection test successful.")
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"MongoDB ping failed: {str(e)}")
             connected_databases[req.name] = config
-
+ 
         elif req.db_type == "postgresql" or req.db_type == "mysql":
             create_database_if_not_exists(config)
             manager = get_connection_manager()
@@ -4396,11 +4568,8 @@ async def connect_to_database(req: DBConnectionRequest):
             # session_postgres = manager.get_sql_session(config.get("name",""))
             # session_db1.execute(text("select * from ab;"))
             connected_databases[req.name] = config
-            # session_postgres.close()
-
-
-        
-
+       
+ 
         if req.flag_for_insert_into_db_connections_table == "1":
             connection_data = {
                 "connection_id": str(uuid.uuid4()),
@@ -4410,12 +4579,12 @@ async def connect_to_database(req: DBConnectionRequest):
                 "connection_port": config.get("port", ),
                 "connection_username": config.get("username", ""),
                 "connection_password": config.get("password", ""),
-                "connection_database_name": config.get("database", "")
+                "connection_database_name": config.get("database", ""),
+                "connection_created_by": config.get("created_by", "")
             }
-
-        
+       
             result = await insert_into_db_connections_table(connection_data)
-
+ 
             if result.get("is_created"):
                 return {
                     "message": f"✅ Connected to {req.db_type} database '{req.database}' and saved configuration.",
@@ -4423,27 +4592,28 @@ async def connect_to_database(req: DBConnectionRequest):
                 }
             else:
                 return {
-                    "message": f"⚠️ Connected to {req.db_type} database '{req.database}', but failed to save configuration.",
+                    "message": f"⚠️ Connected to {req.db_type} database '{req.database}', but failed to save configuration.--{result.get('message')}",
                     # **result
                 }
         else:
             return {
                     "message": f"✅ Connected to {req.db_type} database '{req.database}'."
                 }
-            
-
+           
     except SQLAlchemyError as e:
         raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
-
+ 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
     
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 class DBDisconnectRequest(BaseModel):
     name: str
     db_type: str
+    flag: str
 
 
 
@@ -4475,33 +4645,34 @@ async def disconnect_database(req: DBDisconnectRequest):
     manager = get_connection_manager()
     name = req.name
     db_type = req.db_type.lower()
-
+ 
     # Get current active connections
     active_sql_connections = list(manager.sql_engines.keys())
     active_mongo_connections = list(manager.mongo_clients.keys())
-    delete_result = await delete_connection_by_name(name)
-
-
+    if req.flag=="1":
+        delete_result = await delete_connection_by_name(name)
+ 
+ 
     try:
         if db_type == "mongodb":
             if name in active_mongo_connections:
                 await manager.close_mongo_client(name)
-                return {"message": f"Disconnected MongoDB connection '{name}' successfully and the details are deleted from the table.."}
+                return {"message": f"Disconnected MongoDB connection '{name}' successfully"}
             else:
                 # Your custom logic here
-                return {"message": f"ℹMongoDB connection '{name}' was not active but the details are deleted from the table."}
-
+                return {"message": f"MongoDB connection '{name}' was not active "}
+ 
         else:  # SQL
             if name in active_sql_connections:
                 manager.dispose_sql_engine(name)
-                return {"message": f"Disconnected SQL connection '{name}' successfully and the details are deleted from the table."}
+                return {"message": f"Disconnected SQL connection '{name}' successfully "}
             else:
                 # Your custom logic here
-                return {"message": f"ℹSQL connection '{name}' was not active but the details are deleted from the table.."}
-
+                return {"message": f"SQL connection '{name}' was not active"}
+ 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error while disconnecting: {str(e)}")
- 
+
 
 @app.post("/generate_query")
 async def generate_query(req: QueryGenerationRequest):
@@ -4536,22 +4707,22 @@ async def generate_query(req: QueryGenerationRequest):
    
         Database: {req.database_type}
         Natural Language Query: {req.natural_language_query}
-        🔄 Example Input:
+        Example Input:
         Database: PostgreSQL
         Natural Language Query: Show the top 5 customers with the highest total purchases.
    
-        ✅ Expected Output:
+         Expected Output:
         SELECT customer_id, SUM(purchase_amount) AS total_purchases
         FROM purchases
         GROUP BY customer_id
         ORDER BY total_purchases DESC
         LIMIT 5;
    
-        🔄 Example 2 (MongoDB)
+        Example 2 (MongoDB)
         Database: MongoDB
         Natural Language Query: Get all orders placed by customer with ID "12345" from the "orders" collection.
    
-        ✅ Expected Output:
+         Expected Output:
         db.orders.find({{ customer_id: "12345" }})
         """
  
@@ -4911,16 +5082,37 @@ async def mongodb_operation(op: MONGODBOperation):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/get-active-connection-names")
-def get_active_connection_names():
+async def get_active_connection_names():
     manager = get_connection_manager()
-
+ 
     active_sql_connections = list(manager.sql_engines.keys())
     active_mongo_connections = list(manager.mongo_clients.keys())
-
+ 
+    db_info_list = await get_connections_sql()
+ 
+    connections = db_info_list.get("connections", [])
+    db_type_map = {item["connection_name"]: item["connection_database_type"].lower() for item in connections}
+ 
+    active_mysql_connections = []
+    active_postgres_connections = []
+    active_sqlite_connections = []
+ 
+    for conn_name in active_sql_connections:
+        db_type = db_type_map.get(conn_name)
+        if db_type == "mysql":
+            active_mysql_connections.append(conn_name)
+        elif db_type in ("postgres", "postgresql"):
+            active_postgres_connections.append(conn_name)
+        elif db_type == "sqlite":
+            active_sqlite_connections.append(conn_name)
+ 
     return {
-        "active_sql_connections": active_sql_connections,
+        "active_mysql_connections": active_mysql_connections,
+        "active_postgres_connections": active_postgres_connections,
+        "active_sqlite_connections": active_sqlite_connections,
         "active_mongo_connections": active_mongo_connections
     }
+ 
 
 
 

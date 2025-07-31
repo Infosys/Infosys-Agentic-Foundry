@@ -22,15 +22,12 @@ from langgraph.graph.state import CompiledStateGraph, StateGraph
 from src.models.model import load_model
 from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
-from src.database.services import ChatService, ToolService, AgentService
+from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService
 from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key
 
 from phoenix.otel import register
 from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
-
-# Marked: for later modularization
-from database_manager import insert_into_evaluation_data
 
 
 
@@ -99,12 +96,16 @@ class BaseAgentInference(ABC):
         chat_service: ChatService,
         tool_service: ToolService,
         agent_service: AgentService,
-        inference_utils: InferenceUtils
+        inference_utils: InferenceUtils,
+        feedback_learning_service: FeedbackLearningService,
+        evaluation_service: EvaluationService
     ):
         self.chat_service = chat_service
         self.tool_service = tool_service
         self.agent_service = agent_service
         self.inference_utils = inference_utils
+        self.feedback_learning_service = feedback_learning_service
+        self.evaluation_service = evaluation_service
 
 
     # --- Helper Methods ---
@@ -421,7 +422,7 @@ class BaseAgentInference(ABC):
 
             if insert_into_eval_flag:
                 try:
-                    await insert_into_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name)
+                    await self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name)
                 except Exception as e:
                     log.error(f"Error Occurred while inserting into evaluation data: {e}")
 
@@ -444,9 +445,11 @@ class BaseMetaTypeAgentInference(BaseAgentInference):
         chat_service: ChatService,
         tool_service: ToolService,
         agent_service: AgentService,
-        inference_utils: InferenceUtils
+        inference_utils: InferenceUtils,
+        feedback_learning_service: FeedbackLearningService,
+        evaluation_service: EvaluationService
     ):
-        super().__init__(chat_service, tool_service, agent_service, inference_utils)
+        super().__init__(chat_service, tool_service, agent_service, inference_utils, feedback_learning_service, evaluation_service)
 
 
     # --- Helper Methods ---

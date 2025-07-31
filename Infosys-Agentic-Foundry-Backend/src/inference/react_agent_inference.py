@@ -9,12 +9,9 @@ from langchain_core.messages import AIMessage
 
 from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
-from src.database.services import ChatService, ToolService, AgentService
+from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
 from telemetry_wrapper import logger as log
-
-# Marked: for later modularization
-from database_manager import get_feedback_learning_data
 
 
 
@@ -39,9 +36,11 @@ class ReactAgentInference(BaseAgentInference):
         chat_service: ChatService,
         tool_service: ToolService,
         agent_service: AgentService,
-        inference_utils: InferenceUtils
+        inference_utils: InferenceUtils,
+        feedback_learning_service: FeedbackLearningService,
+        evaluation_service: EvaluationService
     ):
-        super().__init__(chat_service, tool_service, agent_service, inference_utils)
+        super().__init__(chat_service, tool_service, agent_service, inference_utils, feedback_learning_service, evaluation_service)
 
 
     async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None):
@@ -127,7 +126,7 @@ class ReactAgentInference(BaseAgentInference):
             errors = state["errors"]
 
             try:
-                feedback_learning_data = await get_feedback_learning_data(agent_id=state["agentic_application_id"])
+                feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
                 feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
 
                 formatted_query = f'''\

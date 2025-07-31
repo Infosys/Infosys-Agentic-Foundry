@@ -37,7 +37,20 @@
     - Replace the placeholder values with your actual credentials and endpoints.
     - **Note:** Never commit your `.env` file or sensitive credentials to version control.
 
-3. How to set up the environment
+3. Set up USE_OTEL_LOGGING 
+
+   # To run the project locally 
+
+   ## In telemetry_wrapper.py file 
+
+   ### 1. keep USE_OTEL_LOGGING as False in local dev  
+        USE_OTEL_LOGGING = False
+   ### 2. keep USE_OTEL_LOGGING as True in VM for Otel Collector
+        USE_OTEL_LOGGING = True
+
+
+
+4. How to set up the environment
 
     # To run the project locally
     ## In command prompt run the following commands

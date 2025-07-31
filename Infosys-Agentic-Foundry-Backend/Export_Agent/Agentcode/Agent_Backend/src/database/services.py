@@ -12,7 +12,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, ChatMessage, AnyMessage
 
-from src.database.repositories import AgentRepository,ToolRepository,ChatHistoryRepository
+from src.database.repositories import AgentRepository,ToolRepository,ChatHistoryRepository,EvaluationDataRepository,ToolEvaluationMetricsRepository,AgentEvaluationMetricsRepository,FeedbackLearningRepository
 from src.prompts.prompts import CONVERSATION_SUMMARY_PROMPT
 from src.models.model import load_model
 # from src.tools.tool_code_processor import ToolCodeProcessor
@@ -79,6 +79,7 @@ class ToolService:
             description = f"tool name:\n{tool.__name__} \n tool arguments:\n{args_list} \ntool Docstring:\n{tool.__doc__}\n"
             descriptions.append(description)
         return "\n\n".join(descriptions)
+    
     async def _extract_tools_using_tool_ids(self, tools_id: Union[List[str], str]) -> Dict[str, Any]:
         """
         Extracts tool information from the database using tool IDs.
@@ -106,6 +107,53 @@ class ToolService:
                 tools_info_user[f"Tool_{idx+1}"] = {"error": f"No data found for tool_id: {tool_id_single}"}
         log.info(f"Extracted {len(tools_info_user)} tools using provided tool IDs.")
         return tools_info_user
+
+    @staticmethod
+    async def _generate_tool_prompt_from_tools_info(tools_info: Dict[str, Any]) -> str:
+        """
+        Generates a prompt for the agent describing the available tools.
+
+        Args:
+            tools_info (dict): A dictionary containing information about each tool.
+
+        Returns:
+            str: A prompt string describing the tools.
+        """
+        tool_prompt = ""
+        for tool_id, tool_info_desc in tools_info.items():
+            if "error" in tool_info_desc:
+                log.error(f"Error in tool info: {tool_info_desc['error']}")
+                continue
+            tool_nm = tool_info_desc.get("Tool_Name", "")
+            tool_desc = tool_info_desc.get("Tool_Description", "")
+            tool_code = tool_info_desc.get("code_snippet", "")
+            tool_prompt_temp = f"""{tool_id}
+-------------------------
+Tool Name: {tool_nm}
+
+Tool Description: {tool_desc}
+
+Tool Code Snippet:
+{tool_code}"""
+            tool_prompt = tool_prompt + tool_prompt_temp + "\n\n\n\n"
+        if not tools_info:
+            log.warning("No tools available for onboarding.")
+            tool_prompt = "No tools are available"
+        log.info(f"Generated tool prompt with {len(tools_info)} tools.")
+        return tool_prompt
+
+    async def generate_tool_prompt(self, tools_id: Union[List[str], str]) -> str:
+        """
+        Generates a prompt for the agent describing the available tools.
+
+        Args:
+            tools_id (Union[List[str], str]): A list of tool IDs to generate the prompt for.
+
+        Returns:
+            str: A prompt string describing the tools.
+        """
+        tools_info = await self._extract_tools_using_tool_ids(tools_id)
+        return await self._generate_tool_prompt_from_tools_info(tools_info)
 class AgentService:
     """
     Service layer for managing agents (Agentic Applications).
@@ -363,7 +411,7 @@ class ChatService:
                 ]
             )
             if executor_messages:
-                chat_history += "\n\n" + "\n\n".join(self.get_formatted_messages(messages=executor_messages, msg_limit=executor_message_limit))
+                chat_history += "\n\n" + "\n\n".join(await self.get_formatted_messages(messages=executor_messages, msg_limit=executor_message_limit))
             conversation_summary = await conversation_summary_chain.ainvoke(
                 {"chat_history": chat_history}
             )
@@ -623,3 +671,287 @@ class ChatService:
         except Exception as e:
             log.error(f"Service-level error updating query response with tag for session '{session_id}': {e}")
             return None
+
+# --- Feedback Learning Service ---
+
+class FeedbackLearningService:
+    """
+    Service layer for managing feedback data.
+    Orchestrates FeedbackLearningRepository calls and applies business logic,
+    including data enrichment (e.g., adding agent names).
+    """
+
+    def __init__(self, feedback_learning_repo: FeedbackLearningRepository, agent_service: 'AgentService'):
+        """
+        Initializes the FeedbackLearningService.
+
+        Args:
+            feedback_learning_repo (FeedbackLearningRepository): The repository for feedback data access.
+            agent_service (AgentService): The service for agent-related operations (for data enrichment).
+        """
+        self.repo = feedback_learning_repo
+        self.agent_service = agent_service
+
+
+    async def save_feedback(self, agent_id: str, query: str, old_final_response: str, old_steps: str, feedback: str, new_final_response: str, new_steps: str, approved: bool = False) -> Dict[str, Any]:
+        """
+        Saves new feedback data, including the feedback response and its mapping to an agent.
+        """
+        response_id = str(uuid.uuid4()).replace("-", "_") # Generate a unique response ID
+
+        feedback_success = await self.repo.insert_feedback_record(
+            response_id=response_id,
+            query=query,
+            old_final_response=old_final_response,
+            old_steps=old_steps,
+            feedback=feedback,
+            new_final_response=new_final_response,
+            new_steps=new_steps,
+            approved=approved
+        )
+
+        if feedback_success:
+            mapping_success = await self.repo.insert_agent_feedback_mapping(
+                agent_id=agent_id,
+                response_id=response_id
+            )
+            if mapping_success:
+                log.info(f"Feedback inserted successfully for agent_id: {agent_id} with response_id: {response_id}.")
+                return {"message": "Feedback saved successfully.", "response_id": response_id, "is_saved": True}
+            else:
+                log.error(f"Failed to map feedback {response_id} to agent {agent_id}.")
+                # Consider deleting the feedback record if mapping failed to prevent orphaned data
+                return {"message": "Feedback saved but failed to map to agent.", "response_id": response_id, "is_saved": False}
+        else:
+            log.error(f"Failed to insert feedback record for agent_id: {agent_id}.")
+            return {"message": "Failed to save feedback.", "response_id": None, "is_saved": False}
+
+    async def get_approved_feedback(self, agent_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves approved feedback for a specific agent.
+        """
+        return await self.repo.get_approved_feedback_records(agent_id)
+
+    async def get_all_approvals_for_agent(self, agent_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all feedback and their approval status for a given agent_id.
+        """
+        return await self.repo.get_all_feedback_records_by_agent(agent_id)
+
+    async def get_feedback_details_by_response_id(self, response_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all details for a specific feedback response, including agent name.
+        """
+        feedback_records = await self.repo.get_feedback_record_by_response_id(response_id)
+        for feedback_record in feedback_records:
+            agent_id = feedback_record.get("agent_id", "")
+            agent_details_list = await self.agent_service.get_agent(agentic_application_id=agent_id)
+            agent_name = agent_details_list[0].get("agentic_application_name", "Unknown") if agent_details_list else "Unknown"
+            feedback_record["agent_name"] = agent_name
+        log.info(f"Retrieved feedback details for response_id: {response_id}.")
+        return feedback_records
+
+    async def get_agents_with_feedback(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all agents who have given feedback along with their names.
+        """
+        distinct_agent_ids = await self.repo.get_distinct_agents_with_feedback()
+        agent_data = []
+        for agent_id in distinct_agent_ids:
+            agent_details_list = await self.agent_service.agent_repo.get_agent_record(agentic_application_id=agent_id)
+            agent_name = agent_details_list[0].get("agentic_application_name", "Unknown") if agent_details_list else "Unknown"
+            agent_data.append({
+                "agent_id": agent_id,
+                "agent_name": agent_name
+            })
+        log.info(f"Retrieved {len(agent_data)} agents with feedback.")
+        return agent_data
+
+    async def update_feedback_status(self, response_id: str, update_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Updates fields in a feedback_response record.
+        `update_data` should be a dictionary with keys as column names and values as the new values.
+        """
+        success = await self.repo.update_feedback_record(response_id, update_data)
+        if success:
+            return {"is_update": True, "message": "Feedback updated successfully."}
+        else:
+            return {"is_update": False, "message": "Failed to update feedback."}
+
+# --- Evaluation Service ---
+
+class EvaluationService:
+    """
+    Service layer for managing evaluation metrics.
+    Orchestrates repository calls for evaluation data, agent metrics, and tool metrics.
+    Handles data preparation and serialization for database insertion.
+    """
+
+    def __init__(
+        self,
+        evaluation_data_repo: EvaluationDataRepository,
+        tool_evaluation_metrics_repo: ToolEvaluationMetricsRepository,
+        agent_evaluation_metrics_repo: AgentEvaluationMetricsRepository,
+        tool_service: 'ToolService',    # For getting tool details for logging/enrichment
+        agent_service: 'AgentService' # For getting agent details for logging/enrichment
+    ):
+        self.evaluation_data_repo = evaluation_data_repo
+        self.tool_evaluation_metrics_repo = tool_evaluation_metrics_repo
+        self.agent_evaluation_metrics_repo = agent_evaluation_metrics_repo
+        self.tool_service = tool_service
+        self.agent_service = agent_service
+
+
+    async def create_evaluation_tables_if_not_exists(self):
+        """
+        Orchestrates the creation of all evaluation-related tables.
+        """
+        await self.evaluation_data_repo.create_table_if_not_exists()
+        await self.tool_evaluation_metrics_repo.create_table_if_not_exists()
+        await self.agent_evaluation_metrics_repo.create_table_if_not_exists()
+        log.info("All evaluation tables checked/created successfully.")
+
+    @staticmethod
+    async def serialize_executor_messages(messages: list) -> list:
+        serialized = []
+        for msg in messages:
+            if hasattr(msg, 'dict'):
+                serialized.append(msg.dict())
+            elif hasattr(msg, '__dict__'):
+                serialized.append(vars(msg))  # fallback
+            else:
+                serialized.append(str(msg))   # last resort
+        return serialized
+
+    async def log_evaluation_data(self, session_id: str, agentic_application_id: str, agent_config: Dict[str, Any], response: Dict[str, Any], model_name: str) -> bool:
+        """
+        Logs raw inference data into the evaluation_data table.
+        """
+        agent_last_step = response.get("executor_messages", [{}])[-1].get("agent_steps", [{}])[-1]
+
+        if not response.get('response') or (hasattr(agent_last_step, "role") and agent_last_step.role == 'plan'):
+            log.info("Skipping evaluation data logging due to empty response or planner role in last step.")
+            return False
+        
+        try:
+            data_to_log = {}
+            data_to_log["session_id"] = session_id
+            data_to_log["query"] = response['query']
+            data_to_log["response"] = response['response']
+            data_to_log["model_used"] = model_name
+            data_to_log["agent_id"] = agentic_application_id
+            
+            agent_details_list = await self.agent_service.agent_repo.get_agent_record(agentic_application_id=agentic_application_id)
+            agent_details = agent_details_list[0] if agent_details_list else {}
+
+            data_to_log["agent_name"] = agent_details.get('agentic_application_name', 'Unknown')
+            data_to_log["agent_type"] = agent_details.get('agentic_application_type', 'Unknown')
+            data_to_log["agent_goal"] = agent_details.get('agentic_application_description', '')
+            data_to_log["workflow_description"] = agent_details.get('agentic_application_workflow_description', '')
+            
+            # Reconstruct tool_prompt from agent_config's TOOLS_INFO
+            tools_info_ids = agent_config.get('TOOLS_INFO', [])
+            data_to_log["tool_prompt"] = await self.tool_service.generate_tool_prompt(tools_id=tools_info_ids)
+            
+            # Ensure messages are in a serializable format (list of dicts)
+            # Assuming response['executor_messages'] is already a list of LangChain Message objects
+            # and segregate_conversation_in_json_format handles conversion to dicts.
+            # The repository expects JSON dumped strings for JSONB columns.
+            data_to_log["executor_messages"] = response['executor_messages']
+            data_to_log["steps"] = response['executor_messages'][-1]['agent_steps']
+
+
+            # Adjust query for feedback/regenerate if needed (business logic)
+            if data_to_log['query'].startswith("[feedback:]") and data_to_log['query'].endswith("[:feedback]"):
+                feedback_content = data_to_log['query'][11:-11]
+                original_query_content = data_to_log["steps"][0].content if data_to_log["steps"] else ''
+                data_to_log['query'] = f"Query:{original_query_content}\nFeedback: {feedback_content}"
+            elif data_to_log['query'].startswith("[regenerate:]"):
+                original_query_content = data_to_log["steps"][0].content if data_to_log["steps"] else ''
+                data_to_log['query'] = f"Query:{original_query_content} (Regenerate)"
+
+            data_to_log["steps"] = json.dumps(await self.serialize_executor_messages(data_to_log["steps"]))
+            data_to_log["executor_messages"] = json.dumps(await self.serialize_executor_messages(data_to_log["executor_messages"]))
+
+            success = await self.evaluation_data_repo.insert_evaluation_record(data_to_log)
+            if success:
+                log.info("Data inserted into evaluation_data table successfully.")
+                return True
+            else:
+                log.error("Failed to insert data into evaluation_data table.")
+                return False
+        except Exception as e:
+            log.error(f"Error preparing/inserting data into evaluation_data table: {e}", exc_info=True)
+            return False
+
+    async def fetch_next_unprocessed_evaluation(self) -> Dict[str, Any] | None:
+        """
+        Fetches the next unprocessed evaluation entry.
+        """
+        record = await self.evaluation_data_repo.get_unprocessed_record()
+        if record:
+            # Deserialize JSONB fields if they are not automatically converted by asyncpg
+            # (asyncpg usually handles JSONB to Python dict/list automatically)
+            record['steps'] = json.loads(record['steps']) if isinstance(record['steps'], str) else record['steps']
+            record['executor_messages'] = json.loads(record['executor_messages']) if isinstance(record['executor_messages'], str) else record['executor_messages']
+            log.info(f"Fetched unprocessed evaluation entry with ID: {record['id']}.")
+            return record
+        return None
+
+    async def update_evaluation_status(self, evaluation_id: int, status: str) -> bool:
+        """
+        Updates the processing status of an evaluation record.
+        """
+        success = await self.evaluation_data_repo.update_status(evaluation_id, status)
+        if success:
+            log.info(f"Status for evaluation_id {evaluation_id} updated to '{status}'.")
+        else:
+            log.error(f"Failed to update status for evaluation_id {evaluation_id} to '{status}'.")
+        return success
+
+    async def insert_tool_metrics(self, metrics_data: Dict[str, Any]) -> bool:
+        """
+        Inserts tool evaluation metrics.
+        """
+        success = await self.tool_evaluation_metrics_repo.insert_metrics_record(metrics_data)
+        if success:
+            log.info(f"Tool evaluation metrics inserted successfully for evaluation_id: {metrics_data.get('evaluation_id')}.")
+        else:
+            log.error(f"Failed to insert tool evaluation metrics for evaluation_id: {metrics_data.get('evaluation_id')}.")
+        return success
+
+    async def insert_agent_metrics(self, metrics_data: Dict[str, Any]) -> bool:
+        """
+        Inserts agent evaluation metrics.
+        """
+        # Ensure JSONB fields are dumped if not already
+        metrics_data['consistency_queries'] = json.dumps(metrics_data.get('consistency_queries', []))
+        metrics_data['robustness_queries'] = json.dumps(metrics_data.get('robustness_queries', []))
+
+        success = await self.agent_evaluation_metrics_repo.insert_metrics_record(metrics_data)
+        if success:
+            log.info(f"Agent Evaluation metrics inserted successfully for evaluation_id: {metrics_data.get('evaluation_id')}.")
+        else:
+            log.error(f"Failed to insert agent evaluation metrics for evaluation_id: {metrics_data.get('evaluation_id')}.")
+        return success
+
+    async def get_evaluation_data(self, agent_names: Optional[List[str]] = None, page: int = 1, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves evaluation data records.
+        """
+        return await self.evaluation_data_repo.get_records_by_agent_names(agent_names, page, limit)
+
+    async def get_tool_metrics(self, agent_names: Optional[List[str]] = None, page: int = 1, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves tool evaluation metrics records.
+        """
+        return await self.tool_evaluation_metrics_repo.get_metrics_by_agent_names(agent_names, page, limit)
+
+    async def get_agent_metrics(self, agent_names: Optional[List[str]] = None, page: int = 1, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Retrieves agent evaluation metrics records.
+        """
+        return await self.agent_evaluation_metrics_repo.get_metrics_by_agent_names(agent_names, page, limit)
+
+
+

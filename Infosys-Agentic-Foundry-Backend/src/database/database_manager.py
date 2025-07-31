@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-REQUIRED_DATABASES = [os.getenv("DATABASE", ""), "feedback_learning", "telemetry_logs", "login", "logs", "arize_traces", "recycle"]
+REQUIRED_DATABASES = [os.getenv("DATABASE", ""), "feedback_learning", "evaluation_logs", "recycle", "login", "arize_traces"]
 
 
 class DatabaseManager:

@@ -11,6 +11,7 @@ from langchain.prompts import PromptTemplate
 from langchain_core.runnables import Runnable
 from pathlib import Path
 from fuzzywuzzy import fuzz  
+from dotenv import load_dotenv
 import psutil
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from rouge_score import rouge_scorer
@@ -21,9 +22,15 @@ from sentence_transformers import SentenceTransformer, util
 from src.inference.base_agent_inference import AgentInferenceRequest, BaseAgentInference
 from telemetry_wrapper import logger as log
 
-# ✅ Load SBERT model
-# sbert_model = SentenceTransformer(r'C:\Users\kotni.greeshma\Downloads\models\all-MiniLM-L6-v2')
-sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
+# Load environment variables from .env file
+load_dotenv()
+
+# Get model name from environment
+model_name = os.getenv("SBERT_MODEL_PATH")
+
+# Load the model
+sbert_model = SentenceTransformer(model_name)
+
 
 # ✅ LLM prompt templates
 grading_prompt = PromptTemplate(
