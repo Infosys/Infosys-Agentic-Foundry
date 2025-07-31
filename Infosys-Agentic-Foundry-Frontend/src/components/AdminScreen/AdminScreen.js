@@ -7,8 +7,8 @@ import AgentList from "./AgentsList";
 import ResponsesList from "./ResponseList";
 import ResponseDetail from "./ResponseDetail";
 import styles from "./AdminScreen.module.css";
-import AgentsEvaluator from "../AgentsEvaluator";
-import EvaluationScore from "../AdminScreen/EvaluationScore.js";
+// import AgentsEvaluator from "../AgentsEvaluator";
+// import EvaluationScore from "../AdminScreen/EvaluationScore.js";
 import UpdatePassword from "./UpdatePassword.jsx";
 import RecycleBin from "./RecycleBin.jsx";
 
@@ -146,6 +146,7 @@ const AdminScreen = () => {
         >
           Learning
         </button>
+        {/* Commented out - moved to separate Evaluation page
         <button 
           className={activeTab === "metrics" ? styles.activeTab : styles.tab} 
           onClick={() => {
@@ -167,6 +168,7 @@ const AdminScreen = () => {
         >
           Evaluations
         </button>
+        */}
          <button 
           className={activeTab === "Update User" ? styles.activeTab : styles.tab} 
           onClick={() => {
@@ -235,18 +237,20 @@ const AdminScreen = () => {
             )}
           </div>
         )}
+        {/* Commented out - moved to separate Evaluation page
         {/* Metrics Tab */}
-        {activeTab === "metrics" && (
+        {/* {activeTab === "metrics" && (
           <div className={styles.evaluateMetrics}>
             <AgentsEvaluator />
           </div>
-        )}
+        )} */}
         {/* Evaluations Tab */}
-        {activeTab === "evaluation" && (
+        {/* {activeTab === "evaluation" && (
           <div className={styles.evaluateMetrics}>
             <EvaluationScore />
           </div>
-        )}
+        )} */}
+        {/* End of commented evaluation sections */}
          {activeTab === "Update User" && (
           <div className={styles.evaluateMetrics}>
             {/* <EvaluationScore /> */}

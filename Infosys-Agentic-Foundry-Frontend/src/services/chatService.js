@@ -8,7 +8,7 @@ let getMethod = "GET";
 
 export const resetChat = async (data) => {
   try {
-    const apiUrl = `${BASE_URL}/react-agent/clear-chat-history`;
+    const apiUrl = `${BASE_URL}/react-agent${APIs.CLEAR_CHAT_HISTORY}`;
     const response = await axios.request({
       method: "DELETE",
       url: apiUrl,
@@ -56,7 +56,7 @@ export const getChatQueryResponse = async (chatData, url) => {
 
 export const getChatHistory = async (chatData) => {
   try {
-    const apiUrl = `${BASE_URL}/react-agent/get-chat-history`;
+    const apiUrl = `${BASE_URL}/react-agent${APIs.GET_CHAT_HISTORY}`;
     const response = await axios.request({
       method: postMethod,
       url: apiUrl,

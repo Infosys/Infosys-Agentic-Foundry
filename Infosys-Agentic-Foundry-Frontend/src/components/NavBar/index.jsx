@@ -13,6 +13,7 @@ export default function NavBar() {
   const [activeButton, setActiveButton] = useState("");
 
   const role = Cookies.get("role");
+  const isAdmin = role && role.toLowerCase() === "admin";
 
   const handleFileClick = () => {
     setActiveButton("files");
@@ -46,12 +47,7 @@ export default function NavBar() {
               <span>Vault</span>
             </NavLink>
           </li>
-          <li>
-            <NavLink to="/groundtruth" activeclassname="active">
-              <SVGIcons icon="ground-truth" color="#343741" />
-              <span>Ground Truth</span>
-            </NavLink>
-          </li>
+        
           <li>
             <NavLink to="/dataconnector" activeclassname="active">
              <SVGIcons icon="data-connectors" fill="#343741"/>
@@ -66,6 +62,14 @@ export default function NavBar() {
               <span>Files</span>
             </button>
           </li>
+            {!isAdmin && (
+            <li>
+              <NavLink to="/groundtruth" activeclassname="active">
+                <SVGIcons icon="ground-truth" color="#343741" />
+                <span>Ground Truth Evaluation</span>
+              </NavLink>
+            </li>
+          )}
           {/* <li>
             <NavLink to="/new-chat" activeclassname="active">
               <SVGIcons icon="new-chat" fill="#343741"/>
@@ -75,12 +79,19 @@ export default function NavBar() {
           {/* Show Admin nav only if user is admin (case-insensitive) */}
           {role && role.toUpperCase() === "ADMIN" && (
             <>
+              <li>
+              <NavLink to="/evaluation" activeclassname="active">
+                <SVGIcons icon="clipboard-check" fill="#343741" />
+                <span>Evaluation</span>
+              </NavLink>
+            </li>
             <li>
               <NavLink to="/admin" activeclassname="active">
                 <SVGIcons icon="person-circle" fill="#343741"/>
                 <span>Admin</span>
               </NavLink>
             </li>
+           
             </>
           )}
         </ul>

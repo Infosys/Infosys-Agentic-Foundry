@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { BASE_URL, APIs } from '../../../constant';
 import { useDatabase } from '../context/DatabaseContext';
@@ -44,14 +44,14 @@ export const useDatabaseConnections = () => {
   const [isActivating, setIsActivating] = useState(false);
 
   // Fetch available connections from API
-  const loadAvailableConnections = async () => {
+  const loadAvailableConnections = useCallback(async () => {
     setIsLoadingConnections(true);
     try {
       const result = await fetchConnections();
-      console.log('fetchConnections result:', result);
+      
       if (result.success) {
         const connections = result.data.connections || result.data || [];
-        console.log('Processed connections:', connections);
+        
         setAvailableConnections(connections);
         setLastUpdateTime(Date.now());
       } else {
@@ -64,15 +64,15 @@ export const useDatabaseConnections = () => {
     } finally {
       setIsLoadingConnections(false);
     }
-  };
+  }, []);
 
   // Immediate update function for after connection changes
-  const updateConnectionsImmediate = async () => {
+  const updateConnectionsImmediate = useCallback(async () => {
     // Only update if it's been more than 1 second since last update
     if (Date.now() - lastUpdateTime > 1000) {
       await loadAvailableConnections();
     }
-  };
+  }, [lastUpdateTime, loadAvailableConnections]);
 
   // Add visibility change listener for better UX
   useEffect(() => {
@@ -88,30 +88,7 @@ export const useDatabaseConnections = () => {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [lastUpdateTime]);
-
-  // Load connections when component mounts and set up smart polling
-  useEffect(() => {
-    loadAvailableConnections();
-    
-    // Set up periodic polling (every 30 seconds)
-    const pollInterval = setInterval(() => {
-      loadAvailableConnections();
-    }, 30000);
-
-    // Refresh connections when window regains focus
-    const handleFocus = () => {
-      loadAvailableConnections();
-    };
-    
-    window.addEventListener('focus', handleFocus);
-
-    // Clean up interval and event listener on unmount
-    return () => {
-      clearInterval(pollInterval);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, []);
+  }, [lastUpdateTime, updateConnectionsImmediate]);
 
   // Handle connection selection from dropdown
   const handleConnectionSelect = (selectedConnectionName) => {
@@ -153,14 +130,36 @@ export const useDatabaseConnections = () => {
     }
   };
 
+  // Helper for sqlite payload
+  function buildSqlitePayloadForApi(connectionName, dbType, database, flag) {
+    return {
+      name: connectionName || '',
+      db_type: 'sqlite', // always force sqlite
+      database: database || '',
+      port: 0,
+      host: '',
+      username: '',
+      password: '',
+      flag_for_insert_into_db_connections_table: flag
+    };
+  }
+
   const handleConnectionSubmit = async (e) => {
     e.preventDefault();
     
     // Use temporary connection data if available (from DataConnectors modal)
     const currentConnectionData = window.tempConnectionData || connectionData;
-    
-    // Validate required fields
-    const requiredFields = ['connectionName', 'databaseType', 'host', 'port', 'username', 'password', 'databaseName'];
+
+    // Defensive: For SQLite, only validate the three required fields
+    let requiredFields;
+    if (
+      currentConnectionData.databaseType &&
+      currentConnectionData.databaseType.toLowerCase() === 'sqlite'
+    ) {
+      requiredFields = ['connectionName', 'databaseType'];
+    } else {
+      requiredFields = ['connectionName', 'databaseType', 'host', 'port', 'username', 'password', 'databaseName'];
+    }
     const missingFields = requiredFields.filter(field => !currentConnectionData[field] || currentConnectionData[field].trim() === '');
     if (missingFields.length > 0) {
       addMessage(`Please fill in the following required fields: ${missingFields.join(', ')}`, "error");
@@ -168,16 +167,30 @@ export const useDatabaseConnections = () => {
     }
     setIsConnecting(true);
     try {
-      const payload = {
-        name: currentConnectionData.connectionName,
-        db_type: currentConnectionData.databaseType.toLowerCase(),
-        host: currentConnectionData.host,
-        port: parseInt(currentConnectionData.port),
-        username: currentConnectionData.username,
-        password: currentConnectionData.password,
-        database: currentConnectionData.databaseName,
-        flag_for_insert_into_db_connections_table: "1"
-      };
+      let payload;
+      if (currentConnectionData.databaseType.toLowerCase() === 'sqlite') {
+        // If file is uploaded, use its name as database
+        let dbValue = currentConnectionData.uploaded_file
+          ? currentConnectionData.uploaded_file.name
+          : currentConnectionData.databaseName;
+        payload = buildSqlitePayloadForApi(
+          currentConnectionData.connectionName,
+          currentConnectionData.databaseType,
+          dbValue,
+          "1"
+        );
+      } else {
+        payload = {
+          name: currentConnectionData.connectionName,
+          db_type: currentConnectionData.databaseType.toLowerCase(),
+          host: currentConnectionData.host,
+          port: parseInt(currentConnectionData.port),
+          username: currentConnectionData.username,
+          password: currentConnectionData.password,
+          database: currentConnectionData.databaseName,
+          flag_for_insert_into_db_connections_table: "1"
+        };
+      }
       
       const apiUrl = `${BASE_URL}${APIs.CONNECT_DATABASE}`;
       try {
@@ -188,6 +201,12 @@ export const useDatabaseConnections = () => {
           }
         });
         if (response.data) {
+          // Always refresh active connections after connect
+          try {
+            await fetchActiveConnections();
+          } catch (error) {
+            // Optionally log error
+          }
           addDatabase({
             name: currentConnectionData.connectionName,
             type: currentConnectionData.databaseType,
@@ -196,10 +215,8 @@ export const useDatabaseConnections = () => {
             username: currentConnectionData.username,
             databaseName: currentConnectionData.databaseName
           });
-          
           addMessage(response.data.message || "Database connected successfully!", "success");
           setIsConnected(true); // Disable the connect button after successful connection
-          
           // Clear temporary connection data
           if (window.tempConnectionData) {
             delete window.tempConnectionData;
@@ -217,24 +234,19 @@ export const useDatabaseConnections = () => {
     }
   };
 
-  const handleDisconnect = async (connectionName, databaseType) => {
+  const handleDisconnect = async (connectionName, databaseType, flag = "1") => {
     if (!connectionName || !databaseType) {
-      addMessage("Connection name and database type are required for disconnection", "error");
+      addMessage("Connection name and database type are required for deactivation", "error");
       return;
     }
-
     setIsDisConnecting(true);
-    
     try {
       // Prepare the API request payload for disconnect
       const payload = {
         name: connectionName,
-        db_type: databaseType.toLowerCase()
+        db_type: databaseType.toLowerCase(),
+        flag: flag.toString()
       };
-      
-      console.log('Hook handleDisconnect - Payload:', payload);
-      console.log('Hook handleDisconnect - API URL:', `${BASE_URL}${APIs.DISCONNECT_DATABASE}`);
-      
       // Make the API call to disconnect
       const response = await axios.post(`${BASE_URL}${APIs.DISCONNECT_DATABASE}`, payload, {
         headers: {
@@ -242,32 +254,19 @@ export const useDatabaseConnections = () => {
           'Accept': 'application/json'
         }
       });
-      
-      console.log('Hook handleDisconnect - Response:', response.data);
-      
       if (response.data) {
-        
-        
         // Refresh active connections to reflect the disconnection
         try {
           await fetchActiveConnections();
-          
-        } catch (error) {
-          
-        }
-        
+        } catch (error) {}
         // Refresh available connections immediately
         await updateConnectionsImmediate();
-        
         // Clear selected connection
         setSelectedConnection("");
         setSelectedConnectionData(null);
-        
-        addMessage(response.data.message || "Database disconnected successfully!", "success");
+        addMessage(response.data.message, "success");
       }
     } catch (error) {
-      console.error('Hook handleDisconnect - Error:', error);
-      console.error('Hook handleDisconnect - Error response:', error.response?.data);
       
       // Show error message
       let errorMessage = "Failed to disconnect from database.";
@@ -291,24 +290,88 @@ export const useDatabaseConnections = () => {
     }
   };
 
+  // Unified connect/activate function
+  const handleConnectOrActivate = async (connectionData, flag = "1") => {
+    setIsConnecting(true);
+    try {
+      let payload;
+      const dbTypeValue = (connectionData.databaseType || connectionData.db_type || connectionData.connection_database_type || '').toLowerCase();
+      if (dbTypeValue === 'sqlite') {
+        let name = connectionData.connection_name || connectionData.connectionName || '';
+        if (!name || name.trim() === '') name = 'sqlite_db';
+        let database = connectionData.connection_database_name || connectionData.databaseName || connectionData.database || '';
+        if (!database || database.trim() === '') database = name;
+        let db_type = 'sqlite';
+        payload = {
+          name,
+          db_type,
+          database,
+          port: 0,
+          host: '',
+          username: '',
+          password: '',
+          flag_for_insert_into_db_connections_table: flag
+        };
+      } else {
+        payload = {
+          name: connectionData.connectionName || connectionData.name || connectionData.connection_name || '',
+          db_type: (connectionData.databaseType || connectionData.db_type || connectionData.connection_database_type || '').toLowerCase(),
+          host: connectionData.host || connectionData.connection_host || '',
+          port: parseInt(connectionData.port || connectionData.connection_port) || 0,
+          username: connectionData.username || connectionData.connection_username || '',
+          password: connectionData.password || connectionData.connection_password || '',
+          database: connectionData.databaseName || connectionData.database || connectionData.connection_database_name || '',
+          flag_for_insert_into_db_connections_table: flag
+        };
+      }
+      const apiUrl = `${BASE_URL}${APIs.CONNECT_DATABASE}`;
+      const response = await axios.post(apiUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      if (response.data) {
+        try { await fetchActiveConnections(); } catch {}
+        await updateConnectionsImmediate();
+        addMessage(response.data.message || (flag === "0" ? "Database activated successfully!" : "Database connected successfully!"), "success");
+        setIsConnected(flag === "1");
+      }
+    } catch (error) {
+      addMessage(`Connection failed: ${error.message || error}`, "error");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   // Handle connection activation
   const handleActivateConnection = async (connection) => {
-    
-    
     setIsActivating(true);
-    
     try {
-      // Prepare the API request payload for activation
-      const payload = {
-        name: connection.connection_name,
-        db_type: connection.connection_database_type.toLowerCase(),
-        host: connection.connection_host,
-        port: parseInt(connection.connection_port),
-        username: connection.connection_username,
-        password: connection.connection_password,
-        database: connection.connection_database_name,
-        flag_for_insert_into_db_connections_table: "0"
-      };
+      let payload;
+      if(connection.databasetype.toLowerCase() === 'sqlite'){
+     payload = {
+          name: connection.connection_name,
+          db_type: "sqlite",
+          host: "",
+          port: 0, // SQLite does not use port
+          username:"",
+          password: "",
+          database:connection.connection_database_name,
+          flag_for_insert_into_db_connections_table: "0"
+        };
+      }else {
+        payload = {
+          name: connection.connection_name,
+          db_type: connection.connection_database_type ? connection.connection_database_type.toLowerCase() : '',
+          host: connection.connection_host,
+          port: parseInt(connection.connection_port),
+          username: connection.connection_username,
+          password: connection.connection_password,
+          database: connection.connection_database_name,
+          flag_for_insert_into_db_connections_table: "0"
+        };
+      }
       
       
       
@@ -322,43 +385,9 @@ export const useDatabaseConnections = () => {
         
         throw new Error("Database connection API endpoint not configured");
       }
-      
+      try{
       // Construct the URL
       const apiUrl = `${BASE_URL}${APIs.CONNECT_DATABASE}`;
-      
-      
-      // Make the API call
-      try {
-       
-        
-        // Add a timestamp to track the request
-        const requestStartTime = Date.now();
-        
-        
-        // Test basic axios functionality
-        
-        try {
-          const testResponse = await axios.get(BASE_URL);
-          
-        } catch (testError) {
-          
-        }
-        
-        // Try manual fetch as well to compare
-        
-        try {
-          const fetchResponse = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify(payload)
-          });
-          
-        } catch (fetchError) {
-          
-        }
         
         const response = await axios.post(apiUrl, payload, {
           headers: {
@@ -367,21 +396,30 @@ export const useDatabaseConnections = () => {
           }
         });
         
-        const requestEndTime = Date.now();
-        
         
         if (response.data) {
           
           
           // Add the activated database connection to our context
-          addDatabase({
-            name: connection.connection_name,
-            type: connection.connection_database_type,
-            host: connection.connection_host,
-            port: connection.connection_port,
-            username: connection.connection_username,
-            databaseName: connection.connection_database_name
-          });
+          if (payload.db_type === 'sqlite') {
+            addDatabase({
+              name: payload.name,
+              type: 'sqlite',
+              host: '',
+              port: 0,
+              username: '',
+              databaseName: payload.database
+            });
+          } else {
+            addDatabase({
+              name: connection.connection_name,
+              type: connection.connection_database_type,
+              host: connection.connection_host,
+              port: connection.connection_port,
+              username: connection.connection_username,
+              databaseName: connection.connection_database_name
+            });
+          }
           
           // Refresh active connections to show the newly activated connection
           try {
@@ -434,34 +472,80 @@ export const useDatabaseConnections = () => {
     }
   };
 
- 
-
-  // Auto-refresh connections when they're accessed and stale
-  const currentAvailableConnections = useMemo(() => {
-    // If connections haven't been updated recently, trigger a refresh
-    if (Date.now() - lastUpdateTime > 15000) { // 15 seconds
-      updateConnectionsImmediate();
+  // Handle deactivate connection (flag = "0")
+  const handleDeactivate = async (connectionName, databaseType, flag = "0") => {
+    if (!connectionName || !databaseType) {
+      addMessage("Connection name and database type are required for deactivation", "error");
+      return;
     }
-    return availableConnections;
-  }, [availableConnections, lastUpdateTime]);
+    setIsDisConnecting(true);
+    try {
+      // Prepare the API request payload for deactivate
+      const payload = {
+        name: connectionName,
+        db_type: databaseType.toLowerCase(),
+        flag: flag.toString()
+      };
+      const response = await axios.post(`${BASE_URL}${APIs.DISCONNECT_DATABASE}`, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      if (response.data) {
+        // Refresh active connections to reflect the deactivation
+        try {
+          await fetchActiveConnections();
+        } catch (error) {}
+        // Refresh available connections immediately
+        await updateConnectionsImmediate();
+        // Clear selected connection
+        setSelectedConnection("");
+        setSelectedConnectionData(null);
+        addMessage(response.data.message || "Database deactivated successfully!", "success");
+      }
+    } catch (error) {
+      
+      // Show error message
+      let errorMessage = "Failed to deactivate connection.";
+      
+      if (error.response) {
+        console.error('Hook handleDeactivate - Response error:', error.response.status, error.response.data);
+        errorMessage = error.response.data?.message || 
+                      error.response.data?.error || 
+                      `Server error (${error.response.status})`;
+      } else if (error.request) {
+        console.error('Hook handleDeactivate - Request error:', error.request);
+        errorMessage = "No response from server. Please check if the server is running.";
+      } else {
+        console.error('Hook handleDeactivate - General error:', error.message);
+        errorMessage = error.message;
+      }
+      
+      addMessage(`Deactivation failed: ${errorMessage}`, "error");
+    } finally {
+      setIsDisConnecting(false);
+    }
+  };
 
   return {
     connectionData,
     setConnectionData,
+    selectedConnection,
+    selectedConnectionData,
+    availableConnections,
+    isLoadingConnections,
+    isConnecting,
+    isDisConnecting,
+    isConnected,
+    isActivating,
+    loadAvailableConnections,
+    handleConnectionSelect,
     handleConnectionInputChange,
     handleConnectionSubmit,
     handleDisconnect,
-    handleConnectionSelect,
-    loadAvailableConnections,
-    isConnecting,
-    isDisConnecting,
-    isActivating,
-    isConnected,
-    isLoadingConnections,
-    availableConnections: currentAvailableConnections,
-    selectedConnection,
-    selectedConnectionData,
-    updateConnectionsImmediate,
-    handleActivateConnection
+    handleConnectOrActivate,
+    handleActivateConnection,
+    handleDeactivate
   };
 };

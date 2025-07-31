@@ -3,9 +3,9 @@ import style from "./ToastMessage.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 
 const ToastMessage = (props) => {
-  const { message, setShowToast } = props;
+  const { message, onClose } = props;
   const handleClose = () => {
-    setShowToast(false);
+    onClose();
   };
   return (
     <div className={style.toastContainer}>

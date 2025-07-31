@@ -7,23 +7,15 @@ export const APP_VERSION = pkg.version;
 export const BOT = "bot";
 export const USER = "user";
 
-export const dropdown1 = [
-  { label: "React Agent", value: "react_agent" },
-  { label: "Multi Agent", value: "multi_agent" },
-  { label: "Meta Agent", value: "meta_agent" },
-  { label:"Planner Meta Agent",value:"planner_meta_agent"},
-  { label: "React Critic Agent", value: "react_critic_agent"},
-  { label:"Planner Executor Agent",value:"planner_executor_agent"},
-];
 //   { label: "Custom Template", value: "custom_template" }
 
-export const agentTypes = [
-  { label: "React Agent", value: "react_agent" },
-  { label: "Multi Agent", value: "multi_agent" },
-  { label: "Meta Agent", value: "meta_agent" },
-  {label:"Planner Meta Agent",value:"planner_meta_agent"},
-  {label: "React Critic Agent", value: "react_critic_agent"},
-  {label:"Planner Executor Agent",value:"planner_executor_agent"},
+export const agentTypesDropdown = [
+  { label: "Meta", value: "meta_agent" },
+  { label: "Meta Planner ",value:"planner_meta_agent"},
+  { label: "Planner Executor",value:"planner_executor_agent"},
+  { label: "Planner Executor Critic", value: "multi_agent" },
+  { label: "React", value: "react_agent" },
+  { label: "React Critic", value: "react_critic_agent"}
 ];
 
 export const REACT_AGENT = "react_agent";
@@ -40,29 +32,23 @@ export const dislike = "feedback";
 
 export const CHAT_BOT_DATA = "CHAT_BOT_DATA";
 
-export const BASE_URL = "add_your_server_host_url";
+export const BASE_URL = process.env.REACT_APP_BASE_URL;
 
-export const mkDocs_baseURL = "http://10.208.82.47:9000/";
+export const mkDocs_baseURL = process.env.REACT_APP_MKDOCS_BASE_URL;
 
-export const liveTrackingUrl = "add_your_live_track_Url";
+export const liveTrackingUrl = process.env.REACT_APP_LIVE_TRACKING_URL;
 
 export const APIs = {
-  GET_AGENTS: "/get-agents/",
-  // DELETE_AGENT: "/delete-agent/",
   DELETE_AGENT: "/react-agent/delete-agent/",
-  ONBOARD_AGENT: "/react-agent/onboard-agent",
-  ONBOARD_MULTI_AGENT: "/planner-executor-critic-agent/onboard-agents",
-  ONBOARD_META_AGENT: "/meta-agent/onboard-agents",
-  GET_TOOLS: "/get-tools/",
+  ONBOARD_AGENT: "/onboard-agent",
   GET_AGENT: "/get-agent/",
-  UPDATE_AGENT: "/react-agent/update-agent",
-  UPDATE_MULTI_AGENT: "/planner-executor-critic-agent/update-agent",
-  UPADATE_META_AGENT: "/meta-agent/update-agent",
+  UPDATE_AGENT: "/update-agent",
   PLANNER: "/planner-executor-critic-agent/get-query-response-hitl-replanner",
   CUSTOME_TEMPLATE_QUERY: "/custom_template/get-query-response-hitl-replanner",
   META_AGENT_QUERY: "/meta-agent/get-query-response",
   REACT_MULTI_AGENT_QUERY: "/get-query-response",
   GET_CHAT_HISTORY: "/get-chat-history",
+  CLEAR_CHAT_HISTORY: "/clear-chat-history",
   META_AGENT_HISTORY: "/meta-agent/get-chat-history",
   GET_TAGS: "/tags/get-available-tags",
   FETCH_OLD_CHATS: "/old-chats",
@@ -70,17 +56,8 @@ export const APIs = {
   GET_ALLUPLOADFILELIST: "/files/user-uploads/get-file-structure/",
   GET_MODELS: "/get-models",
   FILE_UPLOAD:'/files/user-uploads/delete-file/?file_path=',
-  GET_TOOLS_BY_SEARCH:"/get-tools-by-search",
-  GET_AGENTS_BY_SEARCH:"/get-agents-by-search",
   GET_AGENTS_BY_DETAILS:"/get-agents-details-for-chat",
   PLANNER_META_AGENT_QUERY:"/planner-meta-agent/get-query-response",
-  ONBOARD_PLANNER_META_AGENT:"/planner-meta-agent/onboard-agents",
-  UPDATE_PLANNER_META_AGENT:"/planner-meta-agent/update-agent",
-  UPDATE_PLANNER_SYSTEM_PROMT:"/planner-meta-agent/update-system-prompt",
-  ONBOARD_PLANNER_EXECUTOR_AGENT:"/planner-executor-agent/onboard-agents",
-  ONBOARD_REACT_CRITIC_AGENT:"/react-critic-agent/onboard-agent",
-  UPDATE_REACT_CRITIC_AGENT:"/react-critic-agent/update-agent",
-  UPDATE_PLANNER_EXECUTOR_AGENT:"/planner-executor-agent/update-agent",
   PLANNER_EXECUTOR_AGENT_QUERY:"/planner-executor-agent/get-query-response-hitl-replanner",
   UPDATE_PASWORD_ROLE:"/update-password-role",
   RECYCLE_BIN:"/recycle-bin",
@@ -109,6 +86,7 @@ export const APIs = {
   SECRETS_GET:'/secrets/get',
   PUBLIC_SECRETS_GET:'/secrets/public/get',
   HEALTH_SECRETS:'/secrets/health'
+
 };
 
 // export const sessionId = "test_101";
@@ -122,33 +100,19 @@ export const feedBackMessage =
 
 export const likeMessage =
   "Thanks for the like! We're glad you found the response helpful. If you have any more questions or need further assistance, feel free to ask!";
-export const SystemPromptsTypesPlanner=[
-  { label:"SYSTEM_PROMPT_META_AGENT_PLANNER", value:"SYSTEM_PROMPT_META_AGENT_PLANNER"},
-  { label:"SYSTEM_PROMPT_META_AGENT_RESPONDER", value:"SYSTEM_PROMPT_META_AGENT_RESPONDER"},
-  { label:"SYSTEM_PROMPT_META_AGENT_SUPERVISOR",value:"SYSTEM_PROMPT_META_AGENT_SUPERVISOR"}
+export const SystemPromptsPlannerMetaAgent=[
+  {label:"SYSTEM_PROMPT_META_AGENT_PLANNER", value:"SYSTEM_PROMPT_META_AGENT_PLANNER"},
+  {label:"SYSTEM_PROMPT_META_AGENT_RESPONDER", value:"SYSTEM_PROMPT_META_AGENT_RESPONDER"},
+  {label:"SYSTEM_PROMPT_META_AGENT_SUPERVISOR",value:"SYSTEM_PROMPT_META_AGENT_SUPERVISOR"}
 ]
-export const SystemPromptsTypes = [
+export const SystemPromptsMultiAgent = [
+  {label : "SYSTEM PROMPT GENERAL LLM", value: "SYSTEM_PROMPT_GENERAL_LLM"},
   { label: "SYSTEM PROMPT CRITIC AGENT", value: "SYSTEM_PROMPT_CRITIC_AGENT" },
-  {
-    label: "SYSTEM PROMPT CRITIC BASED PLANNER AGENT",
-    value: "SYSTEM_PROMPT_CRITIC_BASED_PLANNER_AGENT",
-  },
-  {
-    label: "SYSTEM PROMPT EXECUTOR AGENT",
-    value: "SYSTEM_PROMPT_EXECUTOR_AGENT",
-  },
-  {
-    label: "SYSTEM PROMPT PLANNER AGENT",
-    value: "SYSTEM_PROMPT_PLANNER_AGENT",
-  },
-  {
-    label: "SYSTEM PROMPT REPLANNER AGENT",
-    value: "SYSTEM_PROMPT_REPLANNER_AGENT",
-  },
-  {
-    label: "SYSTEM PROMPT RESPONSE GENERATOR AGENT",
-    value: "SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT",
-  },
+  {label: "SYSTEM PROMPT PLANNER AGENT",value: "SYSTEM_PROMPT_PLANNER_AGENT"},
+  {label: "SYSTEM PROMPT EXECUTOR AGENT",value: "SYSTEM_PROMPT_EXECUTOR_AGENT"},
+  {label: "SYSTEM PROMPT REPLANNER AGENT",value: "SYSTEM_PROMPT_REPLANNER_AGENT"},
+  {label: "SYSTEM PROMPT RESPONSE GENERATOR AGENT",value: "SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT"},
+  {label: "SYSTEM PROMPT CRITIC BASED PLANNER AGENT",value: "SYSTEM_PROMPT_CRITIC_BASED_PLANNER_AGENT"}
 ];
 
 export const branchInteruptKey =
@@ -161,17 +125,17 @@ export const roleOptions = ["Admin", "Developer", "User"];
 
 export const systemPromptReactCriticAgents = 
 [
+  {label:"SYSTEM PROMPT CTRITIC AGENT",value:"SYSTEM_PROMPT_CRITIC_AGENT"},
   {label:"SYSTEM PROMPT EXECUTOR AGENT",value:"SYSTEM_PROMPT_EXECUTOR_AGENT"},
-  {label:"SYSTEM PROMPT CTRITIC AGENT",value:"SYSTEM_PROMPT_CRITIC_AGENT"}
 ];
 
 export const systemPromptPlannerExecutorAgents =
 [
   {label:"SYSTEM PROMPT GENERAL LLM",value:"SYSTEM_PROMPT_GENERAL_LLM"},
-  {label:"SYSTEM PROMPT RESPONSE GENERATOR AGENT",value:"SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT"},
-  {label:"SYSTEM PROMPT REPLANNER AGENT",value:"SYSTEM_PROMPT_REPLANNER_AGENT"},
+  {label:"SYSTEM PROMPT PLANNER AGENT",value:"SYSTEM_PROMPT_PLANNER_AGENT"},
   {label:"SYSTEM PROMPT EXECUTOR AGENT",value:"SYSTEM_PROMPT_EXECUTOR_AGENT"},
-  {label:"SYSTEM PROMPT PLANNER AGENT",value:"SYSTEM_PROMPT_PLANNER_AGENT"}
+  {label:"SYSTEM PROMPT REPLANNER AGENT",value:"SYSTEM_PROMPT_REPLANNER_AGENT"},
+  {label:"SYSTEM PROMPT RESPONSE GENERATOR AGENT",value:"SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT"},
 ];
 
 

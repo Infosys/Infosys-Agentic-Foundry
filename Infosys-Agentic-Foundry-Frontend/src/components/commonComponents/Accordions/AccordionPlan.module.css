@@ -2,7 +2,7 @@
   border-radius: 5px;
   margin-bottom: 5px;
   overflow: visible;
-  max-width: 92%;
+  max-width: 100%;
   width: fit-content;
   background: none;
   background: #eeeeee70;
@@ -26,7 +26,6 @@
   position: relative;
   z-index: 0;
   background: #eeeeee70;
-  font-family: Segoe UI;
   /* max-height: 0; */
   opacity: 0;
   overflow: hidden;
@@ -42,6 +41,10 @@
   border-bottom-right-radius: 15px;
   border-bottom-left-radius: 15px;
   scrollbar-width: thin;
+}
+
+.accordion-content:has(.MessagingboxToolcall) {
+  margin: 0;
 }
 
 /* Ensure MessagingboxToolcall content is visible when accordion is open */
@@ -82,7 +85,6 @@
 .accordionButton {
   display: flex;
   align-items: center;
-  font-family: Segoe UI;
   font-weight: 600;
   font-size: 10px;
   line-height: 16px;
@@ -109,7 +111,6 @@
   display: flex;
   /* flex-direction: column; */
   align-items: center;
-  font-family: Segoe UI;
   font-weight: 600;
   font-size: 12px;
   line-height: 16px;
@@ -124,10 +125,10 @@
 }
 .accordionContainerToolCall {
   max-width: 100%;
+  min-width: 260px;
   padding: 3px;
   position: relative;
   background: #eeeeee70;
-  font-family: Segoe UI;
   border: 1px solid #ccc;
   border-radius: 5px;
 }

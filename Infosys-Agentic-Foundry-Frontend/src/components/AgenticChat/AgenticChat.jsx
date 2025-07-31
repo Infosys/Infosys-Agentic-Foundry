@@ -9,9 +9,11 @@ import "./AgenticChat.css";
 import { APIs } from '../../constant';
 import { useAuditContext } from "../../context/AuditContext";
 import ModelSelectorPopover from "../commonComponents/ModelSelectorPopover/ModelSelectorPopover";
+import { useMessage } from "../../Hooks/MessageContext";
 
 const AgenticChat = forwardRef((props, ref) => {
   const { setAuditData } = useAuditContext();
+  const { addMessage } = useMessage();
 
   const [messages, setMessages] = useState([
     {
@@ -221,7 +223,7 @@ const AgenticChat = forwardRef((props, ref) => {
 
       // Enforce maximum of 2 files
       if (uploadedFiles.length + selectedFiles.length > 2) {
-        alert('You can only upload a maximum of 2 files.');
+        addMessage('You can only upload a maximum of 2 files.');
         return;
       }
 
@@ -315,7 +317,7 @@ const AgenticChat = forwardRef((props, ref) => {
             .map((message, index) => (
               <div
                 key={message.id}
-                className={`message-with-feedback ${index === messages.length - 1 ? "message-appear" : ""}}`}
+                className={`message-with-feedback ${index === messages.length - 1 ? "message-appear" : ""}`}
               >
                 <div className={`message ${message.sender}`}>
                   {message.text}
@@ -350,8 +352,7 @@ const AgenticChat = forwardRef((props, ref) => {
                   </div>
                 )}
               </div>
-            ))
-            .reverse()}
+            ))}
         </div>
 
         {/* Display uploaded files with improved styling */}

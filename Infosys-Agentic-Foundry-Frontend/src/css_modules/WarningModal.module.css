@@ -19,7 +19,6 @@
   width: min(90%, 500px);
   max-height: 80vh;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  font-family: Segoe UI;
 }
 
 .warningContainer {

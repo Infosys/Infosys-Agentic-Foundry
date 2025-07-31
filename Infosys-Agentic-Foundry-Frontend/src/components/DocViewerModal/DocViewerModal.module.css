@@ -44,6 +44,6 @@ border-radius: 4px;
   overflow-y: auto;
   height: 100%;
   background-color: white;
-  font-family: 'Segoe UI', sans-serif;
+  /* font-family: 'Segoe UI', sans-serif; */
   color: #333;
 }

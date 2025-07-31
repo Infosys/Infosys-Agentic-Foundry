@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import PlaceholderScreen from "./PlaceholderScreen";
 import DOMPurify from "dompurify";
 import SVGIcons from "../../Icons/SVGIcons";
 import { BOT, CUSTOM_TEMPLATE, MULTI_AGENT, PLANNER_EXECUTOR_AGENT, REACT_CRITIC_AGENT, USER } from "../../constant";
@@ -35,6 +36,16 @@ import {
   fetchOldChats,
   fetchNewChats,
 } from "../../services/chatService";
+import chatBubbleCss from "./ChatBubble.module.css";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faUser,
+  faRobot,
+  faThumbsUp,
+  faThumbsDown,
+  faRotateRight
+} from "@fortawesome/free-solid-svg-icons";
+
 
 const MsgBox = (props) => {
   const [feedBackText, setFeedBackText] = useState("");
@@ -79,6 +90,7 @@ const MsgBox = (props) => {
     messageDisable,
     isEditable,
     setIsEditable,
+    isDeletingChat,
   } = props;
   const [parsedValues, setParsedValues] = useState({});
   const rawData =
@@ -93,6 +105,12 @@ const MsgBox = (props) => {
 
   const [continueButton, setContinueButton] = useState(true);
   const [sendIconShow, setSendIconShow] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+  // Track which feedback is currently highlighted ("up" or "down" or null)
+  const [highlightedFeedback, setHighlightedFeedback] = useState(null);
+
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  
   const handleFeedBack = (value, sessionId) => {
     setGenerateButton(true);
     setFeedback(value);
@@ -148,30 +166,23 @@ const MsgBox = (props) => {
           if (charIndex < currentSentence.length) {
             setDisplayedText(currentSentence.slice(0, charIndex + 1));
             charIndex++;
-            
-            // More consistent typing speed for smoother effect
             const speed = currentSentence[charIndex - 1] === ' ' ? 120 : 
                          currentSentence[charIndex - 1] === '.' ? 200 :
-                         75; // Consistent speed with slight variations
+                         75; 
             setTimeout(typeChar, speed);
           } else {
-            // Sentence completed, wait before starting next sentence
             setTimeout(() => {
               setCurrentSentenceIndex(sentenceIndex + 1);
               typeSentence(sentenceIndex + 1);
-            }, 2500); // 2.5 second pause between sentences
+            }, 2500); 
           }
-        };
-        
-        // Start typing the current sentence
-        setTimeout(typeChar, 500); // Initial delay before typing starts
+        };    
+        setTimeout(typeChar, 500); 
       };
-      
-      // Start the typewriter effect
+
       typeSentence(0);
       
     } else {
-      // Reset states when placeholder is not shown
       setDisplayedText("");
       setIsTyping(false);
       setShowCursor(false);
@@ -193,6 +204,7 @@ const MsgBox = (props) => {
     setSendIconShow(true);
   };
   const handlePlanFeedBack = async (feedBack, userText) => {
+
     setClose(feedBack === "no" ? true : false);
     setFeedback(feedBack);
     setFetching(true);
@@ -252,10 +264,12 @@ const MsgBox = (props) => {
     if (feedBack !== like) setMessageData(converToChatFormat(response) || []);
 
     if (feedBack === like) {
-      setShowToast(true);
-      setTimeout(() => {
-        setShowToast(false);
-      }, 5000);
+      if (!isDeletingChat) {
+        setShowToast(true);
+        setTimeout(() => {
+          setShowToast(false);
+        }, 5000);
+      }
     }
     setFetching(false);
     setgenerateFeedBackButton(false);
@@ -279,7 +293,6 @@ const MsgBox = (props) => {
     const newData = {};
 
     for (const [key, value] of Object.entries(data)) {
-      // if (typeof value !=='number'&& value?.includes("{")) {
       if (typeof value !== "number") {
         try {
           const parsed = JSON.parse(value);
@@ -415,21 +428,31 @@ const MsgBox = (props) => {
   const [text, setText] = useState(argumentValue);
   let messagetext = messageData?.filter((item) => item.message.trim() === "");
   
+  const getAgentIcon = () => {
+    switch (agentType) {
+      case 'META_AGENT':
+        return '🧠';
+      case 'MULTI_AGENT':
+        return '👥';
+      case 'REACT_AGENT':
+        return '⚡';
+      default:
+        return <FontAwesomeIcon icon={faRobot} />;
+    }
+  };
+  
   return (
-    <div className={styles.msgBoxWrapper}>
+    <div className={styles.messagesContainer}>
        {(((!props?.allOptionsSelected && props?.oldChats.length===0) ||(props?.allOptionsSelected && props?.oldChats.length===0))&& messageData.length ===0) &&(
 
-       <div className={styles.msgBoxPlaceHolder}>
-          <img src={brandlogotwo} alt="Brandlogo" />
-          <div className={styles.typewriterContainer}>
-            <span className={styles.typewriterText}>
-              {displayedText}
-            </span>
-            {showCursor && <span className={styles.cursor}></span>}
-          </div>
-        </div>
+       <PlaceholderScreen 
+                agentType={agentType}
+                model={model}
+                selectedAgent={agentSelectValue}
+              />
 
       )}      
+      
       {(messageData?.length > 0 || props?.oldChats.length > 0)&&
         ((feedBack === "no" || feedBack === dislike) &&
         ((agentType === REACT_AGENT && close) ||
@@ -447,13 +470,15 @@ const MsgBox = (props) => {
               : messageData.length - 1;
           return (
             <>
-              <div className={styles.chatContainer} key={data.message}>
+              <div className={`${chatBubbleCss.container} ${data.type === BOT ? chatBubbleCss.botMessage : chatBubbleCss.userMessage}`} key={data.message}>
                 {data.type === BOT && (
-                  <div className={styles.botChats}>
-                    <div className={styles.botIcon}>
-                      <img src={robot} alt="Robot" />
+                  <>
+                    <div className={chatBubbleCss.avatarContainer}>
+                      <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.botAvatar}`}>
+                          <span className={chatBubbleCss.agentIcon}>{getAgentIcon()}</span>
+                      </div>
                     </div>
-                    <div className={styles.botChatSection}>
+                    <div className={chatBubbleCss.messageWrapper}>
                       {data.message &&
                         agentType !== CUSTOM_TEMPLATE &&
                         agentType === PLANNER_META_AGENT &&
@@ -522,25 +547,24 @@ const MsgBox = (props) => {
                               </div>
 
                               {!fetching && feedBack !== "no" && (
-                                <div className={styles["plan-feedback"]}>
+                                <div className={chatBubbleCss.feedbackWrapper}>
                                   <button
-                                    onClick={() =>
-                                      handlePlanFeedBack("yes", data?.userText)
-                                    }
-                                    className={styles.button}
+                                    className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
+                                    onClick={() => handlePlanFeedBack("yes", data?.userText)}
+                                    title="Good response"
                                   >
-                                    <img src={thumbsUp} alt="Approve" />
+                                    <FontAwesomeIcon icon={faThumbsUp} />
                                   </button>
-
                                   <button
+                                    className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
                                     onClick={() =>
                                       handlePlanFeedBack("no", data?.userText)
                                     }
-                                    className={`${styles.button} + ${styles.dislikeButton}`}
+                                    title="Poor response"
                                   >
-                                    <img src={thumbsDown} alt="Dislike" />
+                                    <FontAwesomeIcon icon={faThumbsDown} style={{transform: 'scaleX(-1)'}} />
                                   </button>
-                                </div>
+                                </div> 
                               )}
 
                               {showInput && (
@@ -665,23 +689,22 @@ const MsgBox = (props) => {
                             {!fetching &&
                               index === lastIndex &&
                               agentType === CUSTOM_TEMPLATE && (
-                                <div className={styles["plan-feedback"]}>
+                                <div className={chatBubbleCss.feedbackWrapper}>
                                   <button
-                                    onClick={() =>
-                                      handlePlanFeedBack("yes", data?.userText)
-                                    }
-                                    className={styles.button}
+                                    className={`${chatBubbleCss.feedbackButton} `} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
+                                    onClick={() => handlePlanFeedBack("yes", data?.userText)}
+                                    title="Good response"
                                   >
-                                    <img src={thumbsUp} alt="Approve" />
+                                    <FontAwesomeIcon icon={faThumbsUp} />
                                   </button>
-
                                   <button
+                                    className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
                                     onClick={() =>
                                       handlePlanFeedBack("no", data?.userText)
                                     }
-                                    className={`${styles.button} + ${styles.dislikeButton}`}
+                                    title="Poor response"
                                   >
-                                    <img src={thumbsDown} alt="Dislike" />
+                                    <FontAwesomeIcon icon={faThumbsDown} style={{transform: 'scaleX(-1)'}} />
                                   </button>
                                 </div>
                               )}
@@ -879,12 +902,15 @@ const MsgBox = (props) => {
                                     ?.additional_kwargs
                                 ).length > 0 ? (
                                   <>
+                                  <div className={chatBubbleCss.feedbackWrapper}>
                                     <button
+                                      className={`${chatBubbleCss.feedbackButton}`} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
                                       onClick={() => submitFeedbackYes(data)}
-                                      className={styles.button}
+                                      title="Good response"
                                     >
-                                      <img src={thumbsUp} alt="Approve" />
+                                      <FontAwesomeIcon icon={faThumbsUp} />
                                     </button>
+                                      
                                     {Array.isArray(
                                       props?.messageData?.toolcallData
                                         ?.additional_details
@@ -919,6 +945,7 @@ const MsgBox = (props) => {
                                         fill={"  #007ac0"}
                                       />
                                     </button>
+                                  </div>
                                   </>
                                 ) : (
                                   <>
@@ -941,34 +968,35 @@ const MsgBox = (props) => {
                                       <>
                                         {agentType !== PLANNER_META_AGENT && (
                                           <>
+                                          <div className={chatBubbleCss.feedbackWrapper}>
                                             <button
+                                              className={`${chatBubbleCss.feedbackButton}`} /*${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''}*/
                                               onClick={() => handleFeedBack(like)}
-                                              className={styles.button}
+                                              title="Good response"
                                             >
-                                              <img src={thumbsUp} alt="Approve" />
+                                              <FontAwesomeIcon icon={faThumbsUp} />
                                             </button>
                                             <button
+                                              className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
                                               onClick={() =>
                                                 handleFeedBack(dislike)
                                               }
-                                              className={`${styles.button} + ${styles.dislikeButton}`}
+                                              title="Poor response"
                                             >
-                                              <img
-                                                src={thumbsDown}
-                                                alt="Dislike"
-                                              />
+                                              <FontAwesomeIcon icon={faThumbsDown} style={{transform: 'scaleX(-1)'}} />
                                             </button>
                                             <button
-                                              onClick={() =>
-                                                handleFeedBack(regenerate)
-                                              }
-                                              className={styles.button}
+                                              className={chatBubbleCss.feedbackButton}
+                                              onClick={() => handleFeedBack(regenerate)}
+                                              title="Regenerate response"
                                             >
-                                              <img
-                                                src={refresh}
-                                                alt="Regenerate"
+                                              <FontAwesomeIcon
+                                                icon={faRotateRight}
+                                                style={{transform: 'rotate(-106deg)'}}
+                                                className={generating ? chatBubbleCss.spinning : ''}
                                               />
                                             </button>
+                                          </div>
                                           </>
                                         )}
                                       </>
@@ -991,21 +1019,32 @@ const MsgBox = (props) => {
                           </div>
                         )}
                     </div>
-                  </div>
+                  </>
                 )}
                 {data.type === USER && (
                   <>
-                    <div className={styles.userChat}>
-                      {/* Sanitize the message (with newlines already converted to <br />), 
-                      then parse the resulting safe HTML string into React elements. */}
-                      {parse(
-                        DOMPurify.sanitize(
-                          (data?.message || "").replace(/\n/g, "<br />")
-                        )
-                      )}
+                    <div className={chatBubbleCss.avatarContainer}>
+                      <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.userAvatar}`}>
+                          <FontAwesomeIcon icon={faUser} className={chatBubbleCss.avatarIcon} />
+                      </div>
                     </div>
-                    <div className={"userIcon"}>
-                      <SVGIcons icon="person-circle" fill="000000" />
+                    <div className={chatBubbleCss.messageWrapper}>
+                      <div className={`${chatBubbleCss.messageBubble} ${chatBubbleCss.userBubble}`}>
+                        <div className={chatBubbleCss.messageContent}>
+                          <div className={chatBubbleCss.userText}>
+                            {/* Sanitize the message (with newlines already converted to <br />), 
+                            then parse the resulting safe HTML string into React elements. */}
+                            {parse(
+                              DOMPurify.sanitize(
+                                (data?.message || "").replace(/\n/g, "<br />")
+                              )
+                            )}
+                          </div>
+                          <div className={chatBubbleCss.timestamp}>
+                            {/* Time to be displayed here */}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </>
                 )}

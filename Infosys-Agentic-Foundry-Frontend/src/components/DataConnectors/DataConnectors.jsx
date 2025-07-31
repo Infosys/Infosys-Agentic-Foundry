@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import styles from "./DataConnectors.module.css";
 import ConnectionModal from "./ConnectionModal";
 import QueryModal from "./QueryModal";
@@ -6,17 +6,21 @@ import CrudModal from "./CrudModal";
 import ConnectionManagementModal from "./ConnectionManagementModal";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
-import { DatabaseProvider } from "./context/DatabaseContext";
+import { DatabaseProvider, useDatabase } from "./context/DatabaseContext";
+import { fetchSqlConnections } from '../../services/databaseService';
 
 const DataConnectorsContent = () => {
-  const [searchTerm, setSearchTerm] = useState("");
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showQueryModal, setShowQueryModal] = useState(false);
   const [showCrudModal, setShowCrudModal] = useState(false);
   const [showManagementModal, setShowManagementModal] = useState(false);
   const [selectedDatabase, setSelectedDatabase] = useState(null);
+  const [managementDatabase, setManagementDatabase] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [isCrudExecuting, setIsCrudExecuting] = useState(false);
+  const [sqlConnections, setSqlConnections] = useState([]);
+  const activeConnectionsFetched = useRef(false);
+  const sqlConnectionsFetched = useRef(false);
 
   // Use the database connections hook
   const { 
@@ -26,9 +30,12 @@ const DataConnectorsContent = () => {
     isLoadingConnections,
     handleDisconnect: hookHandleDisconnect,
     handleActivateConnection: hookHandleActivateConnection,
+    handleDeactivate:hookHandleDeactivate,
     isDisConnecting,
-    isActivating
+    isActivating,
+    loadAvailableConnections
   } = useDatabaseConnections();
+  const { getActiveMySQLConnections, getActivePostgresConnections, getActiveSQLiteConnections, getActiveMongoConnections, fetchActiveConnections } = useDatabase();
 
   // Database types with their configurations
   const databaseTypes = [
@@ -89,22 +96,10 @@ const DataConnectorsContent = () => {
       fields: [
         {name: 'connectionName', label: 'Connection Name', type: 'text', required: true},
         {name: 'databaseType', label: 'Database Type', type: 'text', required: true, defaultValue: 'SQLite', readOnly: true},
-        { name: 'host', label: 'Host', type: 'text', required: true },
-        { name: 'port', label: 'Port', type: 'number', required: true },
-        { name: 'databaseName', label: 'Database Path', type: 'text', required: true },
-        { name: 'username', label: 'Username', type: 'text', required: true },
-        { name: 'password', label: 'Password', type: 'password', required: true}
+        { name: 'databaseName', label: 'New SQLITE DB Filename(.db,.sqlite)', type: 'text' },
       ]
     },
   ];
-
-  // Filter database types based on search term
-  const filteredDatabases = useMemo(() => 
-    databaseTypes.filter(db =>
-      db.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      db.description.toLowerCase().includes(searchTerm.toLowerCase())
-    ), [searchTerm]
-  );
 
   const handleCardClick = (database) => {
     // Don't open connection modal for management card
@@ -128,7 +123,8 @@ const DataConnectorsContent = () => {
   };
 
   const handleManagementClick = (database, event) => {
-    event.stopPropagation(); // Prevent card click event
+    event.stopPropagation();
+    setManagementDatabase(database);
     setShowManagementModal(true);
   };
 
@@ -138,13 +134,13 @@ const DataConnectorsContent = () => {
     setShowCrudModal(false);
     setShowManagementModal(false);
     setSelectedDatabase(null);
+    setManagementDatabase(null);
   };
 
   const handleRunQuery = async (queryData) => {
     setIsExecuting(true);
     try {
       // Add your query execution logic here
-      console.log("Running query:", queryData);
       // Mock execution time
       await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
@@ -158,7 +154,6 @@ const DataConnectorsContent = () => {
     setIsCrudExecuting(true);
     try {
       // Add your CRUD execution logic here
-      console.log("Executing CRUD operation:", crudData);
       
       // Mock execution time and result
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -191,28 +186,36 @@ const DataConnectorsContent = () => {
     }
   };
 
-  const handleSearchChange = (value) => {
-    setSearchTerm(value);
-  };
+  // Fetch active connections from backend when component mounts
+  useEffect(() => {
+    if (!activeConnectionsFetched.current && typeof fetchActiveConnections === 'function') {
+      fetchActiveConnections();
+      activeConnectionsFetched.current = true;
+    }
+    if (!sqlConnectionsFetched.current) {
+      fetchSqlConnections().then(result => {
+        if (result.success) {
+          setSqlConnections(result.data.connections || result.data || []);
+        } else {
+          setSqlConnections([]);
+        }
+      });
+      sqlConnectionsFetched.current = true;
+    }
+    // Fetch available connections immediately on mount
+    loadAvailableConnections && loadAvailableConnections();
+  }, [fetchActiveConnections, loadAvailableConnections]);
 
   return (
     <div className={styles.container}>
       {/* Header */}
       <div className={styles.header} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 className={styles.title}>Data Connectors</h1>
-        <button
-          className={styles.manageButton}
-          onClick={() => setShowManagementModal(true)}
-        >
-          
-          Manage
-        </button>
       </div>
-
       {/* Database Cards */}
       <div className={styles.cardsContainer}>
-        {filteredDatabases.filter(db => !db.isManagement).length > 0 ? (
-          filteredDatabases.filter(db => !db.isManagement).map((database) => {
+        {databaseTypes.filter(db => !db.isManagement).length > 0 ? (
+          databaseTypes.filter(db => !db.isManagement).map((database) => {
             const isDisabled = database.id === 'mysql' || database.id === 'mongodb';
             // Count connections for this database type
             const connectionCount = availableConnections.filter(conn => {
@@ -221,6 +224,17 @@ const DataConnectorsContent = () => {
               const expectedType = (database.name || '').toLowerCase();
               return dbType === expectedType;
             }).length;
+            // Count active connections for this database type
+            let activeConnectionCount = 0;
+            if (database.id === 'postgresql') {
+              activeConnectionCount = getActivePostgresConnections().length;
+            } else if (database.id === 'mysql') {
+              activeConnectionCount = getActiveMySQLConnections().length;
+            } else if (database.id === 'sqlite') {
+              activeConnectionCount = getActiveSQLiteConnections().length;
+            } else if (database.id === 'mongodb') {
+              activeConnectionCount = getActiveMongoConnections().length;
+            }
             return (
             <div
               key={database.id}
@@ -245,7 +259,7 @@ const DataConnectorsContent = () => {
                     <h3 className={styles.cardTitle}>{database.name}</h3>
                     {/* Show connection count badge for non-management cards */}
                     <span style={{marginLeft:0,background:'#eee', borderRadius:12, padding:'2px 8px', fontSize:12}}>
-                      {connectionCount} connection{connectionCount !== 1 ? 's' : ''}
+                      {connectionCount} connection{connectionCount !== 1 ? 's' : ''}, {activeConnectionCount} active
                     </span>
                   </div>
                 </div>
@@ -255,40 +269,48 @@ const DataConnectorsContent = () => {
                 <div className={styles.cardButtons}>
                   {/* Run button: Show for all databases except MongoDB */}
                   {database.id !== 'mongodb' && (
-                    <button
-                      className={styles.runButton}
-                      onClick={(e) => handleRunClick(database, e)}
-                      disabled={isDisabled}
-                    >
-                      Run
-                    </button>
+                    <>
+                      <button
+                        className={styles.runButton}
+                        onClick={(e) => handleRunClick(database, e)}
+                        disabled={isDisabled}
+                      >
+                        Run
+                      </button>
+                      <button
+                        className={styles.manageButton}
+                        onClick={(e) => handleManagementClick(database, e)}
+                        style={{ marginLeft: 8 }}
+                      >
+                        Manage
+                      </button>
+                    </>
                   )}
-                  {/* CRUD button: Show only for MongoDB */}
+                  {/* CRUD and Manage buttons: Show for MongoDB */}
                   {database.id === 'mongodb' && (
-                    <button
-                      className={styles.crudButton}
-                      onClick={(e) => handleCrudClick(database, e)}
-                      disabled={isDisabled}
-                    >
-                      CRUD
-                    </button>
+                    <>
+                      <button
+                        className={styles.crudButton}
+                        onClick={(e) => handleCrudClick(database, e)}
+                        disabled={isDisabled}
+                      >
+                        CRUD
+                      </button>
+                      <button
+                        className={styles.manageButton}
+                        onClick={(e) => handleManagementClick(database, e)}
+                        style={{ marginLeft: 8 }}
+                      >
+                        Manage
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
             </div>
             );
           })
-        ) : (
-          <div className={styles.noResults}>
-            <SVGIcons
-              icon="search"
-              width={48}
-              height={48}
-              fill="#ccc"
-            />
-            <p>No database types found matching "{searchTerm}"</p>
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* Connection Modal */}
@@ -308,6 +330,9 @@ const DataConnectorsContent = () => {
           onClose={handleCloseModal}
           onRunQuery={handleRunQuery}
           isExecuting={isExecuting}
+          sqlConnections={sqlConnections}
+          setSqlConnections={setSqlConnections}
+          loadingSqlConnections={false}
         />
       )}
 
@@ -326,14 +351,74 @@ const DataConnectorsContent = () => {
         <ConnectionManagementModal
           isOpen={showManagementModal}
           onClose={handleCloseModal}
-          availableConnections={availableConnections}
+          availableConnections={managementDatabase ? availableConnections.filter(conn => (conn.connection_database_type || conn.type || '').toLowerCase() === (managementDatabase.name || '').toLowerCase()) : availableConnections}
           isLoadingConnections={isLoadingConnections}
           onDisconnect={hookHandleDisconnect}
           onActivate={hookHandleActivateConnection}
           isDisConnecting={isDisConnecting}
           isActivating={isActivating}
+          databaseType={managementDatabase ? managementDatabase.name : null}
+          onDeactivate={hookHandleDeactivate}
         />
       )}
+
+      {/* Python Code Example Section */}
+      <div className={styles.codeExampleSection}>
+          Python code example to use the connection_name to connect to database in your tools:
+      </div>
+      <div className={styles.codeSnippet}>
+        <pre
+                style={{
+                  backgroundColor: '#2d2d2d',
+                  color: '#f8f8f2',
+                  padding: '16px',
+                  borderRadius: '6px',
+                  marginTop: '20px',
+                  fontSize: '14px',
+                  overflowX: 'auto',
+                  lineHeight: '1.5',
+                  whiteSpace: 'pre-wrap',
+                  marginLeft: '40px',
+                  marginRight: '40px',
+                }}
+              >
+                <code>
+{`def fetch_all_from_xyz(connection_name: str):
+    """
+    Fetches all records from the 'xyz' table in the specified database using the provided database key.
+    Args:
+        connection_name (str): The key used to identify and connect to the specific database.
+    Returns:
+        list: A list of dictionaries, where each dictionary represents a row from the 'xyz' table.
+    """
+    from MultiDBConnection_Manager import get_connection_manager
+    from sqlalchemy import text
+    try:
+        manager = get_connection_manager()
+        session = manager.get_sql_session(connection_name)
+        result = session.execute(text('SELECT * FROM xyz'))
+        rows = result.fetchall()
+        session.close()
+        return [dict(row._mapping) for row in rows]
+    except Exception as e:
+        if 'session' in locals():
+            session.close()
+        return f'Error fetching data from database {connection_name}: {str(e)}'
+
+  Note:
+  - make sure your connection is active.
+  - make sure you add the 2 import lines that are:
+        from MultiDBConnection_Manager import get_connection_manager
+        from sqlalchemy import text
+  - you need to write:
+        manager = get_connection_manager() which gets a singleton instance of youMultiDBConnectionManager class.
+        session = manager.get_sql_session(connection_name) which asks the manager for a new SQLAlchemy session connected to the database identified by connection_name.
+  -make sure you close the session after use:
+	      session.close()
+`}
+        </code>
+        </pre>
+      </div>
     </div>
   );
 };

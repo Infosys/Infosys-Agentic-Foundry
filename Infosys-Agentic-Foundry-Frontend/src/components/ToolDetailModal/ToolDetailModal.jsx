@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import styles from "./ToolDetailModal.module.css";
 import ReactMarkdown from "react-markdown";
-import { META_AGENT } from "../../constant";
+import Markdown from "react-markdown";
+import { META_AGENT,MULTI_AGENT } from "../../constant";
 import { checkToolEditable } from "../../util";
 import { useMessage } from "../../Hooks/MessageContext";
 import Loader from "../commonComponents/Loader";
@@ -78,8 +79,14 @@ const ToolDetailModal = ({
         {systemPrompt && (
           <div className={`${styles.modalBody} ${styles.codeSnippet}`}>
             <ReactMarkdown>
-              {systemPrompt &&
-                JSON.parse(systemPrompt)?.SYSTEM_PROMPT_REACT_AGENT}
+              {typeof systemPrompt === "string"
+                ? JSON.parse(systemPrompt)?.SYSTEM_PROMPT_REACT_AGENT || ""
+                : systemPrompt?.SYSTEM_PROMPT_REACT_AGENT || ""}
+            </ReactMarkdown>
+            <ReactMarkdown>
+              {typeof systemPrompt === "string"
+                ? JSON.parse(systemPrompt)?.SYSTEM_PROMPT_EXECUTOR_AGENT || ""
+                : systemPrompt?.SYSTEM_PROMPT_EXECUTOR_AGENT || ""}
             </ReactMarkdown>
           </div>
         )}
@@ -95,4 +102,4 @@ const ToolDetailModal = ({
   );
 };
 
-export default ToolDetailModal
+export default ToolDetailModal;

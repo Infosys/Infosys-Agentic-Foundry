@@ -184,7 +184,6 @@ function LoginScreen() {
     setValidationError("");
     try {
       const users = await fetchData("/login_guest");
-      console.log("Guest login response:", users); // Add logging to debug
       
       if (users.approval) {
         // Set all required cookies including role

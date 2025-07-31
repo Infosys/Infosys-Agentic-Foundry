@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from "react";
 import styles from "./QueryModal.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
-import { useDatabase } from "./context/DatabaseContext";
 import { fetchSqlConnections, generateQuery, executeQuery } from "../../services/databaseService";
-import { useMessage } from "../../Hooks/MessageContext";
 import Loader from "../commonComponents/Loader.jsx";
 
 const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
@@ -20,13 +18,7 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [sqlConnections, setSqlConnections] = useState([]);
   const [loadingSqlConnections, setLoadingSqlConnections] = useState(false);
-  const { setShowPopup } = useMessage();
-  const [showResponseModal, setShowResponseModal] = useState(false);
-
-  // Use the database context
-  const {  } = useDatabase();
-  const { addMessage } = useMessage();
-
+  const [isQueryEdited, setIsQueryEdited] = useState(false);
   // Fetch SQL connections from API
   const fetchSqlConnectionsData = async () => {
     setLoadingSqlConnections(true);
@@ -49,22 +41,59 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
     fetchSqlConnectionsData();
   }, []);
 
-  // Toggle popup based on isExecuting prop
-  useEffect(() => {
-    if (!isExecuting) {
-      setShowPopup(true);
-    } else {
-      setShowPopup(false);
-    }
-  }, [isExecuting, setShowPopup]);
-
   // Handle input changes
   const handleQueryInputChange = (e) => {
     const { name, value } = e.target;
-    setQueryData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setQueryData(prev => {
+      // If user clears the natural language input or changes connection, hide generated query/results and reset errors/toasts
+      if ((name === "naturalLanguageQuery" && value.trim() === "") || (name === "selectedConnection" && value === "")) {
+        setIsQueryEdited(false);
+        return {
+          ...prev,
+          [name]: value,
+          generatedQuery: "",
+          showGeneratedQuery: false,
+          showResult: false,
+          queryResult: null,
+          error: null,
+          toastMessage: null,
+          toastType: null
+        };
+      }
+      // If user edits the natural language query (not just clears), hide generated query/results
+      if (name === "naturalLanguageQuery") {
+        setIsQueryEdited(false);
+        return {
+          ...prev,
+          [name]: value,
+          showGeneratedQuery: false,
+          showResult: false,
+          error: null,
+          toastMessage: null,
+          toastType: null
+        };
+      }
+      // If user edits the generated query, disable run button and reset result
+      if (name === "generatedQuery") {
+        setIsQueryEdited(true);
+        return {
+          ...prev,
+          [name]: value,
+          showResult: false,
+          queryResult: null,
+          error: null,
+          toastMessage: null,
+          toastType: null
+        };
+      }
+      return {
+        ...prev,
+        [name]: value,
+        error: null,
+        toastMessage: null,
+        toastType: null
+      };
+    });
   };
 
   // Get selected database type
@@ -88,8 +117,6 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
   // Only use API SQL connections, filtered by database type (exact, case-insensitive match)
   const getAllAvailableConnections = () => {
     const expectedDatabaseType = getDatabaseTypeFromId(database.id).toLowerCase();
-    // Debug log to help diagnose API types
-    console.log('API connection types:', sqlConnections.map(conn => conn.connection_database_type));
     return sqlConnections
       .filter(conn => {
         const apiType = (conn.connection_database_type || '').toLowerCase();
@@ -132,6 +159,7 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
           generatedQuery: result.data.generated_query || result.data.query || '',
           showGeneratedQuery: true
         }));
+        setIsQueryEdited(false);
       } else {
         setQueryData(prev => ({
           ...prev,
@@ -195,7 +223,6 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
           toastType: "success",
           showResult: true,
         }));
-        setShowResponseModal(true);
       } else {
         setQueryData(prev => ({
           ...prev,
@@ -214,6 +241,16 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
     }
   };
 
+  // When generatedQuery is changed, check if it matches the original generated query to enable Run button
+  useEffect(() => {
+    if (queryData.showGeneratedQuery) {
+      // Enable Run button only if generatedQuery is not empty and not edited
+      setIsQueryEdited(queryData.generatedQuery !== '' && queryData.generatedQuery !== (queryData.generatedQuery || ''));
+    } else {
+      setIsQueryEdited(false);
+    }
+  }, [queryData.generatedQuery, queryData.showGeneratedQuery]);
+
   const allConnections = getAllAvailableConnections();
   const hasConnections = allConnections.length > 0;
   const isLoadingConnections = loadingSqlConnections;
@@ -221,7 +258,7 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
   return (
     <div className={styles.modalOverlay}>
       <div className={styles.modalContent}>
-        {isExecuting && <Loader />}
+        {(isExecuting || isGenerating) && <Loader />}
         <div className={styles.modalHeader}>
           <div className={styles.headerLeft}>
             <div
@@ -334,7 +371,7 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
                   type="button"
                   onClick={handleRunQuery} 
                   className={styles.runButton}
-                  disabled={isExecuting || !hasConnections}
+                  disabled={isExecuting || !hasConnections || isQueryEdited || !queryData.generatedQuery.trim()}
                 >
                   Run Query
                 </button>
@@ -356,33 +393,33 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
 
           {queryData.showResult && queryData.queryResult && (
             <div className={styles.resultContainer}>
-              <h4>Query Result:</h4>
               {Array.isArray(queryData.queryResult?.rows) && queryData.queryResult.rows.length > 0 ? (
-                <table className={styles.resultTable}>
-                  <thead>
-                    <tr>
-                      <th>Row</th>
-                      {queryData.queryResult.columns.map((col) => (
-                        <th key={col}>{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {queryData.queryResult.rows.map((row, idx) => (
-                      <tr key={idx}>
-                        <td className={styles.rowIndex}>{idx + 1}</td>
-                        {queryData.queryResult.columns.map((col, i) => (
-                          <td key={i}>
-                            {row[col]}
-                          </td>
+                <>
+                  <h4>Query Result:</h4>
+                  <table className={styles.resultTable}>
+                    <thead>
+                      <tr>
+                        <th>Row</th>
+                        {queryData.queryResult.columns.map((col) => (
+                          <th key={col}>{col}</th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p>No data returned.</p>
-              )}
+                    </thead>
+                    <tbody>
+                      {queryData.queryResult.rows.map((row, idx) => (
+                        <tr key={idx}>
+                          <td className={styles.rowIndex}>{idx + 1}</td>
+                          {queryData.queryResult.columns.map((col, i) => (
+                            <td key={i}>
+                              {row[col]}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : null}
             </div>
           )}
         </div>

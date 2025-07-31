@@ -128,7 +128,8 @@
   transform: translateY(-1px);
 }
 
-.runButton {
+.runButton,
+.manageButton{
  background-color: #007bff;
   color: white;
   border: none;
@@ -151,70 +152,6 @@
 
 .crudButton {
  background-color: #007bff;
-  color: white;
-  border: none;
-  padding: 8px 18px;
-  margin-right: 16px;
-  margin-top: 8px;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: auto;
-  min-width: 0;
-  justify-content: center;
-}
-
-.disconnectButton {
-  background-color: #dc3545;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-  justify-content: center;
-}
-
-.disconnectButton:hover {
-  background-color: #c82333;
-  transform: translateY(-1px);
-}
-
-.activateButton {
-  background-color: #28a745;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-  justify-content: center;
-}
-
-.activateButton:hover {
-  background-color: #218838;
-  transform: translateY(-1px);
-}
-
-.manageButton {
-  background-color: #007bff;
   color: white;
   border: none;
   padding: 8px 18px;
@@ -438,4 +375,19 @@
 .errorMessage p {
   margin: 0;
   font-size: 14px;
+}
+
+.codeExampleSection {
+  margin-left: 40px;
+  margin-top: 20px;
+}
+
+.codeExampleTitle {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #382261;
+}
+.codeSnippet{
+  margin-bottom: 66px;
 }

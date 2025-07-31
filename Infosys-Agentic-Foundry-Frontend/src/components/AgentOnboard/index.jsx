@@ -8,13 +8,11 @@ import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 import DropDown from "../commonComponents/DropDowns/DropDown";
 import {
-  agentTypes,
+  agentTypesDropdown,
   MULTI_AGENT,
   REACT_AGENT,
   META_AGENT,
   PLANNER_META_AGENT,
-  REACT_CRITIC_AGENT,
-  PLANNER_EXECUTOR_AGENT
 } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import { calculateDivs } from "../../util";
@@ -54,9 +52,7 @@ const AgentOnboard = (props) => {
         const filtered = allDetails.filter(
           (agent) =>
             agent.agentic_application_type === REACT_AGENT ||
-            agent.agentic_application_type === MULTI_AGENT ||
-            agent.agentic_application_type === REACT_CRITIC_AGENT ||
-            agent.agentic_application_type === PLANNER_EXECUTOR_AGENT
+            agent.agentic_application_type === MULTI_AGENT
         );
         setAgents((prev) => pageNumber === 1 ? filtered : [...prev, ...filtered]);
         setVisibleData((prev) => pageNumber === 1 ? filtered : [...prev, ...filtered]);
@@ -140,9 +136,7 @@ const AgentOnboard = (props) => {
               newData = (res || []).filter(
                 (a) =>
                   (a.agentic_application_type === REACT_AGENT ||
-                    a.agentic_application_type === MULTI_AGENT || 
-                    a.agentic_application_type === REACT_CRITIC_AGENT ||
-                    a.agentic_application_type === PLANNER_EXECUTOR_AGENT)
+                    a.agentic_application_type === MULTI_AGENT)
               );
             } else {
               const res = await getToolsSearchByPageLimit({
@@ -199,9 +193,7 @@ const AgentOnboard = (props) => {
           data = data.filter(
             (a) =>
               a.agentic_application_type === REACT_AGENT ||
-              a.agentic_application_type === MULTI_AGENT ||
-              a.agentic_application_type === REACT_CRITIC_AGENT ||
-              a.agentic_application_type === PLANNER_EXECUTOR_AGENT
+              a.agentic_application_type === MULTI_AGENT
           );
         } else {
           const response = await getToolsSearchByPageLimit({
@@ -241,29 +233,7 @@ const AgentOnboard = (props) => {
     };
 
     try {
-      let url = "";
-      switch (selectedAgent) {
-        case REACT_AGENT:
-          url = APIs.ONBOARD_AGENT;
-          break;
-        case MULTI_AGENT:
-          url = APIs.ONBOARD_MULTI_AGENT;
-          break;
-        case META_AGENT:
-          url = APIs.ONBOARD_META_AGENT;
-          break;
-           case PLANNER_META_AGENT:
-          url = APIs.ONBOARD_PLANNER_META_AGENT;
-          break;
-        case REACT_CRITIC_AGENT:
-          url = APIs.ONBOARD_REACT_CRITIC_AGENT;
-          break;
-        case PLANNER_EXECUTOR_AGENT:
-          url = APIs.ONBOARD_PLANNER_EXECUTOR_AGENT
-          break;
-        default:
-          break;
-      }      
+      let url = APIs.ONBOARD_AGENT;  
       const response = await postData(url, payload);
       if (response?.result?.is_created) {
         setNewAgentData(response.result);
@@ -309,7 +279,7 @@ const AgentOnboard = (props) => {
           <div className={styles.selectContainer}>
             <label htmlFor="model_name">Agent Type</label>
             <DropDown
-              options={agentTypes}
+              options={agentTypesDropdown}
               value={selectedAgent}
               onChange={(e) => {
                 hasLoadedOnce.current = false;

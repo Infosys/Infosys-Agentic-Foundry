@@ -9,8 +9,8 @@ import {
   MULTI_AGENT,
   REACT_AGENT,
  PLANNER_META_AGENT,
-  SystemPromptsTypes,
-  SystemPromptsTypesPlanner,
+  SystemPromptsMultiAgent,
+  SystemPromptsPlannerMetaAgent,
   REACT_CRITIC_AGENT,
   PLANNER_EXECUTOR_AGENT,
   systemPromptReactCriticAgents,
@@ -49,9 +49,9 @@ const UpdateAgent = (props) => {
   const [addedAgentsId, setAddedAgentsId] = useState([]);
   const [removedAgentsId, setRemovedAgentsId] = useState([]);
   const [systemPromptType, setSystemPromptType] = useState(
-    SystemPromptsTypes[0].value
+    SystemPromptsMultiAgent[0].value
   );
-  const[plannersystempromtType,setPlannersystempromptType]=useState(SystemPromptsTypesPlanner[0].value)
+  const[plannersystempromtType,setPlannersystempromptType]=useState(SystemPromptsPlannerMetaAgent[0].value)
   const[reactCriticSystemPromptType,setReactCriticSystemPromptType]=useState(systemPromptReactCriticAgents[0].value)
   const[plannerExecutorSystemPromptType,setPlannerExecutorSystemPromptType]=useState(systemPromptPlannerExecutorAgents[0].value)
   const [systemPromptData, setSystemPromptData] = useState({});
@@ -217,10 +217,10 @@ const UpdateAgent = (props) => {
         const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: "" });
         const fetchedAgents = response || [];
         const agents = fetchedAgents?.filter(
-          (agent) => !selectedAgents?.some(
-            (selectedTool) =>
-              agent?.agentic_application_id === selectedTool.agentic_application_id
-          )
+          (agent) => (agent.agentic_application_type === REACT_AGENT || agent.agentic_application_type === MULTI_AGENT) &&
+            !selectedAgents?.some(
+              (selectedTool) => agent?.agentic_application_id === selectedTool.agentic_application_id
+            )
         );
         setRemainingAgents((prev) => pageNumber === 1 ? agents : [...prev, ...agents]);
         setVisibleData((prev) => pageNumber === 1 ? agents : [...prev, ...agents]);
@@ -334,29 +334,7 @@ const UpdateAgent = (props) => {
         (agentType === META_AGENT || agentType === PLANNER_META_AGENT) ? removedAgentsId : removedToolsId,
     };
     try {
-      let url = "";
-      switch (agentType) {
-        case REACT_AGENT:
-          url = APIs.UPDATE_AGENT;
-          break;
-        case MULTI_AGENT:
-          url = APIs.UPDATE_MULTI_AGENT;
-          break;
-        case META_AGENT:
-          url = APIs.UPADATE_META_AGENT;
-          break;
-          case PLANNER_META_AGENT:
-            url =APIs.UPDATE_PLANNER_META_AGENT;
-            break;
-          case REACT_CRITIC_AGENT:
-          url = APIs.UPDATE_REACT_CRITIC_AGENT;
-          break;
-        case PLANNER_EXECUTOR_AGENT:
-          url = APIs.UPDATE_PLANNER_EXECUTOR_AGENT;
-            break;
-        default:
-          break;
-      }
+      let url = APIs.UPDATE_AGENT;
       const res = await putData(url, payload);      
       fetchAgentDetail();
       fetchAgents();
@@ -754,14 +732,14 @@ const UpdateAgent = (props) => {
                 <DropDown
                   options={
                     agentType === MULTI_AGENT 
-                      ? SystemPromptsTypes 
+                      ? SystemPromptsMultiAgent 
                       : agentType === PLANNER_META_AGENT 
-                      ? SystemPromptsTypesPlanner
+                      ? SystemPromptsPlannerMetaAgent
                       : agentType === REACT_CRITIC_AGENT
                       ? systemPromptReactCriticAgents
                       : agentType === PLANNER_EXECUTOR_AGENT
                       ? systemPromptPlannerExecutorAgents
-                      : SystemPromptsTypes
+                      : SystemPromptsMultiAgent
                   }
                   value={
                     agentType === MULTI_AGENT 

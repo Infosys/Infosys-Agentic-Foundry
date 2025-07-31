@@ -27,7 +27,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 10px; /* Further reduced from 15px */
+  padding-top: 5px; /* Reduced from 10px to fit more items */
 }
  
 .nav ul {
@@ -37,15 +37,15 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px; /* Further reduced from 15px */
+  gap: 10px; /* Reduced from 8px to fit more items */
 }
  
 .nav li {
   display: flex;
   align-items: center;
-  padding: 8px 5px; /* Reduced padding to fit more items */
+  padding: 6px 5px; /* Reduced from 8px to fit more items */
   cursor: pointer;
-  min-height: 60px; /* Ensure minimum height for visibility */
+  min-height: 50px; /* Reduced from 60px to fit more items */
   justify-content: center;
 }
  
@@ -53,10 +53,10 @@
 .nav button {
   display: flex;
   flex-direction: column;
-  gap: 2px; /* Reduced from 3px */
+  gap: 3px; /* Reduced from 2px for even tighter spacing */
   align-items: center;
   text-decoration: none;
-  font-size: 12px; /* Consistent font size */
+  font-size: 11px; /* Reduced from 12px */
   width: 100%;
   border: none;
   background: none;
@@ -67,16 +67,16 @@
  
 .nav a svg,
 .nav button svg {
-  width: 45%;
+  width: 40%; /* Reduced from 45% to save space */
   height: auto;
-  max-width: 24px;
-  max-height: 24px;
+  max-width: 20px; /* Reduced from 24px */
+  max-height: 20px; /* Reduced from 24px */
 }
 
 /* FontAwesome icon styling */
 .nav a .fa-icon,
 .nav button .fa-icon {
-  font-size: 20px;
+  font-size: 18px; /* Reduced from 20px */
   margin-bottom: 2px;
 }
  
@@ -138,9 +138,9 @@
 /* Ensure span text is visible */
 .nav a span,
 .nav button span {
-  font-size: 10px;
+  font-size: 11px; /* Reduced from 10px to save space */
   font-weight: 400;
-  line-height: 1.2;
+  line-height: 1.1; /* Reduced from 1.2 for tighter spacing */
   text-align: center;
   word-wrap: break-word;
   max-width: 60px;

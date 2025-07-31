@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import styles from "../../css_modules/ListOfAgents.module.css";
 import AgentCard from "./AgentCard";
-import { APIs, REACT_AGENT, agentTypes } from "../../constant";
+import { APIs, REACT_AGENT, agentTypesDropdown } from "../../constant";
 import SubHeader from "../commonComponents/SubHeader";
 import AgentOnboard from "../AgentOnboard";
 import UpdateAgent from "./UpdateAgent.jsx";
@@ -363,7 +363,7 @@ const handleScrollLoadMore = async () => {
           searchValue={searchTerm}
           clearSearch={clearSearch}
           showAgentTypeDropdown={true}
-          agentTypes={agentTypes}
+          agentTypes={agentTypesDropdown}
           selectedAgentType={selectedAgentType}
           handleAgentTypeChange={handleAgentTypeChange}
         />

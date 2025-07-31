@@ -39,12 +39,12 @@ To get started with Infosys Agentic Foundry UI:
 
 ## Configuration
 
-- Configuration files (such as API endpoints, environment variables) can be managed using a `src/constant.js` file in the project root -> src.
-- Example `constant.js`:
+- Configuration files (such as API endpoints, environment variables) can be managed using a `.env` file in the project root -> Infosys-Agentic-Foundry-Frontend -> .env
+- Example `.env`:
   ```
-  export const BASE_URL = "https://<your-server-base-url-for-endpoints>
+  REACT_APP_BASE_URL="<backend_url_goes_here>"
   ```
-- Refer to the documentation or comments in `src/constant.js` for configurable constants.
+- Refer to the documentation or comments in `.env` for configurable constants.
 
 ---
 

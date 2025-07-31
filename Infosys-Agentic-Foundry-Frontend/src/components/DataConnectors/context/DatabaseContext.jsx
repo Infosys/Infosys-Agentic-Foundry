@@ -12,7 +12,9 @@ export const DatabaseProvider = ({ children }) => {
 
   // State for active connections from API
   const [activeConnections, setActiveConnections] = useState({
-    active_sql_connections: [],
+    active_mysql_connections: [],
+    active_postgres_connections: [],
+    active_sqlite_connections: [],
     active_mongo_connections: []
   });
 
@@ -27,29 +29,27 @@ export const DatabaseProvider = ({ children }) => {
       if (response.data) {
         // Ensure the structure matches what we expect
         const processedData = {
-          active_sql_connections: response.data.active_sql_connections || [],
+          active_mysql_connections: response.data.active_mysql_connections || [],
+          active_postgres_connections: response.data.active_postgres_connections || [],
+          active_sqlite_connections: response.data.active_sqlite_connections || [],
           active_mongo_connections: response.data.active_mongo_connections || []
         };
         setActiveConnections(processedData);
-        
-        // Log the connection count for debugging
-        console.log('Active connections fetched:', {
-          sql: processedData.active_sql_connections.length,
-          mongo: processedData.active_mongo_connections.length
-        });
-        
         return processedData;
       }
       return {
-        active_sql_connections: [],
+        active_mysql_connections: [],
+        active_postgres_connections: [],
+        active_sqlite_connections: [],
         active_mongo_connections: []
       };
     } catch (error) {
       console.error('Error fetching active connections:', error);
-      
       // Return empty connections on error
       const emptyConnections = {
-        active_sql_connections: [],
+        active_mysql_connections: [],
+        active_postgres_connections: [],
+        active_sqlite_connections: [],
         active_mongo_connections: []
       };
       setActiveConnections(emptyConnections);
@@ -85,7 +85,9 @@ export const DatabaseProvider = ({ children }) => {
   const getDatabaseById = (id) => connectedDatabases.find(db => db.id === id);
 
   // Functions for API active connections
-  const getActiveSqlConnections = () => activeConnections.active_sql_connections || [];
+  const getActiveMySQLConnections = () => activeConnections.active_mysql_connections || [];
+  const getActivePostgresConnections = () => activeConnections.active_postgres_connections || [];
+  const getActiveSQLiteConnections = () => activeConnections.active_sqlite_connections || [];
   const getActiveMongoConnections = () => activeConnections.active_mongo_connections || [];
 
   // Context value
@@ -99,7 +101,9 @@ export const DatabaseProvider = ({ children }) => {
     getDatabaseById,
     activeConnections,
     fetchActiveConnections,
-    getActiveSqlConnections,
+    getActiveMySQLConnections,
+    getActivePostgresConnections,
+    getActiveSQLiteConnections,
     getActiveMongoConnections,
     loadingActiveConnections
   };
@@ -118,4 +122,18 @@ export const useDatabase = () => {
     throw new Error('useDatabase must be used within a DatabaseProvider');
   }
   return context;
+};
+
+// Custom hook for mapping active SQL connection names to objects
+export const useActiveSqlConnections = (availableConnections = []) => {
+  const { activeConnections } = useDatabase();
+  // No fetching here; expects availableConnections to be provided
+  const names = activeConnections.active_sql_connections || [];
+  return names.map(name =>
+    availableConnections.find(conn =>
+      conn.connection_name === name ||
+      conn.name === name ||
+      conn.database_name === name
+    ) || name
+  );
 };

@@ -1,3 +1,10 @@
+body,
+body *{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    sans-serif;
+}
+
 .App {
   text-align: center;
 }
@@ -64,3 +71,34 @@
     transform: rotate(360deg);
   }
 }
+
+/* Global thin scrollbar styles */
+* {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #787b7d transparent; /* Firefox - thumb and track colors */
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+  width: 4px; /* Vertical scrollbar width */
+  height: 4px; /* Horizontal scrollbar height */
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent; /* Invisible track */
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #787b7d; /* Light gray thumb */
+  border-radius: 2px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1; /* Slightly darker on hover */
+}
+
+/* Optional: Style scrollbar corner */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+

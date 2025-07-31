@@ -19,7 +19,7 @@ const ToolCallFinalResponse = (props) => {
       const obj = JSON.parse(jsonString);
       props.setParsedValues(obj);
     } catch (error) {
-      console.log(error);
+      console.error("Error parsing JSON:", error);
     }
   }, [props?.rawData]);
   useEffect(() => {}, [props?.messageData]);
@@ -225,7 +225,7 @@ const ToolCallFinalResponse = (props) => {
           </div>
           
             <div className={styles.accordionButton} onClick={toggleAccordion}>
-              <span>STEPS</span>
+              <span>DEBUG</span>
               <span
                 className={
                   isOpen ? styles.arrow + " " + styles["open"] : styles.arrow

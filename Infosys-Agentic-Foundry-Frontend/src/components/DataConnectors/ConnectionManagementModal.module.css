@@ -117,51 +117,30 @@
 
 .disconnectButton,
 .activateButton {
-  padding: 12px 20px;
+  background-color: #007bff;
+  color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 8px 18px;
+  margin-right: 16px;
+  margin-top: 8px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-}
-
-.disconnectButton {
-  background-color: #dc3545;
-  color: white;
-}
-
-.disconnectButton:hover:not(.disabled) {
-  transform: translateY(-1px);
-}
-
-.activateButton {
-  background-color: #28a745;
-  color: white;
-}
-
-.activateButton:hover:not(.disabled) {
-  transform: translateY(-1px);
-}
-
-.disconnectButton.disabled {
-  background-color: #f5c6cb;
-  color: #fff;
-}
-
-.activateButton.disabled {
-  background-color: #b1dfbb;
-  color: #fff;
+  width: auto;
+  min-width: 0;
+  justify-content: center;
 }
 
 .disabled {
   opacity: 0.6;
   cursor: not-allowed !important;
   transform: none !important;
+  background-color: gray !important;
 }
 
 .connectionInfo {
@@ -227,10 +206,5 @@
   
   .buttonGroup {
     flex-direction: column;
-  }
-  
-  .disconnectButton,
-  .activateButton {
-    width: 100%;
   }
 }

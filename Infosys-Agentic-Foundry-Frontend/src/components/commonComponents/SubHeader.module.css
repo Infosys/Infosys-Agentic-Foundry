@@ -113,7 +113,7 @@
   background-color: #f9f9f9;
   color: #333;
   font-size: 14px;
-  font-family: 'Segoe UI', Arial, sans-serif;
+  /* font-family: 'Segoe UI', Arial, sans-serif; */
   font-weight: 400;
   outline: none;
   transition: border-color 0.2s;

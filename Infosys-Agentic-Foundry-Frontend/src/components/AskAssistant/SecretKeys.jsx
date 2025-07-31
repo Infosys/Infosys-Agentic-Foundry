@@ -14,12 +14,14 @@ const SecretKeys = () => {
   const lastRowRef = useRef(null);
   const containerRef = useRef(null);
   const role = Cookies.get("role");
- const { addMessage} = useMessage();
-  const [rows, setRows] = useState([
-    { name: '', value: '', isSaved: false, isMasked: false, isUpdated: false }
-  ]);
+  const { addMessage } = useMessage();
+  const [rows, setRows] = useState(() => {
+    const role = Cookies.get("role");
+    return role.toUpperCase() === "GUEST" ? [] : [{ name: '', value: '', isSaved: false, isMasked: false, isUpdated: false }];
+  });
+
   const isGuestWithEmptyRows = role?.toUpperCase() === "GUEST" &&
-  rows.every(row => !row.name && !row.value && !row.isSaved);
+    rows.every(row => !row.name && !row.value && !row.isSaved);
   const [activeTab, setActiveTab] = useState("Private");
   const [shouldScroll, setShouldScroll] = useState(false);
   useEffect(() => {
@@ -62,9 +64,12 @@ const SecretKeys = () => {
           isUpdated: false,
         }));
       }
-      setRows(formatted.length ? formatted : [{
-        name: '', value: '', isSaved: false, isMasked: false, isUpdated: false
-      }]);
+      setRows(formatted.length
+        ? formatted
+        : (role?.toUpperCase() !== "GUEST"
+          ? [{ name: '', value: '', isSaved: false, isMasked: false, isUpdated: false }]
+          : []));
+
       setLoading(false)
     };
 
@@ -102,210 +107,210 @@ const SecretKeys = () => {
     setShouldScroll(true);
   };
   if (role?.toUpperCase() !== 'GUEST' && rows.length === 0) {
-  setRows([{ name: '', value: '', isSaved: false, isMasked: true }]);
-}
+    setRows([{ name: '', value: '', isSaved: false, isMasked: true }]);
+  }
   const saveRow = async (index) => {
-  setLoading(true);
-  const updatedRows = [...rows];
-  const row = updatedRows[index];
+    setLoading(true);
+    const updatedRows = [...rows];
+    const row = updatedRows[index];
 
-  if (!row.name || !row.value) {
-    addMessage('Both fields are required.',"error");
-    setLoading(false);
-    return;
-  }
-
-  const res = {
-    user_email: Cookies.get("email"),
-    secret_name: row.name,
-    secret_value: row.value,
-  };
-
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}${APIs.ADD_SECRET}`, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(res),
-    });
-    if (response.status === 500) {
-      const errorData = await response.json();
-      addMessage(errorData.detail || "Internal Server Error", "error");
-      setLoading(false);
-      return;
-    }
-    if (!response.ok) {
-      throw new Error(`Failed to add secret: ${response.status}`);
-    }
-
-    await response.json();
-    updatedRows[index].isSaved = true;
-    updatedRows[index].isMasked = true;
-    setRows(updatedRows);
-  } catch (error) {
-    console.error("Error saving secret:", response);
-    addMessage("Error saving secret", "error");
-  } finally {
-    setLoading(false);
-  }
-};
-
-
- const savePublicRow = async (index) => {
-  setLoading(true)
-  const updatedRows = [...rows];
-  const row = updatedRows[index];
-
-  if (!row.name || !row.value) {
-    addMessage('Both fields are required.', "error");
-    setLoading(false);
-    return;
-  }
-
-  const res = {
-    secret_name: row.name,
-    secret_value: row.value,
-  };
-
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}${APIs.PUBLIC_ADD_SECRET}`, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(res),
-    });
-
-    if (response.status === 500) {
-      const errorData = await response.json();
-      addMessage(errorData.detail || "Internal Server Error", "error");
+    if (!row.name || !row.value) {
+      addMessage('Both fields are required.', "error");
       setLoading(false);
       return;
     }
 
-    if (!response.ok) {
-      throw new Error(`Failed to add public secret: ${response.status}`);
+    const res = {
+      user_email: Cookies.get("email"),
+      secret_name: row.name,
+      secret_value: row.value,
+    };
+
+    let response;
+    try {
+      response = await fetch(`${BASE_URL}${APIs.ADD_SECRET}`, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(res),
+      });
+      if (response.status === 500) {
+        const errorData = await response.json();
+        addMessage(errorData.detail || "Internal Server Error", "error");
+        setLoading(false);
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Failed to add secret: ${response.status}`);
+      }
+
+      await response.json();
+      updatedRows[index].isSaved = true;
+      updatedRows[index].isMasked = true;
+      setRows(updatedRows);
+    } catch (error) {
+      console.error("Error saving secret:", response);
+      addMessage("Error saving secret", "error");
+    } finally {
+      setLoading(false);
     }
-
-    await response.json();
-    updatedRows[index].isSaved = true;
-    updatedRows[index].isMasked = true;
-    setRows(updatedRows);
-  } catch (error) {
-    console.error("Error saving public secret:", error);
-    addMessage("Error saving secret.","error");
-  } finally {
-    setLoading(false);
-  }
-};
-
- const deleteRow = async (index) => {
-  setLoading(true);
-  const updatedRows = [...rows];
-  const rowToDelete = updatedRows[index];
-
-  if (!rowToDelete.isSaved) {
-    updatedRows.splice(index, 1);
-    setRows(updatedRows);
-    setLoading(false);
-    return;
-  }
-
-  const res = {
-    user_email: Cookies.get("email"),
-    secret_name: rowToDelete.name,
   };
 
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}${APIs.DELETE_SECRET}`, {
-      method: "DELETE",
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(res),
-    });
 
-    if (response.status === 500) {
-      const errorData = await response.json();
-      addMessage(errorData.detail || "Internal Server Error", "error");
+  const savePublicRow = async (index) => {
+    setLoading(true)
+    const updatedRows = [...rows];
+    const row = updatedRows[index];
+
+    if (!row.name || !row.value) {
+      addMessage('Both fields are required.', "error");
+      setLoading(false);
       return;
     }
 
-    if (!response.ok) {
-      throw new Error(`Failed to delete secret: ${response.status}`);
+    const res = {
+      secret_name: row.name,
+      secret_value: row.value,
+    };
+
+    let response;
+    try {
+      response = await fetch(`${BASE_URL}${APIs.PUBLIC_ADD_SECRET}`, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(res),
+      });
+
+      if (response.status === 500) {
+        const errorData = await response.json();
+        addMessage(errorData.detail || "Internal Server Error", "error");
+        setLoading(false);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to add public secret: ${response.status}`);
+      }
+
+      await response.json();
+      updatedRows[index].isSaved = true;
+      updatedRows[index].isMasked = true;
+      setRows(updatedRows);
+    } catch (error) {
+      console.error("Error saving public secret:", error);
+      addMessage("Error saving secret.", "error");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    await response.json();
-    updatedRows.splice(index, 1);
-    setRows(
-      updatedRows.length
-        ? updatedRows
-        : [{ name: '', value: '', isSaved: false, isMasked: false, isUpdated: false }]
-    );
-  } catch (error) {
-    console.error("Error deleting secret:", error);
-    addMessage("Error deleting secret.","error");
-  } finally {
-    setLoading(false);
-  }
-};
+  const deleteRow = async (index) => {
+    setLoading(true);
+    const updatedRows = [...rows];
+    const rowToDelete = updatedRows[index];
 
-const deletePublicRow = async (index) => {
-  setLoading(true);
-  const updatedRows = [...rows];
-  const rowToDelete = updatedRows[index];
-
-  if (!rowToDelete.isSaved) {
-    updatedRows.splice(index, 1);
-    setRows(updatedRows);
-    setLoading(false);
-    return;
-  }
-
-  const res = { secret_name: rowToDelete.name };
-
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}${APIs.PUBLIC_DELETE_SECRET}`, {
-      method: "DELETE",
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(res),
-    });
-
-    if (response.status === 500) {
-      const errorData = await response.json();
-      addMessage(errorData.detail || "Internal Server Error", "error");
+    if (!rowToDelete.isSaved) {
+      updatedRows.splice(index, 1);
+      setRows(updatedRows);
+      setLoading(false);
       return;
     }
 
-    if (!response.ok) {
-      throw new Error(`Failed to delete secret: ${response.status}`);
+    const res = {
+      user_email: Cookies.get("email"),
+      secret_name: rowToDelete.name,
+    };
+
+    let response;
+    try {
+      response = await fetch(`${BASE_URL}${APIs.DELETE_SECRET}`, {
+        method: "DELETE",
+        headers: {
+          accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(res),
+      });
+
+      if (response.status === 500) {
+        const errorData = await response.json();
+        addMessage(errorData.detail || "Internal Server Error", "error");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete secret: ${response.status}`);
+      }
+
+      await response.json();
+      updatedRows.splice(index, 1);
+      setRows(
+        updatedRows.length
+          ? updatedRows
+          : [{ name: '', value: '', isSaved: false, isMasked: false, isUpdated: false }]
+      );
+    } catch (error) {
+      console.error("Error deleting secret:", error);
+      addMessage("Error deleting secret.","error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deletePublicRow = async (index) => {
+    setLoading(true);
+    const updatedRows = [...rows];
+    const rowToDelete = updatedRows[index];
+
+    if (!rowToDelete.isSaved) {
+      updatedRows.splice(index, 1);
+      setRows(updatedRows);
+      setLoading(false);
+      return;
     }
 
-    await response.json();
-    updatedRows.splice(index, 1);
-    setRows(
-      updatedRows.length
-        ? updatedRows
-        : [{ name: '', value: '', isSaved: false, isMasked: false, isUpdated: false }]
-    );
-  } catch (error) {
-    console.error("Error deleting secret:", error);
-    addMessage("Error deleting secret.", "error");
-  } finally {
-    setLoading(false);
-  }
-};
+    const res = { secret_name: rowToDelete.name };
+
+    let response;
+    try {
+      response = await fetch(`${BASE_URL}${APIs.PUBLIC_DELETE_SECRET}`, {
+        method: "DELETE",
+        headers: {
+          accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(res),
+      });
+
+      if (response.status === 500) {
+        const errorData = await response.json();
+        addMessage(errorData.detail || "Internal Server Error", "error");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete secret: ${response.status}`);
+      }
+
+      await response.json();
+      updatedRows.splice(index, 1);
+      setRows(
+        updatedRows.length
+          ? updatedRows
+          : [{ name: '', value: '', isSaved: false, isMasked: false, isUpdated: false }]
+      );
+    } catch (error) {
+      console.error("Error deleting secret:", error);
+      addMessage("Error deleting secret.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleToolInterrupt = (isEnabled) => setIsTool(isEnabled);
   const handleToggle = (e) => {
@@ -313,105 +318,105 @@ const deletePublicRow = async (index) => {
 
   };
 
- const updateRow = async (index) => {
-  setLoading(true);
-  const updatedRows = [...rows];
-  const row = updatedRows[index];
+  const updateRow = async (index) => {
+    setLoading(true);
+    const updatedRows = [...rows];
+    const row = updatedRows[index];
 
-  if (!row.name || !row.value) {
-    addMessage('Both fields are required.', "error");
-    setLoading(false);
-    return;
-  }
-
-  const res = {
-    user_email: Cookies.get("email"),
-    secret_name: row.name,
-    secret_value: row.value,
-  };
-
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}${APIs.UPDATE_SECRET}`, {
-      method: "PUT",
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(res),
-    });
-
-    if (response.status === 500) {
-      const errorData = await response.json();
-      addMessage(errorData.detail || "Internal Server Error", "error");
+    if (!row.name || !row.value) {
+      addMessage('Both fields are required.', "error");
+      setLoading(false);
       return;
     }
 
-    if (!response.ok) {
-      throw new Error(`Failed to update secret: ${response.status}`);
+    const res = {
+      user_email: Cookies.get("email"),
+      secret_name: row.name,
+      secret_value: row.value,
+    };
+
+    let response;
+    try {
+      response = await fetch(`${BASE_URL}${APIs.UPDATE_SECRET}`, {
+        method: "PUT",
+        headers: {
+          accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(res),
+      });
+
+      if (response.status === 500) {
+        const errorData = await response.json();
+        addMessage(errorData.detail || "Internal Server Error", "error");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to update secret: ${response.status}`);
+      }
+
+      await response.json();
+      updatedRows[index].isUpdated = false;
+      updatedRows[index].isMasked = true;
+      setRows(updatedRows);
+    } catch (error) {
+      console.error("Error updating secret:", error);
+      addMessage("Error updating secret.", "error");
+    } finally {
+      setLoading(false);
     }
-
-    await response.json();
-    updatedRows[index].isUpdated = false;
-    updatedRows[index].isMasked = true;
-    setRows(updatedRows);
-  } catch (error) {
-    console.error("Error updating secret:", error);
-    addMessage("Error updating secret.", "error");
-  } finally {
-    setLoading(false);
-  }
-};
-
-
- const updatePublicRow = async (index) => {
-  setLoading(true);
-  const updatedRows = [...rows];
-  const row = updatedRows[index];
-
-  if (!row.name || !row.value) {
-    addMessage('Both fields are required.', "error");
-    setLoading(false);
-    return;
-  }
-
-  const res = {
-    secret_name: row.name,
-    secret_value: row.value,
   };
 
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}${APIs.PUBLIC_UPDATE_SECRET}`, {
-      method: "PUT",
-      headers: {
-        accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(res),
-    });
 
-    if (response.status === 500) {
-      const errorData = await response.json();
-      addMessage(errorData.detail || "Internal Server Error", "error");
+  const updatePublicRow = async (index) => {
+    setLoading(true);
+    const updatedRows = [...rows];
+    const row = updatedRows[index];
+
+    if (!row.name || !row.value) {
+      addMessage('Both fields are required.', "error");
+      setLoading(false);
       return;
     }
 
-    if (!response.ok) {
-      throw new Error(`Failed to update public secret: ${response.status}`);
-    }
+    const res = {
+      secret_name: row.name,
+      secret_value: row.value,
+    };
 
-    await response.json();
-    updatedRows[index].isUpdated = false;
-    updatedRows[index].isMasked = true;
-    setRows(updatedRows);
-  } catch (error) {
-    console.error("Error updating public secret:", error);
-    addMessage("Error updating secret.", "error");
-  } finally {
-    setLoading(false);
-  }
-};
+    let response;
+    try {
+      response = await fetch(`${BASE_URL}${APIs.PUBLIC_UPDATE_SECRET}`, {
+        method: "PUT",
+        headers: {
+          accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(res),
+      });
+
+      if (response.status === 500) {
+        const errorData = await response.json();
+        addMessage(errorData.detail || "Internal Server Error", "error");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to update public secret: ${response.status}`);
+      }
+
+      await response.json();
+      updatedRows[index].isUpdated = false;
+      updatedRows[index].isMasked = true;
+      setRows(updatedRows);
+    } catch (error) {
+      console.error("Error updating public secret:", error);
+      addMessage("Error updating secret.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getEyeSecrets = async (name, index, copy) => {
     setLoading(true);
@@ -474,7 +479,7 @@ const deletePublicRow = async (index) => {
           updatedRows[index].value = secretValue;
           setRows(updatedRows);
           await navigator.clipboard.writeText(secretValue);
-           addMessage("Secret value copied to clipboard!","success")
+          addMessage("Secret value copied to clipboard!","success")
         } else {
           const updatedRows = [...rows];
           updatedRows[index].value = secretValue;
@@ -569,24 +574,23 @@ const deletePublicRow = async (index) => {
           <h6 className={styles.titleCss}>LIST OF VAULT SECRET</h6>
           <span
             className={styles.addIcon}
-            onClick={
-              rows.some(row => !row.isSaved) || (role && role.toUpperCase() === "GUEST")
-                ? null
-                : addRow
-            }
+            onClick={() => {
+              if (role?.toUpperCase() === "GUEST") return;
+              if (!rows.some(row => !row.isSaved)) addRow();
+            }}
             style={{
-              opacity: rows.some(row => !row.isSaved) || (role && role.toUpperCase() === "GUEST") ? 0.5 : 1,
-              cursor: rows.some(row => !row.isSaved) || (role && role.toUpperCase() === "GUEST") ? 'not-allowed' : 'pointer',
+              opacity: role?.toUpperCase() === "GUEST" || rows.some(row => !row.isSaved) ? 0.5 : 1,
+              cursor: role?.toUpperCase() === "GUEST" || rows.some(row => !row.isSaved) ? 'not-allowed' : 'pointer',
             }}
             title={
               rows.some(row => !row.isSaved)
                 ? "Please save the current secret before adding another."
-                : (role && role.toUpperCase() === "GUEST"
+                : role?.toUpperCase() === "GUEST"
                   ? "Guests cannot add secrets."
-                  : "Add Secret")
+                  : "Add Secret"
             }
           >
-            <button className={styles.plus} disabled={role && role.toUpperCase() === "GUEST"}>
+            <button className={styles.plus} disabled={role?.toUpperCase() === "GUEST"}>
               <SVGIcons icon="fa-plus" fill="#007CC3" width={16} height={16} />
               <label className={styles.addSecret}>Add Secret</label>
             </button>
@@ -616,128 +620,126 @@ const deletePublicRow = async (index) => {
         </div>
 
         <div className={styles.secretCss} ref={containerRef}>
-          {rows.length === 0 && role.toUpperCase() ==="GUEST" ?(
-            <>
+          {rows.length === 0 && role.toUpperCase() ==="GUEST" ? (
             <div className={styles.noSecretsMessage}>
-              There are no secrets to display
+              There are no secrets to display.
             </div>
-            </>
-          ):(
+          ) : (
             <>
-             {rows.map((row, index) => {
-            const canShowIcons = isRowComplete(row);
-            const isLast = index === rows.length - 1;
-            return (
-              <div className={styles.row} key={index} ref={isLast ? lastRowRef : null}>
-                <input
-                  type="text"
-                  value={row.name}
-                  placeholder="Enter Name"
-                  onChange={(e) => handleInputChange(index, 'name', e.target.value)}
-                  className={styles.input}
-                  disabled={row.isSaved && row.isMasked}
-                />
+              {rows.map((row, index) => {
+                const canShowIcons = isRowComplete(row);
+                const isLast = index === rows.length - 1;
+                return (
+                  <div className={styles.row} key={index} ref={isLast ? lastRowRef : null}>
+                    <input
+                      type="text"
+                      value={row.name}
+                      placeholder="Enter Name"
+                      onChange={(e) => handleInputChange(index, 'name', e.target.value)}
+                      className={styles.input}
+                      disabled={row.isSaved && row.isMasked}
+                    />
 
-                <textarea
-                  value={row.isSaved && row.isMasked ? '.......' : row.value}
-                  placeholder="Enter Value"
-                  onChange={(e) => handleInputChange(index, 'value', e.target.value)}
-                  className={`${styles.input} ${styles.valueTextarea}`}
-                  disabled={row.isSaved && row.isMasked}
-                />
-
-
-
-               {canShowIcons && !row.isSaved && role?.toUpperCase() !== 'GUEST' && (
-  <span
-    className={styles.iconCss}
-    title="Save"
-    onClick={() =>
-      activeTab === "Private" ? saveRow(index) : savePublicRow(index)
-    }
-  >
-    <button className={styles.activeTab}>Save</button>
-  </span>
-)}
-
-{row.isSaved && row.isUpdated && role?.toUpperCase() !== 'GUEST' && (
-  <span
-    className={styles.iconCss}
-    title="Update"
-    onClick={() =>
-      activeTab === "Private" ? updateRow(index) : updatePublicRow(index)
-    }
-  >
-    <button className={styles.activeTab}>Update</button>
-  </span>
-)}
+                    <textarea
+                      value={row.isSaved && row.isMasked ? '.......' : row.value}
+                      placeholder="Enter Value"
+                      onChange={(e) => handleInputChange(index, 'value', e.target.value)}
+                      className={`${styles.input} ${styles.valueTextarea}`}
+                      disabled={row.isSaved && row.isMasked}
+                    />
 
 
-                <>
-              <span
-  className={`${styles.iconCss} ${styles.iconDelete}`}
-  title={
-    !row.isSaved
-      ? "Save the secret before you can delete it."
-      : role && role.toUpperCase() === "GUEST"
-      ? "Guests are not allowed to delete secrets."
-      : "Delete"
-  }
-  onClick={() => {
-    if (!row.isSaved || (role && role.toUpperCase() === "GUEST")) return;
-    activeTab === "Private" ? deleteRow(index) : deletePublicRow(index);
-  }}
-  style={{
-    opacity:
-      !row.isSaved || (role && role.toUpperCase() === "GUEST") ? 0.5 : 1,
-    cursor:
-      !row.isSaved || (role && role.toUpperCase() === "GUEST")
-        ? "not-allowed"
-        : "pointer",
-  }}
->
-  <FontAwesomeIcon icon={faTrash} />
-</span>
 
-                 {/* Show / Hide Secret */}
-<span
-  className={`${styles.iconCss} ${styles.iconEye}`}
-  title={
-    !row.isSaved
-      ? "Save the secret first to view it."
-      : role && role.toUpperCase() === "GUEST"
-      ? "Guests are not allowed to view secrets."
-      : row.isMasked
-      ? "Show Secret"
-      : "Hide Secret"
-  }
-  onClick={
-    !row.isSaved || (role && role.toUpperCase() === "GUEST")
-      ? null
-      : () => {
-          if (row.isMasked) {
-            activeTab === "Private"
-              ? getEyeSecrets(row.name, index, "")
-              : getPublicSecrets(row.name, index, "");
-          } else {
-            toggleMask(index);
-          }
-        }
-  }
-  style={{
-    opacity:
-      !row.isSaved || (role && role.toUpperCase() === "GUEST") ? 0.5 : 1,
-    cursor:
-      !row.isSaved || (role && role.toUpperCase() === "GUEST")
-        ? "not-allowed"
-        : "pointer",
-  }}
->
-  <FontAwesomeIcon icon={row.isMasked ? faEye : faEyeSlash} />
-</span>
+                    {canShowIcons && !row.isSaved && role?.toUpperCase() !== 'GUEST' && (
+                      <span
+                        className={styles.iconCss}
+                        title="Save"
+                        onClick={() =>
+                          activeTab === "Private" ? saveRow(index) : savePublicRow(index)
+                        }
+                      >
+                        <button className={styles.activeTab}>Save</button>
+                      </span>
+                    )}
 
-{/* Copy Secret */}
-{/* <span
+                    {row.isSaved && row.isUpdated && role?.toUpperCase() !== 'GUEST' && (
+                      <span
+                        className={styles.iconCss}
+                        title="Update"
+                        onClick={() =>
+                          activeTab === "Private" ? updateRow(index) : updatePublicRow(index)
+                        }
+                      >
+                        <button className={styles.activeTab}>Update</button>
+                      </span>
+                    )}
+
+
+                    <>
+                      <span
+                        className={`${styles.iconCss} ${styles.iconDelete}`}
+                        title={
+                          !row.isSaved
+                            ? "Save the secret before you can delete it."
+                            : role && role.toUpperCase() === "GUEST"
+                              ? "Guests are not allowed to delete secrets."
+                              : "Delete"
+                        }
+                        onClick={() => {
+                          if (!row.isSaved || (role && role.toUpperCase() === "GUEST")) return;
+                          activeTab === "Private" ? deleteRow(index) : deletePublicRow(index);
+                        }}
+                        style={{
+                          opacity:
+                            !row.isSaved || (role && role.toUpperCase() === "GUEST") ? 0.5 : 1,
+                          cursor:
+                            !row.isSaved || (role && role.toUpperCase() === "GUEST")
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        <FontAwesomeIcon icon={faTrash} />
+                      </span>
+
+                      {/* Show / Hide Secret */}
+                      <span
+                        className={`${styles.iconCss} ${styles.iconEye}`}
+                        title={
+                          !row.isSaved
+                            ? "Save the secret first to view it."
+                            : role && role.toUpperCase() === "GUEST"
+                              ? "Guests are not allowed to view secrets."
+                              : row.isMasked
+                                ? "Show Secret"
+                                : "Hide Secret"
+                        }
+                        onClick={
+                          !row.isSaved || (role && role.toUpperCase() === "GUEST")
+                            ? null
+                            : () => {
+                              if (row.isMasked) {
+                                activeTab === "Private"
+                                  ? getEyeSecrets(row.name, index, "")
+                                  : getPublicSecrets(row.name, index, "");
+                              } else {
+                                toggleMask(index);
+                              }
+                            }
+                        }
+                        style={{
+                          opacity:
+                            !row.isSaved || (role && role.toUpperCase() === "GUEST") ? 0.5 : 1,
+                          cursor:
+                            !row.isSaved || (role && role.toUpperCase() === "GUEST")
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        <FontAwesomeIcon icon={row.isMasked ? faEye : faEyeSlash} />
+                      </span>
+
+                      {/* Copy Secret */}
+                      {/* <span
   className={`${styles.iconCss} ${styles.iconCopy}`}
   title={
     !row.isSaved
@@ -765,52 +767,52 @@ const deletePublicRow = async (index) => {
 >
   <FontAwesomeIcon icon={faCopy} />
 </span> */}
- {index === rows.length - 1 && !row.isSaved && (
-      <span
-        className={styles.iconClose} // create this in CSS for styling close icon
-        title="Remove this secret"
-        onClick={() => {
-          const newRows = [...rows];
-          newRows.pop();  // remove last row
-          setRows(newRows);
-        }}
-        style={{ cursor: "pointer", color: "#333", marginLeft: "10px" }}
-      >
-        <FontAwesomeIcon icon={faTimes} />
-      </span>
-    )}
+                      {!row.isSaved && rows.length > 1 && (
+                        <span
+                          className={styles.iconClose}
+                          title="Remove this secret"
+                          onClick={() => {
+                            const newRows = [...rows];
+                            newRows.splice(index, 1);
+                            setRows(newRows);
+                          }}
+                          style={{ cursor: "pointer", color: "#333", marginLeft: "10px" }}
+                        >
+                          <FontAwesomeIcon icon={faTimes} />
+                        </span>
+                      )}
 
-                </>
-              </div>
-            );
-          })}
+                    </>
+                  </div>
+                );
+              })}
             </>
           )}
-         
+
         </div>
-        {role.toUpperCase() !=="GUEST" &&(
+        {role.toUpperCase() !=="GUEST" && (
           <>
-              <div className={styles?.cssForText}>
-          Access your secret keys in Python via:
-        </div>
-          <div className={styles?.cssForcode}>
-<pre
-  style={{
-    backgroundColor: '#2d2d2d',
-    color: '#f8f8f2',
-    padding: '16px',
-    borderRadius: '6px',
-    marginTop: '20px',
-    fontSize: '14px',
-    overflowX: 'auto',
-    lineHeight: '1.5',
-    whiteSpace: 'pre-wrap',
-    marginLeft: '40px',
-    marginRight: '40px',
-  }}
->
-<code>
-{`# Example: Using user and public secrets to build a secure API request URL
+            <div className={styles?.cssForText}>
+              Access your secret keys in Python via:
+            </div>
+            <div className={styles?.cssForcode}>
+              <pre
+                style={{
+                  backgroundColor: '#2d2d2d',
+                  color: '#f8f8f2',
+                  padding: '16px',
+                  borderRadius: '6px',
+                  marginTop: '20px',
+                  fontSize: '14px',
+                  overflowX: 'auto',
+                  lineHeight: '1.5',
+                  whiteSpace: 'pre-wrap',
+                  marginLeft: '40px',
+                  marginRight: '40px',
+                }}
+              >
+                <code>
+                  {`# Example: Using user and public secrets to build a secure API request URL
 
 def fetch_weather(city):
     api_key = get_user_secrets('weather_api_key', 'no_api_key_found')
@@ -819,10 +821,10 @@ def fetch_weather(city):
     return f"Ready to fetch data from: {full_url}"
 
 print(fetch_weather("New York"))`}
-</code>
-</pre>
+                </code>
+              </pre>
 
-</div>
+            </div>
           </>
         )}
 

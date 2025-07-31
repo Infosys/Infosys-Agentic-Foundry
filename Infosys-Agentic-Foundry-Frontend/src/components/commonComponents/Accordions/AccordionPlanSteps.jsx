@@ -52,7 +52,7 @@ const AccordionPlanSteps = (props) => {
           </div>
         </div>
         <div className={styles.accordionButton} onClick={toggleAccordion}>
-          <span>STEPS</span>
+          <span>DEBUG</span>
           <span
             className={
               isOpen ? styles.arrow + " " + styles["open"] : styles.arrow

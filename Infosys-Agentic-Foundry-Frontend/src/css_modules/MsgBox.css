@@ -4,7 +4,6 @@
   line-height: 1.8; /* Adjust line spacing */
   letter-spacing: 0.5px; /* Adjust letter spacing */
   font-size: 14px;
-  font-family: Segoe UI;
   margin: 5px 10px;
   width: 100%;
 }
@@ -41,7 +40,6 @@
 .Messagingbox p {
   margin: 10px 0;
   margin-bottom: 15px;
-  font-family: Segoe UI;
 }
 
 .Messagingbox ol {
@@ -122,6 +120,7 @@
   border: 1px solid #ddd;
   padding: 8px;
 }
+
 .MessagingboxToolcall {
   width: 95%;
   padding: 10px;
@@ -129,7 +128,6 @@
   line-height: 1.8; /* Adjust line spacing */
   letter-spacing: 0.5px; /* Adjust letter spacing */
   font-size: 14px;
-  font-family: Segoe UI;
 }
 .editBtn {
   height: 24px;
@@ -153,7 +151,6 @@
   display: flex;
   /* flex-direction: column; */
   align-items: center;
-  font-family: Segoe UI;
   font-weight: 600;
   font-size: 12px;
   line-height: 16px;
@@ -184,4 +181,17 @@ justify-content: center;
     display: flex;
     background-color: #007cc3;
 
+}
+
+/* Messages Container */
+.messagesContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px 20px 5px 20px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  /* background: #fff; */
+  /* border: 1px solid #e5e7eb; */
+  border-radius: 6px;
 }

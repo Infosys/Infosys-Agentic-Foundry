@@ -31,6 +31,7 @@ const AgentForm = (props) => {
     agent_goal: "",
     workflow_description: "",
     model_name: "gpt4-8k",
+    agent_type: selectedAgent,
   };
   const [formData, setFormData] = useState(initialState);
   const [successMsg, setSuccessMsg] = useState(false);
@@ -157,6 +158,13 @@ const AgentForm = (props) => {
     setPopupContent(content);
     setShowZoomPopup(true);
   };
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      agent_type: selectedAgent,
+    }));
+  }, [selectedAgent]);
 
   const handleZoomSave = (updatedContent) => {
     if (popupTitle === "Agent Goal") {

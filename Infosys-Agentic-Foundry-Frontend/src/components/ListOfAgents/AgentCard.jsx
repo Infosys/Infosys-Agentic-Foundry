@@ -6,19 +6,20 @@ import React, { useEffect, useState } from "react";
 
   // Helper function to get agent type abbreviation
   const getAgentTypeAbbreviation = (agentType) => {
-    
     if (!agentType) return "";
-    // Custom abbreviations for known types
-    if (/^meta(_|\s)?agent$/i.test(agentType)) return "ME"
-    if (/^multi(_|\s)?agent$/i.test(agentType)) return "MU"
-    // Split on both underscores and spaces
-    const words = agentType.split(/[_\s]+/);
-    if (words.length >= 2) {
-      // Take first letter from each of the first two words
-      return (words[0][0] + words[1][0]).toUpperCase();
-    }
-    // Fallback: first two letters of the first word
-    return words[0].substring(0, 2).toUpperCase();
+    
+    // Map specific agent types to their abbreviations
+    const abbreviationMap = {
+      "react_agent": "RA",
+      "react_critic_agent": "RC", 
+      "planner_executor_agent": "PE",
+      "multi_agent": "PC",
+      "meta_agent": "MA",
+      "planner_meta_agent": "MP"
+    };
+    
+    // Return the mapped abbreviation or fallback to first two letters
+    return abbreviationMap[agentType] || agentType.substring(0, 2).toUpperCase();
   };
     
 

@@ -33,11 +33,6 @@ function MessageUpdateform(props) {
     fetchAgents();
   }, []);
 
-  const handleEmpty = (event) => {
-    event.preventDefault();
-    setFiles([]);
-  };
-
   const handleInputChange = (event) => {
     const { name, value } = event.target;
     setInputValues({
@@ -73,32 +68,24 @@ if(showKnowledge){
   };
 
   const handleFileChange = (event) => {
-    const selectedFiles = event.target.files;
-    if (selectedFiles && selectedFiles.length > 0) {
-      const file = selectedFiles[0];
-      if (!isSupportedFile(file)) {
-        setErrorMessage("Unsupported file type");
-        setShowToast(true);
-        setFiles([]);
-        return;
-      }
-      setFiles([file]);
+    const selectedFiles = Array.from(event.target.files);
+    const validFiles = selectedFiles.filter(isSupportedFile);
+    if (validFiles.length !== selectedFiles.length) {
+      setErrorMessage("Unsupported file type");
+      setShowToast(true);
     }
+    setFiles(validFiles);
   };
 
   const handleDrop = (event) => {
     event.preventDefault();
-    const droppedFiles = event.dataTransfer.files;
-    if (droppedFiles.length > 0) {
-      const file = droppedFiles[0];
-      if (!isSupportedFile(file)) {
-        setErrorMessage("Unsupported file type");
-        setShowToast(true);
-        setFiles([]);
-        return;
-      }
-      setFiles([file]);
+    const droppedFiles = Array.from(event.dataTransfer.files);
+    const validFiles = droppedFiles.filter(isSupportedFile);
+    if (validFiles.length !== droppedFiles.length) {
+      setErrorMessage("Some files have unsupported types");
+      setShowToast(true);
     }
+    setFiles(validFiles);
   };
 
   const fetchAgents = async (e) => {
@@ -323,6 +310,11 @@ if(showKnowledge){
     {}
   );
 
+  const handleRemoveFile = (index) => (event) => {
+    event.preventDefault();
+    setFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
+  };
+
   return (
     <div id="myOverlay" className={style["overlay"]}>
       {(loading || kbloader) && <Loader />}
@@ -363,7 +355,7 @@ if(showKnowledge){
                           </div>
                           <button
                             className={style["closebtntwo"]}
-                            onClick={handleEmpty}
+                            onClick={handleRemoveFile(index)}
                           >
                             &times;
                           </button>
@@ -389,7 +381,7 @@ if(showKnowledge){
                               id="browse"
                               onChange={handleFileChange}
                               accept=".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar"
-                              multiple={false}
+                              multiple={true}
                             />
                             <label
                               htmlFor="browse"
