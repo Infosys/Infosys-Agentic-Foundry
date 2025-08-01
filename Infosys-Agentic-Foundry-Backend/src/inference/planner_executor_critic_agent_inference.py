@@ -462,7 +462,7 @@ Final Response from Executor Agent:
             """
             feedback_context = "" if not hitl_flag else f"""
 Now user want to modify above query with below modification:
-{state["tool_feedback"]}
+{state["plan_feedback"]}
 """
 
             formatted_query = f'''\
@@ -523,7 +523,7 @@ Final Response:
             """
             feedback_context = "" if not hitl_flag else f"""
 *Now user want to modify above query with below modification:
-{state["tool_feedback"]}
+{state["plan_feedback"]}
 """
 
             formatted_query = f'''
