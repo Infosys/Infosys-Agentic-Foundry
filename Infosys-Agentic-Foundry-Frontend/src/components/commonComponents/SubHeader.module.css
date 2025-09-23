@@ -1,8 +1,9 @@
 .container {
   display: flex;
-  width: calc(100% - 52px);
+  width: 100%; /* allow parent to control spacing */
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .container h6 {
@@ -10,6 +11,7 @@
   letter-spacing: 0px;
   color: #343741;
   text-transform: uppercase;
+  margin: 0; /* remove default margin that can break alignment */
 }
 
 .setting {
@@ -30,6 +32,8 @@
   display: flex;
   align-items: center;
   gap: 20px;
+  flex: 1 1 auto; /* allow title to take remaining space */
+  min-width: 0; /* allow truncation if needed */
 }
 
 .refreshButton {
@@ -43,6 +47,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
+  flex: 0 0 auto; /* keep controls their natural size */
 }
 
 .setting {
@@ -123,4 +128,43 @@
 
 .agentTypeDropdown:focus {
   border-color: #007cc3;
+}
+
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.loginBtn {
+  padding: 8px 16px;
+  background-color: #007cc3;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.loginBtn:hover {
+  background-color: #005a99;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  background-color: #343741;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.cancelBtn:hover {
+  background-color: #2a2f42;
 }

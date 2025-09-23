@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import styles from "./CrudModal.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
-import { fetchMongodbConnections } from "../../services/databaseService";
+import { useDatabases} from "./service/databaseService.js";  
 import Loader from "../commonComponents/Loader.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
 
@@ -22,6 +22,7 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
   const [mongodbConnections, setMongodbConnections] = useState([]);
   const [loadingMongodbConnections, setLoadingMongodbConnections] = useState(false);
   const { setShowPopup } = useMessage();
+  const { fetchMongodbConnections } = useDatabases();
 
   // Fetch MongoDB connections from API
   const fetchMongodbConnectionsData = async () => {
@@ -56,10 +57,32 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
   // Handle input changes
   const handleCrudInputChange = (e) => {
     const { name, value } = e.target;
-    setCrudData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setCrudData(prev => {
+      // If any field is changed after result is shown, reset result and showResult
+      if (prev.showResult) {
+        return {
+          ...prev,
+          [name]: value,
+          result: null,
+          showResult: false,
+          error: null // Reset error when input changes
+        };
+      }
+      // If user alters any JSON fields, reset result and showResult
+      if (["jsonQuery", "dataJson", "updateJson"].includes(name)) {
+        return {
+          ...prev,
+          [name]: value,
+          result: null,
+          showResult: false,
+          error: null // Reset error when input changes
+        };
+      }
+      return {
+        ...prev,
+        [name]: value,
+      };
+    });
   };
 
   // Handle execute CRUD operation
@@ -151,6 +174,16 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
 
   const allMongoDBConnections = getAPIMongoDBConnections();
   const hasConnections = allMongoDBConnections.length > 0;
+
+  // Validation for required fields
+  const isCrudFormValid = () => {
+    return (
+      crudData.selectedConnection &&
+      crudData.collection &&
+      crudData.operation &&
+      crudData.mode
+    );
+  };
 
   return (
     <div className={styles.modalOverlay}>
@@ -263,7 +296,7 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
 
           <div className={styles.formGroup}>
             <label htmlFor="jsonQuery" className={styles.label}>
-              Query (JSON) <span className={styles.required}>*</span>
+              Query (JSON)
             </label>
             <textarea
               id="jsonQuery"
@@ -272,7 +305,6 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
               onChange={handleCrudInputChange}
               className={styles.textarea}
               rows="8"
-              required
             />
           </div>
 
@@ -280,7 +312,7 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
           {crudData.operation === "insert" && (
             <div className={styles.formGroup}>
               <label htmlFor="dataJson" className={styles.label}>
-                Data (JSON) <span className={styles.required}>*</span>
+                Data (JSON)
               </label>
               <textarea
                 id="dataJson"
@@ -289,7 +321,6 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
                 onChange={handleCrudInputChange}
                 className={styles.textarea}
                 rows="6"
-                required
               />
             </div>
           )}
@@ -298,7 +329,7 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
           {crudData.operation === "update" && (
             <div className={styles.formGroup}>
               <label htmlFor="updateJson" className={styles.label}>
-                Update (JSON) <span className={styles.required}>*</span>
+                Update (JSON)
               </label>
               <textarea
                 id="updateJson"
@@ -307,7 +338,6 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
                 onChange={handleCrudInputChange}
                 className={styles.textarea}
                 rows="6"
-                required
               
               />
             </div>
@@ -318,7 +348,12 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
               type="button"
               className={styles.executeButton}
               onClick={handleExecuteCrud}
-              disabled={loadingMongodbConnections || !hasConnections || isExecuting}
+              disabled={
+                loadingMongodbConnections ||
+                !hasConnections ||
+                isExecuting ||
+                !isCrudFormValid()
+              }
             >
               Execute
             </button>

@@ -1,63 +1,24 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import PlaceholderScreen from "./PlaceholderScreen";
 import DOMPurify from "dompurify";
 import SVGIcons from "../../Icons/SVGIcons";
+import DebugStepsPanel from "./DebugStepsPanel.jsx";
 import { BOT, CUSTOM_TEMPLATE, MULTI_AGENT, PLANNER_EXECUTOR_AGENT, REACT_CRITIC_AGENT, USER } from "../../constant";
 import LoadingChat from "./LoadingChat";
-import brandlogotwo from "../../Assets/Agentic-Foundry-Logo-Blue-2.png";
-import {
-  REACT_AGENT,
-  like,
-  dislike,
-  regenerate,
-  sessionId,
-  feedBackMessage,
-  META_AGENT,
-  APIs,
-  PLANNER_META_AGENT,
-} from "../../constant";
-import { fetchFeedback } from "../../services/chatService";
-import ReactMarkdown from "react-markdown";
-import "../../css_modules/MsgBox.css";
-import refresh from "../../Assets/refresh.png";
-import thumbsDown from "../../Assets/thumbsDown.png";
-import thumbsUp from "../../Assets/thumbsUp.png";
-import robot from "../../Assets/robot.png";
+import { REACT_AGENT, like, dislike, regenerate, sessionId, feedBackMessage, APIs, PLANNER_META_AGENT } from "../../constant";
 import AccordionPlanSteps from "../commonComponents/Accordions/AccordionPlanSteps";
 import parse from "html-react-parser";
-import remarkGfm from "remark-gfm";
 import ToolCallFinalResponse from "./ToolCallFinalResponse";
-import useFetch from "../../Hooks/useAxios";
-import Toggle from "../commonComponents/Toggle";
-import {
-  resetChat,
-  getChatQueryResponse,
-  getChatHistory,
-  fetchOldChats,
-  fetchNewChats,
-} from "../../services/chatService";
+import { useChatServices } from "../../services/chatService";
 import chatBubbleCss from "./ChatBubble.module.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faUser,
-  faRobot,
-  faThumbsUp,
-  faThumbsDown,
-  faRotateRight
-} from "@fortawesome/free-solid-svg-icons";
-
+import { faUser, faRobot, faThumbsUp, faThumbsDown, faRotateRight } from "@fortawesome/free-solid-svg-icons";
 
 const MsgBox = (props) => {
   const [feedBackText, setFeedBackText] = useState("");
   const [close, setClose] = useState(false);
   const [loadingText, setLoadingText] = useState("");
-  
-  // Typewriter effect states
-  const [displayedText, setDisplayedText] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [showCursor, setShowCursor] = useState(true);
-  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
-  const { fetchData, postData } = useFetch();
+
   const {
     styles,
     messageData,
@@ -71,46 +32,42 @@ const MsgBox = (props) => {
     fetching,
     setFetching,
     setShowToast,
+    setToastMessage,
     sendHumanInLoop,
     showInput,
     setShowInput,
-    isShowIsHuman,
     isHuman,
-    setIsHuman,
     lastResponse,
-    setIsTool,
-    isTool,
-    selectedOption,
     toolInterrupt,
-    handleToolInterrupt,
-    handleHumanInLoop,
-    setGenerating,
+    setLikeIcon,
     oldSessionId,
     session,
-    messageDisable,
     isEditable,
     setIsEditable,
     isDeletingChat,
+    debugSteps,
+    showLiveSteps,
+    setShowLiveSteps,
+    expanded,
+    setExpanded,
+    isCanvasEnabled,
+    isContextEnabled
   } = props;
   const [parsedValues, setParsedValues] = useState({});
+  const { getChatQueryResponse, fetchFeedback, storeMemoryExample } = useChatServices();
   const rawData =
-    messageData?.toolcallData &&
-    messageData?.toolcallData?.additional_details[0]
-      ? messageData?.toolcallData?.additional_details[0]?.additional_kwargs
-          ?.tool_calls[0]?.function?.arguments
+    messageData?.toolcallData && messageData?.toolcallData?.additional_details[0]
+      ? messageData?.toolcallData?.additional_details[0]?.additional_kwargs?.tool_calls[0]?.function?.arguments
       : "";
-  const [newData, setNewData] = useState(false);
   const [generateFeedBackButton, setgenerateFeedBackButton] = useState(false);
   const [showgenerateButton, setGenerateButton] = useState(false);
 
+  // Track per-message feedback processing so UI (loader/toast) can be shown for that specific message
+  const [processingFeedback, setProcessingFeedback] = useState({});
+
   const [continueButton, setContinueButton] = useState(true);
   const [sendIconShow, setSendIconShow] = useState(false);
-  const [showSteps, setShowSteps] = useState(false);
-  // Track which feedback is currently highlighted ("up" or "down" or null)
-  const [highlightedFeedback, setHighlightedFeedback] = useState(null);
 
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-  
   const handleFeedBack = (value, sessionId) => {
     setGenerateButton(true);
     setFeedback(value);
@@ -122,6 +79,83 @@ const MsgBox = (props) => {
     }
     setGenerateButton(false);
   };
+
+  const handleMessageLike = async (data, idx) => {
+    setProcessingFeedback((p) => ({ ...p, [idx]: true }));
+    try {
+      const payload = {
+        agent_id: agentSelectValue,
+        query: data?.userText ? data.userText : lastResponse?.query || "",
+        response: typeof data?.message === "string" ? data.message : JSON.stringify(data?.message || ""),
+        label: "positive",
+        tool_calls:
+          data?.toolcallData?.additional_details && Array.isArray(data.toolcallData.additional_details) && data.toolcallData.additional_details[0]?.additional_kwargs?.tool_calls
+            ? data.toolcallData.additional_details[0].additional_kwargs.tool_calls.map((tc) => (typeof tc === "string" ? tc : JSON.stringify(tc)))
+            : [],
+      };
+
+      const resp = await storeMemoryExample(payload);
+      if (resp && !isDeletingChat) {
+        try {
+          setToastMessage && setToastMessage(resp?.message || "Thanks for the like!");
+        } catch (e) {}
+        setShowToast(true);
+        setTimeout(() => {
+          setShowToast(false);
+          try {
+            setToastMessage && setToastMessage("");
+          } catch (e) {}
+        }, 5000);
+      }
+    } catch (err) {
+      // ignore errors to match existing patterns
+    } finally {
+      setProcessingFeedback((p) => {
+        const copy = { ...p };
+        delete copy[idx];
+        return copy;
+      });
+    }
+  };
+
+  const handleMessageDislike = async (data, idx) => {
+    setProcessingFeedback((p) => ({ ...p, [idx]: true }));
+    try {
+      const payload = {
+        agent_id: agentSelectValue,
+        query: data?.userText ? data.userText : lastResponse?.query || "",
+        response: typeof data?.message === "string" ? data.message : JSON.stringify(data?.message || ""),
+        label: "negative",
+        tool_calls:
+          data?.toolcallData?.additional_details && Array.isArray(data.toolcallData.additional_details) && data.toolcallData.additional_details[0]?.additional_kwargs?.tool_calls
+            ? data.toolcallData.additional_details[0].additional_kwargs.tool_calls.map((tc) => (typeof tc === "string" ? tc : JSON.stringify(tc)))
+            : [],
+      };
+
+      const resp = await storeMemoryExample(payload);
+      if (resp && !isDeletingChat) {
+        try {
+          setToastMessage && setToastMessage(resp?.message || "Thanks — your feedback was submitted");
+        } catch (e) {}
+        setShowToast(true);
+        setTimeout(() => {
+          setShowToast(false);
+          try {
+            setToastMessage && setToastMessage("");
+          } catch (e) {}
+        }, 5000);
+      }
+    } catch (err) {
+      // ignore errors to match existing patterns
+    } finally {
+      setProcessingFeedback((p) => {
+        const copy = { ...p };
+        delete copy[idx];
+        return copy;
+      });
+    }
+  };
+
   const continueOnclick = () => {
     setContinueButton(false);
   };
@@ -129,88 +163,20 @@ const MsgBox = (props) => {
     setContinueButton(true);
   }, [messageData]);
 
-  // Typewriter effect for placeholder text
-  const sentences = [
-    "Build Reliable Enterprise Agents.",
-    "Pro-code development with reusable templates.",
-    "Robust tool integration for complex workflows.",
-    "Deep observability and monitoring capabilities.",
-    "From concept to production in minutes.",
-    "Simple bots to multi-agent systems made easy."
-  ];
-  
-  useEffect(() => {
-    // Check if placeholder should be shown
-    const shouldShowPlaceholder = (((!props?.allOptionsSelected && props?.oldChats.length===0) ||(props?.allOptionsSelected && props?.oldChats.length===0))&& messageData.length ===0);
-    
-    if (shouldShowPlaceholder) {
-      setIsTyping(true);
-      setDisplayedText("");
-      setShowCursor(true);
-      setCurrentSentenceIndex(0);
-      
-      const typeSentence = (sentenceIndex) => {
-        if (sentenceIndex >= sentences.length) {
-          // Reset to first sentence and continue the cycle
-          sentenceIndex = 0;
-          setCurrentSentenceIndex(0);
-        }
-        
-        const currentSentence = sentences[sentenceIndex];
-        let charIndex = 0;
-        
-        // Clear previous text
-        setDisplayedText("");
-        
-        const typeChar = () => {
-          if (charIndex < currentSentence.length) {
-            setDisplayedText(currentSentence.slice(0, charIndex + 1));
-            charIndex++;
-            const speed = currentSentence[charIndex - 1] === ' ' ? 120 : 
-                         currentSentence[charIndex - 1] === '.' ? 200 :
-                         75; 
-            setTimeout(typeChar, speed);
-          } else {
-            setTimeout(() => {
-              setCurrentSentenceIndex(sentenceIndex + 1);
-              typeSentence(sentenceIndex + 1);
-            }, 2500); 
-          }
-        };    
-        setTimeout(typeChar, 500); 
-      };
-
-      typeSentence(0);
-      
-    } else {
-      setDisplayedText("");
-      setIsTyping(false);
-      setShowCursor(false);
-      setCurrentSentenceIndex(0);
-    }
-  }, [props?.allOptionsSelected, props?.oldChats?.length, messageData?.length]);
-
   const onMsgEdit = (data) => {
     const jsonString =
-      data?.toolcallData && data?.toolcallData?.additional_details[0]
-        ? data?.toolcallData?.additional_details[0]?.additional_kwargs
-            ?.tool_calls[0]?.function?.arguments
-        : "";
-    const obj =
-      typeof jsonString !== "object" ? JSON.parse(jsonString) : jsonString;
+      data?.toolcallData && data?.toolcallData?.additional_details[0] ? data?.toolcallData?.additional_details[0]?.additional_kwargs?.tool_calls[0]?.function?.arguments : "";
+    const obj = typeof jsonString !== "object" ? JSON.parse(jsonString) : jsonString;
     setParsedValues(obj);
     props.setLikeIcon(true);
     setIsEditable(true);
     setSendIconShow(true);
   };
   const handlePlanFeedBack = async (feedBack, userText) => {
-
     setClose(feedBack === "no" ? true : false);
     setFeedback(feedBack);
     setFetching(true);
-    feedBack === "no"
-      ? setLoadingText("Loading")
-      : setLoadingText("Generating");
+    feedBack === "no" ? setLoadingText("Loading") : setLoadingText("Generating");
     const response = await sendHumanInLoop(feedBack, feedBackText, userText);
     if (response && feedBack === "no") {
       setShowInput(true);
@@ -231,26 +197,32 @@ const MsgBox = (props) => {
 
   const converToChatFormat = (chatHistory) => {
     let chats = [];
+
     chatHistory?.executor_messages?.map((item, index) => {
-      chats?.push({ type: USER, message: item?.user_query });
+      chats?.push({
+        type: USER,
+        message: item?.user_query,
+        debugExecutor: item?.additional_details,
+      });
       chats?.push({
         type: BOT,
         message: item?.final_response,
         toolcallData: item,
         steps: JSON.stringify(item?.agent_steps, null, "\t"),
-        ...(index === chatHistory?.executor_messages?.length - 1 &&
-          item?.final_response === "" && { plan: chatHistory?.plan }),
+        debugExecutor: item?.additional_details,
+        ...(index === chatHistory?.executor_messages?.length - 1 && item?.final_response === "" && { plan: chatHistory?.plan }),
+        parts: item?.parts || [],
+        show_canvas: item?.show_canvas || false,
       });
     });
+
     return chats;
   };
 
   const sendFeedback = async (feedBack, user_feedback = "", session_Id) => {
     setgenerateFeedBackButton(true);
     setFetching(true);
-    feedBack === "no"
-      ? setLoadingText("Loading")
-      : setLoadingText("Generating");
+    feedBack === "no" ? setLoadingText("Loading") : setLoadingText("Generating");
     const data = {
       agentic_application_id: agentSelectValue,
       query: lastResponse.query,
@@ -258,18 +230,25 @@ const MsgBox = (props) => {
       model_name: model,
       reset_conversation: false,
       prev_response: lastResponse || {},
-      feedback: user_feedback,
+      final_response_feedback: user_feedback,
     };
     const response = await fetchFeedback(data, feedBack);
-    if (feedBack !== like) setMessageData(converToChatFormat(response) || []);
+    if (feedBack !== like) {
+      setMessageData(converToChatFormat(response) || []);
+    }
 
-    if (feedBack === like) {
-      if (!isDeletingChat) {
-        setShowToast(true);
-        setTimeout(() => {
-          setShowToast(false);
-        }, 5000);
-      }
+    // Show toast for both like and dislike actions (prefer server message when available)
+    if (response && !isDeletingChat && (feedBack === like || feedBack === dislike)) {
+      try {
+        setToastMessage && setToastMessage(response?.message || (feedBack === like ? "Thanks for the like!" : "Thanks — your feedback was submitted"));
+      } catch (e) {}
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        try {
+          setToastMessage && setToastMessage("");
+        } catch (e) {}
+      }, 5000);
     }
     setFetching(false);
     setgenerateFeedBackButton(false);
@@ -279,11 +258,6 @@ const MsgBox = (props) => {
     setFeedBackText(e?.target?.value);
   };
   const handleEditChange = (key, newValue, val) => {
-    if (newValue !== parsedValues) {
-      setNewData(true);
-    } else {
-      setNewData(false);
-    }
     setParsedValues((prev) => ({
       ...prev,
       [key]: newValue,
@@ -317,42 +291,21 @@ const MsgBox = (props) => {
     // setIsEditable(false)
     setSendIconShow(false);
     setGenerateButton(true);
-    let feedBack;
-    if (!newData) {
-      feedBack = "yes";
-    } else {
-      feedBack = JSON.stringify(argData);
-    }
     let response;
-    let url;
     const payload = {
       agentic_application_id: agentSelectValue,
       query: data?.userText ? data?.userText : "",
       session_id: oldSessionId !== "" ? oldSessionId : session,
       model_name: model,
       reset_conversation: false,
-      ...(toolInterrupt ? { interrupt_flag: true } : { interrupt_flag: false }),
+      ...(toolInterrupt ? { tool_verifier_flag: true } : { tool_verifier_flag: false }),
       tool_feedback: JSON.stringify(argData),
-      feedback: JSON.stringify(argData),
+      ...(isCanvasEnabled ? { response_formatting_flag: true } : { response_formatting_flag: false }),
+      ...(isContextEnabled ? { context_flag: true } : { context_flag: false }),
     };
 
-    if (isHuman) {
-      url =
-        agentType === CUSTOM_TEMPLATE
-          ? APIs.CUSTOME_TEMPLATE_QUERY
-          :agentType === PLANNER_EXECUTOR_AGENT
-          ? APIs.PLANNER_EXECUTOR_AGENT_QUERY
-          : APIs.PLANNER;
-      response = await getChatQueryResponse(payload, url);
-    } else {
-      url =
-        agentType === META_AGENT
-          ? APIs.META_AGENT_QUERY
-          : agentType === PLANNER_META_AGENT
-          ? APIs.PLANNER_META_AGENT_QUERY
-          : APIs.REACT_MULTI_AGENT_QUERY;
-      response = await getChatQueryResponse(payload, url);
-    }
+    response = await getChatQueryResponse(payload, APIs.CHAT_INFERENCE);
+
     setFetching(false);
     setGenerateButton(false);
     setMessageData(converToChatFormat(response) || []);
@@ -363,7 +316,6 @@ const MsgBox = (props) => {
     setLoadingText("Generating");
     setGenerateButton(true);
     setFetching(true);
-    let url;
     let response;
     const payload = {
       agentic_application_id: agentSelectValue,
@@ -371,29 +323,28 @@ const MsgBox = (props) => {
       session_id: oldSessionId !== "" ? oldSessionId : session,
       model_name: model,
       reset_conversation: false,
-      ...(toolInterrupt ? { interrupt_flag: true } : { interrupt_flag: false }),
-      feedback: "yes",
+      ...(toolInterrupt ? { tool_verifier_flag: true } : { tool_verifier_flag: false }),
       tool_feedback: "yes",
+      ...(isCanvasEnabled ? { response_formatting_flag: true } : { response_formatting_flag: false }),
+      ...(isContextEnabled ? { context_flag: true } : { context_flag: false }),
     };
-    if (isHuman) {
-      url =
-        agentType === CUSTOM_TEMPLATE
-          ? APIs.CUSTOME_TEMPLATE_QUERY
-          :agentType === PLANNER_EXECUTOR_AGENT
-          ? APIs.PLANNER_EXECUTOR_AGENT_QUERY
-          : APIs.PLANNER;
-      response = await getChatQueryResponse(payload, url);
-    } else {
-      url =
-        agentType === META_AGENT
-          ? APIs.META_AGENT_QUERY
-          : agentType === PLANNER_META_AGENT
-          ? APIs.PLANNER_META_AGENT_QUERY
-          : APIs.REACT_MULTI_AGENT_QUERY;
-      response = await getChatQueryResponse(payload, url);
-    }
+
+    response = await getChatQueryResponse(payload, APIs.CHAT_INFERENCE);
 
     setMessageData(converToChatFormat(response) || []);
+    // show toast from server response if present (feedback via 'yes' action)
+    if (response && !isDeletingChat) {
+      try {
+        setToastMessage && setToastMessage(response?.message || "Thanks for the like!");
+      } catch (e) {}
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        try {
+          setToastMessage && setToastMessage("");
+        } catch (e) {}
+      }, 5000);
+    }
     setLoadingText("");
     setGenerateButton(false);
     setFetching(false);
@@ -405,58 +356,28 @@ const MsgBox = (props) => {
     setFeedback("");
   };
 
-  const handleToggle2 = async (e) => {
-    if (agentType === "multi_agent" || agentType === MULTI_AGENT) {
-      handleToolInterrupt(e.target.checked);
-    }
-  };
-
-  const handleToggle = (e) => {
-    if (agentType === MULTI_AGENT || agentType === "multi_agent") {
-      handleHumanInLoop(e.target.checked);
-    } else {
-      handleToolInterrupt(e.target.checked);
-    }
-  };
-
-  let argunentKey;
-  let argumentValue;
   useEffect(() => {
     setIsEditable(false);
-  }, [messageData]);
-  const [value, setValue] = useState(argunentKey);
-  const [text, setText] = useState(argumentValue);
-  let messagetext = messageData?.filter((item) => item.message.trim() === "");
-  
-  const getAgentIcon = () => {
-    switch (agentType) {
-      case 'META_AGENT':
-        return '🧠';
-      case 'MULTI_AGENT':
-        return '👥';
-      case 'REACT_AGENT':
-        return '⚡';
-      default:
-        return <FontAwesomeIcon icon={faRobot} />;
-    }
-  };
-  
+  }, [messageData, setIsEditable]);
+
+  // keep the original argument key/value placeholders — required by child components
+  let argunentKey;
+  let argumentValue;
+  // value/text are used as read-only props passed into child accordions
+  const [value] = useState(argunentKey);
+  const [text] = useState(argumentValue);
+
   return (
     <div className={styles.messagesContainer}>
-       {(((!props?.allOptionsSelected && props?.oldChats.length===0) ||(props?.allOptionsSelected && props?.oldChats.length===0))&& messageData.length ===0) &&(
-
-       <PlaceholderScreen 
-                agentType={agentType}
-                model={model}
-                selectedAgent={agentSelectValue}
-              />
-
-      )}      
-      
-      {(messageData?.length > 0 || props?.oldChats.length > 0)&&
+      {((!props?.allOptionsSelected && props?.oldChats.length === 0) || (props?.allOptionsSelected && props?.oldChats.length === 0)) && messageData.length === 0 && (
+        <PlaceholderScreen agentType={agentType} model={model} selectedAgent={agentSelectValue} />
+      )}
+      {(messageData?.length > 0 || props?.oldChats.length > 0) &&
         ((feedBack === "no" || feedBack === dislike) &&
         ((agentType === REACT_AGENT && close) ||
-          agentType === MULTI_AGENT ||agentType === PLANNER_EXECUTOR_AGENT|| agentType=== REACT_CRITIC_AGENT||
+          agentType === MULTI_AGENT ||
+          agentType === PLANNER_EXECUTOR_AGENT ||
+          agentType === REACT_CRITIC_AGENT ||
           agentType === PLANNER_META_AGENT)
           ? messageData.slice(-2)
           : messageData
@@ -464,7 +385,9 @@ const MsgBox = (props) => {
           const lastIndex =
             (feedBack === "no" || feedBack === dislike) &&
             ((agentType === REACT_AGENT && close) ||
-              agentType === MULTI_AGENT ||agentType === PLANNER_EXECUTOR_AGENT|| agentType=== REACT_CRITIC_AGENT||
+              agentType === MULTI_AGENT ||
+              agentType === PLANNER_EXECUTOR_AGENT ||
+              agentType === REACT_CRITIC_AGENT ||
               agentType === PLANNER_META_AGENT)
               ? messageData.slice(-2).length - 1
               : messageData.length - 1;
@@ -475,52 +398,130 @@ const MsgBox = (props) => {
                   <>
                     <div className={chatBubbleCss.avatarContainer}>
                       <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.botAvatar}`}>
-                          <span className={chatBubbleCss.agentIcon}>{getAgentIcon()}</span>
+                        <span className={chatBubbleCss.agentIcon}>
+                          <FontAwesomeIcon icon={faRobot} />
+                        </span>
                       </div>
                     </div>
                     <div className={chatBubbleCss.messageWrapper}>
-                      {data.message &&
-                        agentType !== CUSTOM_TEMPLATE &&
-                        agentType === PLANNER_META_AGENT &&
-                        continueButton &&
-                        index != lastIndex && (
-                          <AccordionPlanSteps
-                            response={data.message}
-                            content={data.steps}
-                            messageData={messageData}
-                            isEditable={isEditable}
-                            value={value}
-                            text={text}
-                            argunentKey={argunentKey}
-                          />
-                        )}
-                      {data.message &&
-                        agentType !== CUSTOM_TEMPLATE &&
-                        agentType !== PLANNER_META_AGENT && (
-                          <AccordionPlanSteps
-                            response={data.message}
-                            content={data.steps}
-                            messageData={messageData}
-                            isEditable={isEditable}
-                            value={value}
-                            text={text}
-                            argunentKey={argunentKey}
-                          />
-                        )}
-                      {data.message &&
-                        agentType !== CUSTOM_TEMPLATE &&
-                        agentType === PLANNER_META_AGENT &&
-                        data?.plan?.length == 0 && (
-                          <AccordionPlanSteps
-                            response={data.message}
-                            content={data.steps}
-                            messageData={messageData}
-                            isEditable={isEditable}
-                            value={value}
-                            text={text}
-                            argunentKey={argunentKey}
-                          />
-                        )}
+                      {" "}
+                      {data.message && agentType !== CUSTOM_TEMPLATE && agentType === PLANNER_META_AGENT && continueButton && index != lastIndex && (
+                        <AccordionPlanSteps
+                          response={
+                            typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                              ? JSON.stringify(data.message, null, 2)
+                              : typeof data.message === "string"
+                              ? data.message
+                              : ""
+                          }
+                          content={
+                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                              ? JSON.stringify(data.steps, null, 2)
+                              : typeof data.steps === "string"
+                              ? data.steps
+                              : ""
+                          }
+                          debugExecutor={
+                            Array.isArray(data.debugExecutor)
+                              ? data.debugExecutor.map((item) =>
+                                  typeof item === "object" && item !== null && !Array.isArray(item)
+                                    ? {
+                                        ...item,
+                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                      }
+                                    : item
+                                )
+                              : []
+                          }
+                          messageData={messageData}
+                          isEditable={isEditable}
+                          value={value}
+                          text={text}
+                          argunentKey={argunentKey}
+                          parts={data?.parts || []}
+                          show_canvas={data?.show_canvas || false}
+                          openCanvas={props.openCanvas}
+                          detectCanvasContent={props.detectCanvasContent}
+                        />
+                      )}
+                      {data.message && agentType !== CUSTOM_TEMPLATE && agentType !== PLANNER_META_AGENT && (
+                        <AccordionPlanSteps
+                          response={
+                            typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                              ? JSON.stringify(data.message, null, 2)
+                              : typeof data.message === "string"
+                              ? data.message
+                              : ""
+                          }
+                          content={
+                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                              ? JSON.stringify(data.steps, null, 2)
+                              : typeof data.steps === "string"
+                              ? data.steps
+                              : ""
+                          }
+                          debugExecutor={
+                            Array.isArray(data.debugExecutor)
+                              ? data.debugExecutor.map((item) =>
+                                  typeof item === "object" && item !== null && !Array.isArray(item)
+                                    ? {
+                                        ...item,
+                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                      }
+                                    : item
+                                )
+                              : []
+                          }
+                          messageData={messageData}
+                          isEditable={isEditable}
+                          value={value}
+                          text={text}
+                          argunentKey={argunentKey}
+                          openCanvas={props.openCanvas}
+                          parts={data?.parts || []}
+                          show_canvas={data?.show_canvas || false}
+                          detectCanvasContent={props.detectCanvasContent}
+                        />
+                      )}
+                      {data.message && agentType !== CUSTOM_TEMPLATE && agentType === PLANNER_META_AGENT && data?.plan?.length === 0 && (
+                        <AccordionPlanSteps
+                          response={
+                            typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                              ? JSON.stringify(data.message, null, 2)
+                              : typeof data.message === "string"
+                              ? data.message
+                              : ""
+                          }
+                          content={
+                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                              ? JSON.stringify(data.steps, null, 2)
+                              : typeof data.steps === "string"
+                              ? data.steps
+                              : ""
+                          }
+                          debugExecutor={
+                            Array.isArray(data.debugExecutor)
+                              ? data.debugExecutor.map((item) =>
+                                  typeof item === "object" && item !== null && !Array.isArray(item)
+                                    ? {
+                                        ...item,
+                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                      }
+                                    : item
+                                )
+                              : []
+                          }
+                          messageData={messageData}
+                          isEditable={isEditable}
+                          value={value}
+                          text={text}
+                          argunentKey={argunentKey}
+                          openCanvas={props.openCanvas}
+                          parts={data?.parts || []}
+                          show_canvas={data?.show_canvas || false}
+                          detectCanvasContent={props.detectCanvasContent}
+                        />
+                      )}
                       <div className={styles.accordionContainer}>
                         {index === lastIndex &&
                           data?.plan?.length > 0 &&
@@ -528,20 +529,17 @@ const MsgBox = (props) => {
                           data?.message === "" &&
                           ((isHuman && toolInterrupt) || isHuman) &&
                           (!data?.toolcallData?.additional_details || // not present at all
-                            (Array.isArray(
-                              data.toolcallData.additional_details
-                            ) &&
+                            (Array.isArray(data.toolcallData.additional_details) &&
                               data.toolcallData.additional_details.length > 0 &&
-                              Object.keys(
-                                data.toolcallData.additional_details[0]
-                                  ?.additional_kwargs || {}
-                              ).length === 0)) && (
+                              Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs || {}).length === 0)) && (
                             <>
                               <div className={styles.planContainer}>
                                 <h3>Plan</h3>
-                                {data?.plan?.map((data) => (
+                                {data?.plan?.map((planItem, planIndex) => (
                                   <>
-                                    <p className={styles.stepsContent}>{data}</p>
+                                    <p className={styles.stepsContent} key={`plan-step-${planIndex}`}>
+                                      {planItem}
+                                    </p>
                                   </>
                                 ))}
                               </div>
@@ -551,28 +549,21 @@ const MsgBox = (props) => {
                                   <button
                                     className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
                                     onClick={() => handlePlanFeedBack("yes", data?.userText)}
-                                    title="Good response"
-                                  >
+                                    title="Good response">
                                     <FontAwesomeIcon icon={faThumbsUp} />
-                                  </button>
+                                  </button>{" "}
                                   <button
                                     className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
-                                    onClick={() =>
-                                      handlePlanFeedBack("no", data?.userText)
-                                    }
-                                    title="Poor response"
-                                  >
-                                    <FontAwesomeIcon icon={faThumbsDown} style={{transform: 'scaleX(-1)'}} />
+                                    onClick={() => handlePlanFeedBack("no", data?.userText)}
+                                    title="Poor response">
+                                    <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
                                   </button>
-                                </div> 
+                                </div>
                               )}
 
                               {showInput && (
                                 <>
-                                  {(agentType === REACT_AGENT ||
-                                    agentType === MULTI_AGENT || 
-                                    agentType === REACT_CRITIC_AGENT ||
-                                    agentType === PLANNER_EXECUTOR_AGENT) &&
+                                  {(agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT) &&
                                     close && (
                                       <div className={styles["cancel-btn"]}>
                                         <button
@@ -580,18 +571,12 @@ const MsgBox = (props) => {
                                             setClose(false);
                                             setFeedback("");
                                             setShowInput(false);
-                                          }}
-                                        >
-                                          <SVGIcons
-                                            icon="fa-xmark"
-                                            fill="#3D4359"
-                                          />
+                                          }}>
+                                          <SVGIcons icon="fa-xmark" fill="#3D4359" width={13} height={13} />
                                         </button>
                                       </div>
                                     )}
-                                  <p className={styles.warning}>
-                                    {feedBackMessage}
-                                  </p>
+                                  <p className={styles.warning}>{feedBackMessage}</p>
                                   <div className={styles.feedBackInput}>
                                     <textarea
                                       type="text"
@@ -599,29 +584,27 @@ const MsgBox = (props) => {
                                       className={styles.feedBackTextArea}
                                       value={feedBackText}
                                       onChange={handleChange}
-                                      rows={4}
-                                    ></textarea>
-                                    <button
-                                      disabled={generating}
-                                      onClick={() =>
-                                        handlePlanDislikeFeedBack(data?.userText)
-                                      }
-                                      className={styles.sendIcon}
-                                    >
-                                      <SVGIcons
-                                        icon="ionic-ios-send"
-                                        fill="#007CC3"
-                                        width={28}
-                                        height={28}
-                                      />
+                                      rows={1}></textarea>
+                                    <button disabled={generating} onClick={() => handlePlanDislikeFeedBack(data?.userText)} className={styles.feedbackSendBtn}>
+                                      <SVGIcons icon="ionic-ios-send" fill="#007CC3" width={18} height={18} />
                                     </button>
                                   </div>
                                 </>
                               )}
+                              {fetching && (
+                                <div className={styles.loadingChat}>
+                                  {/* Basic SSE actions list replaced with compact panel */}
+                                  <DebugStepsPanel
+                                    steps={debugSteps}
+                                    visible={showLiveSteps}
+                                    expanded={expanded}
+                                    setExpanded={setExpanded}
+                                    onClose={() => setShowLiveSteps(false)}
+                                  />
 
-                              <span className={styles.regenerateText}>
-                                {fetching && <LoadingChat label={loadingText} />}
-                              </span>
+                                  <LoadingChat label={loadingText} />
+                                </div>
+                              )}
                             </>
                           )}
                         {index === lastIndex &&
@@ -629,135 +612,191 @@ const MsgBox = (props) => {
                           data?.message !== "" &&
                           agentType === PLANNER_META_AGENT &&
                           (!data?.toolcallData?.additional_details || // not present at all
-                            (Array.isArray(
-                              data.toolcallData.additional_details
-                            ) &&
+                            (Array.isArray(data.toolcallData.additional_details) &&
                               data.toolcallData.additional_details.length > 0 &&
-                              Object.keys(
-                                data.toolcallData.additional_details[0]
-                                  ?.additional_kwargs || {}
-                              ).length === 0)) && (
+                              Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs || {}).length === 0)) && (
                             <>
                               <div className={styles.planContainer}>
                                 <h3>Plan</h3>
-                                {data?.plan?.map((data) => (
+                                {data?.plan?.map((planItem, planIndex) => (
                                   <>
-                                    <p className={styles.stepsContent}>{data}</p>
+                                    <p className={styles.stepsContent} key={`plan-${planIndex}`}>
+                                      {planItem}
+                                    </p>
                                   </>
                                 ))}
                               </div>
-                              {continueButton &&
-                                agentType === PLANNER_META_AGENT && (
-                                  <div className={styles["plan-feedback"]}>
-                                    <button
-                                      onClick={() => continueOnclick()}
-                                      className={styles.continueButton}
-                                    >
-                                      {"continue...."}
-                                    </button>
-                                  </div>
-                                )}
+                              {continueButton && agentType === PLANNER_META_AGENT && (
+                                <div className={styles["plan-feedback"]}>
+                                  <button onClick={() => continueOnclick()} className={styles.continueButton}>
+                                    {"continue...."}
+                                  </button>
+                                </div>
+                              )}
                             </>
                           )}
-
-                        {agentType !== CUSTOM_TEMPLATE &&
-                          agentType === PLANNER_META_AGENT &&
-                          !continueButton && (
-                            <AccordionPlanSteps
-                              response={data.message}
-                              content={data.steps}
-                              messageData={messageData}
-                              isEditable={isEditable}
-                              value={value}
-                              text={text}
-                              argunentKey={argunentKey}
-                            />
-                          )}
-
+                        {agentType !== CUSTOM_TEMPLATE && agentType === PLANNER_META_AGENT && !continueButton && (
+                          <AccordionPlanSteps
+                            response={
+                              typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                                ? JSON.stringify(data.message, null, 2)
+                                : typeof data.message === "string"
+                                ? data.message
+                                : ""
+                            }
+                            content={
+                              typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                                ? JSON.stringify(data.steps, null, 2)
+                                : typeof data.steps === "string"
+                                ? data.steps
+                                : ""
+                            }
+                            debugExecutor={
+                              Array.isArray(data.debugExecutor)
+                                ? data.debugExecutor.map((item) =>
+                                    typeof item === "object" && item !== null && !Array.isArray(item)
+                                      ? {
+                                          ...item,
+                                          content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                        }
+                                      : item
+                                  )
+                                : []
+                            }
+                            messageData={messageData}
+                            isEditable={isEditable}
+                            value={value}
+                            text={text}
+                            argunentKey={argunentKey}
+                            openCanvas={props.openCanvas}
+                            parts={data?.parts || []}
+                            show_canvas={data?.show_canvas || false}
+                            detectCanvasContent={props.detectCanvasContent}
+                          />
+                        )}
                         {agentType === CUSTOM_TEMPLATE && (
                           <>
                             <AccordionPlanSteps
-                              response={data.message}
-                              content={data.steps}
+                              response={
+                                typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                                  ? JSON.stringify(data.message, null, 2)
+                                  : typeof data.message === "string"
+                                  ? data.message
+                                  : ""
+                              }
+                              content={
+                                typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                                  ? JSON.stringify(data.steps, null, 2)
+                                  : typeof data.steps === "string"
+                                  ? data.steps
+                                  : ""
+                              }
+                              debugExecutor={
+                                Array.isArray(data.debugExecutor)
+                                  ? data.debugExecutor.map((item) =>
+                                      typeof item === "object" && item !== null && !Array.isArray(item)
+                                        ? {
+                                            ...item,
+                                            content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                          }
+                                        : item
+                                    )
+                                  : []
+                              }
                               messageData={messageData}
                               isEditable={isEditable}
                               value={value}
                               text={text}
                               argunentKey={argunentKey}
+                              openCanvas={props.openCanvas}
+                              parts={data?.parts || []}
+                              show_canvas={data?.show_canvas || false}
+                              detectCanvasContent={props.detectCanvasContent}
                             />
 
-                            {!fetching &&
-                              index === lastIndex &&
-                              agentType === CUSTOM_TEMPLATE && (
-                                <div className={chatBubbleCss.feedbackWrapper}>
-                                  <button
-                                    className={`${chatBubbleCss.feedbackButton} `} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                    onClick={() => handlePlanFeedBack("yes", data?.userText)}
-                                    title="Good response"
-                                  >
-                                    <FontAwesomeIcon icon={faThumbsUp} />
-                                  </button>
-                                  <button
-                                    className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
-                                    onClick={() =>
-                                      handlePlanFeedBack("no", data?.userText)
-                                    }
-                                    title="Poor response"
-                                  >
-                                    <FontAwesomeIcon icon={faThumbsDown} style={{transform: 'scaleX(-1)'}} />
-                                  </button>
-                                </div>
-                              )}
+                            {!fetching && index === lastIndex && agentType === CUSTOM_TEMPLATE && (
+                              <div className={chatBubbleCss.feedbackWrapper}>
+                                <button
+                                  className={`${chatBubbleCss.feedbackButton} `} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
+                                  onClick={() => handlePlanFeedBack("yes", data?.userText)}
+                                  title="Good response">
+                                  <FontAwesomeIcon icon={faThumbsUp} />
+                                </button>
+                                <button
+                                  className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
+                                  onClick={() => handlePlanFeedBack("no", data?.userText)}
+                                  title="Poor response">
+                                  <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
+                                </button>
+                              </div>
+                            )}
 
-                            {showInput &&
-                              index === lastIndex &&
-                              agentType === CUSTOM_TEMPLATE && (
-                                <div className={styles.feedBackInput}>
-                                  <textarea
-                                    type="text"
-                                    placeholder="Enter your feedback:"
-                                    className={styles.feedBackTextArea}
-                                    value={feedBackText}
-                                    onChange={handleChange}
-                                    rows={4}
-                                  ></textarea>
-                                  <button
-                                    disabled={generating}
-                                    onClick={() =>
-                                      handlePlanDislikeFeedBack(data?.userText)
-                                    }
-                                    className={styles.sendIcon}
-                                  >
-                                    <SVGIcons
-                                      icon="ionic-ios-send"
-                                      fill="#007CC3"
-                                      width={28}
-                                      height={28}
-                                    />
-                                  </button>
-                                </div>
-                              )}
+                            {showInput && index === lastIndex && agentType === CUSTOM_TEMPLATE && (
+                              <div className={styles.feedBackInput}>
+                                <textarea
+                                  type="text"
+                                  placeholder="Enter your feedback:"
+                                  className={styles.feedBackTextArea}
+                                  value={feedBackText}
+                                  onChange={handleChange}
+                                  rows={4}></textarea>
+                                <button disabled={generating} onClick={() => handlePlanDislikeFeedBack(data?.userText)} className={styles.feedbackSendBtn}>
+                                  <SVGIcons icon="ionic-ios-send" fill="#007CC3" width={18} height={18} />
+                                </button>
+                              </div>
+                            )}
 
                             {index === lastIndex && (
-                              <span className={styles.regenerateText}>
+                              <>
                                 {fetching && (
-                                  <LoadingChat label={"Regnerating"} />
+                                  <div className={styles.loadingChat}>
+                                    {/* Basic SSE actions list replaced with compact panel */}
+                                    <DebugStepsPanel
+                                      steps={debugSteps}
+                                      visible={showLiveSteps}
+                                      expanded={expanded}
+                                      setExpanded={setExpanded}
+                                      onClose={() => setShowLiveSteps(false)}
+                                    />
+                                    <LoadingChat label={"Regnerating"} />
+                                  </div>
                                 )}
-                              </span>
+                              </>
                             )}
                           </>
                         )}
                         {data?.message === "" &&
                           Array.isArray(data?.toolcallData?.additional_details) &&
                           data.toolcallData.additional_details.length > 0 &&
-                          Object.keys(
-                            data.toolcallData.additional_details[0]
-                              ?.additional_kwargs
-                          ).length > 0 && (
+                          Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs).length > 0 && (
                             <>
                               <ToolCallFinalResponse
-                                response={data.message}
-                                content={data.steps}
+                                response={
+                                  typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                                    ? JSON.stringify(data.message, null, 2)
+                                    : typeof data.message === "string"
+                                    ? data.message
+                                    : ""
+                                }
+                                content={
+                                  typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                                    ? JSON.stringify(data.steps, null, 2)
+                                    : typeof data.steps === "string"
+                                    ? data.steps
+                                    : ""
+                                }
+                                debugExecutor={
+                                  Array.isArray(data.debugExecutor)
+                                    ? data.debugExecutor.map((item) =>
+                                        typeof item === "object" && item !== null && !Array.isArray(item)
+                                          ? {
+                                              ...item,
+                                              content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                            }
+                                          : item
+                                      )
+                                    : []
+                                }
                                 messageData={data}
                                 isEditable={isEditable}
                                 value={value}
@@ -766,6 +805,8 @@ const MsgBox = (props) => {
                                 parsedValues={parsedValues}
                                 setParsedValues={setParsedValues}
                                 rawData={rawData}
+                                setIsEditable={setIsEditable}
+                                setLikeIcon={setLikeIcon}
                                 handleEditChange={handleEditChange}
                                 sendArgumentEditData={sendArgumentEditData}
                                 fetching={fetching}
@@ -774,70 +815,71 @@ const MsgBox = (props) => {
                               />
                             </>
                           )}
-                        {/* {data.message==="" &&isEditable && (!generating || !fetching) && sendIconShow &&(
-                  <>
-                  <div className={styles.accordionButtonSend}  onClick={(e)=>sendArgumentEditData(props?.messageData)} title={"send"}>
-                      <span
-              className={
-                styles?.arrowOpen
-                  
-              } 
-            >
-                                    <SVGIcons
-                                      icon="ionic-ios-send"
-                                      fill="#007CC3"
-                                      width={48}
-                                      height={15}
-                                    />
-            </span>
-          </div>
-                  </>
-              )} */}
-                        {data?.message === "" &&
-                          !isHuman &&
-                          toolInterrupt &&
-                          !(
-                            "additional_details" in (data?.toolcallData || {})
-                          ) && (
-                            <div className={styles.botChatSection}>
-                              <div className={styles.accordion}>
-                                <div className={styles["accordion-header"]}>
-                                  <div className="Messagingbox">
-                                    <div className="table-container">
-                                      <span>{"Something went wrong"}</span>
-                                    </div>
-                                  </div>
+                        {data?.message === "" && !isHuman && toolInterrupt && !("additional_details" in (data?.toolcallData || {})) && (
+                          <div className={styles.botChatSection}>
+                            <div className={styles.accordion}>
+                              <div className={styles["accordion-header"]}>
+                                <div className={chatBubbleCss.messageBubble}>
+                                  <span>{"Something went wrong"}</span>
                                 </div>
                               </div>
                             </div>
-                          )}
+                          </div>
+                        )}
                       </div>
-
+                      {/* Added: show like/dislike for all non-last bot responses (no changes to last response behavior) */}
+                      {data.type === BOT &&
+                        index !== lastIndex &&
+                        (processingFeedback[index] ? (
+                          <div style={{ marginTop: 8 }}>
+                            <LoadingChat label={"Generating"} />
+                          </div>
+                        ) : (
+                          <div className={chatBubbleCss.feedbackWrapper} style={{ marginTop: 8 }}>
+                            <button
+                              type="button"
+                              className={chatBubbleCss.feedbackButton}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMessageLike(data, index);
+                              }}
+                              title="Good response">
+                              <FontAwesomeIcon icon={faThumbsUp} />
+                            </button>
+                            <button
+                              type="button"
+                              className={chatBubbleCss.feedbackButton}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMessageDislike(data, index);
+                              }}
+                              title="Poor response">
+                              <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
+                            </button>
+                          </div>
+                        ))}
                       {feedBack === dislike &&
                         index === lastIndex &&
                         (agentType === REACT_AGENT ||
                           agentType === "react_agent" ||
-                          agentType === MULTI_AGENT ||agentType === PLANNER_EXECUTOR_AGENT|| agentType=== REACT_CRITIC_AGENT||
+                          agentType === MULTI_AGENT ||
+                          agentType === PLANNER_EXECUTOR_AGENT ||
+                          agentType === REACT_CRITIC_AGENT ||
                           agentType === "multi_agent" ||
-                          agentType === PLANNER_META_AGENT) && (                        <div className={styles.feedBackSection}>
-                            {((agentType === REACT_AGENT ||
-                              agentType === MULTI_AGENT ||agentType === PLANNER_EXECUTOR_AGENT|| agentType=== REACT_CRITIC_AGENT) &&
-                              close) ||
-                              (agentType === PLANNER_META_AGENT &&
-                                continueButton &&
-                                feedBack === dislike &&
-                                close) ? (
-                                  <div className={styles["cancel-btn"]}>
-                                    <button
-                                      onClick={() => {
-                                        setClose(false);
-                                        setFeedback("");
-                                      }}
-                                    >
-                                      <SVGIcons icon="fa-xmark" fill="#3D4359" />
-                                    </button>
-                                  </div>
-                                ) : null}
+                          agentType === PLANNER_META_AGENT) && (
+                          <div className={styles.feedBackSection}>
+                            {((agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === REACT_CRITIC_AGENT) && close) ||
+                            (agentType === PLANNER_META_AGENT && continueButton && feedBack === dislike && close) ? (
+                              <div className={styles["cancel-btn"]}>
+                                <button
+                                  onClick={() => {
+                                    setClose(false);
+                                    setFeedback("");
+                                  }}>
+                                  <SVGIcons icon="fa-xmark" fill="#3D4359" width={13} height={13} />
+                                </button>
+                              </div>
+                            ) : null}
                             <p className={styles.warning}>{feedBackMessage}</p>
                             <div className={styles.feedBackInput}>
                               <textarea
@@ -846,34 +888,29 @@ const MsgBox = (props) => {
                                 className={styles.feedBackTextArea}
                                 value={feedBackText}
                                 onChange={handleChange}
-                                rows={4}
-                              ></textarea>
-                              <button
-                                disabled={generating}
-                                onClick={handleDislikeFeedBack}
-                                className={styles.sendIcon}
-                              >
-                                <SVGIcons
-                                  icon="ionic-ios-send"
-                                  fill="#007CC3"
-                                  width={28}
-                                  height={28}
-                                />
+                                rows={4}></textarea>
+                              <button disabled={generating} onClick={handleDislikeFeedBack} className={styles.feedbackSendBtn}>
+                                <SVGIcons icon="ionic-ios-send" fill="#007CC3" width={18} height={18} />
                               </button>
                             </div>
                           </div>
                         )}
                       {index === lastIndex && (
-                        <span className={styles.regenerateText}>
+                        <>
                           {fetching && generateFeedBackButton && (
-                            <LoadingChat label={"Generating"} />
+                            <div className={styles.loadingChat}>
+                              {/* Basic SSE actions list replaced with compact panel */}
+                              <DebugStepsPanel steps={debugSteps} visible={showLiveSteps} expanded={expanded} setExpanded={setExpanded} onClose={() => setShowLiveSteps(false)} />
+                              <LoadingChat label={"Generating"} />
+                            </div>
                           )}
-                        </span>
+                        </>
                       )}
-
                       {index === lastIndex &&
                         (agentType === REACT_AGENT ||
-                          agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT|| agentType=== REACT_CRITIC_AGENT||
+                          agentType === MULTI_AGENT ||
+                          agentType === PLANNER_EXECUTOR_AGENT ||
+                          agentType === REACT_CRITIC_AGENT ||
                           (agentType === PLANNER_META_AGENT && continueButton)) &&
                         feedBack !== dislike && (
                           <div className={styles["feedback-section"]}>
@@ -881,11 +918,19 @@ const MsgBox = (props) => {
                               <div className={styles["button-container"]}>
                                 {loadingText ? (
                                   <>
-                                    <span className={styles.regenerateText}>
-                                      {fetching && (
+                                    {fetching && (
+                                      <div className={styles.loadingChat}>
+                                        {/* Basic SSE actions list replaced with compact panel */}
+                                        <DebugStepsPanel
+                                          steps={debugSteps}
+                                          visible={showLiveSteps}
+                                          expanded={expanded}
+                                          setExpanded={setExpanded}
+                                          onClose={() => setShowLiveSteps(false)}
+                                        />
                                         <LoadingChat label={"Generating"} />
-                                      )}
-                                    </span>
+                                      </div>
+                                    )}
                                   </>
                                 ) : (
                                   <></>
@@ -893,110 +938,88 @@ const MsgBox = (props) => {
 
                                 {data?.message === "" &&
                                 !props?.likeIcon &&
-                                Array.isArray(
-                                  data?.toolcallData?.additional_details
-                                ) &&
+                                Array.isArray(data?.toolcallData?.additional_details) &&
                                 data.toolcallData.additional_details.length > 0 &&
-                                Object.keys(
-                                  data.toolcallData.additional_details[0]
-                                    ?.additional_kwargs
-                                ).length > 0 ? (
+                                Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs).length > 0 ? (
                                   <>
-                                  <div className={chatBubbleCss.feedbackWrapper}>
-                                    <button
-                                      className={`${chatBubbleCss.feedbackButton}`} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                      onClick={() => submitFeedbackYes(data)}
-                                      title="Good response"
-                                    >
-                                      <FontAwesomeIcon icon={faThumbsUp} />
-                                    </button>
-                                      
-                                    {Array.isArray(
-                                      props?.messageData?.toolcallData
-                                        ?.additional_details
-                                    ) &&
-                                    props.messageData.toolcallData
-                                      .additional_details.length > 0 &&
-                                    Array.isArray(
-                                      props.messageData.toolcallData
-                                        .additional_details[0]?.additional_kwargs
-                                        ?.tool_calls
-                                    ) &&
-                                    props.messageData.toolcallData
-                                      .additional_details[0].additional_kwargs
-                                      .tool_calls.length > 0 &&
-                                    props.messageData.toolcallData
-                                      .additional_details[0].additional_kwargs
-                                      .tool_calls[0]?.function?.arguments ===
-                                      "{}" ? (
-                                      <></>
-                                    ) : (
-                                      <></>
-                                    )}
+                                    <div className={chatBubbleCss.feedbackWrapper}>
+                                      <button
+                                        className={`${chatBubbleCss.feedbackButton}`} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
+                                        onClick={() => submitFeedbackYes(data)}
+                                        title="Good response">
+                                        <FontAwesomeIcon icon={faThumbsUp} />
+                                      </button>
 
-                                    <button
-                                      className={styles.editBtn}
-                                      onClick={() => onMsgEdit(data)}
-                                    >
-                                      <SVGIcons
-                                        icon="fa-solid fa-pen"
-                                        width={16}
-                                        height={16}
-                                        fill={"  #007ac0"}
-                                      />
-                                    </button>
-                                  </div>
+                                      {Array.isArray(props?.messageData?.toolcallData?.additional_details) &&
+                                      props.messageData.toolcallData.additional_details.length > 0 &&
+                                      Array.isArray(props.messageData.toolcallData.additional_details[0]?.additional_kwargs?.tool_calls) &&
+                                      props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls.length > 0 &&
+                                      props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls[0]?.function?.arguments === "{}" ? (
+                                        <></>
+                                      ) : (
+                                        <></>
+                                      )}
+
+                                      <button className={chatBubbleCss.editBtn} onClick={() => onMsgEdit(data)} title="Edit">
+                                        <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                                          <g>
+                                            <path
+                                              d="M15.2 3.8c.5-.5 1.3-.5 1.8 0l.2.2c.5.5.5 1.3 0 1.8l-9.7 9.7-2.7.3.3-2.7 9.7-9.7z"
+                                              fill="currentColor"
+                                              stroke="currentColor"
+                                              strokeWidth="1.5"
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                            />
+                                            <rect x="2.5" y="14.5" width="5" height="2" rx="0.8" fill="currentColor" opacity="0.18" />
+                                            <path d="M13.7 5.7l1.6 1.6" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                                          </g>
+                                        </svg>
+                                      </button>
+                                    </div>
                                   </>
                                 ) : (
                                   <>
                                     {(data?.message === "" && props?.likeIcon) ||
-                                    (data?.message === "" &&
-                                      (data?.plan || !data?.plan)) ||
+                                    (data?.message === "" && (data?.plan || !data?.plan)) ||
                                     (data?.message === "" &&
                                       isHuman &&
-                                      Array.isArray(
-                                        data?.toolcallData?.additional_details
-                                      ) &&
-                                      data.toolcallData.additional_details
-                                        .length > 0 &&
-                                      Object.keys(
-                                        data.toolcallData.additional_details[0]
-                                          ?.additional_kwargs || {}
-                                      ).length === 0) ? (
+                                      Array.isArray(data?.toolcallData?.additional_details) &&
+                                      data.toolcallData.additional_details.length > 0 &&
+                                      Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs || {}).length === 0) ? (
                                       <></>
                                     ) : (
                                       <>
                                         {agentType !== PLANNER_META_AGENT && (
                                           <>
-                                          <div className={chatBubbleCss.feedbackWrapper}>
-                                            <button
-                                              className={`${chatBubbleCss.feedbackButton}`} /*${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''}*/
-                                              onClick={() => handleFeedBack(like)}
-                                              title="Good response"
-                                            >
-                                              <FontAwesomeIcon icon={faThumbsUp} />
-                                            </button>
-                                            <button
-                                              className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
-                                              onClick={() =>
-                                                handleFeedBack(dislike)
-                                              }
-                                              title="Poor response"
-                                            >
-                                              <FontAwesomeIcon icon={faThumbsDown} style={{transform: 'scaleX(-1)'}} />
-                                            </button>
-                                            <button
-                                              className={chatBubbleCss.feedbackButton}
-                                              onClick={() => handleFeedBack(regenerate)}
-                                              title="Regenerate response"
-                                            >
-                                              <FontAwesomeIcon
-                                                icon={faRotateRight}
-                                                style={{transform: 'rotate(-106deg)'}}
-                                                className={generating ? chatBubbleCss.spinning : ''}
-                                              />
-                                            </button>
-                                          </div>
+                                            <div className={chatBubbleCss.feedbackWrapper}>
+                                              <button
+                                                className={`${chatBubbleCss.feedbackButton}`} /*${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''}*/
+                                                onClick={() => handleFeedBack(like)}
+                                                title="Good response">
+                                                <FontAwesomeIcon icon={faThumbsUp} />
+                                              </button>
+                                              <button
+                                                className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
+                                                onClick={() => handleFeedBack(dislike)}
+                                                title="Poor response">
+                                                <FontAwesomeIcon
+                                                  icon={faThumbsDown}
+                                                  style={{
+                                                    transform: "scaleX(-1)",
+                                                  }}
+                                                />
+                                              </button>{" "}
+                                              <button className={chatBubbleCss.feedbackButton} onClick={() => handleFeedBack(regenerate)} title="Regenerate response">
+                                                <FontAwesomeIcon
+                                                  icon={faRotateRight}
+                                                  style={{
+                                                    transform: "rotate(-106deg)",
+                                                  }}
+                                                  className={generating ? chatBubbleCss.spinning : ""}
+                                                />
+                                              </button>
+                                            </div>
                                           </>
                                         )}
                                       </>
@@ -1009,9 +1032,17 @@ const MsgBox = (props) => {
                             )}
                             {showgenerateButton ? (
                               <>
-                                <span className={styles.regenerateText}>
+                                <div className={styles.loadingChat}>
+                                  {/* Basic SSE actions list replaced with compact panel */}
+                                  <DebugStepsPanel
+                                    steps={debugSteps}
+                                    visible={showLiveSteps}
+                                    expanded={expanded}
+                                    setExpanded={setExpanded}
+                                    onClose={() => setShowLiveSteps(false)}
+                                  />
                                   <LoadingChat label={"Generating"} />
-                                </span>
+                                </div>
                               </>
                             ) : (
                               <></>
@@ -1025,25 +1056,43 @@ const MsgBox = (props) => {
                   <>
                     <div className={chatBubbleCss.avatarContainer}>
                       <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.userAvatar}`}>
-                          <FontAwesomeIcon icon={faUser} className={chatBubbleCss.avatarIcon} />
+                        <FontAwesomeIcon icon={faUser} className={chatBubbleCss.avatarIcon} />
                       </div>
                     </div>
                     <div className={chatBubbleCss.messageWrapper}>
                       <div className={`${chatBubbleCss.messageBubble} ${chatBubbleCss.userBubble}`}>
-                        <div className={chatBubbleCss.messageContent}>
-                          <div className={chatBubbleCss.userText}>
-                            {/* Sanitize the message (with newlines already converted to <br />), 
-                            then parse the resulting safe HTML string into React elements. */}
-                            {parse(
-                              DOMPurify.sanitize(
-                                (data?.message || "").replace(/\n/g, "<br />")
-                              )
-                            )}
+                        {/* Only render if data.message is a string or a plain object, never as a React child or array */}
+                        {Array.isArray(data.message) ? null : typeof data.message === "object" && data.message !== null ? (
+                          <div className={chatBubbleCss.messageContent}>
+                            <div className={chatBubbleCss.userText}>
+                              <pre
+                                style={{
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                }}>
+                                {JSON.stringify(data.message, null, 2)}
+                              </pre>
+                            </div>
                           </div>
-                          <div className={chatBubbleCss.timestamp}>
-                            {/* Time to be displayed here */}
+                        ) : typeof data.message === "string" ? (
+                          <div className={chatBubbleCss.messageContent}>
+                            <div className={chatBubbleCss.userText}>
+                              {parse(DOMPurify.sanitize((data.message || "").replace(/\n/g, "<br />")), {
+                                replace: (domNode) => {
+                                  if (domNode.name === "ul") {
+                                    domNode.attribs = domNode.attribs || {};
+                                    domNode.attribs.class = (domNode.attribs.class || "") + " markdownList";
+                                  }
+                                  if (domNode.name === "li") {
+                                    domNode.attribs = domNode.attribs || {};
+                                    domNode.attribs.class = (domNode.attribs.class || "") + " markdownListItem";
+                                  }
+                                },
+                              })}
+                            </div>
                           </div>
-                        </div>
+                        ) : null}
+                        <div className={chatBubbleCss.timestamp}>{/* Time to be displayed here */}</div>
                       </div>
                     </div>
                   </>
@@ -1051,14 +1100,19 @@ const MsgBox = (props) => {
               </div>
             </>
           );
-        }) 
-
-      }
+        })}
       {generating && (
         <div className={styles.loadingChat}>
-          <LoadingChat />
+          {/* Basic SSE actions list replaced with compact panel */}
+          <DebugStepsPanel steps={debugSteps} expanded={expanded} setExpanded={setExpanded} visible={showLiveSteps} onClose={() => setShowLiveSteps(false)} />
+          <LoadingChat label={"Generating"} />
         </div>
       )}
+
+      <div className={`${"fixedDebugpanel"} ${styles.loadingChat}`} style={{ width: "100%", maxWidth: "98%" }}>
+        {/* Basic SSE actions list replaced with compact panel */}
+        <DebugStepsPanel steps={debugSteps} visible={true} expanded={true} setExpanded={setExpanded} onClose={() => setShowLiveSteps(false)} />
+      </div>
     </div>
   );
 };

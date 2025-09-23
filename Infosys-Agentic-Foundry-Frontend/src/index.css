@@ -6,19 +6,15 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
-
 
 /* Global thin scrollbar styles */
 * {
@@ -48,4 +44,33 @@ code {
 /* Optional: Style scrollbar corner */
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+.iafTabsBtn {
+  min-width: 60px;
+  max-width: 180px;
+  height: 18px;
+  font-size: 13px;
+  padding: 8px 15px;
+  margin-right: 0;
+  text-align: center;
+  border: 1.5px solid #e6e9ef;
+  outline: none;
+  justify-content: space-evenly;
+  border-radius: 5px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  background: #f5f7fa;
+  color: #343741;
+}
+
+.iafTabsBtn.active {
+  background: #007cc3;
+  border: 1.5px solid #007cc3;
+  color: #ffffff;
+}
+
+.iafTabsBtn:hover:not(.active) {
+  background: #e1e5eb;
+  color: #343741;
 }

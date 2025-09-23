@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import styles from "./FilterModal.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
+import styles from "./FilterModal.module.css";
 
-const FilterModal = ({ show, onClose, tags, handleFilter, selectedTags }) => {
+const FilterModal = ({ show, onClose, tags, handleFilter, selectedTags, showfilterHeader, filterTypes }) => {
   const [localSelectedTags, setLocalSelectedTags] = useState([]);
   const [tempSelectedTags, setTempSelectedTags] = useState([]);
 
@@ -12,11 +12,7 @@ const FilterModal = ({ show, onClose, tags, handleFilter, selectedTags }) => {
   }, [selectedTags]);
 
   const handleTagChange = (tagName) => {
-    setTempSelectedTags((prevTags) =>
-      prevTags.includes(tagName)
-        ? prevTags.filter((t) => t !== tagName)
-        : [...prevTags, tagName]
-    );
+    setTempSelectedTags((prevTags) => (prevTags.includes(tagName) ? prevTags.filter((t) => t !== tagName) : [...prevTags, tagName]));
   };
 
   const applyFilter = () => {
@@ -33,32 +29,40 @@ const FilterModal = ({ show, onClose, tags, handleFilter, selectedTags }) => {
     setTempSelectedTags(localSelectedTags); // Revert temp state on close
     onClose();
   };
-
   if (!show) return null;
 
   return (
     <div className={styles.modal}>
       <div className={styles.modalContent}>
-        <h2 className={styles.heading}>Filter Tools by Tags</h2>
+        <h2 className={styles.heading}>{showfilterHeader}</h2>
         <div className={styles.tagsContainer}>
           {tags.map((tag) => (
-            <div
-              key={tag.tag_id}
-              className={`${styles.tag} ${
-                tempSelectedTags.includes(tag.tag_name) ? styles.selectedTag : ""
-              }`}
-            >
-              <input
-                type="checkbox"
-                id={tag.tag_id}
-                value={tag.tag_name}
-                checked={tempSelectedTags.includes(tag.tag_name)}
-                onChange={() => handleTagChange(tag.tag_name)}
-              />
+            <div key={tag.tag_id} className={`${styles.tag} ${tempSelectedTags.includes(tag.tag_name) ? styles.selectedTag : ""}`}>
+              <input type="checkbox" id={tag.tag_id} value={tag.tag_name} checked={tempSelectedTags.includes(tag.tag_name)} onChange={() => handleTagChange(tag.tag_name)} />
               <label htmlFor={tag.tag_id}>{tag.tag_name}</label>
             </div>
           ))}
         </div>
+        {filterTypes === "servers" && (
+          <div className={styles.serverTypeSection}>
+            <h3 className={styles.sectionTitle}>Filter by Type:</h3>
+            <div className={styles.typeTagsContainer}>
+              {["LOCAL", "REMOTE"].map((type) => (
+                <div key={type} className={`${styles.tag} ${tempSelectedTags.includes(type) ? styles.selectedTag : ""}`}>
+                  <input
+                    type="checkbox"
+                    id={`type-${type}`}
+                    checked={tempSelectedTags.includes(type)}
+                    onChange={(e) => {
+                      setTempSelectedTags((prev) => (e.target.checked ? [...prev, type] : prev.filter((t) => t !== type)));
+                    }}
+                  />
+                  <label htmlFor={`type-${type}`}>{type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()}</label>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <button onClick={applyFilter} className={styles.applyButton}>
           Apply Filter
         </button>

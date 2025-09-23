@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
-import styles from "../../css_modules/AskAssistant.module.css";
-import stylesNew from "./AskAssistant2.module.css";
+import { useEffect, useRef, useState } from "react";
+import stylesNew from "./AskAssistant.module.css";
 import chatInputModule from "./ChatInput.module.css";
 import MsgBox from "./MsgBox";
-import Toggle from "../commonComponents/Toggle";
 import ChatHistorySlider from "./ChatHistorySlider";
+import PromptSuggestions from "./PromptSuggestions";
+import SuggestionPopover from "./SuggestionPopover";
 import {
   BOT,
   agentTypesDropdown,
@@ -19,52 +19,21 @@ import {
   REACT_AGENT,
   customTemplatId,
   META_AGENT,
-  PLANNER_META_AGENT_QUERY,
   PLANNER_META_AGENT,
   liveTrackingUrl,
   REACT_CRITIC_AGENT,
   PLANNER_EXECUTOR_AGENT,
-  KB_LIST,
-  BASE_URL
 } from "../../constant";
-import axios, { all } from "axios";
-import SVGIcons from "../../Icons/SVGIcons";
-import {
-  resetChat,
-  getChatQueryResponse,
-  getChatHistory,
-  fetchOldChats,
-  fetchNewChats,
-} from "../../services/chatService";
+import { useChatServices } from "../../services/chatService";
 import ToastMessage from "../commonComponents/ToastMessage";
-import clearChat from "../../Assets/clearchat.png";
 import useFetch from "../../Hooks/useAxios";
-import { getCsrfToken, getSessionId } from "../../Hooks/useAxios";
-import tracking from "../../Assets/tracking.png";
-import CustomDropdown from "../commonComponents/DropDowns/CustomDropdown";
-import OldChatsHistory from "./OldChatsHistory";
 import Cookies from "js-cookie";
-import AskAssistantDropdown from "./AskAssisstantDropdown.jsx";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faPaperclip,
-  faChartPie,
-  faTrash,
-  faArrowTrendUp,
-  faHexagonNodes,
-  faRobot,
-  faScrewdriverWrench,
-  faGlobe,
-  faArrowUp,
-  faCommentMedical,
-  faBookOpenReader
-} from "@fortawesome/free-solid-svg-icons";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext.js";
-import Loader from "../commonComponents/Loader";
+import Canvas from "../Canvas/Canvas";
 
 const AskAssistant = () => {
   const loggedInUserEmail = Cookies.get("email");
-  const session_id = Cookies.get("session_id");
+  const user_session = Cookies.get("user_session");
   const [messageData, setMessageData] = useState([]);
   const [lastResponse, setLastResponse] = useState({});
   const [userChat, setUserChat] = useState("");
@@ -80,12 +49,13 @@ const AskAssistant = () => {
   const [feedBack, setFeedback] = useState("");
   const [fetching, setFetching] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
   const [isDeletingChat, setIsDeletingChat] = useState(false);
   const [planData, setPlanData] = useState(null);
   const [showInput, setShowInput] = useState(false);
   const [oldChats, setOldChats] = useState([]);
   const [oldSessionId, setOldSessionId] = useState("");
-  const [session, setSessionId] = useState(session_id);
+  const [session, setSessionId] = useState(user_session);
   const [selectedModels, setSelectedModels] = useState([]);
   const [toolInterrupt, setToolInterrupt] = useState(false);
   const [toolData, setToolData] = useState(null);
@@ -93,6 +63,8 @@ const AskAssistant = () => {
   const [isEditable, setIsEditable] = useState(false);
   const [showModelPopover, setShowModelPopover] = useState(false);
   const bullseyeRef = useRef(null);
+  const { resetChat, getChatQueryResponse, getChatHistory, fetchOldChats, fetchNewChats, getQuerySuggestions, setSseMessageCallback } = useChatServices();
+  const [canvasInterrupt, setCanvasInterrupt] = useState(false);
 
   const chatbotContainerRef = useRef(null);
   const [likeIcon, setLikeIcon] = useState(false);
@@ -102,43 +74,159 @@ const AskAssistant = () => {
   // Knowledge base popover state
   const [showKnowledgePopover, setShowKnowledgePopover] = useState(false);
   const [showVerifierSettings, setShowVerifierSettings] = useState(false);
+  const [showChatSettings, setShowChatSettings] = useState(false);
 
   const [agentSearchTerm, setAgentSearchTerm] = useState("");
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(-1);
-  const [showSettings, setShowSettings] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState("");
-  
   const [isHumanVerifierEnabled, setIsHumanVerifierEnabled] = useState(false);
   const [isToolVerifierEnabled, setIsToolVerifierEnabled] = useState(false);
+  const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
+  const [isContextEnabled, setIsContextEnabled] = useState(true);
   const [showChatHistory, setShowChatHistory] = useState(false);
-    
-  const settingsRef = useRef(null);
+  const [isListening, setIsListening] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcription, setTranscription] = useState("");
+  const mediaRecorder = useRef(null);
+  const audioChunks = useRef([]);
+  const mediaStream = useRef(null);
+
+  // Canvas states
+  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [canvasContent, setCanvasContent] = useState(null);
+  const [canvasTitle, setCanvasTitle] = useState("Code View");
+  const [canvasContentType, setCanvasContentType] = useState("");
+  const [canvasMessageId, setCanvasMessageId] = useState(null);
+
+  const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
+  const [promptSuggestions, setPromptSuggestions] = useState([]);
+
+  const [highlightedKbIndex, setHighlightedKbIndex] = useState(-1);
+
+  const verifierSettingsRef = useRef(null);
+  const chatSettingsRef = useRef(null);
   const agentTriggerRef = useRef(null);
   const agentSearchInputRef = useRef(null);
   const agentDropdownRef = useRef(null);
   const agentListRef = useRef(null);
   const knowledgePopoverRef = useRef(null);
+  const knowledgeSearchInputRef = useRef(null);
+  const knowledgeListRef = useRef(null);
+  const suggestionPopoverRef = useRef(null);
 
-  let messageDisable = messageData.some((msg) => msg?.message.trim() === "");
+  const [cachedSuggestions, setCachedSuggestions] = useState({
+    user_history: [],
+    agent_history: [],
+  });
+
+  let messageDisable = messageData.some((msg) => msg?.message?.trim() === "");
+  const startRecording = async () => {
+    try {
+      // Reset audio chunks for new recording
+      audioChunks.current = [];
+
+      // Get user media stream
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100,
+        },
+      });
+
+      // Store the stream reference
+      mediaStream.current = stream;
+
+      // Create MediaRecorder instance
+      mediaRecorder.current = new MediaRecorder(stream, {
+        mimeType: "audio/webm;codecs=opus",
+      });
+
+      // Handle data available event
+      mediaRecorder.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.current.push(event.data);
+        }
+      };
+
+      // Handle recording stop event
+      mediaRecorder.current.onstop = () => {
+        // Create blob from audio chunks
+        const audioBlob = new Blob(audioChunks.current, {
+          type: "audio/webm;codecs=opus",
+        });
+
+        // Send to transcription service
+        sendAudioForTranscription(audioBlob);
+
+        // Clean up stream
+        if (mediaStream.current) {
+          mediaStream.current.getTracks().forEach((track) => track.stop());
+          mediaStream.current = null;
+        }
+      };
+
+      // Start recording
+      mediaRecorder.current.start();
+      setRecording(true);
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      setRecording(false);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (mediaRecorder.current && mediaRecorder.current.state === "recording") {
+      mediaRecorder.current.stop();
+      setRecording(false);
+    }
+  };
+
+  const sendAudioForTranscription = async (audioBlob) => {
+    // Convert webm to wav if needed by backend
+    const formData = new FormData();
+    formData.append("file", audioBlob, "recording.webm");
+
+    try {
+      const data = await postData(APIs.TRANSCRIBE_AUDIO, formData);
+
+      // Update the chat input with transcription
+      if (data.transcription) {
+        setUserChat((prev) => prev + data.transcription);
+        setTranscription(data.transcription);
+      }
+    } catch (error) {
+      console.error("Transcription failed:", error);
+      setTranscription("Error transcribing audio.");
+    }
+  };
+
+  const handlePromptSuggestionsToggle = () => {
+    setShowPromptSuggestions(!showPromptSuggestions);
+  };
+
+  const handlePromptSelect = (prompt) => {
+    setUserChat(prompt);
+    calculateHeight();
+  };
+
   const shouldShowHumanVerifier = () => {
     return agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "multi_agent";
   };
-    const handleLiveTracking = () => {
-      window.open(liveTrackingUrl, '_blank');
-    };
-    
+
+  const handleLiveTracking = () => {
+    window.open(liveTrackingUrl, "_blank");
+  };
+
   const selectAgent = (agent) => {
+    closeCanvas(); // Close canvas on agent change
     setSelectedAgent(agent);
     closeAgentDropdown();
   };
 
   const shouldShowToolVerifier = () => {
-    return agentType === REACT_AGENT ||
-      agentType === MULTI_AGENT ||
-      agentType === REACT_CRITIC_AGENT ||
-      agentType === PLANNER_EXECUTOR_AGENT ||
-      agentType === "react_agent";
+    return agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "react_agent";
   };
 
   const handleToggle2 = async (e) => {
@@ -172,21 +260,39 @@ const AskAssistant = () => {
       handleToolInterrupt(e.target.checked);
     }
   };
+
+  const handleCanvasToggle = (checked) => {
+    setIsCanvasEnabled(checked);
+    // If disabling canvas and it's currently open, close it
+    if (!checked && isCanvasOpen) {
+      closeCanvas();
+    }
+  };
+
+  const handleContextToggle = (checked) => {
+    setIsContextEnabled(checked);
+  };
+
+  const handleToolInterrupt = (isEnabled) => {
+    setToolInterrupt(isEnabled);
+    setIsTool(isEnabled);
+  };
+
   const handleIconClick = () => {
     setShowVerifierSettings((prev) => !prev);
   };
   const oldChatRef = useRef(null);
-  const knowledgeRef = useRef(null)
+  const knowledgeRef = useRef(null);
   const toggleDropdown = () => {
     setIsOldChatOpen((prev) => !prev);
   };
   const toggleKnowledge = async () => {
     const newState = !isKnowledgeOpen;
     setIsKnowledgeOpen(newState);
-        if (newState && (!knowledgeResponse || knowledgeResponse.length === 0)) {
+    if (newState && (!knowledgeResponse || knowledgeResponse.length === 0)) {
       await knowledgeBaseData();
     }
-  }
+  };
   useEffect(() => {
     function handleClickOutside(event) {
       if (oldChatRef.current && !oldChatRef.current.contains(event.target)) {
@@ -216,10 +322,7 @@ const AskAssistant = () => {
   const msgContainerRef = useRef(null);
   const hasInitialized = useRef(false);
 
-  const allOptionsSelected =
-    agentType !== CUSTOM_TEMPLATE
-      ? agentType === "" || model === "" || agentSelectValue === ""
-      : agentType === "" || model === "";
+  const allOptionsSelected = agentType !== CUSTOM_TEMPLATE ? agentType === "" || model === "" || agentSelectValue === "" : agentType === "" || model === "";
 
   useEffect(() => {
     if (hasInitialized.current) return;
@@ -232,7 +335,6 @@ const AskAssistant = () => {
     hasInitialized.current = true;
   }, []);
 
-
   useEffect(() => {
     if (isHumanVerifierEnabled || isToolVerifierEnabled) {
       setIsHumanVerifierEnabled(false);
@@ -244,9 +346,21 @@ const AskAssistant = () => {
     setFeedback("");
   }, [agentType]);
 
+  // Cleanup media streams on component unmount
+  useEffect(() => {
+    return () => {
+      // Clean up any active recording when component unmounts
+      if (mediaRecorder.current && mediaRecorder.current.state === "recording") {
+        mediaRecorder.current.stop();
+      }
+      if (mediaStream.current) {
+        mediaStream.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
   const filteredAgents = agentListDropdown.filter((agent) => {
-    return agent.agentic_application_name?.toLowerCase().includes(agentSearchTerm.toLowerCase())
+    return agent.agentic_application_name?.toLowerCase().includes(agentSearchTerm.toLowerCase());
   });
 
   useEffect(() => {
@@ -263,11 +377,15 @@ const AskAssistant = () => {
   }, [showAgentDropdown]);
 
   useEffect(() => {
+    if (showKnowledgePopover && knowledgeSearchInputRef.current) {
+      knowledgeSearchInputRef.current.focus();
+    }
+  }, [showKnowledgePopover]);
+
+  useEffect(() => {
     setAgentSelectValue("");
     if (!agentType) return;
-    const tempList = agentsListData?.filter(
-      (list) => list.agentic_application_type === agentType
-    );
+    const tempList = agentsListData?.filter((list) => list.agentic_application_type === agentType);
     setAgentListDropdown(tempList);
   }, [agentType, agentsListData]);
 
@@ -299,8 +417,11 @@ const AskAssistant = () => {
       if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target)) {
         closeAgentDropdown();
       }
-      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
-        setShowSettings(false);
+      if (verifierSettingsRef.current && !verifierSettingsRef.current.contains(event.target)) {
+        setShowVerifierSettings(false);
+      }
+      if (chatSettingsRef.current && !chatSettingsRef.current.contains(event.target)) {
+        setShowChatSettings(false);
       }
       if (knowledgePopoverRef.current && !knowledgePopoverRef.current.contains(event.target)) {
         setShowKnowledgePopover(false);
@@ -314,21 +435,55 @@ const AskAssistant = () => {
 
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
     }
   }, [userChat]);
+  useEffect(() => {
+    const handleGlobalKeyDown = (event) => {
+      if (event.key === "Escape") {
+        if (showKnowledgePopover) {
+          event.preventDefault();
+          setShowKnowledgePopover(false);
+          setSearchTerm("");
+        } else if (showChatHistory) {
+          event.preventDefault();
+          setShowChatHistory(false);
+        } else if (showVerifierSettings) {
+          event.preventDefault();
+          setShowVerifierSettings(false);
+        } else if (showPromptSuggestions) {
+          event.preventDefault();
+          setShowPromptSuggestions(false);
+        } else if (showChatSettings) {
+          event.preventDefault();
+          setShowChatSettings(false);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, [showKnowledgePopover, showChatHistory, showVerifierSettings, showPromptSuggestions, showChatSettings]);
 
   const handleSettingsKeyDown = (e) => {
-    if (!showSettings) return;
+    if (!showVerifierSettings) return;
 
     switch (e.key) {
-      case 'Escape':
+      case "Escape":
         e.preventDefault();
-        setShowSettings(false);
-        if (settingsRef.current) {
-          const settingsButton = settingsRef.current.querySelector('button');
-          if (settingsButton) settingsButton.focus();
+
+        if (verifierSettingsRef.current) {
+          setShowVerifierSettings(false);
+          const verifierSettingsButton = verifierSettingsRef.current.querySelector("button");
+          if (verifierSettingsButton) verifierSettingsButton.focus();
+        }
+        if (chatSettingsRef.current) {
+          setShowChatSettings(false);
+          const chatSettingsButton = chatSettingsRef.current.querySelector("button");
+          if (chatSettingsButton) chatSettingsButton.focus();
         }
         break;
     }
@@ -336,16 +491,16 @@ const AskAssistant = () => {
 
   const handleToggleKeyDown = (e, toggleHandler, currentValue) => {
     switch (e.key) {
-      case 'Enter':
-      case ' ':
+      case "Enter":
+      case " ":
         e.preventDefault();
         toggleHandler(!currentValue);
         break;
-      case 'ArrowRight':
+      case "ArrowRight":
         e.preventDefault();
         if (!currentValue) toggleHandler(true);
         break;
-      case 'ArrowLeft':
+      case "ArrowLeft":
         e.preventDefault();
         if (currentValue) toggleHandler(false);
         break;
@@ -380,6 +535,7 @@ const AskAssistant = () => {
       setFeedback("no");
       setShowInput(true);
     }
+
     chatHistory?.executor_messages?.map((item, index) => {
       chats?.push({ type: USER, message: item?.user_query });
       chats?.push({
@@ -388,9 +544,12 @@ const AskAssistant = () => {
         toolcallData: item,
         userText: item?.user_query,
         steps: JSON.stringify(item?.agent_steps, null, "\t"),
+        debugExecutor: item?.additional_details,
         ...(index === chatHistory?.executor_messages?.length - 1 && {
           plan: chatHistory?.plan,
         }),
+        parts: item?.parts || [],
+        show_canvas: item?.show_canvas || false,
       });
     });
     setPlanData(chatHistory?.plan);
@@ -401,90 +560,128 @@ const AskAssistant = () => {
   const fetchChatHistory = async (sessionId = session) => {
     const data = {
       session_id: sessionId,
-      agent_id:
-        agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
+      agent_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
     };
     const chatHistory = await getChatHistory(data);
     setLastResponse(chatHistory);
     setMessageData(converToChatFormat(chatHistory) || []);
+
+    // Fetch and cache suggestions only once per chat history fetch
+    const payload = {
+      agentic_application_id: agentSelectValue,
+      user_email: loggedInUserEmail,
+    };
+    const response = await getQuerySuggestions(payload);
+    if (response) {
+      setCachedSuggestions({
+        user_history: response.user_history || [],
+        agent_history: response.agent_history || [],
+      });
+      if (response.query_library) {
+        setPromptSuggestions(response.query_library);
+      }
+    }
   };
 
   const addMessage = (type, message, steps, plan, userText) => {
-    setMessageData((prevProp) => [
-      ...prevProp,
-      { type, message, steps, plan, userText },
-    ]);
+    setMessageData((prevProp) => [...prevProp, { type, message, steps, plan, userText }]);
   };
 
   const sendHumanInLoop = async (isApprove = "", feedBack = "", userText) => {
     const payload = {
-      agentic_application_id:
-        agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
+      agentic_application_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
       query: userText,
       session_id: oldSessionId !== "" ? oldSessionId : session,
       model_name: model,
       reset_conversation: false,
-      ...(isApprove !== "" && { approval: isApprove }),
-      ...(feedBack !== "" && { feedback: feedBack }),
-      ...(toolInterrupt ? { interrupt_flag: true } : { interrupt_flag: false }),
+      ...(isApprove !== "" && { is_plan_approved: isApprove }),
+      ...(feedBack !== "" && { tool_feedback: feedBack }),
+      ...(toolInterrupt ? { tool_verifier_flag: true } : { tool_verifier_flag: false }),
+      ...(isHuman ? { plan_verifier_flag: true } : { plan_verifier_flag: false }),
+      ...(isCanvasEnabled ? { response_formatting_flag: true } : { response_formatting_flag: false }),
+      ...(isContextEnabled ? { context_flag: true } : { context_flag: false }),
     };
-    
+
     if (selectedValues && selectedValues.length > 0) {
-      const selectedString = selectedValues.join(',');
+      const selectedString = selectedValues.join(",");
       payload.knowledgebase_name = JSON.stringify(selectedString);
     }
     let response;
     try {
-      const url =
-        agentType === CUSTOM_TEMPLATE
-          ? APIs.CUSTOME_TEMPLATE_QUERY
-          : agentType === PLANNER_EXECUTOR_AGENT
-            ? APIs.PLANNER_EXECUTOR_AGENT_QUERY
-            : APIs.PLANNER;
-      response = await postData(url, payload);
+      response = await postData(APIs.CHAT_INFERENCE, payload);
       setLastResponse(response);
       setPlanData(response?.plan);
-      setMessageData(converToChatFormat(response) || []);
+
+      const chatData = converToChatFormat(response) || [];
+      setMessageData(chatData);
+
+      // First check for parts format in the root response
+      if (response && response.parts) {
+        const textParts = response.parts.filter((part) => part.type === "text");
+        if (textParts.length > 0) {
+        } else {
+        }
+      } else {
+      }
+
+      const canvasContent = detectCanvasContent(response);
+      if (response.executor_messages[response.executor_messages.length - 1].show_canvas) {
+        openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
+      }
+      // // Fallback: Auto-detect and open Canvas for individual message content
+      // else if (chatData.length > 0) {
+      //   const lastMessage = chatData[chatData.length - 1];
+      //   if (lastMessage.type === BOT && lastMessage.message) {
+      //     const canvasContent = detectCanvasContent(lastMessage.message);
+      //     if (canvasContent) {
+      //       openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
+      //     }
+      //   }
+      // }
     } catch (err) {
       console.error(err);
     }
     return response;
   };
 
-  const sendUserMessage = async () => {
+  const sendUserMessage = async (overrideText) => {
+    const messageToSend = overrideText !== undefined ? overrideText.trim() : userChat.trim();
+    if (!messageToSend || generating) return;
+
     setFetching(true);
     resetHeight();
-    if (!userChat || generating) return;
-    addMessage(USER, userChat);
+
+    // Clear previous debug steps
+    clearDebugSteps();
+    addMessage(USER, messageToSend);
     setUserChat("");
     setGenerating(true);
     setLikeIcon(false);
-    let userText = userChat;
+    setSuggestionVisible(false);
+
     const payload = {
-      agentic_application_id:
-        agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
-      query: userChat.trim(),
+      agentic_application_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
+      query: messageToSend,
       session_id: oldSessionId !== "" ? oldSessionId : session,
       model_name: model,
       reset_conversation: false,
-      ...(toolInterrupt ? { interrupt_flag: true } : { interrupt_flag: false }),
+      ...(toolInterrupt ? { tool_verifier_flag: true } : { tool_verifier_flag: false }),
+      ...(isCanvasEnabled ? { response_formatting_flag: true } : { response_formatting_flag: false }),
+      ...(isContextEnabled ? { context_flag: true } : { context_flag: false }),
     };
-    
+
     if (selectedValues && selectedValues.length > 0) {
-      const selectedString = selectedValues.join(',');
+      const selectedString = selectedValues.join(",");
       payload.knowledgebase_name = JSON.stringify(selectedString);
     }
-    if (isHuman) {
-      await sendHumanInLoop("", "", userText);
-    } else {
-      const url =
-        agentType === META_AGENT
-          ? APIs.META_AGENT_QUERY
-          : agentType === PLANNER_META_AGENT
-            ? APIs.PLANNER_META_AGENT_QUERY
-            : APIs.REACT_MULTI_AGENT_QUERY;
 
-      const response = await getChatQueryResponse(payload, url);
+    // To hide the open canvas when user sends the next query
+    setIsCanvasOpen(false);
+
+    if (isHuman) {
+      await sendHumanInLoop("", "", messageToSend);
+    } else {
+      const response = await getChatQueryResponse(payload, APIs.CHAT_INFERENCE);
       setLastResponse(response);
       if (response === null) {
         setShowToast(true);
@@ -493,16 +690,32 @@ const AskAssistant = () => {
         }, 5000);
       }
 
-      setMessageData(converToChatFormat(response) || []);
+      const chatData = converToChatFormat(response) || [];
+      setMessageData(chatData);
+
+      const canvasContent = detectCanvasContent(response);
+      if (canvasContent) {
+        openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
+      }
+      // Fallback: Auto-detect and open Canvas for individual message content
+      else if (chatData.length > 0) {
+        const lastMessage = chatData[chatData.length - 1];
+        if (lastMessage.type === BOT && lastMessage.message) {
+          const canvasContent = detectCanvasContent(lastMessage.message);
+          if (canvasContent) {
+            openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
+          }
+        }
+      }
     }
     setGenerating(false);
     setFetching(false);
-    setSelectedValues("")
+    setSelectedValues("");
   };
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
-      sendUserMessage();
+      sendUserMessage(event.target.value);
       resetHeight();
     } else if (event.shiftKey && event.key === "Enter") {
       event.preventDefault();
@@ -512,14 +725,15 @@ const AskAssistant = () => {
   };
 
   const handleTypeChange = (selectedOption) => {
+    closeCanvas(); // Close canvas on agent type change
     setAgentType(selectedOption);
     setLikeIcon(false);
     setIsPlanVerifierOn(
       selectedOption === MULTI_AGENT ||
-      selectedOption === REACT_AGENT ||
-      selectedOption === REACT_CRITIC_AGENT ||
-      selectedOption === PLANNER_EXECUTOR_AGENT ||
-      selectedOption === "react_agent"
+        selectedOption === REACT_AGENT ||
+        selectedOption === REACT_CRITIC_AGENT ||
+        selectedOption === PLANNER_EXECUTOR_AGENT ||
+        selectedOption === "react_agent"
     );
     if (selectedOption === CUSTOM_TEMPLATE) {
       setIsHuman(true);
@@ -530,10 +744,11 @@ const AskAssistant = () => {
 
   const handleResetChat = async () => {
     if (window.confirm("Are you sure you want to delete this chat?")) {
+      clearDebugSteps();
+      closeCanvas(); // Close canvas on chat delete
       const data = {
         session_id: oldSessionId !== "" ? oldSessionId : session,
-        agent_id:
-          agentType !== CUSTOM_TEMPLATE ? agentSelectValue : customTemplatId,
+        agent_id: agentType !== CUSTOM_TEMPLATE ? agentSelectValue : customTemplatId,
       };
       try {
         const response = await resetChat(data);
@@ -542,8 +757,7 @@ const AskAssistant = () => {
           fetchOldChatsData();
           setOldSessionId("");
         }
-      }
-      catch (error) {
+      } catch (error) {
         console.error("Error deleting chat:", error);
       }
     }
@@ -588,7 +802,11 @@ const AskAssistant = () => {
     const oldChats = reseponse;
     let temp = [];
     for (let key in oldChats) {
-      temp.push({ ...oldChats[key][0], session_id: key, messageCount: oldChats[key].length });
+      temp.push({
+        ...oldChats[key][0],
+        session_id: key,
+        messageCount: oldChats[key].length,
+      });
     }
     setOldChats(temp);
   };
@@ -596,18 +814,18 @@ const AskAssistant = () => {
   const handleChatDeleted = (deletedSessionId) => {
     setIsDeletingChat(true);
     setShowToast(false);
-    
-    setOldChats(prev => prev.filter(chat => chat.session_id !== deletedSessionId));
-    
+
+    setOldChats((prev) => prev.filter((chat) => chat.session_id !== deletedSessionId));
+
     if ((oldSessionId !== "" ? oldSessionId : session) === deletedSessionId) {
       setOldSessionId("");
       setMessageData([]);
     }
-    
+
     setTimeout(() => {
       fetchOldChatsData();
     }, 100);
-    
+
     setTimeout(() => {
       setIsDeletingChat(false);
       setShowToast(false);
@@ -615,31 +833,27 @@ const AskAssistant = () => {
   };
 
   const handleChatSelected = (sessionId) => {
+    clearDebugSteps();
+    closeCanvas(); // Close canvas on chat select from history
     setOldSessionId(sessionId);
     fetchChatHistory(sessionId);
     setShowChatHistory(false);
   };
-  const [knowledgeResponse, serKnowledgeResponse] = useState([])
+  const [knowledgeResponse, serKnowledgeResponse] = useState([]);
   const knowledgeBaseData = async () => {
     try {
-      const url = `${BASE_URL}${APIs.KB_LIST}`;
-      const response = await axios.request({
-        method: "GET",
-        url: url,
-        headers: {
-          "Content-Type": "application/json",
-          "csrf-token": getCsrfToken(),
-          "session-id": getSessionId(),
-        },
-      });
-          serKnowledgeResponse(response?.data?.knowledge_bases || []);
+      const response = await fetchData(APIs.GET_KB_LIST);
+      serKnowledgeResponse(response?.knowledge_bases || []);
     } catch (error) {
-      console.error('Error fetching knowledge base data:', error);
+      console.error("Error fetching knowledge base data:", error);
       serKnowledgeResponse([]);
     }
   };
 
   const handleNewChat = async () => {
+    clearDebugSteps();
+    setShowChatSettings(false);
+    closeCanvas(); // Close canvas on new chat
     const sessionId = await fetchNewChats(loggedInUserEmail);
     fetchOldChatsData();
     setOldSessionId("");
@@ -651,23 +865,23 @@ const AskAssistant = () => {
     if (!showAgentDropdown) return;
 
     switch (e.key) {
-      case 'ArrowDown':
+      case "ArrowDown":
         e.preventDefault();
-        setHighlightedAgentIndex(prev => {
+        setHighlightedAgentIndex((prev) => {
           const newIndex = prev < filteredAgents.length - 1 ? prev + 1 : 0;
           scrollToHighlightedItem(newIndex);
           return newIndex;
         });
         break;
-      case 'ArrowUp':
+      case "ArrowUp":
         e.preventDefault();
-        setHighlightedAgentIndex(prev => {
+        setHighlightedAgentIndex((prev) => {
           const newIndex = prev > 0 ? prev - 1 : filteredAgents.length - 1;
           scrollToHighlightedItem(newIndex);
           return newIndex;
         });
         break;
-      case 'Enter':
+      case "Enter":
         e.preventDefault();
         if (highlightedAgentIndex >= 0 && filteredAgents[highlightedAgentIndex]) {
           selectAgent(filteredAgents[highlightedAgentIndex]);
@@ -677,11 +891,11 @@ const AskAssistant = () => {
           setLikeIcon(false);
         }
         break;
-      case 'Escape':
+      case "Escape":
         e.preventDefault();
         closeAgentDropdown();
         break;
-      case 'Tab':
+      case "Tab":
         if (!e.shiftKey && highlightedAgentIndex >= 0 && filteredAgents[highlightedAgentIndex]) {
           e.preventDefault();
           selectAgent(filteredAgents[highlightedAgentIndex]);
@@ -699,10 +913,68 @@ const AskAssistant = () => {
       const items = agentListRef.current.children;
       if (items[index]) {
         items[index].scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
+          behavior: "smooth",
+          block: "nearest",
         });
       }
+    }
+  };
+
+  const scrollToHighlightedKbItem = (index) => {
+    if (knowledgeListRef.current && index >= 0) {
+      const items = knowledgeListRef.current.children;
+      if (items[index]) {
+        items[index].scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }
+    }
+  };
+
+  const handleKnowledgeDropdownKeyDown = (e) => {
+    if (!showKnowledgePopover) return;
+
+    const filteredKnowledgeOptions = Array.isArray(knowledgeResponse) ? knowledgeResponse.filter((option) => option.toLowerCase().includes(searchTerm.toLowerCase())) : [];
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightedKbIndex((prev) => {
+          const newIndex = prev < filteredKnowledgeOptions.length - 1 ? prev + 1 : 0;
+          scrollToHighlightedKbItem(newIndex);
+          return newIndex;
+        });
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightedKbIndex((prev) => {
+          const newIndex = prev > 0 ? prev - 1 : filteredKnowledgeOptions.length - 1;
+          scrollToHighlightedKbItem(newIndex);
+          return newIndex;
+        });
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (highlightedKbIndex >= 0 && filteredKnowledgeOptions[highlightedKbIndex]) {
+          const selectedOption = filteredKnowledgeOptions[highlightedKbIndex];
+          const isChecked = selectedValues.includes(selectedOption);
+          if (isChecked) {
+            setSelectedValues((prev) => prev.filter((item) => item !== selectedOption));
+          } else {
+            setSelectedValues((prev) => [...prev, selectedOption]);
+          }
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setShowKnowledgePopover(false);
+        setSearchTerm("");
+        setHighlightedKbIndex(-1);
+        break;
+      default:
+        break;
     }
   };
 
@@ -732,14 +1004,6 @@ const AskAssistant = () => {
     showComponent(<div>Your file content here</div>);
   };
 
-  const handleToolInterrupt = (isEnabled) => {
-    setToolInterrupt(isEnabled);
-    setIsTool(isEnabled);
-  };
-
-  let fieldData = messageData?.map((item, index) => {
-    return <>{item?.message}</>;
-  });
   const [selectedValues, setSelectedValues] = useState([]);
   const handleCheckboxChange = (e) => {
     const value = e.target.value;
@@ -747,7 +1011,7 @@ const AskAssistant = () => {
     if (isChecked) {
       setSelectedValues((prevValues) => [...prevValues, value]); // Add value if checked
     } else {
-      setSelectedValues((prevValues) => prevValues.filter(item => item !== value)); // Remove if unchecked
+      setSelectedValues((prevValues) => prevValues.filter((item) => item !== value)); // Remove if unchecked
     }
     if (isChecked) {
     } else {
@@ -757,6 +1021,15 @@ const AskAssistant = () => {
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
   };
+
+  useEffect(() => {
+    const filteredKnowledgeOptions = Array.isArray(knowledgeResponse) ? knowledgeResponse.filter((option) => option.toLowerCase().includes(searchTerm.toLowerCase())) : [];
+    if (searchTerm !== "" && filteredKnowledgeOptions.length > 0) {
+      setHighlightedKbIndex(0);
+    } else {
+      setHighlightedKbIndex(-1);
+    }
+  }, [searchTerm, knowledgeResponse]);
   const highlightText = (text) => {
     if (!searchTerm) return text;
 
@@ -771,32 +1044,213 @@ const AskAssistant = () => {
       )
     );
   };
+  const [suggestionVisible, setSuggestionVisible] = useState(false);
+  const [suggestionData, setSuggestionData] = useState({
+    history: [],
+    recommendations: [],
+  });
+  const handleInputChangeForSuggestion = (e) => {
+    const value = e.target.value;
+    setUserChat(value);
+    calculateHeight();
+    if (!value.trim()) {
+      setSuggestionVisible(false);
+      setSuggestionData({ history: [], recommendations: [] });
+      return;
+    }
+    // Use cached suggestions for filtering
+    let historyMatches = (cachedSuggestions.user_history || []).filter((item) => item && item.toLowerCase().includes(value.toLowerCase()));
+    let recommendationsMatches = (cachedSuggestions.agent_history || []).filter((item) => item && item.toLowerCase().includes(value.toLowerCase()));
+    historyMatches = historyMatches.slice(0, 6);
+    let recCount = Math.max(0, 6 - historyMatches.length);
+    recommendationsMatches = recommendationsMatches.slice(0, recCount);
+    setSuggestionData({
+      history: historyMatches,
+      recommendations: recommendationsMatches,
+    });
+    setSuggestionVisible(historyMatches.length > 0 || recommendationsMatches.length > 0);
+  };
+  const handleSuggestionSelect = (text, submitUserMessage = false) => {
+    setUserChat(text);
+    setSuggestionVisible(false);
+    calculateHeight();
+    if (submitUserMessage) {
+      // If user wants to directly call the chat on selection of the suggestion then current it populates the input and adds focus to it
+      // If we have to trigger the chat immediately upon selection comment the above focus line and uncomment the below submit function
+      sendUserMessage(text);
+    } else {
+      if (textareaRef.current) textareaRef.current.focus();
+    }
+  };
+
+  // Canvas helper functions
+  const openCanvas = (content, title = "Code View", type = "code", messageId = null) => {
+    // Don't open canvas if it's disabled
+    if (!isCanvasEnabled) {
+      return;
+    }
+
+    // Check if content type is text-only in parts array
+    if (Array.isArray(content) && content.every((part) => part.type === "text")) {
+      return;
+    }
+
+    // Always close first, then open with new data
+    setIsCanvasOpen(false);
+    setTimeout(() => {
+      setCanvasContent(content);
+      setCanvasTitle(title);
+      setCanvasContentType(type);
+      setCanvasMessageId(messageId);
+      setIsCanvasOpen(true);
+    }, 0);
+  };
+
+  const closeCanvas = () => {
+    setIsCanvasOpen(false);
+    setCanvasContent(null);
+    setCanvasTitle("");
+    setCanvasContentType("");
+    setCanvasMessageId(null);
+  };
+
+  // Auto-detect canvas content from AI responses - PARTS FORMAT ONLY
+  const detectCanvasContent = (input) => {
+    try {
+      // Check if input is the API response object with parts at root level
+      if (typeof input === "object" && input !== null && input.parts) {
+        const parts = input.parts;
+        // Check if parts has components array
+        if (parts && Array.isArray(parts) && parts?.length > 0) {
+          // Any valid parts structure should trigger canvas rendering
+          return {
+            type: "parts",
+            content: parts,
+            title: "Canvas View",
+            isParts: true,
+          };
+        }
+      }
+
+      // FALLBACK: If no parts format, try markdown parsing for chart content
+      // let text = "";
+      // if (typeof input === "string") {
+      //   text = input;
+      // } else if (input && input.message) {
+      //   text = input.message;
+      // } else {
+      //   return null;
+      // }
+
+      // Check for chart patterns in the text
+      // if (text.includes("Day") && text.includes("Income") && (text.includes("Expenses") || text.includes("Expense")) && text.includes("████")) {
+      //   // Parse chart lines
+      //   const chartLines = text.split("\n").filter((line) => line.includes("Day") && line.includes("Income") && (line.includes("Expenses") || line.includes("Expense")));
+
+      //   if (chartLines.length > 0) {
+      //     const chartData = chartLines
+      //       .map((line) => {
+      //         const dayMatch = line.match(/Day\s+(\d+)/);
+      //         const incomeMatch = line.match(/Income.*?\(([\d,]+)\)/);
+      //         const expensesMatch = line.match(/Expenses?.*?\(([\d,]+)\)/);
+
+      //         if (dayMatch && incomeMatch && expensesMatch) {
+      //           return {
+      //             day: `Day ${dayMatch[1]}`,
+      //             income: parseInt(incomeMatch[1].replace(/,/g, "")),
+      //             expenses: parseInt(expensesMatch[1].replace(/,/g, "")),
+      //           };
+      //         }
+      //         return null;
+      //       })
+      //       .filter(Boolean);
+
+      //     if (chartData.length > 0) {
+      //       // Return chart data in parts format
+      //       return {
+      //         type: "parts",
+      //         content: [
+      //           {
+      //             type: "chart",
+      //             data: {
+      //               chart_type: "bar",
+      //               title: "Income vs Expenses",
+      //               chart_data: chartData,
+      //             },
+      //             metadata: {},
+      //           },
+      //         ],
+      //         title: "Chart View",
+      //         isParts: true,
+      //       };
+      //     }
+      //   }
+      // }
+      // No parts format found - return null (no canvas)
+      return null;
+    } catch (error) {
+      console.error("Error processing message in detectCanvasContent:", error);
+      return null;
+    }
+  };
+
+  const [debugSteps, setDebugSteps] = useState([]);
+  const [showLiveSteps, setShowLiveSteps] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  // Augment existing SSE callback logic to also accept plain debug step objects
+  useEffect(() => {
+    const genericHandler = (data) => {
+      // Accept either structured control events (open/close) or direct debug steps
+      if (data && (data.type === "open" || data.event === "open")) {
+        setDebugSteps([]);
+        setShowLiveSteps(true);
+        return;
+      }
+      if (data && (data.type === "close" || data.event === "close")) {
+        setShowLiveSteps(false);
+        return;
+      }
+      // Normalize possible string payload
+      let payload = data;
+      if (typeof data === "string") {
+        try {
+          payload = JSON.parse(data);
+        } catch (_) {
+          payload = { debug_value: data };
+        }
+      }
+      if (!payload) return;
+      const hasDebug = payload.debug_value || payload.debug_key;
+      if (hasDebug) {
+        setShowLiveSteps(true);
+        setDebugSteps((prev) => [...prev, { step: prev.length + 1, ...payload }].slice(-200));
+      }
+    };
+    setSseMessageCallback(genericHandler);
+    return () => setSseMessageCallback(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Clear debug steps when starting new operations
+  const clearDebugSteps = () => {
+    setDebugSteps([]);
+    setShowLiveSteps(false);
+  };
+
   return (
     <>
-    <div className={styles.container} ref={chatbotContainerRef}>
-      <div className={stylesNew.chatWrapper}>
-        <div className={stylesNew.bubbleAndInput}>
-          <div className={stylesNew.chatBubblesWrapper}>
-            <div className={stylesNew.messagesWrapper}>
-              {/* message container */}{" "}
-              {/* <div className={stylesNew.messagesContainer} ref={msgContainerRef}> */}
-                {showToast && !showChatHistory && !isDeletingChat && (
-                  <ToastMessage
-                    message={lastResponse === null ? "Internal Server error" : likeMessage}
-                    showToast={showToast}
-                    setShowToast={setShowToast}
-                  />
-                )}
-                {/* {(lastResponse === null) &&(
-                  <ToastMessage
-                    message={"Internal Server error"}
-                    showToast={showToast}
-                    setShowToast={setShowToast}
-                  />
+      <div className={stylesNew.askAssistantContainer} ref={chatbotContainerRef}>
+        <div className={`${stylesNew.chatWrapper} ${isCanvasOpen ? stylesNew.withCanvas : ""}`}>
+          <div className={stylesNew.bubbleAndInput}>
+            <div className={stylesNew.chatBubblesWrapper}>
+              <div className={stylesNew.messagesWrapper}>
+                {/* message container */} {/* <div className={stylesNew.messagesContainer} ref={msgContainerRef}> */}
+                {/* {showToast && !showChatHistory && !isDeletingChat && lastResponse && (
+                  <ToastMessage message={lastResponse === null ? "Internal Server error" : likeMessage} onClose={() => setShowToast(false)} />
                 )} */}
-
                 <MsgBox
-                  styles={styles}
+                  styles={stylesNew}
                   messageData={messageData}
                   generating={generating}
                   agentType={agentType}
@@ -809,6 +1263,7 @@ const AskAssistant = () => {
                   setFetching={setFetching}
                   showToast={showToast}
                   setShowToast={setShowToast}
+                  setToastMessage={setToastMessage}
                   isHuman={isHuman}
                   planData={planData}
                   sendHumanInLoop={sendHumanInLoop}
@@ -822,7 +1277,9 @@ const AskAssistant = () => {
                   selectedOption={agentType}
                   toolInterrupt={toolInterrupt}
                   handleToolInterrupt={handleToolInterrupt}
+                  handleCanvasToggle={handleCanvasToggle}
                   handleHumanInLoop={handleHumanInLoop}
+                  handleContextToggle={handleContextToggle}
                   oldSessionId={oldSessionId}
                   setOldSessionId={setOldSessionId}
                   session={session}
@@ -837,483 +1294,734 @@ const AskAssistant = () => {
                   allOptionsSelected={allOptionsSelected}
                   oldChats={oldChats}
                   isDeletingChat={isDeletingChat}
+                  openCanvas={openCanvas}
+                  detectCanvasContent={detectCanvasContent}
+                  debugSteps={debugSteps}
+                  showLiveSteps={showLiveSteps}
+                  setShowLiveSteps={setShowLiveSteps}
+                  expanded={expanded}
+                  setExpanded={setExpanded}
+                  isCanvasEnabled={isCanvasEnabled}
+                  isContextEnabled={isContextEnabled}
                 />
-            </div>
-          </div>
-          <div className={styles.chatSection}>
-            <div className={chatInputModule.container}>
-              <div className={chatInputModule.topControls}>
-                <div className={chatInputModule.controlGroup}>
-                  <select
-                    className={chatInputModule.select}
-                    value={agentType}
-                    onChange={(e) => handleTypeChange(e.target.value)}
-                    disabled={generating || fetching || isEditable}
-                  >
-                    <option value="">Select Agent Type</option>
-                    {agentTypesDropdown.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className={chatInputModule.controlGroup}>
-                  <select
-                    className={chatInputModule.select}
-                    value={model}
-                    onChange={(selectedOption) => {
-                      setModel(selectedOption.target.value);
-                      setLikeIcon(false);
-                    }}
-                    disabled={generating || fetching || isEditable}
-                  >
-                    <option value="">Select Model</option>
-                    {selectedModels.map((modelOption) => (
-                      <option key={modelOption.value} value={modelOption.value}>
-                        {modelOption.value}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className={chatInputModule.controlGroup} ref={agentDropdownRef}>
-                  <div className={`${chatInputModule.searchableDropdown} ${(messageDisable || fetching || generating || isEditable) ? chatInputModule.disabled : ''}`} aria-disabled={(messageDisable || fetching || generating || isEditable)}>
-                    <div
-                      ref={agentTriggerRef}
-                      className={`${chatInputModule.dropdownTrigger} ${showAgentDropdown ? chatInputModule.active : ''} ${(messageDisable || fetching || generating || isEditable) ? chatInputModule.disabled : ''}`}
-                      onClick={!(messageDisable || fetching || generating || isEditable) ? handleAgentDropdownToggle : undefined}
-                      onKeyDown={(e) => {
-                        if ((messageDisable || fetching || generating || isEditable)) return;
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleAgentDropdownToggle();
-                        } else if (e.key === 'ArrowDown') {
-                          e.preventDefault();
-                          if (!showAgentDropdown) {
-                            setShowAgentDropdown(true);
-                            setHighlightedAgentIndex(0);
-                          } else {
-                            handleAgentDropdownKeyDown(e);
-                          }
-                        } else if (e.key === 'ArrowUp') {
-                          e.preventDefault();
-                          if (showAgentDropdown) {
-                            handleAgentDropdownKeyDown(e);
-                          }
-                        } else if (showAgentDropdown) {
-                          handleAgentDropdownKeyDown(e);
-                        }
-                      }}
-                      tabIndex={(messageDisable || fetching || generating || isEditable) ? -1 : 0}
-                      role="combobox"
-                      aria-expanded={showAgentDropdown}
-                      aria-haspopup="listbox"
-                      aria-label="Select Agent"
-                      aria-disabled={(messageDisable || fetching || generating || isEditable)}
-                    >
-                      <span>{selectedAgent.agentic_application_name || "Select Agent"}</span>
-                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={`${chatInputModule.chevronIcon} ${showAgentDropdown ? chatInputModule.rotated : ''}`}>
-                        <path d="M6 8L10 12L14 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-
-                    {showAgentDropdown && (
-                      <div
-                        className={chatInputModule.dropdownContent}
-                        role="listbox"
-                        aria-label="Agent options"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className={chatInputModule.searchContainer}>
-                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
-                            <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                            <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                          </svg>
-                          <input
-                            ref={agentSearchInputRef}
-                            type="text"
-                            placeholder="Search agents..."
-                            value={agentSearchTerm}
-                            onChange={(e) => {
-                              const newSearchTerm = e.target.value;
-                              setAgentSearchTerm(newSearchTerm);
-                              // Reset highlight when searching
-                              setHighlightedAgentIndex(newSearchTerm === '' ? -1 : 0);
-                            }}
-                            onKeyDown={handleAgentDropdownKeyDown}
-                            className={chatInputModule.searchInput}
-                            aria-label="Search agents"
-                            autoComplete="off"
-                          />
-                        </div>
-                        <div className={chatInputModule.agentsList} ref={agentListRef}>
-                          {filteredAgents.length > 0 ? (
-                            filteredAgents.map((agent, index) => (
-                              <div
-                                key={agent.agentic_application_id}
-                                className={`${chatInputModule.agentItem} ${index === highlightedAgentIndex ? chatInputModule.highlighted : ''}`}
-                                onClick={() => {
-                                  selectAgent(agent);
-                                  setAgentSelectValue(agent.agentic_application_id);
-                                  setFeedback("");
-                                  setOldSessionId("");
-                                  setLikeIcon(false);
-                                }}
-                                onMouseEnter={() => setHighlightedAgentIndex(index)}
-                                onMouseLeave={() => setHighlightedAgentIndex(-1)}
-                                role="option"
-                                aria-selected={index === highlightedAgentIndex}
-                              >
-                                <div className={chatInputModule.agentName}>{agent.agentic_application_name}</div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className={chatInputModule.noAgents}>No agents found</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
-              {!allOptionsSelected && <div className={chatInputModule.inputsWrapperRow2}>
-                <div className={chatInputModule.inputForm}>
-                  <div className={chatInputModule.inputContainer}>
-                    <button
-                      type="button"
-                      className={chatInputModule.inputButton}
-                      onClick={handleFileClick}
-                      disabled={messageDisable || fetching || generating || isEditable || allOptionsSelected}
-                      title="Upload Files"
-                      tabIndex={0}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M10 13V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-  <path d="M7 6L10 3L13 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-  <rect x="4" y="15" width="12" height="2" rx="1" stroke="currentColor" strokeWidth="1.5"/>
-</svg>
-
-                    </button>
-                    <div className={chatInputModule.textInputWrapper}>
-                      <textarea
-                        ref={textareaRef}
-                        value={userChat}
-                        onChange={handleChange}
-                        onKeyDown={handleKeyDown}
-                        placeholder={
-                          !allOptionsSelected
-                            ? "Type your message..."
-                            : "Please select Agent Type, Model, and Agent to start chatting"
-                        }
-                        disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
-                        className={chatInputModule.textInput}
-                        rows={1}
-                      />
-                    </div>
-
-                    <div className={chatInputModule.rightButtons}>
-                      <button
-                        type="submit"
-                        onClick={sendUserMessage}
-                        className={`${chatInputModule.inputButton} ${chatInputModule.sendButton}`}
-                        disabled={allOptionsSelected || generating || !userChat.trim()}
-                        title="Send Message"
-                        tabIndex={0}
-                      >
-                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
-                        </svg>
-                      </button>
-                    </div>
+            </div>
+            <div className={"chatSection"}>
+              <div className={chatInputModule.container}>
+                <div className={chatInputModule.topControls}>
+                  <div className={chatInputModule.controlGroup}>
+                    <select className={chatInputModule.select} value={agentType} onChange={(e) => handleTypeChange(e.target.value)} disabled={generating || fetching || isEditable}>
+                      <option value="">Select Agent Type</option>
+                      {agentTypesDropdown.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </div>
-                <div className={chatInputModule.actionButtons}>
 
-                  <div className={chatInputModule.settingsContainer} ref={settingsRef}>
-                    <button
-                      className={`${chatInputModule.actionButton} ${showSettings ? chatInputModule.active : ''}`}
-                      onClick={() => setShowSettings(!showSettings)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setShowSettings(!showSettings);
-                        } else if (e.key === 'ArrowDown' && !showSettings) {
-                          e.preventDefault();
-                          setShowSettings(true);
-                        }
+                  <div className={chatInputModule.controlGroup}>
+                    <select
+                      className={chatInputModule.select}
+                      value={model}
+                      onChange={(selectedOption) => {
+                        setModel(selectedOption.target.value);
+                        setLikeIcon(false);
                       }}
-                      title="Settings"
-                      tabIndex={generating ? -1 : 0}
-
-                      disabled={allOptionsSelected || generating}
-                      aria-expanded={showSettings}
-                      aria-haspopup="menu"
-                      aria-label="Settings menu"
-                      aria-disabled={generating}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="4" y="7" width="12" height="6" rx="3" stroke="currentColor" strokeWidth="1.5" />
-                        <circle cx="13" cy="10" r="2" fill="currentColor" />
-
-                      </svg>
-                    </button>
-                    {showSettings && (
-                      <div
-                        className={chatInputModule.settingsDropdown}
-                        onKeyDown={handleSettingsKeyDown}
-                        role="menu"
-                        aria-label="Settings menu"
-                      >
-                        <div className={chatInputModule.settingsHeader}>Verifier Settings</div>
-
-                        {shouldShowHumanVerifier() && (
-                          <div className={chatInputModule.toggleGroup + " plan-verifier"} role="menuitem">
-                            <label className={chatInputModule.toggleLabel}>
-                              <span className={chatInputModule.toggleText} id="humanVerifierLabel">Plan Verifier</span>
-                              <input
-                                type="checkbox"
-                                checked={isHuman}
-                                onChange={(e) => handleHumanInLoop(e.target.checked)}
-                                className={chatInputModule.toggleInput}
-                                id="humanVerifierToggle"
-                                disabled={messageDisable || generating || fetching || isEditable}
-                              />
-                              <span
-                                className={chatInputModule.toggleSlider}
-                                tabIndex={0}
-                                role="switch"
-                                aria-checked={isHuman}
-                                aria-labelledby="humanVerifierLabel"
-                                onKeyDown={(e) => handleToggleKeyDown(e, handleHumanInLoop, isHuman)}
-                              ></span>
-                            </label>
-                          </div>
-                        )}
-
-                        {shouldShowToolVerifier() && (
-                          <div className={chatInputModule.toggleGroup + " tool-verifier"} role="menuitem">
-                            <label className={chatInputModule.toggleLabel}>
-                              <span className={chatInputModule.toggleText} id="toolVerifierLabel">Tool Verifier</span>
-                              <input
-                                type="checkbox"
-                                checked={toolInterrupt}
-                                onChange={(e) => handleToolInterrupt(e.target.checked)}
-                                className={chatInputModule.toggleInput}
-                                id="toolVerifierToggle"
-                                disabled={messageDisable || generating || fetching || isEditable}
-                              />
-                              <span
-                                className={chatInputModule.toggleSlider}
-                                tabIndex={0}
-                                role="switch"
-                                aria-checked={toolInterrupt}
-                                aria-labelledby="toolVerifierLabel"
-                                onKeyDown={(e) => handleToggleKeyDown(e, handleToolInterrupt, toolInterrupt)}
-                              ></span>
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      disabled={generating || fetching || isEditable}>
+                      <option value="">Select Model</option>
+                      {selectedModels.map((modelOption) => (
+                        <option key={modelOption.value} value={modelOption.value}>
+                          {modelOption.value}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {agentType === REACT_AGENT && (
-                    <div className={chatInputModule.relativeWrapper} ref={knowledgePopoverRef}>
-                      <button
-                        className={chatInputModule.actionButton}
-                        onClick={async () => {
-                          const newState = !showKnowledgePopover;
-                          setShowKnowledgePopover(newState);
-                          if (newState && (!knowledgeResponse || knowledgeResponse.length === 0)) {
-                            await knowledgeBaseData();
+                  <div className={chatInputModule.controlGroup} ref={agentDropdownRef}>
+                    <div
+                      className={`${chatInputModule.searchableDropdown} ${messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""}`}
+                      aria-disabled={messageDisable || fetching || generating || isEditable}>
+                      <div
+                        ref={agentTriggerRef}
+                        className={`${chatInputModule.dropdownTrigger} ${showAgentDropdown ? chatInputModule.active : ""} ${
+                          messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""
+                        }`}
+                        onClick={!(messageDisable || fetching || generating || isEditable) ? handleAgentDropdownToggle : undefined}
+                        onKeyDown={(e) => {
+                          if (messageDisable || fetching || generating || isEditable) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleAgentDropdownToggle();
+                          } else if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            if (!showAgentDropdown) {
+                              setShowAgentDropdown(true);
+                              setHighlightedAgentIndex(0);
+                            } else {
+                              handleAgentDropdownKeyDown(e);
+                            }
+                          } else if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            if (showAgentDropdown) {
+                              handleAgentDropdownKeyDown(e);
+                            }
+                          } else if (showAgentDropdown) {
+                            handleAgentDropdownKeyDown(e);
                           }
                         }}
-                        title="Knowledge Base"
-                        tabIndex={0}
+                        tabIndex={messageDisable || fetching || generating || isEditable ? -1 : 0}
+                        role="combobox"
+                        aria-expanded={showAgentDropdown}
                         aria-haspopup="listbox"
-                        aria-expanded={showKnowledgePopover}
-                        disabled={allOptionsSelected || generating || fetching || isEditable}
-                      >
-                        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <circle cx="32" cy="18" r="5.5" fill="currentColor" />
-                                                    <path
-                            d="M16 32
+                        aria-label="Select Agent"
+                        aria-disabled={messageDisable || fetching || generating || isEditable}>
+                        <span>{selectedAgent.agentic_application_name || "Select Agent"}</span>
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          className={`${chatInputModule.chevronIcon} ${showAgentDropdown ? chatInputModule.rotated : ""}`}>
+                          <path d="M6 8L10 12L14 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+
+                      {showAgentDropdown && (
+                        <div className={chatInputModule.dropdownContent} role="listbox" aria-label="Agent options" onClick={(e) => e.stopPropagation()}>
+                          <div className={chatInputModule.searchContainer}>
+                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
+                              <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                              <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                            <input
+                              ref={agentSearchInputRef}
+                              type="text"
+                              placeholder="Search agents..."
+                              value={agentSearchTerm}
+                              onChange={(e) => {
+                                const newSearchTerm = e.target.value;
+                                setAgentSearchTerm(newSearchTerm);
+                                // Reset highlight when searching
+                                setHighlightedAgentIndex(newSearchTerm === "" ? -1 : 0);
+                              }}
+                              onKeyDown={handleAgentDropdownKeyDown}
+                              className={chatInputModule.searchInput}
+                              aria-label="Search agents"
+                              autoComplete="off"
+                            />
+                          </div>
+                          <div className={chatInputModule.agentsList} ref={agentListRef}>
+                            {filteredAgents.length > 0 ? (
+                              filteredAgents.map((agent, index) => (
+                                <div
+                                  key={agent.agentic_application_id}
+                                  className={`${chatInputModule.agentItem} ${index === highlightedAgentIndex ? chatInputModule.highlighted : ""}`}
+                                  onClick={() => {
+                                    selectAgent(agent);
+                                    setAgentSelectValue(agent.agentic_application_id);
+                                    setFeedback("");
+                                    setOldSessionId("");
+                                    setLikeIcon(false);
+                                  }}
+                                  onMouseEnter={() => setHighlightedAgentIndex(index)}
+                                  onMouseLeave={() => setHighlightedAgentIndex(-1)}
+                                  role="option"
+                                  aria-selected={index === highlightedAgentIndex}>
+                                  <div className={chatInputModule.agentName}>{agent.agentic_application_name}</div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className={chatInputModule.noAgents}>No agents found</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {!allOptionsSelected && (
+                  <div className={chatInputModule.inputsWrapperRow2}>
+                    <div className={chatInputModule.inputForm}>
+                      <div className={chatInputModule.inputContainer}>
+                        <button
+                          type="button"
+                          className={chatInputModule.inputButton + " " + chatInputModule.actionButton}
+                          onClick={handleFileClick}
+                          disabled={messageDisable || fetching || generating || isEditable || allOptionsSelected}
+                          title="Upload Files"
+                          tabIndex={0}>
+                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M10 13V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M7 6L10 3L13 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <rect x="4" y="15" width="12" height="2" rx="1" stroke="currentColor" strokeWidth="1.5" />
+                          </svg>
+                        </button>
+
+                        <div className={chatInputModule.promptLibraryAndTextArea}>
+                          {promptSuggestions && promptSuggestions.length > 0 && (
+                            <button
+                              type="button"
+                              className={chatInputModule.promptSuggestionBtn}
+                              onClick={handlePromptSuggestionsToggle}
+                              disabled={messageDisable || fetching || generating || isEditable || allOptionsSelected}
+                              title="AI Prompt Suggestions"
+                              tabIndex={0}>
+                              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                  d="M10 2L12.09 6.26L17 7L13.5 10.74L14.18 15.74L10 13.77L5.82 15.74L6.5 10.74L3 7L7.91 6.26L10 2Z"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  fill="none"
+                                />
+                                <path d="M6 3L7 5L9 4" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
+                                <path d="M15 4L16 6L18 5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
+                                <path d="M4 12L5 14L7 13" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
+                              </svg>
+                            </button>
+                          )}
+                          <div className={chatInputModule.textInputWrapper}>
+                            {recording ? (
+                              <div className={stylesNew.recordingIndicator}>
+                                <div className={stylesNew.recordingAnimation}>
+                                  <div className={stylesNew.recordingDot}></div>
+                                  <div className={stylesNew.recordingPulse}></div>
+                                </div>
+                                <span className={stylesNew.recordingText}>
+                                  <span className={stylesNew.recordingLabel}>Recording</span>
+                                  <div className={stylesNew.audioVisualizer}>
+                                    <div className={stylesNew.audioBar}></div>
+                                    <div className={stylesNew.audioBar}></div>
+                                    <div className={stylesNew.audioBar}></div>
+                                    <div className={stylesNew.audioBar}></div>
+                                    <div className={stylesNew.audioBar}></div>
+                                  </div>
+                                </span>
+                              </div>
+                            ) : (
+                              <textarea
+                                ref={textareaRef}
+                                value={userChat}
+                                onChange={handleInputChangeForSuggestion}
+                                onKeyDown={handleKeyDown}
+                                placeholder={!allOptionsSelected ? "Type your message..." : "Please select Agent Type, Model, and Agent to start chatting"}
+                                disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
+                                className={chatInputModule.textInput}
+                                rows={1}
+                                maxLength={2000}
+                                autoComplete="off"
+                                aria-autocomplete="list"
+                                aria-controls="suggestion-popover"
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className={"rightButtons"}>
+                          <button
+                            type="submit"
+                            onClick={() => sendUserMessage(userChat)}
+                            className={`${chatInputModule.inputButton} ${chatInputModule.sendButton}`}
+                            disabled={allOptionsSelected || generating || !userChat.trim()}
+                            title="Send Message"
+                            tabIndex={0}>
+                            {/* SVG icon for send */}
+                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
+                            </svg>
+                          </button>
+                        </div>
+                        {/* Do not remove the below code it is needed for microphone implementation */}
+                        {/* Voice/Send Button */}
+                        {/* <div className={"rightButtons"}>
+                      {userChat.trim() ? (
+                        <button
+                          type="submit"
+                          onClick={sendUserMessage}
+                          className={`${chatInputModule.inputButton} ${chatInputModule.sendButton}`}
+                          disabled={allOptionsSelected || generating || !userChat.trim()}
+                          title="Send Message"
+                          tabIndex={0}
+                        >
+                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`${chatInputModule.inputButton} ${!recording ? chatInputModule.micHighlight : ''} ${recording ? chatInputModule.selected : ''}`}
+                          onClick={recording ? stopRecording : startRecording}
+                          disabled={allOptionsSelected || generating}
+                          title={recording ? "Stop Recording" : "Voice Input"}
+                          tabIndex={0}
+                        >
+                          {recording ? (
+                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" />
+                            </svg>
+                          ) : (
+                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <rect x="8" y="3" width="4" height="10" rx="2" fill="currentColor" />
+                              <path d="M10 15V17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                              <path d="M7 17H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
+                    </div> */}
+                      </div>
+                    </div>
+                    {/* Action Buttons */}
+                    <div className={chatInputModule.actionButtons}>
+                      <div className={chatInputModule.settingsContainer} ref={verifierSettingsRef}>
+                        <button
+                          className={`${chatInputModule.actionButton} ${showVerifierSettings ? chatInputModule.active : ""}`}
+                          onClick={() => setShowVerifierSettings(!showVerifierSettings)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setShowVerifierSettings(!showVerifierSettings);
+                            } else if (e.key === "ArrowDown" && !showVerifierSettings) {
+                              e.preventDefault();
+                              setShowVerifierSettings(true);
+                            }
+                          }}
+                          title="Settings"
+                          tabIndex={generating ? -1 : 0}
+                          disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
+                          aria-expanded={showVerifierSettings}
+                          aria-haspopup="menu"
+                          aria-label="Verifier Settings menu"
+                          aria-disabled={generating}>
+                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="4" y="7" width="12" height="6" rx="3" stroke="currentColor" strokeWidth="1.5" />
+                            <circle cx="13" cy="10" r="2" fill="currentColor" />
+                          </svg>
+                        </button>
+                        {showVerifierSettings && (
+                          <div className={chatInputModule.settingsDropdown} onKeyDown={handleSettingsKeyDown} role="menu" aria-label="Verifier Settings menu">
+                            <div className={chatInputModule.settingsHeader}>Toggle Settings</div>
+
+                            {shouldShowHumanVerifier() && (
+                              <div className={chatInputModule.toggleGroup + " plan-verifier"} role="menuitem">
+                                <label className={chatInputModule.toggleLabel}>
+                                  <span className={chatInputModule.toggleText} id="humanVerifierLabel">
+                                    Plan Verifier
+                                  </span>
+                                  <input
+                                    type="checkbox"
+                                    checked={isHuman}
+                                    onChange={(e) => handleHumanInLoop(e.target.checked)}
+                                    className={chatInputModule.toggleInput}
+                                    id="humanVerifierToggle"
+                                    disabled={messageDisable || generating || fetching || isEditable}
+                                  />
+                                  <span
+                                    className={chatInputModule.toggleSlider}
+                                    tabIndex={0}
+                                    role="switch"
+                                    aria-checked={isHuman}
+                                    aria-labelledby="humanVerifierLabel"
+                                    onKeyDown={(e) => handleToggleKeyDown(e, handleHumanInLoop, isHuman)}></span>
+                                </label>
+                              </div>
+                            )}
+
+                            {shouldShowToolVerifier() && (
+                              <div className={chatInputModule.toggleGroup + " tool-verifier"} role="menuitem">
+                                <label className={chatInputModule.toggleLabel}>
+                                  <span className={chatInputModule.toggleText} id="toolVerifierLabel">
+                                    Tool Verifier
+                                  </span>
+                                  <input
+                                    type="checkbox"
+                                    checked={toolInterrupt}
+                                    onChange={(e) => handleToolInterrupt(e.target.checked)}
+                                    className={chatInputModule.toggleInput}
+                                    id="toolVerifierToggle"
+                                    disabled={messageDisable || generating || fetching || isEditable}
+                                  />
+                                  <span
+                                    className={chatInputModule.toggleSlider}
+                                    tabIndex={0}
+                                    role="switch"
+                                    aria-checked={toolInterrupt}
+                                    aria-labelledby="toolVerifierLabel"
+                                    onKeyDown={(e) => handleToggleKeyDown(e, handleToolInterrupt, toolInterrupt)}></span>
+                                </label>
+                              </div>
+                            )}
+
+                            {/* Canvas Toggle - Available for all agent types */}
+                            <div className={chatInputModule.toggleGroup + " canvas-toggle"} role="menuitem">
+                              <label className={chatInputModule.toggleLabel}>
+                                <span className={chatInputModule.toggleText} id="canvasToggleLabel">
+                                  Canvas View
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={isCanvasEnabled}
+                                  onChange={(e) => handleCanvasToggle(e.target.checked)}
+                                  className={chatInputModule.toggleInput}
+                                  id="canvasToggle"
+                                  disabled={messageDisable || generating || fetching || isEditable}
+                                />
+                                <span
+                                  className={chatInputModule.toggleSlider}
+                                  tabIndex={0}
+                                  role="switch"
+                                  aria-checked={isCanvasEnabled}
+                                  aria-labelledby="canvasToggleLabel"
+                                  onKeyDown={(e) => handleToggleKeyDown(e, handleCanvasToggle, isCanvasEnabled)}></span>
+                              </label>
+                            </div>
+
+                            {/* Context Toggle - Available for all agent types */}
+                            <div className={chatInputModule.toggleGroup + " context-toggle"} role="menuitem">
+                              <label className={chatInputModule.toggleLabel}>
+                                <span className={chatInputModule.toggleText} id="contextToggleLabel">
+                                  Context
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={isContextEnabled}
+                                  onChange={(e) => handleContextToggle(e.target.checked)}
+                                  className={chatInputModule.toggleInput}
+                                  id="contextToggle"
+                                  disabled={messageDisable || generating || fetching || isEditable}
+                                />
+                                <span
+                                  className={chatInputModule.toggleSlider}
+                                  tabIndex={0}
+                                  role="switch"
+                                  aria-checked={isContextEnabled}
+                                  aria-labelledby="contextToggleLabel"
+                                  onKeyDown={(e) => handleToggleKeyDown(e, handleContextToggle, isContextEnabled)}></span>
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {agentType === REACT_AGENT && (
+                        <div className={chatInputModule.relativeWrapper} ref={knowledgePopoverRef}>
+                          <button
+                            className={chatInputModule.actionButton}
+                            onClick={async () => {
+                              const newState = !showKnowledgePopover;
+                              setShowKnowledgePopover(newState);
+                              if (newState && (!knowledgeResponse || knowledgeResponse.length === 0)) {
+                                await knowledgeBaseData();
+                              }
+                            }}
+                            title="Knowledge Base"
+                            tabIndex={0}
+                            aria-haspopup="listbox"
+                            aria-expanded={showKnowledgePopover}
+                            disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}>
+                            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <circle cx="32" cy="18" r="5.5" fill="currentColor" />
+                              <path
+                                d="M16 32
                               C16 28, 24 28, 32 32
                               C40 28, 48 28, 48 32
                               V48
                               C48 44, 40 44, 32 48
                               C24 44, 16 44, 16 48
                               V32Z"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            fill="none"
-                          />
-                          
-                          <line x1="32" y1="32" x2="32" y2="48" stroke="currentColor" strokeWidth="1.5" />
-                          
-                          <line x1="19" y1="33" x2="19" y2="47" stroke="currentColor" strokeWidth="0.8" />
-                          <line x1="22" y1="34" x2="22" y2="46" stroke="currentColor" strokeWidth="0.8" />
-                          <line x1="25" y1="35" x2="25" y2="45" stroke="currentColor" strokeWidth="0.8" />
-                          <line x1="28" y1="36" x2="28" y2="44" stroke="currentColor" strokeWidth="0.8" />
-                          
-                          <line x1="36" y1="36" x2="36" y2="44" stroke="currentColor" strokeWidth="0.8" />
-                          <line x1="39" y1="35" x2="39" y2="45" stroke="currentColor" strokeWidth="0.8" />
-                          <line x1="42" y1="34" x2="42" y2="46" stroke="currentColor" strokeWidth="0.8" />
-                          <line x1="45" y1="33" x2="45" y2="47" stroke="currentColor" strokeWidth="0.8" />
-                          
-                          <path d="M19 33C19 33 25 31 32 33C39 31 45 33 45 33" stroke="currentColor" strokeWidth="1" />
-                        </svg>
-                      </button>
-                      {showKnowledgePopover && (
-                        <div className={chatInputModule.dropdownContent} role="listbox" aria-label="Knowledge Base options" style={{ minWidth: 220, maxWidth: 260 }}>
-                          <div className={chatInputModule.searchContainer} style={{ padding: '8px 8px 4px 8px' }}>
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
-                              <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                              <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                fill="none"
+                              />
+
+                              <line x1="32" y1="32" x2="32" y2="48" stroke="currentColor" strokeWidth="1.5" />
+
+                              <line x1="19" y1="33" x2="19" y2="47" stroke="currentColor" strokeWidth="0.8" />
+                              <line x1="22" y1="34" x2="22" y2="46" stroke="currentColor" strokeWidth="0.8" />
+                              <line x1="25" y1="35" x2="25" y2="45" stroke="currentColor" strokeWidth="0.8" />
+                              <line x1="28" y1="36" x2="28" y2="44" stroke="currentColor" strokeWidth="0.8" />
+
+                              <line x1="36" y1="36" x2="36" y2="44" stroke="currentColor" strokeWidth="0.8" />
+                              <line x1="39" y1="35" x2="39" y2="45" stroke="currentColor" strokeWidth="0.8" />
+                              <line x1="42" y1="34" x2="42" y2="46" stroke="currentColor" strokeWidth="0.8" />
+                              <line x1="45" y1="33" x2="45" y2="47" stroke="currentColor" strokeWidth="0.8" />
+
+                              <path d="M19 33C19 33 25 31 32 33C39 31 45 33 45 33" stroke="currentColor" strokeWidth="1" />
                             </svg>
-                            <input
-                              type="text"
-                              placeholder="Search knowledge base..."
-                              value={searchTerm}
-                              onChange={handleSearchChange}
-                              className={chatInputModule.searchInput}
-                              aria-label="Search knowledge base"
-                              autoComplete="off"
-                            />
-                          </div>
-                          <div className={chatInputModule.agentsList} style={{ maxHeight: 160, overflowY: 'auto', padding: '4px 8px' }}>
-                            {Array.isArray(knowledgeResponse) && knowledgeResponse.length > 0 ? (
-                              knowledgeResponse
-                                .filter(option => option.toLowerCase().includes(searchTerm.toLowerCase()))
-                                .map((option, idx) => (
-                                  <div key={idx} className={chatInputModule.agentItem} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <input
-                                      type="checkbox"
-                                      id={`kb-checkbox-${idx}`}
-                                      value={option}
-                                      checked={selectedValues.includes(option)}
-                                      onChange={handleCheckboxChange}
-                                      // className={chatInputModule.toggInput}
-                                      style={{ marginRight: 6 }}
-                                    />
-                                    <label htmlFor={`kb-checkbox-${idx}`} className={chatInputModule.agentName} style={{ fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                                      {option}
-                                    </label>
-                                  </div>
-                                ))
-                            ) : (
-                              <div className={chatInputModule.noAgents}>No knowledge base found</div>
-                            )}
-                          </div>
+                          </button>
+                          {showKnowledgePopover && (
+                            <div className={chatInputModule.dropdownContent} role="listbox" aria-label="Knowledge Base options" style={{ minWidth: 220, maxWidth: 260 }}>
+                              <div className={chatInputModule.searchContainer} style={{ padding: "8px 8px 4px 8px" }}>
+                                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
+                                  <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                  <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                </svg>
+                                <input
+                                  ref={knowledgeSearchInputRef}
+                                  type="text"
+                                  placeholder="Search knowledge base..."
+                                  value={searchTerm}
+                                  onChange={handleSearchChange}
+                                  onKeyDown={handleKnowledgeDropdownKeyDown}
+                                  className={chatInputModule.searchInput}
+                                  aria-label="Search knowledge base"
+                                  autoComplete="off"
+                                />
+                              </div>
+                              <div
+                                className={chatInputModule.agentsList}
+                                ref={knowledgeListRef}
+                                style={{
+                                  maxHeight: 200,
+                                  overflowY: "auto",
+                                  padding: "4px 8px",
+                                }}>
+                                {Array.isArray(knowledgeResponse) && knowledgeResponse.length > 0 ? (
+                                  (() => {
+                                    const filteredOptions = knowledgeResponse.filter((option) => option.toLowerCase().includes(searchTerm.toLowerCase()));
+                                    return filteredOptions.map((option, idx) => (
+                                      <div
+                                        key={idx}
+                                        className={`${chatInputModule.agentItem} ${idx === highlightedKbIndex ? chatInputModule.highlighted : ""}`}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 8,
+                                        }}
+                                        onMouseEnter={() => setHighlightedKbIndex(idx)}
+                                        onMouseLeave={() => setHighlightedKbIndex(-1)}
+                                        onClick={() => {
+                                          const isChecked = selectedValues.includes(option);
+                                          if (isChecked) {
+                                            setSelectedValues((prev) => prev.filter((item) => item !== option));
+                                          } else {
+                                            setSelectedValues((prev) => [...prev, option]);
+                                          }
+                                        }}
+                                        role="option"
+                                        aria-selected={idx === highlightedKbIndex}>
+                                        <input
+                                          type="checkbox"
+                                          id={`kb-checkbox-${idx}`}
+                                          value={option}
+                                          checked={selectedValues.includes(option)}
+                                          onChange={handleCheckboxChange}
+                                          style={{ marginRight: 6 }}
+                                          tabIndex={-1}
+                                        />
+                                        <label
+                                          htmlFor={`kb-checkbox-${idx}`}
+                                          className={chatInputModule.agentName}
+                                          style={{
+                                            fontSize: 13,
+                                            fontWeight: 500,
+                                            cursor: "pointer",
+                                          }}>
+                                          {option}
+                                        </label>
+                                      </div>
+                                    ));
+                                  })()
+                                ) : (
+                                  <div className={chatInputModule.noAgents}>No knowledge base found</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
+
+                      <div className={chatInputModule.settingsContainer} ref={chatSettingsRef}>
+                        <button
+                          className={`${chatInputModule.actionButton} ${showChatSettings ? chatInputModule.active : ""}`}
+                          onClick={() => setShowChatSettings(!showChatSettings)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setShowChatSettings(!showChatSettings);
+                            } else if (e.key === "ArrowDown" && !showChatSettings) {
+                              e.preventDefault();
+                              setShowChatSettings(true);
+                            }
+                          }}
+                          title="ChatSettings"
+                          tabIndex={generating ? -1 : 0}
+                          disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
+                          aria-expanded={showChatSettings}
+                          aria-haspopup="menu"
+                          aria-label="Chat Settings menu"
+                          aria-disabled={generating}>
+                          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            {/* <!-- Speech bubble outline with reduced height --> */}
+                            <path
+                              d="M2.5 2.5 C2.5 1.95 2.95 1.5 3.5 1.5 L14.5 1.5 C15.05 1.5 15.5 1.95 15.5 2.5 L15.5 11.5 C15.5 12.05 15.05 12.5 14.5 12.5 L6.5 12.5 L3.5 15.5 C3.2 15.8 2.5 15.6 2.5 15.2 L2.5 2.5 Z"
+                              stroke="currentColor"
+                              strokeWidth="1"
+                              fill="none"
+                              strokeLinejoin="round"
+                            />
+
+                            {/* <!-- Gear outline positioned higher --> */}
+                            <path
+                              d="M9 3.5 C8.7 3.5 8.5 3.7 8.5 4 L8.5 4.3 C8.3 4.4 8.2 4.5 8 4.6 L7.8 4.4 C7.6 4.2 7.3 4.2 7.1 4.4 L6.6 4.9 C6.4 5.1 6.4 5.4 6.6 5.6 L6.8 5.8 C6.7 6 6.6 6.1 6.5 6.3 L6.2 6.3 C5.9 6.3 5.7 6.5 5.7 6.8 L5.7 7.5 C5.7 7.8 5.9 8 6.2 8 L6.5 8 C6.6 8.2 6.7 8.3 6.8 8.5 L6.6 8.7 C6.4 8.9 6.4 9.2 6.6 9.4 L7.1 9.9 C7.3 10.1 7.6 10.1 7.8 9.9 L8 9.7 C8.2 9.8 8.3 9.9 8.5 10 L8.5 10.3 C8.5 10.6 8.7 10.8 9 10.8 L9.7 10.8 C10 10.8 10.2 10.6 10.2 10.3 L10.2 10 C10.4 9.9 10.5 9.8 10.7 9.7 L10.9 9.9 C11.1 10.1 11.4 10.1 11.6 9.9 L12.1 9.4 C12.3 9.2 12.3 8.9 12.1 8.7 L11.9 8.5 C12 8.3 12.1 8.2 12.2 8 L12.5 8 C12.8 8 13 7.8 13 7.5 L13 6.8 C13 6.5 12.8 6.3 12.5 6.3 L12.2 6.3 C12.1 6.1 12 6 11.9 5.8 L12.1 5.6 C12.3 5.4 12.3 5.1 12.1 4.9 L11.6 4.4 C11.4 4.2 11.1 4.2 10.9 4.4 L10.7 4.6 C10.5 4.5 10.4 4.4 10.2 4.3 L10.2 4 C10.2 3.7 10 3.5 9.7 3.5 L9 3.5 Z"
+                              stroke="currentColor"
+                              strokeWidth="0.8"
+                              fill="none"
+                            />
+
+                            {/* <!-- Gear center circle positioned higher --> */}
+                            <circle cx="9.35" cy="7.15" r="1.2" stroke="currentColor" strokeWidth="0.8" fill="none" />
+                          </svg>
+                        </button>
+                        {showChatSettings && (
+                          <div
+                            className={`${chatInputModule.settingsDropdown} ${chatInputModule.chatSettingsDropdown}`}
+                            onKeyDown={handleSettingsKeyDown}
+                            role="menu"
+                            aria-label="Chat Settings menu">
+                            <div className={chatInputModule.settingsHeader}>Chat Options</div>
+
+                            <div className={`${chatInputModule.toggleGroup} ${chatInputModule.chatOptions}`} role="menuitem">
+                              <div className={chatInputModule.chatOptionsItems}>
+                                <button
+                                  className={chatInputModule.actionButton}
+                                  onClick={handleNewChat}
+                                  title="New Chat"
+                                  tabIndex={0}
+                                  disabled={allOptionsSelected || generating || fetching || isEditable}>
+                                  {" "}
+                                  {/* Removed the condition check 'messageData.length === 0' */}
+                                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path
+                                      d="M3 6C3 4.34315 4.34315 3 6 3H14C15.6569 3 17 4.34315 17 6V11C17 12.6569 15.6569 14 14 14H8L5 17V6Z"
+                                      stroke="currentColor"
+                                      strokeWidth="1.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                    <g transform="translate(11, 8.5)">
+                                      <path d="M0 -2.5V2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                      <path d="M-2.5 0H2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    </g>
+                                  </svg>
+                                  <p className={chatInputModule.chatOptionName}>New Chat</p>
+                                </button>
+                              </div>
+
+                              <div className={chatInputModule.chatOptionsItems}>
+                                <button
+                                  className={chatInputModule.actionButton}
+                                  onClick={() => {
+                                    setShowChatHistory(true);
+                                    setShowChatSettings(false);
+                                  }}
+                                  title="Chat History"
+                                  tabIndex={0}
+                                  disabled={allOptionsSelected || generating || fetching || isEditable}>
+                                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="3" y="3" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                                    <path d="M6 7H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M6 9H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M6 11H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+
+                                    <g transform="translate(1.1, 0)">
+                                      <circle cx="14" cy="16" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                      <path d="M14 14V16L15.5 17.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    </g>
+                                  </svg>
+                                  <p className={chatInputModule.chatOptionName}>Chat History</p>
+                                </button>
+                              </div>
+
+                              <div className={chatInputModule.chatOptionsItems}>
+                                <button
+                                  className={chatInputModule.actionButton}
+                                  onClick={(e) => {
+                                    if (allOptionsSelected || fetching || messageData.length === 0) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+                                    handleResetChat();
+                                    setShowChatSettings(false);
+                                  }}
+                                  title="Delete Chat"
+                                  tabIndex={0}
+                                  disabled={allOptionsSelected || generating || fetching || isEditable || messageData.length === 0}>
+                                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M7 4V3C7 2.44772 7.44772 2 8 2H12C12.5523 2 13 2.44772 13 3V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M5 4H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M6 4V16C6 17.1046 6.89543 18 8 18H12C13.1046 18 14 17.1046 14 16V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M8 8V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M12 8V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                  </svg>
+                                  <p className={chatInputModule.chatOptionName}>Delete Chat</p>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        className={chatInputModule.actionButton}
+                        onClick={handleLiveTracking}
+                        title="Live Tracking"
+                        tabIndex={0}
+                        disabled={allOptionsSelected || generating || fetching || isEditable}>
+                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                          <circle cx="10" cy="6" r="1" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" />
+                          <path d="M10 9L10 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                          <path d="M6 15L10 13L14 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <circle cx="4" cy="4" r="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.6" />
+                          <circle cx="16" cy="5" r="1" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" />
+                          <circle cx="15" cy="15" r="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5" />
+                          <rect x="2" y="17" width="16" height="1.5" rx="0.75" fill="currentColor" opacity="0.3" />
+                        </svg>
+                      </button>
                     </div>
-                  )}
-
-                  <button
-                    className={chatInputModule.actionButton}
-                    onClick={() => setShowChatHistory(true)}
-                    title="Chat History"
-                    tabIndex={0}
-                    disabled={allOptionsSelected || generating || fetching || isEditable}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <rect x="3" y="3" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                      <path d="M6 7H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <path d="M6 9H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <path d="M6 11H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        
-                      <g transform="translate(1.1, 0)">
-                        <circle cx="14" cy="16" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                        <path d="M14 14V16L15.5 17.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        
-                      </g>
-                    </svg>
-                  </button>
-
-                  <button
-                    className={chatInputModule.actionButton}
-                    onClick={handleNewChat}
-                    title="New Chat"
-                    tabIndex={0}
-                    disabled={allOptionsSelected || generating || fetching || isEditable || messageData.length === 0}
-                  >
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M3 6C3 4.34315 4.34315 3 6 3H14C15.6569 3 17 4.34315 17 6V11C17 12.6569 15.6569 14 14 14H8L5 17V6Z"
-                        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <g transform="translate(11, 8.5)">
-                        <path d="M0 -2.5V2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                        <path d="M-2.5 0H2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      </g>
-                    </svg>
-        
-                  </button>
-
-                  <button
-                    className={chatInputModule.actionButton}
-                    onClick={(e) => {
-                      if (
-                        allOptionsSelected ||
-                        fetching ||
-                        messageData.length === 0
-                      ) {
-                        e.preventDefault();
-                        return;
-                      }
-                      handleResetChat();
-                    }}
-                    title="Delete Chat"
-                    tabIndex={0}
-                    disabled={allOptionsSelected || generating || fetching || isEditable || messageData.length === 0}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M7 4V3C7 2.44772 7.44772 2 8 2H12C12.5523 2 13 2.44772 13 3V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <path d="M5 4H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <path d="M6 4V16C6 17.1046 6.89543 18 8 18H12C13.1046 18 14 17.1046 14 16V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <path d="M8 8V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <path d="M12 8V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                  </button>
-
-                  <button
-                    className={chatInputModule.actionButton}
-                    onClick={handleLiveTracking}
-                    title="Live Tracking"
-                    tabIndex={0}
-                    disabled={allOptionsSelected || generating || fetching || isEditable}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="10" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                      <circle cx="10" cy="6" r="1" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" />
-                      <path d="M10 9L10 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      <path d="M6 15L10 13L14 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <circle cx="4" cy="4" r="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.6" />
-                      <circle cx="16" cy="5" r="1" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" />
-                      <circle cx="15" cy="15" r="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5" />
-                      <rect x="2" y="17" width="16" height="1.5" rx="0.75" fill="currentColor" opacity="0.3" />
-                    </svg>
-                  </button>
+                  </div>
+                )}
+                <PromptSuggestions
+                  isVisible={showPromptSuggestions}
+                  onClose={() => setShowPromptSuggestions(false)}
+                  onSelectPrompt={handlePromptSelect}
+                  promptSuggestions={promptSuggestions}
+                />
+                {/* Autofill Suggestion Popover */}
+                <div style={{ position: "relative" }}>
+                  <SuggestionPopover
+                    suggestions={suggestionData}
+                    userValue={userChat}
+                    onSelect={handleSuggestionSelect}
+                    visible={suggestionVisible}
+                    onClose={() => setSuggestionVisible(false)}
+                  />
                 </div>
-              </div>}
+              </div>
+              {showChatHistory && (
+                <ChatHistorySlider
+                  chats={oldChats}
+                  onClose={() => setShowChatHistory(false)}
+                  fetchChatHistory={fetchChatHistory}
+                  setOldSessionId={setOldSessionId}
+                  agentSelectValue={agentSelectValue}
+                  agentType={agentType}
+                  customTemplatId={customTemplatId}
+                  onChatDeleted={handleChatDeleted}
+                  onSelectChat={handleChatSelected}
+                />
+              )}
             </div>
-            {showChatHistory && (
-              <ChatHistorySlider
-                chats={oldChats}
-                onClose={() => setShowChatHistory(false)}
-                fetchChatHistory={fetchChatHistory}
-                setOldSessionId={setOldSessionId}
-                agentSelectValue={agentSelectValue}
-                agentType={agentType}
-                customTemplatId={customTemplatId}
-                onChatDeleted={handleChatDeleted}
-                onSelectChat={handleChatSelected}
-              />
-            )}
           </div>
+          {/* Canvas Component */}
+          {isCanvasOpen && (
+            <Canvas isOpen={isCanvasOpen} onClose={closeCanvas} content={canvasContent} contentType={canvasContentType} title={canvasTitle} messageId={canvasMessageId} />
+          )}
         </div>
       </div>
-    </div>
     </>
   );
 };

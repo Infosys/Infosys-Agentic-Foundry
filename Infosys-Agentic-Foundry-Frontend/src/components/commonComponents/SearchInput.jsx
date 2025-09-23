@@ -1,25 +1,59 @@
-import React from "react";
-import styles from "./SearchInput.module.css";
+import React, { useEffect, useState } from "react";
 import SVGIcons from "../../Icons/SVGIcons";
+import styles from "./SearchInputTools.module.css";
 
-const SearchInput = (props) => {
-  const { inputProps, handleSearch } = props;
+const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => {
+  // Fallback to no-op if clearSearch is not provided
+  const safeClearSearch = typeof clearSearch === "function" ? clearSearch : () => {};
+  const [localSearchValue, setLocalSearchValue] = useState(searchValue || "");
 
-  const handleChange = (e) => {
-    handleSearch(e.target.value);
+  useEffect(() => {
+    setLocalSearchValue(searchValue);
+  }, [searchValue]);
+
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setLocalSearchValue(value);
+    if (value.trim() === "") {
+      let toClearTheValueFully = setTimeout(() => {
+        safeClearSearch();
+        handleSearch("");
+        clearTimeout(toClearTheValueFully);
+      }, 500); // Show all items when search is cleared
+    }
+  };
+
+  const handleSearchClick = () => {
+    const trimmedValue = localSearchValue?.trim();
+
+    if (trimmedValue) {
+      handleSearch(trimmedValue);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setLocalSearchValue("");
+    safeClearSearch();
+    handleSearch(""); // Show all items when search is cleared
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      handleSearchClick();
+    }
   };
 
   return (
     <div className={styles.searchContainer}>
-      <input
-        type="text"
-        className={styles.searchInput}
-        {...inputProps}
-        onChange={handleChange}
-      />
-      <button onClick={(e) => e.preventDefault()}>
-        <SVGIcons icon="search" fill="#ffffff" width={12} height={12} />
+      <input type="text" value={localSearchValue} onChange={handleInputChange} onKeyDown={handleKeyDown} {...inputProps} className={styles.searchInput} placeholder="Search..." />
+      <button onClick={handleSearchClick} className={styles.searchButton} title="Search">
+        <SVGIcons icon="search" width={16} height={16} fill="#fff" />
       </button>
+      {localSearchValue && (
+        <button onClick={handleClearSearch} className={styles.clearButton} title="Clear">
+          <SVGIcons icon="close-icon" width={20} height={20} color="currentColor" />
+        </button>
+      )}
     </div>
   );
 };

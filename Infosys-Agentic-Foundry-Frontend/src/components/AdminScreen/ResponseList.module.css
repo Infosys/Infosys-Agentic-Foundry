@@ -1,7 +1,6 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   padding: 0;
   background: transparent;
   width: 100%;
@@ -20,7 +19,6 @@
   margin: 0;
   font-size: 24px;
   font-weight: 600;
-  color: #2c3e50;
 }
 
 .list {
@@ -28,7 +26,8 @@
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 16px;
   width: 100%;
-  /* margin-top: 20px; */
+  overflow: auto;
+  height: Calc(90vh - 165px);
 }
 
 .responseButton {

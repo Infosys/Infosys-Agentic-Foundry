@@ -7,83 +7,146 @@ import AgentForm from "./AgentForm";
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 import DropDown from "../commonComponents/DropDowns/DropDown";
-import {
-  agentTypesDropdown,
-  MULTI_AGENT,
-  REACT_AGENT,
-  META_AGENT,
-  PLANNER_META_AGENT,
-} from "../../constant";
+import { agentTypesDropdown, MULTI_AGENT, REACT_AGENT, META_AGENT, PLANNER_META_AGENT } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
-import { calculateDivs } from "../../util";
-import { getToolsSearchByPageLimit,getAgentsSearchByPageLimit } from "../../services/toolService";
+import { useToolsAgentsService } from "../../services/toolService";
 import SearchInputToolsAgents from "../commonComponents/SearchInputTools";
-import { debounce } from "lodash"; 
+import { debounce } from "lodash";
+import { useMcpServerService } from "../../services/serverService";
+import FilterModal from "../commonComponents/FilterModal";
 
 const AgentOnboard = (props) => {
-  const { onClose, tags, setNewAgentData,fetchAgents,agentsListData} = props;
+  const { onClose, tags, setNewAgentData, fetchAgents } = props;
 
-  const [tools, setTools] = useState([]);
-  const [agents, setAgents] = useState([]);
   const [selectedTool, setSelectedTool] = useState([]);
   const [selectedAgents, setSelectedAgents] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState("react_agent");
   const [visibleData, setVisibleData] = useState([]);
-  const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [loader, setLoaderState] = useState(false);
-    const isLoadingRef = React.useRef(false);
+  const isLoadingRef = React.useRef(false);
+  const [activeTab, setActiveTab] = useState("tools");
+  const [servers, setServers] = useState([]);
+  const [selectedServers, setSelectedServers] = useState([]);
+  const [unmappedServers, setUnmappedServers] = useState([]);
+  // Tag filtering state
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedServerTags, setSelectedServerTags] = useState([]);
+  const [filterModal, setFilterModal] = useState(false);
 
   const { addMessage } = useMessage();
-  const { postData } = useFetch();
+  const { postData, fetchData } = useFetch();
+  const { getToolsSearchByPageLimit, getAgentsSearchByPageLimit, calculateDivs } = useToolsAgentsService();
+  const { getAllServers, getServersSearchByPageLimit } = useMcpServerService();
 
   const containerRef = useRef(null);
   const pageRef = useRef(1);
   const hasLoadedOnce = useRef(false);
 
-  const fetchPaginatedData = async (pageNumber, divsCount) => {
-    setLoading(true);
-    try {
-      if (selectedAgent === META_AGENT || selectedAgent ===  PLANNER_META_AGENT) {
-        const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: searchTerm });
-        const allDetails = response || [];
-        const filtered = allDetails.filter(
-          (agent) =>
-            agent.agentic_application_type === REACT_AGENT ||
-            agent.agentic_application_type === MULTI_AGENT
-        );
-        setAgents((prev) => pageNumber === 1 ? filtered : [...prev, ...filtered]);
-        setVisibleData((prev) => pageNumber === 1 ? filtered : [...prev, ...filtered]);
-        setTotalCount(response?.length || 0);
-      } else {
-        const response = await getToolsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: searchTerm });
-        const toolsData = response || [];
-        setTools((prev) => pageNumber === 1 ? toolsData : [...prev, ...toolsData]);
-        setVisibleData((prev) => pageNumber === 1 ? toolsData : [...prev, ...toolsData]);
-        setTotalCount(response?.length || 0);
+  const fetchPaginatedData = useCallback(
+    async (pageNumber, divsCount, tagParams = null) => {
+      setLoading(true);
+      try {
+        const tagsToUse = tagParams !== null ? tagParams : selectedTags;
+        if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
+          const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: searchTerm, tags: tagsToUse });
+          const allDetails = typeof response?.details === "object" && Array.isArray(response.details) ? response.details : [];
+          const filtered = allDetails.filter((agent) => agent.agentic_application_type === REACT_AGENT || agent.agentic_application_type === MULTI_AGENT);
+          setVisibleData((prev) => (pageNumber === 1 ? filtered : [...prev, ...filtered]));
+          setTotalCount(response?.total_count || allDetails?.length || 0);
+        } else {
+          const response = await getToolsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: searchTerm, tags: tagsToUse });
+          const toolsData = typeof response?.details === "object" && Array.isArray(response.details) ? response.details : [];
+          setVisibleData((prev) => (pageNumber === 1 ? toolsData : [...prev, ...toolsData]));
+          setTotalCount(response?.total_count || toolsData?.length || 0);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    },
+    [searchTerm, selectedAgent, selectedTags]
+  );
+
+  // Helper to map server data for ToolCard (include raw + derived LOCAL/REMOTE)
+  const mapServerData = (server) => {
+    const raw = server || {};
+    const hasCode = Boolean(raw?.mcp_config?.args?.[1] || raw?.mcp_file?.code_content || raw?.code_content || raw?.code || raw?.script || raw?.code_snippet);
+    const hasUrl = Boolean(raw?.mcp_config?.url || raw?.mcp_url || raw?.endpoint || raw?.mcp_config?.mcp_url || raw?.mcp_config?.endpoint);
+    const derivedType = hasCode ? "LOCAL" : hasUrl ? "REMOTE" : ((raw.mcp_type || raw.type || "") + "").toUpperCase() || "UNKNOWN";
+    return {
+      tool_id: raw.tool_id || raw.id || raw._id || Math.random().toString(36).substr(2, 9), // Always unique!
+      name: raw.tool_name || raw.name,
+      status: raw.status || "approved",
+      type: derivedType,
+      team_id: raw.team_id || "Public",
+      description: raw.tool_description || raw.description,
+      tags: Array.isArray(raw.tag_ids)
+        ? raw.tag_ids.map((t) => (typeof t === "object" ? t.tag_name : t))
+        : Array.isArray(raw.tags)
+        ? raw.tags.map((t) => (typeof t === "object" ? t.tag_name : t))
+        : [],
+      endpoint: raw.mcp_url || raw.endpoint || "",
+      tools: raw.tools || [],
+      raw, // preserve full object for code snippet extraction
+    };
   };
 
   useEffect(() => {
-    if (!hasLoadedOnce.current) {
+    if (activeTab === "servers") {
+      setLoading(true);
+      Promise.all([
+        selectedServerTags?.length > 0
+          ? getServersSearchByPageLimit({
+              page: 1,
+              limit: calculateDivs(containerRef, 149, 57, 26),
+              search: searchTerm,
+              tags: selectedServerTags,
+            })
+          : getAllServers(),
+        fetchData(APIs.GET_AGENTS_BY_DETAILS),
+      ])
+        .then(([serverResponse, allAgents]) => {
+          // Handle server response format - check for details property or use response directly
+          const allServers = serverResponse?.details || serverResponse || [];
+
+          // Collect all mapped server IDs from all agents
+          const mappedServerIds = new Set();
+          (allAgents || []).forEach((agent) => {
+            if (Array.isArray(agent.tools_id)) {
+              agent.tools_id.forEach((id) => mappedServerIds.add(id));
+            } else if (typeof agent.tools_id === "string") {
+              try {
+                JSON.parse(agent.tools_id).forEach((id) => mappedServerIds.add(id));
+              } catch {}
+            }
+          });
+          // Only show servers not mapped to any agent
+          const unmapped = (Array.isArray(allServers) ? allServers : []).filter((s) => !mappedServerIds.has(s.tool_id || s.id));
+          setUnmappedServers(unmapped.map(mapServerData));
+          setServers(unmapped.map(mapServerData)); // Use unmapped for display
+          setLoading(false);
+        })
+        .catch(() => {
+          setServers([]);
+          setUnmappedServers([]);
+          setLoading(false);
+        });
+    }
+  }, [activeTab, selectedServerTags, searchTerm]);
+
+  useEffect(() => {
+    if (!hasLoadedOnce.current && activeTab === "tools") {
       hasLoadedOnce.current = true;
       const divsCount = calculateDivs(containerRef, 149, 57, 26);
-      setPage(1);
       pageRef.current = 1;
       setVisibleData([]);
-      setAgents([]);
-      setTools([]);
       fetchPaginatedData(1, divsCount);
     }
-  }, [selectedAgent]);
-
+  }, [selectedAgent, activeTab, fetchPaginatedData]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -93,7 +156,8 @@ const AgentOnboard = (props) => {
     const checkAndLoadMore = () => {
       if (
         container.scrollTop + container.clientHeight >= container.scrollHeight - 40 &&
-        !loading && !isLoadingRef.current // Prevent if already loading
+        !loading &&
+        !isLoadingRef.current // Prevent if already loading
       ) {
         handleScrollLoadMore();
       }
@@ -105,79 +169,190 @@ const AgentOnboard = (props) => {
       debouncedCheckAndLoad();
     };
 
-    window.addEventListener('resize', handleResize);
-    container.addEventListener('scroll', debouncedCheckAndLoad);
+    window.addEventListener("resize", handleResize);
+    container.addEventListener("scroll", debouncedCheckAndLoad);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener("resize", handleResize);
       debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
-      container.removeEventListener('scroll', debouncedCheckAndLoad);
+      container.removeEventListener("scroll", debouncedCheckAndLoad);
     };
-  }, [ visibleData.length, totalCount, searchTerm]);
+  }, [visibleData.length, totalCount, searchTerm]); // handleScrollLoadMore, loading  - also might be included in the dependency
 
-   const handleScrollLoadMore = async () => {
-      if (loader || isLoadingRef.current) return; // Prevent multiple calls
-      isLoadingRef.current = true;
-      const nextPage = pageRef.current + 1;
-      const divsCount = calculateDivs(containerRef, 149, 57, 26);
-      
-        try {
-          setLoaderState(true);
-          setLoading && setLoading(true);
-          let newData = [];
-          if (searchTerm.trim()) {
-            // Only call search API if searchTerm is present
-            if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
-              const res = await getAgentsSearchByPageLimit({
-                page: nextPage,
-                limit: divsCount,
-                search: searchTerm,
-              });
-              newData = (res || []).filter(
-                (a) =>
-                  (a.agentic_application_type === REACT_AGENT ||
-                    a.agentic_application_type === MULTI_AGENT)
-              );
-            } else {
-              const res = await getToolsSearchByPageLimit({
-                page: nextPage,
-                limit: divsCount,
-                search: searchTerm,
-              });
-              newData = (res || [])
-            }
-            setVisibleData((prev) => [...prev, ...newData]);
-          } else {
-            // Only call fetchToolsData if no searchTerm
-            await fetchPaginatedData(nextPage, divsCount);
-          }
-          setPage(nextPage);
-          pageRef.current = nextPage;
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setLoaderState(false);
-          setLoading && setLoading(false);
-          isLoadingRef.current = false;
+  const handleScrollLoadMore = async () => {
+    if (loader || isLoadingRef.current) return; // Prevent multiple calls
+    isLoadingRef.current = true;
+    const nextPage = pageRef.current + 1;
+    const divsCount = calculateDivs(containerRef, 149, 57, 26);
+
+    try {
+      setLoaderState(true);
+      setLoading && setLoading(true);
+      let newData = [];
+      if (searchTerm.trim()) {
+        // Only call search API if searchTerm is present
+        if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
+          const res = await getAgentsSearchByPageLimit({
+            page: nextPage,
+            limit: divsCount,
+            search: searchTerm,
+            tags: selectedTags,
+          });
+          newData = (res?.details || []).filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT);
+        } else {
+          const res = await getToolsSearchByPageLimit({
+            page: nextPage,
+            limit: divsCount,
+            search: searchTerm,
+            tags: selectedTags,
+          });
+          newData = res?.details || [];
         }
-    };
+        if (typeof newData === "object" && Array.isArray(newData)) {
+          setVisibleData((prev) => [...prev, ...newData]);
+          pageRef.current = nextPage;
+        }
+      } else {
+        // Only call fetchToolsData if no searchTerm
+        await fetchPaginatedData(nextPage, divsCount);
+        pageRef.current = nextPage;
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoaderState(false);
+      setLoading && setLoading(false);
+      isLoadingRef.current = false;
+    }
+  };
 
+  const clearSearch = async () => {
+    setSearchTerm("");
+    setVisibleData([]);
+    pageRef.current = 1;
+    if (activeTab === "servers") {
+      setLoading(true);
+      try {
+        // Fetch all agents to get mapped server IDs
+        const allAgents = await fetchData(APIs.GET_AGENTS_BY_DETAILS);
+        const mappedServerIds = new Set();
+        (allAgents || []).forEach((agent) => {
+          if (Array.isArray(agent.tools_id)) {
+            agent.tools_id.forEach((id) => mappedServerIds.add(id));
+          } else if (typeof agent.tools_id === "string") {
+            try {
+              JSON.parse(agent.tools_id).forEach((id) => mappedServerIds.add(id));
+            } catch {}
+          }
+        });
 
-  const clearSearch = () => {
-     setSearchTerm("");
-     setVisibleData([]);
-     
-     const divsCount = calculateDivs(containerRef, 149, 57, 26);
-     setPage(1);
-     pageRef.current = 1;
-     fetchPaginatedData(1, divsCount);
+        // Use filtered or unfiltered servers based on selected tags
+        let serverResponse;
+        if (selectedServerTags?.length > 0) {
+          serverResponse = await getServersSearchByPageLimit({
+            page: 1,
+            limit: calculateDivs(containerRef, 149, 57, 26),
+            search: "",
+            tags: selectedServerTags,
+          });
+        } else {
+          serverResponse = await getAllServers();
+        }
+
+        const allServers = serverResponse?.details || serverResponse || [];
+        const unmapped = (Array.isArray(allServers) ? allServers : []).filter((s) => !mappedServerIds.has(s.tool_id || s.id));
+        setUnmappedServers(unmapped.map(mapServerData));
+        setServers(unmapped.map(mapServerData));
+      } catch (err) {
+        setUnmappedServers([]);
+        setServers([]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    if (activeTab === "tools") {
+      setLoading(true);
+      try {
+        let data = [];
+        const divsCount = calculateDivs(containerRef, 149, 57, 26);
+
+        if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
+          const response = await getAgentsSearchByPageLimit({
+            page: 1,
+            limit: divsCount,
+            search: "",
+            tags: selectedTags,
+          });
+          data = response?.details || [];
+          data = data.filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT);
+        } else {
+          const response = await getToolsSearchByPageLimit({
+            page: 1,
+            limit: divsCount,
+            search: "",
+            tags: selectedTags,
+          });
+          data = typeof response?.details === "object" && Array.isArray(response.details) ? response.details : [];
+        }
+        setVisibleData(data);
+        setTotalCount(data.length);
+      } catch (err) {
+        setVisibleData([]);
+        setTotalCount(0);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    // ...existing code for agents clear...
+    const divsCount = calculateDivs(containerRef, 149, 57, 26);
+    fetchPaginatedData(1, divsCount);
   };
 
   const handleSearch = async (searchValue) => {
     setSearchTerm(searchValue);
     setVisibleData([]);
-    setPage(1);
     pageRef.current = 1;
+    if (activeTab === "servers") {
+      setLoading(true);
+      try {
+        const divsCount = calculateDivs(containerRef, 149, 57, 26);
+        // Fetch all agents to get mapped server IDs
+        const allAgents = await fetchData(APIs.GET_AGENTS_BY_DETAILS);
+        const mappedServerIds = new Set();
+        (allAgents || []).forEach((agent) => {
+          if (Array.isArray(agent.tools_id)) {
+            agent.tools_id.forEach((id) => mappedServerIds.add(id));
+          } else if (typeof agent.tools_id === "string") {
+            try {
+              JSON.parse(agent.tools_id).forEach((id) => mappedServerIds.add(id));
+            } catch {}
+          }
+        });
+        // Call backend search for servers with tags
+        const response = await getServersSearchByPageLimit({
+          page: 1,
+          limit: divsCount,
+          search: searchValue,
+          tags: selectedServerTags?.length > 0 ? selectedServerTags : undefined,
+        });
+        let data = response?.details || response || [];
+        if (!Array.isArray(data)) data = [];
+        // Only show unmapped servers
+        const unmapped = data.filter((s) => !mappedServerIds.has(s.tool_id || s.id));
+        setUnmappedServers(unmapped.map(mapServerData));
+        setServers(unmapped.map(mapServerData));
+      } catch (err) {
+        console.error(err);
+        setUnmappedServers([]);
+        setServers([]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    // ...existing code for tools/agents search...
     if (searchValue.trim()) {
       try {
         setLoading(true);
@@ -188,20 +363,18 @@ const AgentOnboard = (props) => {
             page: 1,
             limit: divsCount,
             search: searchValue,
+            tags: selectedTags,
           });
-          data = response || [];
-          data = data.filter(
-            (a) =>
-              a.agentic_application_type === REACT_AGENT ||
-              a.agentic_application_type === MULTI_AGENT
-          );
+          data = response?.details || [];
+          data = data.filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT);
         } else {
           const response = await getToolsSearchByPageLimit({
             page: 1,
             limit: divsCount,
             search: searchValue,
+            tags: selectedTags,
           });
-          data = response || [];
+          data = typeof response?.details === "object" && Array.isArray(response.details) ? response.details : [];
         }
         setVisibleData(data);
         setTotalCount(data.length);
@@ -214,32 +387,148 @@ const AgentOnboard = (props) => {
     } else {
       const divsCount = calculateDivs(containerRef, 149, 57, 26);
       setVisibleData([]);
-      setPage(1);
       pageRef.current = 1;
       fetchPaginatedData(1, divsCount);
     }
   };
 
+  const handleTabSwitch = (tab) => {
+    // Block switching to servers for meta agent types
+    if ((selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) && tab === "servers") return;
+    setActiveTab(tab);
+    setVisibleData([]);
+    setSearchTerm("");
+    pageRef.current = 1;
+    hasLoadedOnce.current = false;
+    if (tab === "tools") {
+      clearSearch();
+      fetchPaginatedData(1, calculateDivs(containerRef, 149, 57, 26));
+    } else if (tab === "servers") {
+      clearSearch();
+      // Fetch servers if needed
+    }
+  };
 
+  // Ensure activeTab is tools when switching to a meta agent type
+  useEffect(() => {
+    if ((selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) && activeTab === "servers") {
+      setActiveTab("tools");
+    }
+  }, [selectedAgent, activeTab]);
+
+  // Tag filtering functions
+  const getToolsDataWithTags = useCallback(
+    (tagsToApply) => {
+      setVisibleData([]);
+      pageRef.current = 1;
+      const divsCount = calculateDivs(containerRef, 149, 57, 26);
+      fetchPaginatedData(1, divsCount, tagsToApply);
+    },
+    [fetchPaginatedData]
+  );
+
+  const getAgentsDataWithTags = useCallback(
+    (tagsToApply) => {
+      setVisibleData([]);
+      pageRef.current = 1;
+      const divsCount = calculateDivs(containerRef, 149, 57, 26);
+      fetchPaginatedData(1, divsCount, tagsToApply);
+    },
+    [fetchPaginatedData]
+  );
+
+  const handleFilter = useCallback(
+    (newSelectedTags) => {
+      if (newSelectedTags.length === 0) {
+        setFilterModal(false);
+      }
+
+      setSelectedTags(newSelectedTags);
+
+      if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
+        getAgentsDataWithTags(newSelectedTags);
+      } else {
+        getToolsDataWithTags(newSelectedTags);
+      }
+    },
+    [selectedAgent, getAgentsDataWithTags, getToolsDataWithTags]
+  );
+
+  const getServersDataWithTags = useCallback(
+    async (tagsToApply) => {
+      setLoading(true);
+      try {
+        const divsCount = calculateDivs(containerRef, 149, 57, 26);
+        // Fetch all agents to get mapped server IDs
+        const allAgents = await fetchData(APIs.GET_AGENTS_BY_DETAILS);
+        const mappedServerIds = new Set();
+        (allAgents || []).forEach((agent) => {
+          if (Array.isArray(agent.tools_id)) {
+            agent.tools_id.forEach((id) => mappedServerIds.add(id));
+          } else if (typeof agent.tools_id === "string") {
+            try {
+              JSON.parse(agent.tools_id).forEach((id) => mappedServerIds.add(id));
+            } catch {}
+          }
+        });
+
+        // Call backend search for servers with tags
+        const response = await getServersSearchByPageLimit({
+          page: 1,
+          limit: divsCount,
+          search: searchTerm,
+          tags: tagsToApply?.length > 0 ? tagsToApply : undefined,
+        });
+        let data = response?.details || response || [];
+        if (!Array.isArray(data)) data = [];
+
+        // Only show unmapped servers
+        const unmapped = data.filter((s) => !mappedServerIds.has(s.tool_id || s.id));
+        setUnmappedServers(unmapped.map(mapServerData));
+        setServers(unmapped.map(mapServerData));
+      } catch (err) {
+        console.error(err);
+        setUnmappedServers([]);
+        setServers([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [searchTerm, fetchData, getServersSearchByPageLimit, mapServerData, calculateDivs]
+  );
+
+  const handleServerFilter = useCallback(
+    (newSelectedServerTags) => {
+      if (newSelectedServerTags.length === 0) {
+        setFilterModal(false);
+      }
+
+      setSelectedServerTags(newSelectedServerTags);
+      getServersDataWithTags(newSelectedServerTags);
+    },
+    [getServersDataWithTags]
+  );
 
   const submitForm = async (value, callBack) => {
     setLoading(true);
-    const payload = {
-      ...value,
-      tools_id:
-        (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)
-          ? selectedAgents?.map((agent) => agent?.agentic_application_id)
-          : selectedTool?.map((tool) => tool?.tool_id),
-    };
+    let payload = { ...value };
+    // Fix: Always send both selected tool and server IDs in payload.tools_id
+    const toolIds =
+      selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT
+        ? selectedAgents?.map((agent) => agent?.agentic_application_id)
+        : selectedTool?.map((tool) => tool?.tool_id);
+    const serverIds = selectedServers?.map((server) => server.tool_id);
+    payload.tools_id = [...(toolIds || []), ...(serverIds || [])];
 
     try {
-      let url = APIs.ONBOARD_AGENT;  
+      let url = APIs.ONBOARD_AGENTS;
       const response = await postData(url, payload);
       if (response?.result?.is_created) {
         setNewAgentData(response.result);
         addMessage("Agent has been added successfully!", "success");
         setSelectedTool([]);
         setSelectedAgents([]);
+        setSelectedServers([]);
         await fetchAgents();
         callBack(response);
       } else {
@@ -247,8 +536,7 @@ const AgentOnboard = (props) => {
       }
     } catch (e) {
       console.error(e);
-    }
-    finally{
+    } finally {
       setLoading(false);
     }
   };
@@ -256,7 +544,6 @@ const AgentOnboard = (props) => {
   const handleClose = () => {
     onClose();
   };
-
 
   return (
     <div className={styles.container}>
@@ -268,30 +555,145 @@ const AgentOnboard = (props) => {
       </div>
       <div className={styles.dashboardContainer}>
         <div className={styles.agentToolsContainer} ref={containerRef}>
-          <div className={styles.subHeader}>
-            <p>{`SELECT ${(selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)? "AGENT" : "TOOL"} TO ADD AGENT`}</p>
-            <SearchInputToolsAgents
-              inputProps={{ placeholder: "SEARCH" }}
-              handleSearch={handleSearch}
-              clearSearch={clearSearch}
-            />
-          </div>
-          <div className={styles.selectContainer}>
-            <label htmlFor="model_name">Agent Type</label>
+          {/* Agent Type moved to top above tabs */}
+          <div className={styles.selectContainer} style={{ marginBottom: "14px" }}>
+            <label htmlFor="agent_type_select">Agent Type</label>
             <DropDown
+              id="agent_type_select"
               options={agentTypesDropdown}
               value={selectedAgent}
               onChange={(e) => {
                 hasLoadedOnce.current = false;
-                setSelectedAgent(e?.target?.value);
+                const newType = e?.target?.value;
+                setSelectedAgent(newType);
+                // Reset selections & listing when agent type changes
+                setSelectedTool([]);
+                setSelectedAgents([]);
+                setSelectedServers([]);
+                setVisibleData([]);
+                pageRef.current = 1;
+                if ((newType === META_AGENT || newType === PLANNER_META_AGENT) && activeTab === "servers") {
+                  setActiveTab("tools");
+                }
               }}
             />
           </div>
+          <div className={styles.tabRow} style={{ display: "flex", marginBottom: "18px", alignItems: "center" }}>
+            <button
+              className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}
+              onClick={() => handleTabSwitch("tools")}
+              aria-label={selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "Agents" : "Tools"}
+              type="button"
+              style={{
+                marginRight: selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? 0 : "0",
+                boxShadow: activeTab === "tools" ? "0 2px 8px rgba(16,24,40,0.08)" : "none",
+              }}>
+              {selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "AGENTS" : "TOOLS"}
+            </button>
+            {selectedAgent !== META_AGENT && selectedAgent !== PLANNER_META_AGENT && (
+              <button
+                className={`iafTabsBtn ${activeTab === "servers" ? " active" : ""}`}
+                onClick={() => handleTabSwitch("servers")}
+                aria-label="Servers list"
+                type="button"
+                style={{
+                  boxShadow: activeTab === "servers" ? "0 2px 8px rgba(16,24,40,0.08)" : "none",
+                }}>
+                SERVERS
+              </button>
+            )}
+          </div>
+          <div className={styles.subHeader}>
+            {/* <p>{`SELECT ${activeTab === "servers" ? "SERVER" : selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "AGENT" : "TOOL"} TO ADD AGENT`}</p> */}
+            <SearchInputToolsAgents inputProps={{ placeholder: "SEARCH" }} handleSearch={handleSearch} clearSearch={clearSearch} />
+            {activeTab === "tools" && (
+              <button
+                type="button"
+                onClick={() => setFilterModal(true)}
+                title={`Filter ${selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "agents" : "tools"} by tags`}
+                style={{
+                  width: "40px",
+                  height: "30px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  backgroundColor: selectedTags.length > 0 ? "#007acc" : "transparent",
+                  border: "none",
+                  borderRadius: "4px",
+                  marginLeft: "10px",
+                  position: "relative",
+                }}
+                aria-label="Open filter modal">
+                {selectedTags?.length > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "-5px",
+                      right: "-5px",
+                      backgroundColor: "#007cc3",
+                      color: "white",
+                      fontSize: "10px",
+                      borderRadius: "50%",
+                      width: "16px",
+                      height: "16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}>
+                    {selectedTags.length}
+                  </span>
+                )}
+                <SVGIcons icon="slider-rect" width={20} height={18} fill="#C3C1CF" />
+              </button>
+            )}
+            {activeTab === "servers" && (
+              <button
+                type="button"
+                onClick={() => setFilterModal(true)}
+                title="Filter servers by tags"
+                style={{
+                  width: "40px",
+                  height: "30px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  backgroundColor: selectedServerTags.length > 0 ? "#007acc" : "transparent",
+                  border: "none",
+                  borderRadius: "4px",
+                  marginLeft: "10px",
+                  position: "relative",
+                }}
+                aria-label="Open server filter modal">
+                {selectedServerTags?.length > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "-5px",
+                      right: "-5px",
+                      backgroundColor: "#007cc3",
+                      color: "white",
+                      fontSize: "10px",
+                      borderRadius: "50%",
+                      width: "16px",
+                      height: "16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}>
+                    {selectedServerTags.length}
+                  </span>
+                )}
+                <SVGIcons icon="slider-rect" width={20} height={18} fill="#C3C1CF" />
+              </button>
+            )}
+          </div>
           <div className={styles.toolsCards}>
-            {((selectedAgent !== META_AGENT )&& (selectedAgent !== PLANNER_META_AGENT))&&
-            
+            {activeTab === "tools" &&
+              selectedAgent !== META_AGENT &&
+              selectedAgent !== PLANNER_META_AGENT &&
               visibleData?.map((tool) => (
-                
                 <ToolCard
                   key={tool?.tool_id}
                   tool={tool}
@@ -302,7 +704,8 @@ const AgentOnboard = (props) => {
                   selectedAgents={selectedAgents}
                 />
               ))}
-            {(selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)   &&
+            {activeTab === "tools" &&
+              (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) &&
               visibleData?.map((agent) => (
                 <ToolCard
                   key={agent?.agentic_application_id}
@@ -314,6 +717,17 @@ const AgentOnboard = (props) => {
                   selectedAgents={selectedAgents}
                 />
               ))}
+            {activeTab === "servers" &&
+              unmappedServers?.map((server) => (
+                <ToolCard
+                  key={server.tool_id}
+                  server={server}
+                  tool_id={server.tool_id} // Pass unique tool_id
+                  styles={styles}
+                  setSelectedServers={setSelectedServers}
+                  selectedServers={selectedServers}
+                />
+              ))}
           </div>
         </div>
         <div className={styles.agentDetailContainer}>
@@ -323,16 +737,31 @@ const AgentOnboard = (props) => {
             selectedAgents={selectedAgents}
             handleClose={handleClose}
             submitForm={submitForm}
-            isMetaAgent={(selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT)}
+            isMetaAgent={selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT}
             selectedAgent={selectedAgent}
             loading={loading}
             tags={tags}
             setSelectedAgents={setSelectedAgents}
             setSelectedTool={setSelectedTool}
+            setSelectedServers={setSelectedServers}
+            selectedServers={selectedServers}
           />
         </div>
       </div>
       {loading && <Loader />}
+      {filterModal && (
+        <FilterModal
+          show={filterModal}
+          onClose={() => setFilterModal(false)}
+          tags={tags}
+          selectedTags={activeTab === "servers" ? selectedServerTags : selectedTags}
+          handleFilter={activeTab === "servers" ? handleServerFilter : handleFilter}
+          showfilterHeader={
+            activeTab === "servers" ? "Filter Servers by Tags" : `Filter ${selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "Agents" : "Tools"} by Tags`
+          }
+          filterTypes={activeTab === "servers" ? "servers" : undefined}
+        />
+      )}
     </div>
   );
 };

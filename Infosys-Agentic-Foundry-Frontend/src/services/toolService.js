@@ -1,235 +1,253 @@
-import axios from "axios";
-import { BASE_URL ,APIs} from "../constant"
-import { getCsrfToken, getSessionId} from "../Hooks/useAxios";
-import Cookies from "js-cookie";
-let postMethod = "POST";
-let getMethod = "GET";
+import { APIs } from "../constant";
+import useFetch from "../Hooks/useAxios";
 
-export const getToolsSearchByPageLimit = async ({search, page, limit}) => {
-  try {
-    let apiUrl;
-    if (search && search.trim() && search.trim().length > 0) {
-      apiUrl = `${BASE_URL}/get-tools-search-paginated/?search_value=${encodeURIComponent(search)}&page_number=${page}&page_size=${limit}`;
-    } else {
-      apiUrl = `${BASE_URL}/get-tools-search-paginated/?page_number=${page}&page_size=${limit}`;
+export const useToolsAgentsService = () => {
+  const { fetchData, postData, putData, deleteData } = useFetch();
+
+  const extractErrorMessage = (error) => {
+    const responseError = { message: null };
+    if (error.response?.data?.detail) {
+      responseError.message = error.response.data.detail;
     }
-    const response = await axios.request({
-      method: getMethod,
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
-      return null;
+    if (error.response?.data?.message) {
+      responseError.message = error.response.data.message;
     }
-  } catch (error) {
-    return null;
-  }
-}
+    return responseError.message ? responseError : null;
+  };
 
-export const getAgentsSearchByPageLimit = async ({search, page, limit, agent_type}) => {
-  try {
-    let apiUrl;
-    // If both search and agent_type are empty, use default API URL
-    if ((!search || !search.trim()) && (!agent_type || !agent_type.trim())) {
-      apiUrl = `${BASE_URL}/get-agents-search-paginated/?page_number=${page}&page_size=${limit}`;
-    } else if (agent_type && agent_type.trim() && agent_type.trim().length > 0) {
-      apiUrl = `${BASE_URL}/get-agents-search-paginated/?agentic_application_type=${encodeURIComponent(agent_type)}&page_number=${page}&page_size=${limit}`;
-    } else if (search && search.trim() && search.trim().length > 0) {
-      apiUrl = `${BASE_URL}/get-agents-search-paginated/?search_value=${encodeURIComponent(search)}&page_number=${page}&page_size=${limit}`;
-    }
-    const response = await axios.request({
-      method: getMethod,
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
-      return null;
-    }
-  } catch (error) {
-    return null;
-  }
-}
-
-export const addTool = async (toolData,force_add) => {
-  try {
-    const apiUrl = force_add ? `${BASE_URL}/add-tool?force_add=true` : `${BASE_URL}/add-tool`;
-    const response = await axios.request({
-      method: postMethod,
-      url: apiUrl,
-      data: toolData,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
-      return null;
-    }
-  } catch (error) {
-    return null;
-  }
-};
-
-export const updateTools = async (toolData, toolId) => {
-  try {
-    const apiUrl = `${BASE_URL}/update-tool/${toolId}`;
-    const response = await axios.request({
-      method: "PUT",
-      url: apiUrl,
-      data: toolData,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
-      return response;
-    }
-  } catch (error) {
-    return error;
-  }
-};
-
-export const RecycleTools = async (toolData, toolId,selectedType) => {
-  try {
-    const apiUrl = `${BASE_URL}${APIs.RESTORE_TOOL}${selectedType}?item_id=${toolId}&user_email_id=${encodeURIComponent(
-            Cookies?.get("email")
-          )}`;
-    const response = await axios.request({
-      method: "POST",
-      url: apiUrl,
-      data: toolData,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
-      return response;
-    }
-  } catch (error) {
-    return error;
-  }
-};
-
-export const deletedTools = async (toolData, toolId,selectedType) => {
-  try {
-    const apiUrl = `${BASE_URL}${APIs.DELETE_TOOL}${selectedType}?item_id=${toolId}&user_email_id=${encodeURIComponent(
-            Cookies?.get("email")
-          )}`;          
-    const response = await axios.request({
-      method: "DELETE",
-      url: apiUrl,
-      // data: toolData,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
-      return response;
-    }
-  } catch (error) {
-    return error;
-  }
-};
-export const deleteTool = async (toolData, toolId) => {
-  try {
-    const apiUrl = `${BASE_URL}/delete-tool/${toolId}`;
-    const response = await axios.request({
-      method: "DELETE",
-      url: apiUrl,
-      data: toolData,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
-      return null;
-    }
-  } catch (error) {
-    return null;
-  }
-};
-
-export const exportAgents = async (agentIds, userEmail) => {
-  try {
-    // Build URL with multiple agent_ids params and user email
-    const params = agentIds.map(id => `agent_ids=${encodeURIComponent(id)}`).join('&');
-    const emailParam = userEmail ? `&user_email=${encodeURIComponent(userEmail)}` : '';
-    const apiUrl = `${BASE_URL}/export-agents?${params}${emailParam}`;
-    const response = await axios.request({
-      method: "GET",
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(),
-      },
-      responseType: 'blob',
-    });
-    if (response?.status === 200) {
-      return response.data;
-    } else {
-      // Try to parse error from blob if possible
-      const errorText = await response.data.text();
-      let errorJson;
-      try {
-        errorJson = JSON.parse(errorText);
-      } catch {
-        errorJson = { detail: errorText };
+  const getToolsSearchByPageLimit = async ({ search, page, limit, tags }) => {
+    try {
+      const params = [];
+      if (search && search.trim() && search.trim().length > 0) {
+        params.push(`search_value=${encodeURIComponent(search)}`);
       }
-      const error = new Error(errorJson.detail || 'Export failed!');
-      error.response = { data: errorJson };
-      throw error;
+      params.push(`page_number=${page}`);
+      params.push(`page_size=${limit}`);
+      if (tags && Array.isArray(tags) && tags.length > 0) {
+        // Add separate tag_names parameter for each tag
+        tags.forEach(tag => {
+          if (tag && tag.trim()) {
+            params.push(`tag_names=${encodeURIComponent(tag)}`);
+          }
+        });
+      }
+      const apiUrl = `${APIs.GET_TOOLS_SEARCH_PAGINATED}?${params.join('&')}`;
+      const response = await fetchData(apiUrl);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
     }
-  } catch (error) {
-    // If error is an Axios error with a blob response, try to parse it
-    if (error.response && error.response.data instanceof Blob) {
-      try {
-        const errorText = await error.response.data.text();
+  };
+
+  const getAgentsSearchByPageLimit = async (paramsObj) => {
+    try {
+      const params = [];
+      // Only use agentic_application_type from input, ignore agent_type
+      const agentType = paramsObj.agentic_application_type;
+      const search = paramsObj.search_value || paramsObj.search;
+      const page = paramsObj.page_number || paramsObj.page;
+      const limit = paramsObj.page_size || paramsObj.limit;
+      const tags = paramsObj.tags;
+      
+      // Only add agentic_application_type if valid
+      if (agentType && agentType.trim() && agentType.trim().toLowerCase() !== "all") {
+        params.push(`agentic_application_type=${encodeURIComponent(agentType)}`);
+      }
+      
+      // Only add search_value if valid
+      if (search && search.trim()) {
+        params.push(`search_value=${encodeURIComponent(search)}`);
+      }
+      
+      // Add page and limit parameters
+      params.push(`page_number=${page}`);
+      params.push(`page_size=${limit}`);
+      
+      // Add tag_names parameter if tags are provided
+      if (tags && Array.isArray(tags) && tags.length > 0) {
+        // Add separate tag_names parameter for each tag
+        tags.forEach(tag => {
+          if (tag && tag.trim()) {
+            params.push(`tag_names=${encodeURIComponent(tag)}`);
+          }
+        });
+      } else {
+      }
+      const apiUrl = `${APIs.GET_AGENTS_SEARCH_PAGINATED}?${params.join("&")}`;
+      const response = await fetchData(apiUrl);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  const addTool = async (toolData, force_add) => {
+    try {
+      const apiUrl = force_add ? `${APIs.ADD_TOOLS}?force_add=true` : APIs.ADD_TOOLS;
+      const response = await postData(apiUrl, toolData);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  const updateTools = async (toolData, toolId,force_add) => {
+    try {
+      const apiUrl = force_add ? `${APIs.UPDATE_TOOLS}${toolId}?force_add=true` : `${APIs.UPDATE_TOOLS}${toolId}`;
+      const response = await putData(apiUrl, toolData);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+  const deleteTool = async (toolData, toolId) => {
+    try {
+      const apiUrl = `${APIs.DELETE_TOOLS}${toolId}`;
+      const response = await deleteData(apiUrl, toolData);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  const exportAgents = async (agentIds, userEmail) => {
+    try {
+      // Build URL with multiple agent_ids params and user email
+      const params = agentIds.map((id) => `agent_ids=${encodeURIComponent(id)}`).join("&");
+      const emailParam = userEmail ? `&user_email=${encodeURIComponent(userEmail)}` : "";
+      const apiUrl = `${APIs.EXPORT_AGENTS}?${params}${emailParam}`;
+      const response = await fetchData(apiUrl, { responseType: "blob" });
+      if (response) {
+        return response;
+      } else {
+        // Try to parse error from blob if possible
+        const errorText = await response.data.text();
         let errorJson;
         try {
           errorJson = JSON.parse(errorText);
         } catch {
           errorJson = { detail: errorText };
         }
-        error.response.data = errorJson;
-      } catch {}
+        const error = new Error(errorJson.detail || "Export failed!");
+        error.response = { data: errorJson };
+        throw error;
+      }
+    } catch (error) {
+      // If error is an Axios error with a blob response, try to parse it
+      if (error.response && error.response.data instanceof Blob) {
+        try {
+          const errorText = await error.response.data.text();
+          let errorJson;
+          try {
+            errorJson = JSON.parse(errorText);
+          } catch {
+            errorJson = { detail: errorText };
+          }
+          error.response.data = errorJson;
+        } catch {}
+      }
+      throw error;
     }
-    throw error;
-  }
+  };
+
+  const checkToolEditable = async (tool, setShowForm, addMessage, setLoading) => {
+    let response;
+    const updatedTool = { ...tool, user_email_id: tool.created_by };
+    if (setLoading) setLoading(true);
+    response = await updateTools(updatedTool, tool.tool_id, true);
+    if (setLoading) setLoading(false);
+    if (response?.is_update) {
+      setShowForm(true);
+      return true;
+    } else {
+      if (response?.status && response?.response?.status !== 200) {
+        addMessage(response?.response?.data?.detail, "error");
+      } else {
+        addMessage(response?.message, "error");
+      }
+      return false;
+    }
+  };
+
+  const calculateDivs = (containerRef, cardWidth, cardHeight, flexGap) => {
+    if (containerRef.current) {
+      const containerWidth = containerRef.current.offsetWidth;
+      const containerHeight = containerRef.current.offsetHeight;
+
+      const maxDivsInRow = Math.ceil((containerWidth + flexGap) / (cardWidth + flexGap));
+
+      const maxDivsInColumn = Math.ceil((containerHeight + flexGap) / (cardHeight + flexGap));
+
+      const totalDivs = maxDivsInRow * maxDivsInColumn;
+      return totalDivs;
+    }
+  };
+
+  const addServer = async (serverData) => {
+    try {
+      const apiUrl = `${APIs.MCP_ADD_TOOLS}`;
+
+      const normalizedTagIds = Array.isArray(serverData.tag_ids)
+        ? serverData.tag_ids.map((id) => String(id))
+        : [];
+      const dataToSend = new FormData();
+      dataToSend.append("tool_name", serverData.tool_name || serverData.model_name || "");
+      dataToSend.append("tool_description", serverData.tool_description || "");
+      dataToSend.append("mcp_type", serverData.mcp_type || "");
+      dataToSend.append("created_by", serverData.created_by || serverData.user_email_id || "");
+      dataToSend.append("user_email_id", serverData.user_email_id || serverData.created_by || "");
+      dataToSend.append("mcp_module_name", serverData.mcp_module_name || "");
+      dataToSend.append("mcp_url", serverData.mcp_url || "");
+      dataToSend.append("code_content", serverData.code_content || serverData.code_snippet || "");
+      dataToSend.append("code_snippet", serverData.code_snippet || serverData.code_content || "");
+      try {
+        if (serverData.mcp_file instanceof Blob && serverData.mcp_file.name) {
+          dataToSend.append("mcp_file", serverData.mcp_file, serverData.mcp_file.name);
+        } else if (serverData.mcp_file) {
+          dataToSend.append("mcp_file", serverData.mcp_file);
+        } else {
+          dataToSend.append("mcp_file", "");
+        }
+      } catch (e) {
+        dataToSend.append("mcp_file", "");
+      }
+
+      normalizedTagIds.forEach((id) => {
+        dataToSend.append("tag_ids", id);
+      });
+      try {
+        if (typeof window !== "undefined" && window && window.console && console.debug) {
+          console.debug("[toolService.addServer] FormData preview (keys/vals):");
+          for (const pair of dataToSend.entries()) {
+            const k = pair[0];
+            const v = pair[1];
+            if (v instanceof File) console.debug(k, `${v.name} (file)`);
+            else console.debug(k, v);
+          }
+        }
+      } catch (e) {}
+
+      const response = await postData(apiUrl, dataToSend);
+      return response || null;
+    } catch (error) {
+      try {
+        if (typeof window !== "undefined" && window && window.console && console.error) {
+          console.error("[toolService.addServer] request failed:", error?.response?.data || error?.message || error);
+        }
+      } catch (e) {}
+      return error?.response?.data || error;
+    }
+  };
+
+  return {
+    getToolsSearchByPageLimit,
+    getAgentsSearchByPageLimit,
+    addTool,
+    updateTools,
+    deleteTool,
+    exportAgents,
+    checkToolEditable,
+    calculateDivs,
+    addServer,
+  };
 };

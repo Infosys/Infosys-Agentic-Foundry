@@ -1,0 +1,518 @@
+/* Main Container */
+.askAssistantContainer {
+  height: Calc(100vh - 45px);
+  width: Calc(100% - 70px);
+  display: flex;
+  flex-direction: column;
+  background: white;
+  overflow: hidden;
+  position: fixed;
+}
+
+/* Chat Wrapper */
+.chatWrapper {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.bubbleAndInput {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease-in-out;
+  min-width: 0; /* Prevents flex overflow */
+  overflow: hidden; /* Ensures content doesn't overflow */
+}
+
+/* Canvas Layout States */
+.bubbleAndInput.withCanvas {
+  width: 30%;
+  flex: none;
+}
+
+.bubbleAndInput.withoutCanvas {
+  width: 100%;
+  flex: 1;
+}
+
+.messagesWrapper {
+  flex: 1 1;
+  display: flex;
+  flex-direction: column-reverse;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 2px 0 2px 0;
+  min-height: 0;
+  width: 100%;
+  margin: 0 auto;
+  margin-right: 0;
+  padding-right: 2%;
+}
+
+/* Chat Bubbles Wrapper */
+.chatBubblesWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 2px 0 2px 0;
+  min-height: 0;
+  width: 100%;
+  margin: 0 auto;
+  margin-right: 0;
+  padding-left: 2%;
+}
+
+/* Messages Container */
+.messagesContainer {
+  padding: 15px 20px 5px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 6px;
+}
+
+.messagesContainer::-webkit-scrollbar {
+  width: 4px;
+}
+
+.messagesContainer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messagesContainer::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 2px;
+}
+
+.messagesContainer::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
+.accordionContainer {
+  border-radius: 5px;
+  margin-bottom: 5px;
+  overflow: visible;
+  max-width: 100%;
+  min-width: 225px;
+  width: fit-content;
+  background: none;
+}
+
+.accordionContainer:has(.toolCallWrapper) .toolcallArgItem:has(textarea) {
+  width: 100%;
+}
+
+.planContainer {
+  display: flex;
+  align-items: flex-start;
+  border: 1px solid #ccc;
+  min-width: 180px;
+  background: #eeeeee70;
+  flex-direction: column;
+  border-radius: 5px;
+  line-height: 1.8;
+  letter-spacing: 0.5px;
+  font-size: 13px;
+  padding: 5px 10px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+/* Generating Indicator */
+.generatingIndicator {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 4px;
+  padding-left: 20px;
+}
+
+.generatingContent {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px 8px 8px 2px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  max-width: 160px;
+  color: #666;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.spinnerIcon {
+  color: #007acc;
+  font-size: 10px;
+}
+
+/* Recording Indicator - In-place of textarea */
+.recordingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  background: white;
+  border-radius: 8px;
+  animation: fadeIn 0.2s ease-out;
+  position: relative;
+  font-size: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+}
+
+.recordingAnimation {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+}
+
+.recordingPulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  animation: pulseRing 1.5s ease-out infinite;
+  background: #ff4757;
+}
+
+.recordingText {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #ffffff;
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  flex: 1;
+  padding-left: 5px;
+}
+
+.recordingLabel {
+  font-weight: 600;
+  color: #ff4757;
+}
+
+/* Audio Visualizer */
+.audioVisualizer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  height: 16px;
+}
+
+.audioBar {
+  width: 2px;
+  background: #ff4757;
+  border-radius: 1px;
+  animation: audioWave 1.2s ease-in-out infinite;
+  min-height: 4px;
+}
+
+.audioBar:nth-child(1) {
+  animation-delay: 0s;
+  height: 8px;
+}
+
+.audioBar:nth-child(2) {
+  animation-delay: 0.1s;
+  height: 12px;
+}
+
+.audioBar:nth-child(3) {
+  animation-delay: 0.2s;
+  height: 16px;
+}
+
+.audioBar:nth-child(4) {
+  animation-delay: 0.3s;
+  height: 10px;
+}
+
+.audioBar:nth-child(5) {
+  animation-delay: 0.4s;
+  height: 6px;
+}
+
+/* Animation for smooth transitions */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.messagesContainer > * {
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.chatContainer {
+  display: flex;
+  width: 100%;
+  transition: all 0.3s ease-in-out;
+}
+
+.chatSection {
+  /* flex: 1; */
+  transition: width 0.3s ease-in-out;
+  /* overflow: hidden; */
+}
+
+.messageBubble {
+  letter-spacing: 0.5px;
+  font-size: 14px;
+  margin: 5px 10px;
+}
+
+.loadingChat {
+  border-radius: 5px;
+  padding: 5px 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0px;
+  color: #4d4d4d;
+  width: max-content;
+}
+
+.feedBackSection {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #f9f9f9;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  max-width: 840px;
+}
+
+.cancel-btn {
+  position: absolute;
+  right: 8px;
+  top: 0;
+}
+
+.warning {
+  color: #1f1d1d;
+  font-size: 13px;
+  font-weight: 500;
+  margin-right: 18px;
+}
+
+.feedBackInput {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.feedbackSendBtn {
+  align-self: flex-end;
+  border: 1px solid #007cc3;
+  padding: 4px 3px 0 4px;
+  border-radius: 4px;
+  margin-bottom: 2px;
+}
+
+.feedBackTextArea {
+  min-height: 25px;
+  height: fit-content;
+  max-height: 70px;
+  padding: 2px 5px;
+  line-height: 18px;
+  border: 1px solid #c9c9c9;
+  border-radius: 5px;
+  width: 100%;
+  margin-left: -1px;
+}
+
+/* Simplified Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes simplePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+@keyframes pulseRing {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+  }
+}
+
+@keyframes dotBounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.8;
+  }
+  30% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+@keyframes audioWave {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .chatWrapper {
+    padding: 0 12px;
+  }
+
+  .messagesContainer {
+    padding: 0 2px;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chatWrapper {
+    padding: 0 8px;
+  }
+
+  .chatBubblesWrapper {
+    padding: 6px 0 4px 0;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .recordingIndicator {
+    padding: 8px 10px;
+    gap: 6px;
+    font-size: 11px;
+    min-height: 36px;
+  }
+
+  .recordingText {
+    font-size: 11px;
+    gap: 2px;
+  }
+
+  .audioVisualizer {
+    height: 14px;
+    margin-left: 6px;
+  }
+
+  .audioBar {
+    width: 1.5px;
+  }
+
+  .audioBar:nth-child(1) {
+    height: 6px;
+  }
+
+  .audioBar:nth-child(2) {
+    height: 10px;
+  }
+
+  .audioBar:nth-child(3) {
+    height: 14px;
+  }
+
+  .audioBar:nth-child(4) {
+    height: 8px;
+  }
+
+  .audioBar:nth-child(5) {
+    height: 5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .recordingIndicator {
+    padding: 6px 8px;
+    gap: 5px;
+    min-height: 32px;
+  }
+
+  .recordingText {
+    font-size: 10px;
+  }
+
+  .recordingLabel {
+    font-size: 10px;
+  }
+
+  .audioVisualizer {
+    height: 12px;
+    margin-left: 4px;
+    gap: 1px;
+  }
+
+  .audioBar {
+    width: 1px;
+  }
+
+  .audioBar:nth-child(1) {
+    height: 4px;
+  }
+
+  .audioBar:nth-child(2) {
+    height: 8px;
+  }
+
+  .audioBar:nth-child(3) {
+    height: 12px;
+  }
+
+  .audioBar:nth-child(4) {
+    height: 6px;
+  }
+
+  .audioBar:nth-child(5) {
+    height: 3px;
+  }
+}

@@ -37,17 +37,19 @@
   overflow: hidden;
 }
 
-.visibleToolsContainer{
+.visibleToolsContainer {
   display: flex;
   padding: 20px;
   flex-wrap: wrap;
   gap: 40px;
   overflow-y: auto;
-  height: 100%;
-  width: 100%;
+  height: Calc(100vh - 218px);
+  width: 98%;
+  padding-left: 0;
+  padding-top: 0;
 }
 
-.subHeaderContainer{
+.subHeaderContainer {
   display: flex;
   justify-content: space-between;
   margin-bottom: 20px;
@@ -70,6 +72,8 @@
   padding: 11px;
   color: white;
   position: relative;
+  transition: transform 0.2s, box-shadow 0.2s;
+  transform: translateY(0px);
 }
 .cardRecycle {
   background: #3d4359 0% 0% no-repeat padding-box;
@@ -83,6 +87,7 @@
   color: white;
   position: relative;
   cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card-title {
@@ -128,7 +133,6 @@
   bottom: 20px;
   right: 5px;
 }
-
 
 .search-container {
   position: relative;
@@ -273,6 +277,9 @@
 .searchedToolText {
   margin-bottom: 16px;
   font-weight: bold;
+  position: absolute;
+  top: 85px;
+  left: 240px;
 }
 
 .toolsList {
@@ -282,7 +289,7 @@
 }
 
 .filteredToolText {
-  margin-bottom: 16px;
+  margin-bottom: 0px;
   font-weight: bold;
 }
 
@@ -319,11 +326,56 @@
   margin-left: 2px;
   margin-top: 2px;
   display: flex;
-  align-items: center; 
+  align-items: center;
 }
 .warningIcon {
   display: flex;
   align-items: center;
   justify-content: center;
   margin-right: 4px;
+}
+
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.loginBtn {
+  padding: 8px 16px;
+  background-color: #007cc3;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.loginBtn:hover {
+  background-color: #005a99;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  background-color: #343741;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.cancelBtn:hover {
+  background-color: #2a2f42;
+}
+
+.summaryLine {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 5px 8px;
 }

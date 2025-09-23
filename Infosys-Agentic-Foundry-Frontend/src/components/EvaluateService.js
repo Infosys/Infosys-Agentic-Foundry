@@ -1,28 +1,13 @@
-import { BASE_URL } from "../constant"
-import axios from "axios";
-import { getCsrfToken, getSessionId} from "../Hooks/useAxios";
+import {APIs} from "../constant"
+import useFetch from "../Hooks/useAxios";
 
-export const  evaluate = async(input1, input2) => {
-  try{
-    const apiUrl = `${BASE_URL}/evaluate?evaluating_model1=${encodeURIComponent(input1)}&evaluating_model2=${encodeURIComponent(input2)}`;
-    const response = await axios.request({
-      method: "POST",
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), 
-      },
-    });
-    return response.data;
-  } catch (error) {
-    console.error('API call failed:', error);
-    return { error: error.message };
-  }
-}
-export const getEvaluationData = async (agentNames,page = 1,limit = 10) => {
+
+export const useEndpointsService = () => {
+    const { fetchData, postData, putData, deleteData } = useFetch();
+
+const getEvaluationData = async (agentNames,page = 1,limit = 10) => {
   try {
-    let apiUrl = `${BASE_URL}/evaluations?page=${page}&limit=${limit}`;
+    let apiUrl = `${APIs.GET_EVALUATION_DATA}?page=${page}&limit=${limit}`;
     if (agentNames) {
       if (Array.isArray(agentNames)) {
         if (agentNames.length > 0) {
@@ -33,24 +18,17 @@ export const getEvaluationData = async (agentNames,page = 1,limit = 10) => {
         apiUrl += `&agent_names=${encodeURIComponent(agentNames)}`;
       }
     }
-    const response = await axios.request({
-      method: "GET",
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(),
-      },
-    });
-    return response.data;
+    const response = await fetchData(apiUrl);
+    return response
   } catch (error) {
     console.error('API call failed:', error);
     return { error: error.message };
   }
 }
-export const getAgentMetricsData = async (agentNames, page = 1, limit = 10) => {
+
+const getAgentMetricsData = async (agentNames, page = 1, limit = 10) => {
   try {
-    let apiUrl = `${BASE_URL}/agent-metrics?page=${page}&limit=${limit}`;
+    let apiUrl = `${APIs.GET_AGENT_METRICS}?page=${page}&limit=${limit}`;
     if (agentNames) {
       if (Array.isArray(agentNames)) {
         if (agentNames.length > 0) {
@@ -61,24 +39,17 @@ export const getAgentMetricsData = async (agentNames, page = 1, limit = 10) => {
         apiUrl += `&agent_names=${encodeURIComponent(agentNames)}`;
       }
     }
-    const response = await axios.request({
-      method: "GET",
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(),
-      },
-    });
-    return response.data;
+    const response = await fetchData(apiUrl);
+    return response;
   } catch (error) {
     console.error('API call failed:', error);
     return { error: error.message };
   }
 }
-export const getToolMetricsData = async (agentNames, page = 1, limit = 10) => {
+
+const getToolMetricsData = async (agentNames, page = 1, limit = 10) => {
   try {
-    let apiUrl = `${BASE_URL}/tool-metrics?page=${page}&limit=${limit}`;
+    let apiUrl = `${APIs.GET_TOOL_METRICS}?page=${page}&limit=${limit}`;
     if (agentNames) {
       if (Array.isArray(agentNames)) {
         if (agentNames.length > 0) {
@@ -89,16 +60,8 @@ export const getToolMetricsData = async (agentNames, page = 1, limit = 10) => {
         apiUrl += `&agent_names=${encodeURIComponent(agentNames)}`;
       }
     }
-    const response = await axios.request({
-      method: "GET",
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(),
-      },
-    });
-    return response.data;
+    const response = await fetchData(apiUrl);
+    return response;
   } catch (error) {
     console.error('API call failed:', error);
     return { error: error.message };
@@ -120,7 +83,7 @@ export const getToolMetricsData = async (agentNames, page = 1, limit = 10) => {
  * @param {Function} setHasMore - Setter to update hasMore in parent
  * @returns {Function} - Scroll event handler function
  */
-export const createLazyLoadHandler = (
+const createLazyLoadHandler = (
   tabName,
   tableContainerRef,
   currentData,
@@ -199,3 +162,10 @@ export const createLazyLoadHandler = (
   };
 };
 
+   return {
+    createLazyLoadHandler,
+    getEvaluationData,
+    getAgentMetricsData,
+    getToolMetricsData
+  };
+}

@@ -9,7 +9,6 @@ textarea {
   resize: none;
 }
 
-
 .header {
   display: flex;
   justify-content: space-between;
@@ -216,11 +215,11 @@ textarea {
   grid-area: description;
 }
 
-.inputTags{
+.inputTags {
   grid-area: tags;
 }
 
-.tagsContainer{
+.tagsContainer {
   display: flex;
   flex-wrap: wrap;
   /* justify-content: space-between; */
@@ -247,7 +246,7 @@ textarea {
   width: min-content;
 }
 
-.closeAndAddBtn{
+.closeAndAddBtn {
   grid-area: closeAndAddBtn;
   display: flex;
   justify-content: end;
@@ -271,7 +270,6 @@ textarea {
 .selectStyle {
   width: 100%;
 }
-
 
 .textAreaContainer {
   position: relative;
@@ -361,9 +359,49 @@ textarea {
   transform: scale(1.2);
 }
 
-.copyIcon[disabled], .expandIcon[disabled] {
+.copyIcon[disabled],
+.expandIcon[disabled] {
   cursor: not-allowed !important;
 }
-.copyIcon[disabled] svg, .expandIcon[disabled] svg {
+.copyIcon[disabled] svg,
+.expandIcon[disabled] svg {
   fill: #bdbdbd !important;
+}
+
+.tabSwitcher {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.tabBtn {
+  display: flex;
+  align-items: center;
+  background: #f5f7fa;
+  color: #343741;
+  border-radius: 24px;
+  padding: 10px 24px;
+  font-size: 16px;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.08);
+  border: 2px solid transparent;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  outline: none;
+}
+
+.tabBtn:hover {
+  background: #e6e9ef;
+  color: #0b5fff;
+}
+
+.activeTab {
+  background: linear-gradient(90deg, #0b5fff 0%, #3d4359 100%);
+  color: #fff !important;
+  border: 2px solid #0b5fff;
+  box-shadow: 0 4px 16px rgba(11, 95, 255, 0.12);
+  font-weight: 700;
+  transform: scale(1.05);
 }

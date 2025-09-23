@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import styles from "../../commonComponents/FilterModal.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
+import Tag from "../../Tag/Tag";
 
 const AddToolsFilterModal = ({ show, onClose, tags, handleFilter, selectedTags }) => {
   const [localSelectedTags, setLocalSelectedTags] = useState([]);
@@ -11,7 +12,8 @@ const AddToolsFilterModal = ({ show, onClose, tags, handleFilter, selectedTags }
     setTempSelectedTags(selectedTags);
   }, [selectedTags]);
 
-  const handleTagChange = (tagId) => {
+  const handleTagChange = (index) => {
+    const tagId = tags[index].tag_id;
     setTempSelectedTags((prevTags) =>
       prevTags.includes(tagId)
         ? prevTags.filter((t) => t !== tagId)
@@ -44,24 +46,16 @@ const AddToolsFilterModal = ({ show, onClose, tags, handleFilter, selectedTags }
   return (
     <div className={styles.modal}>
       <div className={styles.modalContent}>
-        <h2 className={styles.heading}>Update Tags</h2>
+        <h2 className={styles.heading}>Update Tags For Agent</h2>
         <div className={styles.tagsContainer}>
-          {tags.map((tag) => (
-            <div
+          {tags.map((tag, idx) => (
+            <Tag
               key={tag.tag_id}
-              className={`${styles.tag} ${
-                tempSelectedTags.includes(tag.tag_id) ? styles.selectedTag : ""
-              }`}
-            >
-              <input
-                type="checkbox"
-                id={tag.tag_id}
-                value={tag.tag_name}
-                checked={tempSelectedTags.includes(tag.tag_id)}
-                onChange={() => handleTagChange(tag.tag_id)}
-              />
-              <label htmlFor={tag.tag_id}>{tag.tag_name}</label>
-            </div>
+              tag={tag.tag_name}
+              selected={tempSelectedTags.includes(tag.tag_id)}
+              toggleTagSelection={() => handleTagChange(idx)}
+              index={idx}
+            />
           ))}
         </div>
         <button 

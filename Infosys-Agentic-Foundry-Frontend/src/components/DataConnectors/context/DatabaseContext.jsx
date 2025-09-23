@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
-import axios from 'axios';
-import { BASE_URL, APIs } from '../../../constant';
+import { APIs } from '../../../constant';
+import useFetch from '../../../Hooks/useAxios';
 
 // Create context
 const DatabaseContext = createContext();
@@ -9,6 +9,7 @@ const DatabaseContext = createContext();
 export const DatabaseProvider = ({ children }) => {
   // State for connected databases - start with empty array
   const [connectedDatabases, setConnectedDatabases] = useState([]);
+  const {fetchData} = useFetch();
 
   // State for active connections from API
   const [activeConnections, setActiveConnections] = useState({
@@ -25,14 +26,14 @@ export const DatabaseProvider = ({ children }) => {
   const fetchActiveConnections = async () => {
     setLoadingActiveConnections(true);
     try {
-      const response = await axios.get(`${BASE_URL}${APIs.GET_ACTIVE_CONNECTIONS}`);
-      if (response.data) {
+      const response = await fetchData(APIs.GET_ACTIVE_CONNECTIONS);
+      if (response) {
         // Ensure the structure matches what we expect
         const processedData = {
-          active_mysql_connections: response.data.active_mysql_connections || [],
-          active_postgres_connections: response.data.active_postgres_connections || [],
-          active_sqlite_connections: response.data.active_sqlite_connections || [],
-          active_mongo_connections: response.data.active_mongo_connections || []
+          active_mysql_connections: response.active_mysql_connections || [],
+          active_postgres_connections: response.active_postgres_connections || [],
+          active_sqlite_connections: response.active_sqlite_connections || [],
+          active_mongo_connections: response.active_mongo_connections || []
         };
         setActiveConnections(processedData);
         return processedData;

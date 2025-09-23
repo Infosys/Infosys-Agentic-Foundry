@@ -37,6 +37,7 @@
   /* 12 parts */
   grid-template-areas:
     "name name name name select select select userId userId userId userId ."
+    "tagsFilter tagsFilter tagsFilter tagsFilter . . . . . . . ."
     "goal goal goal goal description description description description systemPrompt systemPrompt systemPrompt systemPrompt"
     "addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool "
     "tagDropdown tagDropdown tagDropdown tagDropdown . . . . . . btns btns";
@@ -192,7 +193,7 @@
   position: relative;
 }
 
-.toolContainer p {
+.toolContainer > p {
   font: normal normal 600 14px/14px Segoe UI;
   letter-spacing: -0.7px;
   color: #ffffff;
@@ -250,9 +251,10 @@
 .btns {
   grid-area: btns;
   width: 100%;
+  text-align: right;
 }
-.btnsRestore{
-   grid-area: btns;
+.btnsRestore {
+  grid-area: btns;
   width: 100%;
   display: flex;
   justify-content: end;
@@ -260,10 +262,9 @@
 .closeBtn {
   grid-area: closeBtn;
   background-color: #3d4359;
-  margin-right: 25px;
 }
-.restoreBtn{
-   grid-area: submitBtn;
+.restoreBtn {
+  grid-area: submitBtn;
   background-color: #007cc3;
   cursor: pointer;
   margin-right: 25px;
@@ -273,9 +274,11 @@
   grid-area: submitBtn;
   background-color: #007cc3;
   cursor: pointer;
+  margin-right: 22px;
 }
 
-.closeBtn,.restoreBtn,
+.closeBtn,
+.restoreBtn,
 .submitBtn {
   border-radius: 5px;
   font: normal normal 600 12px/14px Segoe UI;
@@ -336,7 +339,7 @@
 
 .agentTextArea {
   font: normal normal 400 12px / 20px Segoe UI;
-  width:100%;
+  width: 100%;
   padding-right: 40px;
   box-sizing: border-box;
   resize: none;
@@ -422,4 +425,89 @@
   background: #f8f9fa !important;
   color: #6c757d !important;
   border-color: #e9ecef !important;
+}
+
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.loginBtn {
+  padding: 8px 16px;
+  background-color: #007cc3;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.loginBtn:hover {
+  background-color: #005a99;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  background-color: #343741;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.cancelBtn:hover {
+  background-color: #2a2f42;
+}
+
+.tagsFilterButton {
+  position: relative;
+  background-color: #e7f3ff;
+  color: #007ac0;
+  border: 1px solid #007ac0;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.tagsFilterButton:hover:not(:disabled) {
+  background-color: #007ac0;
+  color: #fff;
+}
+
+.tagsFilterButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.filterBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background-color: #007ac0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.tagsFilterContainer{
+  display: flex;
+  height: 40px;
+  align-self: end;
 }

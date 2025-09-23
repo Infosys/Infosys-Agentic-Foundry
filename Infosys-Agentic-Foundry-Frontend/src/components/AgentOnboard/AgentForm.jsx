@@ -10,20 +10,15 @@ import SVGIcons from "../../Icons/SVGIcons";
 import ZoomPopup from "../commonComponents/ZoomPopup";
 
 const AgentForm = (props) => {
-  const {
-    styles,
-    selectedTool,
-    handleClose,
-    submitForm,
-    selectedAgents,
-    selectedAgent,
-    loading,
-    tags,
-    setSelectedAgents,
-    setSelectedTool,
-  } = props;
+  const { styles, selectedTool = [], handleClose, submitForm, selectedAgents = [], selectedAgent, loading, tags, setSelectedAgents, setSelectedTool, selectedServers = [] } = props;
 
   const loggedInUserEmail = Cookies.get("email");
+
+  // Safe wrappers for optional callback props to avoid runtime TypeErrors
+  const safeSubmitForm = typeof submitForm === "function" ? submitForm : () => {};
+  const safeSetSelectedAgents = typeof setSelectedAgents === "function" ? setSelectedAgents : null;
+  const safeSetSelectedTool = typeof setSelectedTool === "function" ? setSelectedTool : null;
+  const safeHandleClose = typeof handleClose === "function" ? handleClose : () => {};
 
   const initialState = {
     agent_name: "",
@@ -35,19 +30,21 @@ const AgentForm = (props) => {
   };
   const [formData, setFormData] = useState(initialState);
   const [successMsg, setSuccessMsg] = useState(false);
-  const [isFormDisabled, setIsFormDisabled] = useState(true);
+  // Form should remain enabled regardless of selections
+  const [isFormDisabled, setIsFormDisabled] = useState(false);
   const [models, setModels] = useState([]);
   const [initialTags, setInitialTags] = useState([]);
 
   const [showZoomPopup, setShowZoomPopup] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
   const [popupContent, setPopupContent] = useState("");
+  const [popupType, setPopupType] = useState("text");
 
   const [copiedStates, setCopiedStates] = useState({});
 
   const { fetchData } = useFetch();
 
-  const {setShowPopup } = useMessage();
+  const { setShowPopup } = useMessage();
 
   useEffect(() => {
     if (!loading) {
@@ -55,7 +52,7 @@ const AgentForm = (props) => {
     } else {
       setShowPopup(false);
     }
-  }, [loading]);
+  }, [loading, setShowPopup]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -67,7 +64,7 @@ const AgentForm = (props) => {
 
   const onSubmit = (e) => {
     e.preventDefault();
-    submitForm(
+    safeSubmitForm(
       {
         ...formData,
         tag_ids: initialTags.filter((e) => e.selected).map((e) => e.tagId),
@@ -76,17 +73,23 @@ const AgentForm = (props) => {
         setSuccessMsg(true);
         setFormData(initialState);
         resetSelectedCards();
-        setSelectedAgents([]);
-        setSelectedTool([]);
+        if (safeSetSelectedAgents) safeSetSelectedAgents([]);
+        if (safeSetSelectedTool) safeSetSelectedTool([]);
       }
     );
   };
 
-  useEffect(() => {
-    if ((selectedAgent === META_AGENT||selectedAgent === PLANNER_META_AGENT))
-      setIsFormDisabled(selectedAgents.length <= 0);
-    else setIsFormDisabled(selectedTool.length <= 0);
-  }, [selectedAgent, selectedAgents, selectedTool]);
+  // useEffect(() => {
+  //   // META agents still require selected agents
+  //   if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
+  //     setIsFormDisabled(!(Array.isArray(selectedAgents) && selectedAgents.length > 0));
+  //     return;
+  //   }
+
+  //   // For non-META agents allow creating an agent even if no tools or servers are selected.
+  //   // Keep the form enabled so users can create standalone agents (they must still fill required fields).
+  //   setIsFormDisabled(false);
+  // }, [selectedAgent, selectedAgents, selectedTool, selectedServers]);
 
   useEffect(() => {
     if (!successMsg) return;
@@ -110,32 +113,27 @@ const AgentForm = (props) => {
     setInitialTags(newTags);
   };
 
-  const fetchModels = async () => {
-    try {
-      const data = await fetchData(APIs.GET_MODELS);
-      if (data?.models && Array.isArray(data.models)) {
-        const formattedModels = data.models.map((model) => ({
-          label: model,
-          value: model,
-        }));
-        setModels(formattedModels);
-      } else {
-        setModels([]);
-      }
-    } catch {
-      console.error("Model fetch failed");
-      setModels([]);
-    }
-  };
-
-  // Use a ref to ensure models are fetched only once
   const hasLoadedModelsOnce = useRef(false);
 
   useEffect(() => {
     if (hasLoadedModelsOnce.current) return;
     hasLoadedModelsOnce.current = true;
-    fetchModels();
-  }, []);
+    (async () => {
+      try {
+        const data = await fetchData(APIs.GET_MODELS);
+        if (data?.models && Array.isArray(data.models)) {
+          const formattedModels = data.models.map((model) => ({ label: model, value: model }));
+          setModels(formattedModels);
+        } else {
+          setModels([]);
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("Model fetch failed", err);
+        setModels([]);
+      }
+    })();
+  }, [fetchData]);
 
   const resetSelectedCards = () => {
     const selectedCards = document?.querySelectorAll("[data-isclicked=true]");
@@ -153,9 +151,10 @@ const AgentForm = (props) => {
     setInitialTags(tags);
   };
 
-  const handleZoomClick = (title, content) => {
+  const handleZoomClick = (title, content, type = "text") => {
     setPopupTitle(title);
     setPopupContent(content);
+    setPopupType(type);
     setShowZoomPopup(true);
   };
 
@@ -181,41 +180,38 @@ const AgentForm = (props) => {
     setShowZoomPopup(false);
   };
 
-
   const handleCopy = (key, text) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      // Use Clipboard API if supported
       navigator.clipboard
         .writeText(text)
         .then(() => {
-          setCopiedStates((prev) => ({ ...prev, [key]: true })); // Set copied state
+          setCopiedStates((prev) => ({ ...prev, [key]: true }));
           setTimeout(() => {
-            setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
+            setCopiedStates((prev) => ({ ...prev, [key]: false }));
           }, 2000);
         })
         .catch(() => {
           console.error("Failed to copy text, Agent form");
         });
     } else {
-      // Fallback for unsupported browsers
       const textarea = document.createElement("textarea");
       textarea.value = text;
-      textarea.style.position = "fixed"; // Prevent scrolling to the bottom of the page
-      textarea.style.opacity = "0"; // Hide the textarea
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
       document.body.appendChild(textarea);
       textarea.focus();
       textarea.select();
-  
+
       try {
         document.execCommand("copy");
-        setCopiedStates((prev) => ({ ...prev, [key]: true })); // Set copied state
+        setCopiedStates((prev) => ({ ...prev, [key]: true }));
         setTimeout(() => {
-          setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
+          setCopiedStates((prev) => ({ ...prev, [key]: false }));
         }, 2000);
-      } catch  {
+      } catch {
         console.error("Fallback: Failed to copy text, agent form");
       } finally {
-        document.body.removeChild(textarea); // Clean up
+        document.body.removeChild(textarea);
       }
     }
   };
@@ -233,12 +229,12 @@ const AgentForm = (props) => {
             type="text"
             id="agent_name"
             name="agent_name"
-            disabled={!selectedTool}
+            disabled={isFormDisabled}
             value={formData.agent_name}
             onChange={(e) => {
               const value = e.target.value.replace(/[^a-zA-Z0-9_\s()-{}[\]]/g, "");
               handleChange({
-                target: { name: "agent_name", value }
+                target: { name: "agent_name", value },
               });
             }}
             required
@@ -250,52 +246,38 @@ const AgentForm = (props) => {
             <InfoTag message="Provide goal for the agent." />
           </label>
           <div className={styles.textAreaContainer}>
-            <textarea
-              id="agent_goal"
-              name="agent_goal"
-              disabled={!selectedTool}
-              value={formData.agent_goal}
-              onChange={handleChange}
-              required
-              className={styles.agentTextArea}
-            />
+            <textarea id="agent_goal" name="agent_goal" disabled={isFormDisabled} value={formData.agent_goal} onChange={handleChange} required className={styles.agentTextArea} />
             <button
               type="button"
               className={styles.copyIcon}
-              onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleCopy("agent_goal", formData.agent_goal)}
+              onClick={
+                isFormDisabled
+                  ? (e) => {
+                      e.preventDefault();
+                    }
+                  : () => handleCopy("agent_goal", formData.agent_goal)
+              }
               title="Copy"
-              disabled={isFormDisabled}
-            >
-              <SVGIcons
-                icon="fa-regular fa-copy"
-                width={16}
-                height={16}
-                fill={isFormDisabled ? '#bdbdbd' : '#343741'}
-              />
+              disabled={isFormDisabled}>
+              <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill={isFormDisabled ? "#bdbdbd" : "#343741"} />
             </button>
             <div className={styles.iconGroup}>
               <button
                 type="button"
                 className={styles.expandIcon}
-                onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Agent Goal", formData.agent_goal)}
+                onClick={
+                  isFormDisabled
+                    ? (e) => {
+                        e.preventDefault();
+                      }
+                    : () => handleZoomClick("Agent Goal", formData.agent_goal, "text")
+                }
                 title="Expand"
-                disabled={isFormDisabled}
-              >
-                <SVGIcons
-                  icon="fa-solid fa-up-right-and-down-left-from-center"
-                  width={16}
-                  height={16}
-                  fill={isFormDisabled ? '#bdbdbd' : '#343741'}
-                />
+                disabled={isFormDisabled}>
+                <SVGIcons icon="fa-solid fa-up-right-and-down-left-from-center" width={16} height={16} fill={isFormDisabled ? "#bdbdbd" : "#343741"} />
               </button>
             </div>
-            <span
-              className={`${styles.copiedText} ${
-                copiedStates["agent_goal"] ? styles.visible : styles.hidden
-              }`}
-            >
-              Text Copied!
-            </span>
+            <span className={`${styles.copiedText} ${copiedStates["agent_goal"] ? styles.visible : styles.hidden}`}>Text Copied!</span>
           </div>
         </div>
         <div className={styles.inputDescription}>
@@ -307,7 +289,7 @@ const AgentForm = (props) => {
             <textarea
               id="workflow_description"
               name="workflow_description"
-              disabled={!selectedTool}
+              disabled={isFormDisabled}
               value={formData.workflow_description}
               onChange={handleChange}
               required
@@ -316,42 +298,34 @@ const AgentForm = (props) => {
             <button
               type="button"
               className={styles.copyIcon}
-              onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleCopy("workflow_description", formData.workflow_description)}
+              onClick={
+                isFormDisabled
+                  ? (e) => {
+                      e.preventDefault();
+                    }
+                  : () => handleCopy("workflow_description", formData.workflow_description)
+              }
               title="Copy"
-              disabled={isFormDisabled}
-            >
-              <SVGIcons
-                icon="fa-regular fa-copy"
-                width={16}
-                height={16}
-                fill={isFormDisabled ? '#bdbdbd' : '#343741'}
-              />
+              disabled={isFormDisabled}>
+              <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill={isFormDisabled ? "#bdbdbd" : "#343741"} />
             </button>
             <div className={styles.iconGroup}>
               <button
                 type="button"
                 className={styles.expandIcon}
-                onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Workflow Description", formData.workflow_description)}
+                onClick={
+                  isFormDisabled
+                    ? (e) => {
+                        e.preventDefault();
+                      }
+                    : () => handleZoomClick("Workflow Description", formData.workflow_description, "text")
+                }
                 title="Expand"
-                disabled={isFormDisabled}
-              >
-                <SVGIcons
-                  icon="fa-solid fa-up-right-and-down-left-from-center"
-                  width={16}
-                  height={16}
-                  fill={isFormDisabled ? '#bdbdbd' : '#343741'}
-                />
+                disabled={isFormDisabled}>
+                <SVGIcons icon="fa-solid fa-up-right-and-down-left-from-center" width={16} height={16} fill={isFormDisabled ? "#bdbdbd" : "#343741"} />
               </button>
             </div>
-            <span
-              className={`${styles.copiedText} ${
-                copiedStates["workflow_description"]
-                  ? styles.visible
-                  : styles.hidden
-              }`}
-            >
-              Text Copied!
-            </span>
+            <span className={`${styles.copiedText} ${copiedStates["workflow_description"] ? styles.visible : styles.hidden}`}>Text Copied!</span>
           </div>
         </div>
         <div className={styles.selectContainer}>
@@ -362,7 +336,7 @@ const AgentForm = (props) => {
           <DropDown
             options={models}
             selectStyle={styles.selectStyle}
-            disabled={!selectedTool}
+            disabled={isFormDisabled}
             id="model_name"
             name="model_name"
             value={formData.model_name}
@@ -377,39 +351,18 @@ const AgentForm = (props) => {
           </label>
           <div className={styles.tagsContainer}>
             {initialTags.map((tag, index) => (
-              <Tag
-                key={index}
-                index={index}
-                tag={tag.tag}
-                selected={tag.selected}
-                toggleTagSelection={toggleTagSelection}
-              />
+              <Tag key={index} index={index} tag={tag.tag} selected={tag.selected} toggleTagSelection={toggleTagSelection} />
             ))}
           </div>
         </div>
         <div className={styles.closeAndAddBtn}>
-          <button
-            className={styles.closeBtn}
-            disabled={!selectedTool}
-            onClick={handleClose}
-          >
+          <input type="submit" value="ADD AGENT" className={styles.submitBtn} disabled={isFormDisabled} />
+          <button className={styles.closeBtn} disabled={isFormDisabled} onClick={safeHandleClose}>
             Close
           </button>
-          <input
-            type="submit"
-            value="ADD AGENT"
-            className={styles.submitBtn}
-            disabled={!selectedTool}
-          />
         </div>
       </form>
-      <ZoomPopup
-        show={showZoomPopup}
-        onClose={() => setShowZoomPopup(false)}
-        title={popupTitle}
-        content={popupContent}
-        onSave={handleZoomSave}
-      />
+      <ZoomPopup show={showZoomPopup} onClose={() => setShowZoomPopup(false)} title={popupTitle} content={popupContent} onSave={handleZoomSave} type={popupType} />
     </div>
   );
 };

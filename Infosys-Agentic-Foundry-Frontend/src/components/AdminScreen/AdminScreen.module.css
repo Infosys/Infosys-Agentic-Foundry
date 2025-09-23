@@ -1,8 +1,8 @@
 /* Admin Screen Tabs Styling */
 .tabHeader {
   display: flex;
-  border-bottom: 1px solid #ddd;
-  margin-bottom: 20px;
+  /* border-bottom: 1px solid #ddd; */
+  margin-bottom: 0;
   overflow: hidden;
   overflow-x: auto;
   white-space: nowrap;
@@ -36,7 +36,9 @@
 }
 
 .tabContent {
-  padding-inline: 10px;
+  padding: 10px;
+  padding-left: 0;
+  height: Calc(100vh - 95px);
 }
 
 /* Customize scrollbar for tabHeader */
@@ -59,37 +61,44 @@
 }
 
 /* Ensure tabs have minimum width */
-.tab, .activeTab {
+.tab,
+.activeTab {
   min-width: fit-content;
   flex-shrink: 0;
 }
 
-.registrationForm :global(.div-login){
-    width: fit-content;
-    position: static;
-    transform: none;
-    left: 0;
-    bottom: 0
+.registrationForm {
+  height: Calc(100vh - 155px);
+  overflow: auto;
 }
 
-.registrationForm :global(.app-container){
-    height: auto !important;
+.registrationForm :global(.div-login) {
+  width: fit-content;
+  position: static;
+  transform: none;
+  left: 0;
+  bottom: 0;
 }
 
-.registrationForm :global(.app-container img){
-    display: none;
+.registrationForm :global(.app-container) {
+  height: auto !important;
 }
 
-.registrationForm :global(.app-container){
-    background-image: none;
-    background: none;
+.registrationForm :global(.app-container img) {
+  display: none;
+}
+
+.registrationForm :global(.app-container) {
+  background-image: none;
+  background: none;
+  padding: 0;
 }
 
 .registrationForm :global(.remember-style),
-.registrationForm :global(.hyperlink){
-    display: none
+.registrationForm :global(.hyperlink) {
+  display: none;
 }
 
-.evaluateMetrics{
+.evaluateMetrics {
   display: block;
 }

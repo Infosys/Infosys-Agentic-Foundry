@@ -7,7 +7,8 @@ import ConnectionManagementModal from "./ConnectionManagementModal";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { DatabaseProvider, useDatabase } from "./context/DatabaseContext";
-import { fetchSqlConnections } from '../../services/databaseService';
+import { useDatabases} from './service/databaseService.js';
+import Editor from "@monaco-editor/react";
 
 const DataConnectorsContent = () => {
   const [showConnectionModal, setShowConnectionModal] = useState(false);
@@ -21,6 +22,7 @@ const DataConnectorsContent = () => {
   const [sqlConnections, setSqlConnections] = useState([]);
   const activeConnectionsFetched = useRef(false);
   const sqlConnectionsFetched = useRef(false);
+  const {fetchSqlConnections ,executeMongodbOperation} = useDatabases();
 
   // Use the database connections hook
   const { 
@@ -141,8 +143,7 @@ const DataConnectorsContent = () => {
     setIsExecuting(true);
     try {
       // Add your query execution logic here
-      // Mock execution time
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      
     } catch (error) {
       console.error("Query execution error:", error);
     } finally {
@@ -153,31 +154,19 @@ const DataConnectorsContent = () => {
   const handleExecuteCrud = async (crudData) => {
     setIsCrudExecuting(true);
     try {
-      // Add your CRUD execution logic here
-      
-      // Mock execution time and result
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock result based on operation
-      let mockResult;
-      switch (crudData.operation) {
-        case 'find':
-          mockResult = { success: true, data: [{ _id: "1", name: "John", email: "john@example.com" }] };
-          break;
-        case 'insert':
-          mockResult = { success: true, insertedId: "60f7b4e8d4f8a84b2c1e3f5a" };
-          break;
-        case 'update':
-          mockResult = { success: true, modifiedCount: 1 };
-          break;
-        case 'delete':
-          mockResult = { success: true, deletedCount: 1 };
-          break;
-        default:
-          mockResult = { success: true, message: "Operation completed" };
-      }
-      
-      return mockResult;
+      // Prepare payload for MongoDB operation (API expects empty objects, not empty strings)
+      const payload = {
+        conn_name: crudData.selectedConnection.replace(/^mongodb_/, ''),
+        collection: crudData.collection,
+        operation: crudData.operation,
+        mode: crudData.mode,
+        query: crudData.jsonQuery ? JSON.parse(crudData.jsonQuery) : {},
+        data: crudData.dataJson ? JSON.parse(crudData.dataJson) : {},
+        update_data: crudData.updateJson ? JSON.parse(crudData.updateJson) : {}
+      };
+      Object.keys(payload).forEach(key => payload[key] === undefined && delete payload[key]);
+      const result = await executeMongodbOperation(payload);
+      return result;
     } catch (error) {
       console.error("CRUD execution error:", error);
       throw error;
@@ -216,7 +205,6 @@ const DataConnectorsContent = () => {
       <div className={styles.cardsContainer}>
         {databaseTypes.filter(db => !db.isManagement).length > 0 ? (
           databaseTypes.filter(db => !db.isManagement).map((database) => {
-            const isDisabled = database.id === 'mysql' || database.id === 'mongodb';
             // Count connections for this database type
             const connectionCount = availableConnections.filter(conn => {
               // Normalize type for comparison
@@ -238,9 +226,12 @@ const DataConnectorsContent = () => {
             return (
             <div
               key={database.id}
-              className={styles.databaseCard + (isDisabled ? ' ' + styles.disabledCard : '')}
-              onClick={() => !isDisabled && handleCardClick(database)}
-              style={{ cursor: isDisabled ? 'not-allowed' : 'pointer', opacity: isDisabled ? 0.5 : 1 }}
+              className={styles.databaseCard}
+              onClick={() => database.id !== 'mongodb' ? handleCardClick(database) : null}
+              style={{ 
+                cursor: database.id === 'mongodb' ? 'not-allowed' : 'pointer', 
+                opacity: database.id === 'mongodb' ? 0.5 : 1 
+              }}
             >
               <div className={styles.cardHeader} style={{ justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -273,7 +264,6 @@ const DataConnectorsContent = () => {
                       <button
                         className={styles.runButton}
                         onClick={(e) => handleRunClick(database, e)}
-                        disabled={isDisabled}
                       >
                         Run
                       </button>
@@ -291,15 +281,17 @@ const DataConnectorsContent = () => {
                     <>
                       <button
                         className={styles.crudButton}
-                        onClick={(e) => handleCrudClick(database, e)}
-                        disabled={isDisabled}
+                        onClick={(e) => e.stopPropagation()}
+                        disabled={true}
+                        style={{ opacity: 0.5, cursor: 'not-allowed' }}
                       >
                         CRUD
                       </button>
                       <button
                         className={styles.manageButton}
-                        onClick={(e) => handleManagementClick(database, e)}
-                        style={{ marginLeft: 8 }}
+                        onClick={(e) => e.stopPropagation()}
+                        disabled={true}
+                        style={{ marginLeft: 8, opacity: 0.5, cursor: 'not-allowed' }}
                       >
                         Manage
                       </button>
@@ -366,24 +358,12 @@ const DataConnectorsContent = () => {
       <div className={styles.codeExampleSection}>
           Python code example to use the connection_name to connect to database in your tools:
       </div>
-      <div className={styles.codeSnippet}>
-        <pre
-                style={{
-                  backgroundColor: '#2d2d2d',
-                  color: '#f8f8f2',
-                  padding: '16px',
-                  borderRadius: '6px',
-                  marginTop: '20px',
-                  fontSize: '14px',
-                  overflowX: 'auto',
-                  lineHeight: '1.5',
-                  whiteSpace: 'pre-wrap',
-                  marginLeft: '40px',
-                  marginRight: '40px',
-                }}
-              >
-                <code>
-{`def fetch_all_from_xyz(connection_name: str):
+      <div className={styles.codeSnippet} style={{ marginLeft: '40px', marginRight: '40px', marginTop: '20px' }}>
+        <Editor
+          height="600px"
+          language="python"
+          value={`# [PostgreSQL,MySQL,SQLite]
+def fetch_all_from_xyz(connection_name: str):
     """
     Fetches all records from the 'xyz' table in the specified database using the provided database key.
     Args:
@@ -403,21 +383,61 @@ const DataConnectorsContent = () => {
     except Exception as e:
         if 'session' in locals():
             session.close()
-        return f'Error fetching data from database {connection_name}: {str(e)}'
+        return f'Error fetching data from database {connection_name}: {str(e)}
 
-  Note:
-  - make sure your connection is active.
-  - make sure you add the 2 import lines that are:
-        from MultiDBConnection_Manager import get_connection_manager
-        from sqlalchemy import text
-  - you need to write:
-        manager = get_connection_manager() which gets a singleton instance of youMultiDBConnectionManager class.
-        session = manager.get_sql_session(connection_name) which asks the manager for a new SQLAlchemy session connected to the database identified by connection_name.
-  -make sure you close the session after use:
-	      session.close()
-`}
-        </code>
-        </pre>
+# [MONGODB]
+def fetch_all_from_xyz(connection_name: str):
+    """
+    Fetches all records from the 'xyz' collection in the specified MongoDB database using the provided connection name.
+    Args:
+        connection_name (str): The key used to identify and connect to the specific MongoDB database.
+    Returns:
+        list: A list of dictionaries, where each dictionary represents a document from the 'xyz' collection.
+    """
+    from MultiDBConnection_Manager import get_connection_manager
+    try:
+        manager = get_connection_manager()
+        mongo_db = manager.get_mongodb_client(connection_name)
+        collection = mongo_db['xyz']
+        cursor = collection.find({})
+        documents = []
+        async for document in cursor:
+            documents.append(document)
+        return documents
+    except Exception as e:
+        return f'Error fetching data from MongoDB {connection_name}: {str(e)}
+
+# Note:
+# - make sure your connection is active.
+# - make sure you add the 2 import lines that are:
+#       from MultiDBConnection_Manager import get_connection_manager
+#       from sqlalchemy import text
+# - you need to write:
+#       manager = get_connection_manager() which gets a singleton instance of youMultiDBConnectionManager class.
+#       session = manager.get_sql_session(connection_name) which asks the manager for a new SQLAlchemy session connected to the database identified by connection_name.
+# -make sure you close the session after use:
+#       session.close()`}
+          options={{
+            readOnly: true,
+            domReadOnly: true,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            wordWrap: "on",
+            lineNumbers: "on",
+            folding: false,
+            selectOnLineNumbers: false,
+            automaticLayout: true,
+            fontSize: 14,
+            theme: "vs-dark",
+            contextmenu: false,
+            quickSuggestions: false,
+            parameterHints: { enabled: false },
+            suggestOnTriggerCharacters: false,
+            acceptSuggestionOnCommitCharacter: false,
+            tabCompletion: "off",
+            wordBasedSuggestions: false
+          }}
+        />
       </div>
     </div>
   );

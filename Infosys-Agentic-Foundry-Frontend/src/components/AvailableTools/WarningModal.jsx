@@ -2,7 +2,7 @@ import React from "react";
 import style from "../../css_modules/WarningModal.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 
-export function WarningModal({ show, messages = [], onClose, onForceAdd, showForceAdd = false }) {
+export function WarningModal({ show, messages = [], onClose, onForceAdd, showForceAdd = false, isUpdate = false }) {
     if (!show) return null;
 
     return (
@@ -39,7 +39,7 @@ export function WarningModal({ show, messages = [], onClose, onForceAdd, showFor
           </div>
           {showForceAdd && (
             <div className={style.confirmationText}>
-                Do you want to proceed and add the tool?
+                Do you want to proceed and {isUpdate ? 'update' : 'add'} the tool?
             </div>
           )}
 
@@ -56,7 +56,7 @@ export function WarningModal({ show, messages = [], onClose, onForceAdd, showFor
                 onClick={onForceAdd} 
                 className={style.forceButton}
               >
-              YES, ADD TOOL
+              {isUpdate ? "YES, UPDATE TOOL" : "YES, ADD TOOL"}
               </button>
             )}
           </div>

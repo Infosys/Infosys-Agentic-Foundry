@@ -1,285 +1,294 @@
 button {
-    all: unset;
-    cursor: pointer;
-  }
-
-  input {
-    border: unset;
-    outline: unset;
-  }
-
-  .container {
-    display: flex;
-    flex-direction: column;
-    height: 90vh;
-    padding: 30px 40px;
-    padding-right: 0px;
-    padding-bottom: 0px;
-    position: relative;
-    width: 100%;
-    overflow: hidden;
-  }
-  .containerCss{
-     display: flex;
-    flex-direction: column;
-    height: 90vh;
-    padding: 30px 40px;
-    padding-right: 0px;
-    padding-bottom: 0px;
-    position: relative;
-    width: 100%;
-    overflow: hidden;
-  }
-
-  .subHeaderContainer{
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 20px;
-  }
-
-  .visibleAgentsContainer{
-    display: flex;
-    padding: 20px;
-    flex-wrap: wrap;
-    gap: 40px;
-    overflow-y: auto;
-    height: 100%;
-    width: 100%;
-  }
-
-  .agentsList {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .listContainer,
-  .listDeleteContainer {
-    position: relative;
-    background-color: #3d4359;
-    font-size: 14px;
-    padding: 6px 9px;
-    border-radius: 4px;
-    box-shadow: 5px 15px 6px #00000029;
-    min-height: 57px;
-    height: 8rem;
-    width: 200px;
-    letter-spacing: -0.7px;
-    color: #ffffff;
-  }
-  .listContainerCss{
-      position: relative;
-    background-color: #3d4359;
-    font-size: 14px;
-    padding: 6px 9px;
-    border-radius: 4px;
-    box-shadow: 5px 15px 6px #00000029;
-    min-height: 57px;
-    height: 8rem;
-    width: 200px;
-    letter-spacing: -0.7px;
-    color: #ffffff;
-    cursor: pointer;
-  }
-
-  .listDeleteContainer {
-    display: flex;
-    flex-wrap: wrap;
-    min-height: 88px;
-    background: #b0b3bc;
-    padding: 0px 13px 8px 11px;
-    letter-spacing: 0px;
-    font: normal normal normal 12px / 14px Segoe UI;
-  }
-
-  .deleteBtn,
-  .editBtn {
-    height: 24px;
-    position: absolute;
-    transform: translateY(50%);
-    box-shadow: 0px 4px 4px #00000029;
-    border-radius: 3px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-
-  .line {
-    top: 211px;
-    left: 101px;
-    width: 48px;;
-    height: 0px;
-    border: 2px solid #0071b3;
-  }
-
-  .deleteBtn {
-    width: 30px;
-    background-color: #6a2020;
-    right: 44px;
-    bottom: 0;
-  }
-
-  .editBtn {
-    width: 24px;
-    background-color: #007ac0;
-    right: 10px;
-    bottom: 0;
-  }
-
-  .agent-type-abbreviation {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    font-size: 12px;
-    font-weight: bold;
-    color: white;
-  }
-
-  .email-id-input {
-    padding: 8px 4px 7px 4px;
-    box-shadow: inset 0px 3px 6px #00000029;
-    border-radius: 4px;
-    outline: none;
-    border: none;
-    width: 100%;
-    margin-top: 13px;
-  }
-
-  .deleteBtnFull {
-    background-color: #6a2020;
-    display: flex;
-    border-radius: 3px;
-    padding: 0px 5px 0px 7px;
-    gap: 3px;
-    letter-spacing: 0px;
-    color: #ffffff;
-    text-transform: uppercase;
-    justify-content: center;
-    align-items: center;
-    justify-self: right;
-    margin-left: auto;
-    height: 28px;
-    text-align: left;
-    font: normal normal 600 12px/14px Segoe UI;
-  }
-
-  .deleteBtnFull svg {
-    margin-left: 2px;
-  }
-
-  .agentOnboardContainer,
-  .updateAgentContainer {
-    position: absolute;
-    background-color: #fff;
-    top: 0px;
-    left: 0px;
-    z-index: 1;
-    width: 100%;
-  padding: 0px 40px;
-    overflow-y: auto;
-    height: 90vh;
-  }
-.EditAgentContainer{
-    position: absolute;
-    background-color: #fff;
-    top: 0px;
-    left: 0px;
-    z-index: 1;
-    width: 100%;
-  /* padding: 30px 40px; */
-    /* overflow-y: auto; */
-    height: 90vh;
+  all: unset;
+  cursor: pointer;
 }
-  .card-title {
-    /* font-family: Segoe UI; */
-    font-size: 16px;
-    line-height: 14px;
-    font-weight: 600;
-    letter-spacing: -0.8px;
-    word-break: break-all;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-    max-height: 35px;
-  }
 
-  .card-description {
-    font: normal normal 600 12px/16px Segoe UI;
-    letter-spacing: 0px;
-    text-transform: uppercase;
-    opacity: 1;
-    margin-top: 5px;
-  }
+input {
+  border: unset;
+  outline: unset;
+}
 
-  .card-description-title {
-    font: normal normal 400 12px/16px Segoe UI;
-    letter-spacing: -0.24px;
-    color: #ffffff;
-    max-height: 32px;
-    margin-bottom: 30px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  padding: 30px 40px;
+  padding-right: 0px;
+  padding-bottom: 0px;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
 
-  .searchedToolText {
-    margin-bottom: 16px;
-    font-weight: bold;
-  }
+.iafTabsBtn {
+  min-width: 60px;
+}
 
-  .filteredToolText {
-    margin-bottom: 16px;
-    font-weight: bold;
-  }
+.subHeaderContainer {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
 
-  .btn-grp {
-    display: flex;
-    justify-content: end;
-    position: absolute;
-    right: 5px;
-    bottom: 20px;
-  }
+.visibleAgentsContainer {
+  display: flex;
+  padding: 20px;
+  padding-top: 8px;
+  padding-left: 0;
+  flex-wrap: wrap;
+  gap: 40px;
+  overflow-y: auto;
+  height: 100%;
+  width: 100%;
+}
 
-  .cancel-btn {
-    border: none;
-    background: transparent;
-    float: right;
-    margin-left: 10rem;
-    margin-top: 5px;
-  }
-  .actionInfo {
-    font-size: 13px;
-    font-weight: 400;
-    margin-bottom: 10px;
-    margin-left: 2px;
-    margin-top: 2px;
-    color: black;
-    border: none;
-    display: flex;
-    align-items: center; 
-  }
-  .warningIcon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 4px;
-  }
+.agentsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
 
-  .exportSelectedBtn {
-    background: #007bff;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 16px;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: background 0.2s;
-    margin-left: 16px;
-    margin-right: 16px;
-  }
-  .exportSelectedBtn:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-  }
-  
+.listContainer,
+.listDeleteContainer {
+  position: relative;
+  background-color: #3d4359;
+  font-size: 14px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  box-shadow: 5px 15px 6px #00000029;
+  min-height: 57px;
+  height: 8rem;
+  width: 200px;
+  letter-spacing: -0.7px;
+  color: #ffffff;
+}
+.listContainerCss {
+  position: relative;
+  background-color: #3d4359;
+  font-size: 14px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  box-shadow: 5px 15px 6px #00000029;
+  min-height: 57px;
+  height: 8rem;
+  width: 200px;
+  letter-spacing: -0.7px;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.listDeleteContainer {
+  display: flex;
+  flex-wrap: wrap;
+  min-height: 88px;
+  background: #b0b3bc;
+  padding: 0px 13px 8px 11px;
+  letter-spacing: 0px;
+  font: normal normal normal 12px / 14px Segoe UI;
+}
+
+.deleteBtn,
+.editBtn {
+  height: 24px;
+  position: absolute;
+  transform: translateY(50%);
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.line {
+  top: 211px;
+  left: 101px;
+  width: 48px;
+  height: 0px;
+  border: 2px solid #0071b3;
+}
+
+.deleteBtn {
+  width: 30px;
+  background-color: #6a2020;
+  right: 44px;
+  bottom: 0;
+}
+
+.editBtn {
+  width: 24px;
+  background-color: #007ac0;
+  right: 10px;
+  bottom: 0;
+}
+
+.agent-type-abbreviation {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+}
+
+.email-id-input {
+  padding: 8px 4px 7px 4px;
+  box-shadow: inset 0px 3px 6px #00000029;
+  border-radius: 4px;
+  outline: none;
+  border: none;
+  width: 100%;
+  margin-top: 13px;
+}
+
+.deleteBtnFull {
+  background-color: #6a2020;
+  display: flex;
+  border-radius: 3px;
+  padding: 0px 5px 0px 7px;
+  gap: 3px;
+  letter-spacing: 0px;
+  color: #ffffff;
+  text-transform: uppercase;
+  justify-content: center;
+  align-items: center;
+  justify-self: right;
+  margin-left: auto;
+  height: 28px;
+  text-align: left;
+  font: normal normal 600 12px/14px Segoe UI;
+}
+
+.deleteBtnFull svg {
+  margin-left: 2px;
+}
+
+.agentOnboardContainer,
+.updateAgentContainer {
+  position: absolute;
+  background-color: #fff;
+  top: 0px;
+  left: 0px;
+  z-index: 1;
+  width: 100%;
+  padding: 0px 40px;
+  overflow-y: auto;
+  height: 90vh;
+}
+
+.EditAgentContainer {
+  position: absolute;
+  background-color: #fff;
+  top: 0px;
+  left: 0px;
+  z-index: 1;
+  height: 90vh;
+  margin-top: 50px;
+  width: Calc(100% - 70px);
+  margin-left: 70px;
+  padding: 8px 16px;
+  overflow: auto;
+}
+
+.formContainer {
+  margin-left: 72px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid red;
+  background: white;
+}
+
+.card-title {
+  /* font-family: Segoe UI; */
+  font-size: 16px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  word-break: break-all;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  max-height: 35px;
+}
+
+.card-description {
+  font: normal normal 600 12px/16px Segoe UI;
+  letter-spacing: 0px;
+  text-transform: uppercase;
+  opacity: 1;
+  margin-top: 5px;
+}
+
+.card-description-title {
+  font: normal normal 400 12px/16px Segoe UI;
+  letter-spacing: -0.24px;
+  color: #ffffff;
+  word-break: break-word;
+  white-space: pre-line;
+  max-height: 32px;
+  margin-bottom: 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.searchedToolText {
+  margin-bottom: 16px;
+  font-weight: bold;
+}
+
+.filteredToolText {
+  margin-bottom: 16px;
+  font-weight: bold;
+}
+
+.btn-grp {
+  display: flex;
+  justify-content: end;
+  position: absolute;
+  right: 5px;
+  bottom: 20px;
+}
+
+.cancel-btn {
+  border: none;
+  background: transparent;
+  float: right;
+  margin-left: 10rem;
+  margin-top: 5px;
+}
+.actionInfo {
+  font-size: 13px;
+  font-weight: 400;
+  margin-bottom: 10px;
+  margin-left: 2px;
+  margin-top: 2px;
+  color: black;
+  border: none;
+  display: flex;
+  align-items: center;
+}
+.warningIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+
+.exportSelectedBtn {
+  background: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-left: 16px;
+  margin-right: 16px;
+}
+.exportSelectedBtn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
 .agentCheckbox {
   min-width: 15px;
   min-height: 15px;
@@ -303,10 +312,55 @@ button {
   display: flex;
   align-items: flex-start;
 }
-  .line {
-    top: 211px;
-    left: 101px;
-    width: 28px;
-    height: 0px;
-    border: 2px solid #0071b3;
-  }
+.line {
+  top: 211px;
+  left: 101px;
+  width: 28px;
+  height: 0px;
+  border: 2px solid #0071b3;
+}
+
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.loginBtn {
+  padding: 8px 16px;
+  background-color: #007cc3;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.loginBtn:hover {
+  background-color: #005a99;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  background-color: #343741;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.cancelBtn:hover {
+  background-color: #2a2f42;
+}
+
+.summaryLine {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 5px -2px;
+}

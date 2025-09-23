@@ -4,26 +4,39 @@ import SVGIcons from "../../Icons/SVGIcons";
 import brandlogotwo from "../../Assets/Agentic-Foundry-Logo-Blue-2.png";
 import { useNavigate } from "react-router-dom";
 import Cookies from "js-cookie";
-import { mkDocs_baseURL } from "../../constant";
+import { APIs, mkDocs_baseURL } from "../../constant";
 import { useApiUrl } from "../../context/ApiUrlContext"; // Import the hook
 import { useVersion } from "../../context/VersionContext"; // Import version context hook
+import useFetch from "../../Hooks/useAxios";
+import { useMessage } from "../../Hooks/MessageContext"; // Import message context hook
+import { useAuth } from "../../context/AuthContext";
 
 export default function Header() {
-  const name = Cookies.get("userName");
-  const role = Cookies.get("role");
+  const { user: name, role, logout } = useAuth();
 
   const [dropdownVisible, setDropdownVisible] = React.useState(false);
 
   const navigate = useNavigate();
+  const { postData } = useFetch(); // Use the custom hook for API calls
+  const { addMessage } = useMessage();
 
-  const handleLogout = () => {
-    Cookies.remove("userName");
-    Cookies.remove("session_id");
-    Cookies.remove("csrf-token");
-    Cookies.remove("email");
-    Cookies.remove("role");
-    setDropdownVisible(false);
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await postData(APIs.LOGOUT);
+    } catch (error) {
+      // addMessage("Logout failed. Please try again.", "error");
+    } finally {
+      // Clear any extra cookies not managed by auth
+      Cookies.remove("email");
+      Cookies.remove("jwt-token");
+      // Clear session start timestamp (auto logout reference)
+      try {
+        localStorage.removeItem("login_timestamp");
+        Cookies.remove("login_timestamp");
+      } catch (_) {}
+      setDropdownVisible(false);
+      logout();
+    }
   };
   const { mkDocsInternalPath } = useApiUrl(); // Get the dynamic base URL
   const { combinedVersion } = useVersion(); // Properly extract the combinedVersion from the hook
@@ -33,21 +46,21 @@ export default function Header() {
   };
 
   const handleFaqclick = () => {
-    window.open(mkDocs_baseURL+mkDocsInternalPath,'_blank');
-  }
+    window.open(mkDocs_baseURL + mkDocsInternalPath, "_blank");
+  };
 
   return (
     <div className={styles.navbar}>
       <div className={styles.brand}>
         <img src={brandlogotwo} alt="Brandlogo" />
-        <span className={styles.version_number} title={combinedVersion}>{combinedVersion}</span>
+        <span className={styles.version_number} title={combinedVersion}>
+          {combinedVersion}
+        </span>
       </div>
       <div className={styles.menu}>
         <div className={styles.user_info}>
           <span className={styles.logged_in_user}>
-            WELCOME <span className={styles.user_name}>
-              {name === "Guest" ? name : `${name} (${role})`}
-            </span>
+            WELCOME <span className={styles.user_name}>{name === "Guest" ? name : `${name} (${role})`}</span>
           </span>
           <div className={styles.profile_icon} onClick={toggleDropdown}>
             <SVGIcons icon="fa-user" width={14} height={14} fill="#000" />
@@ -61,9 +74,9 @@ export default function Header() {
           </div>
         </div>
         {/* <a href="http://10.208.85.72:9000/" target="_blank"> */}
-          <div className={styles.faq_icon} onClick={handleFaqclick}>
-            <SVGIcons icon="fa-question" width={14} height={14} />
-          </div>
+        <div className={styles.faq_icon} onClick={handleFaqclick}>
+          <SVGIcons icon="fa-question" width={14} height={14} />
+        </div>
         {/* </a> */}
       </div>
     </div>

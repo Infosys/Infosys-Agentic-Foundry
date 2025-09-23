@@ -1,145 +1,163 @@
-import axios from "axios";
-import { APIs, BASE_URL } from "../constant";
-import { getCsrfToken, getSessionId } from "../Hooks/useAxios";
+import { APIs } from "../constant";
+import useFetch from "../Hooks/useAxios";
+import { useSSE } from "../context/SSEContext";
+import React from "react";
+import Cookies from "js-cookie";
 
+export const useChatServices = () => {
+  const { fetchData, postData, deleteData } = useFetch();
+  const { sseMessages, connectionStatus } = useSSE();
 
-let postMethod = "POST";
-let getMethod = "GET";
+  // Persist callback across renders using ref so parent can register once
+  const sseMessageCallbackRef = React.useRef(null);
 
-export const resetChat = async (data) => {
-  try {
-    const apiUrl = `${BASE_URL}/react-agent${APIs.CLEAR_CHAT_HISTORY}`;
-    const response = await axios.request({
-      method: "DELETE",
-      url: apiUrl,
-      data: data,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
+  const setSseMessageCallback = (callback) => {
+    // Allow null to clear
+    sseMessageCallbackRef.current = callback;
+  };
 
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
+  // Listen for new SSE messages and pass to callback + log
+  React.useEffect(() => {
+    if (sseMessages && sseMessages.length > 0) {
+      const lastMsg = sseMessages[sseMessages.length - 1];
+      if (sseMessageCallbackRef.current) {
+        try {
+          sseMessageCallbackRef.current(lastMsg);
+        } catch (err) {
+        }
+      }
+    }
+  }, [sseMessages]);
+
+  const resetChat = async (data) => {
+    try {
+      const apiUrl = APIs.CLEAR_CHAT_HISTORY;
+      const response = await deleteData(apiUrl, data);
+
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
       return null;
     }
-  } catch (error) {
-    return null;
-  }
-};
+  };
 
-export const getChatQueryResponse = async (chatData, url) => {
-  try {
-    const apiUrl = `${BASE_URL}${url}`;
-    const response = await axios.request({
-      method: postMethod,
-      url: apiUrl,
-      data: chatData,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
+  const getChatQueryResponse = async (chatData, url) => {
+    try {
+      const response = await postData(url, chatData);
 
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
       return null;
     }
-  } catch (error) {
-    return null;
-  }
-};
+  };
 
-export const getChatHistory = async (chatData) => {
-  try {
-    const apiUrl = `${BASE_URL}/react-agent${APIs.GET_CHAT_HISTORY}`;
-    const response = await axios.request({
-      method: postMethod,
-      url: apiUrl,
-      data: chatData,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
+  // Remove getDebugStepsAsSSE, SSE is handled globally
 
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
+  const getChatHistory = async (chatData) => {
+    try {
+      const apiUrl = APIs.GET_CHAT_HISTORY;
+      const response = await postData(apiUrl, chatData);
+
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
       return null;
     }
-  } catch (error) {
-    return null;
-  }
-};
+  };
 
-export const fetchFeedback = async (data, feedback) => {
-  try {
-    const apiUrl = `${BASE_URL}/react-agent/get-feedback-response/${feedback}`;
-    const response = await axios.request({
-      method: postMethod,
-      url: apiUrl,
-      data: data,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
+  const fetchFeedback = async (data, feedback) => {
+    try {
+      const apiUrl = `${APIs.GET_FEEDBACK_RESPONSE}${feedback}`;
+      const response = await postData(apiUrl, data);
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
       return null;
     }
-  } catch (error) {
-    return null;
-  }
-};
+  };
 
-export const fetchOldChats = async (data) => {
-  try {
-    const apiUrl = `${BASE_URL}${APIs.FETCH_OLD_CHATS}`;
-    const response = await axios.request({
-      method: postMethod,
-      url: apiUrl,
-      data: data,
-      headers: {
-        "Content-Type": "application/json",
-        "csrf-token": getCsrfToken(),
-        "session-id": getSessionId(), // added for CSRF token implementation
-      },
-    });
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
+  const fetchOldChats = async (data) => {
+    try {
+      const apiUrl = APIs.GET_OLD_CONVERSATIONS;
+      const response = await postData(apiUrl, data);
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
       return null;
     }
-  } catch (error) {
-    return null;
-  }
-};
+  };
 
-export const fetchNewChats = async (userEmail) => {
-  try {
-    const apiUrl = `${BASE_URL}${APIs.NEW_CHAT}${userEmail}`;
-    const response = await axios.request({
-      method: getMethod,
-      url: apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-    if (response?.status === 200) {
-      return response?.data;
-    } else {
+  const fetchNewChats = async (userEmail) => {
+    try {
+      const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
+      const response = await fetchData(apiUrl);
+      if (response) {
+        Cookies.set("user_session", response, { path: "/" });
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
       return null;
     }
-  } catch (error) {
-    return null;
-  }
+  };
+
+  const getQuerySuggestions = async (data) => {
+    try {
+      const apiUrl = `${APIs.SUGGESTIONS}?agentic_application_id=${data.agentic_application_id}&user_email=${data.user_email}`;
+      const response = await fetchData(apiUrl);
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  };
+
+  // Store memory example (positive/negative label examples)
+  const storeMemoryExample = async (data) => {
+    try {
+      const apiUrl = APIs.MEMORY_STORE_EXAMPLE;
+      const response = await postData(apiUrl, data);
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  };
+
+  return {
+    resetChat,
+    getChatQueryResponse,
+    getChatHistory,
+    fetchFeedback,
+    fetchOldChats,
+    fetchNewChats,
+    getQuerySuggestions,
+    setSseMessageCallback,
+    sseMessages,
+    connectionStatus,
+    storeMemoryExample,
+  };
 };

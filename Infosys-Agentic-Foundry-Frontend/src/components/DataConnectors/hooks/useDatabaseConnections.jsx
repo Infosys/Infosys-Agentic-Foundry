@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
-import { BASE_URL, APIs } from '../../../constant';
+import { APIs } from '../../../constant';
 import { useDatabase } from '../context/DatabaseContext';
 import { useMessage } from '../../../Hooks/MessageContext';
-import { fetchConnections } from '../../../services/databaseService';
+import { useDatabases } from '../service/databaseService.js';
+import useFetch from '../../../Hooks/useAxios.js';
 
 export const useDatabaseConnections = () => {
   // Use the database context
@@ -11,8 +11,10 @@ export const useDatabaseConnections = () => {
   
   // Get message context for toast notifications
   const { addMessage } = useMessage();
-  
-  
+  // Use the database service
+  const { fetchConnections } = useDatabases();
+  const { postData } = useFetch();
+
   // State for database connection form (new connections)
   const [connectionData, setConnectionData] = useState({
     connectionName: "",
@@ -130,20 +132,6 @@ export const useDatabaseConnections = () => {
     }
   };
 
-  // Helper for sqlite payload
-  function buildSqlitePayloadForApi(connectionName, dbType, database, flag) {
-    return {
-      name: connectionName || '',
-      db_type: 'sqlite', // always force sqlite
-      database: database || '',
-      port: 0,
-      host: '',
-      username: '',
-      password: '',
-      flag_for_insert_into_db_connections_table: flag
-    };
-  }
-
   const handleConnectionSubmit = async (e) => {
     e.preventDefault();
     
@@ -168,39 +156,40 @@ export const useDatabaseConnections = () => {
     setIsConnecting(true);
     try {
       let payload;
-      if (currentConnectionData.databaseType.toLowerCase() === 'sqlite') {
-        // If file is uploaded, use its name as database
-        let dbValue = currentConnectionData.uploaded_file
-          ? currentConnectionData.uploaded_file.name
-          : currentConnectionData.databaseName;
-        payload = buildSqlitePayloadForApi(
-          currentConnectionData.connectionName,
-          currentConnectionData.databaseType,
-          dbValue,
-          "1"
-        );
-      } else {
-        payload = {
-          name: currentConnectionData.connectionName,
-          db_type: currentConnectionData.databaseType.toLowerCase(),
-          host: currentConnectionData.host,
-          port: parseInt(currentConnectionData.port),
-          username: currentConnectionData.username,
-          password: currentConnectionData.password,
-          database: currentConnectionData.databaseName,
-          flag_for_insert_into_db_connections_table: "1"
-        };
+      if (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'sqlite') {
+        payload = new FormData();
+        payload.append('name', currentConnectionData.connectionName);
+        payload.append('db_type', 'sqlite');
+        payload.append('host', '');
+        payload.append('port', '');
+        payload.append('username', '');
+        payload.append('password', '');
+        payload.append('flag_for_insert_into_db_connections_table', '1');
+        if (currentConnectionData.uploaded_file) {
+          payload.append('sql_file', currentConnectionData.uploaded_file);
+          payload.append('database', '');
+        } else {
+          payload.append('sql_file', '');
+          payload.append('database', currentConnectionData.databaseName);
+        }
+      } else if (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'postgresql' || 
+        currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'mysql' || 
+        currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'mongodb') {
+        payload = new FormData();
+        payload.append('name', currentConnectionData.connectionName);
+        payload.append('db_type', currentConnectionData.databaseType.toLowerCase());
+        payload.append('host', currentConnectionData.host);
+        payload.append('port', currentConnectionData.port);
+        payload.append('username', currentConnectionData.username);
+        payload.append('password', currentConnectionData.password);
+        payload.append('database', currentConnectionData.databaseName);
+        payload.append('flag_for_insert_into_db_connections_table', '1');
+        payload.append('sql_file', '');
       }
-      
-      const apiUrl = `${BASE_URL}${APIs.CONNECT_DATABASE}`;
+      const apiUrl = APIs.CONNECT_DATABASE;
       try {
-        const response = await axios.post(apiUrl, payload, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-        if (response.data) {
+        const response = await postData(apiUrl, payload);
+        if (response) {
           // Always refresh active connections after connect
           try {
             await fetchActiveConnections();
@@ -215,7 +204,7 @@ export const useDatabaseConnections = () => {
             username: currentConnectionData.username,
             databaseName: currentConnectionData.databaseName
           });
-          addMessage(response.data.message || "Database connected successfully!", "success");
+          addMessage(response.message || "Database connected successfully!", "success");
           setIsConnected(true); // Disable the connect button after successful connection
           // Clear temporary connection data
           if (window.tempConnectionData) {
@@ -228,7 +217,7 @@ export const useDatabaseConnections = () => {
       }
     } catch (error) {
       
-      addMessage(`Connection failed`, "error");
+      addMessage(error.response.data.detail, "error");
     } finally {
       setIsConnecting(false);
     }
@@ -248,13 +237,8 @@ export const useDatabaseConnections = () => {
         flag: flag.toString()
       };
       // Make the API call to disconnect
-      const response = await axios.post(`${BASE_URL}${APIs.DISCONNECT_DATABASE}`, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-      if (response.data) {
+      const response = await postData(APIs.DISCONNECT_DATABASE, payload);
+      if (response) {
         // Refresh active connections to reflect the disconnection
         try {
           await fetchActiveConnections();
@@ -264,7 +248,7 @@ export const useDatabaseConnections = () => {
         // Clear selected connection
         setSelectedConnection("");
         setSelectedConnectionData(null);
-        addMessage(response.data.message, "success");
+        addMessage(response.message, "success");
       }
     } catch (error) {
       
@@ -272,12 +256,10 @@ export const useDatabaseConnections = () => {
       let errorMessage = "Failed to disconnect from database.";
       
       if (error.response) {
-        console.error('Hook handleDisconnect - Response error:', error.response.status, error.response.data);
-        errorMessage = error.response.data?.message || 
-                      error.response.data?.error || 
+        errorMessage = error.response.message || 
+                      error.response.error || 
                       `Server error (${error.response.status})`;
       } else if (error.request) {
-        console.error('Hook handleDisconnect - Request error:', error.request);
         errorMessage = "No response from server. Please check if the server is running.";
       } else {
         console.error('Hook handleDisconnect - General error:', error.message);
@@ -297,48 +279,43 @@ export const useDatabaseConnections = () => {
       let payload;
       const dbTypeValue = (connectionData.databaseType || connectionData.db_type || connectionData.connection_database_type || '').toLowerCase();
       if (dbTypeValue === 'sqlite') {
-        let name = connectionData.connection_name || connectionData.connectionName || '';
-        if (!name || name.trim() === '') name = 'sqlite_db';
-        let database = connectionData.connection_database_name || connectionData.databaseName || connectionData.database || '';
-        if (!database || database.trim() === '') database = name;
-        let db_type = 'sqlite';
-        payload = {
-          name,
-          db_type,
-          database,
-          port: 0,
-          host: '',
-          username: '',
-          password: '',
-          flag_for_insert_into_db_connections_table: flag
-        };
-      } else {
-        payload = {
-          name: connectionData.connectionName || connectionData.name || connectionData.connection_name || '',
-          db_type: (connectionData.databaseType || connectionData.db_type || connectionData.connection_database_type || '').toLowerCase(),
-          host: connectionData.host || connectionData.connection_host || '',
-          port: parseInt(connectionData.port || connectionData.connection_port) || 0,
-          username: connectionData.username || connectionData.connection_username || '',
-          password: connectionData.password || connectionData.connection_password || '',
-          database: connectionData.databaseName || connectionData.database || connectionData.connection_database_name || '',
-          flag_for_insert_into_db_connections_table: flag
-        };
-      }
-      const apiUrl = `${BASE_URL}${APIs.CONNECT_DATABASE}`;
-      const response = await axios.post(apiUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+        payload = new FormData();
+        payload.append('name', connectionData.connectionName || connectionData.name || connectionData.connection_name || '');
+        payload.append('db_type', 'sqlite');
+        payload.append('host', '');
+        payload.append('port', '');
+        payload.append('username', '');
+        payload.append('password', '');
+        payload.append('flag_for_insert_into_db_connections_table', flag);
+        if (connectionData.uploaded_file) {
+          payload.append('sql_file', connectionData.uploaded_file);
+          payload.append('database', '');
+        } else {
+          payload.append('sql_file', '');
+          payload.append('database', connectionData.databaseName || connectionData.database || connectionData.connection_database_name || '');
         }
-      });
-      if (response.data) {
+      } else if (dbTypeValue === 'postgresql' || dbTypeValue === 'mysql' || dbTypeValue === 'mongodb') {
+        payload = new FormData();
+        payload.append('name', connectionData.connectionName || connectionData.name || connectionData.connection_name || '');
+        payload.append('db_type', dbTypeValue);
+        payload.append('host', connectionData.host || connectionData.connection_host || '');
+        payload.append('port', connectionData.port || connectionData.connection_port || '');
+        payload.append('username', connectionData.username || connectionData.connection_username || '');
+        payload.append('password', connectionData.password || connectionData.connection_password || '');
+        payload.append('database', connectionData.databaseName || connectionData.database || connectionData.connection_database_name || '');
+        payload.append('flag_for_insert_into_db_connections_table', flag);
+        payload.append('sql_file', '');
+      }
+      const apiUrl = APIs.CONNECT_DATABASE;
+      const response = await postData(apiUrl, payload);
+      if (response) {
         try { await fetchActiveConnections(); } catch {}
         await updateConnectionsImmediate();
-        addMessage(response.data.message || (flag === "0" ? "Database activated successfully!" : "Database connected successfully!"), "success");
+        addMessage(response.message , "success");
         setIsConnected(flag === "1");
       }
     } catch (error) {
-      addMessage(`Connection failed: ${error.message || error}`, "error");
+      addMessage(error.response.data.detail, "error");
     } finally {
       setIsConnecting(false);
     }
@@ -349,55 +326,61 @@ export const useDatabaseConnections = () => {
     setIsActivating(true);
     try {
       let payload;
-      if(connection.databasetype.toLowerCase() === 'sqlite'){
-     payload = {
-          name: connection.connection_name,
-          db_type: "sqlite",
-          host: "",
-          port: 0, // SQLite does not use port
-          username:"",
-          password: "",
-          database:connection.connection_database_name,
-          flag_for_insert_into_db_connections_table: "0"
-        };
-      }else {
-        payload = {
-          name: connection.connection_name,
-          db_type: connection.connection_database_type ? connection.connection_database_type.toLowerCase() : '',
-          host: connection.connection_host,
-          port: parseInt(connection.connection_port),
-          username: connection.connection_username,
-          password: connection.connection_password,
-          database: connection.connection_database_name,
-          flag_for_insert_into_db_connections_table: "0"
-        };
+      if(connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'sqlite'){
+        payload = new FormData();
+        payload.append('name', connection.connection_name);
+        payload.append('db_type', 'sqlite');
+        payload.append('host', '');
+        payload.append('port', '');
+        payload.append('username', '');
+        payload.append('password', '');
+        payload.append('flag_for_insert_into_db_connections_table', '0');
+        if (connection.uploaded_file) {
+          payload.append('sql_file', connection.uploaded_file);
+          payload.append('database', '');
+        } else {
+          payload.append('sql_file', '');
+          payload.append('database', connection.connection_database_name);
+        }
+      } else if (connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'postgresql' || 
+        connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'mysql' || 
+        connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'mongodb') {
+        payload = new FormData();
+        payload.append('name', connection.connection_name);
+        payload.append('db_type', connection.connection_database_type.toLowerCase());
+        payload.append('host', connection.connection_host);
+        payload.append('port', connection.connection_port);
+        payload.append('username', connection.connection_username);
+        payload.append('password', connection.connection_password);
+        payload.append('database', connection.connection_database_name);
+        payload.append('flag_for_insert_into_db_connections_table', '0');
+        payload.append('sql_file', '');
       }
       
       
       
-      // Basic validation
-      if (isNaN(payload.port) || payload.port <= 0) {
+      // Basic validation (skip for FormData)
+      if (!(payload instanceof FormData) && (isNaN(payload.port) || payload.port <= 0)) {
         throw new Error("Port must be a valid positive number");
       }
       
       // Check if the API endpoint is defined
       if (!APIs.CONNECT_DATABASE) {
-        
         throw new Error("Database connection API endpoint not configured");
       }
       try{
       // Construct the URL
-      const apiUrl = `${BASE_URL}${APIs.CONNECT_DATABASE}`;
-        
-        const response = await axios.post(apiUrl, payload, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-        
-        
-        if (response.data) {
+      const apiUrl = APIs.CONNECT_DATABASE;
+
+        const response = await postData(apiUrl, payload);
+
+        // Check for error fields in the response
+        if (response && (response.detail || response.error)) {
+          addMessage(response.detail || response.error, "error");
+          return;
+        }
+
+        if (response) {
           
           
           // Add the activated database connection to our context
@@ -406,7 +389,7 @@ export const useDatabaseConnections = () => {
               name: payload.name,
               type: 'sqlite',
               host: '',
-              port: 0,
+              port: '',
               username: '',
               databaseName: payload.database
             });
@@ -437,36 +420,29 @@ export const useDatabaseConnections = () => {
             
           }
           
-          addMessage(response.data.message || `Connection "${connection.connection_name}" activated successfully!`, "success");
+          addMessage(response.message || `Connection "${connection.connection_name}" activated successfully!`, "success");
           
         } else {
           
           addMessage("API response received but no data", "warning");
         }
       } catch (apiError) {
-        
-        throw apiError;
+        // Show error message from backend if available
+        let errorMessage = "Failed to activate connection. Please try again.";
+        if (apiError.response && (apiError.response.detail || apiError.response.error)) {
+          errorMessage = apiError.response.detail || apiError.response.error;
+        } else if (apiError.response) {
+          errorMessage = apiError.response.message || `Server error (${apiError.response.status})`;
+        } else if (apiError.request) {
+          errorMessage = "No response from server. Please check if the server is running.";
+        } else {
+          errorMessage = apiError.message;
+        }
+        addMessage(`Connection activation failed: ${errorMessage}`, "error");
       }
     } catch (error) {
       
-      
-      // Show error message
-      let errorMessage = "Failed to activate connection. Please try again.";
-      
-      if (error.response) {
-        
-        errorMessage = error.response.data?.message || 
-                      error.response.data?.error || 
-                      `Server error (${error.response.status})`;
-      } else if (error.request) {
-        
-        errorMessage = "No response from server. Please check if the server is running.";
-      } else {
-      
-        errorMessage = error.message;
-      }
-      
-      addMessage(`Connection activation failed: ${errorMessage}`, "error");
+      addMessage(error.response.data.detail, "error");
     } finally {
       setIsActivating(false);
     }
@@ -486,13 +462,8 @@ export const useDatabaseConnections = () => {
         db_type: databaseType.toLowerCase(),
         flag: flag.toString()
       };
-      const response = await axios.post(`${BASE_URL}${APIs.DISCONNECT_DATABASE}`, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-      if (response.data) {
+      const response = await postData(APIs.DISCONNECT_DATABASE, payload);
+      if (response) {
         // Refresh active connections to reflect the deactivation
         try {
           await fetchActiveConnections();
@@ -502,27 +473,11 @@ export const useDatabaseConnections = () => {
         // Clear selected connection
         setSelectedConnection("");
         setSelectedConnectionData(null);
-        addMessage(response.data.message || "Database deactivated successfully!", "success");
+        addMessage(response.message || "Database deactivated successfully!", "success");
       }
     } catch (error) {
       
-      // Show error message
-      let errorMessage = "Failed to deactivate connection.";
-      
-      if (error.response) {
-        console.error('Hook handleDeactivate - Response error:', error.response.status, error.response.data);
-        errorMessage = error.response.data?.message || 
-                      error.response.data?.error || 
-                      `Server error (${error.response.status})`;
-      } else if (error.request) {
-        console.error('Hook handleDeactivate - Request error:', error.request);
-        errorMessage = "No response from server. Please check if the server is running.";
-      } else {
-        console.error('Hook handleDeactivate - General error:', error.message);
-        errorMessage = error.message;
-      }
-      
-      addMessage(`Deactivation failed: ${errorMessage}`, "error");
+      addMessage(error.response.data.detail, "error");
     } finally {
       setIsDisConnecting(false);
     }

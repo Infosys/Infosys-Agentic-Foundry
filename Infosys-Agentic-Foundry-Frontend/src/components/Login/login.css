@@ -1,4 +1,4 @@
-.login-container {
+.loginContainer {
   background-color: #3d4359;
   border: 0.5px solid #0071b3;
   border-radius: 8px;
@@ -31,9 +31,7 @@
   display: inline-flex;
   justify-content: space-between;
   align-items: center;
-  transition:
-    border-color 0.2s ease-in-out,
-    box-shadow 0.2s ease-in-out;
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
 /* Add focus style for input fields */
@@ -52,7 +50,6 @@
   padding-top: 5px;
   font-size: 12px;
   color: red;
-
 }
 
 .space-devider {
@@ -82,17 +79,14 @@
   height: 19px;
   background-color: #fff;
   border-radius: 50%;
-
 }
-
-
 
 .arrow-icon {
   position: absolute;
   right: 0;
   margin-right: 10px;
-  opacity: 1
-    /* Add some spacing between text and icon */
+  opacity: 1;
+  /* Add some spacing between text and icon */
 }
 
 .dropdown-menu {
@@ -142,7 +136,7 @@
 .submit-style span {
   font: normal normal normal 12px/16px Segoe UI;
   letter-spacing: 0px;
-  color: #FFFFFF;
+  color: #ffffff;
   opacity: 1;
 }
 
@@ -150,7 +144,7 @@
   text-decoration: underline;
   font: normal normal normal 12px/16px Segoe UI;
   letter-spacing: 0px;
-  color: #FFFFFF;
+  color: #ffffff;
   text-transform: uppercase;
   opacity: 1;
   padding-right: 10px;
@@ -158,13 +152,13 @@
 
 .button-style {
   padding: 5px 10px 5px 10px;
- 
+
   /* font-family: "Segoe UI";
   text-transform: uppercase;
   font-size: 12px; */
   display: inline-flex;
   align-items: center;
-  background: #FFFFFF 0% 0% no-repeat padding-box;
+  background: #ffffff 0% 0% no-repeat padding-box;
   border-radius: 5px;
   opacity: 1;
   /* display:flex; */
@@ -173,15 +167,15 @@
 }
 
 .signarrow {
- background-color: #0071B3;
- width: 23px;
- height: 23px;
- /* align-items: center;
+  background-color: #0071b3;
+  width: 23px;
+  height: 23px;
+  /* align-items: center;
  justify-content: center; */
- margin-left: 10px;
- padding-left: 2px;
- padding-top: 2px;
- border-radius: 50%;
+  margin-left: 10px;
+  padding-left: 2px;
+  padding-top: 2px;
+  border-radius: 50%;
 }
 
 .signIntext {
@@ -246,7 +240,7 @@
 
 /* Checkmark when checked */
 .checkbox:checked::before {
-  content: '✔';
+  content: "✔";
   font-size: 10px;
   color: #3d4359;
   position: absolute;
@@ -269,15 +263,13 @@
   height: 5px;
 }
 
-
 @media only screen and (max-width: 600px) {
   .login-input {
-    max-Width: 200px;
-
+    max-width: 200px;
   }
 
   .dropdown-toggle {
-    max-Width: 200px;
+    max-width: 200px;
   }
 
   .submit-style {
@@ -297,10 +289,9 @@
   .hyperlink {
     padding-right: 0px;
     margin-top: 5px;
-    text-align: center
+    text-align: center;
   }
 }
-
 
 .password-container {
   position: relative;

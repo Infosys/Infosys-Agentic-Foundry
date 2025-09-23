@@ -348,8 +348,8 @@
 
 @media (max-width: 768px) {
   .slider {
-    width: 100vw;
-    left: 0;
+    width: 60vw;
+    right: 0;
     border-radius: 0;
     animation: slideInUp 0.2s ease-out;
   }

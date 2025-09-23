@@ -1,57 +1,63 @@
 import { useState, useCallback } from "react";
-import { BASE_URL } from "../constant";
+import { APIs, BASE_URL } from "../constant";
 import Cookies from "js-cookie";
+import axios from "axios";
 
-// CSRF token storage
-let csrfToken = null;
 let sessionId = null;
 
 let postMethod = "POST";
+let getMethod = "GET";
+let deleteMethod = "DELETE";
+let putMethod = "PUT";
 
-// Function to set the CSRF token (to be called after login/signup)
-export const setCsrfToken = (token) => {
+// JWT token storage
+let jwtToken = null;
+
+// Function to set the JWT token (to be called after login/signup)
+export const setJwtToken = (token) => {
   if (token) {
-    csrfToken = token;
-    Cookies.set("csrf-token", token); // Store in cookie
+    jwtToken = token;
+    Cookies.set("jwt-token", token); // Store in localStorage for persistence
     return true;
   }
   return false;
 };
 
-// Function to get the current CSRF token
-export const getCsrfToken = () => {
-  if (!csrfToken) {
-    csrfToken = Cookies.get("csrf-token");
+// Function to get the current JWT token
+export const getJwtToken = () => {
+  if (!jwtToken) {
+    jwtToken = Cookies.get("jwt-token");
   }
-  return csrfToken;
+  return jwtToken;
 };
 
-// Function to get the current session ID
-export const getSessionId = () => {
-  if (!sessionId) {
-    sessionId = Cookies.get("session_id");
-  }
-  return sessionId;
-};
-
-// Helper to add CSRF token to headers if available
-const addCsrfHeader = (headers = {}) => {
-  if (getCsrfToken()) {
+// Helper to add Authorization header if JWT token is available
+const addConfigHeaders = (headers = {}) => {
+  const token = getJwtToken();
+  if (token) {
     return {
       ...headers,
-      "csrf-token": getCsrfToken(),
-      "session-id": getSessionId(), // added for CSRF token implementation
+      Authorization: `Bearer ${token}`,
     };
   }
   return headers;
 };
 
+// Function to get the current session ID
+export const getSessionId = () => {
+  if (!sessionId) {
+    sessionId = Cookies.get("user_session");
+  }
+  return sessionId;
+};
+
+const REQUEST_TIMEOUT_MS = Number(process.env.REACT_APP_API_TIMEOUT ?? 20 * 60 * 1000); // If not declared in ENV , it will be 20 minutes
+
 const defaultConfig = {
   headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
+    accept: "application/json",
   },
-  timeout: 5000, // 5 seconds timeout
+  timeout: REQUEST_TIMEOUT_MS,
 };
 
 const useFetch = () => {
@@ -61,33 +67,24 @@ const useFetch = () => {
   const fetchData = useCallback(async (url, config = {}) => {
     setLoading((prevLoading) => ({ ...prevLoading, fetch: true }));
     try {
-      // Add CSRF token to headers for POST requests
-      const headers = addCsrfHeader({
+      // Add token to headers for POST requests
+      const headers = addConfigHeaders({
         ...defaultConfig.headers,
-        ...config.headers
+        ...config.headers,
       });
-      // Check if login_guest then add csrf and session id temporarirly to validate the Fortify fix
-      let tempHeaders = {};
-      if(url.includes("/login_guest")){
-        tempHeaders = {
-          ...defaultConfig,
-          ...config,
-          headers
-        }
-      }
-      else{
-        tempHeaders = {
-          ...defaultConfig,
-          ...config,
-        }
-      }
-      const response = await fetch(BASE_URL + url, tempHeaders);
-      if (!response.ok) throw new Error("Network response was not ok");
-      const data = await response.json();
 
-      // Check if this is a login or signup response and extract CSRF token if present
-      if (url.includes('/login_guest') && data?.csrf_token) {
-        setCsrfToken(data.csrf_token);
+      const response = await axios.request({
+        url: BASE_URL + url,
+        method: getMethod,
+        ...defaultConfig,
+        ...config,
+        headers,
+      });
+      const data = response.data;
+
+      // Setting JWT token
+      if (url.includes(APIs.GUEST_LOGIN) && data?.token) {
+        setJwtToken(data.token);
       }
 
       setError((prevError) => ({ ...prevError, fetch: null }));
@@ -103,25 +100,32 @@ const useFetch = () => {
   const postData = useCallback(async (url, postData, config = {}) => {
     setLoading((prevLoading) => ({ ...prevLoading, post: true }));
     try {
-      // Add CSRF token to headers for POST requests
-      const headers = addCsrfHeader({
+      let contentType = "application/json";
+      let dataToSend = postData;
+      if (postData instanceof FormData) {
+        contentType = undefined;
+      } else {
+        dataToSend = JSON.stringify(postData);
+      }
+      const headers = addConfigHeaders({
         ...defaultConfig.headers,
-        ...config.headers
+        ...config.headers,
+        ...(contentType ? { "Content-Type": contentType } : {}),
       });
 
-      const response = await fetch(BASE_URL + url, {
+      const response = await axios.request({
+        url: BASE_URL + url,
         method: postMethod,
-        body: JSON.stringify(postData),
+        data: dataToSend,
         ...defaultConfig,
         ...config,
-        headers
+        headers,
       });
-      if (!response.ok) throw new Error("Network response was not ok");
-      const data = await response.json();
+      const data = response.data;
 
-      // Check if this is a login or signup response and extract CSRF token if present
-      if ((url.includes('/login') || url.includes('/registration')) && data?.csrf_token) {
-        setCsrfToken(data.csrf_token);
+      // Check if this is a login or signup response and extract token if present
+      if ((url.includes(APIs.LOGIN) || url.includes(APIs.REGISTER)) && data?.token) {
+        setJwtToken(data.token);
       }
 
       setError((prevError) => ({ ...prevError, post: null }));
@@ -137,20 +141,28 @@ const useFetch = () => {
   const putData = useCallback(async (url, putData, config = {}) => {
     setLoading((prevLoading) => ({ ...prevLoading, put: true }));
     try {
-      // Add CSRF token to headers for PUT requests
-      const headers = addCsrfHeader({
+      let contentType = "application/json";
+      let dataToSend = putData;
+      if (putData instanceof FormData) {
+        contentType = undefined;
+      } else {
+        dataToSend = JSON.stringify(putData);
+      }
+      const headers = addConfigHeaders({
         ...defaultConfig.headers,
-        ...config.headers
+        ...config.headers,
+        ...(contentType ? { "Content-Type": contentType } : {}),
       });
 
-      const response = await fetch(BASE_URL + url, {
-        method: "PUT",
-        body: JSON.stringify(putData),
+      const response = await axios.request({
+        url: BASE_URL + url,
+        method: putMethod,
+        data: dataToSend,
         ...defaultConfig,
         ...config,
-        headers
+        headers,
       });
-      const data = await response.json();
+      const data = response.data;
       setError((prevError) => ({ ...prevError, put: null }));
       return data;
     } catch (err) {
@@ -164,22 +176,30 @@ const useFetch = () => {
   const deleteData = useCallback(async (url, deleteData, config = {}) => {
     setLoading((prevLoading) => ({ ...prevLoading, delete: true }));
     try {
-      // Add CSRF token to headers for DELETE requests
-      const headers = addCsrfHeader({
+      let contentType = "application/json";
+      let dataToSend = deleteData;
+      if (deleteData instanceof FormData) {
+        contentType = undefined;
+      } else {
+        dataToSend = JSON.stringify(deleteData);
+      }
+      const headers = addConfigHeaders({
         ...defaultConfig.headers,
-        ...config.headers
+        ...config.headers,
+        ...(contentType ? { "Content-Type": contentType } : {}),
       });
 
-      const response = await fetch(BASE_URL + url, {
-        method: "DELETE",
-        body: JSON.stringify(deleteData),
+      const response = await axios.request({
+        url: BASE_URL + url,
+        method: deleteMethod,
+        data: dataToSend,
         ...defaultConfig,
         ...config,
-        headers
+        headers,
       });
-      if (!response.ok) throw new Error("Network response was not ok");
+      const data = response.data;
       setError((prevError) => ({ ...prevError, delete: null }));
-      return null;
+      return data;
     } catch (err) {
       setError((prevError) => ({ ...prevError, delete: err }));
       throw err;
@@ -188,10 +208,10 @@ const useFetch = () => {
     }
   }, []);
 
-  // Clear CSRF token (for logout)
-  const clearCsrfToken = useCallback(() => {
-    csrfToken = null;
-    Cookies.remove("csrf-token");
+  // Clear token (for logout)
+  const clearJwtToken = useCallback(() => {
+    jwtToken = null;
+    Cookies.remove("jwt-token");
   }, []);
 
   return {
@@ -201,10 +221,10 @@ const useFetch = () => {
     postData,
     putData,
     deleteData,
-    setCsrfToken,
-    clearCsrfToken,
-    getCsrfToken,
-    getSessionId
+    setJwtToken,
+    clearJwtToken,
+    getSessionId,
+    getJwtToken,
   };
 };
 

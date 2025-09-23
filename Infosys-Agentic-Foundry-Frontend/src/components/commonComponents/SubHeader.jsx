@@ -4,9 +4,9 @@ import SVGIcons from "../../Icons/SVGIcons";
 import styles from "./SubHeader.module.css";
 import Cookies from "js-cookie";
 import DeleteModal from "./DeleteModal";
-import { useNavigate } from "react-router-dom";
 import { faRefresh } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { useAuth } from "../../context/AuthContext";
 
 const SubHeader = (props) => {
   const {
@@ -38,55 +38,51 @@ const SubHeader = (props) => {
       setShowAddModal(true);
       return;
     }
-    onPlusClick();
+    if (typeof onPlusClick === "function") {
+      onPlusClick();
+      return;
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("openToolOnboard"));
+    } catch (e) {}
   };
 
-  const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const handleLoginButton = (e) => {
     e.preventDefault();
-    Cookies.remove("userName");
-    Cookies.remove("session_id");
-    Cookies.remove("csrf-token");
-    Cookies.remove("email");
-    Cookies.remove("role");
-    navigate("/login");
+    logout("/login");
   };
 
   return (
     <>
       <DeleteModal show={showAddModal} onClose={() => setShowAddModal(false)}>
-        <p>
-          {heading && heading.toLowerCase().includes("tool")
-            ? "You are not authorized to add a tool. Please login with registered email."
-            : "You are not authorized to add an agent. Please login with registered email."}
-        </p>
+        <p>You are not authorized to add/modify. Please login with registered email.</p>
         {handleRefresh && (
-          <button onClick={(e) => handleLoginButton(e)}>Login</button>
+          <div className={styles.buttonContainer}>
+            <button onClick={(e) => handleLoginButton(e)} className={styles.loginBtn}>Login</button>
+            <button onClick={() => setShowAddModal(false)} className={styles.cancelBtn}>Cancel</button>
+          </div>
         )}
       </DeleteModal>
       <div className={styles.container}>
         <div className={styles.titleContainer}>
           <h6>{heading}</h6>
           <button
-            onClick={handleRefresh}
+            type="button"
+            onClick={() => {
+              if (typeof handleRefresh === "function") handleRefresh();
+            }}
             title={"Refresh"}
-            className={styles.refreshButton}
-          >
+            className={styles.refreshButton}>
             <FontAwesomeIcon icon={faRefresh} />
           </button>
         </div>
 
         <div className={styles.rightPart}>
-           {showAgentTypeDropdown && (
+          {showAgentTypeDropdown && (
             <div className={styles.dropdownContainer}>
-              <select
-                id="agentTypeDropdown"
-                className={styles.agentTypeDropdown}
-                value={selectedAgentType}
-                onChange={handleAgentTypeChange}
-              >
-
+              <select id="agentTypeDropdown" className={styles.agentTypeDropdown} value={selectedAgentType} onChange={handleAgentTypeChange}>
                 <option value="">All</option>
                 {agentTypes.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -96,24 +92,12 @@ const SubHeader = (props) => {
               </select>
             </div>
           )}
-          <SearchInputToolsAgents
-            inputProps={{ placeholder: "SEARCH" }}
-            handleSearch={handleSearch}
-            heading={heading}
-            clearSearch={clearSearch}
-          />
-          <button onClick={handleSettingClick} className={styles.setting}>
-            {selectedTags?.length > 0 && (
-              <span className={styles.badge}>{selectedTags?.length}</span>
-            )}
-            <SVGIcons
-              icon="slider-rect"
-              width={20}
-              height={18}
-              fill="#C3C1CF"
-            />
+          <SearchInputToolsAgents inputProps={{ placeholder: "SEARCH" }} handleSearch={handleSearch} heading={heading} clearSearch={clearSearch} searchValue={props.searchValue} />
+          <button type="button" onClick={handleSettingClick} className={styles.setting}>
+            {selectedTags?.length > 0 && <span className={styles.badge}>{selectedTags?.length}</span>}
+            <SVGIcons icon="slider-rect" width={20} height={18} fill="#C3C1CF" />
           </button>
-          <button onClick={handlePlusClick} className={styles.plus}>
+          <button type="button" onClick={handlePlusClick} className={styles.plus}>
             <SVGIcons icon="fa-plus" fill="#007CC3" width={16} height={16} />
           </button>
         </div>

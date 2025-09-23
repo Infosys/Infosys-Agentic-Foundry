@@ -1,4 +1,4 @@
-.popup-message-modal{
+.popup-message-modal {
   position: fixed;
   top: 0;
   left: 0;
@@ -7,13 +7,13 @@
   background: rgba(0, 0, 0, 0.253);
   display: flex;
   justify-content: center;
-  z-index: 1000;
+  z-index: 1201;
 }
 
 .message-container {
-  width: 383px;
+  width: 450px;
   max-width: 100%;
-  padding: 10px;
+  padding: 60px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -21,7 +21,7 @@
 }
 
 .message-popup {
-  background: #FFFFFF 0% 0% no-repeat padding-box;
+  background: #ffffff 0% 0% no-repeat padding-box;
   color: #333;
   padding: 10px;
   padding-left: 12.5px;
@@ -40,14 +40,14 @@
 }
 
 .message-popup.success {
-  border: 1px solid #8EAA20;
+  border: 1px solid #8eaa20;
 }
 
 .message-popup.error {
-  border: 1px solid #B32B2B;
+  border: 1px solid #b32b2b;
 }
 
-.icon-container{
+.icon-container {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -58,17 +58,17 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.icon-container.error{
-  background-color: #B32B2B;
+.icon-container.error {
+  background-color: #b32b2b;
   padding: 8.5px;
 }
 
-.icon-container.success{
-  background-color: #8EAA20;
+.icon-container.success {
+  background-color: #8eaa20;
   padding: 5px;
 }
 
-.close-btn{
+.close-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -77,7 +77,7 @@
   padding: 0;
 }
 
-.icon-message{
+.icon-message {
   display: flex;
   align-items: center;
   gap: 10px;

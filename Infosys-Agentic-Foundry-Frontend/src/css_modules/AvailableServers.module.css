@@ -1,0 +1,641 @@
+:root {
+  --card-bg: #ffffff;
+  --muted: #6b7280;
+  --accent: #0b5fff;
+  --border: #e6e9ef;
+  --pill-bg: #eef2ff;
+  --success: #16a34a;
+  --shadow: 0 1px 4px rgba(16, 24, 40, 0.06);
+}
+
+.container {
+  height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 18px 22px;
+  padding-left: 0;
+  padding-top: 0;
+  width: 100%;
+}
+
+.subHeaderContainer {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.summaryLine {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 10px 0 5px 1px;
+}
+
+.serverGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px; /* Reduced gap for tighter card spacing */
+}
+
+.serverCard {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  /* reduce bottom padding so footer sits closer to border */
+  padding: 12px 14px 12px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  position: relative; /* allow overlay */
+  overflow: hidden; /* ensure overlay cannot spill outside the card */
+}
+
+.typeCorner {
+  display: block;
+  margin-top: 8px;
+}
+.typePill {
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+
+  /* unified grey color for both LOCAL and REMOTE */
+  background: var(--muted);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.serverName {
+  font-weight: 600;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.statusPill {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #0f172a;
+  background: var(--pill-bg);
+  border: 1px solid rgba(11, 95, 255, 0.08);
+}
+
+.statusPill.approved {
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--success);
+  border: 1px solid rgba(22, 163, 74, 0.12);
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sourceDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.green {
+  background: #16a34a;
+}
+.yellow {
+  background: #f59e0b;
+}
+
+.idPill {
+  background: #f8fafc;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid #eef2ff;
+}
+
+.typeTag {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.typeTag.code {
+  color: #0b5fff;
+  border: 1px solid rgba(11, 95, 255, 0.06);
+  background: var(--pill-bg);
+}
+
+.teamLabel {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pill {
+  background: #eef2ff;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #0b5fff;
+}
+
+.tagsContainer {
+  display: flex;
+  gap: 6px;
+}
+
+.tagBadge {
+  background: #f3f4f6;
+  color: #374151;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.desc {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #334155;
+  min-height: 34px;
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  /* push the action row to the bottom of the card */
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* left side of the footer: type pill + endpoint */
+.leftFooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0; /* allow endpoint to ellipsis when needed */
+}
+
+.btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  box-shadow: 0 4px 10px rgba(11, 95, 255, 0.06);
+}
+
+.metaLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.metaRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.endpointWrap {
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.actionButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.iconBtnMinimal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 14px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.08s ease, transform 0.06s ease;
+  font-size: 10px;
+}
+.iconBtnMinimal:hover {
+  background: rgba(0, 0, 0, 0.04);
+  transform: translateY(-1px);
+}
+.iconBtnMinimal:active {
+  transform: translateY(0);
+}
+.iconBtnMinimal:focus {
+  outline: 2px solid rgba(0, 0, 0, 0.08);
+}
+.iconBtnMinimal svg {
+  width: 21px;
+  height: 14px;
+  display: block;
+  font-size: 10px;
+}
+
+/* undo bar */
+.undoBar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 24px;
+  background: #111827;
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  z-index: 1300;
+}
+.undoBtn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Modal styles */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: stretch; /* Full height */
+  justify-content: flex-end; /* Position drawer to the right */
+  z-index: 1200;
+}
+.modal {
+  width: 730px;
+  max-width: calc(100% - 40px);
+  background: #fff;
+  padding: 18px;
+  position: relative;
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.18); /* Left shadow for drawer effect */
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border-left: 1px solid #e0e0e0; /* Add left border for definition */
+  top: 44px;
+  padding-bottom: 15px;
+  margin-bottom: 45px;
+}
+.closeBtn {
+  position: absolute;
+  right: 12px; /* Changed from left: 12px; to right: 12px; */
+  top: 2px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 0;
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(2, 6, 23, 0.08);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+.modalBody {
+  display: flex;
+  gap: 18px;
+  font-size: 17px;
+}
+.modalLeft {
+  flex: 0 0 46%;
+}
+.modalRight {
+  flex: 1 1 54%;
+}
+.modalTitle {
+  margin: 6px 0 8px 0;
+  color: #0f172a;
+  font-size: 22px;
+}
+.badgeRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.infoGrid {
+  display: flex;
+  gap: 12px;
+}
+.infoCol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.infoRow {
+  font-size: 16px;
+  color: #0f172a;
+}
+.codeLabel {
+  font-size: 16px;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+.codePreview {
+  background: #0b0b0b;
+  color: #e6eef8;
+  padding: 14px;
+  border-radius: 6px;
+  min-height: 220px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+  font-size: 15px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* delete-confirm UI (in-card) */
+.cancelBtn {
+  background: transparent;
+  border: 0;
+  position: relative;
+  margin-right: 6px;
+  cursor: pointer;
+}
+.deleteConfirmRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  flex-wrap: nowrap;
+  padding-right: 8px;
+  flex: 1;
+}
+.endpointWrap.deleteHidden {
+  display: none;
+}
+.emailIdInput {
+  padding: 8px 4px 7px 4px;
+  box-shadow: inset 0px 3px 6px #00000029;
+  border-radius: 4px;
+  outline: none;
+  border: none;
+  width: 100%;
+  margin-top: 13px;
+  color: #3d4359;
+}
+.emailIdInput::placeholder {
+  color: #3d4359;
+}
+.actionInfo {
+  font-size: 13px;
+  font-weight: 400;
+  margin-bottom: 10px;
+  margin-left: 2px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  color: black;
+}
+.warningIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+.deleteBtnContainer {
+  text-align: center;
+  margin-top: 0px;
+  display: flex;
+  justify-content: center;
+}
+.confirmDeleteBtn {
+  background-color: #6a2020;
+  color: white;
+  font: normal normal 600 12px/14px Segoe UI;
+  border: none;
+  padding: 6px 7px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.confirmDeleteBtn:hover {
+  background-color: #7f1d1d;
+  color: white;
+} /* darker red on hover */
+.confirmDeleteBtn:active {
+  background-color: #991b1b;
+  color: white;
+  transform: translateY(1px);
+} /* even darker red while clicking */
+.error {
+  color: #721c24;
+  margin-top: 10px;
+  font: normal normal 600 12px/14px Segoe UI;
+  text-align: center;
+}
+
+/* overlay that covers the card when delete is clicked */
+.cardDeleteOverlay {
+  position: absolute;
+  inset: 0;
+  background: #b0b3bc 0% 0% no-repeat padding-box;
+  color: black;
+  border: none;
+  font: normal normal normal 12px/14px Segoe UI;
+  padding: 9px 14px 21px 14px;
+  border-radius: 4px;
+  z-index: 1200; /* sit above other UI */
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* panel that matches tool delete card styling */
+.overlayPanel {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.overlayPanel > * {
+  box-sizing: border-box;
+}
+
+/* close button in overlay (top-right) - matches tool cancel button */
+.overlayClose {
+  border: none;
+  background: transparent;
+  float: right;
+  cursor: pointer;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: auto;
+  height: auto;
+  padding: 4px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Deep fix: Ensure drawer modal and its form fill full height, no bottom gap, and scroll correctly */
+.modalDrawerRight {
+  position: fixed;
+  right: 0;
+  top: 0;
+  /* width: 480px; */
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 100vh;
+  background: #fff;
+  z-index: 1200;
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.drawerContent {
+  flex: 1 1 auto;
+  /* overflow-y: auto; */
+  padding: 32px 24px 24px 24px;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  max-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* Unique drawer form container for AvailableServers only */
+.modalDrawerRight .availableServersDrawerForm {
+  right: 0 !important;
+  height: 100vh !important;
+  /* min-height: 100vh !important; */
+  max-height: 100vh !important;
+  background-color: white !important;
+  padding: 20px !important;
+  padding-bottom: 32px !important;
+  z-index: 2 !important;
+  /* overflow-y: auto !important; */
+  overflow-x: hidden !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  box-sizing: border-box !important;
+  border-bottom: none !important;
+}
+
+.noRadius {
+  border-radius: 0 !important;
+}
+
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.loginBtn {
+  padding: 8px 16px;
+  background-color: #007cc3;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.loginBtn:hover {
+  background-color: #005a99;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  background-color: #343741;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.cancelBtn:hover {
+  background-color: #2a2f42;
+}
+
+.titleContainer {
+  position: absolute;
+  top: 40px;
+  left: 30%;
+  flex-direction: row-reverse;
+  gap: 8px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 0px 10px;
+}
+
+.titleContainer h3 {
+  font-size: 13px;
+}
+
+.titleContainer button {
+  padding: 0;
+  box-shadow: none;
+  border: none;
+}
+
+.titleContainer svg {
+  font-size: 13px;
+}
+
+.searchedServerText {
+  margin-bottom: 16px;
+  font-weight: bold;
+  position: absolute;
+  top: 85px;
+  left: 240px;
+}
+
+.filteredServerText {
+  margin-bottom: 16px;
+  font-weight: bold;
+}

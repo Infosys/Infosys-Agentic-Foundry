@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useRef } from 'react';
 import styles from './ConnectionManagementModal.module.css';
 import SVGIcons from '../../Icons/SVGIcons';
-import { fetchConnections } from '../../services/databaseService';
+import { useDatabases } from './service/databaseService.js';
 import ActiveConnections from '../DataConnectors/ActiveConnections.jsx';
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { useMessage } from "../../Hooks/MessageContext";
-import Loader from "../commonComponents/Loader.jsx";
 import { useDatabase } from "./context/DatabaseContext";
+import Loader from "../commonComponents/Loader.jsx";
 
 const ConnectionManagementModal = ({ 
   isOpen, 
@@ -21,14 +21,19 @@ const ConnectionManagementModal = ({
   const [isActivating, setIsActivating] = useState(false);
   const { handleConnectOrActivate, handleDisconnect, handleDeactivate } = useDatabaseConnections();
   const { addMessage, setShowPopup } = useMessage();
+  const { 
+    getActivePostgresConnections, 
+    getActiveMySQLConnections, 
+    getActiveSQLiteConnections, 
+    getActiveMongoConnections 
+  } = useDatabase();
   const [apiConnections, setApiConnections] = useState([]);
   const [loadingApiConnections, setLoadingApiConnections] = useState(false);
-  const [pendingToast, setPendingToast] = useState(null);
-  const { activeConnections } = useDatabase();
+  const { fetchConnections } = useDatabases();
+  const hasConnectionsRef = useRef(false);
 
   // Fetch all available connections from API on mount
-  useEffect(() => {
-    const fetchAllConnections = async () => {
+  const fetchAllConnections = async () => {
       setLoadingApiConnections(true);
       try {
         const result = await fetchConnections();
@@ -43,7 +48,12 @@ const ConnectionManagementModal = ({
         setLoadingApiConnections(false);
       }
     };
-    fetchAllConnections();
+
+  useEffect(() => {
+    if(!hasConnectionsRef.current) {
+      hasConnectionsRef.current = true;
+      fetchAllConnections();
+    }
   }, []);
 
   // Filter connections if databaseType is provided (from API)
@@ -75,6 +85,42 @@ const ConnectionManagementModal = ({
     );
     setSelectedConnection(connectionId);
     setSelectedConnectionData(connectionObj || null);
+  };
+
+  // Helper function to check if the selected connection is active
+  const isSelectedConnectionActive = () => {
+    if (!selectedConnectionData) return false;
+    
+    const connectionName = selectedConnectionData.connection_name || 
+                          selectedConnectionData.name || 
+                          selectedConnectionData.id || 
+                          selectedConnectionData.connectionName;
+    
+    const databaseType = (selectedConnectionData.connection_database_type || 
+                         selectedConnectionData.type || 
+                         selectedConnectionData.databaseType || '').toLowerCase();
+    
+    // Get active connections for the respective database type
+    let activeConnections = [];
+    switch (databaseType) {
+      case 'postgresql':
+        activeConnections = getActivePostgresConnections();
+        break;
+      case 'mysql':
+        activeConnections = getActiveMySQLConnections();
+        break;
+      case 'sqlite':
+        activeConnections = getActiveSQLiteConnections();
+        break;
+      case 'mongodb':
+        activeConnections = getActiveMongoConnections();
+        break;
+      default:
+        return false;
+    }
+    
+    // Check if the connection name is in the active connections list
+    return activeConnections.includes(connectionName);
   };
 
   const handleDisconnectClick = async () => {
@@ -130,7 +176,6 @@ const ConnectionManagementModal = ({
         setSelectedConnection("");
         setSelectedConnectionData(null);
         onClose();
-        addMessage("Database connection activated successfully!", "success");
       } catch (error) {
         onClose();
         addMessage(`Error activating connection: ${error.message}`, "error");
@@ -202,18 +247,18 @@ const ConnectionManagementModal = ({
                     Disconnect
               </button>
               <button
-                className={`${styles.activateButton} ${!selectedConnection ? styles.disabled : ''}`}
+                className={`${styles.activateButton} ${(!selectedConnection || isSelectedConnectionActive()) ? styles.disabled : ''}`}
                 onClick={handleActivate}
-                disabled={!selectedConnection || isActivating}
+                disabled={!selectedConnection || isActivating || isSelectedConnectionActive()}
               >
                 <SVGIcons icon="check" width={16} height={16} fill="white" />
                     Activate
               </button>
 
               <button
-                className={`${styles.disconnectButton} ${!selectedConnection ? styles.disabled : ''}`}
+                className={`${styles.disconnectButton} ${(!selectedConnection || !isSelectedConnectionActive()) ? styles.disabled : ''}`}
                 onClick={handleDeactivateClick}
-                disabled={!selectedConnection || isDisconnecting}
+                disabled={!selectedConnection || isDisconnecting || !isSelectedConnectionActive()}
               >
                     <SVGIcons icon="close" width={16} height={16} fill="white" />
                     Deactivate

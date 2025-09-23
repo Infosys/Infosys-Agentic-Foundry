@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Register from "../Register/Index";
 import Loader from "../commonComponents/Loader";
 import { useMessage } from "../../Hooks/MessageContext";
-import {BASE_URL} from "../../constant";
+import { APIs } from "../../constant";
 import AgentList from "./AgentsList";
 import ResponsesList from "./ResponseList";
 import ResponseDetail from "./ResponseDetail";
@@ -11,18 +11,21 @@ import styles from "./AdminScreen.module.css";
 // import EvaluationScore from "../AdminScreen/EvaluationScore.js";
 import UpdatePassword from "./UpdatePassword.jsx";
 import RecycleBin from "./RecycleBin.jsx";
+import useFetch from "../../Hooks/useAxios.js";
 
 const AdminScreen = () => {
   const [agents, setAgents] = useState([]);
   const [responses, setResponses] = useState([]);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [responseDetail, setResponseDetail] = useState(null);
-  const [form, setForm] = useState({});// form state for response details
-  const [loadingAgents, setLoadingAgents] = useState(false);//loader state for agents
-  const [activeTab, setActiveTab] = useState("register"); // State for active tab
-  const { addMessage, setShowPopup} = useMessage(); // Message context for notifications
-  
+  const [form, setForm] = useState({}); // form state for response details
+  const [loadingAgents, setLoadingAgents] = useState(false); //loader state for agents
+  const [activeTab, setActiveTab] = useState("user"); // State for active tab
+  const [activeUserSubTab, setActiveUserSubTab] = useState("register"); // State for User sub-tabs
+  const { addMessage, setShowPopup } = useMessage(); // Message context for notifications
+
   const [selectedAgentName, setSelectedAgentName] = useState(null);
+  const { fetchData, putData } = useFetch();
 
   useEffect(() => {
     if (!loadingAgents) {
@@ -32,23 +35,33 @@ const AdminScreen = () => {
     }
   }, [loadingAgents, setShowPopup]);
 
+  const extractErrorMessage = (error) => {
+    const responseError = { message: null };
+    if (error.response?.data?.detail) {
+      responseError.message = error.response.data.detail;
+    }
+    if (error.response?.data?.message) {
+      responseError.message = error.response.data.message;
+    }
+    return responseError.message ? responseError : null;
+  };
   // Fetch all agents
   const loadAgents = async () => {
     setLoadingAgents(true);
     try {
       setAgents([]); // Clear agents before loading new data
-      const res = await fetch(`${BASE_URL}/get-approvals-list`);
-      const agentsData = await res.json();
+      const agentsData = await fetchData(APIs.GET_APPROVALS_LIST);
       setAgents(agentsData);
     } catch (err) {
-      addMessage("Failed to load agents", "error");
+      // addMessage("Failed to load agents", "error");
+      addMessage(extractErrorMessage(err).message, "error");
     } finally {
       setLoadingAgents(false);
     }
   };
   // Fetch agents on mount and clear response states when switching tabs
   useEffect(() => {
-    if(activeTab === "learning"){
+    if (activeTab === "learning") {
       // Reset states when switching to learning tab
       setResponseDetail(null);
       setSelectedAgentId(null);
@@ -60,24 +73,24 @@ const AdminScreen = () => {
     setSelectedAgentId(agentId);
     setSelectedAgentName(agentName);
     try {
-      const res = await fetch(`${BASE_URL}/get-approvals-by-id/${agentId}`);
-      const responsesData = await res.json();
+      const responsesData = await fetchData(`${APIs.GET_APPROVALS_BY_ID}${agentId}`);
       setResponses(responsesData);
       // Switch to learning tab when an agent is selected
       setActiveTab("learning");
     } catch (err) {
-      addMessage("Failed to load responses", "error");
+      // addMessage("Failed to load responses", "error");
+      addMessage(extractErrorMessage(err).message, "error");
     }
   };
 
   // Fetch details for a selected response
   const loadResponseDetail = async (responseId) => {
     try {
-      const res = await fetch(`${BASE_URL}/get-responses-data/${responseId}`);
-      const data = await res.json();
+      const data = await fetchData(`${APIs.GET_RESPONSES_DATA}${responseId}`);
       const response = data[0] || {};
       setResponseDetail(response);
       setForm({
+        agent_name: response.agent_name || "--",
         response_id: response.response_id || "",
         query: response.query || "",
         old_final_response: response.old_final_response || "",
@@ -86,10 +99,12 @@ const AdminScreen = () => {
         feedback: response.feedback || "",
         new_final_response: response.new_final_response || "",
         new_steps: response.new_steps || "",
-        approved: response.approved === 1,
+        approved: response.approved,
+        lesson: response.lesson || "",
       });
     } catch (err) {
-      addMessage("Failed to load response details", "error");
+      // addMessage("Failed to load response details", "error");
+      addMessage(extractErrorMessage(err).message, "error");
     }
   };
 
@@ -104,17 +119,13 @@ const AdminScreen = () => {
     e.preventDefault();
     const payload = { ...form };
     try {
-      const res = await fetch(`${BASE_URL}/update-approval-response`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const response = await putData(APIs.UPDATE_APPROVAL_RESPONSE, payload);
       setLoadingAgents(false); // Hide loader before showing toast
-      if (res.ok) {
+      if (response.is_update) {
         addMessage("Updated successfully!", "success");
         // After successful update, return to the responses list
-        setResponseDetail(null);
-        loadResponses(selectedAgentId);
+        // setResponseDetail(null);
+        loadResponses(selectedAgentId, selectedAgentName);
       } else {
         addMessage("Update failed!", "error");
       }
@@ -125,25 +136,22 @@ const AdminScreen = () => {
   };
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", marginLeft: 20,marginTop:20, maxHeight: '80vh', overflowY: 'auto' }}>
+    <div style={{ fontFamily: "Arial, sans-serif", marginLeft: 20, marginTop: 10, overflowY: "hidden" }}>
       {loadingAgents && <Loader />}
-      
-      {/* Tabs Header */}      <div className={styles.tabHeader}>
-        <button 
-          className={activeTab === "register" ? styles.activeTab : styles.tab} 
+      {/* Tabs Header */}{" "}
+      <div className={styles.tabHeader}>
+        <button
+          className={`iafTabsBtn ${activeTab === "user" ? " active" : ""}`}
           onClick={() => {
-            setActiveTab("register");
-            // Clear response states when switching to Register tab
+            setActiveTab("user");
+            // Clear response states when switching to User tab
             setResponseDetail(null);
             setSelectedAgentId(null);
-          }}
-        >
-          Register
+          }}>
+          User
         </button>
-        <button 
-          className={activeTab === "learning" ? styles.activeTab : styles.tab} 
-          onClick={() => setActiveTab("learning")}
-        >
+
+        <button className={`iafTabsBtn ${activeTab === "learning" ? " active" : ""}`} onClick={() => setActiveTab("learning")}>
           Learning
         </button>
         {/* Commented out - moved to separate Evaluation page
@@ -169,37 +177,45 @@ const AdminScreen = () => {
           Evaluations
         </button>
         */}
-         <button 
-          className={activeTab === "Update User" ? styles.activeTab : styles.tab} 
+        <button
+          className={`iafTabsBtn ${activeTab === "Recycle Bin" ? " active" : ""}`}
           onClick={() => {
-            setActiveTab("Update User");
+            setActiveTab("Recycle Bin");
             setResponseDetail(null);
             setSelectedAgentId(null);
-          }}
-        >
-         Update User
+          }}>
+          RecycleBin
         </button>
-      <button 
-  className={activeTab === "Recycle Bin" ? styles.activeTab : styles.tab} 
-  onClick={() => {
-    setActiveTab("Recycle Bin"); 
-    setResponseDetail(null);
-    setSelectedAgentId(null);
-  }}
->
-  RecycleBin
-</button>
-       
       </div>
-
       {/* Tab Content */}
       <div className={styles.tabContent}>
-        {/* Register Tab */}
-        {activeTab === "register" && (
-          <div className={styles.registrationForm}>
-            <Register isAdminScreen={true} />
+        {/* User Tab with Sub-tabs */}
+        {activeTab === "user" && (
+          <div>
+            {/* Sub-tabs Header */}
+            <div style={{ marginBottom: "16px" }}>
+              <button className={`iafTabsBtn ${activeUserSubTab === "register" ? " active" : ""}`} onClick={() => setActiveUserSubTab("register")}>
+                Register
+              </button>
+              <button className={`iafTabsBtn ${activeUserSubTab === "update" ? " active" : ""}`} onClick={() => setActiveUserSubTab("update")}>
+                Update
+              </button>
+            </div>
+
+            {/* Sub-tab Content */}
+            {activeUserSubTab === "register" && (
+              <div className={styles.registrationForm}>
+                <Register isAdminScreen={true} />
+              </div>
+            )}
+            {activeUserSubTab === "update" && (
+              <div className={styles.evaluateMetrics}>
+                <UpdatePassword />
+              </div>
+            )}
           </div>
         )}
+
         {/* Learning Tab */}
         {activeTab === "learning" && (
           <div>
@@ -251,15 +267,11 @@ const AdminScreen = () => {
           </div>
         )} */}
         {/* End of commented evaluation sections */}
-         {activeTab === "Update User" && (
-          <div className={styles.evaluateMetrics}>
-            {/* <EvaluationScore /> */}
-            <UpdatePassword />
+        {activeTab === "Recycle Bin" && (
+          <div className={styles.adminRecycleBin}>
+            <RecycleBin />
           </div>
         )}
-        {activeTab === "Recycle Bin" && (
-    <RecycleBin />
-)}
       </div>
     </div>
   );

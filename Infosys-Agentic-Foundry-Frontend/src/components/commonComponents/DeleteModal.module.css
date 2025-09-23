@@ -54,15 +54,10 @@
 }
 
 .modalContent button {
-  padding: 10px 20px;
-  background-color: #007bff; /* Blue background for the button */
+  padding: 8px;
   color: white;
   border: none;
   border-radius: 5px;
   cursor: pointer;
   font-size: 16px;
-}
-
-.modalContent button:hover {
-  background-color: #0056b3; /* Darker blue on hover */
 }

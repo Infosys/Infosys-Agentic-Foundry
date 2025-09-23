@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { evaluate, getEvaluationData, getToolMetricsData, getAgentMetricsData, createLazyLoadHandler } from "../../components/EvaluateService.js";
+import { useEndpointsService } from "../../components/EvaluateService.js";
 import Loader from "../commonComponents/Loader";
 import { useMessage } from "../../Hooks/MessageContext";
 import styles from "./EvaluationScore.module.css";
@@ -22,12 +22,10 @@ const EvaluationScore = () => {
     const [toolMetricsData, setToolMetricsData] = useState([]);
     const [agentMetricsData, setAgentMetricsData] = useState([]);
     const [selectedAgentNames, setSelectedAgentNames] = useState([]);
-    const [evaluationRecords, setEvaluationRecords] = useState([]);
     const [isFiltering, setIsFiltering] = useState(false);
     const [loading, setLoading] = useState(false);
     const [isTableView, setIsTableView] = useState(true); // Add this state
-
-    
+    const {getEvaluationData, getToolMetricsData, getAgentMetricsData,createLazyLoadHandler  } = useEndpointsService();
     // Added for lazy loading
     const [page, setPage] = useState(1);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -145,14 +143,11 @@ const EvaluationScore = () => {
         try {
             // Initial load without any agent filter
             const response = await getEvaluationData(null, 1, limit);
-            if (response && response.data && Array.isArray(response.data)) {
-                setEvaluationData(response.data);
-                setHasMoreEvaluationData(response.data.length === limit);
-            } else if (response && Array.isArray(response)) {
+            if (response && Array.isArray(response)) {
                 setEvaluationData(response);
                 setHasMoreEvaluationData(response.length === limit);
             } else {
-                addMessage("Invalid evaluation data response", "error");
+                addMessage("No evaluation data found", "error");
                 setHasMoreEvaluationData(false);
             }
         } catch (error) {
@@ -184,40 +179,31 @@ const EvaluationScore = () => {
                 switch (activeTab) {
                     case "Evaluation Records":
                         const evalData = await getEvaluationData(null, 1, limit);
-                        if (evalData && evalData.data && Array.isArray(evalData.data)) {
-                            setEvaluationData(evalData.data);
-                            setHasMoreEvaluationData(evalData.data.length === limit);
-                        } else if (evalData && Array.isArray(evalData)) {
+                       if (evalData && Array.isArray(evalData)) {
                             setEvaluationData(evalData);
                             setHasMoreEvaluationData(evalData.length === limit);
                         } else {
-                            addMessage("Invalid evaluation data response", "error");
+                            addMessage("No evaluation data found", "error");
                             setHasMoreEvaluationData(false);
                         }
                         break;
                     case "Tools Efficiency":
                         const toolData = await getToolMetricsData(null, 1, limit);
-                        if (toolData && toolData.data && Array.isArray(toolData.data)) {
-                            setToolMetricsData(toolData.data);
-                            setHasMoreToolMetricsData(toolData.data.length === limit);
-                        } else if (toolData && Array.isArray(toolData)) {
+                       if (toolData && Array.isArray(toolData)) {
                             setToolMetricsData(toolData);
                             setHasMoreToolMetricsData(toolData.length === limit);
                         } else {
-                            addMessage("Invalid tool metrics data response", "error");
+                            addMessage("No tool metrics data found", "error");
                             setHasMoreToolMetricsData(false);
                         }
                         break;
                     case "Agents Efficiency":
                         const agentData = await getAgentMetricsData(null, 1, limit);
-                        if (agentData && agentData.data && Array.isArray(agentData.data)) {
-                            setAgentMetricsData(agentData.data);
-                            setHasMoreAgentMetricsData(agentData.data.length === limit);
-                        } else if (agentData && Array.isArray(agentData)) {
+                       if (agentData && Array.isArray(agentData)) {
                             setAgentMetricsData(agentData);
                             setHasMoreAgentMetricsData(agentData.length === limit);
                         } else {
-                            addMessage("Invalid agent metrics data response", "error");
+                            addMessage("No agent metrics data found", "error");
                             setHasMoreAgentMetricsData(false);
                         }
                         break;
@@ -252,40 +238,31 @@ const EvaluationScore = () => {
             switch (activeTab) {
                 case "Evaluation Records":
                     const evaluationData = await getEvaluationData(agentNamesString, 1, limit);
-                    if (evaluationData && evaluationData.data && Array.isArray(evaluationData.data)) {
-                        setEvaluationData(evaluationData.data);
-                        setHasMoreEvaluationData(evaluationData.data.length === limit);
-                    } else if (evaluationData && Array.isArray(evaluationData)) {
+                    if (evaluationData && Array.isArray(evaluationData)) {
                         setEvaluationData(evaluationData);
                         setHasMoreEvaluationData(evaluationData.length === limit);
                     } else {
-                        addMessage("Invalid evaluation data response", "error");
+                        addMessage("No evaluation data found", "error");
                         setHasMoreEvaluationData(false);
                     }
                     break;
                 case "Tools Efficiency":
                     const toolData = await getToolMetricsData(agentNamesString, 1, limit);
-                    if (toolData && toolData.data && Array.isArray(toolData.data)) {
-                        setToolMetricsData(toolData.data);
-                        setHasMoreToolMetricsData(toolData.data.length === limit);
-                    } else if (toolData && Array.isArray(toolData)) {
+                   if (toolData && Array.isArray(toolData)) {
                         setToolMetricsData(toolData);
                         setHasMoreToolMetricsData(toolData.length === limit);
                     } else {
-                        addMessage("Invalid tool metrics data response", "error");
+                        addMessage("No tool metrics data found", "error");
                         setHasMoreToolMetricsData(false);
                     }
                     break;
                 case "Agents Efficiency":
                     const agentData = await getAgentMetricsData(agentNamesString, 1, limit);
-                    if (agentData && agentData.data && Array.isArray(agentData.data)) {
-                        setAgentMetricsData(agentData.data);
-                        setHasMoreAgentMetricsData(agentData.data.length === limit);
-                    } else if (agentData && Array.isArray(agentData)) {
+                   if (agentData && Array.isArray(agentData)) {
                         setAgentMetricsData(agentData);
                         setHasMoreAgentMetricsData(agentData.length === limit);
                     } else {
-                        addMessage("Invalid agent metrics data response", "error");
+                        addMessage("No agent metrics data found", "error");
                         setHasMoreAgentMetricsData(false);
                     }
                     break;
@@ -316,38 +293,29 @@ const EvaluationScore = () => {
                 
                 if (tab === "Tools Efficiency") {
                     const data = await getToolMetricsData(agentNamesString, 1, limit);
-                    if (data && data.data && Array.isArray(data.data)) {
-                        setToolMetricsData(data.data);
-                        setHasMoreToolMetricsData(data.data.length === limit);
-                    } else if (data && Array.isArray(data)) {
+                  if (data && Array.isArray(data)) {
                         setToolMetricsData(data);
                         setHasMoreToolMetricsData(data.length === limit);
                     } else {
-                        addMessage("Invalid tool metrics data response", "error");
+                        addMessage("No tool metrics data found", "error");
                         setHasMoreToolMetricsData(false);
                     }
                 } else if (tab === "Agents Efficiency") {
                     const data = await getAgentMetricsData(agentNamesString, 1, limit);
-                    if (data && data.data && Array.isArray(data.data)) {
-                        setAgentMetricsData(data.data);
-                        setHasMoreAgentMetricsData(data.data.length === limit);
-                    } else if (data && Array.isArray(data)) {
+                    if (data && Array.isArray(data)) {
                         setAgentMetricsData(data);
                         setHasMoreAgentMetricsData(data.length === limit);
                     } else {
-                        addMessage("Invalid agent metrics data response", "error");
+                        addMessage("No agent metrics data found", "error");
                         setHasMoreAgentMetricsData(false);
                     }
                 } else if (tab === "Evaluation Records" && evaluationData.length === 0) {
-                    const data = await getEvaluationData(agentNamesString, 1, limit);
-                    if (data && data.data && Array.isArray(data.data)) {
-                        setEvaluationData(data.data);
-                        setHasMoreEvaluationData(data.data.length === limit);
-                    } else if (data && Array.isArray(data)) {
+                  const data = await getEvaluationData(agentNamesString, 1, limit);
+                    if (data && Array.isArray(data)) {
                         setEvaluationData(data);
                         setHasMoreEvaluationData(data.length === limit);
                     } else {
-                        addMessage("Invalid evaluation data response", "error");
+                        addMessage("No evaluation data found", "error");
                         setHasMoreEvaluationData(false);
                     }
                 }
@@ -355,38 +323,29 @@ const EvaluationScore = () => {
                 // No selected agents, fetch all data
                 if (tab === "Tools Efficiency" && toolMetricsData.length === 0) {
                     const data = await getToolMetricsData(null, 1, limit);
-                    if (data && data.data && Array.isArray(data.data)) {
-                        setToolMetricsData(data.data);
-                        setHasMoreToolMetricsData(data.data.length === limit);
-                    } else if (data && Array.isArray(data)) {
+                   if (data && Array.isArray(data)) {
                         setToolMetricsData(data);
                         setHasMoreToolMetricsData(data.length === limit);
                     } else {
-                        addMessage("Invalid tool metrics data response", "error");
+                        addMessage("No tool metrics data found", "error");
                         setHasMoreToolMetricsData(false);
                     }
                 } else if (tab === "Agents Efficiency" && agentMetricsData.length === 0) {
                     const data = await getAgentMetricsData(null, 1, limit);
-                    if (data && data.data && Array.isArray(data.data)) {
-                        setAgentMetricsData(data.data);
-                        setHasMoreAgentMetricsData(data.data.length === limit);
-                    } else if (data && Array.isArray(data)) {
+                   if (data && Array.isArray(data)) {
                         setAgentMetricsData(data);
                         setHasMoreAgentMetricsData(data.length === limit);
                     } else {
-                        addMessage("Invalid agent metrics data response", "error");
+                        addMessage("No agent metrics data found", "error");
                         setHasMoreAgentMetricsData(false);
                     }
                 } else if (tab === "Evaluation Records" && evaluationData.length === 0) {
-                    const data = await getEvaluationData(null, 1, limit);
-                    if (data && data.data && Array.isArray(data.data)) {
-                        setEvaluationData(data.data);
-                        setHasMoreEvaluationData(data.data.length === limit);
-                    } else if (data && Array.isArray(data)) {
+                  const data = await getEvaluationData(null, 1, limit);
+                    if (data && Array.isArray(data)) {
                         setEvaluationData(data);
                         setHasMoreEvaluationData(data.length === limit);
                     } else {
-                        addMessage("Invalid evaluation data response", "error");
+                        addMessage("No evaluation data found", "error");
                         setHasMoreEvaluationData(false);
                     }
                 }
@@ -419,7 +378,7 @@ const EvaluationScore = () => {
                                     <table className={styles.evaluationTable}>
                                         <thead>
                                             <tr>
-                                                <th>Session ID</th>
+                                                <th>Session Id</th>
                                                 <th>Query</th>
                                                 <th>Response</th>
                                                 <th>Model Used</th>
@@ -430,7 +389,7 @@ const EvaluationScore = () => {
                                         <tbody>
                                             {evaluationData.map((item, index) => (
                                                 <tr key={index}>
-                                                    <td>{item.session_id}</td>
+                                                <td>{item.session_id}</td>
                                                     <td>{item.query}</td>
                                                     <td>
                                                         <div className={styles.responseCell}>
@@ -450,7 +409,7 @@ const EvaluationScore = () => {
                                 <div className={styles.accordionContainer}>
                                     {evaluationData.map((item, index) => (
                                         <details key={index} className={styles.accordionItem}>
-                                            <summary>
+                                        <summary>
                                                 <span>{item.query}</span>
                                                 <span>{item.model_used}</span>
                                                 <span>{item.agent_name}</span>
@@ -496,7 +455,7 @@ const EvaluationScore = () => {
                                         <tbody>
                                             {toolMetricsData.map((item, index) => (
                                                 <tr key={index}>
-                                                    <td>{item.id}</td>
+                                               <td>{item.id}</td>
                                                     <td>{item.user_query}</td>
                                                     <td>
                                                         <div className={styles.responseCell}>
@@ -534,8 +493,8 @@ const EvaluationScore = () => {
                                                 <div style={{marginBottom: '12px'}}>
                                                     <strong>Agent Response:</strong><br />
                                                     {item.agent_response}
-                                                </div>
-                                                <div style={{marginBottom: '12px'}}>
+                                          </div>
+                                          <div style={{marginBottom: '12px'}}>
                                                     <strong>Tool Selection Accuracy Justification:</strong><br />
                                                     {item.tool_selection_accuracy_justification}
                                                 </div>
@@ -571,22 +530,23 @@ const EvaluationScore = () => {
                                     <table className={styles.evaluationTable}>
                                         <thead>
                                             <tr>
-                                                <th>ID</th>
-                                                <th>Query</th>
+                                  <th>ID</th>
+                                  <th>Query</th>
                                                 <th>Response</th>
                                                 <th>Model</th>
+                                  
                                                 <th>Task Decomposition</th>
-                                                <th>Reasoning Relevancy</th>
+                                  <th>Reasoning Relevancy</th>
                                                 <th>Response Coherence</th>
-                                                <th>Efficiency Category</th>
+                                  <th>Efficiency Category</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {agentMetricsData.map((item, index) => (
-                                                <tr key={index}>
-                                                    <td>{item.id}</td>
-                                                    <td>{item.user_query}</td>
-                                                    <td>
+                                              <tr key={index}>
+                                                <td>{item.id}</td>
+                                                <td>{item.user_query}</td>
+                                               <td>
                                                         <div className={styles.responseCell}>
                                                             {item.response}
                                                         </div>

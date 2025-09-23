@@ -1,12 +1,12 @@
 .navSection {
   width: 70px;
-  height: 100vh;
+  height: calc(100vh - 43px);
   position: fixed;
   left: 0;
   transition: width 0.3s ease-in-out;
   overflow-y: auto;
   overflow-x: hidden;
-  z-index: 110;
+  z-index: 10000; /* Increased to ensure navigation is always accessible, even above loaders and modals */
   top: 43px;
   background-color: white;
   box-shadow: inset 0px 2px 3px #00000029;

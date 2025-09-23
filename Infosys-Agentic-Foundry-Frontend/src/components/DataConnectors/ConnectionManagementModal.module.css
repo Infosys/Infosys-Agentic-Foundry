@@ -136,6 +136,10 @@
   justify-content: center;
 }
 
+.disconnectButton{
+  background-color: #ff0019;
+}
+
 .disabled {
   opacity: 0.6;
   cursor: not-allowed !important;

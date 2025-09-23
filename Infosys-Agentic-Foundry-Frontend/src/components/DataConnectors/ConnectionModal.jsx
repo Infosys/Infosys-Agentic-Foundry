@@ -31,7 +31,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
         // return value.replace(/[^a-zA-Z0-9_\s()\-\[\]{}]/g, ""); // Remove all escapes for [ and ]
         return value.replace(/[^a-zA-Z0-9_\s()-{}[\]]/g, "");
       case 'host':
-        return value.replace(/[^0-9.]/g, "");
+        return value.replace(/[^a-zA-Z0-9.-]/g, "");
       case 'port':
         return value.replace(/[^0-9]/g, "");
       case 'username':
@@ -39,18 +39,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
       case 'password':
         return value.replace(/[^a-zA-Z0-9]/g, "");
       case 'databaseName':
-        // Only allow .db or .sqlite extension for SQLite
-        if (database && database.id === 'sqlite') {
-          // Accept only valid filename ending with .db or .sqlite
-          const sanitized = value.replace(/[^a-zA-Z0-9_.-]/g, "");
-          if (sanitized && !sanitized.match(/^.+\.(db|sqlite)$/i)) {
-            setErrorMessage('Filename must end with .db or .sqlite');
-          } else {
-            setErrorMessage("");
-          }
-          return sanitized;
-        }
-        return value.replace(/[^a-zA-Z0-9_.-]/g, "");
+       return value.replace(/[^a-zA-Z0-9]/g, "");
       default:
         return value;
     }
@@ -217,6 +206,21 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
     setShowPassword(!showPassword);
   };
 
+  // Helper: check if all required fields are filled and displayed
+  const areAllRequiredFieldsFilled = (() => {
+    if (isSqlite) {
+      // For SQLite, require either databaseName or uploaded_file, not both, and required fields
+      if (!hasDbPath && !hasDbFile) return false;
+      if (hasDbPath && hasDbFile) return false;
+      // Only require connectionName and databaseType for SQLite
+      const requiredFields = database.fields.filter(field => ['connectionName', 'databaseType'].includes(field.name));
+      return requiredFields.every(field => formData[field.name]);
+    } else {
+      const requiredFields = database.fields.filter(field => field.required);
+      return requiredFields.every(field => formData[field.name]);
+    }
+  })();
+
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -329,7 +333,6 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
                   className={groundTruthStyles.fileInput}
                   accept=".db,.sqlite,.sqlite3"
                   style={{ display: 'none' }}
-                  disabled={true}
                 />
                 {!formData.uploaded_file ? (
                   <div
@@ -337,9 +340,9 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
                     onDragEnter={handleDragEnter}
                     onDragLeave={handleDragLeave}
                     onDragOver={handleDragOver}
-                    onDrop={undefined}
-                    onClick={undefined}
-                    style={{ pointerEvents: 'none', opacity: 0.5 }}
+                    onDrop={hasDbPath ? undefined : handleDrop}
+                    onClick={() => !hasDbPath && document.getElementById('sqlite_uploaded_file').click()}
+                    style={{ pointerEvents: hasDbPath ? 'none' : 'auto', opacity: hasDbPath ? 0.5 : 1 }}
                   >
                     <div className={groundTruthStyles.uploadPrompt}>
                       <span>{isDragging ? "Drop file here" : "Click to upload or drag and drop"}</span>
@@ -381,7 +384,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
             <button
               type="submit"
               className={styles.connectButton}
-              disabled={isConnecting}
+              disabled={isConnecting || !areAllRequiredFieldsFilled}
             >
                   <SVGIcons icon="plug" width={16} height={16} fill="white" />
                     Connect

@@ -1,0 +1,253 @@
+/* Canvas Container Styles */
+.canvasContainer {
+  width: 70%;
+  background: #ffffff;
+  border-left: 1px solid #e5e7eb;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(0);
+  transition: width 0.1s ease-out;
+  animation: slideInFromRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.canvasContainer.fullscreen {
+  width: 100%;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-left: none;
+  box-shadow: none;
+  z-index: 2000;
+}
+
+.canvasContainer.minimized {
+  width: 300px;
+  height: 50px;
+  bottom: 20px;
+  top: auto;
+  right: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e5e7eb;
+}
+
+/* Canvas Header */
+.canvasHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  flex-shrink: 0;
+  min-height: 30px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvasTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.actionButton {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.actionButton:hover {
+  transform: translateY(-1px);
+}
+
+.actionButton:active {
+  transform: translateY(0);
+  background: #e2e8f0;
+}
+
+/* Canvas Content */
+.canvasContent {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Resize Handle */
+.resizeHandle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 60px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 122, 204, 0.3);
+  border-radius: 0 3px 3px 0;
+  opacity: 1;
+  transition: all 0.2s ease;
+}
+
+.resizeHandle:hover {
+  background: rgba(0, 122, 204, 0.5);
+  opacity: 1;
+}
+
+.resizeIndicator {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.resizeDot {
+  width: 2px;
+  height: 2px;
+  background: #007acc;
+  border-radius: 50%;
+}
+
+/* Animations */
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .canvasContainer {
+    width: 80%;
+  }
+  
+  .canvasContainer.fullscreen {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .canvasContainer {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #e5e7eb;
+    top: 50%;
+    height: 50%;
+    border-radius: 12px 12px 0 0;
+    animation: slideInFromBottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .canvasContainer.fullscreen {
+    top: 0;
+    border-radius: 0;
+  }
+  
+  .canvasContainer.minimized {
+    width: calc(100% - 40px);
+    left: 20px;
+    right: 20px;
+  }
+
+  .resizeHandle {
+    display: none;
+  }
+}
+
+@keyframes slideInFromBottom {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Loading and Error States */
+.canvasLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.canvasError {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 20px;
+  text-align: center;
+}
+
+.errorIcon {
+  color: #ef4444;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.errorMessage {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.errorAction {
+  background: #007acc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.errorAction:hover {
+  background: #0066a3;
+}

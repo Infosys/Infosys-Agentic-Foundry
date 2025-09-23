@@ -1,0 +1,151 @@
+/* Form Viewer Container */
+.formViewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #ffffff;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.contentTag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #e0f2fe;
+  color: #007acc;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* Form Content */
+.formContent {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  min-height: 0;
+}
+
+.form {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.fieldGroup {
+  margin-bottom: 20px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #374151;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
+}
+
+.textarea {
+  min-height: 100px;
+  resize: vertical;
+  /* font-family: inherit; */
+}
+
+.submitButton {
+  background: #007acc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.submitButton:hover {
+  background: #0066a3;
+  transform: translateY(-1px);
+}
+
+.submitButton:active {
+  transform: translateY(0);
+}
+
+/* Fallback */
+.fallback {
+  padding: 20px;
+}
+
+.fallbackContent {
+  margin: 0;
+  /* font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace; */
+  font-size: 13px;
+  line-height: 1.5;
+  color: #374151;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .formContent {
+    padding: 16px;
+  }
+  
+  .form {
+    max-width: none;
+  }
+  
+  .fieldGroup {
+    margin-bottom: 16px;
+  }
+  
+  .input,
+  .textarea {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  
+  .submitButton {
+    padding: 10px 20px;
+    font-size: 13px;
+  }
+}

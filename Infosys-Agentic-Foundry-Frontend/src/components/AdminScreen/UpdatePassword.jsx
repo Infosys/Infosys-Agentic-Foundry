@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import styles from "./UpdatePassword.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import Cookies from "js-cookie";
-import { BASE_URL, APIs } from "../../constant";
+import { APIs } from "../../constant";
 import Loader from "../commonComponents/Loader";
+import useFetch from "../../Hooks/useAxios";
+import "../Register/SignUp.css";
 
 const roleOptions = ["Admin", "Developer", "User"];
 
@@ -20,6 +22,7 @@ const UpdatePassword = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
   const [isSubmitDisabled, setIsSubmitDisabled] = useState(true);
+  const { postData } = useFetch();
 
   const dropdownRef = useRef(null);
 
@@ -35,12 +38,10 @@ const UpdatePassword = () => {
     if (touched.email && !email) {
       newErrors.email = "Email is required";
     }
-    const passwordRegex =
-      /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/;
+    const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/;
 
     if (touched.password && password && !passwordRegex.test(password)) {
-      newErrors.password =
-        "Password must be at least 8 characters, include one uppercase letter, one number, and one special character";
+      newErrors.password = "Password must be at least 8 characters, include one uppercase letter, one number, and one special character";
     }
     if (touched.retypePassword) {
       if (!retypePassword && password) {
@@ -49,17 +50,12 @@ const UpdatePassword = () => {
         newErrors.retypePassword = "Passwords do not match";
       }
     }
-    if (
-      (touched.password || touched.selectedOption) &&
-      !password &&
-      selectedOption === "Select role"
-    ) {
+    if ((touched.password || touched.selectedOption) && !password && selectedOption === "Select role") {
       newErrors.form = "At least one of Password or Role must be provided";
     }
 
     setErrors(newErrors);
-    const isFormValid = Object.keys(newErrors).length === 0 &&
-                        (password || selectedOption !== "Select role");
+    const isFormValid = Object.keys(newErrors).length === 0 && (password || selectedOption !== "Select role");
     setIsSubmitDisabled(!isFormValid); // Disable submit if there are errors or no password/role selected
 
     return isFormValid;
@@ -92,33 +88,24 @@ const UpdatePassword = () => {
     });
 
     if (!validate()) return;
+    // Create request body object
+    const requestBody = {
+      email_id: email,
+      ...(password && { new_password: password }),
+      ...(selectedOption!== "Select role" && { role: selectedOption }),
+    };
 
-    const queryParams = new URLSearchParams({ email_id: email });
-
-    if (password) {
-      queryParams.append("new_password", password);
-    }
-
-    if (selectedOption !== "Select role") {
-      queryParams.append("role", selectedOption);
-    }
-
-    const url = `${BASE_URL}${APIs.UPDATE_PASWORD_ROLE}?${queryParams.toString()}`;
+    const url = APIs.UPDATE_PASSWORD_ROLE;
 
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { accept: "application/json" },
-      });
-      if (!response.ok) throw new Error("Failed to update password and role");
-
-      const data = await response.json();
+      const response = await postData(url, requestBody);
+      const data = await response;
       setResponse(data?.message);
       setError(null);
       setShowLoader(false);
       setTimeout(() => setResponse(null), 5000);
 
-      setEmail(Cookies?.get("email") || "");
+      setEmail("");
       setPassword("");
       setRetypePassword("");
       setSelectedOption("Select role");
@@ -127,6 +114,7 @@ const UpdatePassword = () => {
       console.error(err);
       setError(err.message);
       setResponse(null);
+      setShowLoader(false);
     }
   };
 
@@ -134,94 +122,77 @@ const UpdatePassword = () => {
     <div className={styles.rootWrapper}>
       <div className={styles.updatePasswordContainers}>
         {showLoader ? <Loader /> : ""}
-        <form onSubmit={handleSubmit} className={styles.forms}>
-          <h3>Update User</h3>
-          <div className={styles.inputGroups}>
-            <input
-              type="email"
-              value={email}
-              placeholder="Email"
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={() => handleBlur("email")}
-            />
-            {touched.email && errors.email && (
-              <span className={styles.error}>{errors.email}</span>
-            )}
+        <form onSubmit={handleSubmit} className="loginContainer">
+          <div className="flexrow">
+            <input type="email" value={email} placeholder="Email" className="login-input" onChange={(e) => setEmail(e.target.value)} onBlur={() => handleBlur("email")} />
+            {touched.email && errors.email && <span className={styles.error}>{errors.email}</span>}
           </div>
-          <div className={styles.inputGroups}>
+          <div className="space-devider"></div>
+          <div className="flexrow">
             <input
               type="password"
               value={password}
               placeholder="New Password"
+              className="login-input"
               onChange={(e) => setPassword(e.target.value)}
               onBlur={() => handleBlur("password")}
             />
-            {touched.password && errors.password && (
-              <span className={styles.error}>{errors.password}</span>
-            )}
+            {touched.password && errors.password && <span className={styles.error}>{errors.password}</span>}
           </div>
-          <div className={styles.inputGroups}>
+          <div className="space-devider"></div>
+          <div className="flexrow">
             <input
               type="password"
               value={retypePassword}
               placeholder="Confirm Password"
+              className="login-input"
               onChange={(e) => setRetypePassword(e.target.value)}
               onBlur={() => handleBlur("retypePassword")}
             />
-            {touched.retypePassword && errors.retypePassword && (
-              <span className={styles.error}>{errors.retypePassword}</span>
-            )}
+            {touched.retypePassword && errors.retypePassword && <span className={styles.error}>{errors.retypePassword}</span>}
           </div>
-
+          <div className="space-devider"></div>
           {/* Role Dropdown */}
-          <div className={styles.inputGroups}>
-            <div className={styles.dropdowns} ref={dropdownRef}>
+          <div className="flexrow">
+            <div className="dropdown" ref={dropdownRef}>
               <button
                 type="button"
-                className={styles.dropdownToggle}
+                className="dropdown-toggle"
                 onClick={toggleDropdown}
                 onBlur={(e) => {
                   if (!dropdownRef.current.contains(e.relatedTarget)) {
                     setTimeout(() => setIsOpen(false), 100);
                   }
-                }}
-              >
+                }}>
                 {selectedOption}
-                <div className={styles.downbox}>
-                  <SVGIcons
-                    icon="downarrow"
-                    width={20}
-                    height={18}
-                    fill="#000000"
-                  />
+                <div className="downbox">
+                  <SVGIcons icon="downarrow" width={20} height={18} fill="#000000" />
                 </div>
               </button>
 
               {isOpen && (
-                <ul className={styles.dropdownMenu}>
+                <ul className="dropdown-menu">
                   {roleOptions.map((option) => (
-                    <li
-                      key={option}
-                      tabIndex={0}
-                      onClick={() => handleOptionSelect(option)}
-                    >
+                    <li key={option} tabIndex={0} onClick={() => handleOptionSelect(option)}>
                       {option}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
+            <div className="space-devider"></div>
           </div>
           {errors.form && <div className={styles.errorBox}>{errors.form}</div>}
           {error && <div className={styles.errorBox}>{error}</div>}
           {response && <div className={styles.successBox}>{response}</div>}
-          <button
-            type="submit"
-            className={styles.submitButn}
-            disabled={isSubmitDisabled} // Disable submit based on form validity
-          >
-            Submit
-          </button>
+          <div className="div-hyperstyle">
+            <button type="submit" className="button-style" tabIndex={8} disabled={isSubmitDisabled}>
+              <h2 className="signIntext"> Update User </h2>
+              <div className="signarrow">
+                <SVGIcons icon="rightarrow" width={20} height={18} fill="#fff" />
+              </div>{" "}
+            </button>
+          </div>
         </form>
       </div>
     </div>

@@ -1,18 +1,22 @@
-import React from 'react';
-import { Navigate } from 'react-router-dom';
-import Cookies from 'js-cookie';
+import React from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
-  const username = Cookies.get("userName");
-  const session_id = Cookies.get("session_id");
-  const role = Cookies.get("role");
+  const { isAuthenticated, role, loading } = useAuth();
 
-  if (!username || !session_id) {
+  if (loading) {
+    return null; // Could add a spinner here if desired
+  }
+
+  if (!isAuthenticated) {
     return <Navigate to="/login" />;
   }
 
-  if (requiredRole && (!role || role.toUpperCase() !== requiredRole.toUpperCase())) {
-    // Redirect users without the required role
+  if (
+    requiredRole &&
+    (!role || role.toUpperCase() !== requiredRole.toUpperCase())
+  ) {
     return <Navigate to="/" />;
   }
 

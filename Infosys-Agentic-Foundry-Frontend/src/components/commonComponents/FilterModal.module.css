@@ -15,17 +15,24 @@
   background: #fff;
   padding: 20px;
   border-radius: 8px;
-  width: 400px;
+  width: 450px;
   max-width: 90%;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
   position: relative;
 }
 
 .heading{
   font-size: 20px;
   font-weight: bold;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
   color: #333;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 20px;
+  font-style: italic;
 }
 
 .tagsContainer {
@@ -33,6 +40,8 @@
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 20px;
+  height: 220px;
+  overflow-y: scroll;
 }
 
 .tag {
@@ -93,4 +102,23 @@
 .applyButton:disabled {
   background-color: #ccc;
   cursor: not-allowed;
+}
+
+/* Server type section styles */
+.serverTypeSection {
+  margin-bottom: 20px;
+  padding-top: 15px;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.typeTagsContainer {
+  display: flex;
+  gap: 15px;
+  align-items: center;
 }

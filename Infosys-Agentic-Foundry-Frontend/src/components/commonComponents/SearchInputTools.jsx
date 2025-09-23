@@ -13,8 +13,8 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
     const value = e.target.value;
     setLocalSearchValue(value);
 
-    if(value.trim() === ""){
-      clearSearch();
+    if (value.trim() === "") {
+      if (typeof clearSearch === "function") clearSearch();
     }
   };
 
@@ -22,13 +22,13 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
     const trimmedValue = localSearchValue?.trim();
 
     if (trimmedValue) {
-      handleSearch(trimmedValue);
+      if (typeof handleSearch === "function") handleSearch(trimmedValue);
     }
   };
 
   const handleClearSearch = () => {
     setLocalSearchValue("");
-    clearSearch();
+    if (typeof clearSearch === "function") clearSearch();
   };
 
   const handleKeyDown = (e) => {
@@ -39,15 +39,7 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
 
   return (
     <div className={styles.searchContainer}>
-      <input
-        type="text"
-        value={localSearchValue}
-        onChange={handleInputChange}
-        onKeyDown={handleKeyDown}
-        {...inputProps}
-        className={styles.searchInput}
-        placeholder="Search..."
-      />
+      <input type="text" value={localSearchValue} onChange={handleInputChange} onKeyDown={handleKeyDown} {...inputProps} className={styles.searchInput} placeholder="Search..." />
       <button onClick={handleSearchClick} className={styles.searchButton} title="Search">
         <SVGIcons icon="search" width={16} height={16} fill="#fff" />
       </button>

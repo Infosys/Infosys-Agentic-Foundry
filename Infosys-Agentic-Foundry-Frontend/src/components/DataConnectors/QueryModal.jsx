@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect,useRef } from "react";
 import styles from "./QueryModal.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
-import { fetchSqlConnections, generateQuery, executeQuery } from "../../services/databaseService";
+import { useDatabases } from "./service/databaseService.js";
 import Loader from "../commonComponents/Loader.jsx";
 
 const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
@@ -19,6 +19,8 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
   const [sqlConnections, setSqlConnections] = useState([]);
   const [loadingSqlConnections, setLoadingSqlConnections] = useState(false);
   const [isQueryEdited, setIsQueryEdited] = useState(false);
+  const { fetchSqlConnections, generateQuery, executeQuery } = useDatabases();
+  const hasSqlConnectionsRef = useRef(false);
   // Fetch SQL connections from API
   const fetchSqlConnectionsData = async () => {
     setLoadingSqlConnections(true);
@@ -38,7 +40,10 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
 
   // Fetch connections when component mounts
   useEffect(() => {
-    fetchSqlConnectionsData();
+    if(!hasSqlConnectionsRef.current) {
+      hasSqlConnectionsRef.current = true;
+      fetchSqlConnectionsData();
+    }
   }, []);
 
   // Handle input changes
@@ -310,12 +315,6 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Selected DB Type:
-              <span className={styles.dbTypeText}>{getSelectedDatabaseType() || 'No database selected'}</span>
-            </label>
           </div>
 
           <div className={styles.formGroup}>

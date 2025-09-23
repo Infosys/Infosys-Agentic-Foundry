@@ -18,7 +18,7 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState([]);
   const { addMessage,setShowPopup } = useMessage();
-  const { fetchData } = useFetch();
+  const { fetchData,postData } = useFetch();
   const [agentsListData, setAgentsListData] = useState([]);
   const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
@@ -257,15 +257,16 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
       const selectedAgent = agentListDropdown.find(agent => agent.agentic_application_name === formData.agent_name);
       const agentic_application_id = selectedAgent ? selectedAgent.agentic_application_id : "";
       const agentDisplayName = selectedAgent ? selectedAgent.agentic_application_name : formData.agent_name;
-      const url = new URL(`${BASE_URL}/upload-and-evaluate-json/`);
-      url.searchParams.append('model_name', formData.model_name);
-      url.searchParams.append('agent_type', formData.agent_type);
-      url.searchParams.append('agent_name', agentDisplayName);
-      url.searchParams.append('agentic_application_id', agentic_application_id);
-      url.searchParams.append('session_id','test_groundTruth');
-      url.searchParams.append('use_llm_grading', formData.use_llm_grading.toString());
-      
-      const finalUrl = url.toString().replace(/\+/g, '%20');
+      // Construct query params using encodeURIComponent for each value
+      const params = [
+        `model_name=${encodeURIComponent(formData.model_name)}`,
+        `agent_type=${encodeURIComponent(formData.agent_type)}`,
+        `agent_name=${encodeURIComponent(agentDisplayName)}`,
+        `agentic_application_id=${encodeURIComponent(agentic_application_id)}`,
+        `session_id=${encodeURIComponent('test_groundTruth')}`,
+        `use_llm_grading=${encodeURIComponent(formData.use_llm_grading.toString())}`
+      ].join('&');
+      const finalUrl = `${APIs.UPLOAD_AND_EVALUATE_JSON}/?${params}`;
       const formDataToSend = new FormData();
       if (formData.uploaded_file) {
         if (!validateFile(formData.uploaded_file)) {
@@ -278,15 +279,12 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
         return;
       }
 
-      const response = await fetch(finalUrl, {
-        method: "POST",
-        body: formDataToSend
-      });
+      const response = await postData(finalUrl, formDataToSend);
 
-      if (response.ok) {
+      if (response) {
         let data;
         try {
-          data = await response.json();
+          data = await response
         } catch (e) {
           addMessage("Unexpected response format from server.", "error");
           setLoading(false);
@@ -396,12 +394,22 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
 
     try {
       if (downloadableResponse.url) {
+        const urlObj = new URL(downloadableResponse.url);
+        const relativePath = urlObj.pathname + urlObj.search;
+        const blob = await fetchData(relativePath, {
+          responseType: 'blob'
+        });
+        const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = downloadableResponse.url;
-        a.download = downloadableResponse.fileName || 'download';
+        a.href = url;
+        a.download = downloadableResponse.fileName;
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
+        setTimeout(() => {
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }, 100);
+        addMessage("File downloaded successfully", "success");
       } else if (downloadableResponse.response) {
         await downloadFileFromResponse(
           downloadableResponse.response.clone(),
@@ -411,6 +419,35 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
       }
     } catch (error) {
       addMessage(`Error downloading file: ${error.message}`, "error");
+    }
+  };
+
+  const handleTemplateDownload = async () => {
+    try {
+      setLoading(true);
+      const fileName = "Groundtruth_template.xlsx";
+      const templateUrl = `${APIs.DOWNLOAD_TEMPLATE}?file_name=${encodeURIComponent(fileName)}`;
+      
+      const blob = await fetchData(templateUrl, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+
+      addMessage("Template downloaded successfully!", "success");
+    } catch (error) {
+      addMessage(`Unable to download the template`, "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -672,7 +709,7 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
                     ))
                   ) : (
                     <div className={styles.dropdownItem}>
-                      {agentTypeSearchTerm ? 'No agent types found' : 'Select model first'}
+                      {'No agent types found'}
                     </div>
                   )}
                 </div>
@@ -729,7 +766,7 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
                     ))
                   ) : (
                     <div className={styles.dropdownItem}>
-                      {agentSearchTerm ? 'No agents found' : 'Select agent type first'}
+                     {'No agents found'}
                     </div>
                   )}
                 </div>
@@ -746,6 +783,18 @@ const GroundTruth = ({ isInAdminScreen = false }) => {
                 (File must exactly two columns: 'queries' and 'expected outputs'")
                </span>
              </label>
+             <div className={styles.templateDownloadContainer}>
+               <a 
+                 href="#" 
+                 onClick={(e) => {
+                   e.preventDefault();
+                   handleTemplateDownload();
+                 }}
+                 className={styles.templateDownloadLink}
+               >
+                 Download template
+               </a>
+             </div>
            </div>
            <input
              type="file"

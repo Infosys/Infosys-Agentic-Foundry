@@ -243,7 +243,7 @@ body {
   top: 50;
   overflow-x: hidden;
   transition: 0.5s;
-  z-index: 1000;
+  z-index: 1203;
   background-color: rgba(0, 0, 0, 0.7);
 }
 
@@ -257,14 +257,14 @@ body {
   font-size: 40px;
 }
 
-.toolOnboardingForm{
+.toolOnboardingForm {
   height: 75vh !important;
 }
 
 .form-container {
   position: fixed;
   right: 0;
-  /* top: 50px; */
+  top: 40px;
 
   height: 100%;
   background-color: white;
@@ -480,7 +480,6 @@ body {
   /* box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); */
   /* background-color: #f9f9f9; */
   margin-bottom: 15px;
-
 }
 
 .listitem {

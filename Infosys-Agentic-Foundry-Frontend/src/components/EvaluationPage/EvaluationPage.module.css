@@ -5,8 +5,8 @@
   overflow: hidden;
   overflow-x: auto;
   white-space: nowrap;
-  -webkit-overflow-scrolling: touch; 
-  scrollbar-width: thin; 
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
   position: relative;
 }
 
@@ -37,7 +37,7 @@
 .tabContent {
   padding-inline: 10px;
   height: calc(100vh - 120px);
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 /* Customize scrollbar for tabHeader */
@@ -60,11 +60,12 @@
 }
 
 /* Ensure tabs have minimum width */
-.tab, .activeTab {
+.tab,
+.activeTab {
   min-width: fit-content;
   flex-shrink: 0;
 }
 
-.evaluateMetrics{
+.evaluateMetrics {
   display: block;
 }

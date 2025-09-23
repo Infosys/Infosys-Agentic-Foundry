@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 1201;
 }
 
 .popupContent {
@@ -19,7 +19,7 @@
   text-align: left;
   overflow-y: auto;
   width: 600px;
-  height: 400px;
+  /* height: 400px; */
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -37,6 +37,43 @@
   width: 100%;
   height: calc(100% - 50px);
   font-size: 15px;
+}
+
+.editorContainer {
+  margin-bottom: 15px;
+  width: 100%;
+  height: calc(100% - 140px);
+  /* min-height: 350px; */
+  flex-grow: 1;
+}
+
+.editorContainer textarea {
+  font-family: "Consolas", "Droid Sans Mono", "Monaco", "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  -webkit-tab-size: 4;
+  overflow-wrap: normal;
+  word-wrap: normal;
+  text-rendering: optimizeLegibility;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+
+.editorContainer textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.editorContainer textarea::selection {
+  background-color: #264f78;
+  color: inherit;
+}
+
+.editorContainer textarea::-moz-selection {
+  background-color: #264f78;
+  color: inherit;
 }
 
 .popupContent h3 {
@@ -63,17 +100,6 @@
   border: none;
   cursor: pointer;
   padding: 0;
-}
-
-.closePopup svg {
-  fill: #7f7f7f;
-  width: 20px;
-  height: 20px;
-  transition: fill 0.2s ease;
-}
-
-.closePopup:hover svg {
-  fill: #343741;
 }
 
 .popupFooter {

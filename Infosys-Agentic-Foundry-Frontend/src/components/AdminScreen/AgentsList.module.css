@@ -6,13 +6,13 @@
   margin: 0;
   box-sizing: border-box;
   width: 100%;
+  height: calc(100vh - 80px);
 }
 
 .headerActions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
 }
 
 .sidebar {
@@ -93,7 +93,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 16px;
-  margin-top: 20px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(100% - 80px);
+  padding-right: 5px;
 }
 
 .agentButton {
@@ -110,6 +115,7 @@
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  overflow-wrap: anywhere;
 }
 
 .agentButton:hover {

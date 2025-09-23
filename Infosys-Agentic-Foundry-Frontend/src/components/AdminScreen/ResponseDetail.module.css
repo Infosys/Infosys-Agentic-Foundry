@@ -11,14 +11,26 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
 }
 
 .heading {
   margin: 0 0 20px 0;
   font-size: 24px;
   font-weight: 600;
-  color: #2c3e50;
+}
+
+.responseDetailHeader {
+  margin-bottom: 12px;
+}
+
+.responseDetailHeader p {
+  margin-bottom: 8px;
+}
+
+.responseDetailContent {
+  max-height: Calc(100vh - 170px);
+  overflow: auto;
+  height: 100%;
 }
 
 .form {
@@ -26,9 +38,7 @@
   flex-direction: column;
   gap: 15px;
   background-color: white;
-  padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding-right: 20px;
 }
 
 .label {
@@ -108,7 +118,6 @@
   gap: 10px;
   justify-content: flex-start;
   align-items: center;
-  margin-top: 20px;
 }
 
 /* Add field groups for better organization */
@@ -126,4 +135,27 @@
   margin-bottom: 10px;
   padding-bottom: 5px;
   border-bottom: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  color: #666;
+}
+
+.cancelButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  color: #d32f2f;
 }
