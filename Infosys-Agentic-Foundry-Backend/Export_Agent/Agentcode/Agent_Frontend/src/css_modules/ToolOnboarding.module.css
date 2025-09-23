@@ -1,5 +1,7 @@
 .container {
   background: #ffffff 0% 0% no-repeat padding-box;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
   /* width: 60%; */
   /* width: 100%; */
   /* display: flex;
@@ -38,6 +40,8 @@
   top: 82px;
   left: 593px;
   height: 27px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 .underline {
   top: 115px;
@@ -59,6 +63,8 @@
   color: #c4c4c4;
   text-transform: uppercase;
   opacity: 1;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .sidebar p {
@@ -66,6 +72,7 @@
 }
 
 .description-container {
+  position: relative;
 }
 
 .description-container input {
@@ -89,8 +96,11 @@
   border-radius: 5px;
   opacity: 1;
   width: 689px;
+  max-width: 100%;
   padding: 10px;
   border: none;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .snippet-container {
@@ -98,8 +108,48 @@
   /* height: 180px; */
 }
 
+.codeEditorContainer {
+  position: relative;
+  width: 689px;
+  max-width: 100%;
+  height: 300px;
+  margin-bottom: 10px;
+  overflow: auto;
+}
+
+.codeEditorContainer textarea {
+  font-family: 'Consolas', 'Droid Sans Mono', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  -webkit-tab-size: 4;
+  overflow-wrap: normal;
+  word-wrap: normal;
+  white-space: pre;
+  text-rendering: optimizeLegibility;
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0;
+}
+
+.codeEditorContainer textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.codeEditorContainer textarea::selection {
+  background-color: #264f78;
+  color: inherit;
+}
+
+.codeEditorContainer textarea::-moz-selection {
+  background-color: #264f78;
+  color: inherit;
+}
+
 .snippet-textarea {
   width: 689px;
+  max-width: 100%;
   height: 232px;
   background: #eaeaea 0% 0% no-repeat padding-box;
   box-shadow: inset 0px 1px 4px #00000029;
@@ -107,6 +157,8 @@
   opacity: 1;
   border: none;
   padding: 10px;
+  overflow: auto;
+  white-space: pre;
 }
 
 .other {
@@ -117,13 +169,8 @@
 
 .tagsMainContainer{
   width: 689px;
+  max-width: 100%;
   margin-top: 12px;
-}
-
-.model {
-  /* width: 80px;
-    height: 32px;
-    border-radius: 5px; */
 }
 
 .select-class {
@@ -134,7 +181,9 @@
   opacity: 1;
   height: 32px;
   border: none;
-  padding: 8px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
 }
 
 .option-class {
@@ -148,18 +197,21 @@
 
 .created-input {
   width: 424px;
+  max-width: 100%;
   background: #eaeaea 0% 0% no-repeat padding-box;
   box-shadow: inset 0px 1px 4px #00000029;
   border-radius: 5px;
   opacity: 1;
   padding: 10px;
   border: none;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .button-class {
   display: flex;
   justify-content: flex-end;
-  margin: 24px 0px 0 0;
+  margin: 24px 0px 24px 0;
   /* padding: 2px; */
 }
 
@@ -199,7 +251,7 @@ td {
 }
 
 body {
-  font-family: Arial, sans-serif;
+  /* font-family: Arial, sans-serif; */
   margin: 0;
   padding: 0;
 }
@@ -229,13 +281,13 @@ body {
 .form-container {
   position: fixed;
   right: 0;
- 
-
   height: 100%;
   background-color: white;
   padding: 20px;
   z-index: 2;
   overflow: scroll;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 
@@ -386,7 +438,9 @@ body {
 .success,
 .error {
   word-wrap: break-word;
+  overflow-wrap: break-word;
   max-width: 500px;
+  hyphens: auto;
 }
 
 .selectStyle {
@@ -426,7 +480,6 @@ body {
   padding: 10px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   background-color: #f9f9f9;
-  font-family: Segoe UI;
   margin-bottom: 15px;
 }
 
@@ -436,7 +489,6 @@ body {
   justify-content: space-between;
   padding: 10px;
   background-color: #f9f9f9;
-  font-family: Segoe UI;
 }
 
 .documentslistconatiner ol {
@@ -540,6 +592,7 @@ width: 25%;
   box-sizing: border-box;
   resize: none;
   line-height: 1.5;
+  overflow: auto;
 }
 
 .copyIcon {
@@ -601,7 +654,7 @@ width: 25%;
 .iconGroup {
   position: absolute;
   bottom: 8px;
-  right: 10px;
+  right: 22px;
   display: flex;
   gap: 6px;
   z-index: 11;
@@ -628,11 +681,150 @@ width: 25%;
 .expandIcon:hover svg {
   transform: scale(1.2);
 }
+
+.themeIconButton {
+  position: absolute;
+  top: 8px;
+  right: 60px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #d0d7de;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 15;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.themeIconButton:hover {
+  background: rgba(0, 123, 195, 0.1);
+  border-color: #007cc3;
+  transform: scale(1.05);
+}
+
 .disabledButton {
   opacity: 0.5;
-  pointer-events: none;
-  cursor: not-allowed;
   background: #f8f9fa !important;
   color: #6c757d !important;
   border-color: #e9ecef !important;
+  cursor: not-allowed;
+}
+
+/* Text overflow utility classes */
+.textOverflowFit {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+  hyphens: auto;
+  max-width: 100%;
+}
+
+.preventOverflow {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Code editor specific styles for horizontal scrolling */
+.codeEditorContainer {
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f1f1f1;
+}
+
+.codeEditorContainer::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.codeEditorContainer::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.codeEditorContainer::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.codeEditorContainer::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Ensure code areas maintain horizontal scrolling */
+.snippet-textarea {
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f1f1f1;
+}
+
+.snippet-textarea::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.snippet-textarea::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.snippet-textarea::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.snippet-textarea::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Code-specific textarea for maintaining code formatting */
+.codeTextarea {
+  font-family: 'Consolas', 'Droid Sans Mono', 'Monaco', 'Courier New', monospace !important;
+  white-space: pre !important;
+  overflow: auto !important;
+  word-wrap: normal !important;
+  overflow-wrap: normal !important;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  -webkit-tab-size: 4;
+}
+
+/* Regular text areas for wrapping text */
+.regularTextarea {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .input-class,
+  .snippet-textarea,
+  .codeEditorContainer,
+  .tagsMainContainer {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  
+  .created-input {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  
+  .form-container {
+    width: 100% !important;
+    right: 0;
+    left: 0;
+  }
+}
+
+/* Ensure all text elements can handle overflow */
+* {
+  box-sizing: border-box;
+}
+
+p, span, div, label {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }

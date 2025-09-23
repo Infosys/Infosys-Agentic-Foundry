@@ -13,6 +13,7 @@
 
 .modalContainer {
   background: rgb(255 255 255);
+  color: #333;
   width: 40%;
   height: 80vh;
   padding: 20px;
@@ -51,23 +52,21 @@
   text-align: left;
   padding: 10px;
   line-height: normal;
-  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-    monospace;
+  /* font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
+   monospace;  */
   text-transform: none;
   /* font: normal;
   font-size: 16px;
   font-weight: 100; */
 }
 
-.codeSnippet {
-  padding: 10px;
-  font-family: monospace;
-  max-height: 300px;
-  min-height: 100px;
-  overflow-y: scroll;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  color: #333;
+
+.codeEditorContainer {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  border-radius: 5px;
+  overflow: hidden;
+  /* Monaco handles its own background and font */
 }
 
 .closeBtnContainer {

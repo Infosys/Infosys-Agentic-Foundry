@@ -5,24 +5,31 @@ import uuid
 import inspect
 import pandas as pd
 from datetime import datetime, timezone
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional, Union, Dict, Any, Literal
 
-from langchain_core.tools import BaseTool
+from fastapi import UploadFile
+from langchain_core.tools import BaseTool, StructuredTool
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, ChatMessage, AnyMessage
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from sentence_transformers import CrossEncoder
 
 from src.database.repositories import (
     TagRepository, TagToolMappingRepository, TagAgentMappingRepository,
     ToolRepository, ToolAgentMappingRepository, RecycleToolRepository,
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
     FeedbackLearningRepository, EvaluationDataRepository,
-    ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository
+    ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
+    ExportAgentRepository, McpToolRepository
 )
-from src.models.model import load_model
+from src.models.model_service import ModelService
 from src.prompts.prompts import CONVERSATION_SUMMARY_PROMPT
 from src.tools.tool_code_processor import ToolCodeProcessor
+from src.utils.secrets_handler import get_user_secrets
 from telemetry_wrapper import logger as log, update_session_context
+from src.tools.tool_validation import graph
 
 
 
@@ -471,6 +478,597 @@ class TagService:
         return [all_tags_dict[tag_id] for tag_id in tag_ids if tag_id in all_tags_dict]
 
 
+# --- McpToolService ---
+
+class McpToolService:
+    """
+    Service layer for managing MCP tools (server definitions).
+    Handles business rules, file management for code-based MCPs,
+    and orchestrates repository calls.
+    """
+
+    def __init__(
+        self,
+        mcp_tool_repo: McpToolRepository,
+        tag_service: TagService, # Needed for tag mapping
+        tool_agent_mapping_repo: ToolAgentMappingRepository, # Needed for dependency checks
+        agent_repo: AgentRepository # Needed for dependency checks
+    ):
+        self.mcp_tool_repo = mcp_tool_repo
+        self.tag_service = tag_service
+        self.tool_agent_mapping_repo = tool_agent_mapping_repo
+        self.agent_repo = agent_repo
+        self.VAULT_PREFIX = "VAULT::"
+
+    # --- Helper Methods for File Management ---
+
+    @staticmethod
+    async def _get_mcp_type_by_id(tool_id: str) -> Optional[str]:
+        """
+        Extracts the MCP type from the tool_id prefix.
+        Expected prefixes: 'mcp_file_', 'mcp_url_', 'mcp_module_'
+        """
+        if tool_id.startswith("mcp_file_"):
+            return "file"
+        elif tool_id.startswith("mcp_url_"):
+            return "url"
+        elif tool_id.startswith("mcp_module_"):
+            return "module"
+        else:
+            return "invalid"
+
+    async def _read_uploaded_file_content(self, uploaded_file: UploadFile) -> str:
+        """
+        Reads content from an uploaded FastAPI UploadFile and normalizes newlines.
+        """
+        try:
+            content_bytes = await uploaded_file.read()
+            content_str = content_bytes.decode("utf-8")
+            
+            # Normalize newlines: Replace all Windows-style (\r\n) and old Mac-style (\r)
+            # newlines with Unix-style (\n) newlines.
+            # Then, ensure no double newlines are present if they were introduced.
+            normalized_content = content_str.replace('\r\n', '\n').replace('\r', '\n')
+            return normalized_content
+
+        except Exception as e:
+            log.error(f"Error reading and normalizing uploaded file content: {e}")
+            raise
+
+    # --- MCP Tool Creation Operations ---
+
+    async def create_mcp_tool(
+            self,
+            tool_name: str,
+            tool_description: str,
+            mcp_type: Literal["file", "url", "module"],
+            created_by: str,
+            tag_ids: Optional[Union[List[str], str]] = None,
+            mcp_url: Optional[str] = None,
+            headers: Optional[Dict[str, str]] = None,
+            mcp_module_name: Optional[str] = None,
+            code_content: Optional[str] = None, # For file-based MCPs
+        ) -> Dict[str, Any]:
+        """
+        Creates a new MCP tool (server definition) and saves it to the database.
+        Handles file creation for 'file' type MCPs.
+        """
+        # Generate tool_id with appropriate prefix
+        tool_id_prefix = f"mcp_{mcp_type}_"
+        tool_id = tool_id_prefix + str(uuid.uuid4())
+        update_session_context(tool_id=tool_id, tool_name=tool_name)
+
+        if await self.mcp_tool_repo.get_mcp_tool_record(tool_name=tool_name):
+            log.warning(f"MCP tool with name '{tool_name}' already exists.")
+            return {"message": f"MCP tool with name '{tool_name}' already exists.", "is_created": False}
+
+        mcp_config: Dict[str, Any] = {"transport": "stdio"} # Default transport
+
+        if mcp_type == "file":
+            if not code_content:
+                return {"message": "Code content is required for 'file' type MCP tools.", "is_created": False}
+            mcp_config["command"] = "python"
+            mcp_config["args"] = ["-c", code_content]
+
+        elif mcp_type == "url":
+            if not mcp_url:
+                return {"message": "URL is required for 'url' type MCP tools.", "is_created": False}
+            mcp_config["url"] = mcp_url
+            mcp_config["transport"] = "streamable_http" # URL-based typically use HTTP
+            if headers:             # Add headers if provided
+                mcp_config["headers"] = headers
+
+        elif mcp_type == "module":
+            if not mcp_module_name:
+                return {"message": "Module name is required for 'module' type MCP tools.", "is_created": False}
+            mcp_config["command"] = "python"
+            mcp_config["args"] = ["-m", mcp_module_name]
+
+        else:
+            return {"message": f"Unsupported MCP type: {mcp_type}", "is_created": False}
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        tool_data = {
+            "tool_id": tool_id,
+            "tool_name": tool_name,
+            "tool_description": tool_description,
+            "mcp_config": mcp_config,
+            "is_public": False, # Default values as per schema
+            "status": "pending", # Default values as per schema
+            "comments": None,
+            "approved_at": None,
+            "approved_by": None,
+            "created_by": created_by,
+            "created_on": now,
+            "updated_on": now
+        }
+
+        success = await self.mcp_tool_repo.save_mcp_tool_record(tool_data)
+
+        if success:
+            if not tag_ids:
+                general_tag = await self.tag_service.get_tag(tag_name="General")
+                tag_ids = [general_tag['tag_id']] if general_tag else []
+            await self.tag_service.assign_tags_to_tool(tag_ids=tag_ids, tool_id=tool_id)
+
+            log.info(f"Successfully onboarded MCP tool '{tool_name}' with ID: {tool_id}")
+            return {"message": f"Successfully onboarded MCP tool '{tool_name}'", "tool_id": tool_id, "is_created": True}
+        else:
+            log.error(f"Failed to onboard MCP tool '{tool_name}'.")
+            return {"message": f"Failed to onboard MCP tool '{tool_name}'.", "is_created": False}
+
+    # --- MCP Tool Retrieval Operations ---
+
+    async def get_mcp_tool(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves a single MCP tool (server definition) record by ID or name.
+        """
+        tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id, tool_name=tool_name)
+        if not tool_records:
+            log.info(f"No MCP tool found with ID: {tool_id} or Name: {tool_name}.")
+            return []
+
+        # Ensure mcp_config is a Python dict (asyncpg usually handles JSONB deserialization)
+        for record in tool_records:
+            if isinstance(record.get("mcp_config"), str):
+                record["mcp_config"] = json.loads(record["mcp_config"])
+            record["mcp_type"] = await self._get_mcp_type_by_id(record['tool_id'])
+            record['tags'] = await self.tag_service.get_tags_by_tool(record['tool_id'])
+        
+        log.info(f"Retrieved MCP tool with ID: {tool_records[0]['tool_id']} and Name: {tool_records[0]['tool_name']}.")
+        return tool_records
+
+    async def get_all_mcp_tools(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all MCP tool (server definition) records with associated tags.
+        """
+        tool_records = await self.mcp_tool_repo.get_all_mcp_tool_records()
+        tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+
+        for tool in tool_records:
+            if isinstance(tool.get("mcp_config"), str):
+                tool["mcp_config"] = json.loads(tool["mcp_config"])
+            tool["mcp_type"] = await self._get_mcp_type_by_id(tool['tool_id'])
+            tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+        log.info(f"Retrieved {len(tool_records)} MCP tools.")
+        return tool_records
+
+    async def get_mcp_tools_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1, tag_names: Optional[List[str]] = None, mcp_type: Optional[List[Literal["file", "url", "module"]]] = None) -> Dict[str, Any]:
+        """
+        Retrieves MCP tools (server definitions) with pagination and search filtering, including associated tags.
+        """
+        total_count = await self.mcp_tool_repo.get_total_mcp_tool_count(search_value, mcp_type)
+        if tag_names:
+            tag_names = set(tag_names)
+            tool_records = await self.mcp_tool_repo.get_mcp_tools_by_search_or_page_records(search_value, total_count, 1, mcp_type)
+        else:
+            tool_records = await self.mcp_tool_repo.get_mcp_tools_by_search_or_page_records(search_value, limit, page, mcp_type)
+
+        tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+        filtered_tools = []
+
+        for tool in tool_records:
+            if isinstance(tool.get("mcp_config"), str):
+                tool["mcp_config"] = json.loads(tool["mcp_config"])
+            tool["mcp_type"] = await self._get_mcp_type_by_id(tool['tool_id'])                     
+            tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+            if tag_names:
+                for tag in tool['tags']:
+                    if tag['tag_name'] in tag_names:
+                        filtered_tools.append(tool)
+                        break
+
+        if tag_names:
+            total_count = len(filtered_tools)
+            offset = limit * max(0, page-1)
+            filtered_tools = filtered_tools[offset: offset + limit]
+        else:
+            filtered_tools = tool_records
+
+        return {
+            "total_count": total_count,
+            "details": filtered_tools
+        }
+
+    # --- MCP Tool Updation Operations ---
+
+    async def update_mcp_tool(
+        self,
+        tool_id: str,
+        user_id: str,
+        is_admin: bool = False,
+        tool_description: Optional[str] = None,
+        code_content: Optional[str] = None, # Only for 'mcp_file_' type
+        updated_tag_id_list: Optional[Union[List[str], str]] = None,
+        is_public: Optional[bool] = None,
+        status: Optional[str] = None,
+        comments: Optional[str] = None,
+        approved_at: Optional[datetime] = None,
+        approved_by: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Updates an existing MCP tool (server definition) record.
+        Only allows 'code_content' updates for 'mcp_file_' type tools.
+        """
+        tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id)
+        if not tool_records:
+            log.error(f"Error: MCP tool not found with ID: {tool_id}")
+            return {"status_message": f"Error: MCP tool not found with ID: {tool_id}", "is_update": False}
+
+        tool_data = tool_records[0]
+
+        if not is_admin and tool_data["created_by"] != user_id:
+            err = f"Permission denied: Only the admin or the tool's creator can perform this action for MCP Tool ID: {tool_id}."
+            log.error(err)
+            return {"status_message": err, "is_update": False}
+
+        # Check if any actual updates are requested
+        if not any([tool_description, code_content, updated_tag_id_list,
+                    is_public is not None, status, comments, approved_at, approved_by]):
+            return {"status_message": "No fields provided to update the MCP tool.", "is_update": False}
+
+        update_payload: Dict[str, Any] = {"updated_on": datetime.now(timezone.utc).replace(tzinfo=None)}
+        
+        # Update basic metadata
+        if tool_description:
+            update_payload["tool_description"] = tool_description.strip()
+        if is_public is not None:
+            update_payload["is_public"] = is_public
+        if status:
+            update_payload["status"] = status
+        if comments:
+            update_payload["comments"] = comments
+        if approved_at:
+            update_payload["approved_at"] = approved_at
+        if approved_by:
+            update_payload["approved_by"] = approved_by
+
+        # Handle tags update
+        if updated_tag_id_list:
+            await self.tag_service.clear_tags(tool_id=tool_id)
+            await self.tag_service.assign_tags_to_tool(tag_ids=updated_tag_id_list, tool_id=tool_id)
+            log.info(f"Tags updated for MCP tool ID: {tool_id}")
+
+        # Handle code_content update for 'mcp_file_' type only
+        if tool_id.startswith("mcp_file_") and code_content:
+            if isinstance(tool_data.get("mcp_config"), str):
+                tool_data["mcp_config"] = json.loads(tool_data["mcp_config"])
+            tool_data["mcp_config"]["args"][1] = code_content.strip() # Update code content
+
+            update_payload["mcp_config"] = tool_data["mcp_config"] # Add updated config to payload
+            log.info(f"Code content updated for MCP file tool ID: {tool_id}")
+
+
+        success = await self.mcp_tool_repo.update_mcp_tool_record(update_payload, tool_id)
+
+        if success:
+            log.info(f"Successfully updated MCP tool with ID: {tool_id}.")
+            return {"status_message": f"Successfully updated MCP tool with ID: {tool_id}.", "is_update": True}
+        else:
+            log.error(f"Failed to update MCP tool with ID: {tool_id}.")
+            return {"status_message": f"Failed to update MCP tool with ID: {tool_id}.", "is_update": False}
+
+    # --- MCP Tool Deletion Operations ---
+
+    async def delete_mcp_tool(self, tool_id: str, user_id: str, is_admin: bool = False) -> Dict[str, Any]:
+        """
+        Deletes an MCP tool (server definition) record from the database.
+        Handles file deletion for 'mcp_file_' type tools.
+        """
+        tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id)
+        if not tool_records:
+            log.error(f"No MCP tool found with ID: {tool_id}")
+            return {"status_message": f"No MCP tool found with ID: {tool_id}", "is_delete": False}
+        
+        tool_data = tool_records[0]
+
+        if not is_admin and tool_data["created_by"] != user_id:
+            err = f"Permission denied: Only the admin or the tool's creator can perform this action for MCP Tool ID: {tool_id}."
+            log.error(err)
+            return {"status_message": err, "is_delete": False}
+
+        # Check for agent dependencies
+        agents_using_this_tool_raw = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
+        if agents_using_this_tool_raw:
+            agent_ids = [m['agentic_application_id'] for m in agents_using_this_tool_raw]
+            agent_details = []
+            for agent_id in agent_ids:
+                agent_record = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+                if agent_record:
+                    agent_record = agent_record[0]
+                    agent_details.append({
+                        "agentic_application_id": agent_record['agentic_application_id'],
+                        "agentic_application_name": agent_record['agentic_application_name'],
+                        "agentic_app_created_by": agent_record['created_by']
+                    })
+            if agent_details:
+                log.error(f"The MCP tool you are trying to delete is being referenced by {len(agent_details)} agentic applications.")
+                return {
+                    "status_message": f"The MCP tool you are trying to delete is being referenced by {len(agent_details)} agentic application(s).",
+                    "details": agent_details,
+                    "is_delete": False
+                }
+
+        # Delete from database
+        delete_success = await self.mcp_tool_repo.delete_mcp_tool_record(tool_id)
+
+        if delete_success:
+            # Clean up tags
+            await self.tag_service.clear_tags(tool_id=tool_id)
+
+            log.info(f"Successfully deleted MCP tool with ID: {tool_id}")
+            return {"status_message": f"Successfully deleted MCP tool with ID: {tool_id}.", "is_delete": True}
+        else:
+            log.error(f"Failed to delete MCP tool with ID: {tool_id}.")
+            return {"status_message": f"Failed to delete MCP tool with ID: {tool_id}.", "is_delete": False}
+
+    # --- MCP Tool Approval Operations ---
+
+    async def approve_mcp_tool(self, tool_id: str, approved_by: str, comments: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Approves an MCP tool by updating its status in the repository.
+        """
+        update_payload = {
+            "status": "approved",
+            "approved_by": approved_by,
+            "approved_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "comments": comments
+        }
+        success = await self.mcp_tool_repo.update_mcp_tool_record(update_payload, tool_id)
+        
+        if success:
+            log.info(f"Successfully approved MCP tool with ID: {tool_id}")
+            return {"status_message": f"Successfully approved MCP tool with ID: {tool_id}", "is_approved": True}
+        else:
+            log.error(f"Failed to approve MCP tool with ID: {tool_id}")
+            return {"status_message": f"Failed to approve MCP tool with ID: {tool_id}", "is_approved": False}
+
+    async def get_all_mcp_tools_for_approval(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all MCP tools with 'pending' status for admin approval.
+        """
+        all_mcp_tools = await self.mcp_tool_repo.get_all_mcp_tool_records()
+        pending_mcp_tools = [tool for tool in all_mcp_tools if tool.get("status") == "pending"]
+        
+        tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+        for tool in pending_mcp_tools:
+            if isinstance(tool.get("mcp_config"), str):
+                tool["mcp_config"] = json.loads(tool["mcp_config"])
+            tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+        
+        return pending_mcp_tools
+
+    async def get_mcp_tools_for_approval_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1) -> Dict[str, Any]:
+        """
+        Retrieves MCP tools with 'pending' status, with pagination and search filtering, for admin approval.
+        """
+        # First get all pending tools, then apply search/pagination in memory for simplicity
+        # For large datasets, this would need to be pushed to the repository query.
+        all_pending_tools = await self.get_all_mcp_tools_for_approval()
+        
+        filtered_tools = [
+            tool for tool in all_pending_tools 
+            if not search_value or search_value.lower() in tool.get("tool_name", "").lower()
+        ]
+        
+        total_count = len(filtered_tools)
+        offset = limit * max(0, page - 1)
+        paginated_tools = filtered_tools[offset : offset + limit]
+        
+        return {
+            "total_count": total_count,
+            "details": paginated_tools
+        }
+
+    # --- Runtime Tool Discovery from MCP Server ---
+
+    async def get_tools_from_mcp_configs(self, mcp_configs: Dict[str, Dict[str, Any]]) -> List[StructuredTool]:
+        """
+        Connects to multiple MCP server(s) defined by the given mcp_configs and discovers
+        all tools they expose.
+
+        Args:
+            mcp_configs (Dict[str, Dict[str, Any]]): A dictionary where each key is a unique server name
+                                                     and the value is the MCP configuration dictionary.
+
+        Returns:
+            List[StructuredTool]: A list of StructuredTool instances discovered from all servers.
+        """
+        for server_name, config in mcp_configs.items():
+            headers: dict = config.get("headers", None)
+            if not headers:
+                continue
+            for k, v in headers.items():
+                if isinstance(v, str) and v.startswith(self.VAULT_PREFIX):
+                    vault_key = v[len(self.VAULT_PREFIX):].strip()
+                    vault_val = get_user_secrets(vault_key, None)
+                    if not vault_val:
+                        raise ValueError(f"Vault key '{vault_key}' not found for MCP server '{server_name}'.")
+                    headers[k] = vault_val
+
+        try:
+            log.info(f"Connecting to {len(mcp_configs)} MCP servers.")
+            client = MultiServerMCPClient(mcp_configs)
+            all_tools = await client.get_tools()
+            log.info(f"Discovered {len(all_tools)} tools from {len(mcp_configs)} MCP servers.")
+            return all_tools
+
+        except Exception as e:
+            log.error(f"Error discovering tools from MCP servers: {e}")
+            raise
+
+    async def get_live_mcp_tools_from_server(self, tool_id: str) -> Dict[str, Any]:
+        """
+        Connects to the live MCP server defined by the given tool_id and discovers
+        the tools it exposes.
+        """
+        tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id)
+        if not tool_records:
+            raise ValueError(f"MCP server definition not found for tool_id: {tool_id}")
+
+        mcp_server_data = tool_records[0]
+        mcp_config = mcp_server_data["mcp_config"]
+
+        # Ensure mcp_config is a Python dict
+        if isinstance(mcp_config, str):
+            mcp_server_data["mcp_config"] = mcp_config = json.loads(mcp_config)
+
+        try:
+            mcp_server_data["live_tools"] = await self.get_tools_from_mcp_configs({mcp_server_data["tool_name"]: mcp_config})
+            log.info(f"Discovered {len(mcp_server_data['live_tools'])} tools from live MCP server: {mcp_server_data['tool_name']}")
+            return mcp_server_data
+
+        except Exception as e:
+            log.error(f"Error discovering tools from MCP server {mcp_server_data['tool_name']} ({tool_id}): {e}")
+            raise ValueError(f"Failed to connect to or discover tools from MCP server: {e}")
+
+    async def get_live_mcp_tools_from_servers(self, tool_ids: List[str]) -> Dict[str, Any]:
+        """
+        Connects to multiple live MCP server(s) defined by the given tool_id(s) and discovers
+        all tools they expose in a single batch operation.
+
+        Args:
+            tool_ids (List[str]): A list of tool_id(s) for the MCP server definitions in the database.
+
+        Returns:
+            Dict[str, Any]: A dictionary with the following structure:
+                            {
+                                "tool_id_1": mcp_server_data_1,  # Database record for server 1
+                                "tool_id_2": mcp_server_data_2,  # Database record for server 2
+                                # ... (for each successfully processed tool_id) ...
+                                "tool_id_with_error_A": {"error": "Error message A"}, # For servers that failed to load config
+                                "all_live_tools": [
+                                    StructuredTool_from_server_1_tool_A,
+                                    StructuredTool_from_server_1_tool_B,
+                                    StructuredTool_from_server_2_tool_X,
+                                    # ... all live tools from all successfully connected servers combined
+                                ]
+                            }
+                            Note: The individual mcp_server_data entries will NOT have a "live_tools" key.
+                                  All discovered tools are combined into the top-level "all_live_tools" list.
+        """
+        server_configs_for_client: Dict[str, Dict[str, Any]] = {}
+        server_details_map: Dict[str, Any] = {} # To store the original mcp_server_data (DB record)
+        
+        # First pass: Collect all server configurations and original DB data
+        for single_tool_id in tool_ids:
+            if not single_tool_id.startswith("mcp_"):
+                continue
+
+            try:
+                tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=single_tool_id)
+                if not tool_records:
+                    server_details_map[single_tool_id] = {"error": f"MCP server definition not found for tool_id: {single_tool_id}"}
+                    log.warning(f"MCP server definition not found for tool_id: {single_tool_id}")
+                    continue
+
+                mcp_server_data = tool_records[0]
+                mcp_config = mcp_server_data["mcp_config"]
+
+                # Ensure mcp_config is a Python dict
+                if isinstance(mcp_config, str):
+                    mcp_server_data["mcp_config"] = mcp_config = json.loads(mcp_config)
+
+                # Store the prepared config for the MultiServerMCPClient
+                server_configs_for_client[mcp_server_data["tool_name"]] = mcp_config
+
+                # Store the original mcp_server_data (DB record) for the final return map
+                server_details_map[single_tool_id] = mcp_server_data
+
+            except Exception as e:
+                server_details_map[single_tool_id] = {"error": f"Failed to prepare config for MCP server {mcp_server_data.get('tool_name', single_tool_id)} ({single_tool_id}): {e}"}
+                log.error(f"Error preparing config for MCP server {mcp_server_data.get('tool_name', single_tool_id)} ({single_tool_id}): {e}")
+
+        all_combined_live_tools: List[StructuredTool] = []
+        if server_configs_for_client:
+            try:
+                all_combined_live_tools = await self.get_tools_from_mcp_configs(server_configs_for_client)
+                log.info(f"Discovered {len(all_combined_live_tools)} tools from {len(server_configs_for_client)} live MCP servers.")
+            except Exception as e:
+                # This error applies to all servers if the client itself fails to initialize or connect
+                log.error(f"Error during batch discovery from MCP servers: {e}")
+                # Update all successfully prepared server entries with a general error
+                for tool_id_key in server_details_map.keys():
+                    if "error" not in server_details_map[tool_id_key]: # Don't overwrite specific config errors
+                        server_details_map[tool_id_key] = {"error": f"Failed to connect to MCP servers for batch discovery: {e}"}
+        else:
+            log.info("No valid MCP server configurations to attempt batch discovery.")
+
+        # Add the combined list of all live tools at the top level
+        server_details_map["all_live_tools"] = all_combined_live_tools
+
+        return server_details_map
+
+    async def get_mcp_tool_details_for_display(
+            self,
+            tool_id: Optional[str] = None,
+            live_tools: Optional[List[StructuredTool]] = None
+        ) -> List[Dict[str, Any]]:
+        """
+        Extracts and formats details (name, description, args) from MCP tools for UI display.
+        Can accept either an MCP server tool_id (to discover live tools) or a pre-fetched list of StructuredTool objects.
+
+        Args:
+            tool_id (Optional[str]): The ID of the MCP server definition in the database.
+                                      If provided, live tools will be discovered from this server.
+            live_tools (Optional[List[StructuredTool]]): A list of StructuredTool objects,
+                                                          if tools have already been discovered.
+
+        Returns:
+            List[Dict[str, Any]]: A list of dictionaries, each containing 'name', 'description', and 'args'
+                                  for an individual MCP tool.
+        """
+        if tool_id:
+            try:
+                # Discover live tools from the MCP server definition
+                mcp_server_data = await self.get_live_mcp_tools_from_server(tool_id)
+                live_tools: List[StructuredTool] = mcp_server_data.get("live_tools", [])
+            except ValueError as e:
+                log.error(f"Failed to get live MCP tools for display from tool_id {tool_id}: {e}")
+                return [{"error": str(e)}]
+            except Exception as e:
+                log.error(f"Unexpected error getting live MCP tools for display from tool_id {tool_id}: {e}")
+                return [{"error": f"An unexpected error occurred: {e}"}]
+
+        if not live_tools:
+            log.info(f"No live MCP tools found for display for tool_id: {tool_id or 'N/A'}.")
+            return []
+
+        extracted_details = []
+        for tool_obj in live_tools:
+            if isinstance(tool_obj, StructuredTool):
+                extracted_details.append({
+                    "name": tool_obj.name,
+                    "description": tool_obj.description,
+                    "args": tool_obj.args # This is already a dictionary representing the schema
+                })
+            else:
+                log.warning(f"Skipping non-StructuredTool object: {tool_obj}")
+        
+        log.info(f"Extracted details for {len(extracted_details)} MCP tools for display.")
+        return extracted_details
+
+
 # --- Tool Service ---
 
 class ToolService:
@@ -487,7 +1085,9 @@ class ToolService:
         tool_agent_mapping_repo: ToolAgentMappingRepository,
         tag_service: TagService,
         tool_code_processor: ToolCodeProcessor,
-        agent_repo: AgentRepository # Need agent_repo for dependency checks
+        agent_repo: AgentRepository, # Need agent_repo for dependency checks
+        model_service: ModelService,
+        mcp_tool_service: McpToolService # Inject the new MCP Tool Service
     ):
         self.tool_repo = tool_repo
         self.recycle_tool_repo = recycle_tool_repo
@@ -495,11 +1095,12 @@ class ToolService:
         self.tag_service = tag_service
         self.tool_code_processor = tool_code_processor
         self.agent_repo = agent_repo # Store agent_repo for direct use in dependency checks
-
+        self.model_service = model_service
+        self.mcp_tool_service = mcp_tool_service # Store MCP Tool Service
 
     # --- Tool Creation Operations ---
 
-    async def create_tool(self, tool_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_tool(self, tool_data: Dict[str, Any],force_add) -> Dict[str, Any]:
         """
         Creates a new tool, including validation, docstring generation, and saving to the database.
 
@@ -531,7 +1132,59 @@ class ToolService:
                 "created_by": tool_data.get('created_by', ''),
                 "is_created": False
             }
-
+        initial_state = {
+                "code": tool_data["code_snippet"],
+                "validation_case1": None,
+                "feedback_case1": None,
+                "validation_case3": None,
+                "feedback_case3": None,
+                "validation_case4": None,
+                "feedback_case4": None,
+                "validation_case5": None,
+                "feedback_case5": None,
+                "validation_case6": None,
+                "feedback_case6": None,
+                "validation_case7": None,
+                "feedback_case7": None
+            }
+        workflow_result = await graph.ainvoke(input=initial_state)
+        w_cases=["validation_case3","validation_case5"]
+        e_cases=["validation_case1","validation_case6","validation_case4","validation_case7"]
+        warnings={}
+        errors={}
+        for i in w_cases:
+            if not workflow_result.get(i):
+                feedback_key = i.replace("validation_", "feedback_")
+                if workflow_result.get(feedback_key):
+                    warnings[i] = workflow_result.get(feedback_key)
+        for j in e_cases:
+            if not workflow_result.get(j):
+                feedback_key = j.replace("validation_", "feedback_")
+                errors[j] = workflow_result.get(feedback_key)
+        # if warnings and not force_add:
+        #         verify=list(warnings.values())
+        #         return {
+        #             "message": ("Verification failed: "+str(verify)),
+        #             "tool_id": "",
+        #             "is_created": False
+        #         }
+        if errors:
+            verify=list(errors.values())
+            return {
+                    "message": verify[0],
+                    "tool_id": "",
+                    "tool_name": tool_data['tool_name'],
+                    "model_name": tool_data.get('model_name', ''),
+                    "created_by": tool_data.get('created_by', ''),
+                    "is_created": False
+                }
+        if warnings and not force_add:
+                verify=list(warnings.values())
+                return {
+                    "message": ("Verification failed: "+str(verify)),
+                    "tool_id": "",
+                    "is_created": False
+                }
         if not tool_data.get("tool_id"):
             tool_data["tool_id"] = str(uuid.uuid4())
             update_session_context(tool_id=tool_data.get("tool_id", None))
@@ -540,7 +1193,7 @@ class ToolService:
             general_tag = await self.tag_service.get_tag(tag_name="General")
             tool_data['tag_ids'] = [general_tag['tag_id']] if general_tag else []
 
-        llm = load_model(model_name=tool_data["model_name"])
+        llm = await self.model_service.get_llm_model(model_name=tool_data["model_name"])
         docstring_generation = await self.tool_code_processor.generate_docstring_for_tool_onboarding(
             llm=llm,
             tool_code_str=tool_data["code_snippet"],
@@ -650,13 +1303,17 @@ class ToolService:
         Retrieves a single tool record by ID or name, with associated tags.
 
         Args:
-            tool_id (str, optional): Tool ID.
-            tool_name (str, optional): Tool name.
+            tool_id (str, optional): Tool ID. Can be used to retrieve both MCP tools (if prefixed with "mcp_") and normal Python function tools.
+            tool_name (str, optional): Tool name. Should only be used to retrieve normal Python function tools.
 
         Returns:
-            dict: A dictionary representing the retrieved tool, or None if not found.
+            List[Dict[str, Any]]: A list of dictionaries representing the retrieved tool(s), each with associated tags. Returns an empty list if no tool is found.
         """
+        if tool_id and tool_id.startswith("mcp_"):
+            return await self.mcp_tool_service.get_mcp_tool(tool_id=tool_id)
+
         tool_records = await self.tool_repo.get_tool_record(tool_id=tool_id, tool_name=tool_name)
+
         if not tool_records:
             log.info(f"No tool found with ID: {tool_id} or Name: {tool_name}.")
             return []
@@ -666,7 +1323,7 @@ class ToolService:
         log.info(f"Retrieved tool with ID: {tool_records[0]['tool_id']} and Name: {tool_records[0]['tool_name']}.")
         return tool_records
 
-    async def get_tools_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1) -> Dict[str, Any]:
+    async def get_tools_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1, tag_names: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Retrieves tools with pagination and search filtering, including associated tags.
 
@@ -679,15 +1336,34 @@ class ToolService:
             dict: A dictionary containing the total count of tools and the paginated tool details.
         """
         total_count = await self.tool_repo.get_total_tool_count(search_value)
-        tool_records = await self.tool_repo.get_tools_by_search_or_page_records(search_value, limit, page)
-        
+
+        if tag_names:
+            tag_names = set(tag_names)
+            tool_records = await self.tool_repo.get_tools_by_search_or_page_records(search_value, total_count, 1)
+        else:
+            tool_records = await self.tool_repo.get_tools_by_search_or_page_records(search_value, limit, page)
+
         tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+        filtered_tools = []
+
         for tool in tool_records:
             tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+            if tag_names:
+                for tag in tool['tags']:
+                    if tag['tag_name'] in tag_names:
+                        filtered_tools.append(tool)
+                        break
+
+        if tag_names:
+            total_count = len(filtered_tools)
+            offset = limit * max(0, page - 1)
+            filtered_tools = filtered_tools[offset : offset + limit]
+        else:
+            filtered_tools = tool_records
 
         return {
             "total_count": total_count,
-            "details": tool_records
+            "details": filtered_tools
         }
 
     # --- Tool Updation Operations ---
@@ -794,7 +1470,7 @@ class ToolService:
                     "is_update": False
                 }
 
-        llm = load_model(model_name=model_name)
+        llm = await self.model_service.get_llm_model(model_name=model_name)
         docstring_generation = await self.tool_code_processor.generate_docstring_for_tool_onboarding(
             llm=llm,
             tool_code_str=tool_data["code_snippet"],
@@ -926,7 +1602,67 @@ class ToolService:
             }
 
     # --- Tool Helper Functions ---
+    
+    async def approve_tool(self, tool_id: str, approved_by: str, comments: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Approves a tool by calling the repository's approve_tool method.
 
+        Args:
+            tool_id (str): The ID of the tool to approve.
+            approved_by (str): The email/identifier of the admin approving the tool.
+            comments (Optional[str]): Optional comments about the approval.
+
+        Returns:
+            dict: Status of the approval operation.
+        """
+        success = await self.tool_repo.approve_tool(tool_id=tool_id, approved_by=approved_by, comments=comments)
+        
+        if success:
+            log.info(f"Successfully approved tool with ID: {tool_id}")
+            return {
+                "status_message": f"Successfully approved tool with ID: {tool_id}",
+                "tool_id": tool_id,
+                "approved_by": approved_by,
+                "is_approved": True
+            }
+        else:
+            log.error(f"Failed to approve tool with ID: {tool_id}")
+            return {
+                "status_message": f"Failed to approve tool with ID: {tool_id}",
+                "tool_id": tool_id,
+                "approved_by": approved_by,
+                "is_approved": False
+            }
+
+    async def get_all_tools_for_approval(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all tools for admin approval purposes.
+
+        Returns:
+            list: A list of tools, represented as dictionaries.
+        """
+        return await self.tool_repo.get_all_tools_for_approval()
+
+    async def get_tools_for_approval_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1) -> Dict[str, Any]:
+        """
+        Retrieves tools with pagination and search filtering for admin approval purposes.
+
+        Args:
+            search_value (str, optional): Tool name to filter by.
+            limit (int, optional): Number of results per page.
+            page (int, optional): Page number for pagination.
+
+        Returns:
+            dict: A dictionary containing the total count of tools and the paginated tool details.
+        """
+        total_count = await self.tool_repo.get_total_tool_count(search_value)
+        tool_records = await self.tool_repo.get_tools_by_search_or_page_records_for_approval(search_value, limit, page)
+        
+        return {
+            "total_count": total_count,
+            "details": tool_records
+        }
+    
     async def validate_tools(self, tools_id: Union[List[str], str]) -> Dict[str, Any]:
         """
         Validates whether the given tool IDs exist in the database.
@@ -944,14 +1680,18 @@ class ToolService:
             tools_id = [tools_id]
 
         for tool_id_single in tools_id:
-            tool = await self.tool_repo.get_tool_record(tool_id=tool_id_single)
+            if tool_id_single.startswith("mcp_"):
+                tool = await self.mcp_tool_service.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id_single)
+            else:
+                tool = await self.tool_repo.get_tool_record(tool_id=tool_id_single)
             tool = tool[0] if tool else None
             if not tool:
                 return {"error": f"Tool with ID {tool_id_single} not found."}
+        log.info("Tool Check Complete. All tools are available.")
         return {"info": "Tool Check Complete. All tools are available."}
 
     @staticmethod
-    async def render_text_description_for_tools(tools: List[BaseTool]) -> str:
+    async def render_text_description_for_tools(tools: List[BaseTool | StructuredTool]) -> str:
         """Render the tool name and description in plain text.
 
         Args:
@@ -969,19 +1709,22 @@ class ToolService:
         """
         descriptions = []
         for tool in tools:
+            if isinstance(tool, StructuredTool):
+                description = f"tool name:\n{tool.name} \n tool arguments:\n{tool.args} \ntool Docstring:\n{tool.__doc__}\n"
+            else:
+                signature = inspect.signature(tool)
+                args_list = ""
 
-            signature = inspect.signature(tool)
-            args_list = ""
-
-            for param_name, param in signature.parameters.items():
-                args_list +=f"Parameter: {param_name}, Type: {param.annotation}\n"
-            description = f"tool name:\n{tool.__name__} \n tool arguments:\n{args_list} \ntool Docstring:\n{tool.__doc__}\n"
+                for param_name, param in signature.parameters.items():
+                    args_list +=f"Parameter: {param_name}, Type: {param.annotation}\n"
+                description = f"tool name:\n{tool.__name__} \n tool arguments:\n{args_list} \ntool Docstring:\n{tool.__doc__}\n"
             descriptions.append(description)
         return "\n\n".join(descriptions)
 
     async def _extract_tools_using_tool_ids(self, tools_id: Union[List[str], str]) -> Dict[str, Any]:
         """
         Extracts tool information from the database using tool IDs.
+        This method is used internally to build the tool prompt.
 
         Args:
             tools_id (Union[List[str], str]): List of tool IDs to retrieve details for.
@@ -994,16 +1737,43 @@ class ToolService:
 
         tools_info_user = {}
         for idx, tool_id_single in enumerate(tools_id):
-            tool_record = await self.tool_repo.get_tool_record(tool_id=tool_id_single)
-            if tool_record:
-                tool_record = tool_record[0]
-                tools_info_user[f"Tool_{idx+1}"] = {
-                    "Tool_Name": tool_record.get("tool_name"),
-                    "Tool_Description": tool_record.get("tool_description"),
-                    "code_snippet": tool_record.get("code_snippet")
-                }
+            if tool_id_single.startswith("mcp_"):
+                # For MCP tools, we need to get live tool details to render prompt
+                try:
+                    mcp_server_def = await self.mcp_tool_service.get_live_mcp_tools_from_server(tool_id_single)
+                    live_mcp_tools: List[StructuredTool] = mcp_server_def.get("live_tools", [])
+                    if live_mcp_tools:
+                        # For prompt generation, we want to describe the *server* as a tool and list its capabilities.
+
+                        server_name = mcp_server_def.get("tool_name", "MCP Server")
+                        server_description = mcp_server_def.get("tool_description", "A Micro-Agentic Protocol server.")
+
+                        # Summarize the tools it exposes for the prompt
+                        exposed_tools_summary = ", ".join([f"{t.name} ({t.description[:50]}...)" for t in live_mcp_tools])
+                        
+                        tools_info_user[f"Tool_{idx+1}"] = {
+                            "Tool_Name": server_name,
+                            "Tool_Description": server_description,
+                            "code_snippet": f"This MCP server is exposes the following capabilities: {exposed_tools_summary}"
+                                            f"To use its tools, call the appropriate function from this server."
+                        }
+                    else:
+                        tools_info_user[f"Tool_{idx+1}"] = {"error": f"MCP server '{tool_id_single}' is not live or has no tools."}
+                except Exception as e:
+                    tools_info_user[f"Tool_{idx+1}"] = {"error": f"Error connecting to MCP server '{tool_id_single}': {e}"}
+
             else:
-                tools_info_user[f"Tool_{idx+1}"] = {"error": f"No data found for tool_id: {tool_id_single}"}
+                tool_record = await self.tool_repo.get_tool_record(tool_id=tool_id_single)
+                if tool_record:
+                    tool_record = tool_record[0]
+                    tools_info_user[f"Tool_{idx+1}"] = {
+                        "Tool_Name": tool_record.get("tool_name"),
+                        "Tool_Description": tool_record.get("tool_description"),
+                        "code_snippet": tool_record.get("code_snippet")
+                    }
+                else:
+                    tools_info_user[f"Tool_{idx+1}"] = {"error": f"No data found for tool_id: {tool_id_single}"}
+
         log.info(f"Extracted {len(tools_info_user)} tools using provided tool IDs.")
         return tools_info_user
 
@@ -1018,7 +1788,21 @@ class ToolService:
         Returns:
             str: A prompt string describing the tools.
         """
-        tool_prompt = ""
+        memory_tool_data = """
+        tool_name : manage_tool
+        tool_description : Stores personal or contextual information for the user in long-term memory.
+                Useful when the user says something you'd want to remember later — like their name,
+                preferences, relationships, or other personal facts.
+        
+        tool_namespace : infyagent_framework/{user_id}/conversation_collection
+        
+        tool_name : search_tool
+        tool_description : Searches the user's memory for previously stored facts or information.
+                Useful when the user asks a question that may refer to something they told earlier.
+                The tool searches the user's memory for previously stored facts or information.
+        tool_namespace : infyagent_framework/{user_id}/conversation_collection
+        """
+        tool_prompt = f"{memory_tool_data}\n\n\n\n"
         for tool_id, tool_info_desc in tools_info.items():
             if "error" in tool_info_desc:
                 log.error(f"Error in tool info: {tool_info_desc['error']}")
@@ -1287,12 +2071,7 @@ Tool Code Snippet:
 
 # --- Agent Service ---
 
-class AgentService:
-    """
-    Service layer for managing agents (Agentic Applications).
-    Applies business rules, handles prompt generation, validation,
-    dependency checks, and orchestrates repository and other service calls.
-    """
+class AgentServiceUtils:
 
     def __init__(
         self,
@@ -1300,13 +2079,41 @@ class AgentService:
         recycle_agent_repo: RecycleAgentRepository,
         tool_service: ToolService,
         tag_service: TagService,
-        meta_type_templates: List[str] = ["meta_agent", "planner_meta_agent"]
+        model_service: ModelService,
+        meta_type_templates: Optional[List[str]] = None
     ):
         self.agent_repo = agent_repo
         self.recycle_agent_repo = recycle_agent_repo
         self.tool_service = tool_service
         self.tag_service = tag_service
-        self.meta_type_templates = meta_type_templates
+        self.model_service = model_service
+        self.meta_type_templates = meta_type_templates or ["meta_agent", "planner_meta_agent"]
+
+
+    @staticmethod
+    async def _normalize_agent_name(agent_name: str):
+        """
+        Normalizes the agent name by removing invalid characters and formatting it.
+        """
+        return re.sub(r'[^a-z0-9_]', '', agent_name.strip().lower().replace(" ", "_"))
+
+
+class AgentService:
+    """
+    Service layer for managing agents (Agentic Applications).
+    Applies business rules, handles prompt generation, validation,
+    dependency checks, and orchestrates repository and other service calls.
+    """
+
+    def __init__(self, agent_service_utils: AgentServiceUtils):
+        self.agent_service_utils = agent_service_utils
+        self.agent_repo = agent_service_utils.agent_repo
+        self.recycle_agent_repo = agent_service_utils.recycle_agent_repo
+        self.tool_service = agent_service_utils.tool_service
+        self.mcp_tool_service = self.tool_service.mcp_tool_service
+        self.tag_service = agent_service_utils.tag_service
+        self.model_service = agent_service_utils.model_service
+        self.meta_type_templates = agent_service_utils.meta_type_templates
 
 
     # --- Agent Creation Operations ---
@@ -1542,7 +2349,8 @@ class AgentService:
                                            limit: int = 20,
                                            page: int = 1,
                                            agentic_application_type: Optional[Union[str, List[str]]] = None,
-                                           created_by: Optional[str] = None) -> Dict[str, Any]:
+                                           created_by: Optional[str] = None,
+                                           tag_names: Optional[List[str]] = None ) -> Dict[str, Any]:
         """
         Retrieves agents with pagination and search filtering, including associated tags.
 
@@ -1557,18 +2365,37 @@ class AgentService:
             dict: A dictionary containing the total count of agents and the paginated agent details.
         """
         total_count = await self.agent_repo.get_total_agent_count(search_value, agentic_application_type, created_by)
-        agent_records = await self.agent_repo.get_agents_by_search_or_page_records(search_value, limit, page, agentic_application_type, created_by)
+
+        if tag_names:
+            tag_names = set(tag_names)
+            agent_records = await self.agent_repo.get_agents_by_search_or_page_records(search_value, total_count, 1, agentic_application_type, created_by)
+        else:
+            agent_records = await self.agent_repo.get_agents_by_search_or_page_records(search_value, limit, page, agentic_application_type, created_by)
 
         agent_id_to_tags = await self.tag_service.get_agent_id_to_tags_dict()
+        filtered_agents = []
+
         for agent in agent_records:
             agent['system_prompt'] = json.loads(agent['system_prompt']) if isinstance(agent['system_prompt'], str) else agent['system_prompt']
             agent['tools_id'] = json.loads(agent['tools_id']) if isinstance(agent['tools_id'], str) else agent['tools_id']
             agent['tags'] = agent_id_to_tags.get(agent['agentic_application_id'], [])
+            if tag_names:
+                for tag in agent['tags']:
+                    if tag['tag_name'] in tag_names:
+                        filtered_agents.append(agent)
+                        break
+
+        if tag_names:
+            total_count = len(filtered_agents)
+            offset = limit * max(0, page - 1)
+            filtered_agents = filtered_agents[offset: offset + limit]
+        else:
+            filtered_agents = agent_records
 
         log.info(f"Retrieved {len(agent_records)} agentic applications with search '{search_value}' on page {page}.")
         return {
             "total_count": total_count,
-            "details": agent_records
+            "details": filtered_agents
         }
 
     async def get_agents_by_tag(self,
@@ -1794,7 +2621,7 @@ class AgentService:
         agent["model_name"] = model_name
 
         if not system_prompt: # Regenerate system prompt if not explicitly provided
-            llm = load_model(model_name=model_name)
+            llm = await self.model_service.get_llm_model(model_name=model_name)
             tool_or_worker_agents_prompt = None
             if is_meta_template:
                 worker_agents_prompt = await self.generate_worker_agents_prompt(agents_id=agent["tools_id"])
@@ -1863,7 +2690,8 @@ class AgentService:
         if not is_admin and agent_data["created_by"] != user_id:
             log.error(f"Permission denied: User {user_id} is not authorized to delete Agentic Application ID: {agent_data['agentic_application_id']}.")
             return {
-                "status_message": f"You do not have permission to delete Agentic Application with ID: {agent_data['agentic_application_id']}. Only the admin or the creator can perform this action.",
+                "status_message": f"You do not have permission to delete Agentic Application with ID: {agent_data['agentic_application_id']}.",
+                "details": [],
                 "is_delete": False
             }
 
@@ -1916,13 +2744,6 @@ class AgentService:
 
     # --- Agent Helper Functions ---
 
-    @staticmethod
-    async def _normalize_agent_name(agent_name: str):
-        """
-        Normalizes the agent name by removing invalid characters and formatting it.
-        """
-        return re.sub(r'[^a-z0-9_]', '', agent_name.strip().lower().replace(" ", "_"))
-
     async def validate_agent_ids(self, agents_id: Union[List[str], str]) -> Dict[str, Any]:
         """
         Validates whether the given agent IDs exist in the database.
@@ -1954,13 +2775,19 @@ class AgentService:
         Generates worker agents prompt for the meta type agent describing the available agents.
         """
         worker_agents_prompt = ""
+        success_count = 0
         for agent_id in agents_id:
-            agent_info = await self.get_agent(agentic_application_id=agent_id)
-            agent_info = agent_info[0]
-            agent_name = await self._normalize_agent_name(agent_info["agentic_application_name"])
-            worker_agents_prompt += f"Agentic Application Name: {agent_name}\nAgentic Application Description: {agent_info['agentic_application_description']}\n\n"
+            agent_info = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+            if not agent_info:
+                log.warning(f"Agent with ID {agent_id} not found.")
+                continue
 
-        log.info(f"Generated worker agents prompt for {len(agents_id)} agents.")
+            agent_info = agent_info[0]
+            agent_name = await self.agent_service_utils._normalize_agent_name(agent_info["agentic_application_name"])
+            worker_agents_prompt += f"Agentic Application Name: {agent_name}\nAgentic Application Description: {agent_info['agentic_application_description']}\n\n"
+            success_count += 1
+
+        log.info(f"Generated worker agents prompt for {success_count} agents.")
         return worker_agents_prompt
 
     async def _get_system_prompt_for_agent(self,
@@ -2000,7 +2827,7 @@ class AgentService:
             return {"error": valid_associated_ids_resp["error"]}
 
         try:
-            llm = load_model(model_name=model_name)
+            llm = await self.model_service.get_llm_model(model_name=model_name)
             tool_or_worker_agents_prompt = None
             if is_meta_template:
                 worker_agents_prompt = await self.generate_worker_agents_prompt(agents_id=associated_ids)
@@ -2087,7 +2914,7 @@ class AgentService:
             }
 
         # Validate and clean up associated tools/worker agents before restoring
-        associated_ids = json.loads(agent_data["tools_id"])
+        associated_ids: List[str] = json.loads(agent_data["tools_id"])
         new_associated_ids = []
         new_associated_created_bys = []
         for associated_id in associated_ids:
@@ -2130,7 +2957,7 @@ class AgentService:
         log.info(f"Successfully restored Agentic Application with ID: {agent_data['agentic_application_id']}")
 
         return {
-            "status_message": f"Successfully restored Agentic Application with ID: {agent_data['agentic_application_id']}.",
+            "status_message": f"Successfully restored Agentic Application with ID: {agent_data['agentic_application_id']}",
             "is_restored": True
         }
 
@@ -2165,6 +2992,67 @@ class AgentService:
             log.error(f"Failed to delete agent {agent_data['agentic_application_id']} from recycle bin.")
             return {"status_message": f"Failed to delete agent {agent_data['agentic_application_id']} from recycle bin.", "is_delete": False}
 
+    # --- Agent Approval Operations ---
+
+    async def approve_agent(self, agentic_application_id: str, approved_by: str, comments: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Approves an agent by calling the repository's approve_agent method.
+
+        Args:
+            agentic_application_id (str): The ID of the agent to approve.
+            approved_by (str): The email/identifier of the admin approving the agent.
+            comments (Optional[str]): Optional comments about the approval.
+
+        Returns:
+            dict: Status of the approval operation.
+        """
+        success = await self.agent_repo.approve_agent(agentic_application_id=agentic_application_id, approved_by=approved_by, comments=comments)
+        
+        if success:
+            log.info(f"Successfully approved agent with ID: {agentic_application_id}")
+            return {
+                "status_message": f"Successfully approved agent with ID: {agentic_application_id}",
+                "agentic_application_id": agentic_application_id,
+                "approved_by": approved_by,
+                "is_approved": True
+            }
+        else:
+            log.error(f"Failed to approve agent with ID: {agentic_application_id}")
+            return {
+                "status_message": f"Failed to approve agent with ID: {agentic_application_id}",
+                "agentic_application_id": agentic_application_id,
+                "approved_by": approved_by,
+                "is_approved": False
+            }
+
+    async def get_all_agents_for_approval(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all agents for admin approval purposes.
+
+        Returns:
+            list: A list of agents, represented as dictionaries.
+        """
+        return await self.agent_repo.get_all_agents_for_approval()
+
+    async def get_agents_for_approval_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1) -> Dict[str, Any]:
+        """
+        Retrieves agents with pagination and search filtering for admin approval purposes.
+
+        Args:
+            search_value (str, optional): Agent name to filter by.
+            limit (int, optional): Number of results per page.
+            page (int, optional): Page number for pagination.
+
+        Returns:
+            dict: A dictionary containing the total count of agents and the paginated agent details.
+        """
+        total_count = await self.agent_repo.get_total_agent_count(search_value)
+        agent_records = await self.agent_repo.get_agents_by_search_or_page_records_for_approval(search_value, limit, page)
+        
+        return {
+            "total_count": total_count,
+            "details": agent_records
+        }
 
 # --- Chat History Service ---
 
@@ -2174,15 +3062,20 @@ class ChatService:
     Applies business rules for naming conventions and orchestrates repository calls.
     """
 
-    def __init__(self, chat_history_repo: ChatHistoryRepository):
+    def __init__(self, chat_history_repo: ChatHistoryRepository, embedding_model: HuggingFaceEmbeddings, cross_encoder: CrossEncoder):
         """
         Initializes the ChatService.
 
         Args:
             chat_history_repo (ChatHistoryRepository): The repository for chat history data access.
+            embedding_model (HuggingFaceEmbeddings): The embedding model for episodic memory.
+            cross_encoder (CrossEncoder): The cross-encoder for episodic memory.
         """
         self.repo = chat_history_repo
+        self.embedding_model = embedding_model
+        self.cross_encoder = cross_encoder
         self.conversation_summary_prompt_template = PromptTemplate.from_template(CONVERSATION_SUMMARY_PROMPT)
+
 
     # --- Private Helper Methods (Business Logic) ---
 
@@ -2216,14 +3109,17 @@ class ChatService:
         return f"{table_name}_{session_id}"
 
     @staticmethod
-    async def _get_thread_config(thread_id: str, recursion_limit: int = 100) -> Dict[str, Any]:
+    async def _get_thread_config(thread_id: str, recursion_limit: int = 50) -> Dict[str, Any]:
         """
         Retrieves the thread configuration for a specific thread_id.
-        """
-        return {"configurable": {"thread_id": thread_id}, "recursion_limit": recursion_limit}
+        """  
+        user_id = thread_id
+        return {"configurable": {"thread_id": thread_id, "user_id": user_id}, "recursion_limit": recursion_limit}
+
 
     async def _get_summary_chain(self, llm):
         return self.conversation_summary_prompt_template | llm | StrOutputParser()
+    
 
     # --- Public Service Methods ---
 
@@ -2336,9 +3232,9 @@ class ChatService:
             limit=limit
         )
 
-    async def get_chat_summary(self, agentic_application_id, session_id, llm, conversation_limit=30, executor_messages=None, executor_message_limit=30) -> str:
+    async def get_chat_summary(self, agentic_application_id, session_id, llm, conversation_limit=8, executor_messages=None, executor_message_limit=30) -> str:
         """Retrieves a summary of the conversation history for a given session ID."""
-        return ""
+        # return ""
         conversation_history_df = pd.DataFrame(
             await self.get_chat_history_from_long_term_memory(
                     agentic_application_id=agentic_application_id,
@@ -2364,13 +3260,99 @@ class ChatService:
             )
             if executor_messages:
                 chat_history += "\n\n" + "\n\n".join(self.get_formatted_messages(messages=executor_messages, msg_limit=executor_message_limit))
+            past_conversation_summary = await self.repo.get_agent_conversation_summary_with_preference(
+                                agentic_application_id=agentic_application_id,
+                                session_id=session_id
+                                )
+            past_conversation_summary = past_conversation_summary.get("summary", "") if past_conversation_summary else ""
             conversation_summary = await conversation_summary_chain.ainvoke(
-                {"chat_history": chat_history}
+                {"chat_history": chat_history, "past_conversation_summary": past_conversation_summary}
             )
+            await self.repo.update_agent_conversation_summary(
+                agentic_application_id=agentic_application_id,
+                session_id=session_id,
+                summary=conversation_summary
+            )
+            log.debug("Chat summary stored successfully")
         else:
             conversation_summary = ""
         log.info(f"Conversation Summary generated for agent id {agentic_application_id} and session {session_id}")
         return conversation_summary
+    
+    async def get_chat_conversation_summary(
+        self, agentic_application_id: str, session_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the conversation summary for a specific agent and session.
+
+        Args:
+            agentic_application_id (str): The ID of the agentic application.
+            session_id (str): The ID of the session.
+
+        Returns:
+            dict: A dictionary representing the conversation summary, or None if not found.
+        """
+        return await self.repo.get_agent_conversation_summary_with_preference(
+            agentic_application_id=agentic_application_id,
+            session_id=session_id
+        )
+
+    async def create_new_session_id(self, email: str) -> str:
+        """
+        Generates a new unique session ID based on the user's email.
+
+        Args:
+            email (str): The user's email.
+
+        Returns:
+            str: The newly generated session ID.
+        """
+        new_uuid = str(uuid.uuid4()).replace("-", "_")
+        session_id = f"{email}_{new_uuid}"
+        log.info(f"New chat session ID generated for user '{email}': {session_id}.")
+        return session_id
+
+    async def get_old_chats_by_user_and_agent(self, user_email: str, agent_id: str) -> Dict[str, Any]:
+        """
+        Retrieves old chat sessions for a specific user and agent.
+
+        Args:
+            user_email (str): The email of the user.
+            agent_id (str): The ID of the agent.
+
+        Returns:
+            Dict[str, Any]: A dictionary where keys are session IDs and values are lists of chat records.
+        """
+        table_name = await self._get_chat_history_table_name(agent_id)
+        
+        try:
+            raw_records = await self.repo.get_chat_records_by_session_prefix(
+                table_name=table_name,
+                session_id_prefix=f"{user_email}_%"
+            )
+        except Exception as e:
+            log.error(f"Error retrieving old chats for user '{user_email}' and agent '{agent_id}': {e}")
+            return {} # Return empty dict on error
+
+        result = {}
+        for row in raw_records:
+            session_id_full = row.get('session_id')
+            timestamp_start = row.get('start_timestamp')
+            timestamp_end = row.get('end_timestamp')
+            user_input = row.get('human_message')
+            agent_response = row.get('ai_message')
+
+            if session_id_full not in result:
+                result[session_id_full] = []
+
+            result[session_id_full].append({
+                "timestamp_start": timestamp_start,
+                "timestamp_end": timestamp_end,
+                "user_input": user_input,
+                "agent_response": agent_response
+            })
+        log.info(f"Retrieved old chats for user '{user_email}' and agent '{agent_id}'.")
+        return result
 
     async def delete_session(self, agentic_application_id: str, session_id: str) -> Dict[str, Any]:
         """
@@ -2401,6 +3383,23 @@ class ChatService:
         except Exception as e:
             log.error(f"Service-level error during transactional delete for session '{session_id}': {e}")
             return {"status": "error", "message": f"An error occurred during deletion: {e}"}
+        
+    async def delete_internal_thread(self, internal_thread:str):
+        """
+        Deletes an internal thread from the checkpoints table.
+        
+        Args:
+            internal_thread (str): The thread_id of the internal thread to delete.
+
+        Returns:
+            bool: True if deletion was successful, False otherwise.
+        """
+        try:
+            success = await self.repo.delete_session_transactional_internal(internal_thread=internal_thread)
+            return success
+        except Exception as e:
+            log.error(f"Error deleting internal thread '{internal_thread}': {e}")
+            return f"Error deleting internal thread '{internal_thread}': {e}"
 
     async def get_all_sessions(self) -> List[Dict[str, str]]:
         """
@@ -2507,6 +3506,10 @@ class ChatService:
             str: The formatted message string.
         """
 
+        if (len(messages)+1)%8 == 0:
+            msg_limit = 8
+        else:
+            msg_limit = len(messages) % 8
         msg_formatted = ""
         for m in messages[-msg_limit:]: # Display only the last `msg_limit` messages
             if isinstance(m, HumanMessage):
@@ -2539,7 +3542,14 @@ class ChatService:
 
         conversation_list = []
         agent_steps = []
-        
+        parts_dict = response.get("parts_storage_dict", {})
+        try:
+            if "parts_storage_dict" in response:
+                del response["parts_storage_dict"]
+            if "parts_storage" in response:
+                del response["parts_storage"]
+        except KeyError:
+            pass
 
         for message in reversed(executor_messages):
             agent_steps.append(message)
@@ -2568,8 +3578,25 @@ class ChatService:
                     "final_response": agent_steps[0].content if (agent_steps[0].type == "ai") and ("tool_calls" not in agent_steps[0].additional_kwargs) and ("function_call" not in agent_steps[0].additional_kwargs) else "",
                     "tools_used": tools_used,
                     "agent_steps": data,
-                    "additional_details": agent_steps
+                    "additional_details": agent_steps,
+                    "parts": parts_dict.get(agent_steps[0].id, [
+                        {
+                        "type": "text",
+                        "data": {
+                            "content": agent_steps[0].content if (agent_steps[0].type == "ai") and ("tool_calls" not in agent_steps[0].additional_kwargs) and ("function_call" not in agent_steps[0].additional_kwargs) else ""
+                        },
+                        "metadata": {}
+                        }
+                    ])
                 }
+                for sub_part in new_conversation["parts"]:
+                    if sub_part.get("type") != "text":
+                        new_conversation.update({"show_canvas": True})
+                        break
+                else:
+                    new_conversation.update({"show_canvas": False})
+                if (agent_steps[0].type == "ai") and (("tool_calls" in agent_steps[0].additional_kwargs) or ("function_call" in agent_steps[0].additional_kwargs)):
+                    new_conversation["parts"] = []
                 conversation_list.append(new_conversation)
                 agent_steps = []
                 tools_used = dict()
@@ -2642,6 +3669,495 @@ class ChatService:
         else: # None was returned (message not found or error)
             return {"message": "Sorry, we couldn't update your request at the moment. Please try again later."}
 
+    async def fetch_all_user_queries(self, user_email: str, agentic_application_id: str) -> Dict[str, List[str]]:
+        """
+        Fetches all user queries from the chat table for a specific user email.
+
+        Args:
+            user_email (str): The email of the user to fetch queries for.
+            agentic_application_id (str): The ID of the agentic application.
+
+        Returns:
+            Dict[str, List[str]]: A dictionary containing user queries and other session IDs.
+        """
+        chat_table_name = await self._get_chat_history_table_name(agentic_application_id)
+        queries = await self.repo.fetch_user_query_from_chat_table(user_email=user_email, chat_table_name=chat_table_name)
+        return queries
+
+    async def extract_conversation_details_from_short_term_memory(self, agentic_application_id: str, session_id: str) -> Dict[str, List[Dict]]:
+        """
+        Extract user_query, final_response, and tool calls from data.
+        
+        Args:
+            agentic_application_id (str): The agent ID
+            session_id (str): The session ID
+        Returns:
+            Dict[str, List[Dict]]:  A dictionary containing conversation details
+        """
+        try:
+            data = await self.get_chat_history_from_short_term_memory(
+                    agentic_application_id=agentic_application_id,
+                    session_id=session_id
+                )
+            if "error" in data:
+                log.error(f"Error retrieving chat history: {data['error']}")
+                return {"conversations": []}
+            
+            executor_messages = data.get("executor_messages", [])
+            if not executor_messages:
+                log.warning("No executor messages found in chat history")
+                return {"conversations": []}
+            
+            conversations = []
+            
+            # Process each conversation object
+            for conversation in executor_messages:
+                if isinstance(conversation, dict):
+                    user_query = conversation.get("user_query", "")
+                    final_response = conversation.get("final_response", "")
+                    tools_used = conversation.get("tools_used", {})
+                    
+                    # Extract tool calls from tools_used
+                    tool_calls = []
+                    for tool_id, tool_info in tools_used.items():
+                        if isinstance(tool_info, dict):
+                            tool_name = tool_info.get("name", "")
+                            tool_args = tool_info.get("args", {})
+                            
+                            if tool_name:
+                                if tool_args:
+                                    args_str = ", ".join([str(v) for v in tool_args.values()])
+                                    tool_call = f"{tool_name}({args_str})"
+                                else:
+                                    tool_call = f"{tool_name}()"
+                                tool_calls.append(tool_call)
+                    
+                    if user_query: 
+                        conversations.append({
+                            "user_query": user_query,
+                            "final_response": final_response,
+                            "tool_calls": tool_calls
+                        })
+            limited_conversations = conversations[-4:] if len(conversations) > 4 else conversations
+            log.info(f"Extracted {len(conversations)} total conversations from short term memory, returning last {len(limited_conversations)} conversations")
+            return {"conversations": limited_conversations}
+                
+        except Exception as e:
+            log.error(f"Error extracting conversation details: {e}")
+            return {"conversations": []}
+ 
+    async def update_preferences_and_analyze_conversation(
+        self, 
+        user_input: str, 
+        llm: Any, 
+        agentic_application_id: str, 
+        session_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Update preferences and analyze conversation for episodic storage in a single LLM call.
+        
+        Returns:
+            Dict containing both preference updates and conversation analysis results
+        """
+        try:
+            from src.inference.inference_utils import EpisodicMemoryManager
+            preferences = await self.repo.get_agent_conversation_summary_with_preference(agentic_application_id=agentic_application_id, session_id= session_id)
+            print(preferences)
+            preferences_string = ""
+            if isinstance(preferences, dict):
+                preferences_string = preferences.get('preference', '')
+            elif isinstance(preferences, str):
+                preferences_string = preferences
+
+            # Use empty string for "no preferences available" 
+            if not preferences_string or preferences_string.strip() == "no preferences available":
+                preferences_string = ""
+
+            conversation_details = await self.extract_conversation_details_from_short_term_memory(
+                agentic_application_id=agentic_application_id,
+                session_id=session_id
+            )
+            conversations = conversation_details.get('conversations', [])
+            # Format conversations for analysis
+            formatted_conversation = ""
+            for i, conv in enumerate(conversations):
+                user_query = conv.get('user_query', '')
+                final_response = conv.get('final_response', '')
+                tool_calls = conv.get('tool_calls', [])
+                
+                formatted_conversation += f"Turn {i+1}:\n"
+                formatted_conversation += f"User: {user_query}\n"
+                formatted_conversation += f"AI: {final_response}\n"
+                if tool_calls:
+                    formatted_conversation += f"Tool calls used: {', '.join(tool_calls)}\n"
+                formatted_conversation += "\n"
+            log.debug(f"Formatted {len(conversations)} conversations for analysis")
+
+            combined_prompt = f"""
+            # Multi-Task AI Assistant
+
+            You are an expert AI assistant that performs two tasks simultaneously:
+            1. **Preference Analysis and Update**
+            2. **Conversation Analysis for Learning Examples**
+
+            ## Task 1: Preference Analysis and Update
+
+            ### Current Preferences:
+            {preferences_string if preferences_string else "no preferences available"}
+
+            ### User Input:
+            {user_input}
+
+            ### Instructions for Preferences:
+
+            - Understand the User query, now analyze is the user intention with query is to provide feedback or related to task.
+                - Understand the feedback points from the given query and add them into the feedback.
+                - Inputs related to any task are not preferences. Don't consider them.
+                - If user intention is providing feed back then update the preferences based on below guidelines.
+                - Update the preferences based on the user input.
+                - If it's a new preference or feedback, add it as a new line.
+                - If it modifies an existing preference or feedback, update the relevant line with detailed preference context.
+                - User input can include new preferences, feedback on mistakes, or corrections to model behavior.
+                - Store these preferences or feedback as lessons to help the model avoid repeating the same mistakes.
+                - The output should contain only the updated preferences, with no extra explanation or commentary.
+                - if no preferences are there then output should is "no preferences available".
+
+            ### Examples for Preferences:
+
+            user query: output should in markdown format
+                - the user query is related to preference and should be added to the preferences.
+                user query: a person is running at 5km per hour how much distance he can cover by 2 hours
+                - The user query is related to task and should not be added to the preferences.
+                user query: give me the response in meters.
+                - This is a perference and should be added to the preferences.
+
+            ## Task 2: Conversation Analysis for Learning Examples
+
+            ### Conversation to Analyze
+            {formatted_conversation}
+
+            ### Objective
+            Identify all query response pairs where the user gives **explicit or implicit feedback** (positive or negative). Each pair must contain:
+            - The **original meaningful user query** (not clarifications like "explain more", "want descriptive", etc.)
+            - The **AI response that was actually evaluated** (often the final one if clarifications were requested)
+            - The **user's feedback** (explicit or implicit)
+
+            ### Analysis Criteria
+
+            #### Positive Indicators  ("good_example")
+            - **Explicit signals:** "helpful", "perfect", "thank you", "ok", "good", "useful", "that worked", "got it"
+            - **Engagement:** user builds upon, confirms, or continues naturally after the answer
+            - **Resolution:** user indicates the problem is solved or answer is satisfactory
+
+            #### Negative Indicators ("bad_example")
+            - **Explicit negative signals:** "wrong", "not correct", "bad", "not helpful", "no"
+            - **Rejections/corrections:** user provides alternative answer, asks to retry, or repeats same question
+            - **Signs of failure:** user abandons or shifts after showing dissatisfaction
+
+            #### No Feedback
+            - If the user just moves on to another question without acknowledging or rejecting the previous response, **ignore that pair** (do not generate an example).
+
+            ### Critical Rules
+
+            1. **Trace feedback to the original query**  
+            - Always link user feedback back to the **original substantive query** that generated the evaluated response.
+
+            2. **Do not treat feedback as a query**  
+            - Feedback itself is not a query-response pair.  
+            - Never store `[feedback → acknowledgment]`.
+
+            3. **Pairing logic**  
+            - When feedback is given, locate the **previous substantive query**.  
+            - Store as:  
+                `[Original Query] → [AI Response] → [User Feedback]`  
+            - Do **not** store:  
+                `[User Feedback] → [AI Acknowledgment]`
+
+            4. **Clarifications**  
+            - If clarifications occur, pair the **original substantive query** with the **final AI response** that the user evaluated (not intermediate responses).
+            
+            5. **ONLY store examples where there is EXPLICIT user feedback** 
+            - (positive or negative words/phrases) about an AI response.
+            - Do **not** treat clarifications like *"in steps," "shorter," "in JSON format"* as feedback.
+
+            6. **Format requests are NOT feedback** 
+            - "give in json format", "explain in steps", "make it shorter" etc. are clarifications/instructions, not evaluative feedback.
+            
+            7. **Meta-requests are NOT feedback** 
+            - "explain more", "want descriptive", "can you elaborate" are requests for more information, not evaluations.
+
+            8. **Conversation flow to identify:**
+            - User asks substantive question → AI responds → User gives evaluative feedback
+            - Store the original question and the AI response that user evaluated
+
+            9. **If no evaluative feedback is found** in the entire conversation, return `[]`.
+
+            ### Confidence Scoring Rules
+            **IMPORTANT - USE NUMBERS NOT STRINGS**
+
+            #### For `good_example`: Set confidence 0.7-1.0 based on clarity of positive feedback
+            - **"helpful", "thank you"** = 0.8-0.9
+            - **Clear engagement/building upon response** = 0.7-0.8
+            - **Implicit satisfaction** = 0.6-0.7
+
+            #### For `bad_example`: Set confidence 0.6-1.0 based on clarity of negative feedback
+            - **Explicit "wrong", "incorrect"** = 0.8-1.0
+            - **Implicit dissatisfaction** = 0.6-0.7
+
+            **NEVER set confidence to 0.0** unless completely uncertain
+
+            ### Example
+
+            #### Input Conversation:
+
+            User: What is 6*7?  
+            Assistant: The answer is 42.  
+            User: want descriptive or give in steps.  
+            Assistant: Multiplication means repeated addition... (detailed explanation).  
+            User: Helpful.  
+
+            #### Expected Output:
+
+            ```json
+            {{
+            "preferences": {{
+                "preferences": ["all new preferences with comma as separator are added here", "", "...goes on"]
+            }},
+            "episodic_analysis": [
+                {{
+                "intent": "good_example" | "bad_example",
+                "confidence": "<float between 0 and 1>",
+                "reasoning": "<why this is good or bad based on user feedback>",
+                "should_store": "true",
+                "user_query": "<original meaningful query>",
+                "ai_response": "<final response user evaluated>",
+                "tool_calls": ["<any tool calls from the original query if applicable>"]
+                }}
+            ]
+            }}
+            """
+            
+            response = await llm.ainvoke(combined_prompt)
+            if hasattr(response, 'content'):
+                content = response.content
+            else:
+                content = str(response)
+            content = content.strip()
+            
+            json_start = content.find('{')
+            json_end = content.rfind('}') + 1
+            
+            if json_start == -1 or json_end == 0:
+                raise json.JSONDecodeError("No JSON found in response", "", 0)
+            
+            content = content[json_start:json_end]
+            
+            try:
+                combined_results = json.loads(content)
+                log.debug("Successfully parsed JSON response from LLM")
+            except json.JSONDecodeError as json_err:
+                log.error(f"Failed to parse JSON from LLM response: {json_err}. Content preview: {content[:200]}...")
+                return {
+                    "preferences_result": "",
+                    "episodic_results": [{
+                        "intent": "bad_example",
+                        "confidence": 0.0,
+                        "reasoning": f"Failed to parse LLM response: {str(json_err)}",
+                        "should_store": False,
+                        "user_query": "",
+                        "ai_response": "",
+                        "tool_calls": [],
+                        "storage_status": "failed"
+                    }]
+                }
+           
+            preferences_data = combined_results.get("preferences", {})
+            if isinstance(preferences_data, str):
+                if preferences_data.strip().lower() == "no preferences available":
+                    final_preferences_response = ""
+                else:
+                    final_preferences_response = preferences_data
+            elif isinstance(preferences_data, dict):
+                preferences_list = preferences_data.get("preferences", [])
+                valid_preferences = [
+                    str(pref) for pref in preferences_list 
+                    if str(pref).strip() and str(pref).strip().lower() != "no preferences available"
+                ]
+                final_preferences_response = "\n".join(valid_preferences) if valid_preferences else ""
+            else:
+                final_preferences_response = ""
+            
+            # Store preferences
+            try:
+                await self.repo.insert_preference_for_agent_conversation(
+                    agentic_application_id=agentic_application_id, 
+                    session_id=session_id, 
+                    preference=final_preferences_response
+                )
+                log.info("Preferences updated successfully")
+            except Exception as e:
+                log.error(f"Error storing preferences: {e}")
+            
+            # Process episodic analysis results
+            episodic_results = combined_results.get("episodic_analysis", [])
+            
+            if not isinstance(episodic_results, list):
+                episodic_results = [episodic_results] if episodic_results else []
+                log.debug("Converted single episodic result to list format")
+            
+            processed_results = []
+            valid_intents = ["good_example", "bad_example"]
+            
+            if episodic_results and conversations:
+                user_id = agentic_application_id
+
+                episodic_memory_manager = EpisodicMemoryManager(
+                    user_id=user_id,
+                    embedding_model=self.embedding_model,
+                    cross_encoder=self.cross_encoder
+                )
+                
+                # Process each result
+                for i, result in enumerate(episodic_results):
+                    if not isinstance(result, dict):
+                        log.warning(f"Skipping non-dict result at index {i}")
+                        continue
+                
+                    if result.get("intent") not in valid_intents:
+                        log.warning(f"Invalid intent '{result.get('intent')}' at index {i}, defaulting to 'bad_example'")
+                        result["intent"] = "bad_example"
+                    
+                    confidence = result.get("confidence", 0.0)
+                    try:
+                        if isinstance(confidence, str):
+                            confidence = float(confidence)
+                        elif not isinstance(confidence, (int, float)):
+                            confidence = 0.0
+                        confidence = max(0.0, min(1.0, confidence))
+                        
+                        if result.get("intent") == "good_example" and confidence == 0.0:
+                            confidence = 0.7  
+                            
+                    except (ValueError, TypeError):
+                        log.warning(f"Invalid confidence value at index {i}, using default")
+                        confidence = 0.7 if result.get("intent") == "good_example" else 0.0
+                    
+                    result["confidence"] = confidence
+                    
+                    should_store = result.get("should_store", False)
+                    if isinstance(should_store, str):
+                        should_store = should_store.lower() in ("true", "1", "yes")
+                    elif not isinstance(should_store, bool):
+                        should_store = True if result.get("intent") == "good_example" else False
+                    
+                    if result["intent"] == "good_example" and confidence < 0.3:
+                        should_store = False
+                        log.debug(f"Disabling storage for good example at index {i} due to low confidence: {confidence}")
+                    elif result["intent"] == "bad_example" and confidence < 0.5:
+                        should_store = False
+                        log.debug(f"Disabling storage for bad example at index {i} due to low confidence: {confidence}")
+                    
+                    result["should_store"] = should_store
+                    
+                    result["user_query"] = str(result.get("user_query", ""))
+                    result["ai_response"] = str(result.get("ai_response", ""))
+                    result["reasoning"] = str(result.get("reasoning", ""))
+                    
+                    tool_calls = result.get("tool_calls", [])
+                    if not isinstance(tool_calls, list):
+                        log.warning(f"Converting non-list tool_calls to empty list at index {i}")
+                        tool_calls = []
+                    result["tool_calls"] = tool_calls
+                    
+                    result["storage_status"] = "not_attempted"
+                    
+                    # Only attempt storage if should_store is True and query is not empty
+                    if result["user_query"].strip() and result["should_store"]:
+                        try:
+                            label = "positive" if result["intent"] == "good_example" else "negative"
+                            
+                            log.debug(f"Attempting to store example {i+1}: {result['intent']} - Query: '{result['user_query'][:50]}...'")
+                            await episodic_memory_manager.store_interaction_example(
+                                query=result["user_query"],
+                                response=result["ai_response"],
+                                label=label,
+                                tool_calls=tool_calls
+                            )
+                            result["storage_status"] = "stored_successfully"
+                            result["storage_message"] = f"Successfully stored as {label} example"
+                            print(f"Successfully stored example {i+1} as {label} example")
+                                
+                        except Exception as storage_error:
+                            result["storage_status"] = "failed"
+                            result["storage_message"] = f"Storage failed: {str(storage_error)}"
+                            print(f"Failed to store example {i+1}: {storage_error}")
+                    
+                    elif result["user_query"].strip():
+                        result["storage_status"] = "skipped_low_confidence"
+                        result["storage_message"] = "Skipped due to low confidence or should_store=False"
+                        log.debug(f"Skipping storage for example {i+1} due to low confidence or should_store=False")
+                    else:
+                        result["storage_status"] = "skipped_empty_query"
+                        result["storage_message"] = "Skipped due to empty user query"
+                        log.debug(f"Skipping example {i+1} due to empty user_query")
+                    
+                    processed_results.append(result)
+            
+            if processed_results:
+                print(f"Analysis and storage completed: Found {len(processed_results)} valid examples out of {len(episodic_results)} total results")
+                
+                storage_summary = {}
+                for result in processed_results:
+                    status = result.get("storage_status", "unknown")
+                    storage_summary[status] = storage_summary.get(status, 0) + 1
+                
+                log.info(f"Storage summary: {storage_summary}")
+            
+            return {
+                "preferences_result": final_preferences_response,
+                "episodic_results": processed_results if processed_results else []
+            }
+            
+        except Exception as e:
+            error_msg = f"Error in combined analysis: {e}"
+            log.error(error_msg, exc_info=True)
+            return {
+                "preferences_result": "",
+                "episodic_results": [{
+                    "intent": "bad_example",
+                    "confidence": 0.0,
+                    "reasoning": error_msg,
+                    "should_store": False,
+                    "user_query": "",
+                    "ai_response": "",
+                    "tool_calls": [],
+                    "storage_status": "failed",
+                    "storage_message": error_msg
+                }]
+            }
+        
+    async def fetch_memory_from_postgres(self):
+        """
+        Fetches memory value for a given key from PostgreSQL for the specified agent.
+
+        Args:
+            agent_id (str): The ID of the agent.
+            key (str): The memory key to fetch.
+
+        Returns:
+            str: The memory value associated with the key, or an empty string if not found.
+        """
+        try:
+            memory_value = await self.repo.fetch_memory_from_postgres()
+            if memory_value is not None:
+                log.info(f"Fetched memory for")
+                return memory_value
+            else:
+                log.info(f"No memory found ")
+                return ""
+        except Exception as e:
+            log.error(f"Error fetching memory : {e}")
+            return ""
 
 # --- Feedback Learning Service ---
 
@@ -2664,7 +4180,7 @@ class FeedbackLearningService:
         self.agent_service = agent_service
 
 
-    async def save_feedback(self, agent_id: str, query: str, old_final_response: str, old_steps: str, feedback: str, new_final_response: str, new_steps: str, approved: bool = False) -> Dict[str, Any]:
+    async def save_feedback(self, agent_id: str, query: str, old_final_response: str, old_steps: str, feedback: str, new_final_response: str, new_steps: str, lesson: str, approved: bool = False) -> Dict[str, Any]:
         """
         Saves new feedback data, including the feedback response and its mapping to an agent.
         """
@@ -2678,7 +4194,8 @@ class FeedbackLearningService:
             feedback=feedback,
             new_final_response=new_final_response,
             new_steps=new_steps,
-            approved=approved
+            approved=approved, 
+            lesson=lesson
         )
 
         if feedback_success:
@@ -2823,8 +4340,11 @@ class EvaluationService:
             
             # Reconstruct tool_prompt from agent_config's TOOLS_INFO
             tools_info_ids = agent_config.get('TOOLS_INFO', [])
-            data_to_log["tool_prompt"] = await self.tool_service.generate_tool_prompt(tools_id=tools_info_ids)
-            
+            if data_to_log["agent_type"] in self.agent_service.meta_type_templates:
+                data_to_log["tool_prompt"] = await self.agent_service.generate_worker_agents_prompt(agents_id=tools_info_ids)
+            else:
+                data_to_log["tool_prompt"] = await self.tool_service.generate_tool_prompt(tools_id=tools_info_ids)
+
             # Ensure messages are in a serializable format (list of dicts)
             # Assuming response['executor_messages'] is already a list of LangChain Message objects
             # and segregate_conversation_in_json_format handles conversion to dicts.
@@ -2924,5 +4444,82 @@ class EvaluationService:
         Retrieves agent evaluation metrics records.
         """
         return await self.agent_evaluation_metrics_repo.get_metrics_by_agent_names(agent_names, page, limit)
+
+
+# --- Export Service ---
+
+class ExportService:
+    def __init__(
+        self,
+        export_repo: ExportAgentRepository
+    ):
+        self.export_repo = export_repo
+
+
+    async def insert_export_log(self, export_id, agent_id: str, agent_name: str, user_name: str, user_email: str, export_time: datetime) -> bool:
+        await self.export_repo.insert_export_log_record(export_id=export_id, agent_id=agent_id, agent_name=agent_name, user_name=user_name, user_email=user_email, export_time=export_time)
+
+    async def get_unique_exporters_by_agent_id(self, agent_id: str) -> List[str]:
+        return await self.export_repo.get_unique_exporters_record_by_agent_id(agent_id=agent_id)
+
+    async def send_email(self, agentic_application_id: str, agentic_application_name: str, updater: str) -> bool:
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        SENDER_EMAIL_ADDRESS = 'BLRKECSMTP01.ad.infosys.com'
+        SMTP_IP = '172.21.5.10'
+        SMTP_PORT = 25
+        SMTP_USER = None
+        SMTP_PASS = None
+        SMTP_REQUIRES_AUTH = False
+        USE_SSL_CONNECTION = False
+        USE_TLS_CONNECTION = False
+        from datetime import date
+        current_date = date.today()
+        recipient_list = await self.get_unique_exporters_by_agent_id(agentic_application_id)
+        if not recipient_list:
+            return True  # No recipients, nothing to send
+        actual_smtp_username = SMTP_USER if SMTP_USER else SENDER_EMAIL_ADDRESS
+        subject = f"Important: The '{agentic_application_name}' You Exported Has Been Updated"
+        body = f"""
+        Dear User,
+ 
+        This is an automated notification from the Infosys Agentic Foundry Team.
+	    The agent, '{agentic_application_name}', which you previously exported, has recently been updated.
+ 
+        Update Details:
+        Agent Name: {agentic_application_name}
+        Updated By: {updater}
+        Date of Update: {current_date}
+ 
+        For a detailed understanding of the changes, please contact the individual who performed the update.
+ 
+        Regards,
+        Infosys Agentic Foundry Team
+        """
+        msg = MIMEMultipart()
+        msg['From'] = SENDER_EMAIL_ADDRESS
+        msg['To'] = ', '.join(recipient_list)
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+        server = None
+        try:
+            server = smtplib.SMTP(SMTP_IP, SMTP_PORT)
+            if USE_TLS_CONNECTION:
+                server.starttls()
+            if SMTP_REQUIRES_AUTH:
+                if not actual_smtp_username or not SMTP_PASS:
+                    return False
+                server.login(actual_smtp_username, SMTP_PASS)
+            server.sendmail(SENDER_EMAIL_ADDRESS, recipient_list, msg.as_string())
+            return True
+        except Exception as e:
+            return False
+        finally:
+            if server:
+                try:
+                    server.quit()
+                except Exception as e:
+                    log.error('Error while quitting SMTP server: {e}')
 
 

@@ -1,76 +1,143 @@
 # Infosys Agentic Foundry
-Infosys Agentic Foundry is a part of Infosys Topaz and is a suite of components that helps Enterprises build reliable AI agents. It allows AI agents to be created using multiple design patterns and enables deployment either through conversational Interface or through custom UX, depending on the use cases. Infosys Agentic Foundry has been built with enterprise grade reliability as its core principle, so businesses can rely on the agents to run their reimagined processes.
 
-## Getting Started with Create React App
+Infosys Agentic Foundry is a part of Infosys Topaz and provides a suite of components to help enterprises build reliable AI agents. It supports multiple agent design patterns and enables deployment through conversational interfaces or custom UIs, depending on your use case. Built with enterprise-grade reliability, Agentic Foundry ensures your business processes are robust and scalable.
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Getting Started
+
+To get started with Infosys Agentic Foundry UI:
+
+1. **Clone the repository:**
+   ```sh
+   git clone https://github.com/Infosys-Generative-AI/Agentic-Pro-UI.git
+   cd Agentic-Pro-UI
+   ```
+
+2. **Install dependencies:**
+   ```sh
+   npm install
+   ```
+
+3. **Start the development server:**
+   ```sh
+   npm start
+   ```
+   The app will be available at [http://localhost:3000](http://localhost:3000).
+
+---
+
+## Installation
+
+- Ensure you have [Node.js](https://nodejs.org/) (v16 >= 23) and [npm](https://www.npmjs.com/) installed.
+- Run `npm install` in the project root to install all dependencies.
+- For production builds, use:
+  ```sh
+  npm run build
+  ```
+  The optimized build will be output to the `build/` directory.
+
+---
+
+## Configuration
+
+- Configuration files (such as API endpoints, environment variables) can be managed using a `src/constant.js` file in the project root -> src.
+- Example `constant.js`:
+  ```
+  export const BASE_URL = "https://<your-server-base-url-for-endpoints>
+  ```
+- Refer to the documentation or comments in `src/constant.js` for configurable constants.
+
+---
 
 ## Available Scripts
 
 In the project directory, you can run:
 
-### `npm start`
+- `npm start` – Runs the app in development mode.
+- `npm test` – Launches the test runner.
+- `npm run build` – Builds the app for production.
+- `npm run eject` – Ejects the app from Create React App (irreversible).
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+See [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started) for more details.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+---
 
-### `npm test`
+## Project Structure
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+The project follows a standard React application structure:
 
-### `npm run build`
+```
+Agentic-Pro-UI/
+├── public/
+│   └── index.html
+├── src/
+│   ├── components/
+│   ├── constants.js
+│   ├── App.js
+│   ├── index.js
+│   └── ...
+├── package.json
+└── README2.md
+```
+- `src/components/`: Contains reusable React components.
+- `src/constants.js`: Stores configuration constants.
+- `src/App.js`: Main application component.
+- `public/`: Static assets and the HTML template.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+---
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Features
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+- Modular and reusable React components.
+- Support for multiple agent design patterns.
+- Easy integration with APIs and backend services.
+- Customizable UI for enterprise use cases.
+- Built-in support for environment-based configuration.
 
-### `npm run eject`
+---
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Customization
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+You can customize the UI and agent logic by modifying components in the `src/components/` directory and updating constants in `src/constants.js`. For environment-specific settings, use the `.env` file or update the configuration files as needed.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+---
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Contributing
 
-## Learn More
+Contributions are welcome! Please follow these steps:
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+1. Fork the repository.
+2. Create a new branch for your feature or bugfix.
+3. Commit your changes with clear messages.
+4. Push to your fork and submit a pull request.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for detailed guidelines.
 
-### Code Splitting
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+## License
 
-### Analyzing the Bundle Size
+This project is licensed under the [MIT License](LICENSE.md).  
+Copyright © 2024-2025 Infosys Ltd.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+---
 
-### Making a Progressive Web App
+## Support
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+For questions, issues, or feature requests, please open an issue in the [GitHub repository](https://github.com/Infosys-Generative-AI/Agentic-Pro-UI/issues) or contact the maintainers.
 
-### Advanced Configuration
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## Acknowledgements
 
-### Deployment
+- [Create React App](https://create-react-app.dev/) for the project scaffolding.
+- [React](https://react.dev/) for the UI framework.
+- [Infosys Topaz](https://www.infosys.com/services/ai-automation/topaz.html) for foundational AI agent concepts.
+- All contributors and open-source libraries used in this project.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+---
 
-### `npm run build` fails to minify
+## Disclaimer
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+This software is provided "as is", without warranty of any kind. See the [LICENSE.md](LICENSE.md) file for more details.
 
-## Infosys License
 © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved. Infosys believes the information in this document is accurate as of its publication date; such information is subject to change without notice. Infosys acknowledges the proprietary rights of other companies to the trademarks, product names and such other intellectual property rights mentioned in this document. Except as expressly permitted, neither this documentation nor any part of it may be reproduced, stored in a retrieval system, or transmitted in any form or by any means, electronic, mechanical, printing, photocopying, recording or otherwise, without the prior permission of Infosys Limited and/or any named intellectual property rights holders under this document.

@@ -5,6 +5,7 @@ This module provides a function to get a model based on the configuration.
 import os
 from typing import cast, Any
 import dotenv
+import httpx
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from telemetry_wrapper import logger as log
@@ -12,7 +13,7 @@ from telemetry_wrapper import logger as log
 
 dotenv.load_dotenv()
 os.environ["AZURE_OPENAI_API_KEY"] = os.getenv("AZURE_OPENAI_API_KEY")
-
+http_client = httpx.Client(verify=False)
 def load_model(model_name: str = "gpt-4o", temperature: float = 0):
     if model_name.startswith("gpt"):
         log.info(f"Loading OpenAI model: {model_name}")
@@ -22,6 +23,7 @@ def load_model(model_name: str = "gpt-4o", temperature: float = 0):
             azure_deployment=model_name,
             temperature=temperature,
             max_tokens=None,
+            http_client=http_client
         )
     elif model_name=="gemini-1.5-flash":
         log.info(f"Loading Google Generative AI model: {model_name}")

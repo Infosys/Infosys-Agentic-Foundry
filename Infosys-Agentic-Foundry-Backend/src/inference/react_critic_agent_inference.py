@@ -2,17 +2,17 @@
 import json
 from typing import Dict, List, Optional, Literal,Any
 from fastapi import HTTPException
-
+import asyncio
 from langgraph.types import interrupt
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AIMessage, ChatMessage
 
 from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
-from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
 from telemetry_wrapper import logger as log
 
+from src.inference.inference_utils import EpisodicMemoryManager
 
 
 class ReactCriticWorkflowState(BaseWorkflowState):
@@ -26,6 +26,7 @@ class ReactCriticWorkflowState(BaseWorkflowState):
     preference: str
     tool_feedback: str = None
     is_tool_interrupted: bool = False
+    tool_calls: Optional[List[str]]
 
 
 
@@ -35,19 +36,11 @@ class ReactCriticAgentInference(BaseAgentInference):
     Implements the LangGraph workflow for 'multi_agent' type.
     """
 
-    def __init__(
-        self,
-        chat_service: ChatService,
-        tool_service: ToolService,
-        agent_service: AgentService,
-        inference_utils: InferenceUtils,
-        feedback_learning_service: FeedbackLearningService,
-        evaluation_service: EvaluationService
-    ):
-        super().__init__(chat_service, tool_service, agent_service, inference_utils, feedback_learning_service, evaluation_service)
+    def __init__(self, inference_utils: InferenceUtils):
+        super().__init__(inference_utils)
 
 
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None):
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False):
         """
         Builds the agent and chains for the React-Critic-Agent workflow.
         """
@@ -63,7 +56,7 @@ class ReactCriticAgentInference(BaseAgentInference):
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
                                         tool_ids=tool_ids,
-                                        interrupt_tool=True
+                                        interrupt_tool=tool_interrupt_flag
                                     )
         # Critic Agent Chains
         critic_chain_json, critic_chain_str = await self._get_chains(llm, critic_system_prompt)
@@ -105,32 +98,47 @@ class ReactCriticAgentInference(BaseAgentInference):
             strt_tmstp = get_timestamp()
             conv_summary = new_preference = ""
             errors = []
-
+            current_state_query = await self.inference_utils.add_prompt_for_feedback(state["query"])
             try:
                 if state["reset_conversation"]:
                     state["executor_messages"].clear()
                     state["ongoing_conversation"].clear()
                     log.info(f"Conversation history for session {state['session_id']} has been reset.")
                 else:
+                    
+                    if state["context_flag"]==False:
+                        return{
+                        'past_conversation_summary': "No past conversation summary available.",
+                        'ongoing_conversation': current_state_query,
+                        'executor_messages': current_state_query,
+                        'preference': "No specific preferences provided.",
+                        'response': None,
+                        'start_timestamp': strt_tmstp,
+                        'response_quality_score': None,
+                        'critique_points': None,
+                        'epoch': 0,
+                        'errors': errors
+                    }
                     # Get summary via ChatService
-                    conv_summary = await self.chat_service.get_chat_summary(
+                    conv_summary = await self.chat_service.get_chat_conversation_summary(
                         agentic_application_id=state["agentic_application_id"],
-                        session_id=state["session_id"],
-                        llm=llm,
-                        executor_messages=state["executor_messages"]
+                        session_id=state["session_id"]
                     )
+                    log.debug("Chat summary fetched successfully")
+                    conv_summary = conv_summary or {}
+                
+                    log.debug("getting preferences")
 
-                new_preference = await self.inference_utils.update_preferences(
-                    preferences=state.get("preference", "no preferences yet"),
-                    user_input=state["query"],
-                    llm=llm
-                )
+                    new_preference = conv_summary.get("preference", "")
+                    conv_summary = conv_summary.get("summary", "")
+                
+                log.debug("Preferences updated successfully")
             except Exception as e:
                 error = f"Error occurred while generating past conversation summary: {e}"
                 log.error(error)
                 errors.append(error)
 
-            current_state_query = await self.inference_utils.add_prompt_for_feedback(state["query"])
+            
 
             log.info(f"Generated past conversation summary for session {state['session_id']}.")
             new_state = {
@@ -154,12 +162,33 @@ class ReactCriticAgentInference(BaseAgentInference):
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
             errors = state["errors"]
+            if state["context_flag"]:
+                user_id = state["agentic_application_id"]
+                episodic_memory = EpisodicMemoryManager(user_id)
+                relevant = await episodic_memory.find_relevant_examples_for_query(query)
+                pos_examples = relevant.get("positive", [])
+                neg_examples = relevant.get("negative", [])
+                context = await episodic_memory.create_context_from_examples(pos_examples, neg_examples)
+                messages = []
+                if context:
+                    messages.append({"role": "user", "content": context})
+                    messages.append({"role": "assistant", "content":
+                        "I will use positive examples as guidance and explicitly avoid negative examples."})
+                messages.append({"role": "user", "content": query})
+                if pos_examples == [] and neg_examples == []:
+                    messages = query
+            else:
+                messages = query
 
             try:
-                feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
-                feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
+                # feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
+                # feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
 
                 critic_messages = ""
+                formatter_node_prompt = ""
+                if state["response_formatting_flag"]:
+                    formatter_node_prompt = "\n\nYou are an intelligent assistant that provides data for a separate visualization tool. When a user asks for a chart, table, image, or any other visual element, you must not attempt to create the visual yourself in text. Your sole responsibility is to generate the raw, structured data. For example, for a chart, provide the JSON data; for an image, provide the <img> tag with a source URL; for a table, provide the data as a list of lists. Your output will be fed into another program that will handle the final formatting and display."
+                       
                 if state.get("response_quality_score", None) is not None:
                     critic_messages = f"""
 Final Response Obtained:
@@ -177,7 +206,7 @@ Past Conversation Summary:
 {state["past_conversation_summary"]}
 
 Ongoing Conversation:
-{await self.chat_service.get_formatted_messages(state["ongoing_conversation"])}
+{await self.chat_service.get_formatted_messages(state["ongoing_conversation"]) if state["context_flag"] else "No ongoing conversation."}
 
 
 Follow these preferences for every step:
@@ -186,13 +215,12 @@ Preferences:
 - When applicable, use these instructions to guide your responses to the user's query.
 
 
-Review the previous feedback carefully and make sure the same mistakes are not repeated
-**FEEDBACK**
-{feedback_msg}
-**END FEEDBACK**
+
+{formatter_node_prompt}
+
 
 User Query:
-{query}
+{messages}
 {critic_messages}
 """
 
@@ -228,7 +256,7 @@ Past Conversation Summary:
 {state["past_conversation_summary"]}
 
 Ongoing Conversation:
-{await self.chat_service.get_formatted_messages(state["ongoing_conversation"])}
+{await self.chat_service.get_formatted_messages(state["ongoing_conversation"]) if state["context_flag"] else "No ongoing conversation."}
 
 Tools Info:
 {await self.tool_service.render_text_description_for_tools(tool_list)}
@@ -270,17 +298,30 @@ Final Response:
             """
             This function handles the final response of the conversation.
             """
+            thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
+            internal_thread_id = f"inside{thread_id}"
+            asyncio.create_task(self.chat_service.delete_internal_thread(internal_thread_id))
             errors = []
             end_timestamp = get_timestamp()
             try:
-                await self.chat_service.save_chat_message(
+                asyncio.create_task(self.chat_service.save_chat_message(
                                         agentic_application_id=state["agentic_application_id"],
                                         session_id=state["session_id"],
                                         start_timestamp=state["start_timestamp"],
                                         end_timestamp=end_timestamp,
                                         human_message=state["query"],
                                         ai_message=state["response"]
-                                    )
+                                    ))
+                # asyncio.create_task(self.chat_service.update_preferences(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
+                asyncio.create_task(self.chat_service.update_preferences_and_analyze_conversation(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
+                if (len(state["ongoing_conversation"])+1)%8 == 0:
+                    log.debug("Storing chat summary")
+                    asyncio.create_task(self.chat_service.get_chat_summary(
+                        agentic_application_id=state["agentic_application_id"],
+                        session_id=state["session_id"],
+                        llm=llm
+                    ))
+                # asyncio.create_task(self.chat_service.analyze_conversation_for_episodic_storage(llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
             except Exception as e:
                 error = f"Error occurred in Final response: {e}"
                 log.error(error)
@@ -390,9 +431,10 @@ Final Response:
         workflow.add_node("executor_agent_node", executor_agent_node)
         workflow.add_node("critic_agent", critic_agent)
         workflow.add_node("final_response", final_response)
-        workflow.add_node("final_decision", final_decision)
         workflow.add_node("tool_interrupt", tool_interrupt)
         workflow.add_node("interrupt_node_for_tool", interrupt_node_for_tool)
+        if flags["response_formatting_flag"]:
+            workflow.add_node("formatter", lambda state: InferenceUtils.format_for_ui_node(state, llm))
 
         workflow.add_edge(START, "generate_past_conversation_summary")
         workflow.add_edge("generate_past_conversation_summary", "executor_agent_node")
@@ -416,7 +458,12 @@ Final Response:
             critic_decision,
             ["final_response", "executor_agent_node"],
         )
-        workflow.add_edge("final_response", END)
+        if flags["response_formatting_flag"]:
+            workflow.add_edge("final_response", "formatter")
+            workflow.add_edge("formatter", END)
+        else:
+            workflow.add_edge("final_response", END)
+        
         log.info(" Executor, Critic agent workflow built successfully.")
         return workflow
 

@@ -2,10 +2,10 @@
   border-radius: 5px;
   margin-bottom: 5px;
   overflow: visible;
-  max-width: 92%;
+  max-width: 100%;
   width: fit-content;
   background: none;
-  background: #eeeeee70;
+  /* background: #eeeeee70; */
 }
 
 .accordion-header {
@@ -15,6 +15,7 @@
   position: relative;
   border: 1px solid #ccc;
   min-width: 180px;
+  background: #eeeeee70;
 }
 
 .accordion-header p {
@@ -25,8 +26,7 @@
   padding: 0 10px;
   position: relative;
   z-index: 0;
-  background: #eeeeee70;
-  font-family: Segoe UI;
+  background: #eeeeee2b;
   /* max-height: 0; */
   opacity: 0;
   overflow: hidden;
@@ -35,19 +35,34 @@
 }
 
 .accordion-content.open {
-  /* max-height: 500px; */
   opacity: 1;
-  padding: 10px;
-  background-color: #f5f5f5;
+  padding: 0;
+  margin-top: 2px;
   border-bottom-right-radius: 15px;
   border-bottom-left-radius: 15px;
   scrollbar-width: thin;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+.accordion-content:has(.MessagingboxToolcall) {
+  margin: 0;
+}
+
+.debugExecutionsHeader{
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px;
+  background: #dedddd;
+  color: #000000d6;
+}
+
+.debugExecutionsteps{
+  overflow: hidden;
+  overflow-y: auto;
 }
 
 /* Ensure MessagingboxToolcall content is visible when accordion is open */
-.accordion-content.OpacityVisible{
-  opacity: 1 !important;
-}
 
 .accordion-content pre {
   background-color: #f5f5f5;
@@ -82,7 +97,6 @@
 .accordionButton {
   display: flex;
   align-items: center;
-  font-family: Segoe UI;
   font-weight: 600;
   font-size: 10px;
   line-height: 16px;
@@ -109,7 +123,6 @@
   display: flex;
   /* flex-direction: column; */
   align-items: center;
-  font-family: Segoe UI;
   font-weight: 600;
   font-size: 12px;
   line-height: 16px;
@@ -124,10 +137,10 @@
 }
 .accordionContainerToolCall {
   max-width: 100%;
+  min-width: 260px;
   padding: 3px;
   position: relative;
   background: #eeeeee70;
-  font-family: Segoe UI;
   border: 1px solid #ccc;
   border-radius: 5px;
 }
@@ -161,4 +174,29 @@
 .submitChanges{
   color: white;
   padding: 4px;
+}
+
+.messageBubble{
+  border-radius: 5px;
+  line-height: 1.8;
+  letter-spacing: 0.5px;
+  font-size: 13px;
+  margin: 5px 10px;
+  width: 100%;
+}
+
+
+.messageBubble:has(table) {
+  overflow-x: auto;
+}
+
+.messageBubble table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.messageBubble th,
+.messageBubble td {
+  border: 1px solid #ddd;
+  padding: 8px;
 }

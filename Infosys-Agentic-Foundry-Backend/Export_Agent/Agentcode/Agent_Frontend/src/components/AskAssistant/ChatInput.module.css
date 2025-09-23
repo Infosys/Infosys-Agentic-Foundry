@@ -1,0 +1,812 @@
+/* Main Container */
+.container {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 4px 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.2s;
+  width: 95%;
+  margin: 0 auto;
+  margin-bottom: 30px;
+}
+
+/* .container:focus-within {
+  box-shadow: 0 4px 16px rgba(0,123,193,0.10);
+  border-color: #007bc1;
+} */
+
+/* Top Controls Bar */
+.topControls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Control Group */
+.controlGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 80px;
+  flex: 1;
+}
+
+.controlLabel {
+  font-size: 10px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.1px;
+}
+
+/* Select Styling */
+.select {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #334155;
+  height: 28px;
+  box-shadow: none;
+  font-weight: 500;
+}
+
+.select:focus,
+.actionButton:focus,
+.inputButton:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+}
+
+.select:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Searchable Dropdown */
+.searchableDropdown {
+  position: relative;
+}
+
+.dropdownTrigger {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 4px 8px;
+  padding-right: 0;
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+  height: 28px;
+}
+
+.dropdownTrigger:hover {
+  border-color: #ccc;
+}
+
+.dropdownTrigger:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+}
+
+.dropdownTrigger.active {
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+  background: #ffffff;
+}
+
+.dropdownTrigger.disabled{
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.dropdownTrigger > span{
+  font-weight: 500;
+}
+
+.chevronIcon {
+  font-size: 10px;
+  color: #666;
+  transition: transform 0.2s ease;
+}
+
+.disabled .chevronIcon {
+  opacity: 0.6;
+}
+
+.dropdownContent {
+  position: absolute;
+  bottom: 30px;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  margin-top: 4px;
+  max-height: 250px;
+  overflow: hidden;
+}
+
+.searchContainer {
+  position: relative;
+  padding: 7px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.searchInput {
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px 8px 32px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: #3b82f6;
+  background: #ffffff;
+}
+
+.agentsList {
+  max-height: 320px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 4px 8px;
+}
+
+.agentsList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.agentsList::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.agentsList::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.agentsList::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.agentItem {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.agentItem:hover {
+  background: #f8fafc;
+  border-left-color: #e2e8f0;
+}
+
+.agentItem.highlighted {
+  background: #e0f2fe;
+  border-left-color: #007acc;
+  box-shadow: inset 0 0 0 1px rgba(0, 122, 204, 0.1);
+}
+
+.agentItem:focus {
+  outline: none;
+  background: #e0f2fe;
+  border-left-color: #007acc;
+  box-shadow: inset 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+.agentItem:last-child {
+  border-bottom: none;
+}
+
+.agentName {
+  font-size: 14px;
+  color: #334155;
+  margin-bottom: 4px;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.agentItem.highlighted .agentName {
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.agentDescription {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.noAgents {
+  padding: 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+/* Inputs row 2 wrapper */
+.inputsWrapperRow2{
+  display: flex;
+  gap: 5px;
+  margin-top: 3px
+}
+
+.promptLibraryAndTextArea{
+  position: relative;
+  width: 100%;
+  display: flex;
+}
+
+.promptSuggestionBtn{
+  position: absolute;
+  right: 0;
+  color: #007acc;
+  border: none;
+  box-shadow: none;
+  padding-top: 1px;
+  width: 16px;
+  height: 16px;
+  margin: 6px;
+  transition: all 0.2s ease;
+  align-self: center;
+}
+
+.promptSuggestionBtn:hover{
+  transform: scale(1.1);
+}
+
+/* Action Buttons */
+.actionButtons {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.actionButton {
+  background: #f8fafc;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 13px;
+  flex-shrink: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.actionButton:disabled:hover,
+.actionButton.disabled:hover{
+  cursor: not-allowed;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: #e5e7eb;
+  color: #334155;
+}
+
+.actionButton.active {
+  background: #007acc;
+  color: white;
+  border-color: #007acc;
+}
+
+.actionButton.disabled{
+  cursor: not-allowed;
+}
+
+/* Settings Container */
+.settingsContainer {
+  position: relative;
+}
+
+.settingsDropdown {
+  position: absolute;
+  bottom: 32px;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 200px;
+}
+
+.settingsHeader {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.toggleGroup {
+  margin-bottom: 12px;
+}
+
+.toggleGroup:last-child {
+  margin-bottom: 0;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.toggleInput {
+  display: none;
+}
+
+.toggleSlider {
+  position: relative;
+  width: 40px;
+  height: 20px;
+  background: #cbd5e1;
+  border-radius: 20px;
+  transition: background-color 0.3s ease;
+  cursor: pointer;
+}
+
+.toggleSlider:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.toggleSlider:hover {
+  background: #b4bcc9;
+}
+
+.toggleSlider::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggleInput:checked + .toggleSlider {
+  background: #3b82f6;
+}
+
+.toggleInput:checked + .toggleSlider:hover {
+  background: #2563eb;
+}
+
+.toggleInput:checked + .toggleSlider:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.toggleInput:checked + .toggleSlider::before {
+  transform: translateX(20px);
+}
+
+.toggleText {
+  flex: 1;
+}
+
+/* Input Form */
+.inputForm {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.inputContainer {
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 4px 8px 0 0;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.inputButton {
+  background: none;
+  border: 1px solid #ccc;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #222;
+  font-size: 16px;
+  transition: background 0.18s, color 0.18s;
+
+}
+
+/* .inputButton:hover:not(:disabled), .inputButton:focus-visible {
+  background: #f2f8fb;
+  color: #007bc1;
+} */
+
+.inputButton:active {
+  background: #e6f2fa;
+  color: #007bc1;
+}
+
+.inputButton:disabled {
+  color: #b6beca;
+  cursor: not-allowed;
+  background: #e6f2fa;
+}
+
+.sendButton {
+  transition: background 0.18s;
+  border: 1px solid #007bc1;
+  color: #007bc1;
+  background: #fff;
+  transition: transform 0.6s;
+}
+
+.sendButton:hover:not(:disabled), .sendButton:focus-visible {
+  background: #007bc1;
+  color: #fff;
+  transform: scale(1.1);
+} 
+
+.micHighlight{
+  color: #007bc1;
+  border: 1px solid #007bc1;
+  transition: color 0.18s;
+}
+
+.micHighlight:hover {
+    color: white;
+    background: #007bc1;
+}
+
+.textInputWrapper {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  padding-inline: 5px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  border-radius: 5px;
+}
+
+
+.textInputWrapper:focus-within {
+  border-color: #007bc1;
+  box-shadow: 0 2px 8px rgba(0,123,193,0.08);
+}
+
+.textInput {
+  width: 100%;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  color: #222;
+  line-height: 1.3;
+  resize: none;
+  min-height: 28px;
+  max-height: 60px;
+  padding: 4px 0;
+  padding-left: 5px;
+  font-family: inherit;
+  transition: color 0.18s;
+  margin-right: 25px;
+}
+
+.textInput::placeholder {
+  color: #b6beca;
+}
+
+.textInput:disabled {
+  color: #b6beca;
+  cursor: not-allowed;
+}
+
+.rightButtons {
+  display: flex;
+  gap: 2px;
+}
+
+.rightButtons{
+    transform: translateY(0px);
+    /* box-shadow: rgba(0, 124, 195, 0.3) 0px 2px 4px 0px; */
+    border-radius: 5px;
+    transition: all 0.2s ease;
+}
+
+.rightButtons:hover:not(:disabled)  {
+    /* background: linear-gradient(135deg, #0088db 0%, #006bb3 100%); */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 124, 195, 0.4);
+}
+
+/* Validation Message */
+.validationMessage {
+  background: #fffbe6;
+  color: #b45309;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  text-align: center;
+  border: 1px solid #fde68a;
+  margin-top: 2px;
+}
+
+/* Recording Indicator */
+.recordingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.recordingDot {
+  width: 8px;
+  height: 8px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: pulse 1s infinite;
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .topControls {
+    gap: 12px;
+  }
+  
+  .controlGroup {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+    margin: 9px 0;
+  }
+  
+  .topControls {
+    flex-direction: row;
+    gap: 12px;
+  }
+  
+  .inputsWrapperRow2{
+    flex-direction: column-reverse;
+  }
+
+  .controlGroup {
+    min-width: 30%;
+    width: 30%;
+  }
+  
+  .actionButtons {
+    justify-content: space-around;
+    margin-top: 8px;
+  }
+  
+  .inputContainer {
+    padding: 6px;
+    padding-bottom: 0;
+  }
+  
+  .inputButton {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+  
+  .textInput {
+    font-size: 14px;
+  }
+  .dropdownContent {
+    width: 230px;
+    left: -20px !important;
+    bottom: 35px;
+  }
+  .settingsDropdown{
+    left: -25px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 12px;
+    margin: 12px 0;
+    border-radius: 12px;
+  }
+  
+  .topControls {
+    gap: 8px;
+  }
+  
+  .actionButtons {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  
+  .actionButton {
+    width: 38px;
+    height: 38px;
+    font-size: 14px;
+  }
+  
+  .settingsDropdown {
+    right: -8px;
+    left: -8px;
+    min-width: auto;
+  }
+}
+
+/* Active/selected state for icons */
+.inputButton.selected, .inputButton.active {
+  color: #007bc1;
+  background: #e6f2fa;
+}
+
+.disabled {
+  pointer-events: none;
+  opacity: 0.9;
+  cursor: not-allowed;
+}
+
+/* Relative wrapper for dropdowns positioning */
+.relativeWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+/* Knowledge base dropdown positioning */
+.relativeWrapper .dropdownContent {
+  position: absolute;
+  bottom: 30px;
+  right: 0;
+  left: auto;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  margin-top: 4px;
+  min-width: 220px;
+  max-width: 280px;
+  width: max-content;
+  max-height: 250px;
+  overflow: hidden;
+}
+
+/* Suggestion Popover Styles */
+.suggestionPopover {
+  position: absolute;
+  bottom: 35px;
+  left: 30px;
+  right: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1100;
+  min-width: 28vw;
+  max-width: 70vw;
+  width: max-content;
+  max-height: 250px;
+  overflow: hidden;
+  animation: fadeInUp 0.18s ease-in;
+  transition: opacity 0.18s, transform 0.18s;
+}
+.suggestionSection {
+  padding: 6px 12px 4px 12px;
+}
+.suggestionLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 2px;
+}
+.suggestionList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.suggestionItem {
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #222;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.18s, color 0.18s;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.suggestionItem:hover, .suggestionItem:focus {
+  background: #e0f2fe;
+  color: #007acc;
+  outline: none;
+}
+.suggestionItem:active {
+  background: #bae6fd;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

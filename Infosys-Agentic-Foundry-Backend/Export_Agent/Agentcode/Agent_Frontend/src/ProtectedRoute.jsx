@@ -20,6 +20,7 @@
 // };
 
 // export default ProtectedRoute;
+
 import React, { useState, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import CookiesJS from 'js-cookie'; // Using the alias to avoid conflicts
@@ -41,14 +42,10 @@ const ProtectedRoute = ({ children, requiredRole }) => {
       const email = CookiesJS.get("email");
       const role = CookiesJS.get("role");
 
-      // Check if all necessary cookies are already present
-      // Include session_id in the check
       if (userName && session_id && email && role) {
         setIsLoading(false); // Cookies are already here, no need to fetch
         return;
       }
-
-      // If cookies are missing, proceed to fetch user data
       try {
         const users = await fetchData("/fetchuser");
 
@@ -67,24 +64,16 @@ const ProtectedRoute = ({ children, requiredRole }) => {
           console.error("Failed to fetch user data (approval: false):", users.message);
           setFetchError(users.message || "Failed to initialize session.");
           setIsLoading(false); // Stop loading, but indicate error
-          // Optionally, redirect to a specific error page if initialization fails
-          // navigate("/error-initializing-session");
         }
       } catch (error) {
         console.error("Error fetching user data in ProtectedRoute:", error);
         setFetchError("Network error or server issue during session initialization.");
         setIsLoading(false); // Stop loading, but indicate error
-        // Optionally, redirect to a specific error page if initialization fails
-        // navigate("/error-initializing-session");
       }
     };
 
     checkAndSetCookies();
   }, [fetchData, setCsrfToken, navigate]); // Dependencies: fetchData, setCsrfToken, navigate
-
-  // --- Render Logic ---
-
-  // 1. Show loading screen while checking/fetching cookies
   if (isLoading) {
     return (
       <div style={{
@@ -97,33 +86,24 @@ const ProtectedRoute = ({ children, requiredRole }) => {
         flexDirection: 'column'
       }}>
         <p>Loading application...</p>
-        {/* You can add a spinner or more elaborate loading animation here */}
         {fetchError && <p style={{ color: 'red', fontSize: '16px', marginTop: '10px' }}>Error: {fetchError}</p>}
       </div>
     );
   }
-
-  // 2. After loading, check if cookies are successfully set (or if there was an error)
   const currentUserName = CookiesJS.get("userName");
   const currentSessionId = CookiesJS.get("session_id"); // Get current session_id
   const currentEmail = CookiesJS.get("email");
   const currentRole = CookiesJS.get("role");
-
-  // Include session_id in the isAuthenticated check
   const isAuthenticated = currentUserName && currentSessionId && currentEmail && currentRole;
 
   if (!isAuthenticated) {
     console.warn("ProtectedRoute: Not authenticated after cookie check/fetch. Redirecting to root.");
-    return <Navigate to="/" replace />; // Fallback if authentication still fails
+    return <Navigate to="/" replace />;
   }
-
-  // 3. Handle role-based access control
   if (requiredRole && (!currentRole || currentRole.toUpperCase() !== requiredRole.toUpperCase())) {
     console.warn(`ProtectedRoute: User role '${currentRole}' does not meet required role '${requiredRole}'. Redirecting.`);
-    return <Navigate to="/" replace />; // Redirect users without the required role
+    return <Navigate to="/" replace />;
   }
-
-  // 4. If all checks pass, render the children
   return children;
 };
 

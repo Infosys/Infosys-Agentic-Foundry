@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import SVGIcons from "../../../Icons/SVGIcons";
 import Toggle from "../../commonComponents/Toggle";
-import { META_AGENT, MULTI_AGENT, PLANNER_META_AGENT, REACT_AGENT,REACT_CRITIC_AGENT,PLANNER_EXECUTOR_AGENT } from "../../../constant";
+import { META_AGENT, MULTI_AGENT, PLANNER_META_AGENT, REACT_AGENT } from "../../../constant";
 import ToolCard from "./ToolCard";
 import SearchInput from "../../commonComponents/SearchInputTools";
 import style from "./AddTools.module.css";
@@ -86,66 +86,87 @@ const AddTools = (props) => {
     setSearchTerm(searchValue);
     setPage(1);
     pageRef.current = 1;
-    if (toggleSelected) {
-      setVisibleData([]);
-      return;
-    }
-    if (searchValue?.trim()) {
-      setVisibleData([]);
-      try {
-        setLoaderState(true);
-        setLoader && setLoader(true);
-        let data = [];
-        if ((agentType === META_AGENT || agentType === PLANNER_META_AGENT)) {
-          const res = await getAgentsSearchByPageLimit({
-            page: pageNumber,
-            limit: divsCount,
-            search: searchValue,
-          });
-          data = res?.filter(
-            (a) =>
-              (a.agentic_application_type === REACT_AGENT ||
-                a.agentic_application_type === MULTI_AGENT || 
-                a.agentic_application_type === REACT_CRITIC_AGENT ||
-                a.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
-              !selectedAgents.some(
-                (mapped) => mapped.agentic_application_id === a.agentic_application_id
-              )
-          ) || [];
-        } else {
-          const res = await getToolsSearchByPageLimit({
-            page: pageNumber,
-            limit: divsCount,
-            search: searchValue,
-          });
-          data = res.filter(
-            (tool) => !selectedTools.some((mapped) => mapped.tool_id === tool.tool_id)
-          );
-        }
-        setVisibleData(data);
-      } catch (err) {
-        console.error(err);
+    if (!toggleSelected) {
+      // Existing logic for search when toggleSelected is off
+      if (searchValue?.trim()) {
         setVisibleData([]);
-      } finally {
-        setLoaderState(false);
-        setLoader && setLoader(false);
+        try {
+          setLoaderState(true);
+          setLoader && setLoader(true);
+          let data = [];
+          if ((agentType === META_AGENT || agentType === PLANNER_META_AGENT)) {
+            const res = await getAgentsSearchByPageLimit({
+              page: pageNumber,
+              limit: divsCount,
+              search: searchValue,
+            });
+            data = res?.filter(
+              (a) =>
+                (a.agentic_application_type === REACT_AGENT ||
+                  a.agentic_application_type === MULTI_AGENT) &&
+                !selectedAgents.some(
+                  (mapped) => mapped.agentic_application_id === a.agentic_application_id
+                )
+            ) || [];
+          } else {
+            const res = await getToolsSearchByPageLimit({
+              page: pageNumber,
+              limit: divsCount,
+              search: searchValue,
+            });
+            data = res.filter(
+              (tool) => !selectedTools.some((mapped) => mapped.tool_id === tool.tool_id)
+            );
+          }
+          setVisibleData(data);
+        } catch (err) {
+          console.error(err);
+          setVisibleData([]);
+        } finally {
+          setLoaderState(false);
+          setLoader && setLoader(false);
+        }
+      } else {
+        const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
+        setVisibleData([]);
+        fetchToolsData(1, divsCount);
       }
     } else {
-      const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
-      setVisibleData([]);
-      fetchToolsData(1, divsCount);
+      // If toggleSelected is on, use dropdown search approach (filter mapped list)
+      let filtered = [];
+      if (agentType === META_AGENT || agentType === PLANNER_META_AGENT) {
+        filtered = selectedAgents.filter(
+          (agent) => agent.agentic_application_name?.toLowerCase().includes(searchValue.toLowerCase())
+        );
+      } else {
+        filtered = selectedTools.filter(
+          (tool) => tool.tool_name?.toLowerCase().includes(searchValue.toLowerCase())
+        );
+      }
+      setVisibleData(filtered);
     }
   };
 
 
   const clearSearch = () => {
     setSearchTerm("");
-    setVisibleData([]);
-    // Trigger fetchToolsData with no search term (reset to first page)
-    const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
     setPage(1);
     pageRef.current = 1;
-    fetchToolsData(1, divsCount);
+    if (!toggleSelected) {
+      setVisibleData([]);
+      // Trigger fetchToolsData with no search term (reset to first page)
+      const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
+      fetchToolsData(1, divsCount);
+    } else {
+      // If toggleSelected is on, reset visibleData to mapped list
+      let mappedList = [];
+      if (agentType === META_AGENT || agentType === PLANNER_META_AGENT) {
+        mappedList = selectedAgents;
+      } else {
+        mappedList = selectedTools;
+      }
+      setVisibleData(mappedList);
+    }
   };
 
   const handleFilter = (selectedTags) => {
@@ -191,9 +212,7 @@ const AddTools = (props) => {
             newData = (res || []).filter(
               (a) =>
                 (a.agentic_application_type === REACT_AGENT ||
-                  a.agentic_application_type === MULTI_AGENT ||
-                  a.agentic_application_type === REACT_CRITIC_AGENT ||
-                  a.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
+                  a.agentic_application_type === MULTI_AGENT) &&
                 !selectedAgents.some(
                   (mapped) => mapped.agentic_application_id === a.agentic_application_id
                 )
@@ -272,8 +291,6 @@ const AddTools = (props) => {
           </p>
         </div>
         {/* Search bar */}
-        {!toggleSelected && (
-          <>
             <div className={styles.searchBar}>
               <SearchInput
                 key={toggleSelected}
@@ -284,6 +301,7 @@ const AddTools = (props) => {
                 clearSearch={clearSearch}
               />
             </div>
+            {!toggleSelected && (
             <div className={style.filterContainer}>
               <button
                 className={style.filterButton}
@@ -304,9 +322,7 @@ const AddTools = (props) => {
                   <span className={style.filterBadge}>{selectedTags.length}</span>
                 )}
               </button>
-            </div>
-          </>
-        )}
+            </div>)}
       </div>
       {searchTerm.trim() && !loader && visibleData.length === 0 ? (
         <div className={styles.noResultsFound}>

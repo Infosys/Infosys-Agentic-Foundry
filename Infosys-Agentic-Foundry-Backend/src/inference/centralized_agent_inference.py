@@ -1,11 +1,14 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-from src.inference.base_agent_inference import BaseAgentInference, AgentInferenceRequest, AgentInferenceHITLRequest
+from src.schemas import AgentInferenceRequest
+from src.inference.base_agent_inference import BaseAgentInference
 from src.inference.react_agent_inference import ReactAgentInference
 from src.inference.planner_executor_critic_agent_inference import MultiAgentInference
 from src.inference.planner_executor_agent_inference import PlannerExecutorAgentInference
 from src.inference.react_critic_agent_inference import ReactCriticAgentInference
 from src.inference.meta_agent_inference import MetaAgentInference
 from src.inference.planner_meta_agent_inference import PlannerMetaAgentInference
+from src.utils.stream_sse import SSEManager
+from src.inference.inference_utils import InferenceUtils
 
 
 
@@ -21,7 +24,8 @@ class CentralizedAgentInference:
             planner_executor_agent_inference: PlannerExecutorAgentInference,
             react_critic_agent_inference: ReactCriticAgentInference,
             meta_agent_inference: MetaAgentInference,
-            planner_meta_agent_inference: PlannerMetaAgentInference
+            planner_meta_agent_inference: PlannerMetaAgentInference,
+            inference_utils: InferenceUtils
         ):
         self.react_agent_inference = react_agent_inference
         self.multi_agent_inference = multi_agent_inference
@@ -29,6 +33,9 @@ class CentralizedAgentInference:
         self.react_critic_agent_inference = react_critic_agent_inference
         self.meta_agent_inference = meta_agent_inference
         self.planner_meta_agent_inference = planner_meta_agent_inference
+        self.feedback_learning_service = inference_utils.feedback_learning_service
+        self.inference_utils = inference_utils
+        
 
 
     async def get_specialized_agent_inference(self, agent_type: str) -> BaseAgentInference:
@@ -48,21 +55,326 @@ class CentralizedAgentInference:
         raise ValueError(f"Unknown agent type: {agent_type}")
 
     async def run(self,
-            inference_request: AgentInferenceRequest | AgentInferenceHITLRequest,
+            inference_request: AgentInferenceRequest,
             *,
-            hitl_flag: bool = False,
-            insert_into_eval_flag: bool = True
+            insert_into_eval_flag: bool = True,
+            sse_manager: SSEManager = None
         ):
         """
         Run the inference request using the appropriate agent inference service based on the agent type.
         """
         agent_config = await self.react_agent_inference._get_agent_config(inference_request.agentic_application_id)
+        if agent_config["AGENT_TYPE"] == 'react_agent':
+            feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=inference_request.agentic_application_id)
+            feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
+            if feedback_msg:
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REACT_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+''' 
+    
+        if agent_config["AGENT_TYPE"] == 'planner_executor_agent':
+            feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=inference_request.agentic_application_id)
+            feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
+            if feedback_msg:
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_EXECUTOR_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_PLANNER_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REPLANNER_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+        if agent_config["AGENT_TYPE"] == 'multi_agent':
+            feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=inference_request.agentic_application_id)
+            feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
+            if feedback_msg:
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_EXECUTOR_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_PLANNER_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REPLANNER_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_CRITIC_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_CRITIC_BASED_PLANNER_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+        if agent_config["AGENT_TYPE"] == 'react_critic_agent':
+            feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=inference_request.agentic_application_id)
+            feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
+            if feedback_msg:
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_CRITIC_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_EXECUTOR_AGENT'] += f'''
+
+## CRITICAL OPERATION INSTRUCTIONS - APPLY THESE RULES FIRST
+
+The following lessons contain important rules that you MUST follow when responding to user queries. This is your highest priority instruction that overrides any other guidelines.
+
+### HOW TO USE THESE LESSONS:
+1. First, examine the user's query carefully
+2. Compare it to each lesson's "WHEN TO APPLY" section
+3. If the user query matches or is similar to any trigger pattern, YOU MUST APPLY THE CORRESPONDING RULE
+4. Then provide your answer following the lesson's rule exactly
+
+### LESSONS:
+{feedback_msg}
+
+### COMPLIANCE REQUIREMENT:
+- You MUST always check if a lesson applies BEFORE formulating your response
+- If multiple lessons apply, follow ALL of them
+- Your primary responsibility is to apply these lessons correctly
+- Failure to apply an applicable lesson makes your entire response incorrect
+- If no lessons apply, respond normally based on your training and the provided Prompt
+
+### CONFIRMATION STEP:
+After drafting your response, verify that you've correctly applied all relevant lessons before sending.
+'''
+        
+        
         agent_inference: BaseAgentInference = await self.get_specialized_agent_inference(agent_type=agent_config["AGENT_TYPE"])
         return await agent_inference.run(
             inference_request=inference_request,
             agent_config=agent_config,
-            hitl_flag=hitl_flag,
-            insert_into_eval_flag=insert_into_eval_flag
+            insert_into_eval_flag=insert_into_eval_flag,
+            sse_manager=sse_manager
         )
+        
+        
 
 

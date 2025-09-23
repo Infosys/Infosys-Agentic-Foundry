@@ -39,6 +39,47 @@
 
     > ✅ Replace `path/to/your/local/all-MiniLM-L6-v2` with the actual folder path where you extracted the model.
 
+    ### 5. Setup e5-base-v2 Model (`e5-base-v2`)
+
+    > If you face SSL issues while connecting to the model from Hugging Face, follow the manual setup below:
+
+    #### Steps:
+
+    1. Download the **`e5-base-v2`** model manually : [[e5-base-v2](https://infosystechnologies.sharepoint.com/:u:/r/sites/AgenticAI104/Shared%20Documents/Agentic%20AI/e5-base-v2.zip?csf=1&web=1&e=syB8fl)]
+
+    2. Extract the downloaded folder to a local directory.
+
+    3. Update your `.env` file with the local model path:
+
+    ```env
+    EMBEDDING_MODEL_PATH=path/to/your/local/e5-base-v2
+    ```
+
+    > ✅ Replace `path/to/your/local/e5-base-v2` with the actual folder path where you extracted the model.
+
+    ### 6. Setup stsb-roberta-base Model (`stsb-roberta-base`)
+
+    > If you face SSL issues while connecting to the model from Hugging Face, follow the manual setup below:
+
+    #### Steps:
+
+    1. Download the **`stsb-roberta-base`** model manually : [[stsb-roberta-base](https://infosystechnologies.sharepoint.com/:u:/r/sites/AgenticAI104/Shared%20Documents/Agentic%20AI/stsb-roberta-base.zip?csf=1&web=1&e=wSubQp)]
+
+    2. Extract the downloaded folder to a local directory.
+
+    3. Update your `.env` file with the local model path:
+
+    ```env
+    CROSS_ENCODER_PATH=path/to/your/local/stsb-roberta-base
+    ```
+
+    > ✅ Replace `path/to/your/local/stsb-roberta-base` with the actual folder path where you extracted the model.
+
+
+    ### 7. Setup Vault secret
+    >  Fill the SECRETS_MASTER_KEY with the any Alfanumeric value of length more then 10 characters.
+
+
 
 3. Usage
 
@@ -132,26 +173,20 @@
         PHOENIX_COLLECTOR_ENDPOINT=your_phoenix_collector_endpoint
         PHOENIX_GRPC_PORT=your_phoenix_grpc_port
         SBERT_MODEL_PATH=path_to_your_local_all-MiniLM-L6-v2
+        EMBEDDING_MODEL_PATH = path_to_your_local_e5-base-v2
+        CROSS_ENCODER_PATH = path_to_your_local_stsb-roberta-base
+
+        # Redis Cache Configuration
+        REDIS_HOST=your_redis_host
+        REDIS_PORT=6379
+        REDIS_DB=0
+        REDIS_PASSWORD=your_redis_password
+        CACHE_EXPIRY_TIME=600
+        ENABLE_CACHING=false  # Set to 'true' to enable Redis caching, 'false' to disable
         ```
 
     - Replace the placeholder values with your actual credentials and endpoints.
     - **Note:** Never commit your `.env` file or sensitive credentials to version control.
-
-    - **CORS Configuration:**  
-        In `agentic_workflow_as_service_endpoints.py`, update the `origins` list to include the URL(s) and port(s) of your frontend/UI. For example, if your UI is hosted at `http://your-frontend-domain.com:3000`, add it to the list:
-
-            ```python
-            origins = [
-                "http://your-frontend-domain.com" # Add your deployed frontend URL
-                "http://your-frontend-domain.com:3000",  # Add your deployed frontend URL and port
-                "http://127.0.0.1",
-                "http://127.0.0.1:3000",
-                "http://localhost",
-                "http://localhost:3000"
-            ]
-            ```
-
-        Replace `"http://your-frontend-domain.com:3000"` with your actual frontend address and port. This ensures the backend allows requests from your UI.
 
 
 
@@ -160,7 +195,6 @@
     # To run the project locally
     ## In command prompt run the following commands
 
-
     ### 1. To create virtual environment
         python -m venv .venv
     ### 2. To activate virtual environment
@@ -169,18 +203,18 @@
         pip install uv
         uv pip install -r requirements.txt
 
-
     ### 4. To run backend-server (first activate the virtual environment)
-        uvicorn agentic_workflow_as_service_endpoints:app --reload
-    ### 5. To run the interface (first activate the virtual environment)
-        streamlit run user_interface.py
+        python main.py
+                OR
+        python run_server.py
+                OR
+        python run_server.py --reload
 
     # --------------------------------------------------------------------------------------
         
     # To run the project as server in VM
     ## In command prompt run the following commands
 
-
     ### 1. To create virtual environment
         python -m venv .venv
 
@@ -192,10 +226,14 @@
         uv pip install -r requirements.txt
 
     ### 4. To run backend-server (first activate the virtual environment)
-        uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4
-        
-    ### 5. To run the basic user interface (first activate the virtual environment)
-        streamlit run user_interface.py --server.port 8501 --server.address 0.0.0.0
+        python main.py --host 0.0.0.0 --port 8000
+                OR
+        python run_server.py --host 0.0.0.0 --port 8000
+                OR
+        python run_server.py --host 0.0.0.0 --port 8000 --workers 2
+
+
+    > **Note:** The `--reload` and `--workers` options are only supported when starting the server with `run_server.py`. If you use `main.py`, you can only configure the `--host` and `--port` options.
 
 
 

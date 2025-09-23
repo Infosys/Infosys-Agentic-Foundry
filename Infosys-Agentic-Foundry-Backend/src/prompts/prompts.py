@@ -505,9 +505,18 @@ Instructions:
 - Make sure the summary is well-structured and easy to follow.
 - Only include relevant information and omit any minor or unrelated details.
 
+4. Store important data for future reference:
+- If user gives and important key(s) or information, make sure to include it in the summary for future reference with exact value.
+- Do not miss any important information provided by the user such and file names, key names, key values, dates, times, deadlines, paths, Urls, etc.
+
+Old summery: this is the past conversation summary provided by the user, which should be used to generate the new summary.
+{past_conversation_summary}
+
 Chat History - This is the full transcript of the conversation you will summarize. Focus on extracting the key points and relevant actions from this text.
 Chat History:
 {chat_history}
+
+5. from both past and current conversations, extract key insights and action items. only relevant information should be included in the summary that addresses the user's future requests.
 """
 
 meta_agent_system_prompt_generator_prompt = """\

@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import style from "../../css_modules/InferenceUploadfile.module.css";
 import Loader from "../commonComponents/Loader.jsx";
-import { BASE_URL } from "../../constant";
+import { BASE_URL, APIs, KNOWLEDGE_BASE_FILE_UPLOAD, KB_LIST, sessionId } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
-import { APIs } from "../../constant";
 import SVGIcons from "../../Icons/SVGIcons";
 import axios from "axios";
 import ToastMessage from "../commonComponents/ToastMessages/ToastMessage.jsx";
@@ -21,21 +20,18 @@ function MessageUpdateform(props) {
   const [responseData, setresponseData] = useState({});
   const [selectdeleteheader, setselectdeleteheader] = useState("");
   const [selectdeletefile, setselectdeletefile] = useState("");
+  const[kbloader,setKbloader]=useState(false)
   const [inputValues, setInputValues] = useState({
     subdirectory: "",
     search: "",
   });
   const { fetchData, getCsrfToken, getSessionId } = useFetch();
   const [showToast, setShowToast] = useState(false);
+  const [isFormValid, setIsFormValid] = useState(false);
 
   useEffect(() => {
     fetchAgents();
   }, []);
-
-  const handleEmpty = (event) => {
-    event.preventDefault();
-    setFiles([]);
-  };
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -44,8 +40,26 @@ function MessageUpdateform(props) {
       [name]: value,
     });
   };
+  const handleKBChange = (event) => {
+    const { name, value } = event.target;
+    setInputValues({
+      ...inputValues,
+      [name]: value,
+    });
+    if (value.trim() !== '') {
+    setIsFormValid(true);
+  } else {
+    setIsFormValid(false);
+  }
+  };
+  let SUPPORTED_EXTENSIONS;
+if(showKnowledge){
+   SUPPORTED_EXTENSIONS = [".pdf",".txt"];
 
-  const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img",".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar"];
+}else{
+     SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img",".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar",".eml"];
+
+}
 
 
   const isSupportedFile = (file) => {
@@ -54,41 +68,35 @@ function MessageUpdateform(props) {
   };
 
   const handleFileChange = (event) => {
-    const selectedFiles = event.target.files;
-    if (selectedFiles && selectedFiles.length > 0) {
-      const file = selectedFiles[0];
-      if (!isSupportedFile(file)) {
-        setErrorMessage("Unsupported file type");
-        setShowToast(true);
-        setFiles([]);
-        return;
-      }
-      setFiles([file]);
+    const selectedFiles = Array.from(event.target.files);
+    const validFiles = selectedFiles.filter(isSupportedFile);
+    if (validFiles.length !== selectedFiles.length) {
+      setErrorMessage("Unsupported file type");
+      setShowToast(true);
     }
+    setFiles(validFiles);
   };
 
   const handleDrop = (event) => {
     event.preventDefault();
-    const droppedFiles = event.dataTransfer.files;
-    if (droppedFiles.length > 0) {
-      const file = droppedFiles[0];
-      if (!isSupportedFile(file)) {
-        setErrorMessage("Unsupported file type");
-        setShowToast(true);
-        setFiles([]);
-        return;
-      }
-      setFiles([file]);
+    const droppedFiles = Array.from(event.dataTransfer.files);
+    const validFiles = droppedFiles.filter(isSupportedFile);
+    if (validFiles.length !== droppedFiles.length) {
+      setErrorMessage("Some files have unsupported types");
+      setShowToast(true);
     }
+    setFiles(validFiles);
   };
 
   const fetchAgents = async (e) => {
+    if(!showKnowledge){
     try {
       const data = await fetchData(APIs.GET_ALLUPLOADFILELIST);
       setresponseData(data?.user_uploads);
     } catch (e) {
       console.error(e);
     }
+  }
   };
 
   const onCancel = () => {
@@ -125,6 +133,42 @@ function MessageUpdateform(props) {
       setErrorMessage("Error uploading file");
     }
   };
+  const toolSubmit = async (event) => {
+    setKbloader(true)
+    event.preventDefault();
+    const subdirectory = inputValues.knowledgeBaseName;
+    const url =`${BASE_URL}${APIs.KNOWLEDGE_BASE_FILE_UPLOAD}?kb_name=${subdirectory}`
+    const formData = new FormData();
+    formData.append("session_id", getSessionId());
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+    try {
+      const response = await axios.post(url, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          "accept": "application/json",
+        },
+      });
+      setSuccessMessage("File Uploaded Successfully!");
+      setKbloader(false)
+      setShowToast(true);
+      setInputValues({
+        knowledgeBaseName: "",
+        search: "",
+      });
+      fetchAgents();
+      setFiles([]);
+    } catch (error) {
+      console.error("Error uploading file", error);
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+      }
+      setErrorMessage("Error uploading file");
+    }
+  };
+
+
 
   const deletefile = async (event) => {
     event.preventDefault();
@@ -144,9 +188,9 @@ function MessageUpdateform(props) {
       maxBodyLength: Infinity,
       url: url,
       headers: {
-      "csrf-token": getCsrfToken(),
-      "session-id": getSessionId(), // added for CSRF token implementation
-      }
+        "csrf-token": getCsrfToken(),
+        "session-id": getSessionId(), // added for CSRF token implementation
+      }
     };
 
     await axios
@@ -179,9 +223,9 @@ function MessageUpdateform(props) {
       const response = await axios.get(`${BASE_URL}/download?filename=${paramone}`, {
         responseType: "blob", // Ensure the response is a Blob
         headers: {
-          "csrf-token": getCsrfToken(),
+          "csrf-token": getCsrfToken(),
           "session-id": getSessionId(), // added for CSRF token implementation
-        },
+        },
       });
 
       // Check if the response is a file
@@ -199,7 +243,7 @@ function MessageUpdateform(props) {
         link.click();
         link.parentNode.removeChild(link);
       }
-    } catch (error) {}
+    } catch (error) { }
   };
   const [viewUrl,setViewUrl]=useState("")
   const [showFile, setShowFile]=useState(false)
@@ -222,9 +266,9 @@ function MessageUpdateform(props) {
         {
           responseType: "blob", // Ensure the response is a Blob
           headers: {
-            "csrf-token": getCsrfToken(),
+            "csrf-token": getCsrfToken(),
             "session-id": getSessionId(), // added for CSRF token implementation
-          }
+          }
         }
       );
       // Check if the response is a file
@@ -247,28 +291,33 @@ function MessageUpdateform(props) {
     }
   };
 
- const filteredResponseData = Object.keys(responseData || {}).reduce(
-  (acc, sectionKey) => {
-    const files =
-      responseData?.[sectionKey]?.__files__ || responseData?.[sectionKey];
-    if (Array.isArray(files)) {
-      const filteredFiles = files.filter(
-        (item) =>
-          typeof item === "string" &&
-          item.toLowerCase().includes(inputValues.search.toLowerCase() || "")
-      );
-      if (filteredFiles.length > 0) {
-        acc[sectionKey] = filteredFiles;
+  const filteredResponseData = Object.keys(responseData || {}).reduce(
+    (acc, sectionKey) => {
+      const files =
+        responseData?.[sectionKey]?.__files__ || responseData?.[sectionKey];
+      if (Array.isArray(files)) {
+        const filteredFiles = files.filter(
+          (item) =>
+            typeof item === "string" &&
+            item.toLowerCase().includes(inputValues.search.toLowerCase() || "")
+        );
+        if (filteredFiles.length > 0) {
+          acc[sectionKey] = filteredFiles;
+        }
       }
-    }
-    return acc;
-  },
-  {}
-);
+      return acc;
+    },
+    {}
+  );
+
+  const handleRemoveFile = (index) => (event) => {
+    event.preventDefault();
+    setFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
+  };
 
   return (
     <div id="myOverlay" className={style["overlay"]}>
-      {loading && <Loader />}
+      {(loading || kbloader) && <Loader />}
 
       <div
         className={
@@ -306,7 +355,7 @@ function MessageUpdateform(props) {
                           </div>
                           <button
                             className={style["closebtntwo"]}
-                            onClick={handleEmpty}
+                            onClick={handleRemoveFile(index)}
                           >
                             &times;
                           </button>
@@ -331,8 +380,8 @@ function MessageUpdateform(props) {
                               hidden
                               id="browse"
                               onChange={handleFileChange}
-                              accept=".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar"
-                              multiple={false}
+                              accept=".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml"
+                              multiple={true}
                             />
                             <label
                               htmlFor="browse"
@@ -345,20 +394,36 @@ function MessageUpdateform(props) {
                       </section>
                     </div>
                   )}
+                  {showKnowledge ? <>
+                    <div className={style["url-section"]}>
+                      <label className={style["label-desc"]} htmlFor="url">
+                        KNOWLEDGE BASE NAME:
+                      </label>
+                      <input
+                        id="url"
+                        type="text"
+                        name="knowledgeBaseName"
+                        value={inputValues.knowledgeBaseName}
+                        onChange={handleKBChange}
+                        required
+                      ></input>
+                    </div>
+                  </> : <>
+                    <span>OR</span>
+                    <div className={style["url-section"]}>
+                      <label className={style["label-desc"]} htmlFor="url">
+                        Enter subdirectory name (leave blank for base directory):
+                      </label>
+                      <input
+                        id="url"
+                        type="text"
+                        name="subdirectory"
+                        value={inputValues.subdirectory}
+                        onChange={handleInputChange}
+                      ></input>
+                    </div>
+                  </>}
 
-                  <span>OR</span>
-                  <div className={style["url-section"]}>
-                    <label className={style["label-desc"]} htmlFor="url">
-                      Enter subdirectory name (leave blank for base directory):
-                    </label>
-                    <input
-                      id="url"
-                      type="text"
-                      name="subdirectory"
-                      value={inputValues.subdirectory}
-                      onChange={handleInputChange}
-                    ></input>
-                  </div>
 
                   <div className={style["button-class"]}>
                     <button
@@ -367,13 +432,25 @@ function MessageUpdateform(props) {
                     >
                       CANCEL
                     </button>
-                    <button
-                      className={style["add-button"]}
-                      onClick={handleSubmit}
-                      disabled={files?.length === 0}
-                    >
-                      {"UPLOAD"}
-                    </button>
+
+                    {showKnowledge ? <>
+                      <button
+                        className={style["add-button"]}
+                        onClick={toolSubmit}
+                        disabled={!isFormValid|| files?.length === 0}
+                      >
+                        {"UPLOAD"}
+                      </button>
+                    </> : <>
+                      <button
+                        className={style["add-button"]}
+                        onClick={handleSubmit}
+                        disabled={files?.length === 0}
+                      >
+                        {"UPLOAD"}
+                      </button>
+                    </>
+                    }
                   </div>
                 </div>
               </div>
@@ -394,106 +471,108 @@ function MessageUpdateform(props) {
                   onCancel={onCancel}
                 />
               )}
-              <div className={style["subnav"]}>
-                <div className={style["header"]}>
-                  <h1 className={style["subText"]}>{"Files"}</h1>
-                  <div className={style["underline"]}></div>
-                </div>
-                <div className={style["search-outer-container"]}>
-                  <div className={style.searchContainer}>
-                    <input
-                      type="search"
-                      name="search"
-                      className={style.searchInput}
-                      placeholder="Search Files"
-                      value={inputValues.search}
-                      onChange={handleInputChange}
-                    />
-                    <SVGIcons
-                      icon="search"
-                      fill="#ffffff"
-                      width={12}
-                      height={12}
-                    />
+              {!showKnowledge ? <>
+                <div className={style["subnav"]}>
+                  <div className={style["header"]}>
+                    <h1 className={style["subText"]}>{"Files"}</h1>
+                    <div className={style["underline"]}></div>
+                  </div>
+                  <div className={style["search-outer-container"]}>
+                    <div className={style.searchContainer}>
+                      <input
+                        type="search"
+                        name="search"
+                        className={style.searchInput}
+                        placeholder="Search Files"
+                        value={inputValues.search}
+                        onChange={handleInputChange}
+                      />
+                      <SVGIcons
+                        icon="search"
+                        fill="#ffffff"
+                        width={12}
+                        height={12}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className={style["documentslistconatiner"]}>
-                {Object?.keys(filteredResponseData)?.map((sectionKey) => (
-                  <div key={sectionKey}>
-                    <h3>{sectionKey}</h3>
-                    <ul className={style["no-bullets"]}>
-                      {Array.isArray(filteredResponseData[sectionKey]) ? (
-                        filteredResponseData[sectionKey].map((item,index) => (
-                          <div className={style["listitem"]} key={`${sectionKey}-item-${index}`}>
-                            <li>{item}</li>
-                            <div className={style["optionscontainer"]}>
-                            {item.includes(".pdf") || item.includes(".docx") ? (<button
-                                className={style["ButtonStyle"]}  
-                                onClick={(event) =>
-                                  sectionKey === "__files__"
-                                    ? handleViewFile(event, item)
-                                    : handleViewFilewithuser(
+                <div className={style["documentslistconatiner"]}>
+                  {Object?.keys(filteredResponseData)?.map((sectionKey) => (
+                    <div key={sectionKey}>
+                      <h3>{sectionKey}</h3>
+                      <ul className={style["no-bullets"]}>
+                        {Array.isArray(filteredResponseData[sectionKey]) ? (
+                          filteredResponseData[sectionKey].map((item, index) => (
+                            <div className={style["listitem"]} key={`${sectionKey}-item-${index}`}>
+                              <li>{item}</li>
+                              <div className={style["optionscontainer"]}>
+                                {item.includes(".pdf") || item.includes(".docx") ? (<button
+                                  className={style["ButtonStyle"]}
+                                  onClick={(event) =>
+                                    sectionKey === "__files__"
+                                      ? handleViewFile(event, item)
+                                      : handleViewFilewithuser(
                                         event,
                                         item,
                                         sectionKey
                                       )
-                                }
-                              >
-                                <SVGIcons
-                                  icon="eyeIcon"
-                                  width={15}
-                                  height={18}
-                                  fill={"#025601"}
-                                />
-                              </button>):null}
-                              <button
-                                className={style["ButtonStyle"]}  
-                                onClick={(event) =>
-                                  sectionKey === "__files__"
-                                    ? handleDownload(event, item)
-                                    : handleDownloadwithuser(
+                                  }
+                                >
+                                  <SVGIcons
+                                    icon="eyeIcon"
+                                    width={15}
+                                    height={18}
+                                    fill={"#025601"}
+                                  />
+                                </button>) : null}
+                                <button
+                                  className={style["ButtonStyle"]}
+                                  onClick={(event) =>
+                                    sectionKey === "__files__"
+                                      ? handleDownload(event, item)
+                                      : handleDownloadwithuser(
                                         event,
                                         item,
                                         sectionKey
                                       )
-                                }
-                              >
-                                <SVGIcons
-                                  icon="download"
-                                  width={15}
-                                  fill={"#1B0896"}
-                                  height={18}
-                                />
-                              </button>
-                              
-                              <button
-                                className={style["ButtonStyle"]}
-                                onClick={handledelete(sectionKey, item)}
-                              >
-                                <SVGIcons
-                                  icon="fa-trash"
-                                  width={12}
-                                  fill={"#FF0000"}
-                                  height={16}
-                                />
-                              </button>
+                                  }
+                                >
+                                  <SVGIcons
+                                    icon="download"
+                                    width={15}
+                                    fill={"#1B0896"}
+                                    height={18}
+                                  />
+                                </button>
+
+                                <button
+                                  className={style["ButtonStyle"]}
+                                  onClick={handledelete(sectionKey, item)}
+                                >
+                                  <SVGIcons
+                                    icon="fa-trash"
+                                    width={12}
+                                    fill={"#FF0000"}
+                                    height={16}
+                                  />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))
-                      ) : (
-                        <li>{""}</li>
-                      )}
-                    </ul>
-                  </div>
-                ))}
-              </div>
+                          ))
+                        ) : (
+                          <li>{""}</li>
+                        )}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </> : <></>}
             </form>
           </div>
         </div>
       </div>
-      {showFile && <DocViewerModal url={viewUrl} onClose={()=>{setShowFile(false)}} /> }
+      {showFile && <DocViewerModal url={viewUrl} onClose={() => { setShowFile(false) }} />}
     </div>
   );
 }

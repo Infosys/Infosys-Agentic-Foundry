@@ -1,7 +1,9 @@
+import Editor from '@monaco-editor/react';
 import React, { useState } from "react";
 import styles from "./ToolDetailModal.module.css";
 import ReactMarkdown from "react-markdown";
-import { META_AGENT } from "../../constant";
+import Markdown from "react-markdown";
+import { META_AGENT,MULTI_AGENT } from "../../constant";
 import { checkToolEditable } from "../../util";
 import { useMessage } from "../../Hooks/MessageContext";
 import Loader from "../commonComponents/Loader";
@@ -52,10 +54,26 @@ const ToolDetailModal = ({
           </div>
         )}
         {codeSnippet && (
-          <div className={`${styles.modalBody} ${styles.codeSnippet}`}>
-            <pre>
-              <code>{codeSnippet}</code>
-            </pre>
+                   <div className={`${styles.modalBody} ${styles.codeSnippet}`}>
+         <div className={styles.codeEditorContainer}>
+            <Editor
+              height="200px"
+              defaultLanguage="python"
+              value={codeSnippet}
+              theme="vs-dark"
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                fontSize: 14,
+                scrollBeyondLastLine: false,
+                lineNumbers: 'on',
+                wordWrap: 'on',
+                domReadOnly: true,
+                renderLineHighlight: 'all',
+                scrollbar: { vertical: 'auto', horizontal: 'auto' },
+              }}
+            />
+            </div>
           </div>
         )}
         {agenticApplicationWorkflowDescription && (
@@ -78,8 +96,14 @@ const ToolDetailModal = ({
         {systemPrompt && (
           <div className={`${styles.modalBody} ${styles.codeSnippet}`}>
             <ReactMarkdown>
-              {systemPrompt &&
-                JSON.parse(systemPrompt)?.SYSTEM_PROMPT_REACT_AGENT}
+              {typeof systemPrompt === "string"
+                ? JSON.parse(systemPrompt)?.SYSTEM_PROMPT_REACT_AGENT || ""
+                : systemPrompt?.SYSTEM_PROMPT_REACT_AGENT || ""}
+            </ReactMarkdown>
+            <ReactMarkdown>
+              {typeof systemPrompt === "string"
+                ? JSON.parse(systemPrompt)?.SYSTEM_PROMPT_EXECUTOR_AGENT || ""
+                : systemPrompt?.SYSTEM_PROMPT_EXECUTOR_AGENT || ""}
             </ReactMarkdown>
           </div>
         )}
@@ -95,4 +119,4 @@ const ToolDetailModal = ({
   );
 };
 
-export default ToolDetailModal
+export default ToolDetailModal;

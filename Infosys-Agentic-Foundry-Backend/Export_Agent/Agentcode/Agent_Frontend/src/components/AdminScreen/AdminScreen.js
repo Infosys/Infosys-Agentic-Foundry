@@ -2,15 +2,16 @@ import React, { useEffect, useState } from "react";
 import Register from "../Register/Index";
 import Loader from "../commonComponents/Loader";
 import { useMessage } from "../../Hooks/MessageContext";
-import {BASE_URL} from "../../constant";
+import {APIs} from "../../constant";
 import AgentList from "./AgentsList";
 import ResponsesList from "./ResponseList";
 import ResponseDetail from "./ResponseDetail";
 import styles from "./AdminScreen.module.css";
-import AgentsEvaluator from "../AgentsEvaluator";
-import EvaluationScore from "../AdminScreen/EvaluationScore.js";
+// import AgentsEvaluator from "../AgentsEvaluator";
+// import EvaluationScore from "../AdminScreen/EvaluationScore.js";
 import UpdatePassword from "./UpdatePassword.jsx";
 import RecycleBin from "./RecycleBin.jsx";
+import useFetch from "../../Hooks/useAxios.js";
 
 const AdminScreen = () => {
   const [agents, setAgents] = useState([]);
@@ -23,6 +24,7 @@ const AdminScreen = () => {
   const { addMessage, setShowPopup} = useMessage(); // Message context for notifications
   
   const [selectedAgentName, setSelectedAgentName] = useState(null);
+  const{ fetchData, putData } = useFetch();
 
   useEffect(() => {
     if (!loadingAgents) {
@@ -37,8 +39,7 @@ const AdminScreen = () => {
     setLoadingAgents(true);
     try {
       setAgents([]); // Clear agents before loading new data
-      const res = await fetch(`${BASE_URL}/get-approvals-list`);
-      const agentsData = await res.json();
+      const agentsData = await fetchData(APIs.GET_APPROVALS_LIST);
       setAgents(agentsData);
     } catch (err) {
       addMessage("Failed to load agents", "error");
@@ -60,8 +61,7 @@ const AdminScreen = () => {
     setSelectedAgentId(agentId);
     setSelectedAgentName(agentName);
     try {
-      const res = await fetch(`${BASE_URL}/get-approvals-by-id/${agentId}`);
-      const responsesData = await res.json();
+      const responsesData = await fetchData(`${APIs.GET_APPROVALS_BY_ID}${agentId}`);
       setResponses(responsesData);
       // Switch to learning tab when an agent is selected
       setActiveTab("learning");
@@ -73,8 +73,7 @@ const AdminScreen = () => {
   // Fetch details for a selected response
   const loadResponseDetail = async (responseId) => {
     try {
-      const res = await fetch(`${BASE_URL}/get-responses-data/${responseId}`);
-      const data = await res.json();
+      const data = await fetchData(`${APIs.GET_RESPONSES_DATA}${responseId}`);
       const response = data[0] || {};
       setResponseDetail(response);
       setForm({
@@ -104,13 +103,9 @@ const AdminScreen = () => {
     e.preventDefault();
     const payload = { ...form };
     try {
-      const res = await fetch(`${BASE_URL}/update-approval-response`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const response = await putData(APIs.UPDATE_APPROVAL_RESPONSE,payload)
       setLoadingAgents(false); // Hide loader before showing toast
-      if (res.ok) {
+      if (response.is_update) {
         addMessage("Updated successfully!", "success");
         // After successful update, return to the responses list
         setResponseDetail(null);
@@ -129,7 +124,7 @@ const AdminScreen = () => {
       {loadingAgents && <Loader />}
       
       {/* Tabs Header */}      <div className={styles.tabHeader}>
-        <button 
+        {/* <button 
           className={activeTab === "register" ? styles.activeTab : styles.tab} 
           onClick={() => {
             setActiveTab("register");
@@ -139,13 +134,14 @@ const AdminScreen = () => {
           }}
         >
           Register
-        </button>
+        </button> */}
         <button 
           className={activeTab === "learning" ? styles.activeTab : styles.tab} 
           onClick={() => setActiveTab("learning")}
         >
           Learning
         </button>
+        {/* Commented out - moved to separate Evaluation page
         <button 
           className={activeTab === "metrics" ? styles.activeTab : styles.tab} 
           onClick={() => {
@@ -167,7 +163,8 @@ const AdminScreen = () => {
         >
           Evaluations
         </button>
-         <button 
+        */}
+         {/* <button 
           className={activeTab === "Update User" ? styles.activeTab : styles.tab} 
           onClick={() => {
             setActiveTab("Update User");
@@ -176,8 +173,8 @@ const AdminScreen = () => {
           }}
         >
          Update User
-        </button>
-      <button 
+        </button> */}
+      {/* <button 
   className={activeTab === "Recycle Bin" ? styles.activeTab : styles.tab} 
   onClick={() => {
     setActiveTab("Recycle Bin"); 
@@ -186,18 +183,18 @@ const AdminScreen = () => {
   }}
 >
   RecycleBin
-</button>
+</button> */}
        
       </div>
 
       {/* Tab Content */}
       <div className={styles.tabContent}>
         {/* Register Tab */}
-        {activeTab === "register" && (
+        {/* {activeTab === "register" && (
           <div className={styles.registrationForm}>
             <Register isAdminScreen={true} />
           </div>
-        )}
+        )} */}
         {/* Learning Tab */}
         {activeTab === "learning" && (
           <div>
@@ -235,27 +232,22 @@ const AdminScreen = () => {
             )}
           </div>
         )}
+        {/* Commented out - moved to separate Evaluation page
         {/* Metrics Tab */}
-        {activeTab === "metrics" && (
+        {/* {activeTab === "metrics" && (
           <div className={styles.evaluateMetrics}>
             <AgentsEvaluator />
           </div>
-        )}
+        )} */}
         {/* Evaluations Tab */}
-        {activeTab === "evaluation" && (
+        {/* {activeTab === "evaluation" && (
           <div className={styles.evaluateMetrics}>
             <EvaluationScore />
           </div>
-        )}
-         {activeTab === "Update User" && (
-          <div className={styles.evaluateMetrics}>
-            {/* <EvaluationScore /> */}
-            <UpdatePassword />
-          </div>
-        )}
-        {activeTab === "Recycle Bin" && (
-    <RecycleBin />
-)}
+        )} */}
+        {/* End of commented evaluation sections */}
+         
+        
       </div>
     </div>
   );

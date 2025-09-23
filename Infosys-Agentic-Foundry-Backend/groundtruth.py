@@ -19,7 +19,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer, util
 
-from src.inference.base_agent_inference import AgentInferenceRequest, BaseAgentInference
+from src.inference.centralized_agent_inference import CentralizedAgentInference
+from src.schemas import AgentInferenceRequest
 from telemetry_wrapper import logger as log
 
 # Load environment variables from .env file
@@ -87,16 +88,16 @@ Be specific and concise. Do not just list the scores again — explain what the 
 )
 
 # ✅ Unified agent call
-async def call_agent(query, model_name, agentic_application_id, session_id, agent_type, specialized_agent_inference: BaseAgentInference):
+async def call_agent(query, model_name, agentic_application_id, session_id, agent_type, inference_service: CentralizedAgentInference):
     req = AgentInferenceRequest(
-        agentic_application_id=agentic_application_id,
         query=query,
+        agentic_application_id=agentic_application_id,
         session_id=session_id,
         model_name=model_name,
         reset_conversation=True
     )
     try:
-        response = await specialized_agent_inference.run(req)
+        response = await inference_service.run(req)
         result = response if isinstance(response, dict) else {"response": f"Error: {response}"}
     except Exception as e:
         log.error(f"Error calling agent: {str(e)}")
@@ -111,7 +112,7 @@ async def evaluate_ground_truth_file(
     file_path: Union[str, os.PathLike],
     agentic_application_id: str,
     session_id: str,
-    specialized_agent_inference: BaseAgentInference,
+    inference_service: CentralizedAgentInference,
     llm=None,
     use_llm_grading: bool = False
 ) -> tuple[pd.DataFrame, dict, str, str, str, Union[str, None]]:
@@ -144,7 +145,7 @@ async def evaluate_ground_truth_file(
         expected = str(row["expected_outputs"])
 
         log.info(f"\nQuery {i+1}: {query}")
-        actual = await call_agent(query, model_name, agentic_application_id, session_id, agent_type, specialized_agent_inference)
+        actual = await call_agent(query, model_name, agentic_application_id, session_id, agent_type, inference_service)
         actual_outputs.append(actual)
         expected_texts.append(expected)
         actual_texts.append(actual)

@@ -1,12 +1,16 @@
 import { useState, useCallback } from "react";
-import { BASE_URL } from "../constant";
+import {BASE_URL } from "../constant";
 import Cookies from "js-cookie";
+import axios from "axios";
 
 // CSRF token storage
 let csrfToken = null;
 let sessionId = null;
 
 let postMethod = "POST";
+let getMethod = "GET";
+let deleteMethod = "DELETE";
+let putMethod = "PUT";
 
 // Function to set the CSRF token (to be called after login/signup)
 export const setCsrfToken = (token) => {
@@ -48,10 +52,9 @@ const addCsrfHeader = (headers = {}) => {
 
 const defaultConfig = {
   headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
+    "accept": "application/json",
   },
-  timeout: 5000, // 5 seconds timeout
+  timeout: 20000, // 20 seconds timeout
 };
 
 const useFetch = () => {
@@ -81,9 +84,12 @@ const useFetch = () => {
           ...config,
         }
       }
-      const response = await fetch(BASE_URL + url, tempHeaders);
-      if (!response.ok) throw new Error("Network response was not ok");
-      const data = await response.json();
+      const response = await axios.request({
+        url: BASE_URL + url,
+        method: getMethod,
+        ...tempHeaders
+      });
+      const data = response.data;
 
       // Check if this is a login or signup response and extract CSRF token if present
       if (url.includes('/login_guest') && data?.csrf_token) {
@@ -103,21 +109,28 @@ const useFetch = () => {
   const postData = useCallback(async (url, postData, config = {}) => {
     setLoading((prevLoading) => ({ ...prevLoading, post: true }));
     try {
-      // Add CSRF token to headers for POST requests
+      let contentType = "application/json";
+      let dataToSend = postData;
+      if (postData instanceof FormData) {
+        contentType = undefined;
+      } else {
+        dataToSend = JSON.stringify(postData);
+      }
       const headers = addCsrfHeader({
         ...defaultConfig.headers,
-        ...config.headers
+        ...config.headers,
+        ...(contentType ? { "Content-Type": contentType } : {})
       });
 
-      const response = await fetch(BASE_URL + url, {
+      const response = await axios.request({
+        url: BASE_URL + url,
         method: postMethod,
-        body: JSON.stringify(postData),
+        data: dataToSend,
         ...defaultConfig,
         ...config,
         headers
       });
-      if (!response.ok) throw new Error("Network response was not ok");
-      const data = await response.json();
+      const data = response.data;
 
       // Check if this is a login or signup response and extract CSRF token if present
       if ((url.includes('/login') || url.includes('/registration')) && data?.csrf_token) {
@@ -137,20 +150,28 @@ const useFetch = () => {
   const putData = useCallback(async (url, putData, config = {}) => {
     setLoading((prevLoading) => ({ ...prevLoading, put: true }));
     try {
-      // Add CSRF token to headers for PUT requests
+      let contentType = "application/json";
+      let dataToSend = putData;
+      if (putData instanceof FormData) {
+        contentType = undefined;
+      } else {
+        dataToSend = JSON.stringify(putData);
+      }
       const headers = addCsrfHeader({
         ...defaultConfig.headers,
-        ...config.headers
+        ...config.headers,
+        ...(contentType ? { "Content-Type": contentType } : {})
       });
 
-      const response = await fetch(BASE_URL + url, {
-        method: "PUT",
-        body: JSON.stringify(putData),
+      const response = await axios.request({
+        url: BASE_URL + url,
+        method: putMethod,
+        data: dataToSend,
         ...defaultConfig,
         ...config,
         headers
       });
-      const data = await response.json();
+      const data = response.data;
       setError((prevError) => ({ ...prevError, put: null }));
       return data;
     } catch (err) {
@@ -164,22 +185,30 @@ const useFetch = () => {
   const deleteData = useCallback(async (url, deleteData, config = {}) => {
     setLoading((prevLoading) => ({ ...prevLoading, delete: true }));
     try {
-      // Add CSRF token to headers for DELETE requests
+      let contentType = "application/json";
+      let dataToSend = deleteData;
+      if (deleteData instanceof FormData) {
+        contentType = undefined;
+      } else {
+        dataToSend = JSON.stringify(deleteData);
+      }
       const headers = addCsrfHeader({
         ...defaultConfig.headers,
-        ...config.headers
+        ...config.headers,
+        ...(contentType ? { "Content-Type": contentType } : {})
       });
 
-      const response = await fetch(BASE_URL + url, {
-        method: "DELETE",
-        body: JSON.stringify(deleteData),
+      const response = await axios.request({
+        url: BASE_URL + url,
+        method: deleteMethod,
+        data: dataToSend,
         ...defaultConfig,
         ...config,
         headers
       });
-      if (!response.ok) throw new Error("Network response was not ok");
+      const data = response.data;
       setError((prevError) => ({ ...prevError, delete: null }));
-      return null;
+      return data;
     } catch (err) {
       setError((prevError) => ({ ...prevError, delete: err }));
       throw err;

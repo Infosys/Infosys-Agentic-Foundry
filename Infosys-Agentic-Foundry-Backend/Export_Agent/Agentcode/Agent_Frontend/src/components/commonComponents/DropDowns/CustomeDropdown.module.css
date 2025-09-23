@@ -3,7 +3,7 @@
   display: inline-block;
   /* width: 200px; */
   /* font-family: sans-serif; */
-  padding-left: 3px;
+  /* padding-left: 3px; */
 }
 
 .dropdown-header {
@@ -80,9 +80,9 @@
   margin-bottom: 4px;
   width: 200px;
 }
-.chevronCss{
+/* .chevronCss{
   padding-left: 5px;
-}
-.hoverEffectCss{
+} */
+/* .hoverEffectCss{
       padding-right: 8px;
-}
+} */

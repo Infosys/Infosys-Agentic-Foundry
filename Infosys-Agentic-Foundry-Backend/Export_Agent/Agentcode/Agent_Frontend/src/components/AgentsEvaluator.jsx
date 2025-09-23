@@ -1,10 +1,10 @@
 import { useState, useEffect ,useRef} from "react";
 import { evaluate } from "./EvaluateService";
-import axios from "axios";
-import { BASE_URL } from "../constant";
+import { APIs } from "../constant";
 import Loader from "./commonComponents/Loader";
 import { useMessage } from "../Hooks/MessageContext";
 import styles from "../css_modules/AgentsEvaluator.module.css";
+import useFetch from "../Hooks/useAxios";
 
 const AgentsEvaluator = () => {
   const [modelOptions, setModelOptions] = useState([]);
@@ -13,12 +13,13 @@ const AgentsEvaluator = () => {
   const [loading, setLoading] = useState(false);
   const {addMessage} = useMessage();
   const hasInitialized = useRef(false);
+  const {fetchData} = useFetch();
   const fetchModels = async() => {
       setLoading(true);
       try {
-        const res = await axios.get(`${BASE_URL}/get-models`);
-        if (res.data && Array.isArray(res.data.models)) {
-          setModelOptions(res.data.models.map(m => ({ label: m, value: m })));
+        const res = await fetchData(APIs.GET_MODELS);
+        if (res.models && Array.isArray(res.models)) {
+          setModelOptions(res.models.map(m => ({ label: m, value: m })));
         } else {
           addMessage("Invalid models response","error");
         }

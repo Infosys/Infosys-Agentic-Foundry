@@ -3,6 +3,7 @@ import DOMPurify from "dompurify";
 import styles from './DocViewerModal.module.css';
 import mammoth from 'mammoth';
 import parse from 'html-react-parser';
+import { useMessage } from "../../Hooks/MessageContext";
 
 const DocViewerModal = ({ url, onClose }) => {
   const [blobUrl, setBlobUrl] = useState(null);
@@ -10,6 +11,7 @@ const DocViewerModal = ({ url, onClose }) => {
 
   const isPdf = url?.toLowerCase().endsWith('.pdf');
   const isDocx = url?.toLowerCase().endsWith('.docx');
+  const { addMessage } = useMessage();
 
   useEffect(() => {
     const fetchPdf = async () => {
@@ -22,7 +24,7 @@ const DocViewerModal = ({ url, onClose }) => {
         setBlobUrl(blobUrl);
       } catch (err) {
         console.error(err);
-        alert('Failed to load PDF');
+        addMessage('Failed to load PDF', 'error');
       }
     };
 
@@ -36,7 +38,7 @@ const DocViewerModal = ({ url, onClose }) => {
         setDocxHtml(sanitizedHtml);
       } catch (err) {
         console.error(err);
-        alert('Failed to load DOCX');
+        addMessage('Failed to load DOCX', 'error');
       }
     };
 

@@ -1,11 +1,16 @@
 import React, { useState, useRef, useEffect } from "react";
 import styles from "./CustomeDropdown.module.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faChevronDown, faChevronUp ,faRobot,faGlobe} from "@fortawesome/free-solid-svg-icons";
+import {
+  faChevronDown,
+  faChevronUp,
+  faRobot,
+  faGlobe,
+} from "@fortawesome/free-solid-svg-icons";
 import { REACT_AGENT } from "../../../constant";
 
 const Dropdown = (props) => {
-  const { options, placeholder, onChange, value, disabled,agentType } = props;
+  const { options, placeholder, onChange, value, disabled, agentType } = props;
   const [isOpen, setIsOpen] = useState(false);
   const [selectedOption, setSelectedOption] = useState(value);
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -27,7 +32,9 @@ const Dropdown = (props) => {
         break;
       case "ArrowUp":
         e.preventDefault();
-        setHighlightIndex((prev) => (prev - 1 + options.length) % options.length);
+        setHighlightIndex(
+          (prev) => (prev - 1 + options.length) % options.length
+        );
         break;
       case "Enter":
         e.preventDefault();
@@ -63,46 +70,32 @@ const Dropdown = (props) => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
- const displayLabel = selectedOption.length > 12 ? `${selectedOption.slice(0, 12)}....` : selectedOption;
+  const displayLabel =
+    selectedOption.length > 12
+      ? `${selectedOption.slice(0, 12)}....`
+      : selectedOption;
   return (
-    // <div
-    //   className={styles["dropdown"]}
-    //   ref={dropdownRef}
-    //   tabIndex={0}
-    //   onKeyDown={handleKeyDown}
-    // >
     <div
-  className={`${styles["dropdown"]} ${isOpen  ? styles["dropdown-up"] : ""}`}
-  ref={dropdownRef}
-  tabIndex={0}
-  onKeyDown={handleKeyDown}
->
-      <div
-       
-        onClick={toggleDropdown} title={selectedOption}
-      >
-        {agentType===REACT_AGENT ?(
+      className={`${styles["dropdown"]} ${isOpen ? styles["dropdown-up"] : ""}`}
+      ref={dropdownRef}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
+      <div onClick={toggleDropdown} title={selectedOption}>
+        {agentType === REACT_AGENT ? (
           <>
-<span className={styles.hoverEffectCss}>
-                              <FontAwesomeIcon icon={faRobot} />
-                            </span>
-                            </>
-        ):(
+            <span className={styles.hoverEffectCss}>
+              <FontAwesomeIcon icon={faRobot} />
+            </span>
+          </>
+        ) : (
           <>
-          <span className={styles.hoverEffectCss}>
-           <FontAwesomeIcon icon={faGlobe} />
-                            </span>
+            <span className={"hoverEffectCss"}>
+              <FontAwesomeIcon icon={faGlobe} />
+            </span>
           </>
         )}
-        
-        {/* <span className={styles["placeholder"]}> */}
-          {/* <span className={styles.placeholderText}>{`${placeholder}: `}</span> */}
-          {agentType===REACT_AGENT ? selectedOption:displayLabel|| "Model"}
-
-        {/* </span> */}
-        {/* <span className={styles.chevronCss}>
-          <FontAwesomeIcon icon={isOpen ? faChevronUp : faChevronDown} />
-        </span> */}
+        {/* {agentType === REACT_AGENT ? selectedOption : displayLabel || "Model"} */}
       </div>
 
       {isOpen && !disabled && (
@@ -111,9 +104,7 @@ const Dropdown = (props) => {
             <li
               key={option.value}
               onClick={() => handleOptionClick(option, index)}
-              className={
-                index === highlightIndex ? styles["highlighted"] : ""
-              }
+              className={index === highlightIndex ? styles["highlighted"] : ""}
             >
               {option.label}
             </li>

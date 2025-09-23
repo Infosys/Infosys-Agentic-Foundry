@@ -2,8 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Union
 
-from src.database.repositories import AgentRepository, RecycleAgentRepository
-from src.database.services import TagService, ToolService, AgentService
+from src.database.services import AgentServiceUtils, AgentService
 
 
 # Normal Type Agent's Base Template Class
@@ -13,10 +12,7 @@ class BaseAgentOnboard(AgentService, ABC):
     BaseAgentTemplate provides a foundational template for agent services, enforcing a standard interface and shared logic for onboarding and updating agents.
     Args:
         agent_type (str): The type of agent being instantiated. Must be provided.
-        agent_repo (AgentRepository): Repository for managing agent data.
-        recycle_agent_repo (RecycleAgentRepository): Repository for managing recycled agents.
-        tool_service (ToolService): Service for managing tools associated with agents.
-        tag_service (TagService): Service for managing tags associated with agents.
+        agent_service_utils (AgentServiceUtils): Utility class for agent service operations.
     Raises:
         ValueError: If agent_type is not provided.
     Methods:
@@ -28,22 +24,12 @@ class BaseAgentOnboard(AgentService, ABC):
             Asynchronously update an existing agent's details.
     """
 
-    def __init__(
-        self,
-        agent_type: str,
-        agent_repo: AgentRepository,
-        recycle_agent_repo: RecycleAgentRepository,
-        tool_service: ToolService,
-        tag_service: TagService,
-    ):
+    def __init__(self, agent_type: str, agent_service_utils: AgentServiceUtils):
         if not agent_type:
             raise ValueError("Agent type must be provided.")
-        super().__init__(
-            agent_repo=agent_repo,
-            recycle_agent_repo=recycle_agent_repo,
-            tool_service=tool_service,
-            tag_service=tag_service
-        )
+
+        super().__init__(agent_service_utils=agent_service_utils)
+
         if agent_type in self.meta_type_templates:
             raise ValueError(f"Agent type '{agent_type}' is reserved for meta-type agents and cannot be used here.")
         self.agent_type = agent_type
@@ -110,10 +96,7 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
     BaseMetaTypeAgentOnboard provides a foundational template for agent services, enforcing a standard interface and shared logic for onboarding and updating agents.
     Args:
         agent_type (str): The type of agent being instantiated. Must be provided.
-        agent_repo (AgentRepository): Repository for managing agent data.
-        recycle_agent_repo (RecycleAgentRepository): Repository for managing recycled agents.
-        tool_service (ToolService): Service for managing tools associated with agents.
-        tag_service (TagService): Service for managing tags associated with agents.
+        agent_service_utils (AgentServiceUtils): Utility class for agent service operations.
     Raises:
         ValueError: If agent_type is not provided.
     Methods:
@@ -125,22 +108,12 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
             Asynchronously update an existing agent's details.
     """
 
-    def __init__(
-        self,
-        agent_type: str,
-        agent_repo: AgentRepository,
-        recycle_agent_repo: RecycleAgentRepository,
-        tool_service: ToolService,
-        tag_service: TagService,
-    ):
+    def __init__(self, agent_type: str, agent_service_utils: AgentServiceUtils):
         if not agent_type:
             raise ValueError("Agent type must be provided.")
-        super().__init__(
-            agent_repo=agent_repo,
-            recycle_agent_repo=recycle_agent_repo,
-            tool_service=tool_service,
-            tag_service=tag_service
-        )
+
+        super().__init__(agent_service_utils=agent_service_utils)
+
         if not agent_type in self.meta_type_templates:
             raise ValueError(f"Agent type '{agent_type}' is not a meta-type agent and cannot be used here.")
         self.agent_type = agent_type

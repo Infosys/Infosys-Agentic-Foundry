@@ -14,7 +14,7 @@ from src.prompts.prompts import (
 
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.database.services import EvaluationService
-from src.models.model import load_model
+from src.models.model_service import ModelService
 from telemetry_wrapper import logger as log
 
 
@@ -29,10 +29,12 @@ class CoreEvaluationService:
     def __init__(
             self,
             evaluation_service: EvaluationService,
-            centralized_agent_inference: CentralizedAgentInference
+            centralized_agent_inference: CentralizedAgentInference,
+            model_service: ModelService
         ):
             self.evaluation_service = evaluation_service
             self.agent_inference = centralized_agent_inference
+            self.model_service = model_service
 
 
     async def _evaluate_agent_performance(
@@ -324,7 +326,7 @@ Past Conversation Summary:
             
             # Determine which LLM to use for evaluation based on the agent's model
             eval_llm_model_name = model2 if data['model_used'] == model1 else model1
-            eval_llm = load_model(model_name=eval_llm_model_name)
+            eval_llm = await self.model_service.get_llm_model(model_name=eval_llm_model_name)
             
             try:
                 # ✅ Check if interaction is meaningful

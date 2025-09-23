@@ -1,5 +1,5 @@
 import axios from "axios";
-import { BASE_URL ,RESTORE_TOOL,APIs} from "../constant"
+import { BASE_URL ,APIs} from "../constant"
 import { getCsrfToken, getSessionId} from "../Hooks/useAxios";
 import Cookies from "js-cookie";
 let postMethod = "POST";
@@ -185,53 +185,6 @@ export const deleteTool = async (toolData, toolId) => {
   }
 };
 
-// export const exportAgents = async (agentIds) => {
-//   try {
-//     // Build URL with multiple agent_ids params
-//     const params = agentIds.map(id => `agent_ids=${encodeURIComponent(id)}`).join('&');
-//     const apiUrl = `${BASE_URL}/export-agents?${params}`;
-//     const response = await axios.request({
-//       method: "GET",
-//       url: apiUrl,
-//       headers: {
-//         "Content-Type": "application/json",
-//         "csrf-token": getCsrfToken(),
-//         "session-id": getSessionId(),
-//       },
-//       responseType: 'blob',
-//     });
-//     if (response?.status === 200) {
-//       return response.data;
-//     } else {
-//       // Try to parse error from blob if possible
-//       const errorText = await response.data.text();
-//       let errorJson;
-//       try {
-//         errorJson = JSON.parse(errorText);
-//       } catch {
-//         errorJson = { detail: errorText };
-//       }
-//       const error = new Error(errorJson.detail || 'Export failed!');
-//       error.response = { data: errorJson };
-//       throw error;
-//     }
-//   } catch (error) {
-//     // If error is an Axios error with a blob response, try to parse it
-//     if (error.response && error.response.data instanceof Blob) {
-//       try {
-//         const errorText = await error.response.data.text();
-//         let errorJson;
-//         try {
-//           errorJson = JSON.parse(errorText);
-//         } catch {
-//           errorJson = { detail: errorText };
-//         }
-//         error.response.data = errorJson;
-//       } catch {}
-//     }
-//     throw error;
-//   }
-// };
 export const exportAgents = async (agentIds, userEmail) => {
   try {
     // Build URL with multiple agent_ids params and user email

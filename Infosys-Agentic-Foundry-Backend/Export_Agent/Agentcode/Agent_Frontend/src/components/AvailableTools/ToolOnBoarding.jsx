@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import style from "../../css_modules/ToolOnboarding.module.css";
 import { updateTools, addTool,RecycleTools,deletedTools } from "../../services/toolService.js";
 import Loader from "../commonComponents/Loader.jsx";
@@ -15,6 +15,8 @@ import MessageUpdateform from "../AskAssistant/MsgUpdateform.jsx";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
 import {WarningModal} from "../AvailableTools/WarningModal.jsx";
+import Editor from '@monaco-editor/react';
+
 
 function ToolOnBoarding(props) {
   const loggedInUserEmail = Cookies.get("email");
@@ -43,7 +45,6 @@ function ToolOnBoarding(props) {
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorMessages, setErrorMessages] = useState([]);
 
-
   const [files, setFiles] = useState([]);
 
   const { addMessage, setShowPopup } = useMessage();
@@ -60,6 +61,11 @@ function ToolOnBoarding(props) {
 
   const [copiedStates, setCopiedStates] = useState({});
   const [forceAdd, setForceAdd] = useState(false);
+  // Theme for the whole form (if needed elsewhere)
+  const [isDarkTheme, setIsDarkTheme] = useState(true);
+  // Theme for the code editor only
+  const [editorDarkTheme, setEditorDarkTheme] = useState(true);
+  const overlayRef = useRef(null);
 
 
   const { fetchData } = useFetch();
@@ -139,7 +145,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
       response = await deletedTools(toolsdata, editTool.tool_id,props?.selectedType);
        if(response?.is_delete){
           props?.setRestoreData(response)
-         addMessage("Tool has been Deleted successfully!", "success");
+         addMessage(response?.status_message, "success");
          setLoading(false);
          setShowForm(false)
         }else{
@@ -202,9 +208,9 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
       };
       
       response = await RecycleTools(toolsdata, editTool.tool_id,props?.selectedType);
-       if(response?.is_delete){
+       if(response?.is_restored){
           props?.setRestoreData(response)
-         addMessage("Tool has been restored successfully!", "success");
+         addMessage(response?.status_message, "success");
          setLoading(false);
          setShowForm(false)
         }else{
@@ -253,9 +259,9 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
       }
     }else{
       if(props?.recycle){
-        if(response?.is_delete){
+        if(response?.is_restored){
           props?.setRestoreData(response)
-         addMessage("Tool has been restored successfully!", "success");
+         addMessage(response?.status_message, "success");
          setLoading(false);
          setShowForm(false)
         }else{
@@ -349,11 +355,11 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
     navigate("/login");
   };
 
-  const handleZoomClick = (title, content) => {
+  const handleZoomClick = useCallback((title, content) => {
     setPopupTitle(title);
     setPopupContent(content || "");
     setShowZoomPopup(true);
-  };
+  }, []);
 
   const handleZoomSave = (updatedContent) => {
     if (popupTitle === "Code Snippet") {
@@ -408,8 +414,183 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
     }
   };
 
+
+
+  const applySyntaxHighlighting = useCallback((code) => {
+    if (!code) return '';
+    
+    // Simple tokenizer approach
+    const lines = code.split('\n');
+    const highlightedLines = lines.map(line => {
+      let highlightedLine = line;
+      
+      // Escape HTML first
+      highlightedLine = highlightedLine
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      // Comments (must be first to avoid conflicts) - LIGHT GREEN
+      if (highlightedLine.trim().startsWith('#')) {
+        return `<span style="color: ${isDarkTheme ? '#90ee90' : '#32cd32'}; font-style: italic;">${highlightedLine}</span>`;
+      }
+      
+      // Check for function definitions first (def function_name)
+      const defMatch = highlightedLine.match(/(\s*)(def)\s+(\w+)/);
+      if (defMatch) {
+        const [fullMatch, indent, defKeyword, functionName] = defMatch;
+        const replacement = `${indent}<span style="color: ${isDarkTheme ? '#87ceeb' : '#4169e1'}; font-weight: bold;">${defKeyword}</span> <span style="color: ${isDarkTheme ? '#ffff99' : '#ffa500'}; font-weight: bold;">${functionName}</span>`;
+        highlightedLine = highlightedLine.replace(fullMatch, replacement);
+      }
+      
+      // Check for class definitions (class ClassName)
+      const classMatch = highlightedLine.match(/(\s*)(class)\s+(\w+)/);
+      if (classMatch) {
+        const [fullMatch, indent, classKeyword, className] = classMatch;
+        const replacement = `${indent}<span style="color: ${isDarkTheme ? '#87ceeb' : '#4169e1'}; font-weight: bold;">${classKeyword}</span> <span style="color: ${isDarkTheme ? '#ffff99' : '#ffa500'}; font-weight: bold;">${className}</span>`;
+        highlightedLine = highlightedLine.replace(fullMatch, replacement);
+      }
+      
+      const words = highlightedLine.split(/(\s+)/);
+      const highlighted = words.map((word, index) => {
+        const trimmed = word.trim();
+        
+        if (word.includes('<span')) {
+          return word;
+        }
+        
+        if (/^(if|elif|else|for|while|try|except|finally|with|import|from|as|return|yield|break|continue|pass|lambda|and|or|not|is|in|True|False|None|self|async|await)$/.test(trimmed)) {
+          return word.replace(trimmed, `<span style="color: ${isDarkTheme ? '#87ceeb' : '#4169e1'}; font-weight: bold;">${trimmed}</span>`);
+        }
+        
+        if (/^".*"$/.test(trimmed) || /^'.*'$/.test(trimmed)) {
+          return word.replace(trimmed, `<span style="color: ${isDarkTheme ? '#ff6b6b' : '#dc143c'};">${trimmed}</span>`);
+        }
+                if (/^\d+\.?\d*$/.test(trimmed)) {
+          return word.replace(trimmed, `<span style="color: ${isDarkTheme ? '#ffff99' : '#ffa500'}; font-weight: 500;">${trimmed}</span>`);
+        }
+            if (/^\w+$/.test(trimmed)) {
+          const nextWord = words[index + 2];
+          if (nextWord && nextWord.trim().startsWith('(')) {
+            return word.replace(trimmed, `<span style="color: ${isDarkTheme ? '#ffff99' : '#ffa500'}; font-weight: 500;">${trimmed}</span>`);
+          }
+        }
+        
+        return word;
+      });
+      
+      return highlighted.join('');
+    });
+    
+    return highlightedLines.join('\n');
+  }, [isDarkTheme]);
+
+  const handleScroll = useCallback((e) => {
+    if (overlayRef.current) {
+      overlayRef.current.scrollTop = e.target.scrollTop;
+      overlayRef.current.scrollLeft = e.target.scrollLeft;
+    }
+  }, []);
+
+  const handleKeyDown = useCallback((e) => {
+    // Handle Tab key for proper indentation
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const textarea = e.target;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const currentCode = formData.code || '';
+      
+      if (e.shiftKey) {
+        // Shift+Tab: Remove indentation
+        const lines = currentCode.split('\n');
+        const startLine = currentCode.substring(0, start).split('\n').length - 1;
+        const endLine = currentCode.substring(0, end).split('\n').length - 1;
+        
+        let newContent = '';
+        let newStart = start;
+        let newEnd = end;
+        
+        for (let i = 0; i < lines.length; i++) {
+          if (i >= startLine && i <= endLine && lines[i].startsWith('    ')) {
+            lines[i] = lines[i].substring(4);
+            if (i === startLine) newStart = Math.max(0, start - 4);
+            if (i === endLine) newEnd = Math.max(0, end - 4);
+          } else if (i >= startLine && i <= endLine && lines[i].startsWith('\t')) {
+            lines[i] = lines[i].substring(1);
+            if (i === startLine) newStart = Math.max(0, start - 1);
+            if (i === endLine) newEnd = Math.max(0, end - 1);
+          }
+        }
+        
+        newContent = lines.join('\n');
+        setFormData(prev => ({ ...prev, code: newContent }));
+        
+        setTimeout(() => {
+          textarea.selectionStart = newStart;
+          textarea.selectionEnd = newEnd;
+        }, 0);
+      } else {
+        // Tab: Add indentation
+        const beforeCursor = currentCode.substring(0, start);
+        const afterCursor = currentCode.substring(end);
+        const indent = '    '; // 4 spaces for Python
+        
+        const newContent = beforeCursor + indent + afterCursor;
+        setFormData(prev => ({ ...prev, code: newContent }));
+        
+        setTimeout(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + indent.length;
+        }, 0);
+      }
+    }
+    
+    // Handle Enter key for auto-indentation
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const textarea = e.target;
+      const start = textarea.selectionStart;
+      const currentCode = formData.code || '';
+      const beforeCursor = currentCode.substring(0, start);
+      const afterCursor = currentCode.substring(start);
+      
+      // Get current line
+      const lines = beforeCursor.split('\n');
+      const currentLine = lines[lines.length - 1];
+      
+      // Calculate indentation of current line
+      const indentMatch = currentLine.match(/^(\s*)/);
+      let indent = indentMatch ? indentMatch[1] : '';
+      
+      // Add extra indentation if line ends with colon (Python)
+      if (currentLine.trim().endsWith(':')) {
+        indent += '    ';
+      }
+      
+      const newContent = beforeCursor + '\n' + indent + afterCursor;
+      setFormData(prev => ({ ...prev, code: newContent }));
+      
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 1 + indent.length;
+      }, 0);
+    }
+  }, [formData.code]);
+
   return (
     <>
+      <style>{`
+        .code-textarea::selection {
+          background-color: ${isDarkTheme ? '#264f78' : '#add6ff'} !important;
+          color: ${isDarkTheme ? '#ffffff' : '#000000'} !important;
+        }
+        .code-textarea::-moz-selection {
+          background-color: ${isDarkTheme ? '#264f78' : '#add6ff'} !important;
+          color: ${isDarkTheme ? '#ffffff' : '#000000'} !important;
+        }
+        .code-textarea {
+          caret-color: ${isDarkTheme ? '#ffffff' : '#000000'} !important;
+        }
+      `}</style>
       <DeleteModal show={updateModal} onClose={() => setUpdateModal(false)}>
         <p>
           You are not authorized to update a tool. Please login with registered
@@ -494,7 +675,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                
               </div>
               <form onSubmit={handleSubmit}>
-                <div className={`${style["form-content"]} ${props?.recycle ? style.disabledButton: ""}`}>
+                <div className={style["form-content"]}>
                   <div className={style["form-fields"]}>
                     <div className={style["description-container"]}>
                       <label className={style["label-desc"]}>
@@ -512,8 +693,9 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                         type="text"
                         onChange={handleChange}
                         value={formData.description}
-                        
                         required
+                        readOnly={!!props?.recycle}
+                        style={props?.recycle ? { background: '#f8f9fa', color: '#6c757d', cursor: 'not-allowed' } : {}}
                       />
                       <button
                           type="button"
@@ -527,7 +709,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                             icon="fa-regular fa-copy"
                             width={16}
                             height={16}
-                            fill="#343741"
+                            fill={isDarkTheme ? "#ffffff" : "#000000"}
                           />
                         </button>
                        <div className={style.iconGroup}>
@@ -541,7 +723,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                               icon="fa-solid fa-up-right-and-down-left-from-center"
                               width={16}
                               height={16}
-                              fill="#343741"
+                              fill={isDarkTheme ? "#ffffff" : "#000000"}
                             />
                           </button>
                         </div>
@@ -562,21 +744,102 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                         CODE SNIPPET
                         <InfoTag message="Enter the code snippet." />
                       </label>
-                      <div className={style.textAreaContainer}>
-                        <textarea
-                          id="code-snippet"
-                          name="code"
-                          className={
-                            style["snippet-textarea"] +
-                            " " +
-                            style.agentTextArea
-                          }
-                          type="text"
-                          rows=""
-                          onChange={handleChange}
-                          value={formData.code}
-                          required
-                        />
+                      <div className={style.codeEditorContainer}>
+                        <div style={{
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          fontFamily: 'Consolas, Monaco, monospace',
+                          backgroundColor: isDarkTheme ? '#1e1e1e' : '#ffffff',
+                          position: 'relative'
+                        }}>
+                        {/*
+                        <button
+                            type="button"
+                            onClick={toggleEditorTheme}
+                            style={{
+                              position: 'absolute',
+                              right: '45px',
+                              top: '8px',
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: 'pointer',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '24px',
+                              height: '24px',
+                              zIndex: 10,
+                              fontSize: '16px',
+                              color: editorDarkTheme ? '#ffffff' : '#000000',
+                              transition: 'transform 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.transform = 'scale(1.2)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.transform = 'scale(1)';
+                            }}
+                            title={editorDarkTheme ? "Switch to Light Theme" : "Switch to Dark Theme"}
+                          >
+                            <FontAwesomeIcon
+                              icon={editorDarkTheme ? faMoon : faSun}
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                color: editorDarkTheme ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)',
+                                transform: 'scale(1)',
+                                marginBottom: '9px'
+                              }}
+                            />
+                          </button>
+                        */}
+                          
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '8px 12px',
+                            backgroundColor: editorDarkTheme ? '#2d2d30' : '#f8f9fa',
+                            borderBottom: editorDarkTheme ? '1px solid #3e3e42' : '1px solid #e0e0e0',
+                            fontSize: '12px'
+                          }}>
+                            <span 
+                              style={{
+                                padding: '4px 8px',
+                                border: '1px solid #d0d7de',
+                                borderRadius: '4px',
+                                backgroundColor: editorDarkTheme ? '#3c3c3c' : 'white',
+                                color: editorDarkTheme ? '#ffffff' : '#000000',
+                                fontSize: '12px',
+                                display: 'inline-block'
+                              }}
+                            >
+                              Python
+                            </span>
+                          </div>
+                          {/* Textarea with fallback text visibility */}
+                          <Editor
+                              height="250px"
+                              language="python"
+                              theme={editorDarkTheme ? "vs-dark" : "vs-light"}
+                              value={formData.code || ''}
+                              onChange={props?.recycle ? undefined : (value) => setFormData((prev) => ({ ...prev, code: value }))}
+                              options={{
+                                fontSize: 14,
+                                lineHeight: 1.2,
+                                padding: { top: 8, right: 8, bottom: 8, left: 8 },
+                                minimap: { enabled: false },
+                                scrollBeyondLastLine: false,
+                                automaticLayout: true,
+                                tabSize: 4,
+                                readOnly: !!props?.recycle,
+                                // Add any other Monaco Editor options here
+                              }}
+                            />
+                        </div>
+                        
                         <button
                           type="button"
                           className={style.copyIcon}
@@ -589,7 +852,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                             icon="fa-regular fa-copy"
                             width={16}
                             height={16}
-                            fill="#343741"
+                            fill={editorDarkTheme ? "#ffffff" : "#000000"}
                           />
                         </button>
                         <div className={style.iconGroup}>
@@ -603,7 +866,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                               icon="fa-solid fa-up-right-and-down-left-from-center"
                               width={16}
                               height={16}
-                              fill="#343741"
+                              fill={editorDarkTheme ? "#ffffff" : "#000000"}
                             />
                           </button>
                         </div>
@@ -636,6 +899,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                             className={style["select-class"]}
                             placeholder={"Select Model"}
                             required
+                            disabled={!!props?.recycle}
                           />
                         </div>
                       </div>
@@ -688,7 +952,6 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
                       </div>
                     </div>
 )}
-                 
                   </div>
                   {showKnowledge && (
                     <MessageUpdateform
@@ -748,6 +1011,7 @@ const isAdmin = role && role.toUpperCase() === "ADMIN";
         title={popupTitle}
         content={popupContent}
         onSave={handleZoomSave}
+        type={popupTitle === "Code Snippet" ? "code" : "text"}
       />
 
       <WarningModal

@@ -8,15 +8,16 @@ new/
 *.db-wal
 
 *.ipynb
+*.zip
 
 .vscode/
 
 user_uploads/
-
+evaluation_uploads/
+uploaded_sqlite_dbs/
 sdlc/
+Hugging_face/
 
-./personal_learning.py
-./index.html
-./index2.html
-new_env
+
 my_env
+!Export_Agent/Agentcode/Agent_Frontend/.env

@@ -71,9 +71,21 @@
   color: white;
   position: relative;
 }
+.cardRecycle {
+  background: #3d4359 0% 0% no-repeat padding-box;
+  box-shadow: 5px 15px 6px #00000029;
+  border-radius: 4px;
+  width: 200px;
+  min-height: 140px;
+  height: 140px;
+  max-height: 160px;
+  padding: 11px;
+  color: white;
+  position: relative;
+  cursor: pointer;
+}
 
 .card-title {
-  font-family: Segoe UI;
   font-size: 16px;
   line-height: 14px;
   font-weight: 600;

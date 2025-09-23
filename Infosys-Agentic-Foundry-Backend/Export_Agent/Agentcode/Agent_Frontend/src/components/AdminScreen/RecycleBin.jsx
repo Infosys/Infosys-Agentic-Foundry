@@ -14,7 +14,9 @@ import Loader from "../commonComponents/Loader.jsx";
 import {RecycleTools,deletedTools } from "../../services/toolService";
 import { useMessage } from "../../Hooks/MessageContext";
 const RecycleBin = ({ loggedInUserEmail }) => {
-  const [selectedType, setSelectedType] = useState("agents");
+  const [selectedType, setSelectedType] = useState("agents"); // for data fetching
+  const [activeTab, setActiveTab] = useState("agents"); // for tab highlight
+  const [lastTab, setLastTab] = useState("agents"); // to restore tab highlight after modal
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -36,9 +38,9 @@ const onAgentEdit = (data) => {
  const RestoreAgent=async(e)=>{
    setLoader(true)
        let response = await RecycleTools("",editAgentData?.agentic_application_id,selectedType);
-       if(response?.is_delete){
+       if(response?.is_restored){
           setLoader(false)
-         addMessage("Agent Restored Successfully", "success");
+         addMessage(response?.status_message, "success");
          setEditAgentData(false)
          setRestoreData(response)
  
@@ -66,13 +68,14 @@ const onAgentEdit = (data) => {
    
  }
   useEffect(() => {
+    if (!selectedType) return;
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-       const url = `${BASE_URL}${APIs.RECYCLE_BIN}/${selectedType}?user_email_id=${encodeURIComponent(
-  Cookies?.get("email")
-)}`;
+        const url = `${BASE_URL}${APIs.RECYCLE_BIN}/${selectedType}?user_email_id=${encodeURIComponent(
+          Cookies?.get("email")
+        )}`;
         const response = await fetch(url, {
           headers: {
             accept: "application/json"
@@ -88,15 +91,17 @@ const onAgentEdit = (data) => {
         setLoading(false);
       }
     };
-
     fetchData();
-  }, [selectedType,restoreData]);
+  }, [selectedType, restoreData]);
 
   return (
     <>
     {showForm && (
         <ToolOnBoarding
-          setShowForm={setShowForm}
+          setShowForm={(show) => {
+            if (!show) setActiveTab(lastTab);
+            setShowForm(show);
+          }}
           isAddTool={isAddTool}
           editTool={editTool}
           setIsAddTool={setIsAddTool}
@@ -107,30 +112,23 @@ const onAgentEdit = (data) => {
           setRestoreData={setRestoreData}
         />
       )}
-       <div className={style.container}>
+       <div className={style.containerCss}>
     {/* <div className={styles.recycleBinContainer}> */}
       <div className={styles.toggleWrapper}>
-        <label className={styles.switch}>
-          <input
-            type="radio"
-            name="recycleToggle"
-            value="agents"
-            checked={selectedType === "agents"}
-            onChange={() => setSelectedType("agents")}
-          />
-          <span className={styles.slider}>Agents</span>
-        </label>
-
-        <label className={styles.switch}>
-          <input
-            type="radio"
-            name="recycleToggle"
-            value="tools"
-            checked={selectedType === "tools"}
-            onChange={() => setSelectedType("tools")}
-          />
-          <span className={styles.slider}>Tools</span>
-        </label>
+        <button
+          type="button"
+          className={`${styles.toggleButton} ${activeTab === "agents" ? styles.selected : ''}`}
+          onClick={() => { setActiveTab("agents"); setSelectedType("agents"); }}
+        >
+          Agents
+        </button>
+        <button
+          type="button"
+          className={`${styles.toggleButton} ${activeTab === "tools" ? styles.selected : ''}`}
+          onClick={() => { setActiveTab("tools"); setSelectedType("tools"); }}
+        >
+          Tools
+        </button>
       </div>
 
       <div className={styles.listArea}>
@@ -141,45 +139,72 @@ const onAgentEdit = (data) => {
         className={styles.visibleAgentsContainer}
        
       >
+        {!data.length >0?<>
         <div className={style.agentsList} >
+          <div className={styles.cardNoData}>
+            <div className={styles.discriptionNoData}>{"No Deleted Agents To Display"}</div>
+
+          </div>
+        </div>
+        </>:<>
+          <div className={style.agentsList} >
        {data.length >0 && data?.map((data1) => (
           <AgentCard
             recycle={"recycle"}
             key={`agent-${Math.random()}`}
             styles={style}
             data={data1}
-            onAgentEdit={onAgentEdit}
+            onAgentEdit={(agent) => {
+              setLastTab(activeTab);
+              setActiveTab("");
+              onAgentEdit(agent);
+            }}
             deleteAgent={""}
             fetchAgents={""}
           />
        ))}
        </div>
+        
+        </>}
+      
        </div>
         </>}
         {!loading && !error && selectedType === "tools" && <>
+         {!data.length >0?<>
+        <div className={style.agentsList} >
+          <div className={styles.cardNoData}>
+            <div className={styles.discriptionNoData}>{"No Deleted Tools To Display"}</div>
+
+          </div>
+        </div>
+        </>:<>
         <div className={style2.toolsList}>
               {data.length>0 &&data?.map((item,index) => (
                   <ToolsCard
                     tool={item}
                     setShowForm={setShowForm}
                     isAddTool={isAddTool}
-                   setIsAddTool={setIsAddTool}
+                    setIsAddTool={setIsAddTool}
                     key={`tools-card-${index}`}
                     style={style2}
                     setEditTool={setEditTool}
                     loading={loading}
                     fetchPaginatedTools={""}
-                    recycle={"recycle"}
+                    recycle={true}
                   />
                 ))}
             </div>
+            </>}
         </>}
       </div>
        
       {editAgentData && (
         <div className={style.EditAgentContainer}>
           <UpdateAgent
-            onClose={handleUpdateAgentClose}
+            onClose={() => {
+              setActiveTab(lastTab);
+              handleUpdateAgentClose();
+            }}
             agentData={editAgentData}
             setEditAgentData={setEditAgentData}
             tags={""}

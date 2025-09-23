@@ -14,8 +14,7 @@ from src.prompts.prompts import replanner_agent_system_prompt
 from src.prompts.prompts import multi_agent_general_llm_system_prompt_generator_prompt
 from telemetry_wrapper import logger as log
 
-from src.database.repositories import AgentRepository, RecycleAgentRepository
-from src.database.services import TagService, ToolService
+from src.database.services import AgentServiceUtils
 from src.agent_templates.base_agent_onboard import BaseAgentOnboard
 
 
@@ -252,20 +251,8 @@ class PlannerExecutorAgentOnboard(BaseAgentOnboard):
     PlannerExecutorAgentOnboard is a specialized onboarding service for planner-executor agents, extending the BaseAgentOnboard class.
     """
 
-    def __init__(
-        self,
-        agent_repo: AgentRepository,
-        recycle_agent_repo: RecycleAgentRepository,
-        tool_service: ToolService,
-        tag_service: TagService,
-    ):
-        super().__init__(
-            agent_type="planner_executor_agent",
-            agent_repo=agent_repo,
-            recycle_agent_repo=recycle_agent_repo,
-            tool_service=tool_service,
-            tag_service=tag_service
-        )
+    def __init__(self, agent_service_utils: AgentServiceUtils):
+        super().__init__(agent_type="planner_executor_agent", agent_service_utils=agent_service_utils)
 
 
     async def _generate_system_prompt(self, agent_name, agent_goal, workflow_description, tool_or_worker_agents_prompt, llm):

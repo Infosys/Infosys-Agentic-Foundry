@@ -552,7 +552,7 @@ def create_public_key(key_name: str, key_value: str, description: str = None) ->
         'database': os.getenv('DATABASE', 'secrets_db'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
-        'port': os.getenv('DB_PORT', 5432)
+        'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
     
     public_keys_manager = PublicKeysManager(db_config)
@@ -566,7 +566,7 @@ def update_public_key(key_name: str, key_value: str, description: str = None) ->
         'database': os.getenv('DATABASE', 'secrets_db'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
-        'port': os.getenv('DB_PORT', 5432)
+        'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
     
     public_keys_manager = PublicKeysManager(db_config)
@@ -580,7 +580,7 @@ def get_public_key(key_name: str, default="") -> Optional[str]:
         'database': os.getenv('DATABASE', 'secrets_db'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
-        'port': os.getenv('DB_PORT', 5432)
+        'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
     
     public_keys_manager = PublicKeysManager(db_config)
@@ -596,7 +596,7 @@ def get_all_public_keys() -> Dict[str, str]:
         'database': os.getenv('DATABASE', 'secrets_db'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
-        'port': os.getenv('DB_PORT', 5432)
+        'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
     
     public_keys_manager = PublicKeysManager(db_config)
@@ -609,7 +609,7 @@ def delete_public_key(key_name: str) -> bool:
         'database': os.getenv('DATABASE', 'secrets_db'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
-        'port': os.getenv('DB_PORT', 5432)
+        'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
     
     public_keys_manager = PublicKeysManager(db_config)
@@ -622,7 +622,7 @@ def list_public_keys() -> list:
         'database': os.getenv('DATABASE', 'secrets_db'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
-        'port': os.getenv('DB_PORT', 5432)
+        'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
     
     public_keys_manager = PublicKeysManager(db_config)
@@ -647,7 +647,7 @@ def get_user_environment(user_email: str, required_secrets: list = None, require
         'database': os.getenv('DATABASE', 'secrets_db'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
-        'port': os.getenv('DB_PORT', 5432)
+        'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
     
     secrets_manager = UserSecretsManager(db_config)
@@ -675,7 +675,7 @@ def setup_secrets_manager():
         'database': os.getenv('DATABASE', 'agentic_workflow_as_service_database'),
         'user': os.getenv('POSTGRESQL_USER', 'postgres'),
         'password': os.getenv('POSTGRESQL_PASSWORD', 'postgres'),
-        'port': int(os.getenv('DB_PORT', 5432))
+        'port': int(os.getenv('POSTGRESQL_PORT', 5432))
     }
     
     # Generate master key if not exists (do this once and store securely)
@@ -701,7 +701,6 @@ def get_user_secrets(look_up_key, default_value=None):
     
     # Get current user email from context variable
     user_email = current_user_email.get()
-    
     if not user_email:
         raise ValueError("Current user email is not set in context")
     

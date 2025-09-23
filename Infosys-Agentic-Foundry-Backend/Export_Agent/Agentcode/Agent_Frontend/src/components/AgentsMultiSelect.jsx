@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import { BASE_URL, APIs } from '../constant';
+import {APIs } from '../constant';
 import styles from '../css_modules/AgentsMultiSelect.module.css';
+import useFetch from '../Hooks/useAxios';
 
 const AgentsMultiSelect = ({ onSelectionChange }) => {
   const [availableAgents, setAvailableAgents] = useState([]);
@@ -10,6 +10,7 @@ const AgentsMultiSelect = ({ onSelectionChange }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
+  const { fetchData } = useFetch();
 
   // Fetch agents data when component mounts
   useEffect(() => {
@@ -38,9 +39,9 @@ const AgentsMultiSelect = ({ onSelectionChange }) => {
   const fetchAgents = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${BASE_URL}${APIs.GET_AGENTS_BY_DETAILS}`);
-      if (response.data && Array.isArray(response.data)) {
-        setAvailableAgents(response.data);
+      const response = await fetchData(APIs.GET_AGENTS_BY_DETAILS);
+      if (response && Array.isArray(response)) {
+        setAvailableAgents(response);
       } else {
         console.error("Invalid agents response");
       }

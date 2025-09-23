@@ -7,13 +7,22 @@
   background: #f8f9fa;
 }
 
+.groundTruthWrapperNoBackground {
+  width: 100%;
+  min-height: 100vh;
+  /* padding: 20px; */
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: transparent;
+}
+
 .groundTruthContainer {
   max-width: 800px;
   margin: 0 auto;
-  padding: 20px;
+  /* padding: 20px; */
   background: #ffffff;
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  /* box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); */
   overflow: visible;
   width: 100%;
   height: auto;

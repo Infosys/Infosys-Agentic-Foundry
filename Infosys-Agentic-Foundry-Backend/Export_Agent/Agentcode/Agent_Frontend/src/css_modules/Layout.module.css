@@ -7,14 +7,14 @@
 
 .container {
   display: flex;
-  margin-top: 45px;
+  margin-top: 43px;
   height: Calc(100vh - 45px);
   overflow: hidden;
 }
 
 .dashboardContainer {
-  margin-left: 52px;
-  width: calc(100% - 52px);
+  margin-left: 70px;
+  width: calc(100% - 70px);
   /* transition: margin-left 0.3s ease; */
   min-height: 100vh;
   overflow: auto;

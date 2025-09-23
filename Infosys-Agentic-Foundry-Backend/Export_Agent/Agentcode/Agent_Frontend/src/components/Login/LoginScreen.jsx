@@ -184,7 +184,6 @@ function LoginScreen() {
     setValidationError("");
     try {
       const users = await fetchData("/login_guest");
-      console.log("Guest login response:", users); // Add logging to debug
       
       if (users.approval) {
         // Set all required cookies including role
@@ -228,7 +227,6 @@ function LoginScreen() {
           } else {
             // Normal submit validation
             setErrSubmit(true);
-            setMsgSubmit("Please fill up all the fields");
             clearError();
           }
           return;
@@ -247,6 +245,11 @@ function LoginScreen() {
           value={email}
           onChange={(e) => emailChange(e.target.value)}
           tabIndex={1}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+            }
+          }}
         />
         {errEmail && <span className="error-style">{errEmail}</span>}
       </div>
@@ -263,6 +266,11 @@ function LoginScreen() {
           onChange={(e) => passwordChange(e.target.value)}
           tabIndex={2}
           onFocus={() => setHasPasswordInput(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+            }
+          }}
         /> {/*  Removed the value prop value={password} modified to ref to overcome vulnerability issue */}
         {hasPasswordInput && (
           <span

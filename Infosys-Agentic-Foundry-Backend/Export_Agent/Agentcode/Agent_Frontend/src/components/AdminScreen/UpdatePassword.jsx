@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from "react";
 import styles from "./UpdatePassword.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import Cookies from "js-cookie";
-import { BASE_URL, APIs } from "../../constant";
+import {APIs } from "../../constant";
 import Loader from "../commonComponents/Loader";
+import useFetch from "../../Hooks/useAxios";
 
 const roleOptions = ["Admin", "Developer", "User"];
 
 const UpdatePassword = () => {
-  const [email, setEmail] = useState(Cookies?.get("email") || "");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [retypePassword, setRetypePassword] = useState("");
   const [selectedOption, setSelectedOption] = useState("Select role");
@@ -20,6 +21,7 @@ const UpdatePassword = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
   const [isSubmitDisabled, setIsSubmitDisabled] = useState(true);
+  const{postData} = useFetch();
 
   const dropdownRef = useRef(null);
 
@@ -103,22 +105,17 @@ const UpdatePassword = () => {
       queryParams.append("role", selectedOption);
     }
 
-    const url = `${BASE_URL}${APIs.UPDATE_PASWORD_ROLE}?${queryParams.toString()}`;
+    const url = `${APIs.UPDATE_PASWORD_ROLE}?${queryParams.toString()}`;
 
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { accept: "application/json" },
-      });
-      if (!response.ok) throw new Error("Failed to update password and role");
-
-      const data = await response.json();
+      const response = await postData(url);
+      const data = await response;
       setResponse(data?.message);
       setError(null);
       setShowLoader(false);
       setTimeout(() => setResponse(null), 5000);
 
-      setEmail(Cookies?.get("email") || "");
+      setEmail("");
       setPassword("");
       setRetypePassword("");
       setSelectedOption("Select role");
@@ -127,6 +124,7 @@ const UpdatePassword = () => {
       console.error(err);
       setError(err.message);
       setResponse(null);
+      setShowLoader(false);
     }
   };
 

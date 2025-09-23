@@ -31,6 +31,7 @@ const AgentForm = (props) => {
     agent_goal: "",
     workflow_description: "",
     model_name: "gpt4-8k",
+    agent_type: selectedAgent,
   };
   const [formData, setFormData] = useState(initialState);
   const [successMsg, setSuccessMsg] = useState(false);
@@ -41,6 +42,7 @@ const AgentForm = (props) => {
   const [showZoomPopup, setShowZoomPopup] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
   const [popupContent, setPopupContent] = useState("");
+  const [popupType, setPopupType] = useState("text");
 
   const [copiedStates, setCopiedStates] = useState({});
 
@@ -152,11 +154,19 @@ const AgentForm = (props) => {
     setInitialTags(tags);
   };
 
-  const handleZoomClick = (title, content) => {
+  const handleZoomClick = (title, content, type = "text") => {
     setPopupTitle(title);
     setPopupContent(content);
+    setPopupType(type);
     setShowZoomPopup(true);
   };
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      agent_type: selectedAgent,
+    }));
+  }, [selectedAgent]);
 
   const handleZoomSave = (updatedContent) => {
     if (popupTitle === "Agent Goal") {
@@ -266,13 +276,13 @@ const AgentForm = (props) => {
               />
             </button>
             <div className={styles.iconGroup}>
-              <button
-                type="button"
-                className={styles.expandIcon}
-                onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Agent Goal", formData.agent_goal)}
-                title="Expand"
-                disabled={isFormDisabled}
-              >
+            <button
+              type="button"
+              className={styles.expandIcon}
+              onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Agent Goal", formData.agent_goal, "text")}
+              title="Expand"
+              disabled={isFormDisabled}
+            >
                 <SVGIcons
                   icon="fa-solid fa-up-right-and-down-left-from-center"
                   width={16}
@@ -323,7 +333,7 @@ const AgentForm = (props) => {
               <button
                 type="button"
                 className={styles.expandIcon}
-                onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Workflow Description", formData.workflow_description)}
+              onClick={isFormDisabled ? (e) => { e.preventDefault(); } : () => handleZoomClick("Workflow Description", formData.workflow_description, "text")}
                 title="Expand"
                 disabled={isFormDisabled}
               >
@@ -401,6 +411,7 @@ const AgentForm = (props) => {
         title={popupTitle}
         content={popupContent}
         onSave={handleZoomSave}
+        type={popupType}
       />
     </div>
   );

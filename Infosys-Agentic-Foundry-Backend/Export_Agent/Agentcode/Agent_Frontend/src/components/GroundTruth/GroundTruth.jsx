@@ -1,11 +1,11 @@
 import React, { useState,useEffect,useRef } from "react";
 import styles from "./GroundTruth.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
-import { APIs, agentTypes,BASE_URL } from "../../constant";
+import { APIs, agentTypesDropdown,BASE_URL } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 
-const GroundTruth = () => {
+const GroundTruth = ({ isInAdminScreen = false }) => {
   const [formData, setFormData] = useState({
     model_name: "",
     agent_name: "",
@@ -20,7 +20,7 @@ const GroundTruth = () => {
   const { addMessage,setShowPopup } = useMessage();
   const { fetchData } = useFetch();
   const [agentsListData, setAgentsListData] = useState([]);
-  const [agentType, setAgentType] = useState(agentTypes[0].value);
+  const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
   const [agentSearchTerm, setAgentSearchTerm] = useState("");
   const [filteredAgents, setFilteredAgents] = useState([]);
@@ -100,7 +100,7 @@ const GroundTruth = () => {
 
   // Initialize filtered agent types
   useEffect(() => {
-    setFilteredAgentTypes(agentTypes);
+    setFilteredAgentTypes(agentTypesDropdown);
   }, []);
 
   // Initialize filtered models
@@ -140,9 +140,9 @@ const GroundTruth = () => {
   // Filter agent types based on search term
   useEffect(() => {
     if (!agentTypeSearchTerm) {
-      setFilteredAgentTypes(agentTypes);
+      setFilteredAgentTypes(agentTypesDropdown);
     } else {
-      const filtered = agentTypes.filter(type =>
+      const filtered = agentTypesDropdown.filter(type =>
         type.label.toLowerCase().includes(agentTypeSearchTerm.toLowerCase())
       );
       setFilteredAgentTypes(filtered);
@@ -194,7 +194,7 @@ const GroundTruth = () => {
           use_llm_grading: false,
           uploaded_file: null
         });
-        setAgentType(agentTypes[0].value);
+        setAgentType(agentTypesDropdown[0].value);
         setAgentSearchTerm("");
         setIsAgentDropdownOpen(false);
         setSelectedAgentIndex(-1);
@@ -552,7 +552,7 @@ const GroundTruth = () => {
   };
 
   return (
-    <div className={styles.groundTruthWrapper}>
+    <div className={isInAdminScreen ? styles.groundTruthWrapperNoBackground : styles.groundTruthWrapper}>
       <div className={styles.groundTruthContainer}>
         <div className={styles.header}>
           <h2 className={styles.title}>Ground Truth Evaluation</h2>
@@ -560,11 +560,11 @@ const GroundTruth = () => {
         <form onSubmit={(e) => e.preventDefault()} className={styles.form}>
         <div className={styles.formRow}>
           <div className={styles.formGroup}>
-            <div className={styles.labelWithButton}>
+            {/* <div className={styles.labelWithButton}> */}
               <label htmlFor="model_name" className={styles.label}>
                 Model Name <span className={styles.required}>*</span>
               </label>
-            </div>
+            {/* </div> */}
             <div className={styles.searchableDropdown} ref={modelDropdownRef}>
               <input
                 type="text"
@@ -575,6 +575,7 @@ const GroundTruth = () => {
                   setIsModelDropdownOpen(true);
                   setSelectedModelIndex(-1);
                 }}
+                autoFocus 
                 onFocus={() => setIsModelDropdownOpen(true)}
                 className={styles.searchInput}
                 onKeyDown={handleModelKeyDown}

@@ -48,7 +48,7 @@ Please consider the following details:
 You will be provided with a Python function, analyzes its parameters, and checks if:
 - **All parameters are explicitly named (no `*args` or `**kwargs`).
 - **All parameters include type hints.
-- **All parameter types are JSON-serializable (i.e., `str`, `int`, `float`, `bool`, `list`, `dict`).
+- **All parameter types are JSON-serializable (i.e., `str`, `int`, `float`, `bool`, `list`, `dict`,`tuple`,`set`,`Dict`, `List`, `Tuple`, `Set`).
 - **Return your analysis using the format below.
 - **If all parameters meet the rules:
    ```json
@@ -78,7 +78,6 @@ Determine whether a function is **safe** or **unsafe** based on strict security 
 - **Executes arbitrary or destructive shell/system commands
 - **Makes irreversible changes to system configurations
 - **Contains code injection or in-memory manipulation
-- **Sends sensitive data insecurely
 - **Modifies user permissions or performs unauthorized privilege escalation
 
 ## User Inputs
@@ -103,12 +102,19 @@ You will be provided with a Python function and must:
    ```json
    {{
 		"validation": False,
-		"suggestion": <Brief improvement tip>'
+		"suggestion": <Specify which unsafe operation was detected and suggest ways in removing or modifying it to ensure safety>'
    }}
    ```
 - **Do **not** explain your decision.
 - **Keep the suggestion short, specific, and actionable.
 - **Do **not** explain the decision. Just return the boolean and the suggestion.
+- **NEVER check for Hardcoded values, API keys, passwords, tokens, or other sensitive data if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
+- **Only check for malicious code which might cause harm to the system.
+- **Do **not** check for any other validations except unsafe code.
+- **Do not check for eval() and exec() functions as unsafe code.
+- **Do not flag code that uses subprocess,os and shutil module as unsafe unless it performs any of the unsafe operations mentioned above.
+- **Do not flag code that uses system commands like 'ls', 'pwd', 'echo', 'dir', 'cd' as unsafe unless it performs any of the unsafe operations mentioned above.
+- **Do not flag code based on variable names that include terms like 'delete', 'remove', 'kill', 'shutdown', 'reboot', 'exec', 'eval', 'command', 'process', 'permission', 'privilege' etc., unless the function actually performs an unsafe operation as defined above.
 """
 
 hardcoded_values="""
@@ -130,7 +136,7 @@ Please consider the following details:
 
 ## Instructions
 You will be provided with a Python function and:
-- **Check for any hardcoded values that resemble API keys, secrets, tokens, passwords, or other forms of sensitive data.
+- **Check for any hardcoded values that resemble API keys, secrets, tokens, passwords only it is fine if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
 - **Classify the function as valid or invalid based on this criterion.
 - **Return a short and practical suggestion if invalid.
 - **Return your analysis using the format below.
@@ -144,14 +150,24 @@ You will be provided with a Python function and:
    ```json
    {{
 		"validation": False,
-		"suggestion": <single-line feedback>\\n<corrected function code>
+		"suggestion": <specify which values are hardcoded and suggest to store them securely using secret value>
    }}
    ```
-- **Return a single-line feedback message followed by the corrected code** — both in the `suggestion` field only.
+- **Return a single-line feedback message** — both in the `suggestion` field only.
 - **Do NOT use a separate `code` field.**
-- **Do **not** explain your decision.
-- **Keep the suggestion short, specific, and actionable.
-- **Do **not** explain the decision. Just return the boolean and the suggestion.
+- **Do **not** explain your decision. Just return the boolean and the suggestion.
+- **Keep the suggestion as it is.
+- **Check for only Keys,email ids, passwords, tokens, endpoints and urls if they are hardcoded directly in the code.
+- **Ignore other hardcoded values like str,integers, float, list, dict, tuples, set etc if they not come under confidential data.
+- **Ignore if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
+- **Do NOT check for public constants,internal identifiers,environment specific tags,client specific tags,models and non-confidential data.
+- **Do **not** check any other validations except hardcoded values like API keys,tokens,urls, email ids,passwords and endpoints.
+- **Do not flag default string values like 'faiss_index_hsbc' in function parameters as hardcoded secrets. These are internal configuration identifiers and are allowed unless they contain sensitive data such as credentials, API keys, or client-specific secrets.
+- **Do not flag placeholder values like 'your_api_key_here' or 'your_password_here' as hardcoded secrets. These are commonly used in example code and documentation to indicate where users should insert their own sensitive information.
+- **Do not flag non-sensitive hardcoded values like 'localhost', 'http://example.com', 'admin', 'user', 'password123', or '12345' as hardcoded secrets. These are generic and do not pose a security risk.
+- **Do not flag hardcoded values that are part of comments or docstrings within the code. These do not affect the execution of the program and are typically used for explanatory purposes.
+- **Do not flag hardcoded values that are assigned to variables or constants but are not sensitive in nature, such as configuration settings, feature flags, or non-confidential identifiers.
+- **Do **not** flag based on variable names that include terms like 'key', 'token', 'password', 'secret', or 'credential' unless the assigned value is actually a sensitive hardcoded value.
 """
 
 error_handling= """

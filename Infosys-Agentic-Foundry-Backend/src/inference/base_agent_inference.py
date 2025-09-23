@@ -1,15 +1,15 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import re
 import json
+import copy
 from datetime import datetime
 from copy import deepcopy
-from pydantic import BaseModel
 from abc import ABC, abstractmethod
 from typing_extensions import TypedDict
 from typing import Any, List, Dict, Optional, Annotated, Union, Literal
 from fastapi import HTTPException
 
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool, StructuredTool, tool
 from langgraph.types import Command
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
@@ -19,52 +19,15 @@ from langgraph.graph.message import add_messages
 from langgraph.graph import START, END
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 
-from src.models.model import load_model
 from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
-from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService
+from src.schemas import AgentInferenceRequest
 from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key
 
 from phoenix.otel import register
 from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
-
-
-
-class AgentInferenceRequest(BaseModel):
-    """
-    Pydantic model representing the input request for agent inference.
-    This model captures the necessary details for querying the agent,
-    including the application ID, query, session ID, and model-related information.
-    """
-    query: str  # The query to be processed by the agent
-    agentic_application_id: str  # ID of the agentic application
-    session_id: str  # Unique session identifier
-    model_name: str  # Name of the llm model
-    reset_conversation: bool = False  # If true need to reset the conversation
-    feedback: str = ""  # Optional feedback for the agent
-    interrupt_flag: bool = False
-    prev_response: Dict = None  # Previous response from the agent
-    knowledgebase_name: Optional[str] = None
-
-class AgentInferenceHITLRequest(BaseModel):
-    """
-    Pydantic model representing the input request for agent inference.
-    This model captures the necessary details for querying the agent,
-    including the application ID, query, session ID, and model-related information.
-    """
-    query: str  # The query to be processed by the agent
-    agentic_application_id: str  # ID of the agentic application
-    session_id: str  # Unique session identifier
-    model_name: str  # Name of the llm model
-    reset_conversation: bool = False# If true need to reset the conversation
-    approval: str = None
-    feedback: str = None
-    tool_feedback: str = None
-    interrupt_flag: bool = False
-    prev_response: Dict = {}
-
-
+from src.utils.stream_sse import SSEManager
 
 
 # Define common TypedDict for state if applicable to all workflows
@@ -82,8 +45,10 @@ class BaseWorkflowState(TypedDict):
     end_timestamp: datetime
     reset_conversation: Optional[bool] = False
     errors: List[str]
-
-
+    parts: List[Dict[Any, Any]]  # For formatted response parts
+    parts_storage_dict: Annotated[Dict[Any, Any], InferenceUtils.add_parts]  # For storing parts temporarily
+    response_formatting_flag: bool = True
+    context_flag : bool = True
 
 class BaseAgentInference(ABC):
     """
@@ -91,21 +56,15 @@ class BaseAgentInference(ABC):
     Provides common dependencies and defines the interface for building workflows.
     """
 
-    def __init__(
-        self,
-        chat_service: ChatService,
-        tool_service: ToolService,
-        agent_service: AgentService,
-        inference_utils: InferenceUtils,
-        feedback_learning_service: FeedbackLearningService,
-        evaluation_service: EvaluationService
-    ):
-        self.chat_service = chat_service
-        self.tool_service = tool_service
-        self.agent_service = agent_service
+    def __init__(self, inference_utils: InferenceUtils):
         self.inference_utils = inference_utils
-        self.feedback_learning_service = feedback_learning_service
-        self.evaluation_service = evaluation_service
+        self.chat_service = inference_utils.chat_service
+        self.tool_service = inference_utils.tool_service
+        self.mcp_tool_service = self.tool_service.mcp_tool_service
+        self.agent_service = inference_utils.agent_service
+        self.model_service = inference_utils.model_service
+        self.feedback_learning_service = inference_utils.feedback_learning_service
+        self.evaluation_service = inference_utils.evaluation_service
 
 
     # --- Helper Methods ---
@@ -119,6 +78,7 @@ class BaseAgentInference(ABC):
                                                 ) -> Any:
         """
         Helper method to create a React agent as an executor agent with tools loaded dynamically.
+        This function now supports loading both Python code-based tools and MCP tools.
         """
         # local_var for exec() context, including secrets handlers
         local_var = {
@@ -127,10 +87,26 @@ class BaseAgentInference(ABC):
             "get_public_secrets": get_public_key
         }
 
-        tool_list: List[BaseTool] = []
+        tool_list: List[BaseTool | StructuredTool] = []
+        manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
+        tool_list.append(manage_memory_tool)
+
+        search_memory_tool = await self.inference_utils.create_search_memory_tool(
+            embedding_model=self.inference_utils.embedding_model
+        )
+        tool_list.append(search_memory_tool)
+
+        mcp_server_ids = []
+
         for tool_id in tool_ids:
+            if tool_id.startswith("mcp_"):
+                mcp_server_ids.append(tool_id)
+                continue
+
             try:
+                log.info(f"Loading Python tool for ID: {tool_id} - CACHE LOG")
                 tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=tool_id)
+                log.info(f"Python tool reading completed for ID: {tool_id} - CACHE LOG")
                 if tool_record:
                     tool_record = tool_record[0]
                     codes = tool_record["code_snippet"]
@@ -138,12 +114,25 @@ class BaseAgentInference(ABC):
                     exec(codes, local_var)
                     tool_list.append(local_var[tool_name])
                 else:
-                    log.warning(f"Tool record for ID {tool_id} not found.")
-                    raise HTTPException(status_code=404, detail=f"Tool record for ID {tool_id} not found.")
+                    log.warning(f"Python tool record for ID {tool_id} not found.")
+                    raise HTTPException(status_code=404, detail=f"Python tool record for ID {tool_id} not found.")
+
+            except HTTPException:
+                raise # Re-raise HTTPExceptions directly
             except Exception as e:
-                log.error(f"Error occurred while loading tool {tool_name}: {e}")
-                raise HTTPException(status_code=500, detail=f"Error occurred while loading tool {tool_name}: {e}")
-            
+                log.error(f"Error occurred while loading tool {tool_id}: {e}")
+                raise HTTPException(status_code=500, detail=f"Error occurred while loading tool {tool_id}: {e}")
+
+        if mcp_server_ids:
+            try:
+                mcp_server_details = await self.mcp_tool_service.get_live_mcp_tools_from_servers(tool_ids=mcp_server_ids)
+                mcp_live_tools: List[StructuredTool] = mcp_server_details.get("all_live_tools", [])
+                if mcp_live_tools:
+                    tool_list.extend(mcp_live_tools)
+
+            except Exception as e:
+                log.error(f"Error occurred while loading tools from MCP servers {mcp_server_ids}: {e}")
+                raise HTTPException(status_code=500, detail=f"Error occurred while loading tools from MCP servers {mcp_server_ids}: {e}")
 
         interrupt_before = ["tools"] if interrupt_tool and tool_list else None
         try:
@@ -152,7 +141,7 @@ class BaseAgentInference(ABC):
                 tools=tool_list,
                 checkpointer=checkpointer,
                 interrupt_before=interrupt_before,
-                state_modifier=system_prompt
+                prompt=system_prompt
             )
             return executor_agent, tool_list
 
@@ -195,7 +184,9 @@ class BaseAgentInference(ABC):
             dict: A dictionary containing the system prompt and tool information.
         """
         # Retrieve agent details from the database
+        log.info("Retrieving agent details - CACHE LOG")
         result = await self.agent_service.agent_repo.get_agent_record(agentic_application_id=agentic_application_id)
+        log.info("Retrieved agent details successfully - CACHE LOG")
         if not result:
             log.error(f"Agentic Application ID {agentic_application_id} not found.")
             raise HTTPException(status_code=404, detail=f"Agentic Application ID {agentic_application_id} not found.")
@@ -214,7 +205,7 @@ class BaseAgentInference(ABC):
     # Abstract Methods
 
     @abstractmethod
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer) -> Any:
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer, tool_interrupt_flag: bool = False) -> Any:
         """
         Abstract method to build and compile the LangGraph chains for a specific agent type.
         """
@@ -228,6 +219,79 @@ class BaseAgentInference(ABC):
         pass
 
     # Common Inference Method
+
+    @staticmethod
+    async def _astream(
+        app: CompiledStateGraph,
+        invocation_input: dict,
+        config: dict,
+        *,
+        is_plan_approved: Literal["yes", "no", None] = None,
+        plan_feedback: str = None,
+        tool_feedback: str = None,
+        sse_manager: SSEManager = None,
+        session_id: str = None
+        ):
+
+        def process_output_by_key(output):
+            """Process the output dictionary and return formatted data based on specific keys"""
+            for key in output.keys():
+                if key == "generate_past_conversation_summary":
+                    return {
+                        "debug_key": "generate_past_conversation_summary",
+                        "debug_value": output[key]
+                    }
+                elif key == "executor_agent":
+                    return {
+                        "debug_key": "executor_agent", 
+                        "debug_value": output[key].get("response", "")
+                    }
+                elif key == "final_response":
+                    return {
+                        "debug_key": "final_response",
+                        "debug_value": "Data Formatting completed"
+                    }
+                else:
+                    return {
+                        "debug_key": key,
+                        "debug_value": str(output[key])
+                    }
+            return {}
+
+        async def process_stream(stream_generator):
+            """Helper function to process any stream"""
+            nonlocal final_response
+            async for output in stream_generator:
+                # Send processed output via SSE
+                if sse_manager is not None:
+                    processed_data = process_output_by_key(output)
+                    log.info(f"sending data to {session_id}")
+                    if processed_data:
+                        await sse_manager.send(session_id, processed_data)
+                    else:
+                        await sse_manager.send(session_id, output)
+                
+                # Update final_response
+                for k in output.keys():
+                    final_response = await InferenceUtils.update_dictionary(final_response, output[k])
+        
+        final_response = copy.deepcopy(invocation_input)
+        
+        # Determine which stream to use based on conditions
+        if not is_plan_approved and not tool_feedback:
+            await process_stream(app.astream(invocation_input, config=config))
+        elif is_plan_approved == "yes":
+            await process_stream(app.astream(Command(resume="yes"), config=config))
+        elif is_plan_approved == "no" and not plan_feedback:
+            await process_stream(app.astream(Command(resume="no"), config=config))
+        elif is_plan_approved == "no" and plan_feedback is not None:
+            await process_stream(app.astream(Command(resume=plan_feedback), config=config))
+        elif tool_feedback is not None:
+            await process_stream(app.astream(Command(resume=tool_feedback), config=config))
+        else:
+            return {"error": "Invalid parameters provided for astream."}
+        
+        return final_response
 
     @staticmethod
     async def _ainvoke(
@@ -264,20 +328,24 @@ class BaseAgentInference(ABC):
                                 project_name: str,
                                 reset_conversation: bool = False,
                                 *,
-                                hitl_flag: bool = False,
+                                plan_verifier_flag: bool = False,
                                 is_plan_approved: Literal["yes", "no", None] = None,
+                                response_formatting_flag:bool = True,
                                 plan_feedback: str = None,
                                 tool_interrupt_flag: bool = False,
-                                tool_feedback: str = None
+                                tool_feedback: str = None,
+                                context_flag: bool = True,
+                                sse_manager: SSEManager=None
                             ):
-        if not hitl_flag:
+        if not plan_verifier_flag:
             is_plan_approved = plan_feedback = None
 
-        llm = load_model(model_name=model_name)
+        llm = await self.model_service.get_llm_model(model_name=model_name)
         agent_resp = {}
 
+        log.debug("Building agent and chains")
         async with await self.chat_service.get_checkpointer_context_manager() as checkpointer:
-            chains = await self._build_agent_and_chains(llm, agent_config, checkpointer)
+            chains = await self._build_agent_and_chains(llm, agent_config, checkpointer, tool_interrupt_flag=tool_interrupt_flag)
             if reset_conversation:
                 try:
                     await self.chat_service.delete_session(agentic_application_id, session_id)
@@ -286,13 +354,16 @@ class BaseAgentInference(ABC):
                     log.error(f"Error occurred while resetting conversation: {e}")
 
             flags = {
-                "hitl_flag": hitl_flag,
-                "tool_interrupt_flag": tool_interrupt_flag
+                "plan_verifier_flag": plan_verifier_flag,
+                "tool_interrupt_flag": tool_interrupt_flag,
+                "response_formatting_flag": response_formatting_flag,
+                "context_flag": context_flag
             }
-
+            log.debug("Building workflow")
             workflow = await self._build_workflow(chains, flags)
+            log.debug("Workflow built successfully")
             app = workflow.compile(checkpointer=checkpointer)
-
+            log.debug("Workflow compiled successfully")
             # Configuration for the workflow
             thread_id = await self.chat_service._get_thread_id(agentic_application_id, session_id)
             graph_config = await self.chat_service._get_thread_config(thread_id)
@@ -307,7 +378,25 @@ class BaseAgentInference(ABC):
                         'reset_conversation': reset_conversation,
                         'model_name': model_name,
                         'is_tool_interrupted': False,
+                        "response_formatting_flag": response_formatting_flag,
+                        "context_flag": context_flag
                     }
+
+                    # final_step = None
+                    # final_step = await self._astream(
+                    #     app,
+                    #     invocation_input,
+                    #     config=graph_config,
+                    #     is_plan_approved=is_plan_approved,
+                    #     plan_feedback=plan_feedback,
+                    #     tool_feedback=tool_feedback,
+                    #     sse_manager= sse_manager,
+                    #     session_id=session_id
+                    # )
+
+                    # agent_resp = final_step if final_step is not None else {"error": "No response received from streaming"}
+
+                    # log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
 
                     agent_resp = await self._ainvoke(
                         app,
@@ -334,17 +423,17 @@ class BaseAgentInference(ABC):
             return agent_resp
 
     async def run(self,
-                  inference_request: AgentInferenceRequest | AgentInferenceHITLRequest,
+                  inference_request: AgentInferenceRequest,
                   *,
                   agent_config: Optional[Union[dict, None]] = None,
-                  hitl_flag: bool = False,
-                  insert_into_eval_flag: bool = True
+                  insert_into_eval_flag: bool = True,
+                  sse_manager :SSEManager= None
                 ) -> Any:
         """
         Runs the Agent inference workflow.
 
         Args:
-            request (AgentInferenceRequest | AgentInferenceHITLRequest): The request object containing all necessary parameters.
+            request (AgentInferenceRequest): The request object containing all necessary parameters.
         """
         agentic_application_id = inference_request.agentic_application_id
         if not agent_config:
@@ -354,19 +443,18 @@ class BaseAgentInference(ABC):
                 log.error(f"Error occurred while retrieving agent configuration: {e}")
                 raise HTTPException(status_code=500, detail=f"Error occurred while retrieving agent configuration: {str(e)}")
 
-        # hitl_flag = hitl_flag or isinstance(inference_request, AgentInferenceHITLRequest)
-
         try:
             query = inference_request.query
             session_id = inference_request.session_id
             model_name = inference_request.model_name
             reset_conversation = inference_request.reset_conversation
-            tool_interrupt_flag = inference_request.interrupt_flag
-            tool_feedback = inference_request.feedback if not hitl_flag else inference_request.tool_feedback
-            is_plan_approved = inference_request.approval if hitl_flag else None
-            plan_feedback = inference_request.feedback if hitl_flag else None
-
-            # Retrieve agent configuration
+            tool_interrupt_flag = inference_request.tool_verifier_flag
+            tool_feedback = inference_request.tool_feedback
+            plan_verifier_flag = inference_request.plan_verifier_flag
+            response_formatting_flag = inference_request.response_formatting_flag
+            context_flag = inference_request.context_flag
+            is_plan_approved = inference_request.is_plan_approved
+            plan_feedback = inference_request.plan_feedback
 
             match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
             user_name = match.group(0) if match else "guest"
@@ -391,8 +479,9 @@ class BaseAgentInference(ABC):
                     return {"response": "Knowledge Base Retriever tool not found. Please ensure it is registered in the system."}
 
                 agent_config['TOOLS_INFO'].append(knowledgebase_retriever_id)
-                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REACT_AGENT'] += f" ;Use Knowledge Base: {inference_request.knowledgebase_name} regarding the query and if any useful information found use it, but use the instructions for each of tools and execute the query"
- 
+                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REACT_AGENT'] += f" ;Use Knowledge Base: {inference_request.knowledgebase_name} regarding the query and if any useful information found use it and pass it to any tools if no useful content is extracted call use the agent as if the knowledgebase tool is not existing, but use the instructions for each of tools and execute the query."
+
+
             # Generate response using the React agent workflow
             response = await self._generate_response(
                 query=query,
@@ -402,11 +491,14 @@ class BaseAgentInference(ABC):
                 agent_config=agent_config,
                 project_name=project_name,
                 reset_conversation=reset_conversation,
-                hitl_flag=hitl_flag,
+                plan_verifier_flag=plan_verifier_flag,
+                response_formatting_flag=response_formatting_flag,
+                context_flag=context_flag,
                 is_plan_approved=is_plan_approved,
                 plan_feedback=plan_feedback,
                 tool_interrupt_flag=tool_interrupt_flag,
-                tool_feedback=tool_feedback
+                tool_feedback=tool_feedback,
+                sse_manager= sse_manager
             )
 
             if isinstance(response, str):
@@ -434,22 +526,13 @@ class BaseAgentInference(ABC):
             raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
-
 class BaseMetaTypeAgentInference(BaseAgentInference):
     """
     Base class for meta-type agent inference.
     """
 
-    def __init__(
-        self,
-        chat_service: ChatService,
-        tool_service: ToolService,
-        agent_service: AgentService,
-        inference_utils: InferenceUtils,
-        feedback_learning_service: FeedbackLearningService,
-        evaluation_service: EvaluationService
-    ):
-        super().__init__(chat_service, tool_service, agent_service, inference_utils, feedback_learning_service, evaluation_service)
+    def __init__(self, inference_utils: InferenceUtils):
+        super().__init__(inference_utils)
 
 
     # --- Helper Methods ---
@@ -857,6 +940,14 @@ Critique Points:
         Helper method to create a React agent as an supervisor or meta agent with agents loaded dynamically.
         """
         worker_agents_as_tools_list = []
+        manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
+        worker_agents_as_tools_list.append(manage_memory_tool)
+
+        search_memory_tool = await self.inference_utils.create_search_memory_tool(
+            embedding_model=self.inference_utils.embedding_model
+        )
+        worker_agents_as_tools_list.append(search_memory_tool)
+
         for worker_agent_id in worker_agent_ids:
             worker_agent_config = await self._get_agent_config(agentic_application_id=worker_agent_id)
 
@@ -865,7 +956,7 @@ Critique Points:
             worker_agent_system_prompt = worker_agent_config.get("SYSTEM_PROMPT")
             worker_agent_tool_ids = worker_agent_config.get("TOOLS_INFO")
             worker_agent_name = worker_agent_config.get("AGENT_NAME")
-            worker_agent_name = await self.agent_service._normalize_agent_name(worker_agent_name)
+            worker_agent_name = await self.agent_service.agent_service_utils._normalize_agent_name(worker_agent_name)
 
             if worker_agent_type == "react_agent":
                 worker_agent, _ = await self._get_react_agent_as_executor_agent(

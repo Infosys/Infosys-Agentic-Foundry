@@ -3,8 +3,6 @@ from typing import TypedDict, Dict, Any, Optional, Union
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 from langgraph.graph import StateGraph, END, START
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.prompts.prompts import (
     meta_agent_planner_system_prompt_generator_prompt,
@@ -13,8 +11,7 @@ from src.prompts.prompts import (
 )
 from telemetry_wrapper import logger as log
 
-from src.database.repositories import AgentRepository, RecycleAgentRepository
-from src.database.services import TagService, ToolService
+from src.database.services import AgentServiceUtils
 from src.agent_templates.base_agent_onboard import BaseMetaTypeAgentOnboard
 
 
@@ -36,20 +33,8 @@ class PlannerMetaAgentOnboard(BaseMetaTypeAgentOnboard):
     extending the BaseMetaTypeAgentOnboard class.
     """
 
-    def __init__(
-        self,
-        agent_repo: AgentRepository,
-        recycle_agent_repo: RecycleAgentRepository,
-        tool_service: ToolService,
-        tag_service: TagService,
-    ):
-        super().__init__(
-            agent_type="planner_meta_agent",
-            agent_repo=agent_repo,
-            recycle_agent_repo=recycle_agent_repo,
-            tool_service=tool_service,
-            tag_service=tag_service
-        )
+    def __init__(self, agent_service_utils: AgentServiceUtils):
+        super().__init__(agent_type="planner_meta_agent", agent_service_utils=agent_service_utils)
 
 
     async def _generate_system_prompt(self, agent_name, agent_goal, workflow_description, tool_or_worker_agents_prompt, llm):

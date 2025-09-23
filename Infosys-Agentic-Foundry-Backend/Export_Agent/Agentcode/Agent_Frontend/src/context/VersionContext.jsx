@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { APP_VERSION, BASE_URL } from '../constant';
-import axios from 'axios';
+import { APIs, APP_VERSION } from '../constant';
+import useFetch from '../Hooks/useAxios';
 
 const VersionContext = createContext(null);
 
@@ -17,6 +17,7 @@ export const VersionProvider = ({ children }) => {
   const [combinedVersion, setCombinedVersion] = useState(APP_VERSION);
   const [loading, setLoading] = useState(true);
   const fetchedRef = useRef(false);
+  const {fetchData}= useFetch();
 
   useEffect(() => {
     // Only fetch if we haven't already done so
@@ -25,8 +26,8 @@ export const VersionProvider = ({ children }) => {
     const fetchBackendVersion = async () => {
       try {
         fetchedRef.current = true;
-        const response = await axios.get(BASE_URL+'/get-version');
-        const version = response.data.version || response.data || '';
+        const response = await fetchData(APIs.GET_VERSION);
+        const version = response.version || response || '';
         setBackendVersion(version);
         setCombinedVersion(`${APP_VERSION} ~ ${version}`);
       } catch (error) {

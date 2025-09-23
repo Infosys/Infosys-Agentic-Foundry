@@ -8,7 +8,7 @@ let getMethod = "GET";
 
 export const resetChat = async (data) => {
   try {
-    const apiUrl = `${BASE_URL}/react-agent/clear-chat-history`;
+    const apiUrl = `${BASE_URL}/react-agent${APIs.CLEAR_CHAT_HISTORY}`;
     const response = await axios.request({
       method: "DELETE",
       url: apiUrl,
@@ -56,7 +56,7 @@ export const getChatQueryResponse = async (chatData, url) => {
 
 export const getChatHistory = async (chatData) => {
   try {
-    const apiUrl = `${BASE_URL}/react-agent/get-chat-history`;
+    const apiUrl = `${BASE_URL}/react-agent${APIs.GET_CHAT_HISTORY}`;
     const response = await axios.request({
       method: postMethod,
       url: apiUrl,
@@ -132,6 +132,28 @@ export const fetchNewChats = async (userEmail) => {
       url: apiUrl,
       headers: {
         "Content-Type": "application/json",
+      },
+    });
+    if (response?.status === 200) {
+      return response?.data;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    return null;
+  }
+};
+
+export const getQuerySuggestions = async (data) => {
+  try {
+    const apiUrl = `${BASE_URL}${APIs.SUGGESTIONS}?agentic_application_id=${data.agentic_application_id}&user_email=${data.user_email}`;
+    const response = await axios.request({
+      method: getMethod,
+      url: apiUrl,
+      headers: {
+        "Content-Type": "application/json",
+        "csrf-token": getCsrfToken(),
+        "session-id": getSessionId(),
       },
     });
     if (response?.status === 200) {
