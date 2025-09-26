@@ -161,6 +161,7 @@
   text-rendering: optimizeLegibility;
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0;
+  height:100%;
 }
 
 .codeEditorContainer textarea:focus {

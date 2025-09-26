@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import styles from "./ZoomPopup.module.css";
 import { faCompress } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import Editor from "@monaco-editor/react";
 
 const ZoomPopup = (props) => {
   const { show, onClose, title, content, onSave, recycleBin, type = "code" } = props;
@@ -11,7 +10,6 @@ const ZoomPopup = (props) => {
   const [localDarkTheme] = useState(true);
   const textareaRef = useRef(null);
   const overlayRef = useRef(null);
-  const editorRef = useRef(null);
 
   useEffect(() => {
     if (show) {
@@ -109,123 +107,28 @@ const ZoomPopup = (props) => {
           <h3>{title}</h3>
           <div className={styles.editorContainer} style={{ position: "relative" }}>
             {type === "code" ? (
-              <div
+              <textarea
+                className={styles.codeTextarea}
+                value={editableContent || ""}
+                onChange={handleInput}
+                placeholder="Enter your code here..."
+                rows={15}
                 style={{
+                  width: "100%",
+                  resize: "vertical",
+                  fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                  fontSize: "14px",
+                  lineHeight: "1.4",
+                  padding: "12px",
                   border: "1px solid #e0e0e0",
                   borderRadius: "8px",
-                  overflow: "hidden",
-                  fontFamily: "Consolas, Monaco, monospace",
                   backgroundColor: localDarkTheme ? "#1e1e1e" : "#ffffff",
-                  position: "relative",
-                }}>
-                {/*
-                <button
-                  type="button"
-                  onClick={toggleTheme}
-                  style={{
-                    position: 'absolute',
-                    top: '8px',
-                    right: '10px',
-                    background: 'rgba(0, 0, 0, 0.1)',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '28px',
-                    height: '28px',
-                    zIndex: 10,
-                    fontSize: '16px',
-                    color: localDarkTheme ? '#ffffff' : '#000000',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.transform = 'scale(1.2)';
-                    e.target.style.background = 'rgba(0, 0, 0, 0.2)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = 'scale(1)';
-                    e.target.style.background = 'rgba(0, 0, 0, 0.1)';
-                  }}
-                  title={localDarkTheme ? "Switch to Light Theme" : "Switch to Dark Theme"}
-                >
-                  <FontAwesomeIcon
-                    icon={localDarkTheme ? faSun : faMoon}
-                    style={{
-                      width: '16px',
-                      height: '13px',
-                      color: localDarkTheme ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)',
-                      transform: 'scale(1)',
-                      paddingTop: '2px'
-                    }}
-                  />
-                </button>
-                */}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "8px 12px",
-                    backgroundColor: localDarkTheme ? "#2d2d30" : "#f8f9fa",
-                    borderBottom: localDarkTheme ? "1px solid #3e3e42" : "1px solid #e0e0e0",
-                    fontSize: "12px",
-                  }}>
-                  <span
-                    style={{
-                      padding: "4px 8px",
-                      border: "1px solid #d0d7de",
-                      borderRadius: "4px",
-                      backgroundColor: localDarkTheme ? "#3c3c3c" : "white",
-                      color: localDarkTheme ? "#ffffff" : "#000000",
-                      fontSize: "12px",
-                      display: "inline-block",
-                    }}>
-                    Python
-                  </span>
-                </div>
-                <div
-                  style={{
-                    position: "relative",
-                    height: "260px",
-                    overflow: "auto",
-                  }}>
-                  <Editor
-                    height="250px"
-                    language="python"
-                    theme={localDarkTheme ? "vs-dark" : "vs-light"}
-                    value={editableContent || ""}
-                    onChange={handleInput}
-                    options={{
-                      fontSize: 14,
-                      lineHeight: 1.2,
-                      padding: { top: 8, right: 8, bottom: 8, left: 8 },
-                      minimap: { enabled: false },
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      tabSize: 4,
-                    }}
-                    onMount={(editor) => {
-                      // Store editor reference if needed
-                      editorRef.current = editor;
-
-                      // Optional: Add custom resize handling
-                      const resizeObserver = new ResizeObserver(() => {
-                        requestAnimationFrame(() => {
-                          editor.layout();
-                        });
-                      });
-
-                      resizeObserver.observe(editor.getDomNode().parentElement);
-
-                      return () => {
-                        resizeObserver.disconnect();
-                      };
-                    }}
-                  />
-                </div>
-              </div>
+                  color: localDarkTheme ? "#ffffff" : "#000000",
+                  outline: "none",
+                  boxSizing: "border-box",
+                  minHeight: "250px"
+                }}
+              />
             ) : (
               <textarea
                 ref={textareaRef}

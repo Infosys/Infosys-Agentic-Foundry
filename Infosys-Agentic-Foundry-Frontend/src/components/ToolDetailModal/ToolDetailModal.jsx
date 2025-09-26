@@ -1,4 +1,3 @@
-import Editor from "@monaco-editor/react";
 import { useState, useRef } from "react";
 import styles from "./ToolDetailModal.module.css";
 import ReactMarkdown from "react-markdown";
@@ -30,8 +29,6 @@ const ToolDetailModal = ({
   const [showEditServerModal, setShowEditServerModal] = useState(false);
   const { checkToolEditable } = useToolsAgentsService();
   const { updateServer } = useMcpServerService();
-
-  const editorRef = useRef(null);
 
   if (!isOpen) return null;
 
@@ -123,38 +120,24 @@ const ToolDetailModal = ({
           {codeSnippet && (
             <div className={`${styles.modalBody} ${styles.codeSnippet}`}>
               <div className={styles.codeEditorContainer}>
-                <Editor
-                  height="200px"
-                  defaultLanguage="python"
+                <textarea
+                  className={styles.codeTextarea}
                   value={codeSnippet}
-                  theme="vs-dark"
-                  options={{
-                    readOnly: true,
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    scrollBeyondLastLine: false,
-                    lineNumbers: "on",
-                    wordWrap: "on",
-                    domReadOnly: true,
-                    renderLineHighlight: "all",
-                    scrollbar: { vertical: "auto", horizontal: "auto" },
-                  }}
-                  onMount={(editor) => {
-                    // Store editor reference if needed
-                    editorRef.current = editor;
-
-                    // Optional: Add custom resize handling
-                    const resizeObserver = new ResizeObserver(() => {
-                      requestAnimationFrame(() => {
-                        editor.layout();
-                      });
-                    });
-
-                    resizeObserver.observe(editor.getDomNode().parentElement);
-
-                    return () => {
-                      resizeObserver.disconnect();
-                    };
+                  readOnly
+                  rows={12}
+                  style={{
+                    width: "100%",
+                    resize: "vertical",
+                    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                    fontSize: "14px",
+                    lineHeight: "1.4",
+                    padding: "12px",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "8px",
+                    backgroundColor: "#1e1e1e",
+                    color: "#ffffff",
+                    outline: "none",
+                    boxSizing: "border-box"
                   }}
                 />
               </div>

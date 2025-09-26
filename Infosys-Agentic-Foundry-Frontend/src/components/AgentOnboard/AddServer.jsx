@@ -7,7 +7,6 @@ import { useToolsAgentsService } from "../../services/toolService";
 import Cookies from "js-cookie";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
-import Editor from "@monaco-editor/react";
 import groundTruthStyles from "../GroundTruth/GroundTruth.module.css";
 import { useMcpServerService } from "../../services/serverService";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -54,7 +53,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   const [tagList, setTagList] = useState([]);
   const hasLoadedTagsOnce = useRef(false);
   const prefillDoneRef = useRef(false);
-  const editorRef = useRef(null);
 
   const serverIdForPrefill = serverData ? serverData.id : null;
   useEffect(() => {
@@ -692,75 +690,28 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         <InfoTag message="Paste your code or upload a file." />
       </label>
       <div className={styles.codeEditorContainer}>
-        <div
+        <textarea
+          className={styles.codeTextarea}
+          value={codeFile ? "" : codeContent}
+          onChange={codeFile ? undefined : (e) => setCodeContent(e.target.value)}
+          placeholder="Enter your Python code here..."
+          rows={12}
+          readOnly={!!codeFile ? true : !(editMode && serverType === "code") && false}
           style={{
+            width: "100%",
+            resize: "vertical",
+            fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+            fontSize: "14px",
+            lineHeight: "1.4",
+            padding: "12px",
             border: "1px solid #e0e0e0",
             borderRadius: "8px",
-            overflow: "hidden",
-            fontFamily: "Consolas, Monaco, monospace",
             backgroundColor: isDarkTheme ? "#1e1e1e" : "#ffffff",
-            position: "relative",
-          }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "8px 12px",
-              backgroundColor: isDarkTheme ? "#2d2d30" : "#f8f9fa",
-              borderBottom: isDarkTheme ? "1px solid #3e3e42" : "1px solid #e0e0e0",
-              fontSize: "12px",
-            }}>
-            <span
-              style={{
-                padding: "4px 8px",
-                border: "1px solid #d0d7de",
-                borderRadius: "4px",
-                backgroundColor: isDarkTheme ? "#3c3c3c" : "white",
-                color: isDarkTheme ? "#ffffff" : "#000000",
-                fontSize: "12px",
-                display: "inline-block",
-              }}>
-              Python
-            </span>
-          </div>
-          <Editor
-            height="250px"
-            language="python"
-            theme={isDarkTheme ? "vs-dark" : "vs-light"}
-            value={codeFile ? "" : codeContent}
-            onChange={codeFile ? undefined : (value) => setCodeContent(value)}
-            options={{
-              fontSize: 14,
-              lineHeight: 1.2,
-              padding: { top: 8, right: 8, bottom: 8, left: 8 },
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              tabSize: 4,
-              // if a file is present, snapshot view only; otherwise allow editing
-              // also if we're in editMode and serverType is 'code', allow editing even if codeFile is null
-              readOnly: !!codeFile ? true : !(editMode && serverType === "code") && false,
-            }}
-            onMount={(editor) => {
-              // Store editor reference if needed
-              editorRef.current = editor;
-
-              // Optional: Add custom resize handling
-              const resizeObserver = new ResizeObserver(() => {
-                requestAnimationFrame(() => {
-                  editor.layout();
-                });
-              });
-
-              resizeObserver.observe(editor.getDomNode().parentElement);
-
-              return () => {
-                resizeObserver.disconnect();
-              };
-            }}
-          />
-        </div>
+            color: isDarkTheme ? "#ffffff" : "#000000",
+            outline: "none",
+            boxSizing: "border-box"
+          }}
+        />
         <button type="button" className={styles.copyIcon} onClick={() => handleCopy("code-snippet", codeFile ? "" : codeContent)} title="Copy">
           <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
         </button>

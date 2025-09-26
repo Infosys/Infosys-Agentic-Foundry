@@ -8,7 +8,6 @@ import SVGIcons from "../../Icons/SVGIcons";
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { DatabaseProvider, useDatabase } from "./context/DatabaseContext";
 import { useDatabases} from './service/databaseService.js';
-import Editor from "@monaco-editor/react";
 
 const DataConnectorsContent = () => {
   const [showConnectionModal, setShowConnectionModal] = useState(false);
@@ -359,9 +358,23 @@ const DataConnectorsContent = () => {
           Python code example to use the connection_name to connect to database in your tools:
       </div>
       <div className={styles.codeSnippet} style={{ marginLeft: '40px', marginRight: '40px', marginTop: '20px' }}>
-        <Editor
-          height="600px"
-          language="python"
+        <textarea
+          readOnly
+          rows={25}
+          style={{
+            width: "100%",
+            resize: "vertical",
+            fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+            fontSize: "14px",
+            lineHeight: "1.4",
+            padding: "12px",
+            border: "1px solid #e0e0e0",
+            borderRadius: "8px",
+            backgroundColor: "#1e1e1e",
+            color: "#ffffff",
+            outline: "none",
+            boxSizing: "border-box"
+          }}
           value={`# [PostgreSQL,MySQL,SQLite]
 def fetch_all_from_xyz(connection_name: str):
     """
@@ -417,26 +430,6 @@ def fetch_all_from_xyz(connection_name: str):
 #       session = manager.get_sql_session(connection_name) which asks the manager for a new SQLAlchemy session connected to the database identified by connection_name.
 # -make sure you close the session after use:
 #       session.close()`}
-          options={{
-            readOnly: true,
-            domReadOnly: true,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            wordWrap: "on",
-            lineNumbers: "on",
-            folding: false,
-            selectOnLineNumbers: false,
-            automaticLayout: true,
-            fontSize: 14,
-            theme: "vs-dark",
-            contextmenu: false,
-            quickSuggestions: false,
-            parameterHints: { enabled: false },
-            suggestOnTriggerCharacters: false,
-            acceptSuggestionOnCommitCharacter: false,
-            tabCompletion: "off",
-            wordBasedSuggestions: false
-          }}
         />
       </div>
     </div>

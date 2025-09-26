@@ -3,7 +3,6 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import styles from './CodeViewer.module.css';
 import SVGIcons from '../../../Icons/SVGIcons';
-import MonacoEditor from "@monaco-editor/react";
 
 const CodeViewer = ({ content, messageId, language = 'python', theme = 'dark' }) => {
   const [currentTheme, setCurrentTheme] = useState(theme);
@@ -201,16 +200,25 @@ const CodeViewer = ({ content, messageId, language = 'python', theme = 'dark' })
       </div>      {/* Code Content */}
       <div className={styles.codeContent}>
         {isEditMode ? (
-          <MonacoEditor
-            height="400px"
-            defaultLanguage={detectedLanguage}
-            defaultValue={editedContent || safeContent}
-            theme={currentTheme === 'dark' ? 'vs-dark' : 'light'}
-            onChange={(value) => setEditedContent(value)}
-            options={{
-              selectOnLineNumbers: true,
-              automaticLayout: true,
-              minimap: { enabled: false },
+          <textarea
+            className={styles.codeTextarea}
+            value={editedContent || safeContent}
+            onChange={(e) => setEditedContent(e.target.value)}
+            rows={20}
+            style={{
+              width: "100%",
+              resize: "vertical",
+              fontFamily: "'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace",
+              fontSize: "13px",
+              lineHeight: "1.5",
+              padding: "16px",
+              border: "1px solid #e0e0e0",
+              borderRadius: "8px",
+              backgroundColor: currentTheme === 'dark' ? "#1e1e1e" : "#ffffff",
+              color: currentTheme === 'dark' ? "#ffffff" : "#000000",
+              outline: "none",
+              boxSizing: "border-box",
+              minHeight: "400px"
             }}
           />
         ) : (

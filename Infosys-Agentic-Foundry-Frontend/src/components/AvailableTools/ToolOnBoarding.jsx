@@ -15,7 +15,6 @@ import MessageUpdateform from "../AskAssistant/MsgUpdateform.jsx";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
 import { WarningModal } from "../AvailableTools/WarningModal.jsx";
-import Editor from "@monaco-editor/react";
 
 import AddServer from "../AgentOnboard/AddServer";
 
@@ -58,10 +57,7 @@ function ToolOnBoarding(props) {
   const [forceAdd, setForceAdd] = useState(false);
   // Theme for the whole form (if needed elsewhere)
   const [isDarkTheme, setIsDarkTheme] = useState(true);
-  // Theme for the code editor only
-  const [editorDarkTheme, setEditorDarkTheme] = useState(true);
   const overlayRef = useRef(null);
-  const editorRef = useRef(null);
 
   const activeTab = contextType === "servers" ? "addServer" : "toolOnboarding"; // 'toolOnboarding' | 'addServer'
 
@@ -873,81 +869,51 @@ function ToolOnBoarding(props) {
                             <InfoTag message="Enter the code snippet." />
                           </label>
                           <div className={style.codeEditorContainer}>
-                            <div
+                            <textarea
+                              className={style.codeTextarea}
+                              value={formData.code || ""}
+                              onChange={props?.recycle ? undefined : (e) => setFormData((prev) => ({ ...prev, code: e.target.value }))}
+                              placeholder="Enter your Python code here..."
+                              rows={12}
+                              readOnly={!!props?.recycle}
                               style={{
+                                width: "100%",
+                                resize: "vertical",
+                                fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                                fontSize: "14px",
+                                lineHeight: "1.4",
+                                padding: "12px",
                                 border: "1px solid #e0e0e0",
                                 borderRadius: "8px",
-                                overflow: "hidden",
-                                fontFamily: "Consolas, Monaco, monospace",
                                 backgroundColor: isDarkTheme ? "#1e1e1e" : "#ffffff",
-                                position: "relative",
-                              }}>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  padding: "8px 12px",
-                                  backgroundColor: editorDarkTheme ? "#2d2d30" : "#f8f9fa",
-                                  borderBottom: editorDarkTheme ? "1px solid #3e3e42" : "1px solid #e0e0e0",
-                                  fontSize: "12px",
-                                }}>
-                                <span
-                                  style={{
-                                    padding: "4px 8px",
-                                    border: "1px solid #d0d7de",
-                                    borderRadius: "4px",
-                                    backgroundColor: editorDarkTheme ? "#3c3c3c" : "white",
-                                    color: editorDarkTheme ? "#ffffff" : "#000000",
-                                    fontSize: "12px",
-                                    display: "inline-block",
-                                  }}>
-                                  Python
-                                </span>
-                              </div>
-                              <Editor
-                                height="250px"
-                                language="python"
-                                theme={editorDarkTheme ? "vs-dark" : "vs-light"}
-                                value={formData.code || ""}
-                                onChange={props?.recycle ? undefined : (value) => setFormData((prev) => ({ ...prev, code: value }))}
-                                options={{
-                                  fontSize: 14,
-                                  lineHeight: 1.2,
-                                  padding: { top: 8, right: 8, bottom: 8, left: 8 },
-                                  minimap: { enabled: false },
-                                  scrollBeyondLastLine: false,
-                                  automaticLayout: true,
-                                  tabSize: 4,
-                                  readOnly: !!props?.recycle,
-                                }}
-                                onMount={(editor) => {
-                                  // Store editor reference if needed
-                                  editorRef.current = editor;
-
-                                  // Optional: Add custom resize handling
-                                  const resizeObserver = new ResizeObserver(() => {
-                                    requestAnimationFrame(() => {
-                                      editor.layout();
-                                    });
-                                  });
-
-                                  resizeObserver.observe(editor.getDomNode().parentElement);
-
-                                  return () => {
-                                    resizeObserver.disconnect();
-                                  };
-                                }}
-                              />
-                            </div>
-                            <button type="button" className={style.copyIcon} onClick={() => handleCopy("code-snippet", formData.code)} title="Copy">
+                                color: isDarkTheme ? "#ffffff" : "#000000",
+                                outline: "none",
+                                boxSizing: "border-box"
+                              }}
+                            />
+                            <button 
+                              type="button" 
+                              className={style.copyIcon} 
+                              onClick={() => handleCopy("code-snippet", formData.code)} 
+                              title="Copy"
+                            >
                               <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill="#ffffff" />
                             </button>
-                            <button type="button" className={style.playIcon} onClick={() => runCode(formData.code)} title="Run Code">
-                              <SVGIcons icon="play" width={16} height={16} fill={editorDarkTheme ? "#ffffff" : "#000000"} />
+                            <button 
+                              type="button" 
+                              className={style.playIcon} 
+                              onClick={() => runCode(formData.code)} 
+                              title="Run Code"
+                            >
+                              <SVGIcons icon="play" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
                             </button>
                             <div className={style.iconGroup}>
-                              <button type="button" className={style.expandIcon} onClick={() => handleZoomClick("Code Snippet", formData.code)} title="Expand">
+                              <button 
+                                type="button" 
+                                className={style.expandIcon} 
+                                onClick={() => handleZoomClick("Code Snippet", formData.code)} 
+                                title="Expand"
+                              >
                                 <SVGIcons icon="fa-solid fa-up-right-and-down-left-from-center" width={16} height={16} fill="#ffffff" />
                               </button>
                             </div>

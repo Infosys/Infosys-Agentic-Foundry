@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.2]
+
+### Fix
+
+- removed monaco code editor
+
 ## [1.4.1]
 
 ### Features
