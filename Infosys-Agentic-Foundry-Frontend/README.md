@@ -8,8 +8,8 @@ To get started with Infosys Agentic Foundry UI:
 
 1. **Clone the repository:**
    ```sh
-   git clone https://github.com/Infosys-Generative-AI/Agentic-Pro-UI.git
-   cd Agentic-Pro-UI
+   git clone https://github.com/Infosys/Infosys-Agentic-Foundry.git
+   cd Infosys-Agentic-Foundry-Frontend
    ```
 
 2. **Install dependencies:**
