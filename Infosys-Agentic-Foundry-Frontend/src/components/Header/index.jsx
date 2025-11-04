@@ -12,38 +12,35 @@ import { useMessage } from "../../Hooks/MessageContext"; // Import message conte
 import { useAuth } from "../../context/AuthContext";
 
 export default function Header() {
-  const { user: name, role, logout } = useAuth();
+  const { user, role, logout } = useAuth();
+  const displayName = user?.name || user || "";
 
-  const [dropdownVisible, setDropdownVisible] = React.useState(false);
-
-  const navigate = useNavigate();
   const { postData } = useFetch(); // Use the custom hook for API calls
   const { addMessage } = useMessage();
 
   const handleLogout = async () => {
+    console.log("🔴 LOGOUT TRIGGERED: Header - Manual logout button clicked");
     try {
       await postData(APIs.LOGOUT);
+      console.log("✅ Backend logout API call successful");
     } catch (error) {
-      // addMessage("Logout failed. Please try again.", "error");
+      console.error("❌ Backend logout API call failed:", error);
+      addMessage("Logout request failed, but clearing local session.", "error");
     } finally {
       // Clear any extra cookies not managed by auth
       Cookies.remove("email");
       Cookies.remove("jwt-token");
+      Cookies.remove("refresh-token");
       // Clear session start timestamp (auto logout reference)
       try {
         localStorage.removeItem("login_timestamp");
         Cookies.remove("login_timestamp");
       } catch (_) {}
-      setDropdownVisible(false);
-      logout();
+      logout("manual"); // Pass "manual" reason to avoid duplicate error messages
     }
   };
   const { mkDocsInternalPath } = useApiUrl(); // Get the dynamic base URL
   const { combinedVersion } = useVersion(); // Properly extract the combinedVersion from the hook
-
-  const toggleDropdown = () => {
-    setDropdownVisible(!dropdownVisible);
-  };
 
   const handleFaqclick = () => {
     window.open(mkDocs_baseURL + mkDocsInternalPath, "_blank");
@@ -60,17 +57,15 @@ export default function Header() {
       <div className={styles.menu}>
         <div className={styles.user_info}>
           <span className={styles.logged_in_user}>
-            WELCOME <span className={styles.user_name}>{name === "Guest" ? name : `${name} (${role})`}</span>
+            WELCOME <span className={styles.user_name}>{displayName === "Guest" ? displayName : `${displayName} (${role})`}</span>
           </span>
-          <div className={styles.profile_icon} onClick={toggleDropdown}>
+          <div className={styles.profile_icon}>
             <SVGIcons icon="fa-user" width={14} height={14} fill="#000" />
-            {dropdownVisible && (
-              <div className={styles.dropdown}>
-                <button onClick={handleLogout} className={styles.dropdown_item}>
-                  Logout
-                </button>
-              </div>
-            )}
+            <div className={styles.dropdown}>
+              <button onClick={handleLogout} className={styles.dropdown_item}>
+                Logout
+              </button>
+            </div>
           </div>
         </div>
         {/* <a href="http://10.208.85.72:9000/" target="_blank"> */}

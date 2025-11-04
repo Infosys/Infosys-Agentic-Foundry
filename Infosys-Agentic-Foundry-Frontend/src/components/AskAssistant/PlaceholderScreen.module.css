@@ -4,7 +4,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  padding: 40px 20px;
+  padding: 0 20px;
   position: relative;
   overflow: hidden;
 }
@@ -215,7 +215,11 @@
 
 /* Animations */
 @keyframes bounce {
-  0%, 20%, 50%, 80%, 100% {
+  0%,
+  20%,
+  50%,
+  80%,
+  100% {
     transform: translateY(0);
   }
   40% {
@@ -227,7 +231,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.3;
     transform: translate(-50%, -50%) scale(1);
   }
@@ -249,7 +254,8 @@
 }
 
 @keyframes float {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0px) rotate(0deg);
   }
   33% {
@@ -265,23 +271,23 @@
   .mainIcon {
     font-size: 20px;
   }
-  
+
   .title {
     font-size: 28px;
   }
-  
+
   .subtitle {
     font-size: 16px;
   }
-  
+
   .description {
     font-size: 14px;
   }
-  
+
   .featuresContainer {
     gap: 16px;
   }
-  
+
   .feature {
     flex-direction: column;
     gap: 5px;
@@ -291,16 +297,16 @@
     min-width: 100px;
     padding: 5px;
   }
-  
+
   .featureIcon {
     font-size: 20px;
   }
-  
+
   .featureText {
     font-size: 11px;
   }
 
-  .iconContainer{
+  .iconContainer {
     margin-bottom: 10px;
   }
 }

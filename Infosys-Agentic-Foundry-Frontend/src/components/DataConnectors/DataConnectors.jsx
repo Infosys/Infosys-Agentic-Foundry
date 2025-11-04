@@ -7,7 +7,8 @@ import ConnectionManagementModal from "./ConnectionManagementModal";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { DatabaseProvider, useDatabase } from "./context/DatabaseContext";
-import { useDatabases} from './service/databaseService.js';
+import { useDatabases } from "./service/databaseService.js";
+import CodeEditor from "../commonComponents/CodeEditor.jsx";
 
 const DataConnectorsContent = () => {
   const [showConnectionModal, setShowConnectionModal] = useState(false);
@@ -21,84 +22,84 @@ const DataConnectorsContent = () => {
   const [sqlConnections, setSqlConnections] = useState([]);
   const activeConnectionsFetched = useRef(false);
   const sqlConnectionsFetched = useRef(false);
-  const {fetchSqlConnections ,executeMongodbOperation} = useDatabases();
+  const { fetchSqlConnections, executeMongodbOperation } = useDatabases();
 
   // Use the database connections hook
-  const { 
-    handleConnectionSubmit, 
-    isConnecting, 
-    availableConnections, 
+  const {
+    handleConnectionSubmit,
+    isConnecting,
+    availableConnections,
     isLoadingConnections,
     handleDisconnect: hookHandleDisconnect,
     handleActivateConnection: hookHandleActivateConnection,
-    handleDeactivate:hookHandleDeactivate,
+    handleDeactivate: hookHandleDeactivate,
     isDisConnecting,
     isActivating,
-    loadAvailableConnections
+    loadAvailableConnections,
   } = useDatabaseConnections();
   const { getActiveMySQLConnections, getActivePostgresConnections, getActiveSQLiteConnections, getActiveMongoConnections, fetchActiveConnections } = useDatabase();
 
   // Database types with their configurations
   const databaseTypes = [
     {
-      id: 'postgresql',
-      name: 'PostgreSQL',
-      description: 'Open-source relational database',
-      icon: 'database',
-      color: '#336791',
+      id: "postgresql",
+      name: "PostgreSQL",
+      description: "Open-source relational database",
+      icon: "database",
+      color: "#336791",
       fields: [
-        {name: 'connectionName', label: 'Connection Name', type: 'text', required: true},
-        {name: 'databaseType', label: 'Database Type', type: 'text', required: true, defaultValue: 'PostgreSQL', readOnly: true},
-        { name: 'host', label: 'Host', type: 'text', required: true },
-        { name: 'port', label: 'Port', type: 'number', required: true },
-        { name: 'databaseName', label: 'Database', type: 'text', required: true },
-        { name: 'username', label: 'Username', type: 'text', required: true },
-        { name: 'password', label: 'Password', type: 'password', required: true },
-      ]
+        { name: "connectionName", label: "Connection Name", type: "text", required: true },
+        { name: "databaseType", label: "Database Type", type: "text", required: true, defaultValue: "PostgreSQL", readOnly: true },
+        { name: "host", label: "Host", type: "text", required: true },
+        { name: "port", label: "Port", type: "number", required: true },
+        { name: "databaseName", label: "Database", type: "text", required: true },
+        { name: "username", label: "Username", type: "text", required: true },
+        { name: "password", label: "Password", type: "password", required: true },
+      ],
     },
     {
-      id: 'mysql',
-      name: 'MySQL',
-      description: 'Popular open-source database',
-      icon: 'database',
-      color: '#4479A1',
+      id: "mysql",
+      name: "MySQL",
+      description: "Popular open-source database",
+      icon: "database",
+      color: "#4479A1",
       fields: [
-        {name: 'connectionName', label: 'Connection Name', type: 'text', required: true},
-        {name: 'databaseType', label: 'Database Type', type: 'text', required: true, defaultValue: 'MySQL', readOnly: true},
-        { name: 'host', label: 'Host', type: 'text', required: true },
-        { name: 'port', label: 'Port', type: 'number', required: true },
-        { name: 'databaseName', label: 'Database', type: 'text', required: true},
-        { name: 'username', label: 'Username', type: 'text', required: true },
-        { name: 'password', label: 'Password', type: 'password', required: true },
-      ]
+        { name: "connectionName", label: "Connection Name", type: "text", required: true },
+        { name: "databaseType", label: "Database Type", type: "text", required: true, defaultValue: "MySQL", readOnly: true },
+        { name: "host", label: "Host", type: "text", required: true },
+        { name: "port", label: "Port", type: "number", required: true },
+        { name: "databaseName", label: "Database", type: "text", required: true },
+        { name: "username", label: "Username", type: "text", required: true },
+        { name: "password", label: "Password", type: "password", required: true },
+      ],
     },
     {
-      id: 'mongodb',
-      name: 'MongoDB',
-      description: 'NoSQL document database',
-      icon: 'database',
-      color: '#47A248',
+      id: "mongodb",
+      name: "MongoDB",
+      description: "NoSQL document database",
+      icon: "database",
+      color: "#47A248",
       fields: [
-        {name: 'connectionName', label: 'Connection Name', type: 'text', required: true},
-        {name: 'databaseType', label: 'Database Type', type: 'text', required: true, defaultValue: 'MongoDB', readOnly: true},
-        { name: 'host', label: 'Host', type: 'text', required: true },
-        { name: 'port', label: 'Port', type: 'number', required: true },
-        { name: 'databaseName', label: 'Database', type: 'text', required: true },
-        { name: 'username', label: 'Username', type: 'text', required: false, },
-        { name: 'password', label: 'Password', type: 'password', required: false }
-      ]
+        { name: "connectionName", label: "Connection Name", type: "text", required: true },
+        { name: "databaseType", label: "Database Type", type: "text", required: true, defaultValue: "MongoDB", readOnly: true },
+        { name: "host", label: "Host", type: "text", required: true },
+        { name: "port", label: "Port", type: "number", required: true },
+        { name: "databaseName", label: "Database", type: "text", required: true },
+        { name: "username", label: "Username", type: "text", required: false },
+        { name: "password", label: "Password", type: "password", required: false },
+      ],
     },
     {
-      id: 'sqlite',
-      name: 'SQLite',
-      description: 'Lightweight file-based database',
-      icon: 'database',
-      color: '#003B57',
+      id: "sqlite",
+      name: "SQLite",
+      description: "Lightweight file-based database",
+      icon: "database",
+      color: "#003B57",
       fields: [
-        {name: 'connectionName', label: 'Connection Name', type: 'text', required: true},
-        {name: 'databaseType', label: 'Database Type', type: 'text', required: true, defaultValue: 'SQLite', readOnly: true},
-        { name: 'databaseName', label: 'New SQLITE DB Filename(.db,.sqlite)', type: 'text' },
-      ]
+        { name: "connectionName", label: "Connection Name", type: "text", required: true },
+        { name: "databaseType", label: "Database Type", type: "text", required: true, defaultValue: "SQLite", readOnly: true },
+        { name: "databaseName", label: "New SQLITE DB Filename(.db,.sqlite)", type: "text" },
+      ],
     },
   ];
 
@@ -142,7 +143,6 @@ const DataConnectorsContent = () => {
     setIsExecuting(true);
     try {
       // Add your query execution logic here
-      
     } catch (error) {
       console.error("Query execution error:", error);
     } finally {
@@ -155,15 +155,15 @@ const DataConnectorsContent = () => {
     try {
       // Prepare payload for MongoDB operation (API expects empty objects, not empty strings)
       const payload = {
-        conn_name: crudData.selectedConnection.replace(/^mongodb_/, ''),
+        conn_name: crudData.selectedConnection.replace(/^mongodb_/, ""),
         collection: crudData.collection,
         operation: crudData.operation,
         mode: crudData.mode,
         query: crudData.jsonQuery ? JSON.parse(crudData.jsonQuery) : {},
         data: crudData.dataJson ? JSON.parse(crudData.dataJson) : {},
-        update_data: crudData.updateJson ? JSON.parse(crudData.updateJson) : {}
+        update_data: crudData.updateJson ? JSON.parse(crudData.updateJson) : {},
       };
-      Object.keys(payload).forEach(key => payload[key] === undefined && delete payload[key]);
+      Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
       const result = await executeMongodbOperation(payload);
       return result;
     } catch (error) {
@@ -176,12 +176,12 @@ const DataConnectorsContent = () => {
 
   // Fetch active connections from backend when component mounts
   useEffect(() => {
-    if (!activeConnectionsFetched.current && typeof fetchActiveConnections === 'function') {
+    if (!activeConnectionsFetched.current && typeof fetchActiveConnections === "function") {
       fetchActiveConnections();
       activeConnectionsFetched.current = true;
     }
     if (!sqlConnectionsFetched.current) {
-      fetchSqlConnections().then(result => {
+      fetchSqlConnections().then((result) => {
         if (result.success) {
           setSqlConnections(result.data.connections || result.data || []);
         } else {
@@ -197,121 +197,85 @@ const DataConnectorsContent = () => {
   return (
     <div className={styles.container}>
       {/* Header */}
-      <div className={styles.header} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 className={styles.title}>Data Connectors</h1>
+      <div className="iafPageSubHeader">
+        <h6>Data Connectors</h6>
       </div>
       {/* Database Cards */}
       <div className={styles.cardsContainer}>
-        {databaseTypes.filter(db => !db.isManagement).length > 0 ? (
-          databaseTypes.filter(db => !db.isManagement).map((database) => {
-            // Count connections for this database type
-            const connectionCount = availableConnections.filter(conn => {
-              // Normalize type for comparison
-              const dbType = (conn.connection_database_type || conn.type || '').toLowerCase();
-              const expectedType = (database.name || '').toLowerCase();
-              return dbType === expectedType;
-            }).length;
-            // Count active connections for this database type
-            let activeConnectionCount = 0;
-            if (database.id === 'postgresql') {
-              activeConnectionCount = getActivePostgresConnections().length;
-            } else if (database.id === 'mysql') {
-              activeConnectionCount = getActiveMySQLConnections().length;
-            } else if (database.id === 'sqlite') {
-              activeConnectionCount = getActiveSQLiteConnections().length;
-            } else if (database.id === 'mongodb') {
-              activeConnectionCount = getActiveMongoConnections().length;
-            }
-            return (
-            <div
-              key={database.id}
-              className={styles.databaseCard}
-              onClick={() => database.id !== 'mongodb' ? handleCardClick(database) : null}
-              style={{ 
-                cursor: database.id === 'mongodb' ? 'not-allowed' : 'pointer', 
-                opacity: database.id === 'mongodb' ? 0.5 : 1 
-              }}
-            >
-              <div className={styles.cardHeader} style={{ justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <div
-                    className={styles.cardIcon}
-                    style={{ backgroundColor: database.color }}
-                  >
-                    <SVGIcons
-                      icon={database.icon}
-                      width={32}
-                      height={32}
-                      fill="white"
-                    />
+        {databaseTypes.filter((db) => !db.isManagement).length > 0
+          ? databaseTypes
+              .filter((db) => !db.isManagement)
+              .map((database) => {
+                // Count connections for this database type
+                const connectionCount = availableConnections.filter((conn) => {
+                  // Normalize type for comparison
+                  const dbType = (conn.connection_database_type || conn.type || "").toLowerCase();
+                  const expectedType = (database.name || "").toLowerCase();
+                  return dbType === expectedType;
+                }).length;
+                // Count active connections for this database type
+                let activeConnectionCount = 0;
+                if (database.id === "postgresql") {
+                  activeConnectionCount = getActivePostgresConnections().length;
+                } else if (database.id === "mysql") {
+                  activeConnectionCount = getActiveMySQLConnections().length;
+                } else if (database.id === "sqlite") {
+                  activeConnectionCount = getActiveSQLiteConnections().length;
+                } else if (database.id === "mongodb") {
+                  activeConnectionCount = getActiveMongoConnections().length;
+                }
+                return (
+                  <div key={database.id} className={styles.databaseCard} onClick={() => handleCardClick(database)} style={{ cursor: "pointer", opacity: 1 }}>
+                    <div className={styles.cardHeader} style={{ justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center" }}>
+                        <div className={styles.cardIcon} style={{ backgroundColor: database.color }}>
+                          <SVGIcons icon={database.icon} width={32} height={32} fill="white" />
+                        </div>
+                        <div className={styles.cardTitleSection}>
+                          <h3 className={styles.cardTitle}>{database.name}</h3>
+                          {/* Show connection count badge for non-management cards */}
+                          <span style={{ marginLeft: 0, background: "#eee", borderRadius: 12, padding: "2px 8px", fontSize: 12 }}>
+                            {connectionCount} connection{connectionCount !== 1 ? "s" : ""}, {activeConnectionCount} active
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className={styles.cardDescription}>{database.description}</p>
+                    <div className={styles.cardFooter}>
+                      <div className={styles.cardButtons}>
+                        {/* Run button: Show for all databases except MongoDB */}
+                        {database.id !== "mongodb" && (
+                          <>
+                            <button className={styles.runButton} onClick={(e) => handleRunClick(database, e)}>
+                              Run
+                            </button>
+                            <button className={styles.manageButton} onClick={(e) => handleManagementClick(database, e)} style={{ marginLeft: 8 }}>
+                              Manage
+                            </button>
+                          </>
+                        )}
+                        {/* CRUD and Manage buttons: Show for MongoDB */}
+                        {database.id === "mongodb" && (
+                          <>
+                            <button className={styles.crudButton} onClick={(e) => handleCrudClick(database, e)}>
+                              CRUD
+                            </button>
+                            <button className={styles.manageButton} onClick={(e) => handleManagementClick(database, e)} style={{ marginLeft: 8 }}>
+                              Manage
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className={styles.cardTitleSection}>
-                    <h3 className={styles.cardTitle}>{database.name}</h3>
-                    {/* Show connection count badge for non-management cards */}
-                    <span style={{marginLeft:0,background:'#eee', borderRadius:12, padding:'2px 8px', fontSize:12}}>
-                      {connectionCount} connection{connectionCount !== 1 ? 's' : ''}, {activeConnectionCount} active
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p className={styles.cardDescription}>{database.description}</p>
-              <div className={styles.cardFooter}>
-                <div className={styles.cardButtons}>
-                  {/* Run button: Show for all databases except MongoDB */}
-                  {database.id !== 'mongodb' && (
-                    <>
-                      <button
-                        className={styles.runButton}
-                        onClick={(e) => handleRunClick(database, e)}
-                      >
-                        Run
-                      </button>
-                      <button
-                        className={styles.manageButton}
-                        onClick={(e) => handleManagementClick(database, e)}
-                        style={{ marginLeft: 8 }}
-                      >
-                        Manage
-                      </button>
-                    </>
-                  )}
-                  {/* CRUD and Manage buttons: Show for MongoDB */}
-                  {database.id === 'mongodb' && (
-                    <>
-                      <button
-                        className={styles.crudButton}
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={true}
-                        style={{ opacity: 0.5, cursor: 'not-allowed' }}
-                      >
-                        CRUD
-                      </button>
-                      <button
-                        className={styles.manageButton}
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={true}
-                        style={{ marginLeft: 8, opacity: 0.5, cursor: 'not-allowed' }}
-                      >
-                        Manage
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-            );
-          })
-        ) : null}
+                );
+              })
+          : null}
       </div>
 
       {/* Connection Modal */}
       {showConnectionModal && selectedDatabase && (
-        <ConnectionModal
-          database={selectedDatabase}
-          onClose={handleCloseModal}
-          onSubmit={handleConnectionSubmit}
-          isConnecting={isConnecting}
-        />
+        <ConnectionModal database={selectedDatabase} onClose={handleCloseModal} onSubmit={handleConnectionSubmit} isConnecting={isConnecting} />
       )}
 
       {/* Query Modal */}
@@ -328,21 +292,18 @@ const DataConnectorsContent = () => {
       )}
 
       {/* CRUD Modal */}
-      {showCrudModal && selectedDatabase && (
-        <CrudModal
-          database={selectedDatabase}
-          onClose={handleCloseModal}
-          onExecuteCrud={handleExecuteCrud}
-          isExecuting={isCrudExecuting}
-        />
-      )}
+      {showCrudModal && selectedDatabase && <CrudModal database={selectedDatabase} onClose={handleCloseModal} onExecuteCrud={handleExecuteCrud} isExecuting={isCrudExecuting} />}
 
       {/* Connection Management Modal */}
       {showManagementModal && (
         <ConnectionManagementModal
           isOpen={showManagementModal}
           onClose={handleCloseModal}
-          availableConnections={managementDatabase ? availableConnections.filter(conn => (conn.connection_database_type || conn.type || '').toLowerCase() === (managementDatabase.name || '').toLowerCase()) : availableConnections}
+          availableConnections={
+            managementDatabase
+              ? availableConnections.filter((conn) => (conn.connection_database_type || conn.type || "").toLowerCase() === (managementDatabase.name || "").toLowerCase())
+              : availableConnections
+          }
           isLoadingConnections={isLoadingConnections}
           onDisconnect={hookHandleDisconnect}
           onActivate={hookHandleActivateConnection}
@@ -354,27 +315,13 @@ const DataConnectorsContent = () => {
       )}
 
       {/* Python Code Example Section */}
-      <div className={styles.codeExampleSection}>
-          Python code example to use the connection_name to connect to database in your tools:
-      </div>
-      <div className={styles.codeSnippet} style={{ marginLeft: '40px', marginRight: '40px', marginTop: '20px' }}>
-        <textarea
-          readOnly
-          rows={25}
-          style={{
-            width: "100%",
-            resize: "vertical",
-            fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-            fontSize: "14px",
-            lineHeight: "1.4",
-            padding: "12px",
-            border: "1px solid #e0e0e0",
-            borderRadius: "8px",
-            backgroundColor: "#1e1e1e",
-            color: "#ffffff",
-            outline: "none",
-            boxSizing: "border-box"
-          }}
+      <div className={styles.codeExampleSection}>Python code example to use the connection_name to connect to database in your tools:</div>
+      <div className={styles.codeSnippet} style={{ marginLeft: "40px", marginRight: "40px", marginTop: "20px" }}>
+        <CodeEditor
+          mode="python"
+          theme="monokai"
+          isDarkTheme={true}
+          readOnly={true}
           value={`# [PostgreSQL,MySQL,SQLite]
 def fetch_all_from_xyz(connection_name: str):
     """
@@ -396,7 +343,7 @@ def fetch_all_from_xyz(connection_name: str):
     except Exception as e:
         if 'session' in locals():
             session.close()
-        return f'Error fetching data from database {connection_name}: {str(e)}
+        return f'Error fetching data from database {connection_name}: {str(e)}'
 
 # [MONGODB]
 def fetch_all_from_xyz(connection_name: str):
@@ -418,7 +365,7 @@ def fetch_all_from_xyz(connection_name: str):
             documents.append(document)
         return documents
     except Exception as e:
-        return f'Error fetching data from MongoDB {connection_name}: {str(e)}
+        return f'Error fetching data from MongoDB {connection_name}: {str(e)}'
 
 # Note:
 # - make sure your connection is active.
@@ -430,6 +377,23 @@ def fetch_all_from_xyz(connection_name: str):
 #       session = manager.get_sql_session(connection_name) which asks the manager for a new SQLAlchemy session connected to the database identified by connection_name.
 # -make sure you close the session after use:
 #       session.close()`}
+          width="100%"
+          height="600px"
+          fontSize={14}
+          setOptions={{
+            enableBasicAutocompletion: false,
+            enableLiveAutocompletion: false,
+            enableSnippets: false,
+            showLineNumbers: true,
+            tabSize: 4,
+            useWorker: false,
+            wrap: true,
+          }}
+          style={{
+            fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+            border: "1px solid #e0e0e0",
+            borderRadius: "8px",
+          }}
         />
       </div>
     </div>

@@ -1,4 +1,4 @@
-.mainContainer{
+.mainContainer {
   padding: 0;
   margin: 0;
   height: 100vh;
@@ -17,12 +17,11 @@
   width: calc(100% - 70px);
   /* transition: margin-left 0.3s ease; */
   min-height: 100vh;
-  overflow: auto;
 }
 
 .header {
   position: fixed;
-   width: 100%;
+  width: 100%;
   top: 0;
   background-color: white;
   z-index: 10000;

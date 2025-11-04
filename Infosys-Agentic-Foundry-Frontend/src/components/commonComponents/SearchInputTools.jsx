@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState, useId } from "react";
 import SVGIcons from "../../Icons/SVGIcons";
 import styles from "./SearchInputTools.module.css";
 
 const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => {
   const [localSearchValue, setLocalSearchValue] = useState(searchValue || "");
+  const uniqueId = useId();
 
   useEffect(() => {
     setLocalSearchValue(searchValue);
@@ -39,7 +40,16 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
 
   return (
     <div className={styles.searchContainer}>
-      <input type="text" value={localSearchValue} onChange={handleInputChange} onKeyDown={handleKeyDown} {...inputProps} className={styles.searchInput} placeholder="Search..." />
+      <input
+        type="text"
+        value={localSearchValue}
+        onChange={handleInputChange}
+        onKeyDown={handleKeyDown}
+        {...inputProps}
+        className={styles.searchInput}
+        placeholder={inputProps?.placeholder || "Search..."}
+        id={uniqueId}
+      />
       <button onClick={handleSearchClick} className={styles.searchButton} title="Search">
         <SVGIcons icon="search" width={16} height={16} fill="#fff" />
       </button>

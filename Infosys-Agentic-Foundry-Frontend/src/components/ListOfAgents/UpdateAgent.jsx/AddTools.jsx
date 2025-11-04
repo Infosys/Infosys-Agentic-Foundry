@@ -422,13 +422,14 @@ const AddTools = (props) => {
   }, [activeTab, normalizedToggleSelected]);
 
   const isMetaAgent = agentType === META_AGENT || agentType === PLANNER_META_AGENT;
+  const shouldHideServers = isMetaAgent;
 
-  // If agent is a meta-type, ensure we stay on the 'tools' tab (which shows agents)
+  // If agent doesn't support servers, ensure we stay on the 'tools' tab
   useEffect(() => {
-    if (isMetaAgent && activeTab === "servers") {
+    if (shouldHideServers && activeTab === "servers") {
       setActiveTab("tools");
     }
-  }, [isMetaAgent, activeTab]);
+  }, [shouldHideServers, activeTab]);
 
   const displayData = searchTerm.trim()
     ? visibleData || []
@@ -608,6 +609,7 @@ const AddTools = (props) => {
                   className={activeTab === "tools" ? `iafTabsBtn active` : "iafTabsBtn"}
                   onClick={() => {
                     setActiveTab("tools");
+                    setFilterTags([]); // Clear filters when switching to tools
                     setSearchTerm("");
                     setVisibleData([]);
                     setPage(1);
@@ -619,11 +621,12 @@ const AddTools = (props) => {
                   tabIndex={activeTab === "tools" ? 0 : -1}>
                   {isMetaAgent ? "Agents" : "Tools"}
                 </button>
-                {!isMetaAgent && (
+                {!shouldHideServers && (
                   <button
                     className={activeTab === "servers" ? "iafTabsBtn active" : "iafTabsBtn"}
                     onClick={() => {
                       setActiveTab("servers");
+                      setFilterTags([]); // Clear filters when switching to servers.
                       setSearchTerm("");
                       setVisibleData([]);
                       setPage(1);

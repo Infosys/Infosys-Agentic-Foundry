@@ -1,0 +1,49 @@
+/* Global ACE editor font override to fix cursor alignment issues.
+   This enforces a consistent monospace font across all internal layers.
+*/
+.ace_editor,
+.ace_editor * {
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro", monospace !important;
+  font-variant-ligatures: none !important; /* Disable ligatures to keep 1:1 glyph advance */
+}
+
+/* Optional: ensure consistent line-height to reduce vertical drift. Adjust if needed. */
+.ace_editor .ace_line {
+  line-height: 1.4 !important;
+}
+
+/* Stabilize scrolling + rendering */
+.ace_editor,
+.ace_scroller,
+.ace_content {
+  overscroll-behavior: contain;
+  will-change: scroll-position;
+  contain: layout style paint;
+}
+
+/* Keep scrollbars always visible (Ace options also set this) to avoid layout shifts */
+.ace_editor .ace_scrollbar-v,
+.ace_editor .ace_scrollbar-h {
+  visibility: visible !important;
+}
+
+/* Reduce potential transform jitter by preventing unwanted transitions */
+.ace_editor *,
+.ace_editor .ace_content * {
+  transition: none !important;
+}
+
+/* Ensure gutter has stable width (paired with fixedWidthGutter option) */
+.ace_gutter {
+  flex: 0 0 auto;
+}
+
+/* When selecting & dragging, avoid text selection outside editor causing jumps */
+.codeEditorWrapper {
+  user-select: none;
+}
+.codeEditorWrapper .ace_content,
+.codeEditorWrapper .ace_text-layer,
+.codeEditorWrapper .ace_line {
+  user-select: text;
+}

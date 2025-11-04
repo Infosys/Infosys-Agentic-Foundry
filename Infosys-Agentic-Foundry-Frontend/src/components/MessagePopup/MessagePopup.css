@@ -7,11 +7,11 @@
   background: rgba(0, 0, 0, 0.253);
   display: flex;
   justify-content: center;
-  z-index: 1201;
+  z-index: 1208;
 }
 
 .message-container {
-  width: 450px;
+  width: 600px;
   max-width: 100%;
   padding: 60px;
   box-sizing: border-box;

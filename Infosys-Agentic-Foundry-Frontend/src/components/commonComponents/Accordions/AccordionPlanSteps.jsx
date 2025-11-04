@@ -38,7 +38,7 @@ const AccordionPlanSteps = (props) => {
       if (canvasParts.length > 0) {
         // We have content for the canvas!
         // setCanvasIsOpen(true);
-        props.openCanvas(canvasParts, "Detailed View", "parts");
+        props.openCanvas(canvasParts, "Detailed View", "parts", null, true);
       }
     }
   };
@@ -48,7 +48,7 @@ const AccordionPlanSteps = (props) => {
       <div className={styles["accordion-header"]}>
         {(() => {
           if (!props?.show_canvas) {
-            // Only one text part, show as text-only bubble
+            // Show all text parts as text-only bubble
             return (
               <div className={`${styles.messageBubble} textOnlyBubble`}>
                 <ReactMarkdown
@@ -67,7 +67,10 @@ const AccordionPlanSteps = (props) => {
                       );
                     },
                   }}>
-                  {props.parts?.[0]?.data?.content || ""}
+                  {props.parts
+                    ?.filter((part) => part.type === "text" && part.data?.content)
+                    .map((part) => part.data.content)
+                    .join("\n\n")}
                 </ReactMarkdown>
               </div>
             );
@@ -136,10 +139,12 @@ const AccordionPlanSteps = (props) => {
 
                           // User Query Stage
                           if (item.role) {
+                            // Format the role for display: capitalize, replace underscores with spaces
+                            const formattedRole = item.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
                             stepElement = (
                               <div key={idx} className={DebugStepsCss.eachSteps + " " + DebugStepsCss.userQueryStage}>
                                 <div className={DebugStepsCss.stepHeader}>
-                                  <span className={DebugStepsCss.stepCount}>{stepCounter}</span> User Query
+                                  <span className={DebugStepsCss.stepCount}>{stepCounter}</span> {formattedRole}
                                 </div>
                                 <div className={DebugStepsCss.stepsContent}>{item.content}</div>
                               </div>

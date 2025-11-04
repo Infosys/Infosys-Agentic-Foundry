@@ -5,6 +5,7 @@ import { APIs, REACT_AGENT, agentTypesDropdown } from "../../constant";
 import SubHeader from "../commonComponents/SubHeader";
 import AgentOnboard from "../AgentOnboard";
 import UpdateAgent from "./UpdateAgent.jsx";
+import ExportFilesModal from "./ExportFilesModal.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 import Loader from "../commonComponents/Loader.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -13,6 +14,7 @@ import { useToolsAgentsService } from "../../services/toolService.js";
 import { debounce } from "lodash";
 import Cookies from "js-cookie";
 import { useActiveNavClick } from "../../events/navigationEvents";
+import { useErrorHandler } from "../../Hooks/useErrorHandler";
 
 const ListOfAgents = () => {
   const [plusBtnClicked, setPlusBtnClicked] = useState(false);
@@ -32,6 +34,7 @@ const ListOfAgents = () => {
   const [totalAgentCount, setTotalAgentCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const { addMessage, setShowPopup } = useMessage();
   const isLoadingRef = React.useRef(false);
   const [loader, setLoaderState] = useState(false);
@@ -43,12 +46,14 @@ const ListOfAgents = () => {
   const { fetchData, deleteData } = useFetch();
   const { getAgentsSearchByPageLimit, exportAgents, calculateDivs } = useToolsAgentsService();
   const pageRef = useRef(1);
+  const { handleError } = useErrorHandler();
+
   const getTags = async () => {
     try {
       const data = await fetchData(APIs.GET_TAGS);
       setTags(data);
-    } catch {
-      console.error("Tags not fetched");
+    } catch (e) {
+      handleError(e, { customMessage: "Failed to load tags" });
     }
   };
   // Use a ref to ensure tags are fetched only once
@@ -84,7 +89,7 @@ const ListOfAgents = () => {
         agentic_application_type: agentTypeToUse !== "all" && agentTypeToUse ? agentTypeToUse : undefined,
         tags: tagsParam,
       });
-      const data = sanitizeAgentsResponse(response);
+      const data = sanitizeAgentsResponse(response?.details);
 
       if (pageNumber === 1) {
         setAgentsList(data); // Save the initial list of agents
@@ -104,8 +109,10 @@ const ListOfAgents = () => {
         // Reset hasMore on fresh load only when page is full
         setHasMore(true);
       }
-      return data; // return fetched data for caller decisions
-    } catch {
+    } catch (e) {
+      // return data; // return fetched data for caller decisions
+
+      handleError(e, { customMessage: "Failed to load agents" });
       console.error("Error fetching tools");
       if (pageNumber === 1) {
         setAgentsList([]);
@@ -128,9 +135,7 @@ const ListOfAgents = () => {
 
       getAgentsData(1, divsCount);
     } catch (e) {
-      const errorMsg = e?.response?.data?.message || e?.message;
-      handleAddMessage(errorMsg, "error");
-      console.error("Fetch Agents Error");
+      handleError(e, { customMessage: "Failed to fetch agents" });
     }
   };
 
@@ -143,9 +148,7 @@ const ListOfAgents = () => {
       handleAddMessage("AGENT HAS BEEN DELETED SUCCESSFULLY !", "success");
       return true;
     } catch (error) {
-      const errorMsg = error?.response?.data?.message || error?.message;
-      handleAddMessage(errorMsg, "error");
-      console.error("Delete Agent Error");
+      handleError(error);
       return false;
     }
   };
@@ -171,7 +174,10 @@ const ListOfAgents = () => {
           agentic_application_type: selectedAgentTypeRef.current !== "all" && selectedAgentTypeRef.current ? selectedAgentTypeRef.current : undefined,
           tags: tagsParam,
         });
-        let dataToSearch = sanitizeAgentsResponse(response);
+        let dataToSearch = sanitizeAgentsResponse(response?.details);
+        if (tagsForSearch?.length > 0) {
+          dataToSearch = dataToSearch.filter((item) => item.tags && item.tags.some((tag) => tagsForSearch.includes(tag?.tag_name)));
+        }
 
         // Setting the total count
         setTotalAgentCount(response.total_count || 0);
@@ -181,7 +187,7 @@ const ListOfAgents = () => {
         // If returned less than requested, no more pages
         setHasMore(dataToSearch.length >= divsCount);
       } catch (error) {
-        console.error("Error fetching search results:", error);
+        handleError(error, { customMessage: "Search failed" });
         setVisibleData([]); // Clear visibleData on error
         setTotalAgentCount(0);
         setHasMore(false);
@@ -257,7 +263,10 @@ const ListOfAgents = () => {
         agentic_application_type: selectedAgentTypeRef.current !== "all" && selectedAgentTypeRef.current ? selectedAgentTypeRef.current : undefined,
         tags: selectedTags?.length > 0 ? selectedTags : undefined,
       });
-      newData = sanitizeAgentsResponse(res);
+      newData = sanitizeAgentsResponse(res?.details);
+      if (selectedTags?.length > 0) {
+        newData = newData.filter((item) => item.tags && item.tags.some((tag) => selectedTags.includes(tag?.tag_name)));
+      }
       if (newData.length > 0) {
         setVisibleData((prev) => [...prev, ...newData]);
         setPage(nextPage);
@@ -266,7 +275,7 @@ const ListOfAgents = () => {
       // If fewer items than requested were returned, we've reached the end
       if (newData.length < divsCount) setHasMore(false);
     } catch (err) {
-      console.error(err);
+      handleError(err, { customMessage: "Failed to load more agents" });
       setHasMore(false);
     } finally {
       setLoaderState(false);
@@ -344,11 +353,6 @@ const ListOfAgents = () => {
     setVisibleData([]);
     setHasMore(true);
 
-    // Close modal if tags are cleared
-    if (!selectedTagsParam || selectedTagsParam.length === 0) {
-      setFilterModal(false);
-    }
-
     // Trigger new API call with selected tags
     const divsCount = calculateDivs(visibleAgentsContainerRef, 200, 128, 40);
     if (searchTerm.trim()) {
@@ -378,7 +382,7 @@ const ListOfAgents = () => {
         agentic_application_type: type !== "all" && type ? type : undefined,
         tags: selectedTags?.length > 0 ? selectedTags : undefined,
       });
-      const sanitized = sanitizeAgentsResponse(response);
+      const sanitized = sanitizeAgentsResponse(response?.details);
       setVisibleData(sanitized);
       setTotalAgentCount(response.total_count || 0);
       setHasMore(sanitized.length >= divsCount);
@@ -394,29 +398,46 @@ const ListOfAgents = () => {
     setSelectedAgentIds((prev) => (checked ? [...prev, agentId] : prev.filter((id) => id !== agentId)));
   };
 
-  const handleExportSelected = async () => {
+  const handleExportSelected = () => {
     if (selectedAgentIds.length === 0) return;
+    setShowExportModal(true);
+  };
+
+  const handleExportWithFiles = async (selectedFiles, configData, exportAndDeploy) => {
     setExportLoading(true);
+    setShowExportModal(false);
     try {
       const userEmail = Cookies.get("email");
-      const blob = await exportAgents(selectedAgentIds, userEmail);
+      // You can extend the exportAgents function to accept selectedFiles parameter
+      // For now, we'll use the existing function and note that file selection could be added to the API
+      // Accept exportAndDeploy as a separate argument
+      const blob = await exportAgents(selectedAgentIds, userEmail, selectedFiles, configData, exportAndDeploy);
       if (!blob) throw new Error("Failed to export agents");
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "agents_export.zip";
+
+      // Dynamic filename and message based on whether files are selected
+      const filename = selectedFiles.length > 0 ? `agents_export_with_${selectedFiles.length}_files.zip` : `agents_export.zip`;
+      const successMessage =
+        selectedFiles.length > 0 ? `Agents exported successfully with ${selectedFiles.length} file${selectedFiles.length !== 1 ? "s" : ""}!` : "Agents exported successfully!";
+
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-      handleAddMessage("Agents exported successfully", "success");
+      handleAddMessage(successMessage, "success");
       setSelectedAgentIds([]); // Clear selection after successful export
     } catch (err) {
-      let errorMsg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Export failed!";
-      handleAddMessage(errorMsg, "error");
+      handleError(err, { customMessage: "Export failed" });
     } finally {
       setExportLoading(false);
     }
+  };
+
+  const handleCloseExportModal = () => {
+    setShowExportModal(false);
   };
 
   useActiveNavClick("/agent", () => {
@@ -435,7 +456,9 @@ const ListOfAgents = () => {
       )} */}
       <div className={styles.subHeaderContainer}>
         <SubHeader
-          onSearch={(value) => handleSearch(value, calculateDivs(visibleAgentsContainerRef, 200, 128, 40), 1)}
+          onSearch={(value) => {
+            handleSearch(value, calculateDivs(visibleAgentsContainerRef, 200, 128, 40), 1);
+          }}
           onSettingClick={onSettingClick}
           onPlusClick={onPlusClick}
           selectedTags={selectedTags}
@@ -453,40 +476,31 @@ const ListOfAgents = () => {
         </button>
       </div>
 
-      {/* Display searched tool text if searchTerm exists and results are found */}
-      {searchTerm.trim() && visibleData.length > 0 && (
-        <div className={styles.searchedToolText}>
-          <p>Agents Found: {searchTerm}</p>
-        </div>
-      )}
+      <div style={{ display: "flex", gap: "12px", width: "100%", overflow: "hidden" }}>
+        {/* Display searched tool text if searchTerm exists and results are found */}
+        {searchTerm.trim() && visibleData.length > 0 && (
+          <div className={styles.searchedToolText}>
+            <p>
+              Search term:{" "}
+              <span className={`boldText ${styles.filterOrSearchText}`} title={searchTerm}>
+                {searchTerm}
+              </span>
+            </p>
+          </div>
+        )}
 
-      {/* Display filtered tools text if filters are applied */}
-      {selectedTags.length > 0 && visibleData.length > 0 && (
-        <div className={styles.filteredToolText}>
-          <p>Agents Found: {selectedTags.join(", ")}</p>
-        </div>
-      )}
-
-      {/* Display "No Agents Found" if no results are found after filtering */}
-      {selectedTags.length > 0 && visibleData.length === 0 && (
-        <div className={styles.searchedToolText}>
-          <p>No Agents Found: {selectedTags.join(", ")}</p>
-        </div>
-      )}
-
-      {/* Display "No Agents Found" if no results are found after searching */}
-      {searchTerm.trim() && visibleData.length === 0 && (
-        <div className={styles.filteredToolText}>
-          <p>No Agents Found: {searchTerm}</p>
-        </div>
-      )}
-
-      {/* Display "No Agents found" if no results are found after selecting agent type */}
-      {selectedAgentType && !searchTerm.trim() && selectedTags.length === 0 && visibleData.length === 0 && (
-        <div className={styles.filteredToolText}>
-          <p>No Agents found</p>
-        </div>
-      )}
+        {/* Display filtered tools text if filters are applied */}
+        {selectedTags.length > 0 && visibleData.length > 0 && (
+          <div className={styles.filteredToolText}>
+            <p>
+              Selected tags:{" "}
+              <span className={`boldText ${styles.filterOrSearchText}`} title={selectedTags.join(", ")}>
+                {selectedTags.join(", ")}
+              </span>
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Display total count summary */}
       {visibleData.length > 0 && (
@@ -496,6 +510,36 @@ const ListOfAgents = () => {
       )}
 
       <div className={styles.visibleAgentsContainer} ref={visibleAgentsContainerRef}>
+        {/* Display "No Agents Found" if no results are found after filtering */}
+        {selectedTags.length > 0 && visibleData.length === 0 && (
+          <div className={styles.searchedToolText}>
+            <p>
+              No agents found for:{" "}
+              <span className={`boldText ${styles.filterOrSearchText}`} title={selectedTags.join(", ")}>
+                {selectedTags.join(", ")}
+              </span>
+            </p>
+          </div>
+        )}
+
+        {/* Display "No Agents Found" if no results are found after searching */}
+        {searchTerm.trim() && visibleData.length === 0 && (
+          <div className={styles.filteredToolText}>
+            <p>
+              No agents found for:{" "}
+              <span className={`boldText ${styles.filterOrSearchText}`} title={searchTerm}>
+                {searchTerm}
+              </span>
+            </p>
+          </div>
+        )}
+
+        {/* Display "No Agents found" if no results are found after selecting agent type */}
+        {selectedAgentType && !searchTerm.trim() && selectedTags.length === 0 && visibleData.length === 0 && (
+          <div className={styles.filteredToolText}>
+            <p>No agents found</p>
+          </div>
+        )}
         <div className={styles.agentsList}>
           {visibleData?.map((data) => (
             <AgentCard
@@ -544,6 +588,8 @@ const ListOfAgents = () => {
         selectedTags={selectedTags}
         showfilterHeader={"Filter agents by Tags"}
       />
+
+      {showExportModal && <ExportFilesModal onClose={handleCloseExportModal} selectedAgentIds={selectedAgentIds} onExport={handleExportWithFiles} />}
     </div>
   );
 };

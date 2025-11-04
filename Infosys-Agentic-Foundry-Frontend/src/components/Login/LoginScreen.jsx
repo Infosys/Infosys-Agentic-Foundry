@@ -4,13 +4,16 @@ import { useNavigate } from "react-router-dom";
 import SVGIcons from "../../Icons/SVGIcons";
 import useFetch from "../../Hooks/useAxios";
 import Cookies from "js-cookie";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth, getActiveUser } from "../../context/AuthContext";
 import { APIs, roleOptions } from "../../constant";
 import { setSessionStart } from "../../Hooks/useAutoLogout";
+import useErrorHandler from "../../Hooks/useErrorHandler";
 
 function LoginScreen() {
-  const { login } = useAuth();
-  const { postData, fetchData, setJwtToken } = useFetch();
+  const { login, forceReplaceLogin, syncFromCookies, isAuthenticated, user, logout } = useAuth();
+  const { postData, fetchData, setJwtToken, setRefreshToken } = useFetch();
+  const { handleApiError, handleApiSuccess } = useErrorHandler(); // centralized handlers
+
   const [email, setEmail] = useState("");
   const [errEmail, setErrEmail] = useState("");
   // Use a ref instead to avoid storing in state
@@ -22,6 +25,8 @@ function LoginScreen() {
   const [errSubmit, setErrSubmit] = useState(false);
   const [msgSubmit, setMsgSubmit] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [pendingCredentials, setPendingCredentials] = useState(null); // store attempted credentials for force replace
 
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
@@ -204,23 +209,43 @@ function LoginScreen() {
           role: selectedOption,
         });
 
-        // Setting JWT token
-        if (users?.token) {
-          setJwtToken(users.token);
-        }
+        // Setting JWT & refresh tokens
+        if (users?.token) setJwtToken(users.token);
+        if (users?.refresh_token) setRefreshToken(users.refresh_token);
 
         if (users.approval) {
           // update context + cookies centrally
           const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
-          let sessionIdResponse = (await fetchData(apiUrl)) || null;
+          const sessionIdResponse = (await fetchData(apiUrl)) || null;
+
+          // DEBUG: Verify all cookies are being set
+          console.log("🔐 Setting login cookies:", {
+            userName: users.user_name || users.username,
+            session: sessionIdResponse,
+            role: users.role,
+            email: users.email,
+          });
 
           login({
             userName: users.user_name || users.username,
             user_session: sessionIdResponse,
             role: users.role,
+            refresh_token: users.refresh_token,
           });
           Cookies.set("email", users.email);
           setSessionStart();
+
+          // VERIFY cookies were actually set after a brief delay
+          // setTimeout(() => {
+          //   console.log("🔍 Verifying cookies after login:", {
+          //     userName: Cookies.get("userName"),
+          //     session: Cookies.get("user_session"),
+          //     jwt: Cookies.get("jwt-token"),
+          //     role: Cookies.get("role"),
+          //     email: Cookies.get("email"),
+          //   });
+          // }, 100);
+
           navigate("/");
           setMsgSubmit("Success");
           clearError();
@@ -235,10 +260,11 @@ function LoginScreen() {
         // passwordRef.current = "";
       }
     } catch (error) {
-      // Clear the password from memory after use
-      // passwordRef.current = "";
+      // Let global handler decide final toast (connection refused / no response / backend detail)
+      handleApiError(error, { context: "LoginScreen.onSubmit" });
       setErrSubmit(true);
-      setMsgSubmit("An error occurred. Please try again.");
+      // Do NOT overwrite with generic text; leave msgSubmit blank so only toast shows
+      setMsgSubmit("");
       clearError();
     }
   };
@@ -256,14 +282,14 @@ function LoginScreen() {
           userName: users.user_name || users.username,
           user_session: sessionIdResponse,
           role: users.role || "Guest",
+          refresh_token: users.refresh_token,
         });
         Cookies.set("email", users.email);
         setSessionStart();
 
-        // Setting JWT token
-        if (users?.token) {
-          setJwtToken(users.token);
-        }
+        // Setting JWT & refresh tokens
+        if (users?.token) setJwtToken(users.token);
+        if (users?.refresh_token) setRefreshToken(users.refresh_token);
 
         navigate("/");
         setMsgSubmit(users.message || "Guest login successful");
@@ -275,11 +301,97 @@ function LoginScreen() {
         clearError();
       }
     } catch (error) {
-      console.error("Guest login error:", error); // Log the detailed error
+      handleApiError(error, { context: "LoginScreen.guestLogin" });
       setErrSubmit(true);
-      setMsgSubmit("An error occurred. Please try again.");
+      setMsgSubmit("");
       clearError();
     }
+  };
+
+  // Pre-login guard: if already authenticated, navigate away (optional UX improvement)
+  useEffect(() => {
+    if (isAuthenticated && user?.name) {
+      // Already logged in; stay or redirect - we leave as-is to allow forced replacement if user clears something.
+    }
+  }, [isAuthenticated, user]);
+
+  // Cross-tab logout / replace-session listener via storage fallback (BroadcastChannel handled in context)
+  useEffect(() => {
+    const handleFocusValidate = () => {
+      // If artifacts missing but context still shows auth, trigger logout
+      try {
+        const hasUserCookie = document.cookie.includes("userName=");
+        if (!hasUserCookie && isAuthenticated) logout("missing-artifacts-focus");
+      } catch (_) {}
+    };
+    window.addEventListener("focus", handleFocusValidate);
+    return () => window.removeEventListener("focus", handleFocusValidate);
+  }, [isAuthenticated, logout]);
+
+  const attemptLoginWithConflictCheck = () => {
+    // Acquire credentials from current form state
+    const emailInput = document.querySelector('input[name="Email"]');
+    const actualEmailValue = emailInput ? emailInput.value : email;
+    const attemptedUserName = actualEmailValue; // assuming email is used as userName OR backend returns user_name later
+    const attemptedRole = selectedOption;
+    const active = getActiveUser();
+    // If there is an active user different from attempted OR role differs while active session exists
+    if (active && active !== attemptedUserName) {
+      setPendingCredentials({ email: attemptedUserName, password: passwordRef.current, role: attemptedRole });
+      setShowConflictModal(true);
+      return;
+    }
+    // proceed normally
+    onSubmit();
+  };
+
+  const handleForceLogin = () => {
+    if (!pendingCredentials) return;
+    const creds = pendingCredentials;
+    setShowConflictModal(false);
+    // Use existing onSubmit pipeline but with forceReplace pre step
+    // We'll call the same API manually to respect existing backend flow
+    (async () => {
+      try {
+        const users = await postData(APIs.LOGIN, {
+          email_id: creds.email,
+          password: creds.password,
+          role: creds.role,
+        });
+        if (users?.approval) {
+          const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
+          const sessionIdResponse = (await fetchData(apiUrl)) || null;
+          forceReplaceLogin({
+            userName: users.user_name || users.username,
+            user_session: sessionIdResponse,
+            role: users.role,
+            refresh_token: users.refresh_token,
+          });
+          Cookies.set("email", users.email);
+          setSessionStart();
+          if (users?.token) setJwtToken(users.token);
+          if (users?.refresh_token) setRefreshToken(users.refresh_token);
+          navigate("/");
+        } else {
+          setErrSubmit(true);
+          setMsgSubmit(users.message || "Force login failed");
+          clearError();
+        }
+      } catch (error) {
+        handleApiError(error, { context: "LoginScreen.forceReplaceLogin" });
+        setErrSubmit(true);
+        setMsgSubmit("Force login error");
+        clearError();
+      }
+    })();
+  };
+
+  const handleRefreshExisting = () => {
+    setShowConflictModal(false);
+    // Rehydrate from cookies and reload state (no new login)
+    syncFromCookies();
+    // Optionally force a soft reload to ensure app-level contexts catch up
+    navigate("/", { replace: true });
   };
 
   return (
@@ -311,7 +423,7 @@ function LoginScreen() {
           return;
         }
         // If all is good, submit the form
-        onSubmit();
+        attemptLoginWithConflictCheck();
       }}>
       <h3 className="title">Sign In</h3>
       {/* email */}{" "}
@@ -429,18 +541,18 @@ function LoginScreen() {
       <div>{msgSubmit && <span className={msgSubmit === "Success" ? "success-style" : "error-style"}>{msgSubmit}</span>}</div>
       <div className="submit-style">
         {/* login as guest button */}
-        <button type="button" className="button-style" onClick={(e) => handleGuestLogin(e)}>
+        {/* <button type="button" className="button-style" onClick={(e) => handleGuestLogin(e)}>
           <h2 className="signIntext"> Login as Guest </h2>
           <div className="signarrow">
             <SVGIcons icon="rightarrow" width={20} height={18} fill="#fff" />
           </div>
-        </button>
+        </button> */}
 
         <div className="div-hyperstyle">
           {/* <a href="/infy-agent/service-register" className="hyperlink">
             Register
           </a> */}
-          <button type="button" className="button-style" onClick={() => onSubmit()} icon>
+          <button type="button" className="button-style" onClick={() => attemptLoginWithConflictCheck()}>
             <h2 className="signIntext"> Sign In </h2>
             <div className="signarrow">
               <SVGIcons icon="rightarrow" width={20} height={18} fill="#fff" />
@@ -448,6 +560,27 @@ function LoginScreen() {
           </button>
         </div>
       </div>
+      {showConflictModal && (
+        <div className="conflict-modal-overlay" role="dialog" aria-modal="true">
+          <div className="conflict-modal">
+            <h2>Existing session detected</h2>
+            <p>
+              You’re currently logged in as <strong>{getActiveUser()}</strong>. Choose Refresh to keep that session or Force Login to replace it across all tabs.
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="button-style" onClick={handleRefreshExisting}>
+                Refresh
+              </button>
+              <button type="button" className="button-style" onClick={handleForceLogin}>
+                Force Login
+              </button>
+              <button type="button" className="button-style" onClick={() => setShowConflictModal(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

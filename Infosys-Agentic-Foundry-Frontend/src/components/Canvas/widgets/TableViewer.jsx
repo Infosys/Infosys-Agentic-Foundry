@@ -335,7 +335,7 @@ const AdvancedTableViewer = ({ content, messageId }) => {
             >
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                 <path d="M10 13V3M7 10L10 13L13 10M5 17H15" 
-                  stroke="#007acc" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
 

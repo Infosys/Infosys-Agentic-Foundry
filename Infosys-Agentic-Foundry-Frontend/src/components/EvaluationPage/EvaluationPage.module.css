@@ -1,17 +1,20 @@
 .tabHeader {
   display: flex;
-  border-bottom: 1px solid #ddd;
-  margin-bottom: 20px;
+  border-bottom: none;
+  margin-bottom: 12px; /* Add space below header tabs */
   overflow: hidden;
   overflow-x: auto;
   white-space: nowrap;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   position: relative;
+  gap: 0;
+  background: none;
+  border: none;
 }
 
 .tab {
-  background-color: #f8f8f8;
+  background: none;
   border: none;
   padding: 10px 20px;
   cursor: pointer;
@@ -21,14 +24,15 @@
 }
 
 .activeTab {
-  background-color: white;
-  border: 1px solid #ddd;
-  border-bottom: none;
+  background: none;
+  color: #007cc3;
+  font-weight: bold;
+  border: none !important;
+  box-shadow: none !important;
   padding: 10px 20px;
   cursor: pointer;
   margin-right: 5px;
-  border-radius: 4px 4px 0 0;
-  font-weight: bold;
+  /* border-radius: 4px 4px 0 0; */
   position: relative;
   top: 1px;
   font-size: 14px;
@@ -38,6 +42,9 @@
   padding-inline: 10px;
   height: calc(100vh - 120px);
   overflow-y: auto;
+  /* border-radius: 0 0 4px 4px; */
+  /* box-shadow: 0 2px 8px rgba(0,124,195,0.08); */
+  /* background: #fff; */
 }
 
 /* Customize scrollbar for tabHeader */
@@ -68,4 +75,234 @@
 
 .evaluateMetrics {
   display: block;
+}
+
+.iafTabsBtn {
+  min-width: 120px;
+  padding: 10px 18px;
+  font-size: 15px;
+  border-radius: 4px 4px 0 0;
+  background: #f5f7fa;
+  color: #343741;
+  font-weight: 600;
+  border: 1px solid #e0e0e0;
+  border-bottom: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 0;
+}
+
+.iafTabsBtn:hover {
+  background: #f5f7fa;
+  color: #007cc3;
+  box-shadow: 0 4px 12px rgba(0, 124, 195, 0.08);
+}
+
+.iafTabsBtn.active {
+  background: #007cc3;
+  color: #fff;
+  border: 1px solid #007cc3;
+  border-bottom: none;
+  font-weight: 700;
+  z-index: 2;
+}
+
+.subHeaderTabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0;
+  margin-top: 4px; /* Add space above subheader tabs */
+}
+
+.subHeaderBtn {
+  min-width: 120px;
+  padding: 10px 18px;
+  font-size: 15px;
+  border-radius: 0 0 0 4px;
+  background: #f5f7fa;
+  color: #343741;
+  font-weight: 600;
+  border: 1px solid #e0e0e0;
+  border-top: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 0;
+}
+
+.subHeaderBtn:hover {
+  background: #f5f7fa;
+  color: #007cc3;
+  box-shadow: 0 4px 12px rgba(0, 124, 195, 0.08);
+}
+
+.subHeaderBtn.active {
+  background: #007cc3;
+  color: #fff;
+  border: 1px solid #007cc3;
+  border-top: none;
+  font-weight: 700;
+  z-index: 2;
+}
+
+.subHeaderBtn:last-child {
+  border-radius: 0 0 4px 0;
+}
+
+.rightTabContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  width: Calc(100vw - 240px);
+}
+
+.leftNav {
+  width: 170px;
+  min-width: 170px;
+  max-width: 170px;
+  background: #fff;
+  border-right: 1px solid #e0e0e0;
+  padding: 20px 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  overflow-y: auto;
+  height: Calc(100vh - 45px);
+}
+
+.leftNavTabs {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Main navigation items (LLM as Judge, Metrics) */
+.navItem {
+  width: 100%;
+  padding: 11px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+  color: #343741;
+  text-align: left;
+  transition: all 0.15s ease, transform 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+.navSeparator {
+  border-block-end: 1px solid #f0f0f0;
+}
+
+.navItem:hover {
+  transform: scale(1.05);
+}
+
+.navItem.activeItem {
+  color: #007cc3;
+  font-weight: 600;
+}
+
+/* Evaluation label (non-clickable separator) */
+.navLabel {
+  width: 100%;
+  padding: 16px 16px 8px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #69707d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0px;
+  box-sizing: border-box;
+}
+
+/* Submenu items (Ground Truth, Consistency) */
+.navSubItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 16px;
+  padding-left: 24px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+  color: #343741; /* was #69707d */
+  text-align: left;
+  transition: all 0.15s ease, transform 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  box-sizing: border-box;
+  align-items: baseline;
+}
+
+.navSubItem:hover {
+  transform: scale(1.05);
+}
+
+.navSubItem.activeSubItem {
+  color: #007cc3;
+  font-weight: 600;
+}
+
+.subItemIcon {
+  font-size: 16px;
+  margin-right: 6px;
+  margin-left: 5px;
+  color: #c1c7d0;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.navSubItem.activeSubItem .subItemIcon {
+  color: #007cc3;
+}
+
+.subItemText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.consistencySplitContainer {
+  display: flex;
+  flex-direction: row;
+  gap: 32px;
+  height: Calc(100vh - 46px);
+}
+
+.consistencyFormPanel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.consistencyResponsePanel {
+  flex: 1;
+  min-width: 0;
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 24px;
+  overflow: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.sideTabWrapper {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: #f7f9fb;
 }

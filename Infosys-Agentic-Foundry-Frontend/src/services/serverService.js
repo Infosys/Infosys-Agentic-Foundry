@@ -1,17 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { APIs } from "../constant";
 import useFetch from "../Hooks/useAxios";
-
-const extractErrorMessage = (error) => {
-  const responseError = { message: null };
-  if (error?.response?.data?.detail) {
-    responseError.message = error.response.data.detail;
-  }
-  if (error?.response?.data?.message) {
-    responseError.message = error.response.data.message;
-  }
-  return responseError.message ? responseError : null;
-};
+import { extractErrorMessage } from "../utils/errorUtils";
 
 export const useMcpServerService = () => {
   const { fetchData, putData, deleteData } = useFetch();
@@ -31,18 +21,18 @@ export const useMcpServerService = () => {
     [deleteData]
   );
 
-  const getAllServers = useCallback(async () => {
-    try {
-      const apiUrl = `${APIs.MCP_GET_ALL_SERVERS}`;
-      const response = await fetchData(apiUrl);
-      if (response) {
-        return response;
-      }
-      return [];
-    } catch (error) {
-      return extractErrorMessage(error);
-    }
-  }, [fetchData]);
+  // const getAllServers = useCallback(async () => {
+  //   try {
+  //     const apiUrl = `${APIs.MCP_GET_ALL_SERVERS}`;
+  //     const response = await fetchData(apiUrl);
+  //     if (response) {
+  //       return response;
+  //     }
+  //     return [];
+  //   } catch (error) {
+  //     return extractErrorMessage(error);
+  //   }
+  // }, [fetchData]);
 
   const getServersSearchByPageLimit = useCallback(
     async ({ search, page, limit, tags }) => {
@@ -56,16 +46,22 @@ export const useMcpServerService = () => {
 
         // Add tag_names parameter if tags are provided (same as tools/agents)
         if (tags && Array.isArray(tags) && tags.length > 0) {
-          // Add separate tag_names parameter for each tag
-          tags.forEach((tag) => {
+          // Process all selected type filters
+          const typeFilters = tags.filter(tag => ["REMOTE", "LOCAL", "EXTERNAL"].includes(tag));
+          typeFilters.forEach(typeFilter => {
+            if (typeFilter === "REMOTE") {
+              params.push(`mcp_type=${encodeURIComponent("url")}`);
+            } else if (typeFilter === "LOCAL") {
+              params.push(`mcp_type=${encodeURIComponent("file")}`);
+            } else if (typeFilter === "EXTERNAL") {
+              params.push(`mcp_type=${encodeURIComponent("module")}`);
+            }
+          });
+          // Then process regular tags
+          const regularTags = tags.filter(tag => !["REMOTE", "LOCAL", "EXTERNAL"].includes(tag));
+          regularTags.forEach(tag => {
             if (tag && tag.trim()) {
-              if (tag === "REMOTE") {
-                params.push(`mcp_type=${encodeURIComponent("url")}`);
-              } else if (tag === "LOCAL") {
-                params.push(`mcp_type=${encodeURIComponent("file")}`);
-              } else {
-                params.push(`tag_names=${encodeURIComponent(tag)}`);
-              }
+              params.push(`tag_names=${encodeURIComponent(tag)}`);
             }
           });
         }
@@ -82,8 +78,20 @@ export const useMcpServerService = () => {
   const updateServer = useCallback(
     async (toolId, payload) => {
       try {
+        // Patch: Ensure REMOTE server update always includes Authorization header
+        const patchedPayload = { ...payload };
+        if (
+          patchedPayload.mcp_type === "url" &&
+          patchedPayload.vaultValue &&
+          typeof patchedPayload.vaultValue === "string" &&
+          patchedPayload.vaultValue.trim().length > 0
+        ) {
+          patchedPayload.mcp_config = patchedPayload.mcp_config || {};
+          patchedPayload.mcp_config.headers = patchedPayload.mcp_config.headers || {};
+          patchedPayload.mcp_config.headers.Authorization = `VAULT::${patchedPayload.vaultValue}`;
+        }
         const apiUrl = `${APIs.MCP_UPDATE_SERVER}${toolId}`;
-        const response = await putData(apiUrl, payload);
+        const response = await putData(apiUrl, patchedPayload);
         if (response) return response;
         return null;
       } catch (error) {
@@ -112,11 +120,11 @@ export const useMcpServerService = () => {
   return useMemo(
     () => ({
       deleteServer,
-      getAllServers,
+      // getAllServers,
       getServersSearchByPageLimit,
       updateServer,
       getLiveToolDetails,
     }),
-    [deleteServer, getAllServers, getServersSearchByPageLimit, updateServer, getLiveToolDetails]
+    [deleteServer, getServersSearchByPageLimit, updateServer, getLiveToolDetails]
   );
 };

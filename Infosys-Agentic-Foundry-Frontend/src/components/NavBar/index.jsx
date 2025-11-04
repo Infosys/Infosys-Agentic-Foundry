@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import styles from "../../css_modules/NavBar.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { NavLink, useLocation } from "react-router-dom";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext";
+import { useAuth } from "../../context/AuthContext";
 import Cookies from "js-cookie";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faKey } from "@fortawesome/free-solid-svg-icons";
@@ -12,9 +13,18 @@ export default function NavBar() {
   const { showComponent, hideComponent } = useGlobalComponent();
   const [activeButton, setActiveButton] = useState("");
   const location = useLocation();
+  const { isAuthenticated } = useAuth();
 
   const role = Cookies.get("role");
   const isAdmin = role && role.toLowerCase() === "admin";
+  const isDeveloper = role && role.toLowerCase() === "developer";
+
+  // Reset active button state when user logs out
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setActiveButton("");
+    }
+  }, [isAuthenticated]);
 
   const handleNavClick = (e) => {
     if (activeButton === "files" && e !== "/files") {
@@ -36,12 +46,7 @@ export default function NavBar() {
       }
     };
     return (
-      <NavLink
-        to={to}
-        onClick={handleClick}
-        className={({ isActive }) => (isActive ? "active" : undefined)}
-        {...extraProps}
-      >
+      <NavLink to={to} onClick={handleClick} className={({ isActive }) => (isActive ? "active" : undefined)} {...extraProps}>
         {children}
       </NavLink>
     );
@@ -97,15 +102,12 @@ export default function NavBar() {
             )}
           </li>
           <li>
-            <button
-              onClick={handleFileClick}
-              className={activeButton === "files" ? "active" : ""}
-            >
+            <button onClick={handleFileClick} className={activeButton === "files" ? "active" : ""}>
               <SVGIcons icon="file" fill="#343741" />
               <span>Files</span>
             </button>
           </li>
-          {!isAdmin && (
+          {(!isAdmin && !isDeveloper) && (
             <li>
               {mainNavLink(
                 "/groundtruth",
@@ -116,31 +118,28 @@ export default function NavBar() {
               )}
             </li>
           )}
-          {/* <li>
-            {mainNavLink("/newchat", <><SVGIcons icon="new-chat" fill="#343741" /><span>New Chat</span></>)}
-          </li> */}
           {/* Show Admin nav only if user is admin (case-insensitive) */}
-          {role && role.toUpperCase() === "ADMIN" && (
-            <>
-              <li>
-                {mainNavLink(
-                  "/evaluation",
-                  <>
-                    <SVGIcons icon="clipboard-check" fill="#343741" />
-                    <span>Evaluation</span>
-                  </>
-                )}
-              </li>
-              <li>
-                {mainNavLink(
-                  "/admin",
-                  <>
-                    <SVGIcons icon="person-circle" fill="#343741" />
-                    <span>Admin</span>
-                  </>
-                )}
-              </li>
-            </>
+          {(role && role.toUpperCase() === "ADMIN" || isDeveloper)&& (
+            <li>
+              {mainNavLink(
+                "/evaluation",
+                <>
+                  <SVGIcons icon="clipboard-check" fill="#343741" />
+                  <span>Evaluation</span>
+                </>
+              )}
+            </li>
+          )}
+              {role && role.toUpperCase() === "ADMIN" && (
+                <li>
+                  {mainNavLink(
+                    "/admin",
+                    <>
+                      <SVGIcons icon="person-circle" fill="#343741" />
+                      <span>Admin</span>
+                    </>
+                  )}
+            </li>
           )}
         </ul>
       </nav>

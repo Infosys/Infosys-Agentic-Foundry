@@ -310,6 +310,10 @@
   cursor: pointer;
 }
 
+input:is(:-webkit-autofill, :autofill) + .eye-icon svg * {
+  stroke: #7f7f7f;
+}
+
 /* Add this to ensure focus works properly on password field */
 .password-container .loginPage-input:focus {
   border-color: #0071b3;

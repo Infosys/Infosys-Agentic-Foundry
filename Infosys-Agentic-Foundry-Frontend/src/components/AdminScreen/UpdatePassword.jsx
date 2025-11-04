@@ -22,9 +22,20 @@ const UpdatePassword = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
   const [isSubmitDisabled, setIsSubmitDisabled] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [hasPasswordInput, setHasPasswordInput] = useState(false);
+  const [hasConfirmPasswordInput, setHasConfirmPasswordInput] = useState(false);
   const { postData } = useFetch();
 
   const dropdownRef = useRef(null);
+
+  const togglePasswordVisibility = () => {
+    setShowPassword((prev) => !prev);
+  };
+  const toggleConfirmPasswordVisibility = () => {
+    setShowConfirmPassword((prev) => !prev);
+  };
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -92,7 +103,7 @@ const UpdatePassword = () => {
     const requestBody = {
       email_id: email,
       ...(password && { new_password: password }),
-      ...(selectedOption!== "Select role" && { role: selectedOption }),
+      ...(selectedOption !== "Select role" && { role: selectedOption }),
     };
 
     const url = APIs.UPDATE_PASSWORD_ROLE;
@@ -109,6 +120,10 @@ const UpdatePassword = () => {
       setPassword("");
       setRetypePassword("");
       setSelectedOption("Select role");
+      setShowPassword(false);
+      setShowConfirmPassword(false);
+      setHasPasswordInput(false);
+      setHasConfirmPasswordInput(false);
       setTouched({});
     } catch (err) {
       console.error(err);
@@ -128,27 +143,49 @@ const UpdatePassword = () => {
             {touched.email && errors.email && <span className={styles.error}>{errors.email}</span>}
           </div>
           <div className="space-devider"></div>
-          <div className="flexrow">
-            <input
-              type="password"
-              value={password}
-              placeholder="New Password"
-              className="login-input"
-              onChange={(e) => setPassword(e.target.value)}
-              onBlur={() => handleBlur("password")}
-            />
+          <div className="flexrow password-container">
+            <div className="input-wrapper">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                placeholder="New Password"
+                className="login-input"
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setHasPasswordInput(e.target.value.length > 0);
+                }}
+                onBlur={() => handleBlur("password")}
+                onFocus={() => setHasPasswordInput(true)}
+              />
+              {hasPasswordInput && (
+                <span className="eye-icon" onClick={togglePasswordVisibility}>
+                  <SVGIcons icon={showPassword ? "eye-slash" : "eye"} fill="#d9d9d9" />
+                </span>
+              )}
+            </div>
             {touched.password && errors.password && <span className={styles.error}>{errors.password}</span>}
           </div>
           <div className="space-devider"></div>
-          <div className="flexrow">
-            <input
-              type="password"
-              value={retypePassword}
-              placeholder="Confirm Password"
-              className="login-input"
-              onChange={(e) => setRetypePassword(e.target.value)}
-              onBlur={() => handleBlur("retypePassword")}
-            />
+          <div className="flexrow password-container">
+            <div className="input-wrapper">
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                value={retypePassword}
+                placeholder="Confirm Password"
+                className="login-input"
+                onChange={(e) => {
+                  setRetypePassword(e.target.value);
+                  setHasConfirmPasswordInput(e.target.value.length > 0);
+                }}
+                onBlur={() => handleBlur("retypePassword")}
+                onFocus={() => setHasConfirmPasswordInput(true)}
+              />
+              {hasPasswordInput && hasConfirmPasswordInput && (
+                <span className="eye-icon" onClick={toggleConfirmPasswordVisibility}>
+                  <SVGIcons icon={showConfirmPassword ? "eye-slash" : "eye"} fill="#d9d9d9" />
+                </span>
+              )}
+            </div>
             {touched.retypePassword && errors.retypePassword && <span className={styles.error}>{errors.retypePassword}</span>}
           </div>
           <div className="space-devider"></div>

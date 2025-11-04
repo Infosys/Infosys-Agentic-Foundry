@@ -14,6 +14,7 @@ import {
   SystemPromptsPlannerMetaAgent,
   REACT_CRITIC_AGENT,
   PLANNER_EXECUTOR_AGENT,
+  HYBRID_AGENT,
   systemPromptReactCriticAgents,
   systemPromptPlannerExecutorAgents,
 } from "../../../constant";
@@ -29,9 +30,10 @@ import { useToolsAgentsService } from "../../../services/toolService";
 import { debounce } from "lodash";
 import { useMcpServerService } from "../../../services/serverService";
 import { useAuth } from "../../../context/AuthContext";
+import { useErrorHandler } from "../../../Hooks/useErrorHandler";
 
 const UpdateAgent = (props) => {
-  const { getAllServers } = useMcpServerService();
+  const { getServersSearchByPageLimit } = useMcpServerService();
   const loggedInUserEmail = Cookies.get("email");
   const userName = Cookies.get("userName");
   const role = Cookies.get("role");
@@ -94,6 +96,7 @@ const UpdateAgent = (props) => {
   const [copiedStates, setCopiedStates] = useState({});
 
   const { addMessage, setShowPopup } = useMessage();
+  const { handleApiError, handleError } = useErrorHandler();
   const [visibleData, setVisibleData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -105,6 +108,17 @@ const UpdateAgent = (props) => {
       setShowPopup(false);
     }
   }, [loader]);
+
+  const extractErrorMessage = (error) => {
+    const responseError = { message: null };
+    if (error.response?.data?.detail) {
+      responseError.message = error.response.data.detail;
+    }
+    if (error.response?.data?.message) {
+      responseError.message = error.response.data.message;
+    }
+    return responseError.message ? responseError : null;
+  };
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -125,7 +139,6 @@ const UpdateAgent = (props) => {
       try {
         const data = await fetchData(APIs.GET_AGENTS_BY_ID + agentData?.agentic_application_id);
 
-        // Batch your state updates where possible
         const agentType = data[0]?.agentic_application_type;
         const systemPrompts = typeof data[0]["system_prompt"] === "string" ? JSON.parse(data[0]["system_prompt"], null, "\t") : data[0]["system_prompt"];
         const selectedToolsId = typeof data[0]["tools_id"] === "string" ? JSON.parse(data[0]["tools_id"]) : data[0]["tools_id"];
@@ -152,8 +165,8 @@ const UpdateAgent = (props) => {
         } else {
           setSelectedToolsLoading(false); // If no agentType, nothing to load
         }
-      } catch {
-        console.error("Details failed");
+      } catch (e) {
+        handleError(e, { customMessage: "Failed to load agent details" });
       } finally {
         setLoader(false);
       }
@@ -169,15 +182,41 @@ const UpdateAgent = (props) => {
   // New function to handle tool loading
   const loadRelatedTools = async (type, selectedToolsId) => {
     try {
-      if (type === REACT_AGENT || type === MULTI_AGENT || type === REACT_CRITIC_AGENT || type === PLANNER_EXECUTOR_AGENT) {
+      if (type === REACT_AGENT || type === MULTI_AGENT || type === REACT_CRITIC_AGENT || type === PLANNER_EXECUTOR_AGENT || type === HYBRID_AGENT) {
         const response = await postData(APIs.GET_TOOLS_BY_LIST, selectedToolsId);
-        setSelectedTools(response);
+        const tools = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.details)
+          ? response.details
+          : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.results)
+          ? response.results
+          : Array.isArray(response?.items)
+          ? response.items
+          : Array.isArray(response?.tools)
+          ? response.tools
+          : [];
+        setSelectedTools(tools);
       } else if (type === META_AGENT || type === PLANNER_META_AGENT) {
         const response = await postData(APIs.GET_AGENTS_BY_LIST, selectedToolsId);
-        setSelectedAgents(response);
+        const agents = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.details)
+          ? response.details
+          : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.results)
+          ? response.results
+          : Array.isArray(response?.items)
+          ? response.items
+          : Array.isArray(response?.agents)
+          ? response.agents
+          : [];
+        setSelectedAgents(agents);
       }
-    } catch {
-      console.error("Check problem in Load Related Tools");
+    } catch (e) {
+      handleError(e, { customMessage: "Failed to load related Tools" });
     } finally {
       setSelectedToolsLoading(false); // Set loading to false when done
     }
@@ -196,24 +235,46 @@ const UpdateAgent = (props) => {
     if (!props?.recycleBin) {
       setLoader(true);
       try {
-        if (agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT) {
-          const response = await getToolsSearchByPageLimit({
-            page: pageNumber,
-            limit: divsCount,
-            search: "",
-          });
-          const fetchedTools = response || [];
-          const filteredTools = fetchedTools.filter((tool) => !selectedTools?.some((selectedTool) => selectedTool.tool_id === tool.tool_id));
+        if (agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === HYBRID_AGENT) {
+          const response = await getToolsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: "" });
+          const fetchedTools = Array.isArray(response)
+            ? response
+            : Array.isArray(response?.details)
+            ? response.details
+            : Array.isArray(response?.data)
+            ? response.data
+            : Array.isArray(response?.results)
+            ? response.results
+            : Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response?.tools)
+            ? response.tools
+            : [];
+          const filteredTools = fetchedTools.filter((tool) => !selectedTools?.some((selectedTool) => (selectedTool.tool_id || selectedTool.id) === (tool.tool_id || tool.id)));
           setRemainingTools((prev) => (pageNumber === 1 ? filteredTools : [...prev, ...filteredTools]));
           setVisibleData((prev) => (pageNumber === 1 ? filteredTools : [...prev, ...filteredTools]));
-          setTotalCount(fetchedTools.length || 0);
+          const total =
+            (typeof response?.total_count === "number" && response.total_count) ||
+            (typeof response?.total === "number" && response.total) ||
+            (typeof response?.count === "number" && response.count) ||
+            fetchedTools.length ||
+            0;
+          setTotalCount(total);
         } else if (agentType === META_AGENT || agentType === PLANNER_META_AGENT) {
-          const response = await getAgentsSearchByPageLimit({
-            page: pageNumber,
-            limit: divsCount,
-            search: "",
-          });
-          const fetchedAgents = response || [];
+          const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: "" });
+          const fetchedAgents = Array.isArray(response)
+            ? response
+            : Array.isArray(response?.details)
+            ? response.details
+            : Array.isArray(response?.data)
+            ? response.data
+            : Array.isArray(response?.results)
+            ? response.results
+            : Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response?.agents)
+            ? response.agents
+            : [];
           const agents = fetchedAgents?.filter(
             (agent) =>
               (agent.agentic_application_type === REACT_AGENT || agent.agentic_application_type === MULTI_AGENT) &&
@@ -221,10 +282,16 @@ const UpdateAgent = (props) => {
           );
           setRemainingAgents((prev) => (pageNumber === 1 ? agents : [...prev, ...agents]));
           setVisibleData((prev) => (pageNumber === 1 ? agents : [...prev, ...agents]));
-          setTotalCount(fetchedAgents.length || 0);
+          const total =
+            (typeof response?.total_count === "number" && response.total_count) ||
+            (typeof response?.total === "number" && response.total) ||
+            (typeof response?.count === "number" && response.count) ||
+            fetchedAgents.length ||
+            0;
+          setTotalCount(total);
         }
-      } catch {
-        console.error("Error fetching tools or agents");
+      } catch (e) {
+        handleError(e, { customMessage: "Failed to fetch list" });
       } finally {
         setLoader(false);
       }
@@ -240,7 +307,7 @@ const UpdateAgent = (props) => {
   useEffect(() => {
     if (!agentType) return;
     // Only fetch unmapped tools after selectedTools is loaded
-    if (agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT) {
+    if (agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === HYBRID_AGENT) {
       if (selectedToolsLoading) return; // Wait for selectedTools to load
       const divsCount = calculateDivs(toolListContainerRef, 231, 70, 26);
       // Reset pagination and data for the list of remaining tools/agents
@@ -298,6 +365,7 @@ const UpdateAgent = (props) => {
     } else if (agentType === PLANNER_EXECUTOR_AGENT) {
       setSelectedPromptData(systemPromptData[plannerExecutorSystemPromptType]);
     } else {
+      // Default handling for REACT_AGENT, MULTI_AGENT, HYBRID_AGENT, etc.
       setSelectedPromptData(systemPromptData[systemPromptType]);
     }
   }, [systemPromptType, systemPromptData, plannersystempromtType, reactCriticSystemPromptType, plannerExecutorSystemPromptType]);
@@ -314,8 +382,8 @@ const UpdateAgent = (props) => {
       let parsedSystemPrompt = {};
       try {
         parsedSystemPrompt = typeof fullAgentData?.system_prompt === "string" ? JSON.parse(fullAgentData?.system_prompt) : fullAgentData?.system_prompt || {};
-      } catch {
-        console.error("Error parsing");
+      } catch (e) {
+        // parsing error ignored; structure fallback continues
       }
 
       return JSON.stringify(systemPromptData) !== JSON.stringify(parsedSystemPrompt);
@@ -325,15 +393,16 @@ const UpdateAgent = (props) => {
       ...formData,
       created_by: fullAgentData.created_by, // Always use creator email from fullAgentData
       updated_tag_id_list: selectedTag,
-      is_admin: role && role.toUpperCase() === "ADMIN",
+      is_admin: role && role?.toUpperCase() === "ADMIN",
       system_prompt: isSystemPromptChanged ? systemPromptData : {},
       user_email_id: formData?.created_by,
       agentic_application_id_to_modify: agentData?.agentic_application_id,
       tools_id_to_add: agentType === META_AGENT || agentType === PLANNER_META_AGENT ? addedAgentsId : addedToolsId,
       tools_id_to_remove: agentType === META_AGENT || agentType === PLANNER_META_AGENT ? removedAgentsId : removedToolsId,
     };
+
     try {
-      let url = APIs.UPDATE_AGENTS;
+      const url = APIs.UPDATE_AGENTS;
       const res = await putData(url, payload);
       fetchAgentDetail();
       fetchAgents();
@@ -345,12 +414,14 @@ const UpdateAgent = (props) => {
         setremovedToolsId([]);
       }
       if (res.detail) {
-        addMessage(res.detail, "error");
-      } else {
+        handleApiError(res);
+      } else if (res.status_message) {
         addMessage(res.status_message, "success");
+      } else {
+        addMessage("Updated successfully", "success");
       }
-    } catch {
-      addMessage("Something went wrong!", "error");
+    } catch (err) {
+      handleApiError(err);
     } finally {
       setLoader(false);
     }
@@ -379,6 +450,7 @@ const UpdateAgent = (props) => {
         [plannerExecutorSystemPromptType]: e?.target?.value,
       });
     } else {
+      // Default handling for REACT_AGENT, HYBRID_AGENT, etc.
       setSystemPromptData({
         ...systemPromptData,
         [Object.keys(systemPromptData)[0]]: e?.target?.value,
@@ -421,8 +493,8 @@ const UpdateAgent = (props) => {
       } else {
         setModels([]);
       }
-    } catch {
-      console.error("Model fetch failed");
+    } catch (e) {
+      handleError(e, { customMessage: "Model fetch failed" });
       setModels([]);
     }
   };
@@ -476,6 +548,7 @@ const UpdateAgent = (props) => {
           [plannerExecutorSystemPromptType]: updatedContent,
         }));
       } else {
+        // Default handling for REACT_AGENT, HYBRID_AGENT, etc.
         setSystemPromptData((prev) => ({
           ...prev,
           [Object.keys(systemPromptData)[0]]: updatedContent,
@@ -495,8 +568,8 @@ const UpdateAgent = (props) => {
             setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
           }, 2000);
         })
-        .catch(() => {
-          console.error("Copy failed");
+        .catch((e) => {
+          handleError(e, { customMessage: "Copy failed" });
         });
     } else {
       // Fallback for unsupported browsers
@@ -514,8 +587,8 @@ const UpdateAgent = (props) => {
         setTimeout(() => {
           setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
         }, 2000);
-      } catch {
-        console.error("Fallback: copy failed");
+      } catch (e) {
+        handleError(e, { customMessage: "Copy failed" });
       } finally {
         document.body.removeChild(textarea); // Clean up
       }
@@ -530,51 +603,10 @@ const UpdateAgent = (props) => {
     await fetchToolsData(pageNumber, divsCount);
   };
 
-  useEffect(() => {
-    // Fetch servers only for eligible non-meta agent types.
-    const eligibleForServers = [REACT_AGENT, MULTI_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT];
-    if (!eligibleForServers.includes(agentType) || props?.recycleBin) {
-      setRemainingServers([]);
-      return;
-    }
-    // Wait until selected tools for this agent are loaded so we know what's already mapped.
-    if (selectedToolsLoading) return;
-
-    let isCancelled = false;
-    (async () => {
-      try {
-        setLoader(true);
-        const allServers = await getAllServers();
-
-        // Collect tool_ids already mapped to THIS agent only (from selectedTools / fullAgentData)
-        const currentMappedIds = new Set();
-        (selectedTools || []).forEach((t) => {
-          if (t && (t.tool_id || t.id)) currentMappedIds.add(t.tool_id || t.id);
-        });
-        // Fallback: if selectedTools not yet populated but fullAgentData.tools_id exists
-        if (currentMappedIds.size === 0) {
-          const rawIds = fullAgentData?.tools_id;
-          if (Array.isArray(rawIds)) rawIds.forEach((id) => currentMappedIds.add(id));
-          else if (typeof rawIds === "string") {
-            try {
-              JSON.parse(rawIds).forEach((id) => currentMappedIds.add(id));
-            } catch {}
-          }
-        }
-
-        const remaining = (allServers || []).filter((s) => !currentMappedIds.has(s.tool_id || s.id));
-        if (!isCancelled) setRemainingServers(remaining);
-      } catch {
-        if (!isCancelled) setRemainingServers([]);
-      } finally {
-        if (!isCancelled) setLoader(false);
-      }
-    })();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [agentType, selectedToolsLoading, selectedTools, fullAgentData, getAllServers, props?.recycleBin]);
+  //   return () => {
+  //     isCancelled = true;
+  //   };
+  // }, [agentType, selectedToolsLoading, selectedTools, fullAgentData, getAllServers, props?.recycleBin]);
 
   return (
     <>
@@ -854,9 +886,8 @@ const UpdateAgent = (props) => {
                 recycleBin={true}
               />
               <div className={styles.btnsRestore}>
-                <input type="button" value="RESTORE" className={styles.restoreBtn} onClick={RestoreAgent} />
-
-                <input type="button" value="DELETE" className={styles.submitBtn} onClick={deleteAgent} />
+                <input type="button" value="DELETE" className="iafButton iafButtonPrimary" onClick={deleteAgent} />
+                <input type="button" value="RESTORE" className="iafButton iafButtonSecondary" onClick={RestoreAgent} />
               </div>
             </>
           ) : (
@@ -902,7 +933,7 @@ const UpdateAgent = (props) => {
               <div className={styles.btns}>
                 <input type="submit" value="UPDATE" className={styles.submitBtn} onClick={onSubmit} />
                 <button onClick={handleClose} className={styles.closeBtn}>
-                  CLOSE
+                  CANCEL
                 </button>
               </div>
             </>

@@ -1,62 +1,51 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import style from "../../css_modules/InferenceUploadfile.module.css";
 import Loader from "../commonComponents/Loader.jsx";
 import { BASE_URL, APIs } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import SVGIcons from "../../Icons/SVGIcons";
-import ToastMessage from "../commonComponents/ToastMessages/ToastMessage.jsx";
-import ConfirmationPopup from "../commonComponents/ToastMessages/ConfirmationPopup.jsx";
+// import ToastMessage from "../commonComponents/ToastMessages/ToastMessage.jsx"; // removed
 import DocViewerModal from "../DocViewerModal/DocViewerModal";
+import { useMessage } from "../../Hooks/MessageContext.js";
 
 function MessageUpdateform(props) {
   const { hideComponent, showKnowledge } = props;
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [confirmdelete, setconfirmdelete] = useState(false);
   const [files, setFiles] = useState([]);
   const [responseData, setresponseData] = useState({});
-  const [selectdeleteheader, setselectdeleteheader] = useState("");
-  const [selectdeletefile, setselectdeletefile] = useState("");
-  const [kbloader, setKbloader] = useState(false);
   const [inputValues, setInputValues] = useState({
     subdirectory: "",
     search: "",
   });
   const { fetchData, getSessionId, postData, deleteData } = useFetch();
-  const [showToast, setShowToast] = useState(false);
   const [isFormValid, setIsFormValid] = useState(false);
+  const [kbloader, setKbloader] = useState(false);
+  const { addMessage } = useMessage();
 
   useEffect(() => {
     fetchAgents();
   }, []);
 
+  // Patch hideComponent to respect a flag set during delete
+  const safeHideComponent = (...args) => {
+    if (window.preventModalCloseAfterDelete) return;
+    if (typeof hideComponent === "function") hideComponent(...args);
+  };
+
   const handleInputChange = (event) => {
     const { name, value } = event.target;
-    setInputValues({
-      ...inputValues,
-      [name]: value,
-    });
+    setInputValues((prev) => ({ ...prev, [name]: value }));
   };
+
   const handleKBChange = (event) => {
     const { name, value } = event.target;
-    setInputValues({
-      ...inputValues,
-      [name]: value,
-    });
-    if (value.trim() !== "") {
-      setIsFormValid(true);
-    } else {
-      setIsFormValid(false);
-    }
+    setInputValues((prev) => ({ ...prev, [name]: value }));
+    setIsFormValid(value.trim() !== "");
   };
-  let SUPPORTED_EXTENSIONS;
-  if (showKnowledge) {
-    SUPPORTED_EXTENSIONS = [".pdf", ".txt"];
-  } else {
-    SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img", ".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar", ".eml"];
-  }
+
+  let SUPPORTED_EXTENSIONS = showKnowledge
+    ? [".pdf", ".txt"]
+    : [".pdf", ".docx", ".ppt", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img", ".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar", ".eml"];
 
   const isSupportedFile = (file) => {
     const fileName = file.name.toLowerCase();
@@ -67,8 +56,7 @@ function MessageUpdateform(props) {
     const selectedFiles = Array.from(event.target.files);
     const validFiles = selectedFiles.filter(isSupportedFile);
     if (validFiles.length !== selectedFiles.length) {
-      setErrorMessage("Unsupported file type");
-      setShowToast(true);
+      addMessage("Unsupported file added", "error");
     }
     setFiles(validFiles);
   };
@@ -78,13 +66,12 @@ function MessageUpdateform(props) {
     const droppedFiles = Array.from(event.dataTransfer.files);
     const validFiles = droppedFiles.filter(isSupportedFile);
     if (validFiles.length !== droppedFiles.length) {
-      setErrorMessage("Some files have unsupported types");
-      setShowToast(true);
+      addMessage("Unsupported file added", "error");
     }
     setFiles(validFiles);
   };
 
-  const fetchAgents = async (e) => {
+  const fetchAgents = async () => {
     if (!showKnowledge) {
       try {
         const data = await fetchData(APIs.GET_ALLUPLOADFILELIST);
@@ -95,104 +82,72 @@ function MessageUpdateform(props) {
     }
   };
 
-  const onCancel = () => {
-    setShowConfirmation(false);
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-      formData.append("file", files[i]);
-    }
+    files.forEach((f) => formData.append("file", f));
     try {
-      const response = await postData(`${APIs.UPLOAD_FILES}?subdirectory=${inputValues.subdirectory}`, formData);
-      setSuccessMessage("File Uploaded Successfully !");
-      setShowToast(true);
-      setInputValues({
-        subdirectory: "",
-        search: "",
-      });
+      await postData(`${APIs.UPLOAD_FILES}?subdirectory=${encodeURIComponent(inputValues.subdirectory || "")}`, formData);
+      addMessage("File Uploaded Successfully !", "success");
+      setInputValues({ subdirectory: "", search: "" });
       fetchAgents();
       setFiles([]);
     } catch {
-      setErrorMessage("Error uploading file");
+      addMessage("Error uploading file", "error");
     }
   };
+
   const toolSubmit = async (event) => {
     setKbloader(true);
     event.preventDefault();
-    const subdirectory = inputValues.knowledgeBaseName;
-    const url = `${APIs.UPLOAD_KB_DOCUMENT}?kb_name=${subdirectory}`;
+    const kbName = inputValues.knowledgeBaseName;
+    const url = `${APIs.UPLOAD_KB_DOCUMENT}?kb_name=${encodeURIComponent(kbName || "")}`;
     const formData = new FormData();
     formData.append("session_id", getSessionId());
-    for (let i = 0; i < files.length; i++) {
-      formData.append("files", files[i]);
-    }
+    files.forEach((f) => formData.append("files", f));
     try {
-      const response = await postData(url, formData);
-      setSuccessMessage("File Uploaded Successfully!");
+      await postData(url, formData);
+      addMessage("File Uploaded Successfully!", "success");
       setKbloader(false);
-      setShowToast(true);
-      setInputValues({
-        knowledgeBaseName: "",
-        search: "",
-      });
+      setInputValues({ knowledgeBaseName: "", search: "" });
       fetchAgents();
       setFiles([]);
     } catch (error) {
       console.error("Error uploading file", error);
-      if (error.response) {
-        console.error("Response data:", error.response);
-      }
-      setErrorMessage("Error uploading file");
+      addMessage("Error uploading file", "error");
+      setKbloader(false);
     }
   };
 
-  const deletefile = async () => {
-    // Removed event.preventDefault() because ConfirmationPopup likely calls onConfirm without event
-    if (!selectdeletefile) {
-      setErrorMessage("No file selected to delete");
-      setShowToast(true);
-      setShowConfirmation(false);
-      return;
-    }
-
-    let isFilesPath = selectdeleteheader === "__files__";
-
-    // Encode to avoid issues with spaces/special chars
-    const encodedHeader = encodeURIComponent(selectdeleteheader);
-    const encodedFile = encodeURIComponent(selectdeletefile);
-
+  const deletefile = async (heading, value) => {
+    const isFilesPath = heading === "__files__";
+    const encodedHeader = encodeURIComponent(heading);
+    const encodedFile = encodeURIComponent(value);
     const url = isFilesPath ? `${APIs.DELETE_FILE}?file_path=${encodedFile}` : `${APIs.DELETE_FILE}?file_path=${encodedHeader}/${encodedFile}`;
 
+    setLoading(true);
     try {
-      setLoading(true);
       const deleteResponse = await deleteData(url, { maxBodyLength: Infinity });
       if (deleteResponse) {
-        fetchAgents();
-        setSuccessMessage("File deleted successfully !");
-        setShowToast(true);
+        addMessage("File deleted successfully !", "success");
+        window.preventModalCloseAfterDelete = true;
+        setTimeout(() => {
+          window.preventModalCloseAfterDelete = false;
+          fetchAgents();
+        }, 1500);
       } else {
-        setErrorMessage("Delete failed (no response)");
-        setShowToast(true);
+        addMessage("Delete failed (no response)", "error");
       }
-    } catch (error) {
-      console.error("Delete error:", error);
-      setErrorMessage("Error Deleting File");
-      setShowToast(true);
+    } catch {
+      addMessage("Error Deleting File", "error");
     } finally {
-      setShowConfirmation(false);
       setLoading(false);
     }
   };
 
-  const handledelete = (heading, value) => (e) => {
+  const handledelete = (heading, value) => async (e) => {
     e.preventDefault();
-    setselectdeleteheader(heading);
-    setselectdeletefile(value);
-    setconfirmdelete(true); // (Optional) can remove confirmdelete state altogether
-    setShowConfirmation(true);
+    await deletefile(heading, value);
   };
 
   const extractFilename = (disposition, fallback) => {
@@ -218,34 +173,25 @@ function MessageUpdateform(props) {
   const downloadFile = async (url, fallbackName) => {
     try {
       const response = await fetchData(url, { responseType: "blob" });
-
-      // Handle both axios-style and fetch-style responses gracefully
       const isAxios = response && response.data !== undefined && response.headers !== undefined;
-      const dataBlob = isAxios ? response.data : response; // if fetchData already returns blob
+      const dataBlob = isAxios ? response.data : response;
       const headers = isAxios ? response.headers : response?.headers || {};
       const getHeader = typeof headers.get === "function" ? (k) => headers.get(k) : (k) => headers[k.toLowerCase()];
-
       const contentType = getHeader && getHeader("content-type");
       const disposition = getHeader && getHeader("content-disposition");
 
-      // If JSON error masquerading as blob
       if (contentType && contentType.includes("application/json")) {
-        const text = await dataBlob.text?.();
-        console.error("Download error payload:", text);
-        setErrorMessage("Unable to download file (server returned JSON).");
-        setShowToast(true);
+        addMessage("Unable to download file (server returned JSON).", "error");
         return;
       }
 
       const fileName = extractFilename(disposition, fallbackName);
       const finalBlob = dataBlob instanceof Blob ? dataBlob : new Blob([dataBlob], { type: contentType || "application/octet-stream" });
       triggerBrowserDownload(finalBlob, fileName);
-      setSuccessMessage("Download started");
-      setShowToast(true);
+      addMessage("Download started", "success");
     } catch (err) {
       console.error("Download failed:", err);
-      setErrorMessage("Download failed");
-      setShowToast(true);
+      addMessage("Download failed", "error");
     }
   };
 
@@ -261,41 +207,36 @@ function MessageUpdateform(props) {
 
   const [viewUrl, setViewUrl] = useState("");
   const [showFile, setShowFile] = useState(false);
+
   const handleViewFile = async (event, paramone) => {
     event.preventDefault();
-    setViewUrl(`${BASE_URL}/download?filename=${paramone}`);
+    setViewUrl(`${BASE_URL}/download?filename=${encodeURIComponent(paramone)}`);
     setShowFile(true);
   };
   const handleViewFilewithuser = async (event, paramone, secondparam) => {
     event.preventDefault();
-    setViewUrl(`${BASE_URL}/download?filename=${paramone}&sub_dir_name=${secondparam}`);
+    setViewUrl(`${BASE_URL}/download?filename=${encodeURIComponent(paramone)}&sub_dir_name=${encodeURIComponent(secondparam)}`);
     setShowFile(true);
   };
 
   const filteredResponseData = Object.keys(responseData || {}).reduce((acc, sectionKey) => {
     const files = responseData?.[sectionKey]?.__files__ || responseData?.[sectionKey];
     if (Array.isArray(files)) {
-      const filteredFiles = files.filter((item) => typeof item === "string" && item.toLowerCase().includes(inputValues.search.toLowerCase() || ""));
-      if (filteredFiles.length > 0) {
-        acc[sectionKey] = filteredFiles;
-      }
+      const filteredFiles = files.filter((item) => typeof item === "string" && item.toLowerCase().includes((inputValues.search || "").toLowerCase()));
+      if (filteredFiles.length > 0) acc[sectionKey] = filteredFiles;
     }
     return acc;
   }, {});
 
   const handleRemoveFile = (index) => (event) => {
     event.preventDefault();
-    setFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
     <div id="myOverlay" className={style["overlay"]}>
-      {(loading || kbloader) && <Loader />}
-
-      <div
-        className={showKnowledge ? `${style["form-container"]} ${style["updateformonly"]} ${style["toolOnboardingForm"]}` : `${style["form-container"]} ${style["updateformonly"]}`}
-        onDrop={handleDrop}
-        onDragOver={(event) => event.preventDefault()}>
+      {loading && <Loader />}
+      <div className={`${style["form-container"]} ${style["updateformonly"]}`} onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}>
         <div className={style["container"]}>
           <div className={style["main"]}>
             <form className={style["file-upload-form"]}>
@@ -304,7 +245,7 @@ function MessageUpdateform(props) {
                   <h3>UPLOAD FILE</h3>
                   <div className={style["sidebar"]}>
                     <div className={style["toggle"]}>
-                      <button className={style["closebtn"]} onClick={hideComponent}>
+                      <button className={style["closebtn"]} onClick={safeHideComponent}>
                         &times;
                       </button>
                     </div>
@@ -325,41 +266,34 @@ function MessageUpdateform(props) {
                       ))}
                     </div>
                   ) : (
-                    <div className={style["file-drop"]}>
-                      <section className={style["drag-drop"]}>
-                        <div className={style["drag-container"]}>
-                          <>
-                            <div className={style["upload-info"]}>
-                              <div>
-                                <p>Drag & Drop to Upload</p>
-                              </div>
-                            </div>
-                            <label>or</label>&nbsp;
-                            <input
-                              type="file"
-                              hidden
-                              id="browse"
-                              onChange={handleFileChange}
-                              accept=".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml"
-                              multiple={true}
-                            />
-                            <label htmlFor="browse" className={style["browse-btn"]}>
-                              browse
-                            </label>
-                          </>
+                    <div className={style["customFileUploadContainer"]}>
+                      <section className={style["customDragDrop"]}>
+                        <div className={style["customFileUploadBox"]}>
+                          <span className={style["customUploadPrompt"]}>Click to upload or drag and drop</span>
+                          <div className={style["customSupportedExtensions"]}>
+                            Supported: .pdf, .docx, .pptx, .txt, .xlsx, .msg, .json, .img, .db, .jpg, .png, .jpeg, .csv, .pkl, .zip, .tar, .eml
+                          </div>
+                          <input
+                            type="file"
+                            id="browse"
+                            onChange={handleFileChange}
+                            accept=".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml"
+                            multiple={true}
+                            style={{ display: "none" }}
+                          />
+                          <label htmlFor="browse" style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 2 }}></label>
                         </div>
                       </section>
                     </div>
                   )}
+
                   {showKnowledge ? (
-                    <>
-                      <div className={style["url-section"]}>
-                        <label className={style["label-desc"]} htmlFor="url">
-                          KNOWLEDGE BASE NAME:
-                        </label>
-                        <input id="url" type="text" name="knowledgeBaseName" value={inputValues.knowledgeBaseName} onChange={handleKBChange} required></input>
-                      </div>
-                    </>
+                    <div className={style["url-section"]}>
+                      <label className={style["label-desc"]} htmlFor="url">
+                        KNOWLEDGE BASE NAME:
+                      </label>
+                      <input id="url" type="text" name="knowledgeBaseName" value={inputValues.knowledgeBaseName || ""} onChange={handleKBChange} required />
+                    </div>
                   ) : (
                     <>
                       <span>OR</span>
@@ -367,50 +301,33 @@ function MessageUpdateform(props) {
                         <label className={style["label-desc"]} htmlFor="url">
                           Enter subdirectory name (leave blank for base directory):
                         </label>
-                        <input id="url" type="text" name="subdirectory" value={inputValues.subdirectory} onChange={handleInputChange}></input>
+                        <input id="url" type="text" name="subdirectory" value={inputValues.subdirectory} onChange={handleInputChange} />
                       </div>
                     </>
                   )}
 
                   <div className={style["button-class"]}>
-                    <button onClick={hideComponent} className={style["cancel-button"]}>
+                    <button onClick={safeHideComponent} className={style["cancel-button"]}>
                       CANCEL
                     </button>
-
                     {showKnowledge ? (
-                      <>
-                        <button className={style["add-button"]} onClick={toolSubmit} disabled={!isFormValid || files?.length === 0}>
-                          {"UPLOAD"}
-                        </button>
-                      </>
+                      <button className="iafButton iafButtonPrimary" onClick={toolSubmit} disabled={!isFormValid || files.length === 0 || kbloader}>
+                        {/* {kbloader ? "UPLOADING..." : "UPLOAD"} */} Upload
+                      </button>
                     ) : (
-                      <>
-                        <button className={style["add-button"]} onClick={handleSubmit} disabled={files?.length === 0}>
-                          {"UPLOAD"}
-                        </button>
-                      </>
+                      <button className="iafButton iafButtonPrimary" onClick={handleSubmit} disabled={files.length === 0}>
+                        UPLOAD
+                      </button>
                     )}
                   </div>
                 </div>
               </div>
-              {showToast && (
-                <div className={style["status-section"]}>
-                  <ToastMessage successMessage={successMessage} errorMessage={errorMessage} setShowToast={setShowToast} />
-                </div>
-              )}
-              {showConfirmation && (
-                <ConfirmationPopup
-                  message={`ARE YOU SURE YOU WANT TO DELETE FILE (${selectdeletefile}) ?`}
-                  setShowConfirmation={setShowConfirmation}
-                  onConfirm={deletefile}
-                  onCancel={onCancel}
-                />
-              )}
-              {!showKnowledge ? (
+
+              {!showKnowledge && (
                 <>
                   <div className={style["subnav"]}>
                     <div className={style["header"]}>
-                      <h1 className={style["subText"]}>{"Files"}</h1>
+                      <h1 className={style["subText"]}>Files</h1>
                       <div className={style["underline"]}></div>
                     </div>
                     <div className={style["search-outer-container"]}>
@@ -422,44 +339,45 @@ function MessageUpdateform(props) {
                   </div>
 
                   <div className={style["documentslistconatiner"]}>
-                    {Object?.keys(filteredResponseData)?.map((sectionKey) => (
+                    {Object.keys(filteredResponseData).map((sectionKey) => (
                       <div key={sectionKey}>
                         <h3>{sectionKey}</h3>
                         <ul className={style["no-bullets"]}>
-                          {Array.isArray(filteredResponseData[sectionKey]) ? (
+                          {Array.isArray(filteredResponseData[sectionKey]) &&
                             filteredResponseData[sectionKey].map((item, index) => (
                               <div className={style["listitem"]} key={`${sectionKey}-item-${index}`}>
                                 <li>{item}</li>
                                 <div className={style["optionscontainer"]}>
-                                  {item.includes(".pdf") || item.includes(".docx") ? (
+                                  {(item.includes(".pdf") || item.includes(".docx")) && (
                                     <button
                                       className={style["ButtonStyle"]}
                                       onClick={(event) => (sectionKey === "__files__" ? handleViewFile(event, item) : handleViewFilewithuser(event, item, sectionKey))}>
-                                      <SVGIcons icon="eyeIcon" width={15} height={18} fill={"#025601"} />
+                                      <SVGIcons icon="eyeIcon" width={15} height={18} fill="#025601" />
                                     </button>
-                                  ) : null}
+                                  )}
                                   <button
                                     className={style["ButtonStyle"]}
-                                    onClick={(event) => (sectionKey === "__files__" ? handleDownload(event, item) : handleDownloadwithuser(event, item, sectionKey))}>
-                                    <SVGIcons icon="download" width={15} fill={"#1B0896"} height={18} />
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      if (sectionKey === "__files__") {
+                                        handleDownload(event, item);
+                                      } else {
+                                        handleDownloadwithuser(event, item, sectionKey);
+                                      }
+                                    }}>
+                                    <SVGIcons icon="download" width={15} height={18} fill="#1B0896" />
                                   </button>
-
                                   <button className={style["ButtonStyle"]} onClick={handledelete(sectionKey, item)}>
-                                    <SVGIcons icon="fa-trash" width={12} fill={"#FF0000"} height={16} />
+                                    <SVGIcons icon="fa-trash" width={12} height={16} fill="#FF0000" />
                                   </button>
                                 </div>
                               </div>
-                            ))
-                          ) : (
-                            <li>{""}</li>
-                          )}
+                            ))}
                         </ul>
                       </div>
                     ))}
                   </div>
                 </>
-              ) : (
-                <></>
               )}
             </form>
           </div>

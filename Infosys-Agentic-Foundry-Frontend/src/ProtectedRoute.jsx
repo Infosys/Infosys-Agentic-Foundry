@@ -1,23 +1,58 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "./context/AuthContext";
+import { useAuth, hasAuthArtifacts, getActiveUser } from "./context/AuthContext";
 
 const ProtectedRoute = ({ children, requiredRole }) => {
-  const { isAuthenticated, role, loading } = useAuth();
+  const { isAuthenticated, role, loading, logout, user } = useAuth();
 
-  if (loading) {
-    return null; // Could add a spinner here if desired
+  useEffect(() => {
+    if (loading) return;
+    const active = getActiveUser();
+
+    if (!hasAuthArtifacts()) {
+      console.log("🔴 LOGOUT TRIGGERED: ProtectedRoute - missing auth artifacts", {
+        hasStrictArtifacts: hasAuthArtifacts(true),
+        hasCoreArtifacts: hasAuthArtifacts(false),
+        activeUser: active,
+        userState: user?.name,
+        currentPath: window.location.pathname,
+      });
+      logout("protected-route-check");
+      return;
+    }
+
+    if (user?.name && active && user.name !== active) {
+      // Allow Guest -> real user transition without forced logout
+      if (user.name === "Guest") {
+        // Soft redirect to trigger contexts to re-evaluate if necessary
+        return;
+      }
+      console.log("🔴 LOGOUT TRIGGERED: ProtectedRoute - user mismatch", {
+        userName: user.name,
+        activeUser: active,
+        currentPath: window.location.pathname,
+      });
+      logout("protected-route-mismatch");
+    }
+  }, [loading, logout, user]);
+
+  if (loading) return null;
+
+  if (!isAuthenticated || !hasAuthArtifacts()) {
+    return <Navigate to="/login" replace />;
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" />;
-  }
-
-  if (
-    requiredRole &&
-    (!role || role.toUpperCase() !== requiredRole.toUpperCase())
-  ) {
-    return <Navigate to="/" />;
+  if (requiredRole) {
+    if (Array.isArray(requiredRole)) {
+      const allowedRoles = requiredRole.map((r) => r.toUpperCase());
+      if (!role || !allowedRoles.includes(role.toUpperCase())) {
+        return <Navigate to="/" replace />;
+      }
+    } else {
+      if (!role || role.toUpperCase() !== requiredRole.toUpperCase()) {
+        return <Navigate to="/" replace />;
+      }
+    }
   }
 
   return children;

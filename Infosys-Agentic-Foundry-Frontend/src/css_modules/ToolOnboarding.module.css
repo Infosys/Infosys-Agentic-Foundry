@@ -109,6 +109,10 @@
   display: block;
 }
 
+.label-desc span {
+  text-transform: lowercase;
+}
+
 .input-class {
   background: #eaeaea 0% 0% no-repeat padding-box;
   box-shadow: inset 0px 1px 4px #00000029;
@@ -139,7 +143,7 @@
   max-width: 100%;
   height: 300px;
   margin-bottom: 10px;
-  overflow: auto;
+  /* overflow: auto; */
 }
 
 /* Full-width layout code editor adjustments */
@@ -161,7 +165,7 @@
   text-rendering: optimizeLegibility;
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0;
-  height:100%;
+  height: 100%;
 }
 
 .codeEditorContainer textarea:focus {
@@ -201,8 +205,6 @@
 
 .other {
   display: flex;
-  margin-top: 16px;
-  /* justify-content: space-between; */
 }
 
 .tagsMainContainer {
@@ -261,17 +263,6 @@
 .cancel-button {
   font-size: 12px;
   background: #3d4359 0% 0% no-repeat padding-box;
-  opacity: 1;
-  color: white;
-  margin-right: 22px;
-  border-radius: 4px;
-  padding: 8px;
-  border: none;
-}
-
-.add-button {
-  font-size: 12px;
-  background: #007cc3 0% 0% no-repeat padding-box;
   opacity: 1;
   color: white;
   margin-right: 22px;
@@ -375,9 +366,8 @@ body {
 .main-content-wrapper.split-layout {
   flex-direction: row;
   gap: 20px;
-  margin-bottom: 20px;
   align-items: flex-start;
-  height: calc(100vh - 200px);
+  height: calc(100vh - 124px);
 }
 
 /* Full-width layout for tool onboarding */
@@ -406,7 +396,7 @@ body {
   max-width: 60%;
   overflow-y: auto;
   overflow-x: hidden;
-  height: calc(100vh - 200px);
+  height: calc(100vh - 124px);
   padding-right: 10px;
 }
 
@@ -1006,18 +996,6 @@ body {
   visibility: hidden;
   opacity: 0;
 }
-
-.viewWarningsButton {
-  font-size: 12px;
-  background: #007cc3 0% 0% no-repeat padding-box;
-  opacity: 1;
-  color: white;
-  margin-right: 2px;
-  border-radius: 4px;
-  padding: 8px;
-  border: none;
-  float: left;
-}
 .iconGroup {
   position: absolute;
   bottom: 8px;
@@ -1614,6 +1592,7 @@ label {
   max-width: 35%;
   height: calc(100vh - 200px);
   overflow-y: auto;
+  padding-bottom: 16px;
 }
 
 /* Full-width layout executor container */
@@ -1651,7 +1630,7 @@ label {
   border: none;
   box-shadow: none;
   margin: 0;
-  padding: 20px;
+  padding: 30px 20px 0 20px;
   padding-top: 45px; /* Add space for close button */
   background: transparent;
   height: auto;
@@ -1666,11 +1645,6 @@ label {
   border: none;
   border-top: 1px solid #e0e0e0;
   margin: 20px;
-}
-
-/* Add top margin when floaterForInput is not present */
-.executorContainer .success_error_section.withTopMargin {
-  margin-top: 40px;
 }
 
 /* Modal styles - Similar to AddServer modal */
@@ -1715,4 +1689,37 @@ label {
   font-size: 18px;
   line-height: 1;
   z-index: 10;
+}
+
+.headerDropdown {
+  width: 100%;
+  max-width: 700px;
+  margin-left: 0;
+  margin-right: 0;
+  box-sizing: border-box;
+  display: block;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  font: normal normal normal 12px / 16px Segoe UI;
+  background: #eaeaea;
+  color: #343741;
+  font-weight: 400;
+  font-size: 16px;
+  padding: 12px 16px;
+  box-shadow: none;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.executorInput {
+  width: 100%;
+  font-size: 16px;
+  padding: 16px 14px;
+  border-radius: 12px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  color: #222;
+  font-weight: 500;
+  margin-bottom: 4px;
+  box-sizing: border-box;
 }

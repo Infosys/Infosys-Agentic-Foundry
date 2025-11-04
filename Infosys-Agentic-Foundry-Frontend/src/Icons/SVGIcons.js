@@ -368,10 +368,9 @@ const SVGIcons = (props) => {
     case "accordionIcon":
       return (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-          <rect x="3" y="5" width="18" height="3" rx="1" fill="#007cc3" />
-          <rect x="3" y="10.5" width="18" height="3" rx="1" fill="#007cc3" />
-          <rect x="3" y="16" width="18" height="3" rx="1" fill="#007cc3" />
-          <polyline points="7,7 12,12 17,7" fill="none" stroke="#fff" strokeWidth="2" />
+          <rect x="3" y="5" width="18" height="3" rx="1" fill="#007cc3"></rect>
+          <rect x="3" y="10.5" width="18" height="3" rx="1" fill="#007cc3"></rect>
+          <rect x="3" y="16" width="18" height="3" rx="1" fill="#007cc3"></rect>
         </svg>
       );
     case "fa-solid fa-up-right-and-down-left-from-center":
@@ -522,6 +521,37 @@ const SVGIcons = (props) => {
       return (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" {...svgStyle}>
           <path d="M506.3 417l-213.3-364c-16.33-28-57.54-28-73.98 0l-213.2 364C-10.59 444.9 9.849 480 42.74 480h426.6C502.1 480 522.6 445 506.3 417zM232 168c0-13.25 10.75-24 24-24S280 154.8 280 168v128c0 13.25-10.75 24-23.1 24S232 309.3 232 296V168zM256 416c-17.36 0-31.44-14.08-31.44-31.44c0-17.36 14.07-31.44 31.44-31.44s31.44 14.08 31.44 31.44C287.4 401.9 273.4 416 256 416z" />
+        </svg>
+      );
+    case "thermometerIcon":
+      return (
+        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" color="none" {...svgStyle}>
+          <rect x="28" y="10" width="8" height="32" rx="4" stroke={fill} strokeWidth="3" fill="none" />
+          <circle cx="32" cy="50" r="10" stroke={fill} strokeWidth="3" fill="none" />
+          <circle cx="32" cy="50" r="6" fill={fill} />
+          <line x1="44" y1="18" x2="54" y2="18" stroke={fill} strokeWidth="3" strokeLinecap="round" />
+          <line x1="44" y1="26" x2="54" y2="26" stroke={fill} strokeWidth="3" strokeLinecap="round" />
+          <line x1="44" y1="34" x2="54" y2="34" stroke={fill} strokeWidth="3" strokeLinecap="round" />
+          <line x1="44" y1="42" x2="54" y2="42" stroke={fill} strokeWidth="3" strokeLinecap="round" />
+        </svg>
+      );
+    case "save":
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" {...svgStyle}>
+          <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2" fill="none" />
+          <rect x="7" y="3" width="10" height="6" fill="currentColor" fillOpacity="0.3" />
+          <rect x="7" y="3" width="10" height="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          <rect x="6" y="13" width="12" height="8" rx="1" fill="currentColor" fillOpacity="0.2" />
+          <rect x="9" y="16" width="6" height="2" rx="0.5" fill="currentColor" />
+        </svg>
+      );
+    case "update":
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" {...svgStyle}>
+          {/* Circular arc */}
+          <path d="M12 4a8 8 0 1 1-7.5 5.3" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+          {/* Bold, sharp triangle arrowhead */}
+          <path d="M1.5 7 L7.5 5 L8 11.5 Z" fill="currentColor" />
         </svg>
       );
     default:

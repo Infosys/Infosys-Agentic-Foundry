@@ -70,7 +70,7 @@
 
 /* Messages Container */
 .messagesContainer {
-  padding: 15px 20px 5px 20px;
+  padding: 0 20px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -122,34 +122,6 @@
   padding: 5px 10px;
   margin-bottom: 8px;
   width: 100%;
-}
-
-/* Generating Indicator */
-.generatingIndicator {
-  display: flex;
-  justify-content: flex-start;
-  margin-bottom: 4px;
-  padding-left: 20px;
-}
-
-.generatingContent {
-  background: #ffffff;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px 8px 8px 2px;
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  max-width: 160px;
-  color: #666;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.spinnerIcon {
-  color: #007acc;
-  font-size: 10px;
 }
 
 /* Recording Indicator - In-place of textarea */
@@ -333,6 +305,15 @@
   padding: 4px 3px 0 4px;
   border-radius: 4px;
   margin-bottom: 2px;
+  color: #007cc3;
+}
+
+.feedbackSendBtn:disabled,
+.feedbackSendBtn[disabled],
+.feedbackSendBtn.disabled {
+  color: #b6beca;
+  cursor: not-allowed;
+  background: #e6f2fa;
 }
 
 .feedBackTextArea {

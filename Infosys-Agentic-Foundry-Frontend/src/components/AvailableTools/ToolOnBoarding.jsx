@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import style from "../../css_modules/ToolOnboarding.module.css";
 import { useToolsAgentsService } from "../../services/toolService.js";
 import Loader from "../commonComponents/Loader.jsx";
@@ -15,8 +15,10 @@ import MessageUpdateform from "../AskAssistant/MsgUpdateform.jsx";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
 import { WarningModal } from "../AvailableTools/WarningModal.jsx";
-
+import groundTruthStyles from "../GroundTruth/GroundTruth.module.css";
 import AddServer from "../AgentOnboard/AddServer";
+import ExecutorPanel from "../commonComponents/ExecutorPanel";
+import CodeEditor from "../commonComponents/CodeEditor.jsx";
 
 function ToolOnBoarding(props) {
   const loggedInUserEmail = Cookies.get("email");
@@ -40,6 +42,9 @@ function ToolOnBoarding(props) {
   const [errorMessages, setErrorMessages] = useState([]);
 
   const [files, setFiles] = useState([]);
+  const [codeFile, setCodeFile] = useState(null);
+  const [isDraggingCode, setIsDraggingCode] = useState(false);
+  const [isDraggingCapabilities, setIsDraggingCapabilities] = useState(false);
 
   const { addMessage, setShowPopup } = useMessage();
 
@@ -57,26 +62,18 @@ function ToolOnBoarding(props) {
   const [forceAdd, setForceAdd] = useState(false);
   // Theme for the whole form (if needed elsewhere)
   const [isDarkTheme, setIsDarkTheme] = useState(true);
-  const overlayRef = useRef(null);
 
   const activeTab = contextType === "servers" ? "addServer" : "toolOnboarding"; // 'toolOnboarding' | 'addServer'
 
   const { fetchData, deleteData, postData } = useFetch();
 
-  const [floaterForInput, setFloaterForInput] = useState(false);
-  const [turnOnDisable, setTurnOnDisable] = useState(false);
+  // ExecutorPanel now manages its own loader, no need for executingCode state
 
-  // State for validation response display
-  const [validationResult, setValidationResult] = useState(null);
-  const [showValidationResult, setShowValidationResult] = useState(false);
-  const [inputValidationErrors, setInputValidationErrors] = useState({});
-  const validationResultRef = useRef(null);
+  // Executor panel (autonomous) state triggers
+  const [showExecutorPanel, setShowExecutorPanel] = useState(false);
+  const [executeTrigger, setExecuteTrigger] = useState(0); // increment to trigger fresh run
 
-  useEffect(() => {
-    if (validationResultRef.current) {
-      validationResultRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [validationResult, showValidationResult]);
+  // No longer needed: validation scroll handled inside ExecutorPanel
 
   const fetchAgents = async (e) => {
     try {
@@ -132,10 +129,70 @@ function ToolOnBoarding(props) {
     const { name, value } = event.target;
     setFormData((values) => ({ ...values, [name]: value }));
   };
+
+  const validateFile = (file, type) => {
+    if (!file) return false;
+    if (type === "code") {
+      const validExtensions = [".py", ".txt"];
+      const fileName = file.name.toLowerCase();
+      const hasValidExtension = validExtensions.some((ext) => fileName.endsWith(ext));
+      if (!hasValidExtension) {
+        addMessage("Please upload a valid Python (.py) or text (.txt) file", "error");
+        setShowPopup(true);
+        return false;
+      }
+    }
+    if (type === "json") {
+      const validExtensions = [".json"];
+      const fileName = file.name.toLowerCase();
+      return validExtensions.some((ext) => fileName.endsWith(ext));
+    }
+    return true;
+  };
+
+  // Drag and drop handlers
+  const handleDragEnter = (type) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === "code") setIsDraggingCode(true);
+    if (type === "capabilities") setIsDraggingCapabilities(true);
+  };
+
+  const handleDragLeave = (type) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === "code") setIsDraggingCode(false);
+    if (type === "capabilities") setIsDraggingCapabilities(false);
+  };
+
+  const handleDragOver = (type) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === "code" && !isDraggingCode) setIsDraggingCode(true);
+    if (type === "capabilities" && !isDraggingCapabilities) setIsDraggingCapabilities(true);
+  };
+
+  const handleRemoveFile = (type) => {
+    if (type === "code") {
+      setCodeFile(null);
+    }
+    const fileInput = document.getElementById(type + "File");
+    if (fileInput) fileInput.value = "";
+  };
+
+  const commonInputStyle = {
+    width: "100%",
+    maxWidth: "700px",
+    marginLeft: 0,
+    marginRight: 0,
+    boxSizing: "border-box",
+    display: "block",
+  };
+
   const deleteTool = async () => {
     let response;
     if (props?.recycle) {
-      const isAdmin = role && role.toUpperCase() === "ADMIN";
+      const isAdmin = role && role?.toUpperCase() === "ADMIN";
       const toolsdata = {
         model_name: formData.model,
         is_admin: isAdmin,
@@ -177,16 +234,32 @@ function ToolOnBoarding(props) {
     setLoading(true);
     let response;
     if (isAddTool) {
-      const toolsdata = {
-        model_name: formData.model,
-        tool_description: formData.description,
-        code_snippet: formData.code,
-        created_by: userName === "Guest" ? formData.createdBy : loggedInUserEmail,
-        tag_ids: initialTags.filter((e) => e.selected).map((e) => e.tagId),
-      };
-      response = await addTool(toolsdata, force);
+      const formDataToSend = new FormData();
+
+      formDataToSend.append("tool_description", formData.description);
+      formDataToSend.append("model_name", formData.model);
+      formDataToSend.append("created_by", userName === "Guest" ? formData.createdBy : loggedInUserEmail);
+      formDataToSend.append(
+        "tag_ids",
+        initialTags
+          .filter((e) => e.selected)
+          .map((e) => e.tagId)
+          .join(",")
+      );
+
+      // If file is uploaded, use file for tool_file and empty code_snippet
+      // If no file, use textarea content for code_snippet and empty tool_file
+      if (codeFile) {
+        formDataToSend.append("code_snippet", "");
+        formDataToSend.append("tool_file", codeFile);
+      } else {
+        formDataToSend.append("code_snippet", formData.code);
+        formDataToSend.append("tool_file", "");
+      }
+
+      response = await addTool(formDataToSend, force);
     } else if (!isAddTool && !props?.recycle) {
-      const isAdmin = role && role.toUpperCase() === "ADMIN";
+      const isAdmin = role && role?.toUpperCase() === "ADMIN";
       const toolsdata = {
         model_name: formData.model,
         is_admin: isAdmin,
@@ -199,7 +272,7 @@ function ToolOnBoarding(props) {
       response = await updateTools(toolsdata, editTool.tool_id, force);
     } else {
       if (props?.recycle) {
-        const isAdmin = role && role.toUpperCase() === "ADMIN";
+        const isAdmin = role && role?.toUpperCase() === "ADMIN";
         const toolsdata = {
           model_name: formData.model,
           is_admin: isAdmin,
@@ -238,12 +311,15 @@ function ToolOnBoarding(props) {
       if (refreshData && typeof fetchPaginatedTools === "function") {
         await props.fetchPaginatedTools(1);
       }
+      // Reset form state including file upload
+      setCodeFile(null);
+      setFormData(formObject);
       setShowForm(false);
       setErrorModalVisible(false);
       setForceAdd(false);
     } else if (!props?.recycle) {
       setLoading(false);
-      if (response?.message?.includes("Verification failed:")) {
+      if (response?.message?.includes("Verification failed:") && response?.error_on_screen === false) {
         const match = response.message.match(/Verification failed:\s*\[(.*)\]/s);
         if (match && match[1]) {
           const raw = match[1];
@@ -365,10 +441,12 @@ function ToolOnBoarding(props) {
 
   const handleZoomSave = (updatedContent) => {
     if (popupTitle === "Code Snippet") {
-      setFormData((prev) => ({
-        ...prev,
-        code: updatedContent,
-      }));
+      if (!codeFile) {
+        setFormData((prev) => ({
+          ...prev,
+          code: updatedContent,
+        }));
+      }
     } else if (popupTitle === "Description") {
       setFormData((prev) => ({
         ...prev,
@@ -377,126 +455,20 @@ function ToolOnBoarding(props) {
     }
   };
 
-  const [inputFields, setInputFields] = useState({});
-  const [requiredInputs, setRequiredInputs] = useState([]);
-
-  // validation function for tool execute dynamic inputs
-  const validateInputFields = () => {
-    const errors = {};
-    let hasErrors = false;
-
-    requiredInputs.forEach((inputItem) => {
-      const value = inputFields[inputItem.name];
-      if (
-        value === null ||
-        value === undefined ||
-        (typeof value === "string" && value.trim() === "") ||
-        (Array.isArray(value) && value.length === 0) ||
-        (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0)
-      ) {
-        errors[inputItem.name] = `${toTitleCase(inputItem.name)} is required`;
-        hasErrors = true;
-      }
-    });
-
-    setInputValidationErrors(errors);
-    return !hasErrors;
-  };
-
-  // Updated runCode function
-  const runCode = async (userCode, userInputs = null, handle_default = false) => {
-    try {
-      if (userCode) {
-        let payload = { code: userCode, handle_default: handle_default };
-        if (userInputs) {
-          payload.inputs = userInputs;
-        }
-        setLoading(true);
-        const validationResponse = await postData(APIs.EXECUTE_CODE, payload);
-        // const validationResponse = {
-        //   inputs_required: [
-        //     {
-        //       name: "a",
-        //       default: null,
-        //     },
-        //     {
-        //       name: "b",
-        //       default: 90,
-        //     },
-        //   ],
-        //   output: "",
-        //   output_type: "int",
-        //   error: "",
-        //   success: true,
-        //   feedback: null,
-        // };
-        setLoading(false);
-        if (validationResponse.success && validationResponse.output !== "") {
-          // We have to show the string or list of strings of the 'output' key from the response in the "success_error_section"
-          setValidationResult({
-            type: "success",
-            data: validationResponse.output,
-          });
-          setShowValidationResult(true);
-        } else if (!validationResponse.success && validationResponse.error !== "") {
-          // We have to show the string or list of strings of the 'error' key from the response in the "success_error_section"
-          setValidationResult({
-            type: "error",
-            data: validationResponse.error,
-          });
-          setShowValidationResult(true);
-        } else if (Array.isArray(validationResponse.inputs_required) && validationResponse.inputs_required.length > 0) {
-          setRequiredInputs(validationResponse.inputs_required);
-          setFloaterForInput(true);
-          setShowValidationResult(false);
-          // Reset input fields for new required inputs
-          const initialInputs = {};
-          validationResponse.inputs_required.forEach((inputItem) => {
-            initialInputs[inputItem.name] = inputItem.default || "";
-          });
-          setInputFields(initialInputs);
-        }
-      } else {
-        addMessage("Please provide valid code to run", "error");
-      }
-    } catch (err) {
-      addMessage("Something went wrong. Please try again.", "error");
-      setFloaterForInput(false);
-      setLoading(false);
-      setRequiredInputs([]);
-      setInputFields({});
-      setShowValidationResult(false);
-      return null;
-    }
-  };
-
-  // Handler for input changes
-  const handleInputFieldChange = (key, value) => {
-    setInputFields((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-
-    // Clear validation error when user starts typing
-    if (inputValidationErrors[key]) {
-      setInputValidationErrors((prev) => ({
-        ...prev,
-        [key]: "",
-      }));
-    }
-  };
-
-  // Handler for submitting required inputs
-  const handleInputFieldsSubmit = async (e) => {
-    e.preventDefault();
-
-    // check if inputs are valid
-    if (!validateInputFields()) {
-      // addMessage("Please fill in all required fields", "error");
-      return; // since error the function skips execution and the error is shown on the form itself
+  // Fire executor panel run
+  const runCode = (userCode) => {
+    if (!userCode) {
+      addMessage("Please provide valid code to run", "error");
+      return;
     }
 
-    await runCode(formData.code, inputFields, true);
+    if (!showExecutorPanel) {
+      // First time: just open panel; ExecutorPanel auto executes on mount
+      setShowExecutorPanel(true);
+    } else {
+      // Panel already open: bump trigger to re-run
+      setExecuteTrigger((c) => c + 1);
+    }
   };
 
   const handleCopy = (key, text) => {
@@ -537,222 +509,6 @@ function ToolOnBoarding(props) {
     }
   };
 
-  const applySyntaxHighlighting = useCallback(
-    (code) => {
-      if (!code) return "";
-
-      // Simple tokenizer approach
-      const lines = code.split("\n");
-      const highlightedLines = lines.map((line) => {
-        let highlightedLine = line;
-
-        // Escape HTML first
-        highlightedLine = highlightedLine.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-        // Comments (must be first to avoid conflicts) - LIGHT GREEN
-        if (highlightedLine.trim().startsWith("#")) {
-          return `<span style="color: ${isDarkTheme ? "#90ee90" : "#32cd32"}; font-style: italic;">${highlightedLine}</span>`;
-        }
-
-        // Check for function definitions first (def function_name)
-        const defMatch = highlightedLine.match(/(\s*)(def)\s+(\w+)/);
-        if (defMatch) {
-          const [fullMatch, indent, defKeyword, functionName] = defMatch;
-          const replacement = `${indent}<span style="color: ${isDarkTheme ? "#87ceeb" : "#4169e1"}; font-weight: bold;">${defKeyword}</span> <span style="color: ${
-            isDarkTheme ? "#ffff99" : "#ffa500"
-          }; font-weight: bold;">${functionName}</span>`;
-          highlightedLine = highlightedLine.replace(fullMatch, replacement);
-        }
-
-        // Check for class definitions (class ClassName)
-        const classMatch = highlightedLine.match(/(\s*)(class)\s+(\w+)/);
-        if (classMatch) {
-          const [fullMatch, indent, classKeyword, className] = classMatch;
-          const replacement = `${indent}<span style="color: ${isDarkTheme ? "#87ceeb" : "#4169e1"}; font-weight: bold;">${classKeyword}</span> <span style="color: ${
-            isDarkTheme ? "#ffff99" : "#ffa500"
-          }; font-weight: bold;">${className}</span>`;
-          highlightedLine = highlightedLine.replace(fullMatch, replacement);
-        }
-
-        const words = highlightedLine.split(/(\s+)/);
-        const highlighted = words.map((word, index) => {
-          const trimmed = word.trim();
-
-          if (word.includes("<span")) {
-            return word;
-          }
-
-          if (
-            /^(if|elif|else|for|while|try|except|finally|with|import|from|as|return|yield|break|continue|pass|lambda|and|or|not|is|in|True|False|None|self|async|await)$/.test(
-              trimmed
-            )
-          ) {
-            return word.replace(trimmed, `<span style="color: ${isDarkTheme ? "#87ceeb" : "#4169e1"}; font-weight: bold;">${trimmed}</span>`);
-          }
-
-          if (/^".*"$/.test(trimmed) || /^'.*'$/.test(trimmed)) {
-            return word.replace(trimmed, `<span style="color: ${isDarkTheme ? "#ff6b6b" : "#dc143c"};">${trimmed}</span>`);
-          }
-          if (/^\d+\.?\d*$/.test(trimmed)) {
-            return word.replace(trimmed, `<span style="color: ${isDarkTheme ? "#ffff99" : "#ffa500"}; font-weight: 500;">${trimmed}</span>`);
-          }
-          if (/^\w+$/.test(trimmed)) {
-            const nextWord = words[index + 2];
-            if (nextWord && nextWord.trim().startsWith("(")) {
-              return word.replace(trimmed, `<span style="color: ${isDarkTheme ? "#ffff99" : "#ffa500"}; font-weight: 500;">${trimmed}</span>`);
-            }
-          }
-
-          return word;
-        });
-
-        return highlighted.join("");
-      });
-
-      return highlightedLines.join("\n");
-    },
-    [isDarkTheme]
-  );
-
-  const handleScroll = useCallback((e) => {
-    if (overlayRef.current) {
-      overlayRef.current.scrollTop = e.target.scrollTop;
-      overlayRef.current.scrollLeft = e.target.scrollLeft;
-    }
-  }, []);
-
-  const toTitleCase = useCallback((str) => {
-    return str
-      ? str
-          .split(/[_\s]+/)
-          .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-          .join(" ")
-      : "Provide value";
-  }, []);
-
-  // Helper function to render validation result content
-  const renderValidationContent = (data) => {
-    if (data !== null) {
-      if (typeof data === "string" || typeof data === "number") {
-        return <div className={`${style.success_error_content} ${style[validationResult.type]}`}>{data}</div>;
-      } else if (Array.isArray(data)) {
-
-        return (
-          <ul className={`${style.success_error_list} ${style.success_error_content} ${style[validationResult.type]}`}>
-            {data.map((item, index) => (
-              <li key={index}>
-                {typeof item === "object" && item !== null ? (
-                  // Check if it's a transaction-like object for better formatting
-                  item.transaction_id ? (
-                    <div>
-                      <strong>ID:</strong> {item.transaction_id} |<strong> Amount:</strong> {item.transaction_amount} |<strong> Detail:</strong> {item.transaction_detail}
-                    </div>
-                  ) : (
-                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{JSON.stringify(item, null, 2)}</pre>
-                  )
-                ) : (
-                  item
-                )}
-              </li>
-            ))}
-          </ul>
-        );
-      } else if (typeof data === "object") {
-        return <pre className={`${style.success_error_content} ${style[validationResult.type]}`}>{JSON.stringify(data, null, 2)}</pre>;
-      } else if (typeof data === "boolean") {
-        return <div className={`${style.success_error_content} ${style[validationResult.type]}`}>{toTitleCase(data.toString())}</div>;
-      }
-    }
-    return null;
-  };
-
-  const handleKeyDown = useCallback(
-    (e) => {
-      // Handle Tab key for proper indentation
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const textarea = e.target;
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const currentCode = formData.code || "";
-
-        if (e.shiftKey) {
-          // Shift+Tab: Remove indentation
-          const lines = currentCode.split("\n");
-          const startLine = currentCode.substring(0, start).split("\n").length - 1;
-          const endLine = currentCode.substring(0, end).split("\n").length - 1;
-
-          let newContent = "";
-          let newStart = start;
-          let newEnd = end;
-
-          for (let i = 0; i < lines.length; i++) {
-            if (i >= startLine && i <= endLine && lines[i].startsWith("    ")) {
-              lines[i] = lines[i].substring(4);
-              if (i === startLine) newStart = Math.max(0, start - 4);
-              if (i === endLine) newEnd = Math.max(0, end - 4);
-            } else if (i >= startLine && i <= endLine && lines[i].startsWith("\t")) {
-              lines[i] = lines[i].substring(1);
-              if (i === startLine) newStart = Math.max(0, start - 1);
-              if (i === endLine) newEnd = Math.max(0, end - 1);
-            }
-          }
-
-          newContent = lines.join("\n");
-          setFormData((prev) => ({ ...prev, code: newContent }));
-
-          setTimeout(() => {
-            textarea.selectionStart = newStart;
-            textarea.selectionEnd = newEnd;
-          }, 0);
-        } else {
-          // Tab: Add indentation
-          const beforeCursor = currentCode.substring(0, start);
-          const afterCursor = currentCode.substring(end);
-          const indent = "    "; // 4 spaces for Python
-
-          const newContent = beforeCursor + indent + afterCursor;
-          setFormData((prev) => ({ ...prev, code: newContent }));
-
-          setTimeout(() => {
-            textarea.selectionStart = textarea.selectionEnd = start + indent.length;
-          }, 0);
-        }
-      }
-
-      // Handle Enter key for auto-indentation
-      else if (e.key === "Enter") {
-        e.preventDefault();
-        const textarea = e.target;
-        const start = textarea.selectionStart;
-        const currentCode = formData.code || "";
-        const beforeCursor = currentCode.substring(0, start);
-        const afterCursor = currentCode.substring(start);
-
-        // Get current line
-        const lines = beforeCursor.split("\n");
-        const currentLine = lines[lines.length - 1];
-
-        // Calculate indentation of current line
-        const indentMatch = currentLine.match(/^(\s*)/);
-        let indent = indentMatch ? indentMatch[1] : "";
-
-        // Add extra indentation if line ends with colon (Python)
-        if (currentLine.trim().endsWith(":")) {
-          indent += "    ";
-        }
-
-        const newContent = beforeCursor + "\n" + indent + afterCursor;
-        setFormData((prev) => ({ ...prev, code: newContent }));
-
-        setTimeout(() => {
-          textarea.selectionStart = textarea.selectionEnd = start + 1 + indent.length;
-        }, 0);
-      }
-    },
-    [formData.code]
-  );
-
   return (
     <>
       <DeleteModal show={updateModal} onClose={() => setUpdateModal(false)}>
@@ -766,13 +522,23 @@ function ToolOnBoarding(props) {
           </button>
         </div>
       </DeleteModal>{" "}
-      <div className={style["modalOverlay"]} onClick={() => setShowForm(false)}>
-        {loading && <Loader />}
+      <div
+        className={style["modalOverlay"]}
+        onClick={() => {
+          setCodeFile(null);
+          setFormData(formObject);
+          setShowForm(false);
+        }}>
+        {loading && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <Loader />
+          </div>
+        )}
         <div
           className={style["modal"]}
           onClick={(e) => e.stopPropagation()}
           style={{
-            width: floaterForInput || showValidationResult ? "calc(100vw - 70px)" : showKnowledge ? "900px" : "790px",
+            width: showExecutorPanel ? "calc(100vw - 70px)" : showKnowledge ? "900px" : "790px",
             maxWidth: "calc(100% - 40px)",
             paddingTop: "6px",
             transition: "width 0.3s ease-in-out",
@@ -822,7 +588,13 @@ function ToolOnBoarding(props) {
                       <div className={showKnowledge ? style["knowledge"] + " " + style["active"] : style["knowledge"]}>KNOWLEDGE</div>
                     )}
                     {/* Close button always visible */}
-                    <button className={style["closeBtn"]} onClick={() => setShowForm(false)}>
+                    <button
+                      className={style["closeBtn"]}
+                      onClick={() => {
+                        setCodeFile(null);
+                        setFormData(formObject);
+                        setShowForm(false);
+                      }}>
                       ×
                     </button>
                   </div>
@@ -830,7 +602,7 @@ function ToolOnBoarding(props) {
               </div>{" "}
               {/* Only show ToolOnboarding form if editing, else allow tab switch */}{" "}
               {(isAddTool ? activeTab === "toolOnboarding" : true) && (
-                <div className={`${style["main-content-wrapper"]} ${floaterForInput || showValidationResult ? style["split-layout"] : ""}`}>
+                <div className={`${style["main-content-wrapper"]} ${showExecutorPanel ? style["split-layout"] : ""}`}>
                   <form onSubmit={handleSubmit} className={style["form-section"]}>
                     <div className={style["form-content"]}>
                       <div className={style["form-fields"]}>
@@ -869,57 +641,111 @@ function ToolOnBoarding(props) {
                             <InfoTag message="Enter the code snippet." />
                           </label>
                           <div className={style.codeEditorContainer}>
-                            <textarea
-                              className={style.codeTextarea}
+                            <CodeEditor
                               value={formData.code || ""}
-                              onChange={props?.recycle ? undefined : (e) => setFormData((prev) => ({ ...prev, code: e.target.value }))}
-                              placeholder="Enter your Python code here..."
-                              rows={12}
-                              readOnly={!!props?.recycle}
-                              style={{
-                                width: "100%",
-                                resize: "vertical",
-                                fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-                                fontSize: "14px",
-                                lineHeight: "1.4",
-                                padding: "12px",
-                                border: "1px solid #e0e0e0",
-                                borderRadius: "8px",
-                                backgroundColor: isDarkTheme ? "#1e1e1e" : "#ffffff",
-                                color: isDarkTheme ? "#ffffff" : "#000000",
-                                outline: "none",
-                                boxSizing: "border-box"
-                              }}
+                              onChange={props?.recycle || codeFile ? undefined : (value) => setFormData((prev) => ({ ...prev, code: value }))}
+                              readOnly={!!props?.recycle || !!codeFile}
+                              isDarkTheme={isDarkTheme}
                             />
-                            <button 
-                              type="button" 
-                              className={style.copyIcon} 
-                              onClick={() => handleCopy("code-snippet", formData.code)} 
-                              title="Copy"
-                            >
+                            <button type="button" className={style.copyIcon} onClick={() => handleCopy("code-snippet", formData.code)} title="Copy">
                               <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill="#ffffff" />
                             </button>
-                            <button 
-                              type="button" 
-                              className={style.playIcon} 
-                              onClick={() => runCode(formData.code)} 
-                              title="Run Code"
-                            >
+                            <button type="button" className={style.playIcon} onClick={() => runCode(formData.code)} title="Run Code">
                               <SVGIcons icon="play" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
                             </button>
                             <div className={style.iconGroup}>
-                              <button 
-                                type="button" 
-                                className={style.expandIcon} 
-                                onClick={() => handleZoomClick("Code Snippet", formData.code)} 
-                                title="Expand"
-                              >
+                              <button type="button" className={style.expandIcon} onClick={() => handleZoomClick("Code Snippet", formData.code)} title="Expand">
                                 <SVGIcons icon="fa-solid fa-up-right-and-down-left-from-center" width={16} height={16} fill="#ffffff" />
                               </button>
                             </div>
                             <span className={`${style.copiedText} ${copiedStates["code-snippet"] ? style.visible : style.hidden}`}>Text Copied!</span>
                           </div>
                         </div>
+
+                        {/* File upload UI - Only show for Add Tool mode and not in recycle mode */}
+                        {isAddTool && !props?.recycle && (
+                          <div className={style["form-block"]} style={{ width: "100%" }}>
+                            <label htmlFor="codeFile" className={style["label-desc"]}>
+                              Python File
+                              <InfoTag message="Upload a Python file instead of typing code snippet." />
+                              <span style={{ fontWeight: 400, fontSize: "13px", marginLeft: "8px", color: "#888" }}>(Supported: .py)</span>
+                            </label>
+                            <input
+                              type="file"
+                              id="codeFile"
+                              name="codeFile"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (validateFile(file, "code")) {
+                                  setCodeFile(file);
+                                  // File is stored but doesn't auto-populate the textarea
+                                  // The file content will be read during form submission
+                                }
+                              }}
+                              className={style["input-class"]}
+                              accept=".py"
+                              style={{ display: "none" }}
+                            />
+                            {!codeFile ? (
+                              <div
+                                className={
+                                  groundTruthStyles.fileUploadContainer +
+                                  (isDraggingCode ? " " + groundTruthStyles.dragging : "") +
+                                  (loading ? " " + groundTruthStyles.disabled : "")
+                                }
+                                onDragEnter={handleDragEnter("code")}
+                                onDragLeave={handleDragLeave("code")}
+                                onDragOver={handleDragOver("code")}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setIsDraggingCode(false);
+                                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                    const file = e.dataTransfer.files[0];
+                                    if (validateFile(file, "code")) {
+                                      setCodeFile(file);
+                                    }
+                                  }
+                                }}
+                                onClick={() => !loading && document.getElementById("codeFile").click()}
+                                tabIndex={0}
+                                role="button"
+                                aria-label="Upload Python File"
+                                style={{
+                                  ...commonInputStyle,
+                                  width: "100%",
+                                  minWidth: "100%",
+                                }}>
+                                <div className={groundTruthStyles.uploadPrompt} style={{ width: "100%", textAlign: "center" }}>
+                                  <span>{isDraggingCode ? "Drop file here" : "Click to upload or drag and drop"}</span>
+                                  <span>
+                                    <small>Supported: .py</small>
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div
+                                className={groundTruthStyles.fileCard}
+                                style={{
+                                  ...commonInputStyle,
+                                  width: "100%",
+                                  minWidth: "100%",
+                                }}>
+                                <div className={groundTruthStyles.fileInfo} style={{ width: "100%", textAlign: "left" }}>
+                                  <span className={groundTruthStyles.fileName}>{codeFile.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveFile("code")}
+                                    className={groundTruthStyles.removeFileButton}
+                                    aria-label="Remove file"
+                                    style={{ color: isDarkTheme ? "#ff6b6b" : "#dc3545" }}>
+                                    &times;
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         <div className={style["other"]}>
                           <div className={style["model"]}>
@@ -981,11 +807,11 @@ function ToolOnBoarding(props) {
                       <>
                         <div className={style["modal-footer"]}>
                           <div className={style["button-class"]}>
-                            <button type="submit" className={style["add-button"]}>
-                              {"RESTORE"}
-                            </button>
-                            <button type="button" className={style["add-button"]} onClick={deleteTool}>
+                            <button type="button" className="iafButton iafButtonPrimary" onClick={deleteTool}>
                               {"DELETE"}
+                            </button>
+                            <button type="submit" className="iafButton iafButtonSecondary">
+                              {"RESTORE"}
                             </button>
                           </div>
                         </div>
@@ -994,15 +820,21 @@ function ToolOnBoarding(props) {
                       <>
                         <div className={style["modal-footer"]}>
                           <div className={style["button-class"]}>
-                            <button type="submit" className={style["add-button"]}>
-                              {isAddTool ? (contextType === "servers" ? "ADD SERVER" : "ADD TOOL") : contextType === "servers" ? "UPDATE SERVER" : "UPDATE"}
+                            <button type="submit" className="iafButton iafButtonPrimary">
+                              {isAddTool ? (contextType === "servers" ? "Add Server" : "Add Tool") : contextType === "servers" ? "Update Server" : "Update Tool"}
                             </button>
-                            <button onClick={() => setShowForm(false)} className={style["cancel-button"]}>
-                              CANCEL
+                            <button
+                              onClick={() => {
+                                setCodeFile(null);
+                                setFormData(formObject);
+                                setShowForm(false);
+                              }}
+                              className="iafButton iafButtonSecondary">
+                              Cancel
                             </button>
                             {errorMessages.length > 0 && !errorModalVisible && !forceAdd && (
-                              <button type="button" className={style["viewWarningsButton"]} onClick={() => setErrorModalVisible(true)}>
-                                VIEW WARNINGS
+                              <button type="button" className="iafButton iafButtonPrimary" onClick={() => setErrorModalVisible(true)}>
+                                View Warnings
                               </button>
                             )}
                           </div>
@@ -1010,95 +842,8 @@ function ToolOnBoarding(props) {
                       </>
                     )}
                   </form>
-                  {(floaterForInput || showValidationResult) && (
-                    <div className={style.executorContainer}>
-                      <span
-                        onClick={() => {
-                          setTurnOnDisable(true);
-                          setFloaterForInput(false);
-                          setRequiredInputs([]);
-                          setInputFields({});
-                          setShowValidationResult(false);
-                          setValidationResult(null);
-                        }}
-                        title="Close executor"
-                        className={style.closeButton}>
-                        <SVGIcons icon="close-icon" color="#dc3545" width={18} height={18} />
-                      </span>
-
-                      {floaterForInput && (
-                        <div className={style.validationPanel} role="dialog" aria-modal="true" aria-label="Required Inputs">
-                          <div className={style.validatorHeader}>
-                            <div className={style.headerTitleAndEdit}>
-                              <p className={style.headerText}>Required inputs:</p>
-                              {/* <div className={style.editAndClose}>
-                                {turnOnDisable ? (
-                                  <span
-                                    onClick={() => {
-                                      setTurnOnDisable(false);
-                                    }}
-                                    title="Enable inputs"
-                                    className={style.editButton}>
-                                    <SVGIcons className={style.editIcon} icon="pencil" width={18} height={18} />
-                                  </span>
-                                ) : (
-                                  <span
-                                    onClick={() => {
-                                      setTurnOnDisable(true);
-                                    }}
-                                    title="Disable inputs"
-                                    className={style.editButton}>
-                                    <SVGIcons className={style.editIcon} icon="disable_icon" width={18} height={18} />
-                                  </span>
-                                )}
-                              </div> */}
-                            </div>
-                          </div>
-                          <div className={style.ValidationInputWrapper}>
-                            {requiredInputs.map((inputItem) => (
-                              <label key={inputItem.name} className={style.inputFieldLabel}>
-                                {toTitleCase(inputItem.name)}:
-                                <input
-                                  type="text"
-                                  name={inputItem.name}
-                                  placeholder={inputItem.default ? `Default: "${inputItem.default}"` : ""}
-                                  value={inputFields[inputItem.name] || ""}
-                                  onChange={(e) => handleInputFieldChange(inputItem.name, e.target.value)}
-                                  className={`${style.validationInput} ${inputValidationErrors[inputItem.name] ? style.inputError : ""}`}
-                                  aria-label={inputItem.name}
-                                  // disabled={turnOnDisable}
-                                  aria-describedby={inputValidationErrors[inputItem.name] ? `${inputItem.name}-error` : undefined}
-                                />
-                                {inputValidationErrors[inputItem.name] && (
-                                  <span id={`${inputItem.name}-error`} className={style.subtleErrorMessage} role="alert">
-                                    {/* {inputValidationErrors[inputItem.name]}  */}
-                                    This field is required
-                                  </span>
-                                )}
-                              </label>
-                            ))}
-                            <div className={style.ValidationButtonWrapper}>
-                              <button type="button" onClick={handleInputFieldsSubmit} disabled={loading}>
-                                {loading ? "Running..." : "Run"}
-                              </button>
-                              {Object.keys(inputValidationErrors).length > 0 && Object.values(inputValidationErrors).some((error) => error) && (
-                                <span className={style.subtleErrorMessage} role="alert">
-                                  Please fill all the fields
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {showValidationResult && validationResult && (
-                        <div ref={validationResultRef} className={`${style.success_error_section} ${style[validationResult.type]} ${!floaterForInput ? style.withTopMargin : ""}`}>
-                          <div className={`${style.success_error_header} ${style[validationResult.type]}`}>{validationResult.type === "success" ? <>Success</> : <>Error</>}</div>
-                          {validationResult.type === "success" && <p className={style.outputLabel}>Output is:</p>}
-                          {renderValidationContent(validationResult.data)}
-                        </div>
-                      )}
-                    </div>
+                  {showExecutorPanel && (
+                    <ExecutorPanel code={formData.code} autoExecute={true} executeTrigger={executeTrigger} onClose={() => setShowExecutorPanel(false)} mode="tool" />
                   )}
                 </div>
               )}
@@ -1118,6 +863,7 @@ function ToolOnBoarding(props) {
         content={popupContent}
         onSave={handleZoomSave}
         type={popupTitle === "Code Snippet" ? "code" : "text"}
+        readOnly={popupTitle === "Code Snippet" && !!codeFile}
       />
       <WarningModal
         show={errorModalVisible}

@@ -1,11 +1,7 @@
 import React, { useRef, useEffect } from "react";
 import style from "./ConfirmationPopup.module.css";
 
-const ConfirmationModal = ({
-  message,
-  onConfirm,
-  setShowConfirmation,
-}) => {
+const ConfirmationModal = ({ message, onConfirm, setShowConfirmation }) => {
   const modalRef = useRef(null);
 
   const hanleClose = () => {

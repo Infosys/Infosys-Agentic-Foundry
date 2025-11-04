@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import SubHeader from "../commonComponents/SubHeader.jsx";
 import styles from "../../css_modules/AvailableServers.module.css";
 import { useMcpServerService } from "../../services/serverService";
@@ -14,6 +14,8 @@ import useFetch from "../../Hooks/useAxios.js";
 import { APIs } from "../../constant";
 import { useToolsAgentsService } from "../../services/toolService.js";
 import { debounce } from "lodash";
+import { useErrorHandler } from "../../Hooks/useErrorHandler";
+import CodeEditor from "../commonComponents/CodeEditor.jsx";
 
 export default function AvailableServers(props) {
   const { getLiveToolDetails, deleteServer, getServersSearchByPageLimit } = useMcpServerService();
@@ -46,14 +48,15 @@ export default function AvailableServers(props) {
   const { fetchData } = useFetch();
   const hasLoadedTagsOnce = useRef(false);
 
+  const { handleError } = useErrorHandler();
   const getTags = useCallback(async () => {
     try {
       const data = await fetchData(APIs.GET_TAGS);
       setTags(data);
     } catch (e) {
-      console.error(e);
+      handleError(e, { context: "AvailableServers.getTags" });
     }
-  }, [fetchData]);
+  }, [fetchData, handleError]);
 
   useEffect(() => {
     if (hasLoadedTagsOnce.current) return;
@@ -78,7 +81,16 @@ export default function AvailableServers(props) {
     const hasCode = Boolean(raw?.mcp_config?.args?.[1] || raw?.mcp_file?.code_content || raw?.code_content || raw?.code || raw?.script);
     const hasUrl = Boolean(raw?.mcp_config?.url || raw?.mcp_url || raw?.endpoint || raw?.mcp_config?.mcp_url || raw?.mcp_config?.endpoint);
 
-    const type = hasCode ? "LOCAL" : hasUrl ? "REMOTE" : ((raw.mcp_type || raw.type || "") + "").toUpperCase() || "UNKNOWN";
+    let type;
+    if (raw.mcp_type === "module") {
+      type = "EXTERNAL";
+    } else if (hasCode) {
+      type = "LOCAL";
+    } else if (hasUrl) {
+      type = "REMOTE";
+    } else {
+      type = ((raw.mcp_type || raw.type || "") + "").toUpperCase() || "UNKNOWN";
+    }
 
     const endpoint = raw.mcp_url || (raw.mcp_config && (raw.mcp_config.url || raw.mcp_config.mcp_url || raw.mcp_config.endpoint)) || raw.endpoint || "";
 
@@ -120,22 +132,22 @@ export default function AvailableServers(props) {
       // Setting the total count from API response
       setTotalServersCount(response.total_count || 0);
 
-      let dataToSearch = sanitizeServersResponse(response.details || response);
-      if (tagsForSearch?.length > 0) {
-        dataToSearch = dataToSearch.filter((item) => {
-          const typeFilters = tagsForSearch.filter((t) => t === "LOCAL" || t === "REMOTE");
-          const tagFilters = tagsForSearch.filter((t) => t !== "LOCAL" && t !== "REMOTE");
-          const mapped = mapServerData(item);
-          const typeMatch = typeFilters.length === 0 || typeFilters.includes(String(mapped.type).toUpperCase());
-          const tagMatch = tagFilters.length === 0 || (Array.isArray(mapped.tags) && mapped.tags.some((tag) => tagFilters.includes(tag)));
-          return typeMatch && tagMatch;
-        });
-      }
+      const dataToSearch = sanitizeServersResponse(response.details || response);
+      // if (tagsForSearch?.length > 0) {
+      //   dataToSearch = dataToSearch.filter((item) => {
+      //     const typeFilters = tagsForSearch.filter((t) => t === "LOCAL" || t === "REMOTE");
+      //     const tagFilters = tagsForSearch.filter((t) => t !== "LOCAL" && t !== "REMOTE");
+      //     const mapped = mapServerData(item);
+      //     const typeMatch = typeFilters.length === 0 || typeFilters.includes(String(mapped.type).toUpperCase());
+      //     const tagMatch = tagFilters.length === 0 || (Array.isArray(mapped.tags) && mapped.tags.some((tag) => tagFilters.includes(tag)));
+      //     return typeMatch && tagMatch;
+      //   });
+      // }
       const mappedData = dataToSearch.map(mapServerData);
       setVisibleData(mappedData);
       setHasMore(dataToSearch.length >= divsCount);
     } catch (error) {
-      console.error("Error fetching search results:", error);
+      handleError(error, { context: "AvailableServers.handleSearch" });
       setVisibleData([]); // Clear visibleData on error
       setHasMore(false);
     } finally {
@@ -150,12 +162,15 @@ export default function AvailableServers(props) {
   );
   const clearSearch = () => {
     setSearchTerm("");
+    setSelectedFilterTags([]);
     setVisibleData([]);
     setHasMore(true);
-    // Trigger fetchServersData with no search term (reset to first page)
-    const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-    pageRef.current = 1;
-    getServersData(1, divsCount);
+    setTimeout(() => {
+      // Trigger fetchServersData with no search term (reset to first page)
+      const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
+      pageRef.current = 1;
+      getServersData(1, divsCount);
+    }, 500);
   };
 
   const visible = useMemo(() => {
@@ -175,11 +190,30 @@ export default function AvailableServers(props) {
     window.addEventListener("AddServer:CloseRequested", handler);
     return () => window.removeEventListener("AddServer:CloseRequested", handler);
   }, []);
+  // Refresh only when AddServer signals success (AddServer dispatches AddServer:RefreshRequested)
+  useEffect(() => {
+    const refreshHandler = () => {
+      try {
+        const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+        pageRef.current = 1;
+        getServersData(1, divsCount);
+      } catch (e) {
+        // swallow
+      }
+    };
+    window.addEventListener("AddServer:RefreshRequested", refreshHandler);
+    return () => window.removeEventListener("AddServer:RefreshRequested", refreshHandler);
+  }, [calculateDivs, getServersData]);
   const handleScrollLoadMore = useCallback(async () => {
     if (loading || isLoadingRef.current || !hasMore) return; // Prevent multiple calls or if no more data
     isLoadingRef.current = true;
     const nextPage = pageRef.current + 1;
     const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+    if (!divsCount || typeof divsCount !== "number" || !Number.isFinite(divsCount)) {
+      // Defensive: release the lock and skip this cycle; will be recalculated on next scroll/resize
+      isLoadingRef.current = false;
+      return;
+    }
 
     try {
       setLoading(true);
@@ -199,18 +233,19 @@ export default function AvailableServers(props) {
           setTotalServersCount(response.total_count);
         }
 
-        let dataToSearch = sanitizeServersResponse(response.details || response);
+        let initialData = sanitizeServersResponse(response.details || response);
+
         if (selectedFilterTags?.length > 0) {
-          dataToSearch = dataToSearch.filter((item) => {
-            const typeFilters = selectedFilterTags.filter((t) => t === "LOCAL" || t === "REMOTE");
-            const tagFilters = selectedFilterTags.filter((t) => t !== "LOCAL" && t !== "REMOTE");
+          initialData = initialData.filter((item) => {
+            const typeFilters = selectedFilterTags.filter((t) => t === "LOCAL" || t === "REMOTE" || t === "EXTERNAL");
+            const tagFilters = selectedFilterTags.filter((t) => t !== "LOCAL" && t !== "REMOTE" && t !== "EXTERNAL");
             const mapped = mapServerData(item);
             const typeMatch = typeFilters.length === 0 || typeFilters.includes(String(mapped.type).toUpperCase());
             const tagMatch = tagFilters.length === 0 || (Array.isArray(mapped.tags) && mapped.tags.some((tag) => tagFilters.includes(tag)));
             return typeMatch && tagMatch;
           });
         }
-        newData = dataToSearch.map(mapServerData);
+        newData = initialData.map(mapServerData);
       } else {
         // Load more regular data
         const response = await getServersSearchByPageLimit({
@@ -226,6 +261,7 @@ export default function AvailableServers(props) {
         }
 
         const data = sanitizeServersResponse(response.details || response);
+
         newData = data.map(mapServerData);
         // Only update servers state for non-search scenarios
         setServers((prev) => {
@@ -247,7 +283,7 @@ export default function AvailableServers(props) {
         setHasMore(false);
       }
     } catch (error) {
-      console.error("Error loading more servers:", error);
+      handleError(error, { context: "AvailableServers.loadMore" });
       setHasMore(false);
     } finally {
       setLoading(false);
@@ -264,10 +300,8 @@ export default function AvailableServers(props) {
       const scrollHeight = container.scrollHeight;
       const clientHeight = container.clientHeight;
 
-      const isNearBottom = scrollTop + clientHeight >= scrollHeight - 50;
-
       // Check if user has scrolled near the bottom (within 50px for better detection)
-      if (isNearBottom && !loading && !isLoadingRef.current && hasMore) {
+      if (scrollTop + clientHeight >= scrollHeight - 50 && !loading && !isLoadingRef.current && hasMore) {
         handleScrollLoadMore();
       }
     };
@@ -345,19 +379,57 @@ export default function AvailableServers(props) {
   }, [visible.length, hasMore, loading, handleScrollLoadMore]);
 
   useEffect(() => {
-    if (open && selected) {
-      setLoadingTools(true);
-      getLiveToolDetails(selected.id)
-        .then((data) => {
-          setLiveToolDetails(Array.isArray(data) ? data : []);
-        })
-        .catch(() => setLiveToolDetails([]))
-        .finally(() => setLoadingTools(false));
-    } else {
+    // NOTE: This effect previously depended on getLiveToolDetails (likely unstable identity),
+    // causing it to fire on every re-render (e.g. when an error toast shows/closes),
+    // which re-triggered the API call -> infinite loop of errors.
+    // We now only fetch when: (1) modal just opened for a server OR (2) selected server id changes.
+    // We remember the last fetched id while the modal remains open to prevent duplicate calls.
+
+    // Refs to track fetch session
+    const fetchState = (AvailableServers.__liveToolsFetchState ||= { lastId: null, open: false });
+
+    if (!open || !selected?.id) {
+      // If modal closed, reset state & clear details
+      if (!open) {
+        fetchState.lastId = null;
+        fetchState.open = false;
+      }
       setLiveToolDetails([]);
       setLoadingTools(false);
+      return;
     }
-  }, [open, selected, getLiveToolDetails]);
+
+    // Prevent duplicate fetch for same id while modal is still open
+    if (fetchState.open && fetchState.lastId === selected.id) {
+      return;
+    }
+
+    fetchState.lastId = selected.id;
+    fetchState.open = true;
+    setLoadingTools(true);
+
+    let isCancelled = false;
+    getLiveToolDetails(selected.id)
+      .then((data) => {
+        if (isCancelled) return;
+        setLiveToolDetails(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        // Keep details empty; DO NOT reset fetchState so we don't spam retries until user changes selection or closes/reopens
+        setLiveToolDetails([]);
+      })
+      .finally(() => {
+        if (isCancelled) return;
+        setLoadingTools(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+    // Intentionally exclude getLiveToolDetails from deps to avoid re-fetch loops due to unstable function reference.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selected?.id]);
   const handleDeleteClick = (server) => {
     const loggedInUserEmail = Cookies.get("email");
     const userName = Cookies.get("userName");
@@ -387,7 +459,12 @@ export default function AvailableServers(props) {
 
     // Admin can delete any server, non-admin can only delete their own servers
     if (!isAdmin && (!loggedInUserEmail || !creatorEmail || loggedInUserEmail.toLowerCase() !== creatorEmail.toLowerCase())) {
-      addMessage("Only creator/admin can delete this server", "error");
+      // Route through global error handler for consistency (toast + logging)
+      handleError(new Error("Only creator/admin can delete this server"), {
+        userMessage: "Only creator/admin can delete this server",
+        context: "AvailableServers.handleDeleteConfirm.permission",
+        severity: "warn",
+      });
       return;
     }
 
@@ -466,7 +543,8 @@ export default function AvailableServers(props) {
       setHasMore(true);
       pageRef.current = 1;
       const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-      await getServersData(1, divsCount);
+      // Call getServersDataWithTags with explicitly empty tags to match tools implementation
+      await getServersDataWithTags(1, divsCount, []);
     } catch (e) {
       // swallow
     }
@@ -477,11 +555,6 @@ export default function AvailableServers(props) {
     pageRef.current = 1;
     setVisibleData([]);
     setHasMore(true);
-
-    // Close modal if tags are cleared
-    if (!selectedTagsParam || selectedTagsParam.length === 0) {
-      setFilterModal(false);
-    }
 
     // Trigger new API call with selected tags - pass selectedTagsParam directly
     const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
@@ -503,12 +576,22 @@ export default function AvailableServers(props) {
       const response = await getServersSearchByPageLimit({
         page: pageNumber,
         limit: divsCount,
-        search: "",
+        search: searchTerm,
         tags: tagsToUse?.length > 0 ? tagsToUse : undefined,
       });
 
-      const data = sanitizeServersResponse(response.details || response);
-      const mappedData = data.map(mapServerData);
+      const dataToSearch = sanitizeServersResponse(response.details || response);
+      // if ((tags || []).length > 0) {
+      //   dataToSearch = dataToSearch.filter((item) => {
+      //     const typeFilters = (tags || []).filter((t) => t === "LOCAL" || t === "REMOTE");
+      //     const tagFilters = (tags || []).filter((t) => t !== "LOCAL" && t !== "REMOTE");
+      //     const mapped = mapServerData(item);
+      //     const typeMatch = typeFilters.length === 0 || typeFilters.includes(String(mapped.type).toUpperCase());
+      //     const tagMatch = tagFilters.length === 0 || (Array.isArray(mapped.tags) && mapped.tags.some((tag) => tagFilters.includes(tag)));
+      //     return typeMatch && tagMatch;
+      //   });
+      // }
+      const mappedData = dataToSearch.map(mapServerData);
       if (pageNumber === 1) {
         // Initial load - replace all data
         setServers(mappedData);
@@ -556,19 +639,11 @@ export default function AvailableServers(props) {
 
   return (
     <>
-      <FilterModal
-        show={filterModal}
-        onClose={() => setFilterModal(false)}
-        tags={tags}
-        handleFilter={handleFilterApply}
-        selectedTags={selectedFilterTags}
-        showfilterHeader={"Filter Servers by Tags"}
-        filterTypes="servers"
-      />
       <div className={styles.container}>
         <div className={styles.subHeaderContainer}>
           <SubHeader
-            heading={"LIST OF SERVERS"}
+            heading={""}
+            activeTab={"servers"}
             onSearch={(value) => handleSearch(value, calculateDivs(serverListContainerRef, 200, 140, 16), 1)}
             searchValue={searchTerm}
             clearSearch={clearSearch}
@@ -581,49 +656,65 @@ export default function AvailableServers(props) {
         </div>
 
         {loading && <Loader />}
+        {/* Search/filter info badges similar to AvailableTools */}
+        <div style={{ display: "flex", gap: "12px", marginBottom: "3px", width: "100%", overflow: "hidden" }}>
+          {/* Display searched server text if searchTerm exists and results are found */}
+          {searchTerm.trim() && visible.length > 0 && (
+            <div className={styles.searchedToolText}>
+              <p>
+                Search term:{" "}
+                <span className={`boldText ${styles.filterOrSearchText}`} title={searchTerm}>
+                  {searchTerm}
+                </span>
+              </p>
+            </div>
+          )}
 
-        {/* Display searched server text if searchTerm exists and results are found */}
-        {searchTerm.trim() && visible.length > 0 && (
-          <div className={styles.searchedServerText}>
-            <p>Servers Found: {searchTerm}</p>
-          </div>
-        )}
+          {/* Display filtered servers text if filters are applied */}
+          {selectedFilterTags.length > 0 && visible.length > 0 && (
+            <div className={styles.filteredToolText}>
+              <p>
+                Selected tags:{" "}
+                <span className={`boldText ${styles.filterOrSearchText}`} title={selectedFilterTags.join(", ")}>
+                  {selectedFilterTags.join(", ")}
+                </span>
+              </p>
+            </div>
+          )}
 
-        {/* Display filtered servers text if filters are applied */}
-        {selectedFilterTags.length > 0 && visible.length > 0 && (
-          <div className={styles.filteredServerText}>
-            <p>Servers Found: {selectedFilterTags.join(", ")}</p>
-          </div>
-        )}
+          {/* Display "No Tools Found" messages when search or filters applied but no results */}
+          {searchTerm.trim() && visibleData.length < 1 && !loading && (
+            <div className={styles.filteredToolText}>
+              <p>
+                No servers found for:{" "}
+                <span className={`boldText ${styles.filterOrSearchText}`} title={searchTerm}>
+                  {searchTerm}
+                </span>
+              </p>
+            </div>
+          )}
 
-        {/* Display "No Servers Found" messages when search or filters applied but no results */}
-        {searchTerm.trim() && visible.length === 0 && (
-          <div className={styles.filteredServerText}>
-            <p>No Servers Found: {searchTerm}</p>
-          </div>
-        )}
-
-        {selectedFilterTags.length > 0 && visible.length === 0 && (
-          <div className={styles.searchedServerText}>
-            <p>No Servers Found: {selectedFilterTags.join(", ")}</p>
-          </div>
-        )}
-
-        <div className={styles.summaryLine}>
-          <strong>{visible.length}</strong> servers (of {totalServersCount} total)
+          {selectedFilterTags.length > 0 && visibleData.length < 1 && !loading && (
+            <div className={styles.searchedToolText}>
+              <p>
+                No servers found for:{" "}
+                <span className={`boldText ${styles.filterOrSearchText}`} title={selectedFilterTags.join(", ")}>
+                  {selectedFilterTags.join(", ")}
+                </span>
+              </p>
+            </div>
+          )}
         </div>
+
+        {/* Conditional summary line only when we have visible data */}
+        {visible.length > 0 && (
+          <div className={styles.summaryLine}>
+            <strong>{visible.length}</strong> servers (of {totalServersCount} total)
+          </div>
+        )}
         <div
           ref={serverListContainerRef}
-          className={styles.serverGrid}
-          style={{
-            maxHeight: "60vh",
-            height: "60vh", // Force a fixed height
-            overflowY: "auto",
-            overflowX: "hidden",
-            scrollBehavior: "smooth",
-            minHeight: "400px", // Increased min height
-            border: "1px solid transparent", // Help with scroll detection
-          }}
+          className={`${styles.serverGrid} ${selectedFilterTags.length > 0 || searchTerm.trim() ? styles.tagOrSerachIsOnServer : ""}`}
           aria-label="Servers list scrollable container">
           {visible.map((s) => (
             <div
@@ -693,12 +784,12 @@ export default function AvailableServers(props) {
                   </div>
                 </div>
               </div>
-              <div style={{ position: "absolute", left: "10px", bottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ position: "absolute", left: "2px", bottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span className={styles.typePill} style={{ fontSize: "12px", padding: "4px 10px", background: "#6b7280", color: "#fff", borderRadius: "8px" }}>
                   {s.type}
                 </span>
               </div>
-              <div style={{ position: "absolute", right: "10px", bottom: "10px", display: "flex", gap: "8px" }}>
+              <div className={styles.serverCardBtnWrapper} style={{ position: "absolute", right: "10px", bottom: "10px", display: "flex", gap: "8px" }}>
                 <button
                   type="button"
                   style={{
@@ -754,7 +845,8 @@ export default function AvailableServers(props) {
                   title="Edit"
                   aria-label={`Edit ${s.name}`}
                   onClick={() => {
-                    setEditServerData(s);
+                    // Always pass raw if available, fallback to s for legacy/local/remote
+                    setEditServerData(s.raw && Object.keys(s.raw).length ? s.raw : s);
                     setShowAddServerModal(true);
                   }}>
                   <SVGIcons icon="fa-solid fa-pen" width={16} height={16} fill="#fff" />
@@ -797,7 +889,7 @@ export default function AvailableServers(props) {
           )}
 
           {/* End of list indicator */}
-          {!hasMore && visible.length > 0 && (
+          {/* {!hasMore && visible.length > 0 && (
             <div
               style={{
                 width: "100%",
@@ -809,33 +901,34 @@ export default function AvailableServers(props) {
               }}>
               No more servers to load
             </div>
-          )}
-          {visible.length === 0 && !loading && (
-            <div
-              className={styles.noServersFound}
-              style={{
-                width: "100%",
-                padding: "32px 0",
-                textAlign: "center",
-                color: "#b0b0b0",
-                fontSize: "18px",
-                fontWeight: 600,
-                fontStyle: "italic",
-                letterSpacing: "0.5px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-              }}>
-              <SVGIcons icon="fa-server" width={48} height={48} fill="#b0b0b0" style={{ marginBottom: "12px" }} />
-              No servers found
-            </div>
-          )}
+          )} */}
         </div>
+
+        {/* {visible.length === 0 && !loading && (
+          <div
+            className={styles.noServersFound}
+            style={{
+              width: "100%",
+              padding: "32px 0",
+              textAlign: "center",
+              color: "#b0b0b0",
+              fontSize: "18px",
+              fontWeight: 600,
+              fontStyle: "italic",
+              letterSpacing: "0.5px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+            <SVGIcons icon="fa-server" width={48} height={48} fill="#b0b0b0" style={{ marginBottom: "12px" }} />
+            No servers found
+          </div>
+        )} */}
 
         {open && selected && (
           <div className={styles.modalOverlay} onClick={() => setOpen(false)}>
-            <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={`${styles.modal} ${String(selected.type || "").toUpperCase() === "LOCAL" ? styles.modalWide : ""}`} onClick={(e) => e.stopPropagation()}>
               <button className={styles.closeBtn} onClick={() => setOpen(false)}>
                 ×
               </button>
@@ -907,6 +1000,11 @@ export default function AvailableServers(props) {
                       <div className={styles.infoRow}>
                         <strong>Type:</strong> {selected.type}
                       </div>
+                      {String(selected.type || "").toUpperCase() === "EXTERNAL" && selected?.raw?.mcp_config?.args?.[1] && (
+                        <div className={styles.infoRow}>
+                          <strong>Module:</strong> {selected.raw.mcp_config.args[1]}
+                        </div>
+                      )}
                       {(() => {
                         if (String(selected.type || "").toUpperCase() === "REMOTE") {
                           // Show liveToolDetails if available, else fallback to selected.tools
@@ -981,10 +1079,33 @@ export default function AvailableServers(props) {
                     </div>
                   </div>
                 </div>
-                {String(selected.type || "").toUpperCase() !== "REMOTE" && (
+                {String(selected.type || "").toUpperCase() === "LOCAL" && (
                   <div className={styles.modalRight}>
                     <div className={styles.codeLabel}>Code Preview:</div>
-                    <pre className={styles.codePreview}>{getCodePreview(selected)}</pre>
+                    <div className={styles.codeEditorContainer}>
+                      <CodeEditor
+                        mode="python"
+                        theme="monokai"
+                        isDarkTheme={true}
+                        value={getCodePreview(selected)}
+                        width="100%"
+                        height="250px"
+                        fontSize={14}
+                        readOnly={true}
+                        setOptions={{
+                          enableBasicAutocompletion: false,
+                          enableLiveAutocompletion: false,
+                          enableSnippets: false,
+                          showLineNumbers: true,
+                          tabSize: 4,
+                          useWorker: false,
+                          wrap: false,
+                        }}
+                        style={{
+                          fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -998,8 +1119,8 @@ export default function AvailableServers(props) {
           tags={tags}
           handleFilter={handleFilterApply}
           selectedTags={selectedFilterTags}
-          showfilterHeader={"Filter servers by Tags"}
-          filterTypes={"servers"}
+          showfilterHeader={"Filter Servers by Tags"}
+          filterTypes="servers"
         />
 
         <DeleteModal show={deleteModal} onClose={() => setDeleteModal(false)}>
@@ -1017,75 +1138,99 @@ export default function AvailableServers(props) {
         {/* AddServer modal for add/edit - OUTSIDE main container for full overlay */}
         {showAddServerModal &&
           (editServerData ? (
-            <div
-              className={styles.modalOverlay}
-              onClick={() => {
+            // <div
+            //   className={styles.modalOverlay}
+            //   onClick={() => {
+            //     setShowAddServerModal(false);
+            //     setEditServerData(null);
+            //   }}>
+            //   <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            //     <button
+            //       className={styles.closeBtn}
+            //       onClick={() => {
+            //         setShowAddServerModal(false);
+            //         setEditServerData(null);
+            //       }}>
+            //       ×
+            //     </button>{" "}
+            //     <AddServer
+            //       editMode={true}
+            //       serverData={editServerData}
+            //       setRefreshPaginated={() => {
+            //         const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
+            //         getServersData(1, divsCount);
+            //       }}
+            //       onClose={() => {
+            //         try {
+            //           const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
+            //           getServersData(1, divsCount);
+            //         } catch (e) {}
+            //         setShowAddServerModal(false);
+            //         setEditServerData(null);
+            //       }}
+            //       drawerFormClass={styles.availableServersDrawerForm}
+            //     />
+            //   </div>
+            // </div>
+            <AddServer
+              editMode={true}
+              serverData={editServerData}
+              setRefreshPaginated={() => {
+                /* refresh handled by AddServer:RefreshRequested */
+              }}
+              onClose={() => {
                 setShowAddServerModal(false);
                 setEditServerData(null);
-              }}>
-              <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-                <button
-                  className={styles.closeBtn}
-                  onClick={() => {
-                    setShowAddServerModal(false);
-                    setEditServerData(null);
-                  }}>
-                  ×
-                </button>{" "}
-                <AddServer
-                  editMode={true}
-                  serverData={editServerData}
-                  setRefreshPaginated={() => {
-                    const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-                    getServersData(1, divsCount);
-                  }}
-                  onClose={() => {
-                    try {
-                      const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-                      getServersData(1, divsCount);
-                    } catch (e) {}
-                    setShowAddServerModal(false);
-                    setEditServerData(null);
-                  }}
-                  drawerFormClass={styles.availableServersDrawerForm}
-                />
-              </div>
-            </div>
+              }}
+              drawerFormClass={styles.availableServersDrawerForm}
+            />
           ) : (
-            <div
-              className={styles.modalOverlay}
-              onClick={() => {
+            // <div
+            //   className={styles.modalOverlay}
+            //   onClick={() => {
+            //     setShowAddServerModal(false);
+            //     setEditServerData(null);
+            //   }}>
+            //   <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            //     <button
+            //       className={styles.closeBtn}
+            //       onClick={() => {
+            //         setShowAddServerModal(false);
+            //         setEditServerData(null);
+            //       }}>
+            //       ×
+            //     </button>{" "}
+            //     <AddServer
+            //       editMode={false}
+            //       serverData={null}
+            //       setRefreshPaginated={() => {
+            //         const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
+            //         getServersData(1, divsCount);
+            //       }}
+            //       onClose={() => {
+            //         try {
+            //           const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
+            //           getServersData(1, divsCount);
+            //         } catch (e) {}
+            //         setShowAddServerModal(false);
+            //         setEditServerData(null);
+            //       }}
+            //       drawerFormClass={styles.availableServersDrawerForm}
+            //     />
+            //   </div>
+            // </div>
+            <AddServer
+              editMode={false}
+              serverData={null}
+              setRefreshPaginated={() => {
+                /* refresh handled by AddServer:RefreshRequested */
+              }}
+              onClose={() => {
                 setShowAddServerModal(false);
                 setEditServerData(null);
-              }}>
-              <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-                <button
-                  className={styles.closeBtn}
-                  onClick={() => {
-                    setShowAddServerModal(false);
-                    setEditServerData(null);
-                  }}>
-                  ×
-                </button>{" "}
-                <AddServer
-                  editMode={false}
-                  serverData={null}
-                  setRefreshPaginated={() => {
-                    const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-                    getServersData(1, divsCount);
-                  }}
-                  onClose={() => {
-                    try {
-                      const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-                      getServersData(1, divsCount);
-                    } catch (e) {}
-                    setShowAddServerModal(false);
-                    setEditServerData(null);
-                  }}
-                  drawerFormClass={styles.availableServersDrawerForm}
-                />
-              </div>
-            </div>
+              }}
+              drawerFormClass={styles.availableServersDrawerForm}
+            />
           ))}
       </div>
     </>

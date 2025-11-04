@@ -1,11 +1,12 @@
 import "./App.css";
+import { useEffect } from "react";
 import ListOfAgents from "./components/ListOfAgents/ListOfAgents";
 import AskAssistant from "./components/AskAssistant/AskAssistant";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import AvailableTools from "./components/AvailableTools/AvailableTools";
 import Login from "./components/Login";
-import { MessageProvider } from "./Hooks/MessageContext";
+import { MessageProvider, useMessage } from "./Hooks/MessageContext";
 import MessagePopup from "./components/MessagePopup/MessagePopup";
 import { GlobalComponentProvider } from "./Hooks/GlobalComponentContext";
 import GlobalComponent from "./Hooks/GlobalComponent";
@@ -15,14 +16,30 @@ import ProtectedRoute from "./ProtectedRoute";
 import AdminScreen from "./components/AdminScreen/AdminScreen";
 import { ApiUrlProvider } from "./context/ApiUrlContext";
 import { VersionProvider } from "./context/VersionContext";
-import SecretKeys from "./components/Vault/Vault";
+import CompileIssuesOverlay from "./components/errorhandling/CompileIssuesOverlay";
+import ErrorBoundaryWrapper from "./components/errorhandling/ErrorBoundary";
+import VaultScreen from "./components/Vault/Vault";
 import GroundTruth from "./components/GroundTruth/GroundTruth";
 import DataConnectors from "./components/DataConnectors/DataConnectors";
 import EvaluationPage from "./components/EvaluationPage/EvaluationPage";
+import EvaluationPlanScreen from "./components/EvaluationPage/EvaluationPlanScreen";
 import useAutoLogout from "./Hooks/useAutoLogout";
+import useErrorHandler from "./Hooks/useErrorHandler";
+import { globalErrorService } from "./services/globalErrorService";
 
 function App() {
+  useErrorHandler(); // Calling error handler hook to catch errors from API calls across the application
   const { isAuthenticated, loading } = useAuth();
+  const { addMessage } = useMessage();
+
+  // Initialize global error service
+  useEffect(() => {
+    globalErrorService.initialize(addMessage);
+    return () => {
+      globalErrorService.cleanup();
+    };
+  }, [addMessage]);
+
   // install 6-hour absolute session auto logout
   useAutoLogout();
   const PublicRoute = ({ children }) => {
@@ -33,12 +50,36 @@ function App() {
     return children;
   };
 
+  const RuntimeErrorListener = () => {
+    const { addMessage } = useMessage();
+    useEffect(() => {
+      const onError = (e) => {
+        try {
+          addMessage && addMessage("A runtime error occurred. Some data may not have loaded properly.", "error");
+        } catch (_) {}
+      };
+      const onRejection = (e) => {
+        try {
+          addMessage && addMessage("An unexpected promise rejection occurred.", "error");
+        } catch (_) {}
+      };
+      window.addEventListener("error", onError);
+      window.addEventListener("unhandledrejection", onRejection);
+      return () => {
+        window.removeEventListener("error", onError);
+        window.removeEventListener("unhandledrejection", onRejection);
+      };
+    }, [addMessage]);
+    return null;
+  };
+
   return (
     <>
       <GlobalComponentProvider>
         <GlobalComponent />
         <MessageProvider>
           <MessagePopup />
+          <RuntimeErrorListener />
           <VersionProvider>
             <ApiUrlProvider>
               <Routes>
@@ -93,7 +134,7 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <Layout>
-                        <SecretKeys />
+                        <VaultScreen />
                       </Layout>
                     </ProtectedRoute>
                   }
@@ -133,9 +174,9 @@ function App() {
                 <Route
                   path="/evaluation"
                   element={
-                    <ProtectedRoute requiredRole="ADMIN">
+                    <ProtectedRoute>
                       <Layout>
-                        <EvaluationPage />
+                        <EvaluationPlanScreen />
                       </Layout>
                     </ProtectedRoute>
                   }

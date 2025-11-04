@@ -3,7 +3,8 @@ import styles from "./Canvas.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import DynamicWidget from "./DynamicWidget";
 
-const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canvas", messageId = null }) => {
+const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canvas", messageId = null, is_last,
+  sendUserMessage,selectedAgent}) => {
   const canvasRef = useRef(null);
   const resizeRef = useRef(null);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -146,7 +147,6 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
               </svg>
             )}
           </button>
-
           <button className={styles.actionButton} onClick={handleClose} title="Close Canvas">
             <SVGIcons icon="fa-xmark" width={12} height={12} fill="#666" />
           </button>
@@ -155,9 +155,18 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
       {/* Canvas Content */}
       {!isMinimized && (
         <div className={styles.canvasContent}>
-          <DynamicWidget type={contentType} content={content} messageId={messageId} />
+          <DynamicWidget
+            type={contentType}
+            content={content}
+            messageId={messageId}
+            is_last={is_last}
+            sendUserMessage={sendUserMessage}
+            isMinimized={isMinimized}
+            isFullscreen={isFullscreen}
+            selectedAgent={selectedAgent}
+          />
         </div>
-      )}{" "}
+      )}{""}
       {/* Resize Handle */}
       {!isFullscreen && !isMinimized && (
         <div className={styles.resizeHandle} ref={resizeRef} onMouseDown={handleResizeStart}>
@@ -170,6 +179,6 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
       )}
     </div>
   );
-};
+}
 
 export default Canvas;

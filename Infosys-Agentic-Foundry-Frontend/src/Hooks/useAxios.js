@@ -1,26 +1,61 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { APIs, BASE_URL } from "../constant";
 import Cookies from "js-cookie";
 import axios from "axios";
+import { registerAxiosInterceptors } from "../config/axiosInterceptors"; // ensure timing/error interceptors on custom instance
+import { useErrorHandler } from "./useErrorHandler";
 
 let sessionId = null;
 
-let postMethod = "POST";
-let getMethod = "GET";
-let deleteMethod = "DELETE";
-let putMethod = "PUT";
+const postMethod = "POST";
+const getMethod = "GET";
+const deleteMethod = "DELETE";
+const putMethod = "PUT";
 
 // JWT token storage
 let jwtToken = null;
+// Refresh token cache (non-HTTP-only fallback). If backend sets httpOnly cookie you can ignore.
+let refreshToken = null;
+let isRefreshing = false;
+let refreshPromise = null; // shared promise for in-flight refresh
+// Flag to detect if session artifacts disappeared during an in‑flight refresh so we don't resurrect a logged out user
+let sessionInvalidatedDuringRefresh = false;
+
+// Global API call tracking to prevent loops
+let isApiBlocked = false;
+const apiCallHistory = new Map();
+const MAX_CALLS_PER_ENDPOINT = 5;
+const TIME_WINDOW = 10000; // 10 seconds
 
 // Function to set the JWT token (to be called after login/signup)
 export const setJwtToken = (token) => {
   if (token) {
     jwtToken = token;
-    Cookies.set("jwt-token", token); // Store in localStorage for persistence
+    Cookies.set("jwt-token", token);
     return true;
   }
   return false;
+};
+
+// Refresh token helpers
+export const setRefreshToken = (token) => {
+  if (token) {
+    refreshToken = token;
+    Cookies.set("refresh-token", token, { path: "/" });
+  } else {
+    refreshToken = null;
+    Cookies.remove("refresh-token");
+  }
+};
+export const getRefreshToken = () => {
+  if (!refreshToken) {
+    refreshToken = Cookies.get("refresh-token") || null;
+  }
+  return refreshToken;
+};
+export const clearRefreshToken = () => {
+  refreshToken = null;
+  Cookies.remove("refresh-token");
 };
 
 // Function to get the current JWT token
@@ -29,6 +64,45 @@ export const getJwtToken = () => {
     jwtToken = Cookies.get("jwt-token");
   }
   return jwtToken;
+};
+
+// Function to check if API calls should be blocked
+const shouldBlockApiCall = (endpoint) => {
+  const now = Date.now();
+
+  if (isApiBlocked) {
+    console.warn(`🚫 API call to ${endpoint} blocked due to error loop protection`);
+    return true;
+  }
+
+  // Check call frequency for this endpoint
+  const endpointHistory = apiCallHistory.get(endpoint) || [];
+  const recentCalls = endpointHistory.filter((timestamp) => now - timestamp < TIME_WINDOW);
+
+  if (recentCalls.length >= MAX_CALLS_PER_ENDPOINT) {
+    console.warn(`🚫 API call to ${endpoint} blocked - too many calls (${recentCalls.length}) in time window`);
+    return true;
+  }
+
+  // Update history
+  recentCalls.push(now);
+  apiCallHistory.set(endpoint, recentCalls);
+
+  return false;
+};
+
+// Function to temporarily block API calls
+const blockApiCalls = (duration = 5000) => {
+  if (isApiBlocked) return;
+
+  isApiBlocked = true;
+  console.warn("🚫 All API calls temporarily blocked due to error loop detection");
+
+  setTimeout(() => {
+    isApiBlocked = false;
+    apiCallHistory.clear();
+    console.info("✅ API calls unblocked");
+  }, duration);
 };
 
 // Helper to add Authorization header if JWT token is available
@@ -60,153 +134,423 @@ const defaultConfig = {
   timeout: REQUEST_TIMEOUT_MS,
 };
 
+// Create a centralized axios instance so interceptors fire uniformly
+const axiosInstance = axios.create({
+  baseURL: BASE_URL,
+  ...defaultConfig,
+});
+// Flag used by shared interceptors to know refresh logic is present
+axiosInstance.__supportsTokenRefresh = true;
+
+// Attach shared timing + standardization interceptors (idempotent)
+try {
+  registerAxiosInterceptors(axiosInstance);
+} catch (e) {
+  if (process.env.NODE_ENV === "development") {
+    // eslint-disable-next-line no-console
+    console.warn("[useAxios] Failed to attach shared interceptors", e);
+  }
+}
+
+// Request interceptor to attach auth header
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = getJwtToken();
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Perform refresh (deduplicated)
+const performTokenRefresh = async () => {
+  if (isRefreshing && refreshPromise) return refreshPromise;
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    const rToken = getRefreshToken();
+    const email = Cookies.get("email");
+    const user_session = Cookies.get("user_session");
+    if (!email || !user_session) {
+      throw new Error("Refresh prerequisites missing (email/session)");
+    }
+    const isSessionStillActive = () => !!Cookies.get("user_session") && !!Cookies.get("email");
+    try {
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("🔄 Attempting token refresh", { hasRefreshToken: !!rToken });
+      }
+      const payload = { email, user_session };
+      if (rToken) payload.refresh_token = rToken; // include only if present
+      const response = await axios.post(`${BASE_URL}${APIs.REFRESH_TOKEN}`, payload);
+      // If user logged out while we were refreshing, abort and mark invalidation
+      if (!isSessionStillActive()) {
+        sessionInvalidatedDuringRefresh = true;
+        throw new Error("Session terminated during token refresh");
+      }
+      const newAccess = response?.data?.token || response?.data?.jwt_token || response?.data?.access_token;
+      const newRefresh = response?.data?.refresh_token || response?.data?.refreshToken;
+      if (!newAccess) throw new Error("No access token in refresh response");
+      setJwtToken(newAccess);
+      if (newRefresh) setRefreshToken(newRefresh);
+      return newAccess;
+    } catch (e) {
+      clearRefreshToken();
+      Cookies.remove("jwt-token");
+      throw e;
+    } finally {
+      isRefreshing = false;
+    }
+  })();
+  return refreshPromise;
+};
+
+// Queue to hold requests while refreshing
+const subscriberQueue = [];
+const addSubscriber = (callback) => subscriberQueue.push(callback);
+const notifySubscribers = (newToken) => {
+  while (subscriberQueue.length) {
+    const cb = subscriberQueue.shift();
+    try {
+      cb(newToken);
+    } catch (_) {}
+  }
+};
+
+axiosInstance.interceptors.response.use(
+  (resp) => resp,
+  async (error) => {
+    const status = error?.response?.status;
+    const originalConfig = error?.config || {};
+
+    if (status === 401 && !originalConfig._retry) {
+      // Attempt silent refresh first; do NOT logout yet.
+      if (Cookies.get("email") && Cookies.get("user_session")) {
+        originalConfig._retry = true;
+        try {
+          if (isRefreshing) {
+            // Wait for ongoing refresh
+            return await new Promise((resolve, reject) => {
+              addSubscriber(async (newToken) => {
+                if (!newToken) {
+                  reject(error);
+                  return;
+                }
+                originalConfig.headers = originalConfig.headers || {};
+                originalConfig.headers.Authorization = `Bearer ${newToken}`;
+                try {
+                  const replayResp = await axiosInstance(originalConfig);
+                  resolve(replayResp);
+                } catch (e) {
+                  reject(e);
+                }
+              });
+            });
+          }
+          const newToken = await performTokenRefresh();
+          // Guard: if session invalidated during refresh or artifacts missing, do not replay queued requests
+          if (sessionInvalidatedDuringRefresh || !Cookies.get("user_session")) {
+            sessionInvalidatedDuringRefresh = false; // reset for next cycle
+            notifySubscribers(null); // fail fast queued subscribers
+            try {
+              const evt = new CustomEvent("globalAuth401", {
+                detail: { error, url: originalConfig?.url, method: originalConfig?.method, abortedReplay: true },
+              });
+              window.dispatchEvent(evt);
+            } catch (_) {}
+            return Promise.reject(error);
+          }
+          notifySubscribers(newToken);
+          if (process.env.NODE_ENV === "development") {
+            // eslint-disable-next-line no-console
+            console.debug("✅ Token refresh succeeded, replaying original request", originalConfig.url);
+          }
+          originalConfig.headers = originalConfig.headers || {};
+          originalConfig.headers.Authorization = `Bearer ${newToken}`;
+          return axiosInstance(originalConfig);
+        } catch (refreshErr) {
+          notifySubscribers(null);
+          if (process.env.NODE_ENV === "development") {
+            // eslint-disable-next-line no-console
+            console.debug("❌ Token refresh failed", refreshErr);
+          }
+          // Refresh failed -> now emit global 401 to trigger logout elsewhere
+          try {
+            const evt = new CustomEvent("globalAuth401", {
+              detail: { error: refreshErr, url: originalConfig?.url, method: originalConfig?.method },
+            });
+            window.dispatchEvent(evt);
+          } catch (_) {}
+        }
+      } else {
+        // No refresh possible (missing email/session) -> emit global 401
+        try {
+          const evt = new CustomEvent("globalAuth401", {
+            detail: { error, url: originalConfig?.url, method: originalConfig?.method },
+          });
+          window.dispatchEvent(evt);
+        } catch (_) {}
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 const useFetch = () => {
   const [loading, setLoading] = useState({});
   const [error, setError] = useState({});
+  const { handleApiError } = useErrorHandler();
 
-  const fetchData = useCallback(async (url, config = {}) => {
-    setLoading((prevLoading) => ({ ...prevLoading, fetch: true }));
-    try {
-      // Add token to headers for POST requests
-      const headers = addConfigHeaders({
-        ...defaultConfig.headers,
-        ...config.headers,
-      });
+  // Listen for error loop events from ErrorBoundary
+  useEffect(() => {
+    const handleErrorLoop = () => {
+      blockApiCalls(10000); // Block for 10 seconds
+    };
 
-      const response = await axios.request({
-        url: BASE_URL + url,
-        method: getMethod,
-        ...defaultConfig,
-        ...config,
-        headers,
-      });
-      const data = response.data;
+    const handleErrorLoopCleared = () => {
+      // Could add logic here if needed when loop is cleared
+    };
 
-      // Setting JWT token
-      if (url.includes(APIs.GUEST_LOGIN) && data?.token) {
-        setJwtToken(data.token);
-      }
+    window.addEventListener("errorLoopDetected", handleErrorLoop);
+    window.addEventListener("errorLoopCleared", handleErrorLoopCleared);
 
-      setError((prevError) => ({ ...prevError, fetch: null }));
-      return data;
-    } catch (err) {
-      setError((prevError) => ({ ...prevError, fetch: err }));
-      throw err;
-    } finally {
-      setLoading((prevLoading) => ({ ...prevLoading, fetch: false }));
-    }
+    return () => {
+      window.removeEventListener("errorLoopDetected", handleErrorLoop);
+      window.removeEventListener("errorLoopCleared", handleErrorLoopCleared);
+    };
   }, []);
 
-  const postData = useCallback(async (url, postData, config = {}) => {
-    setLoading((prevLoading) => ({ ...prevLoading, post: true }));
-    try {
-      let contentType = "application/json";
-      let dataToSend = postData;
-      if (postData instanceof FormData) {
-        contentType = undefined;
-      } else {
-        dataToSend = JSON.stringify(postData);
-      }
-      const headers = addConfigHeaders({
-        ...defaultConfig.headers,
-        ...config.headers,
-        ...(contentType ? { "Content-Type": contentType } : {}),
-      });
-
-      const response = await axios.request({
-        url: BASE_URL + url,
-        method: postMethod,
-        data: dataToSend,
-        ...defaultConfig,
-        ...config,
-        headers,
-      });
-      const data = response.data;
-
-      // Check if this is a login or signup response and extract token if present
-      if ((url.includes(APIs.LOGIN) || url.includes(APIs.REGISTER)) && data?.token) {
-        setJwtToken(data.token);
+  const fetchData = useCallback(
+    async (url, config = {}) => {
+      // Check if this API call should be blocked
+      if (shouldBlockApiCall(url)) {
+        const error = new Error(`API call blocked: ${url}`);
+        error.isBlocked = true;
+        throw error;
       }
 
-      setError((prevError) => ({ ...prevError, post: null }));
-      return data;
-    } catch (err) {
-      setError((prevError) => ({ ...prevError, post: err }));
-      throw err;
-    } finally {
-      setLoading((prevLoading) => ({ ...prevLoading, post: false }));
-    }
-  }, []);
+      setLoading((prevLoading) => ({ ...prevLoading, fetch: true }));
+      try {
+        // Add token to headers for GET requests
+        const headers = addConfigHeaders({
+          ...defaultConfig.headers,
+          ...config.headers,
+        });
 
-  const putData = useCallback(async (url, putData, config = {}) => {
-    setLoading((prevLoading) => ({ ...prevLoading, put: true }));
-    try {
-      let contentType = "application/json";
-      let dataToSend = putData;
-      if (putData instanceof FormData) {
-        contentType = undefined;
-      } else {
-        dataToSend = JSON.stringify(putData);
+        const response = await axiosInstance.request({
+          url,
+          method: getMethod,
+          ...config,
+          headers,
+        });
+        const data = response.data;
+
+        // Setting JWT token
+        if (url.includes(APIs.GUEST_LOGIN) && data?.token) {
+          setJwtToken(data.token);
+        }
+
+        setError((prevError) => ({ ...prevError, fetch: null }));
+        return data;
+      } catch (err) {
+        // If this is a blocked call, don't treat it as a real error
+        if (err.isBlocked) {
+          console.warn("API call was blocked by error loop protection");
+          return { error: "API temporarily unavailable", blocked: true };
+        }
+
+        // Use existing error handler for consistent 401 handling and messaging
+        handleApiError(err, { context: `fetchData: ${url}`, silent: false });
+
+        setError((prevError) => ({ ...prevError, fetch: err }));
+        throw err;
+      } finally {
+        setLoading((prevLoading) => ({ ...prevLoading, fetch: false }));
       }
-      const headers = addConfigHeaders({
-        ...defaultConfig.headers,
-        ...config.headers,
-        ...(contentType ? { "Content-Type": contentType } : {}),
-      });
+    },
+    [handleApiError]
+  );
 
-      const response = await axios.request({
-        url: BASE_URL + url,
-        method: putMethod,
-        data: dataToSend,
-        ...defaultConfig,
-        ...config,
-        headers,
-      });
-      const data = response.data;
-      setError((prevError) => ({ ...prevError, put: null }));
-      return data;
-    } catch (err) {
-      setError((prevError) => ({ ...prevError, put: err }));
-      throw err;
-    } finally {
-      setLoading((prevLoading) => ({ ...prevLoading, put: false }));
-    }
-  }, []);
+  const serializeToUrlEncoded = (data) => {
+    return Object.entries(data)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join("&");
+  };
 
-  const deleteData = useCallback(async (url, deleteData, config = {}) => {
-    setLoading((prevLoading) => ({ ...prevLoading, delete: true }));
-    try {
-      let contentType = "application/json";
-      let dataToSend = deleteData;
-      if (deleteData instanceof FormData) {
-        contentType = undefined;
-      } else {
-        dataToSend = JSON.stringify(deleteData);
+  const postData = useCallback(
+    async (url, postData, config = {}) => {
+      // Check if this API call should be blocked
+      if (shouldBlockApiCall(url)) {
+        const error = new Error(`API call blocked: ${url}`);
+        error.isBlocked = true;
+        throw error;
       }
-      const headers = addConfigHeaders({
-        ...defaultConfig.headers,
-        ...config.headers,
-        ...(contentType ? { "Content-Type": contentType } : {}),
-      });
 
-      const response = await axios.request({
-        url: BASE_URL + url,
-        method: deleteMethod,
-        data: dataToSend,
-        ...defaultConfig,
-        ...config,
-        headers,
-      });
-      const data = response.data;
-      setError((prevError) => ({ ...prevError, delete: null }));
-      return data;
-    } catch (err) {
-      setError((prevError) => ({ ...prevError, delete: err }));
-      throw err;
-    } finally {
-      setLoading((prevLoading) => ({ ...prevLoading, delete: false }));
-    }
-  }, []);
+      setLoading((prevLoading) => ({ ...prevLoading, post: true }));
+      try {
+        let contentType = "application/json";
+        let dataToSend = postData;
+        if (postData instanceof FormData) {
+          contentType = undefined;
+        } else if (config.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
+          contentType = "application/x-www-form-urlencoded";
+          dataToSend = serializeToUrlEncoded(postData);
+        } else {
+          dataToSend = JSON.stringify(postData);
+        }
+
+        const headers = addConfigHeaders({
+          ...defaultConfig.headers,
+          ...config.headers,
+          ...(contentType ? { "Content-Type": contentType } : {}),
+        });
+
+        const response = await axiosInstance.request({
+          url,
+          method: postMethod,
+          data: dataToSend,
+          ...config,
+          headers,
+        });
+        const data = response.data;
+
+        // Check if this is a login or signup response and extract token if present
+        if ((url.includes(APIs.LOGIN) || url.includes(APIs.REGISTER)) && data?.token) {
+          setJwtToken(data.token);
+        }
+
+        setError((prevError) => ({ ...prevError, post: null }));
+        return data;
+      } catch (err) {
+        // If this is a blocked call, don't treat it as a real error
+        if (err.isBlocked) {
+          console.warn("API call was blocked by error loop protection");
+          return { error: "API temporarily unavailable", blocked: true };
+        }
+
+        // Use existing error handler for consistent 401 handling and messaging
+        handleApiError(err, { context: `postData: ${url}`, silent: false });
+
+        setError((prevError) => ({ ...prevError, post: err }));
+        throw err;
+      } finally {
+        setLoading((prevLoading) => ({ ...prevLoading, post: false }));
+      }
+    },
+    [handleApiError]
+  );
+
+  const putData = useCallback(
+    async (url, putData, config = {}) => {
+      // Check if this API call should be blocked
+      if (shouldBlockApiCall(url)) {
+        const error = new Error(`API call blocked: ${url}`);
+        error.isBlocked = true;
+        throw error;
+      }
+
+      setLoading((prevLoading) => ({ ...prevLoading, put: true }));
+      try {
+        let contentType = "application/json";
+        let dataToSend = putData;
+
+        if (putData instanceof FormData) {
+          contentType = undefined;
+        } else if (config.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
+          contentType = "application/x-www-form-urlencoded";
+          dataToSend = serializeToUrlEncoded(putData);
+        } else {
+          dataToSend = JSON.stringify(putData);
+        }
+        const headers = addConfigHeaders({
+          ...defaultConfig.headers,
+          ...config.headers,
+          ...(contentType ? { "Content-Type": contentType } : {}),
+        });
+
+        const response = await axiosInstance.request({
+          url,
+          method: putMethod,
+          data: dataToSend,
+          ...config,
+          headers,
+        });
+        const data = response.data;
+        setError((prevError) => ({ ...prevError, put: null }));
+        return data;
+      } catch (err) {
+        // If this is a blocked call, don't treat it as a real error
+        if (err.isBlocked) {
+          console.warn("API call was blocked by error loop protection");
+          return { error: "API temporarily unavailable", blocked: true };
+        }
+
+        // Use existing error handler for consistent 401 handling and messaging
+        handleApiError(err, { context: `putData: ${url}`, silent: false });
+
+        setError((prevError) => ({ ...prevError, put: err }));
+        throw err;
+      } finally {
+        setLoading((prevLoading) => ({ ...prevLoading, put: false }));
+      }
+    },
+    [handleApiError]
+  );
+
+  const deleteData = useCallback(
+    async (url, deleteData, config = {}) => {
+      // Check if this API call should be blocked
+      if (shouldBlockApiCall(url)) {
+        const error = new Error(`API call blocked: ${url}`);
+        error.isBlocked = true;
+        throw error;
+      }
+
+      setLoading((prevLoading) => ({ ...prevLoading, delete: true }));
+      try {
+        let contentType = "application/json";
+        let dataToSend = deleteData;
+        if (deleteData instanceof FormData) {
+          contentType = undefined;
+        } else {
+          dataToSend = JSON.stringify(deleteData);
+        }
+        const headers = addConfigHeaders({
+          ...defaultConfig.headers,
+          ...config.headers,
+          ...(contentType ? { "Content-Type": contentType } : {}),
+        });
+
+        const response = await axiosInstance.request({
+          url,
+          method: deleteMethod,
+          data: dataToSend,
+          ...config,
+          headers,
+        });
+        const data = response.data;
+        setError((prevError) => ({ ...prevError, delete: null }));
+        return data;
+      } catch (err) {
+        // If this is a blocked call, don't treat it as a real error
+        if (err.isBlocked) {
+          console.warn("API call was blocked by error loop protection");
+          return { error: "API temporarily unavailable", blocked: true };
+        }
+
+        // Use existing error handler for consistent 401 handling and messaging
+        handleApiError(err, { context: `deleteData: ${url}`, silent: false });
+
+        setError((prevError) => ({ ...prevError, delete: err }));
+        throw err;
+      } finally {
+        setLoading((prevLoading) => ({ ...prevLoading, delete: false }));
+      }
+    },
+    [handleApiError]
+  );
 
   // Clear token (for logout)
   const clearJwtToken = useCallback(() => {
@@ -225,6 +569,9 @@ const useFetch = () => {
     clearJwtToken,
     getSessionId,
     getJwtToken,
+    setRefreshToken,
+    getRefreshToken,
+    clearRefreshToken,
   };
 };
 

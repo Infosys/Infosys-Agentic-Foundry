@@ -47,7 +47,7 @@ const FilterModal = ({ show, onClose, tags, handleFilter, selectedTags, showfilt
           <div className={styles.serverTypeSection}>
             <h3 className={styles.sectionTitle}>Filter by Type:</h3>
             <div className={styles.typeTagsContainer}>
-              {["LOCAL", "REMOTE"].map((type) => (
+              {["LOCAL", "REMOTE", "EXTERNAL"].map((type) => (
                 <div key={type} className={`${styles.tag} ${tempSelectedTags.includes(type) ? styles.selectedTag : ""}`}>
                   <input
                     type="checkbox"

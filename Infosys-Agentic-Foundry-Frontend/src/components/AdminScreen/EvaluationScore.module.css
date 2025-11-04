@@ -1,10 +1,12 @@
+.metricsContainer {
+  padding: 24px;
+}
+
 .buttonContainer {
   display: flex;
   justify-content: center;
   width: 100%;
 }
-
-
 
 .agentsFilterContainer {
   background-color: #fff;
@@ -17,7 +19,6 @@
   display: flex;
   align-items: center;
 }
-
 
 .filterLabel {
   display: block;
@@ -65,26 +66,25 @@
   margin: 0;
 }
 
-.tableOrAccordionSwitch{
+.tableOrAccordionSwitch {
   cursor: pointer;
   margin-left: 15px;
 }
 
-.tableOrAccordion{
-    display: flex;
-    align-self: center;
-    margin-bottom: -2px;
-    cursor: pointer;
+.tableOrAccordion {
+  display: flex;
+  align-self: center;
+  margin-bottom: -2px;
+  cursor: pointer;
 }
 
-.tabsContainer{
+.tabsContainer {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 170px);
-  padding: 0 20px;
+  height: calc(100vh - 100px);
 }
 
-.horizontalTabs{
+.horizontalTabs {
   display: flex;
   border-bottom: 1px solid #e0e0e0;
   padding-bottom: 0;
@@ -94,7 +94,7 @@
   justify-content: space-between;
 }
 
-.filterAndTabs{
+.filterAndTabs {
   display: flex;
 }
 
@@ -123,25 +123,47 @@
   font-weight: 500;
 }
 
+.horizontalTab.groundTruthTab {
+  background: #f5f7fa;
+  color: #007cc3;
+}
+
+.horizontalTab.consistencyTab {
+  background: #f5f7fa;
+  color: #28a745;
+}
+
 .tabContentContainer {
   width: 100%;
-  overflow-y: auto;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
 }
 
 .tabContent {
   background-color: #fff;
   border-radius: 5px;
   height: 100%;
-  width: 100%;
-  min-height: calc(100vh - 250px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 0;
+  overflow: auto;
 }
 
 /* Table styles for evaluation data */
 .tableContainer {
   width: 100%;
-  overflow-x: auto;
-  max-height: calc(100vh - 250px);
-  overflow-y: auto;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
   position: relative;
 }
 
@@ -152,12 +174,13 @@
   margin-top: 10px;
   font-size: 14px;
   table-layout: fixed;
+  font-size: 13px;
 }
 
 .evaluationTable th,
 .evaluationTable td {
   border: 1px solid #e0e0e0;
-  padding: 10px 15px;
+  padding: 6px;
   text-align: left;
   word-wrap: break-word;
 }
@@ -184,7 +207,6 @@
   max-height: 100px;
   overflow-y: auto;
   white-space: pre-line;
-  margin-bottom: 15px;
 }
 
 .noData {
@@ -192,16 +214,6 @@
   padding: 20px;
   color: #757575;
   font-size: 16px;
-}
-
-/* Tabs page styles */
-.tabsPageContainer {
-  margin: 40px auto;
-  max-width: 600px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-  padding: 32px;
 }
 
 .tabsNav {
@@ -240,6 +252,10 @@
 .accordionContainer {
   width: 100%;
   margin-top: 10px;
+  overflow-y: auto;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
 }
 
 .accordionItem {
@@ -337,43 +353,77 @@
 }
 
 /* Tools Efficiency specific accordion styles */
-.accordionItem summary span:nth-child(1) {
+.toolAccordionItem {
+  margin-bottom: 6px;
+}
+
+.toolAccordionSummary {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px !important;
+  gap: 6px;
+}
+
+.toolHeaderRow1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolHeaderRow2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolQuery {
   flex: 3;
-  color: #1a237e;
-  font-weight: 600;
+  color: #1a237e !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.accordionItem summary span:nth-child(2) {
+.toolModel {
   flex: 1.5;
-  color: #666;
-  font-size: 12px;
-}
-
-.accordionItem summary span:nth-child(3),
-.accordionItem summary span:nth-child(4),
-.accordionItem summary span:nth-child(5),
-.accordionItem summary span:nth-child(6),
-.accordionItem summary span:nth-child(7) {
-  flex: 1;
-  text-align: center;
-  color: #007cc3;
-  font-weight: 600;
-  font-size: 11px;
-}
-
-.accordionItem summary span:nth-child(8) {
-  flex: 1.2;
-  text-align: center;
-  color: #28a745;
-  font-weight: 500;
-  font-size: 11px;
-}
-
-.accordionItem summary span:nth-child(9) {
-  flex: 1.5;
+  color: #666 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
   text-align: right;
-  color: #666;
-  font-size: 11px;
+}
+
+.toolMetric {
+  flex: 1;
+  text-align: center !important;
+  color: #007cc3 !important;
+  font-weight: 600 !important;
+  font-size: 10px !important;
+  background: rgba(0, 124, 195, 0.1);
+  padding: 2px 4px;
+  border-radius: 3px;
+  min-width: 45px;
+}
+
+.toolCategory {
+  flex: 1.2;
+  text-align: center !important;
+  color: #28a745 !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  background: rgba(40, 167, 69, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.toolEvalModel {
+  flex: 1.5;
+  text-align: right !important;
+  color: #666 !important;
+  font-size: 10px !important;
+  font-weight: 400 !important;
 }
 
 /* Agents Efficiency specific accordion styles */

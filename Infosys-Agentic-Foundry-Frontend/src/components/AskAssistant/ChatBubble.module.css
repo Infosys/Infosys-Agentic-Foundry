@@ -429,6 +429,22 @@ li {
   transform: none;
 }
 
+/* Response Time */
+.responseTime {
+  height: 24px;
+  display: block;
+}
+
+.responseTime .time {
+  margin-bottom: -5px;
+  white-space: nowrap;
+  overflow: hidden;
+  font-size: 10px;
+  color: #868686;
+  display: inline-block;
+  margin-left: -2px;
+}
+
 .feedbackButton.highlighted {
   box-shadow: 0 0 0 1px #201f1f;
   outline: none;

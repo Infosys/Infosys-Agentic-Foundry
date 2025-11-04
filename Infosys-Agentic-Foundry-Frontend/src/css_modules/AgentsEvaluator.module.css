@@ -1,10 +1,7 @@
 /* filepath: AgentsEvaluator.module.css */
 .container {
-  max-width: 420px;
-  margin: 3rem auto;
-  padding: 32px;
+  padding: 24px;
   background: #fff;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.08);
   border-radius: 16px;
 }
 
@@ -18,19 +15,21 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 10px;
 }
 
 .row {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 16px;
+  flex-direction: column;
+  padding-top: 16px;
 }
 
 .label {
   min-width: 80px;
   font-weight: 500;
   color: #333;
+  margin-right: 8px;
 }
 
 .select {
@@ -71,7 +70,5 @@
 
 .buttonContainer {
   display: flex;
-  justify-content: center;
   width: 100%;
 }
-

@@ -2,17 +2,107 @@ button {
   all: unset;
   cursor: pointer;
 }
+.listContainer {
+  position: relative;
+  background-color: #3d4359;
+  font-size: 14px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  box-shadow: 5px 15px 6px #00000029;
+  min-height: 57px;
+  height: 8rem;
+  width: 200px;
+  letter-spacing: -0.7px;
+  color: #ffffff;
+}
 
-input {
+.card-unused {
+  position: relative;
+  background: #3d4359;
+  font-size: 14px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  box-shadow: 5px 15px 6px #00000029;
+  min-height: 57px;
+  height: 9rem;
+  width: 200px;
+  letter-spacing: -0.7px;
+  color: #ffffff;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-unused:hover {
+  transform: translateY(-3px);
+  box-shadow: 5px 18px 10px #00000029;
+}
+
+.listContainer:hover {
+  transform: translateY(-3px);
+  box-shadow: 5px 18px 10px #00000029;
+}
+
+.card-unused .cardTitle {
+  font-size: 16px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  word-wrap: break-word;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  max-height: 35px;
+}
+
+.card-unused .card-info {
+  margin-top: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-unused .info-item {
+  color: #ffffff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.card-unused .info-label {
+  color: #ffffff;
+  opacity: 0.7;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.card-unused .info-value {
+  color: #ffffff;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.card-unused .btn-grp {
+  display: flex;
+  justify-content: flex-end;
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
   border: unset;
   outline: unset;
+  z-index: 1;
 }
 
 .container {
   display: flex;
   flex-direction: column;
   height: 90vh;
-  padding: 30px 40px;
+  padding: 20px 30px;
   padding-right: 0px;
   padding-bottom: 0px;
   position: relative;
@@ -32,14 +122,11 @@ input {
 
 .visibleAgentsContainer {
   display: flex;
-  padding: 20px;
-  padding-top: 8px;
-  padding-left: 0;
   flex-wrap: wrap;
   gap: 40px;
-  overflow-y: auto;
   height: 100%;
   width: 100%;
+  overflow-y: auto;
 }
 
 .agentsList {
@@ -89,14 +176,14 @@ input {
 
 .deleteBtn,
 .editBtn {
+  width: 26px;
   height: 24px;
-  position: absolute;
-  transform: translateY(50%);
-  box-shadow: 0px 4px 4px #00000029;
-  border-radius: 3px;
   display: flex;
   justify-content: center;
   align-items: center;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
 }
 
 .line {
@@ -108,17 +195,24 @@ input {
 }
 
 .deleteBtn {
-  width: 30px;
   background-color: #6a2020;
-  right: 44px;
-  bottom: 0;
 }
 
 .editBtn {
-  width: 24px;
   background-color: #007ac0;
-  right: 10px;
-  bottom: 0;
+}
+
+.deleteBtn:hover,
+.editBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.15);
+}
+
+.btn-grp svg {
+  width: 18px;
+  height: 18px;
+  color: white;
+  display: block;
 }
 
 .agent-type-abbreviation {
@@ -128,6 +222,7 @@ input {
   font-size: 12px;
   font-weight: bold;
   color: white;
+  cursor: default;
 }
 
 .email-id-input {
@@ -137,7 +232,6 @@ input {
   outline: none;
   border: none;
   width: 100%;
-  margin-top: 13px;
 }
 
 .deleteBtnFull {
@@ -152,7 +246,7 @@ input {
   justify-content: center;
   align-items: center;
   justify-self: right;
-  margin-left: auto;
+  margin: 0 auto;
   height: 28px;
   text-align: left;
   font: normal normal 600 12px/14px Segoe UI;
@@ -173,6 +267,7 @@ input {
   padding: 0px 40px;
   overflow-y: auto;
   height: 90vh;
+  padding-top: 20px;
 }
 
 .EditAgentContainer {
@@ -229,22 +324,27 @@ input {
   text-overflow: ellipsis;
 }
 
-.searchedToolText {
-  margin-bottom: 16px;
-  font-weight: bold;
-}
-
+.searchedToolText,
 .filteredToolText {
   margin-bottom: 16px;
-  font-weight: bold;
+  max-width: 48%;
+}
+
+.filterOrSearchText {
+  width: 98%;
+  overflow: hidden;
+  display: inline-block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .btn-grp {
-  display: flex;
-  justify-content: end;
   position: absolute;
-  right: 5px;
-  bottom: 20px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .cancel-btn {
@@ -252,12 +352,12 @@ input {
   background: transparent;
   float: right;
   margin-left: 10rem;
-  margin-top: 5px;
+  margin-top: 2px;
 }
 .actionInfo {
   font-size: 13px;
   font-weight: 400;
-  margin-bottom: 10px;
+  margin-bottom: 7px;
   margin-left: 2px;
   margin-top: 2px;
   color: black;
@@ -363,4 +463,14 @@ input {
   color: var(--muted);
   font-size: 13px;
   margin: 0 0 5px -2px;
+}
+
+.consistencyCardBtn {
+  position: initial;
+  margin-left: 3px;
+}
+
+.consistencyCardBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.15);
 }

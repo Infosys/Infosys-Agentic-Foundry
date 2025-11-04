@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import stylesNew from "./AskAssistant.module.css";
-import chatInputModule from "./ChatInput.module.css";
-import MsgBox from "./MsgBox";
-import ChatHistorySlider from "./ChatHistorySlider";
-import PromptSuggestions from "./PromptSuggestions";
-import SuggestionPopover from "./SuggestionPopover";
+import Cookies from "js-cookie";
 import {
   BOT,
   agentTypesDropdown,
   USER,
   APIs,
-  likeMessage,
   dislike,
   branchInteruptValue,
   branchInteruptKey,
@@ -23,13 +17,32 @@ import {
   liveTrackingUrl,
   REACT_CRITIC_AGENT,
   PLANNER_EXECUTOR_AGENT,
+  HYBRID_AGENT
 } from "../../constant";
 import { useChatServices } from "../../services/chatService";
-import ToastMessage from "../commonComponents/ToastMessage";
 import useFetch from "../../Hooks/useAxios";
-import Cookies from "js-cookie";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext.js";
+import SVGIcons from "../../Icons/SVGIcons";
+
+// Components
+import MsgBox from "./MsgBox";
+import ChatHistorySlider from "./ChatHistorySlider";
+import PromptSuggestions from "./PromptSuggestions";
+import SuggestionPopover from "./SuggestionPopover";
 import Canvas from "../Canvas/Canvas";
+import TemperatureSliderPopup from "./TemperatureSliderPopup.jsx";
+
+// Styles
+import stylesNew from "./AskAssistant.module.css";
+import chatInputModule from "./ChatInput.module.css";
+import "./TemperatureSlider.css";
+
+// Constants
+const TEXTAREA_MAX_HEIGHT = 120; // Maximum height for textarea in pixels
+const TEMPERATURE_MAX_PERCENT = 100; // Maximum percentage for temperature slider
+const AUTO_HIDE_TIMEOUT = 5000; // Timeout for auto-hiding messages (5 seconds)
+const DEBOUNCE_DELAY = 100; // Delay for debounce operations
+const STATE_UPDATE_DELAY = 2000; // Delay for state updates
 
 const AskAssistant = () => {
   const loggedInUserEmail = Cookies.get("email");
@@ -48,6 +61,9 @@ const AskAssistant = () => {
   const [model, setModel] = useState("");
   const [feedBack, setFeedback] = useState("");
   const [fetching, setFetching] = useState(false);
+  const [showModelPopover, setShowModelPopover] = useState(false);
+  const [toolData, setToolData] = useState(null);
+  const [loadingAgents, setLoadingAgents] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [isDeletingChat, setIsDeletingChat] = useState(false);
@@ -58,13 +74,9 @@ const AskAssistant = () => {
   const [session, setSessionId] = useState(user_session);
   const [selectedModels, setSelectedModels] = useState([]);
   const [toolInterrupt, setToolInterrupt] = useState(false);
-  const [toolData, setToolData] = useState(null);
-  const [loadingAgents, setLoadingAgents] = useState(true);
   const [isEditable, setIsEditable] = useState(false);
-  const [showModelPopover, setShowModelPopover] = useState(false);
   const bullseyeRef = useRef(null);
   const { resetChat, getChatQueryResponse, getChatHistory, fetchOldChats, fetchNewChats, getQuerySuggestions, setSseMessageCallback } = useChatServices();
-  const [canvasInterrupt, setCanvasInterrupt] = useState(false);
 
   const chatbotContainerRef = useRef(null);
   const [likeIcon, setLikeIcon] = useState(false);
@@ -98,6 +110,7 @@ const AskAssistant = () => {
   const [canvasTitle, setCanvasTitle] = useState("Code View");
   const [canvasContentType, setCanvasContentType] = useState("");
   const [canvasMessageId, setCanvasMessageId] = useState(null);
+  const [canvasIsLast, setCanvasIsLast] = useState(false);
 
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
   const [promptSuggestions, setPromptSuggestions] = useState([]);
@@ -120,7 +133,26 @@ const AskAssistant = () => {
     agent_history: [],
   });
 
-  let messageDisable = messageData.some((msg) => msg?.message?.trim() === "");
+  const [temperature, setTemperature] = useState(0.0);
+  const [showTemperaturePopup, setShowTemperaturePopup] = useState(false);
+  const temperaturePopupRef = useRef(null);
+  const temperatureSliderRef = useRef(null);
+  // Close temperature popup on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (temperaturePopupRef.current && !temperaturePopupRef.current.contains(event.target)) {
+        setShowTemperaturePopup(false);
+      }
+    }
+    if (showTemperaturePopup) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showTemperaturePopup]);
+
+  const messageDisable = messageData.some((msg) => typeof msg?.message === "string" && msg.message.trim() === "");
   const startRecording = async () => {
     try {
       // Reset audio chunks for new recording
@@ -192,7 +224,7 @@ const AskAssistant = () => {
       const data = await postData(APIs.TRANSCRIBE_AUDIO, formData);
 
       // Update the chat input with transcription
-      if (data.transcription) {
+      if (data && data.transcription) {
         setUserChat((prev) => prev + data.transcription);
         setTranscription(data.transcription);
       }
@@ -212,7 +244,7 @@ const AskAssistant = () => {
   };
 
   const shouldShowHumanVerifier = () => {
-    return agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "multi_agent";
+    return agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "multi_agent" || agentType === HYBRID_AGENT;
   };
 
   const handleLiveTracking = () => {
@@ -226,7 +258,7 @@ const AskAssistant = () => {
   };
 
   const shouldShowToolVerifier = () => {
-    return agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "react_agent";
+    return agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "react_agent" || agentType === HYBRID_AGENT;
   };
 
   const handleToggle2 = async (e) => {
@@ -383,20 +415,32 @@ const AskAssistant = () => {
   }, [showKnowledgePopover]);
 
   useEffect(() => {
+    // Reset previously selected agent value any time agentType changes
     setAgentSelectValue("");
-    if (!agentType) return;
-    const tempList = agentsListData?.filter((list) => list.agentic_application_type === agentType);
+    setSelectedAgent("");
+    const cookieSessionId = Cookies.get("user_session");
+    if (cookieSessionId) {
+      setSessionId(cookieSessionId);
+    }
+    // If agentType cleared, also clear the dropdown list so user can't pick stale agents
+    if (!agentType) {
+      setAgentListDropdown([]);
+      return;
+    }
+
+    const tempList = agentsListData?.filter((list) => list.agentic_application_type === agentType) || [];
     setAgentListDropdown(tempList);
   }, [agentType, agentsListData]);
 
   useEffect(() => {
-    if (!allOptionsSelected) {
+    // Only fetch history when agent changes or options are selected, not on model change
+    if (!allOptionsSelected && agentSelectValue) {
       fetchChatHistory();
       fetchOldChatsData();
-    } else {
+    } else if (allOptionsSelected) {
       setMessageData([]);
     }
-  }, [model, agentSelectValue, allOptionsSelected]);
+  }, [agentSelectValue, allOptionsSelected]); // Removed model from dependencies
   useEffect(() => {
     if (msgContainerRef.current) {
       const container = msgContainerRef.current;
@@ -436,9 +480,17 @@ const AskAssistant = () => {
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, TEXTAREA_MAX_HEIGHT) + "px";
     }
   }, [userChat]);
+
+  // Update the temperature slider's visual state whenever temperature changes
+  useEffect(() => {
+    if (temperatureSliderRef.current) {
+      temperatureSliderRef.current.style.setProperty("--value-percent", `${temperature * TEMPERATURE_MAX_PERCENT}%`);
+    }
+  }, [temperature]);
+
   useEffect(() => {
     const handleGlobalKeyDown = (event) => {
       if (event.key === "Escape") {
@@ -528,9 +580,8 @@ const AskAssistant = () => {
   };
 
   const converToChatFormat = (chatHistory) => {
-    let chats = [];
+    const chats = [];
     setPlanData(null);
-    setToolData(null);
     if (chatHistory && chatHistory[branchInteruptKey] === branchInteruptValue) {
       setFeedback("no");
       setShowInput(true);
@@ -550,6 +601,7 @@ const AskAssistant = () => {
         }),
         parts: item?.parts || [],
         show_canvas: item?.show_canvas || false,
+        response_time: item?.response_time || null,
       });
     });
     setPlanData(chatHistory?.plan);
@@ -558,14 +610,31 @@ const AskAssistant = () => {
   };
 
   const fetchChatHistory = async (sessionId = session) => {
-    const data = {
-      session_id: sessionId,
-      agent_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
-    };
-    const chatHistory = await getChatHistory(data);
-    setLastResponse(chatHistory);
-    setMessageData(converToChatFormat(chatHistory) || []);
+    try {
+      const data = {
+        session_id: sessionId,
+        agent_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
+      };
+      const chatHistory = await getChatHistory(data);
+      
+      if (chatHistory) {
+        setLastResponse(chatHistory);
+        const chatData = converToChatFormat(chatHistory) || [];
+        setMessageData(chatData);
+        // Update model if it's available in the chat history
+        if (chatHistory.model_name) {
+          setModel(chatHistory.model_name);
+        }
+        fetchPromptSuggestions();
+      }
+    } catch (error) {
+      console.error("Error fetching chat history:", error);
+    }
 
+    fetchPromptSuggestions();
+  };
+
+  const fetchPromptSuggestions = async () => {
     // Fetch and cache suggestions only once per chat history fetch
     const payload = {
       agentic_application_id: agentSelectValue,
@@ -579,11 +648,13 @@ const AskAssistant = () => {
       });
       if (response.query_library) {
         setPromptSuggestions(response.query_library);
+      } else {
+        setPromptSuggestions([]);
       }
     }
   };
 
-  const addMessage = (type, message, steps, plan, userText) => {
+  const addMessageData = (type, message, steps, plan, userText) => {
     setMessageData((prevProp) => [...prevProp, { type, message, steps, plan, userText }]);
   };
 
@@ -593,59 +664,65 @@ const AskAssistant = () => {
       query: userText,
       session_id: oldSessionId !== "" ? oldSessionId : session,
       model_name: model,
+      temperature: temperature,
       reset_conversation: false,
-      ...(isApprove !== "" && { is_plan_approved: isApprove }),
-      ...(feedBack !== "" && { tool_feedback: feedBack }),
-      ...(toolInterrupt ? { tool_verifier_flag: true } : { tool_verifier_flag: false }),
-      ...(isHuman ? { plan_verifier_flag: true } : { plan_verifier_flag: false }),
-      ...(isCanvasEnabled ? { response_formatting_flag: true } : { response_formatting_flag: false }),
-      ...(isContextEnabled ? { context_flag: true } : { context_flag: false }),
+      is_plan_approved: isApprove !== "" ? isApprove : null,
+      plan_feedback: feedBack !== "" ? feedBack : null,
+      tool_verifier_flag: Boolean(toolInterrupt),
+      plan_verifier_flag: Boolean(isHuman),
+      response_formatting_flag: Boolean(isCanvasEnabled),
+      context_flag: Boolean(isContextEnabled),
+      evaluation_flag: Boolean(onlineEvaluatorFlag),
     };
 
     if (selectedValues && selectedValues.length > 0) {
       const selectedString = selectedValues.join(",");
       payload.knowledgebase_name = JSON.stringify(selectedString);
     }
-    let response;
     try {
-      response = await postData(APIs.CHAT_INFERENCE, payload);
-      setLastResponse(response);
-      setPlanData(response?.plan);
+      const response = await postData(APIs.CHAT_INFERENCE, payload);
+      if (response) {
+        setLastResponse(response);
+        setPlanData(response?.plan);
 
-      const chatData = converToChatFormat(response) || [];
-      setMessageData(chatData);
+        const chatData = converToChatFormat(response) || [];
+        setMessageData(chatData);
 
-      // First check for parts format in the root response
-      if (response && response.parts) {
-        const textParts = response.parts.filter((part) => part.type === "text");
-        if (textParts.length > 0) {
-        } else {
+        // First check for parts format in the root response
+        if (response.parts) {
+          const textParts = response.parts.filter((part) => part.type === "text");
+          if (textParts.length > 0) {
+            // Handle text parts if needed
+          }
         }
-      } else {
-      }
 
       const canvasContent = detectCanvasContent(response);
       if (response.executor_messages[response.executor_messages.length - 1].show_canvas) {
-        openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
+        // Only open canvas if response_formatting_flag is true
+        if (payload.response_formatting_flag === true) {
+          openCanvas(canvasContent.content,canvasContent.title,canvasContent.type,null,false);
+        }
+        }
       }
-      // // Fallback: Auto-detect and open Canvas for individual message content
-      // else if (chatData.length > 0) {
-      //   const lastMessage = chatData[chatData.length - 1];
-      //   if (lastMessage.type === BOT && lastMessage.message) {
-      //     const canvasContent = detectCanvasContent(lastMessage.message);
-      //     if (canvasContent) {
-      //       openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
-      //     }
-      //   }
-      // }
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error("Error handling chat response:", error);
+      setGenerating(false);
+      setFetching(false);
     }
-    return response;
   };
 
   const sendUserMessage = async (overrideText) => {
-    const messageToSend = overrideText !== undefined ? overrideText.trim() : userChat.trim();
+    let messageToSend = "";
+    let contextFlag = false;
+    let responseFormattingFlag = false;
+    // If overrideText is an object (from EmailViewer), extract flags and query
+    if (overrideText && typeof overrideText === "object") {
+      messageToSend = overrideText.query ? String(overrideText.query).trim() : "";
+      contextFlag = overrideText.context_flag === true;
+      responseFormattingFlag = overrideText.response_formatting_flag === true;
+    } else {
+      messageToSend = overrideText !== undefined ? String(overrideText).trim() : userChat.trim();
+    }
     if (!messageToSend || generating) return;
 
     setFetching(true);
@@ -653,7 +730,7 @@ const AskAssistant = () => {
 
     // Clear previous debug steps
     clearDebugSteps();
-    addMessage(USER, messageToSend);
+    addMessageData(USER, messageToSend);
     setUserChat("");
     setGenerating(true);
     setLikeIcon(false);
@@ -664,10 +741,13 @@ const AskAssistant = () => {
       query: messageToSend,
       session_id: oldSessionId !== "" ? oldSessionId : session,
       model_name: model,
+      temperature: temperature,
       reset_conversation: false,
-      ...(toolInterrupt ? { tool_verifier_flag: true } : { tool_verifier_flag: false }),
-      ...(isCanvasEnabled ? { response_formatting_flag: true } : { response_formatting_flag: false }),
-      ...(isContextEnabled ? { context_flag: true } : { context_flag: false }),
+      tool_verifier_flag: Boolean(toolInterrupt),
+      plan_verifier_flag: Boolean(isHuman),
+      response_formatting_flag: typeof overrideText === "object" ? Boolean(responseFormattingFlag) : Boolean(isCanvasEnabled),
+      context_flag: typeof overrideText === "object" ? Boolean(contextFlag) : Boolean(isContextEnabled),
+      evaluation_flag: Boolean(onlineEvaluatorFlag),
     };
 
     if (selectedValues && selectedValues.length > 0) {
@@ -687,15 +767,20 @@ const AskAssistant = () => {
         setShowToast(true);
         setTimeout(() => {
           setShowToast(false);
-        }, 5000);
+        }, AUTO_HIDE_TIMEOUT);
       }
+
+      // Call prompt suggestion API to fetch latest suggestions based on new chat history
+      fetchPromptSuggestions();
 
       const chatData = converToChatFormat(response) || [];
       setMessageData(chatData);
 
       const canvasContent = detectCanvasContent(response);
       if (canvasContent) {
-        openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
+         if (payload.response_formatting_flag === true) {
+          openCanvas(canvasContent.content,canvasContent.title,canvasContent.type,null,false);
+        }
       }
       // Fallback: Auto-detect and open Canvas for individual message content
       else if (chatData.length > 0) {
@@ -703,7 +788,9 @@ const AskAssistant = () => {
         if (lastMessage.type === BOT && lastMessage.message) {
           const canvasContent = detectCanvasContent(lastMessage.message);
           if (canvasContent) {
-            openCanvas(canvasContent.content, canvasContent.title, canvasContent.type);
+             if (payload.response_formatting_flag === true) {
+          openCanvas(canvasContent.content,canvasContent.title,canvasContent.type,null,false);
+        }
           }
         }
       }
@@ -728,12 +815,21 @@ const AskAssistant = () => {
     closeCanvas(); // Close canvas on agent type change
     setAgentType(selectedOption);
     setLikeIcon(false);
+    // Clearing model when agent type changes (including reset)
+    setModel("");
+    // Reset temperature to default value of 0.0
+    setTemperature(0.0);
+    // Ensure we use cookie session ID when changing agent type
+    const cookieSessionId = Cookies.get("user_session");
+    if (cookieSessionId) {
+      setSessionId(cookieSessionId);
+    }
     setIsPlanVerifierOn(
       selectedOption === MULTI_AGENT ||
         selectedOption === REACT_AGENT ||
         selectedOption === REACT_CRITIC_AGENT ||
         selectedOption === PLANNER_EXECUTOR_AGENT ||
-        selectedOption === "react_agent"
+      selectedOption === "react_agent"|| selectedOption === HYBRID_AGENT
     );
     if (selectedOption === CUSTOM_TEMPLATE) {
       setIsHuman(true);
@@ -800,8 +896,8 @@ const AskAssistant = () => {
     };
     const reseponse = await fetchOldChats(data);
     const oldChats = reseponse;
-    let temp = [];
-    for (let key in oldChats) {
+    const temp = [];
+    for (const key in oldChats) {
       temp.push({
         ...oldChats[key][0],
         session_id: key,
@@ -824,19 +920,34 @@ const AskAssistant = () => {
 
     setTimeout(() => {
       fetchOldChatsData();
-    }, 100);
+    }, DEBOUNCE_DELAY);
 
     setTimeout(() => {
       setIsDeletingChat(false);
       setShowToast(false);
-    }, 2000);
+    }, STATE_UPDATE_DELAY);
   };
 
-  const handleChatSelected = (sessionId) => {
+  const handleChatSelected = async (sessionId) => {
     clearDebugSteps();
     closeCanvas(); // Close canvas on chat select from history
-    setOldSessionId(sessionId);
-    fetchChatHistory(sessionId);
+    
+    // First update both session IDs and wait for them to be set
+    await new Promise(resolve => {
+      setOldSessionId(sessionId);
+      setSessionId(sessionId); // Set current session ID as well
+      setTimeout(resolve, DEBOUNCE_DELAY); // Give React time to update state
+    });
+    
+    try {
+      // Then fetch chat history with the new session ID
+      await fetchChatHistory(sessionId);
+    } catch (error) {
+      console.error("Error fetching chat history:", error);
+      // Reset oldSessionId if fetching fails
+      setOldSessionId("");
+    }
+    
     setShowChatHistory(false);
   };
   const [knowledgeResponse, serKnowledgeResponse] = useState([]);
@@ -1061,8 +1172,9 @@ const AskAssistant = () => {
     // Use cached suggestions for filtering
     let historyMatches = (cachedSuggestions.user_history || []).filter((item) => item && item.toLowerCase().includes(value.toLowerCase()));
     let recommendationsMatches = (cachedSuggestions.agent_history || []).filter((item) => item && item.toLowerCase().includes(value.toLowerCase()));
-    historyMatches = historyMatches.slice(0, 6);
-    let recCount = Math.max(0, 6 - historyMatches.length);
+    const MAX_SUGGESTIONS = 6;
+    historyMatches = historyMatches.slice(0, MAX_SUGGESTIONS);
+    const recCount = Math.max(0, MAX_SUGGESTIONS - historyMatches.length);
     recommendationsMatches = recommendationsMatches.slice(0, recCount);
     setSuggestionData({
       history: historyMatches,
@@ -1084,9 +1196,9 @@ const AskAssistant = () => {
   };
 
   // Canvas helper functions
-  const openCanvas = (content, title = "Code View", type = "code", messageId = null) => {
-    // Don't open canvas if it's disabled
-    if (!isCanvasEnabled) {
+  const openCanvas = (content, title = "Code View", type = "code", messageId = null, forceOpen = false) => {
+    // Don't open canvas if it's disabled, unless it's a manual/forced open
+    if (!isCanvasEnabled && !forceOpen) {
       return;
     }
 
@@ -1103,6 +1215,7 @@ const AskAssistant = () => {
       setCanvasContentType(type);
       setCanvasMessageId(messageId);
       setIsCanvasOpen(true);
+      setCanvasIsLast(true);
     }, 0);
   };
 
@@ -1112,11 +1225,30 @@ const AskAssistant = () => {
     setCanvasTitle("");
     setCanvasContentType("");
     setCanvasMessageId(null);
+    setCanvasIsLast(false);
   };
 
   // Auto-detect canvas content from AI responses - PARTS FORMAT ONLY
   const detectCanvasContent = (input) => {
     try {
+      // Detect email content
+      if (
+        typeof input === "object" && input !== null && (
+          input.type === "email" ||
+          input.contentType === "email" ||
+          input?.to || input?.subject || input?.body || (input.data && (input.data.to || input.data.subject || input.data.body))
+        )
+      ) {
+        // Normalize email data
+        let emailContent = input;
+        if (input.data) emailContent = input.data;
+        return {
+          type: "email",
+          content: emailContent,
+          title: "Email Viewer",
+          is_last: true,
+        };
+      }
       // Check if input is the API response object with parts at root level
       if (typeof input === "object" && input !== null && input.parts) {
         const parts = input.parts;
@@ -1224,7 +1356,8 @@ const AskAssistant = () => {
       const hasDebug = payload.debug_value || payload.debug_key;
       if (hasDebug) {
         setShowLiveSteps(true);
-        setDebugSteps((prev) => [...prev, { step: prev.length + 1, ...payload }].slice(-200));
+        const MAX_DEBUG_STEPS = 200;
+        setDebugSteps((prev) => [...prev, { step: prev.length + 1, ...payload }].slice(-MAX_DEBUG_STEPS));
       }
     };
     setSseMessageCallback(genericHandler);
@@ -1236,6 +1369,17 @@ const AskAssistant = () => {
   const clearDebugSteps = () => {
     setDebugSteps([]);
     setShowLiveSteps(false);
+  };
+
+  const ONLINE_EVAL_AGENT_TYPES = [REACT_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT, MULTI_AGENT,HYBRID_AGENT];
+
+  const shouldShowOnlineEvaluator = () => {
+    if (!agentType) return false;
+    return ONLINE_EVAL_AGENT_TYPES.includes(agentType);
+  };
+  const [onlineEvaluatorFlag, setOnlineEvaluatorFlag] = useState(false);
+  const handleOnlineEvaluatorToggle = (checked) => {
+    setOnlineEvaluatorFlag(checked);
   };
 
   return (
@@ -1303,6 +1447,8 @@ const AskAssistant = () => {
                   setExpanded={setExpanded}
                   isCanvasEnabled={isCanvasEnabled}
                   isContextEnabled={isContextEnabled}
+                  onlineEvaluatorFlag={onlineEvaluatorFlag}
+                   plan_verifier_flag={isHuman}
                 />
               </div>
             </div>
@@ -1325,10 +1471,13 @@ const AskAssistant = () => {
                       className={chatInputModule.select}
                       value={model}
                       onChange={(selectedOption) => {
-                        setModel(selectedOption.target.value);
+                        // When changing model, preserve session IDs but update model
+                        const newModel = selectedOption.target.value;
+                        setModel(newModel);
                         setLikeIcon(false);
                       }}
-                      disabled={generating || fetching || isEditable}>
+                      disabled={!agentType || generating || fetching || isEditable}
+                      aria-disabled={!agentType || generating || fetching || isEditable}>
                       <option value="">Select Model</option>
                       {selectedModels.map((modelOption) => (
                         <option key={modelOption.value} value={modelOption.value}>
@@ -1337,18 +1486,19 @@ const AskAssistant = () => {
                       ))}
                     </select>
                   </div>
+
                   <div className={chatInputModule.controlGroup} ref={agentDropdownRef}>
                     <div
-                      className={`${chatInputModule.searchableDropdown} ${messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""}`}
-                      aria-disabled={messageDisable || fetching || generating || isEditable}>
+                      className={`${chatInputModule.searchableDropdown} ${!agentType || messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""}`}
+                      aria-disabled={!agentType || messageDisable || fetching || generating || isEditable}>
                       <div
                         ref={agentTriggerRef}
                         className={`${chatInputModule.dropdownTrigger} ${showAgentDropdown ? chatInputModule.active : ""} ${
-                          messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""
+                          !agentType || messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""
                         }`}
-                        onClick={!(messageDisable || fetching || generating || isEditable) ? handleAgentDropdownToggle : undefined}
+                        onClick={!(!agentType || messageDisable || fetching || generating || isEditable) ? handleAgentDropdownToggle : null}
                         onKeyDown={(e) => {
-                          if (messageDisable || fetching || generating || isEditable) return;
+                          if (!agentType || messageDisable || fetching || generating || isEditable) return;
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
                             handleAgentDropdownToggle();
@@ -1369,12 +1519,13 @@ const AskAssistant = () => {
                             handleAgentDropdownKeyDown(e);
                           }
                         }}
-                        tabIndex={messageDisable || fetching || generating || isEditable ? -1 : 0}
+                        tabIndex={!agentType || messageDisable || fetching || generating || isEditable ? -1 : 0}
                         role="combobox"
                         aria-expanded={showAgentDropdown}
+                        aria-controls="agent-dropdown-list"
                         aria-haspopup="listbox"
                         aria-label="Select Agent"
-                        aria-disabled={messageDisable || fetching || generating || isEditable}>
+                        aria-disabled={!agentType || messageDisable || fetching || generating || isEditable}>
                         <span>{selectedAgent.agentic_application_name || "Select Agent"}</span>
                         <svg
                           width="18"
@@ -1387,7 +1538,7 @@ const AskAssistant = () => {
                         </svg>
                       </div>
 
-                      {showAgentDropdown && (
+                      {showAgentDropdown && agentType && (
                         <div className={chatInputModule.dropdownContent} role="listbox" aria-label="Agent options" onClick={(e) => e.stopPropagation()}>
                           <div className={chatInputModule.searchContainer}>
                             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
@@ -1422,6 +1573,10 @@ const AskAssistant = () => {
                                     setAgentSelectValue(agent.agentic_application_id);
                                     setFeedback("");
                                     setOldSessionId("");
+                                    const cookieSessionId = Cookies.get("user_session");
+                                    if (cookieSessionId) {
+                                      setSessionId(cookieSessionId);
+                                    }
                                     setLikeIcon(false);
                                   }}
                                   onMouseEnter={() => setHighlightedAgentIndex(index)}
@@ -1465,7 +1620,7 @@ const AskAssistant = () => {
                               className={chatInputModule.promptSuggestionBtn}
                               onClick={handlePromptSuggestionsToggle}
                               disabled={messageDisable || fetching || generating || isEditable || allOptionsSelected}
-                              title="AI Prompt Suggestions"
+                              title="Prompt Library"
                               tabIndex={0}>
                               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path
@@ -1702,10 +1857,56 @@ const AskAssistant = () => {
                                   onKeyDown={(e) => handleToggleKeyDown(e, handleContextToggle, isContextEnabled)}></span>
                               </label>
                             </div>
+                            {shouldShowOnlineEvaluator() && (
+                              <div className={chatInputModule.toggleGroup + " online-evaluator"} role="menuitem">
+                                <label className={chatInputModule.toggleLabel}>
+                                  <span className={chatInputModule.toggleText} id="onlineEvaluatorLabel">
+                                    {"Online Evaluator"}
+                                  </span>
+                                  <input
+                                    type="checkbox"
+                                    checked={onlineEvaluatorFlag}
+                                    onChange={(e) => handleOnlineEvaluatorToggle(e.target.checked)}
+                                    className={chatInputModule.toggleInput}
+                                    id="onlineEvaluatorToggle"
+                                    disabled={messageDisable || generating || fetching || isEditable}
+                                  />
+                                  <span
+                                    className={chatInputModule.toggleSlider}
+                                    tabIndex={0}
+                                    role="switch"
+                                    aria-checked={onlineEvaluatorFlag}
+                                    aria-labelledby="onlineEvaluatorLabel"
+                                    onKeyDown={(e) => handleToggleKeyDown(e, handleOnlineEvaluatorToggle, onlineEvaluatorFlag)}></span>
+                                </label>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-
+                      <div className={chatInputModule.settingsContainer} style={{ position: "relative", display: "inline-block" }} ref={temperaturePopupRef}>
+                        <button
+                          className={`${chatInputModule.actionButton} ${showTemperaturePopup ? chatInputModule.active : ""}`}
+                          onClick={() => setShowTemperaturePopup((v) => !v)}
+                          title="Set Temperature"
+                          tabIndex={0}
+                          disabled={allOptionsSelected || generating || fetching || isEditable}
+                          aria-expanded={showTemperaturePopup}
+                          aria-haspopup="menu"
+                          aria-label="Temperature Settings menu">
+                          <SVGIcons icon="thermometerIcon" width={18} height={18} fill="currentColor" color="none"/>
+                        </button>
+                        {showTemperaturePopup && (
+                          <div
+                            className={`${chatInputModule.settingsDropdown} ${chatInputModule.chatSettingsDropdown}`}
+                            style={{ minWidth: 300, right: 0, left: "auto", bottom: 40, zIndex: 2001, position: "absolute" }}
+                            role="menu"
+                            aria-label="Temperature Settings menu">
+                            <div className={chatInputModule.settingsHeader}>Temperature</div>
+                            <TemperatureSliderPopup value={temperature} onChange={setTemperature} onClose={() => setShowTemperaturePopup(false)} hideOverlay />
+                          </div>
+                        )}
+                      </div>
                       {agentType === REACT_AGENT && (
                         <div className={chatInputModule.relativeWrapper} ref={knowledgePopoverRef}>
                           <button
@@ -1849,7 +2050,7 @@ const AskAssistant = () => {
                           }}
                           title="ChatSettings"
                           tabIndex={generating ? -1 : 0}
-                          disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
+                          // disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
                           aria-expanded={showChatSettings}
                           aria-haspopup="menu"
                           aria-label="Chat Settings menu"
@@ -2018,12 +2219,22 @@ const AskAssistant = () => {
           </div>
           {/* Canvas Component */}
           {isCanvasOpen && (
-            <Canvas isOpen={isCanvasOpen} onClose={closeCanvas} content={canvasContent} contentType={canvasContentType} title={canvasTitle} messageId={canvasMessageId} />
+            <Canvas
+              isOpen={isCanvasOpen}
+              onClose={closeCanvas}
+              content={canvasContent}
+              contentType={canvasContentType}
+              title={canvasTitle}
+              messageId={canvasMessageId}
+              is_last={canvasIsLast}
+              sendUserMessage={sendUserMessage}
+              selectedAgent={agentSelectValue}
+            />
           )}
         </div>
       </div>
     </>
   );
 };
-
+      
 export default AskAssistant;

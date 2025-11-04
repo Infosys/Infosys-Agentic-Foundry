@@ -7,13 +7,15 @@ import AgentForm from "./AgentForm";
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 import DropDown from "../commonComponents/DropDowns/DropDown";
-import { agentTypesDropdown, MULTI_AGENT, REACT_AGENT, META_AGENT, PLANNER_META_AGENT } from "../../constant";
+import { agentTypesDropdown, MULTI_AGENT, REACT_AGENT, META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useToolsAgentsService } from "../../services/toolService";
 import SearchInputToolsAgents from "../commonComponents/SearchInputTools";
 import { debounce } from "lodash";
 import { useMcpServerService } from "../../services/serverService";
 import FilterModal from "../commonComponents/FilterModal";
+import { useErrorHandler } from "../../Hooks/useErrorHandler";
+// Note: Centralized error handling integrated (handleError) replacing scattered console.error occurrences
 
 const AgentOnboard = (props) => {
   const { onClose, tags, setNewAgentData, fetchAgents } = props;
@@ -39,11 +41,13 @@ const AgentOnboard = (props) => {
   const { addMessage } = useMessage();
   const { postData, fetchData } = useFetch();
   const { getToolsSearchByPageLimit, getAgentsSearchByPageLimit, calculateDivs } = useToolsAgentsService();
-  const { getAllServers, getServersSearchByPageLimit } = useMcpServerService();
+  const { getServersSearchByPageLimit } = useMcpServerService();
 
   const containerRef = useRef(null);
   const pageRef = useRef(1);
   const hasLoadedOnce = useRef(false);
+
+  const { handleError } = useErrorHandler();
 
   const fetchPaginatedData = useCallback(
     async (pageNumber, divsCount, tagParams = null) => {
@@ -63,7 +67,7 @@ const AgentOnboard = (props) => {
           setTotalCount(response?.total_count || toolsData?.length || 0);
         }
       } catch (e) {
-        console.error(e);
+        handleError(e, { customMessage: "Failed to fetch list" });
       } finally {
         setLoading(false);
       }
@@ -76,7 +80,7 @@ const AgentOnboard = (props) => {
     const raw = server || {};
     const hasCode = Boolean(raw?.mcp_config?.args?.[1] || raw?.mcp_file?.code_content || raw?.code_content || raw?.code || raw?.script || raw?.code_snippet);
     const hasUrl = Boolean(raw?.mcp_config?.url || raw?.mcp_url || raw?.endpoint || raw?.mcp_config?.mcp_url || raw?.mcp_config?.endpoint);
-    const derivedType = hasCode ? "LOCAL" : hasUrl ? "REMOTE" : ((raw.mcp_type || raw.type || "") + "").toUpperCase() || "UNKNOWN";
+    const derivedType = hasCode ? "LOCAL" : hasUrl ? "REMOTE" : String(raw.mcp_type || raw.type || "").toUpperCase() || "UNKNOWN";
     return {
       tool_id: raw.tool_id || raw.id || raw._id || Math.random().toString(36).substr(2, 9), // Always unique!
       name: raw.tool_name || raw.name,
@@ -106,7 +110,13 @@ const AgentOnboard = (props) => {
               search: searchTerm,
               tags: selectedServerTags,
             })
-          : getAllServers(),
+          : getServersSearchByPageLimit({
+              page: 1,
+              limit: calculateDivs(containerRef, 149, 57, 26),
+              search: searchTerm,
+              tags: selectedServerTags,
+            }),
+        ,
         fetchData(APIs.GET_AGENTS_BY_DETAILS),
       ])
         .then(([serverResponse, allAgents]) => {
@@ -130,10 +140,11 @@ const AgentOnboard = (props) => {
           setServers(unmapped.map(mapServerData)); // Use unmapped for display
           setLoading(false);
         })
-        .catch(() => {
+        .catch((e) => {
           setServers([]);
           setUnmappedServers([]);
           setLoading(false);
+          handleError(e, { customMessage: "Failed to load servers" });
         });
     }
   }, [activeTab, selectedServerTags, searchTerm]);
@@ -218,7 +229,7 @@ const AgentOnboard = (props) => {
         pageRef.current = nextPage;
       }
     } catch (err) {
-      console.error(err);
+      handleError(err, { customMessage: "Load more failed" });
     } finally {
       setLoaderState(false);
       setLoading && setLoading(false);
@@ -256,7 +267,12 @@ const AgentOnboard = (props) => {
             tags: selectedServerTags,
           });
         } else {
-          serverResponse = await getAllServers();
+          serverResponse = await getServersSearchByPageLimit({
+            page: 1,
+            limit: calculateDivs(containerRef, 149, 57, 26),
+            search: searchTerm,
+            tags: selectedServerTags,
+          });
         }
 
         const allServers = serverResponse?.details || serverResponse || [];
@@ -266,6 +282,7 @@ const AgentOnboard = (props) => {
       } catch (err) {
         setUnmappedServers([]);
         setServers([]);
+        handleError(err, { customMessage: "Failed to clear search" });
       } finally {
         setLoading(false);
       }
@@ -293,13 +310,14 @@ const AgentOnboard = (props) => {
             search: "",
             tags: selectedTags,
           });
-          data = typeof response?.details === "object" && Array.isArray(response.details) ? response.details : [];
+          data = typeof response?.details === "object" && Array.isArray(response?.details) ? response?.details : [];
         }
         setVisibleData(data);
         setTotalCount(data.length);
       } catch (err) {
         setVisibleData([]);
         setTotalCount(0);
+        handleError(err, { customMessage: "Failed to reset list" });
       } finally {
         setLoading(false);
       }
@@ -344,9 +362,9 @@ const AgentOnboard = (props) => {
         setUnmappedServers(unmapped.map(mapServerData));
         setServers(unmapped.map(mapServerData));
       } catch (err) {
-        console.error(err);
         setUnmappedServers([]);
         setServers([]);
+        handleError(err, { customMessage: "Server search failed" });
       } finally {
         setLoading(false);
       }
@@ -374,13 +392,13 @@ const AgentOnboard = (props) => {
             search: searchValue,
             tags: selectedTags,
           });
-          data = typeof response?.details === "object" && Array.isArray(response.details) ? response.details : [];
+          data = typeof response?.details === "object" && Array.isArray(response?.details) ? response?.details : [];
         }
         setVisibleData(data);
         setTotalCount(data.length);
       } catch (err) {
-        console.error(err);
         setVisibleData([]);
+        handleError(err, { customMessage: "Search failed" });
       } finally {
         setLoading(false);
       }
@@ -401,9 +419,14 @@ const AgentOnboard = (props) => {
     pageRef.current = 1;
     hasLoadedOnce.current = false;
     if (tab === "tools") {
+      // Clear server tag filters when switching to tools tab
+      setSelectedServerTags([]);
       clearSearch();
       fetchPaginatedData(1, calculateDivs(containerRef, 149, 57, 26));
     } else if (tab === "servers") {
+      // Clear tool tag filters when switching to servers tab
+      setSelectedServerTags([]);
+      setSelectedTags([]);
       clearSearch();
       // Fetch servers if needed
     }
@@ -439,10 +462,6 @@ const AgentOnboard = (props) => {
 
   const handleFilter = useCallback(
     (newSelectedTags) => {
-      if (newSelectedTags.length === 0) {
-        setFilterModal(false);
-      }
-
       setSelectedTags(newSelectedTags);
 
       if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
@@ -499,10 +518,6 @@ const AgentOnboard = (props) => {
 
   const handleServerFilter = useCallback(
     (newSelectedServerTags) => {
-      if (newSelectedServerTags.length === 0) {
-        setFilterModal(false);
-      }
-
       setSelectedServerTags(newSelectedServerTags);
       getServersDataWithTags(newSelectedServerTags);
     },
@@ -511,7 +526,7 @@ const AgentOnboard = (props) => {
 
   const submitForm = async (value, callBack) => {
     setLoading(true);
-    let payload = { ...value };
+    const payload = { ...value };
     // Fix: Always send both selected tool and server IDs in payload.tools_id
     const toolIds =
       selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT
@@ -521,7 +536,7 @@ const AgentOnboard = (props) => {
     payload.tools_id = [...(toolIds || []), ...(serverIds || [])];
 
     try {
-      let url = APIs.ONBOARD_AGENTS;
+      const url = APIs.ONBOARD_AGENTS;
       const response = await postData(url, payload);
       if (response?.result?.is_created) {
         setNewAgentData(response.result);
@@ -535,7 +550,7 @@ const AgentOnboard = (props) => {
         addMessage(response?.result?.message || "Unknown error", "error");
       }
     } catch (e) {
-      console.error(e);
+      handleError(e, { showToast: false }); // Added showToast so it shows default error message from response . Previously had '{ customMessage: "Submit failed" }' as option
     } finally {
       setLoading(false);
     }
@@ -572,7 +587,7 @@ const AgentOnboard = (props) => {
                 setSelectedServers([]);
                 setVisibleData([]);
                 pageRef.current = 1;
-                if ((newType === META_AGENT || newType === PLANNER_META_AGENT) && activeTab === "servers") {
+                if ((newType === META_AGENT || newType === PLANNER_META_AGENT || newType === HYBRID_AGENT) && activeTab === "servers") {
                   setActiveTab("tools");
                 }
               }}
@@ -590,6 +605,7 @@ const AgentOnboard = (props) => {
               }}>
               {selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "AGENTS" : "TOOLS"}
             </button>
+            {/* Enable Servers tab for HYBRID_AGENT and non-meta agents */}
             {selectedAgent !== META_AGENT && selectedAgent !== PLANNER_META_AGENT && (
               <button
                 className={`iafTabsBtn ${activeTab === "servers" ? " active" : ""}`}
@@ -605,7 +621,13 @@ const AgentOnboard = (props) => {
           </div>
           <div className={styles.subHeader}>
             {/* <p>{`SELECT ${activeTab === "servers" ? "SERVER" : selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "AGENT" : "TOOL"} TO ADD AGENT`}</p> */}
-            <SearchInputToolsAgents inputProps={{ placeholder: "SEARCH" }} handleSearch={handleSearch} clearSearch={clearSearch} />
+            <SearchInputToolsAgents
+              inputProps={{
+                placeholder: activeTab === "servers" ? "Search Servers" : selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT ? "Search Agents" : "Search Tools",
+              }}
+              handleSearch={handleSearch}
+              clearSearch={clearSearch}
+            />
             {activeTab === "tools" && (
               <button
                 type="button"

@@ -1,13 +1,6 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import brandlogotwo from "../../Assets/Agentic-Foundry-Logo-Blue-2.png";
-import { 
-  faRobot, 
-  faBrain, 
-  faUsers, 
-  faGear,
-  faComments,
-  faStar
-} from "@fortawesome/free-solid-svg-icons";
+import { faRobot, faBrain, faUsers, faGear, faComments, faStar } from "@fortawesome/free-solid-svg-icons";
 import styles from "./PlaceholderScreen.module.css";
 
 const PlaceholderScreen = ({ agentType, model, selectedAgent }) => {
@@ -20,14 +13,10 @@ const PlaceholderScreen = ({ agentType, model, selectedAgent }) => {
     if (missingFields.length === 3) {
       return {
         icon: faComments,
-        title: "Welcome to AI Chat",
+        title: "Welcome to Agentic Chat",
         subtitle: "Get started by selecting your preferences",
         description: "Choose your agent type, model, and specific agent to begin an intelligent conversation.",
-        steps: [
-          "Select an Agent Type (Meta, Multi, ReAct, or Custom)",
-          "Choose your preferred AI Model",
-          "Pick a specific Agent for your task"
-        ]
+        steps: ["Select an Agent Type (Meta, Multi, ReAct, or Custom)", "Choose your preferred AI Model", "Pick a specific Agent for your task"],
       };
     }
 
@@ -37,7 +26,7 @@ const PlaceholderScreen = ({ agentType, model, selectedAgent }) => {
         title: "Almost Ready!",
         subtitle: `Please select ${missingFields.join(" and ")}`,
         description: "Just a couple more selections and we'll be ready to chat.",
-        steps: missingFields.map(field => `Select ${field}`)
+        steps: missingFields.map((field) => `Select ${field}`),
       };
     }
 
@@ -47,7 +36,7 @@ const PlaceholderScreen = ({ agentType, model, selectedAgent }) => {
         title: "One More Step!",
         subtitle: `Please select ${missingFields[0]}`,
         description: "You're almost there! One more selection and we can start our conversation.",
-        steps: [`Choose your ${missingFields[0]}`]
+        steps: [`Choose your ${missingFields[0]}`],
       };
     }
 
@@ -56,7 +45,7 @@ const PlaceholderScreen = ({ agentType, model, selectedAgent }) => {
       title: "Ready to Chat!",
       subtitle: "All set! Your AI assistant is ready.",
       description: "You can now start chatting with your selected AI agent.",
-      steps: []
+      steps: [],
     };
   };
 
@@ -67,8 +56,8 @@ const PlaceholderScreen = ({ agentType, model, selectedAgent }) => {
       <div className={styles.content}>
         {/* Animated Icon */}
         <div className={styles.iconContainer}>
-          <div style={{"display":"flex", "alignItems":"center", "justifyContent":"center", "position":"relative", "flexDirection":"column"}}>
-            <img style={{"marginBottom": "20px", "width": "100%", "maxWidth": "350px"}} src={brandlogotwo} alt="Brandlogo" />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", position: "relative", flexDirection: "column" }}>
+            <img style={{ marginBottom: "20px", width: "100%", maxWidth: "350px" }} src={brandlogotwo} alt="Brandlogo" />
             <FontAwesomeIcon icon={content.icon} className={styles.mainIcon} />
           </div>
           <div className={styles.iconGlow}></div>
@@ -114,9 +103,9 @@ const PlaceholderScreen = ({ agentType, model, selectedAgent }) => {
 
         {/* Floating Elements for Animation */}
         <div className={styles.floatingElements}>
-          <div className={styles.floatingElement} style={{animationDelay: '0s'}}></div>
-          <div className={styles.floatingElement} style={{animationDelay: '2s'}}></div>
-          <div className={styles.floatingElement} style={{animationDelay: '4s'}}></div>
+          <div className={styles.floatingElement} style={{ animationDelay: "0s" }}></div>
+          <div className={styles.floatingElement} style={{ animationDelay: "2s" }}></div>
+          <div className={styles.floatingElement} style={{ animationDelay: "4s" }}></div>
         </div>
       </div>
     </div>

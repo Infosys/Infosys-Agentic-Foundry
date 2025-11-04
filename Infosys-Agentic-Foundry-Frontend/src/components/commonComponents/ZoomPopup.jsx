@@ -2,9 +2,10 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import styles from "./ZoomPopup.module.css";
 import { faCompress } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import CodeEditor from "./CodeEditor.jsx";
 
 const ZoomPopup = (props) => {
-  const { show, onClose, title, content, onSave, recycleBin, type = "code" } = props;
+  const { show, onClose, title, content, onSave, recycleBin, type = "code", readOnly = false } = props;
 
   const [editableContent, setEditableContent] = useState(content || "");
   const [localDarkTheme] = useState(true);
@@ -38,12 +39,16 @@ const ZoomPopup = (props) => {
   // No effect syncing with parent theme; theme is always local
 
   const handleSave = () => {
-    onSave(editableContent);
-    onClose();
+    if (!readOnly) {
+      onSave(editableContent);
+      onClose();
+    }
   };
 
   const handleInput = (value) => {
-    setEditableContent(value);
+    if (!readOnly) {
+      setEditableContent(value);
+    }
   };
 
   if (!show) return null;
@@ -71,8 +76,8 @@ const ZoomPopup = (props) => {
             title="Collapse"
             style={{
               position: "absolute",
-              top: "10px",
-              right: "50px",
+              top: "17px",
+              right: "21px",
               background: "rgba(0, 0, 0, 0.1)",
               border: "1px solid rgba(255, 255, 255, 0.2)",
               cursor: "pointer",
@@ -107,33 +112,38 @@ const ZoomPopup = (props) => {
           <h3>{title}</h3>
           <div className={styles.editorContainer} style={{ position: "relative" }}>
             {type === "code" ? (
-              <textarea
-                className={styles.codeTextarea}
+              <CodeEditor
+                mode="python"
+                theme={localDarkTheme ? "monokai" : "github"}
+                isDarkTheme={localDarkTheme}
                 value={editableContent || ""}
-                onChange={handleInput}
-                placeholder="Enter your code here..."
-                rows={15}
+                onChange={readOnly ? undefined : (value) => setEditableContent(value)}
+                readOnly={readOnly}
+                width="100%"
+                height="250px"
+                fontSize={14}
+                setOptions={{
+                  enableBasicAutocompletion: true,
+                  enableLiveAutocompletion: true,
+                  enableSnippets: true,
+                  showLineNumbers: true,
+                  tabSize: 4,
+                  useWorker: false,
+                  wrap: false,
+                }}
                 style={{
-                  width: "100%",
-                  resize: "vertical",
-                  fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-                  fontSize: "14px",
-                  lineHeight: "1.4",
-                  padding: "12px",
                   border: "1px solid #e0e0e0",
                   borderRadius: "8px",
-                  backgroundColor: localDarkTheme ? "#1e1e1e" : "#ffffff",
-                  color: localDarkTheme ? "#ffffff" : "#000000",
-                  outline: "none",
-                  boxSizing: "border-box",
-                  minHeight: "250px"
+                  fontFamily: "Consolas, Monaco, 'Courier New', monospace",
                 }}
+                placeholder="Enter your code here..."
               />
             ) : (
               <textarea
                 ref={textareaRef}
                 value={editableContent}
-                onChange={(e) => setEditableContent(e.target.value)}
+                onChange={readOnly ? undefined : (e) => setEditableContent(e.target.value)}
+                readOnly={readOnly}
                 style={{
                   width: "100%",
                   height: "200px",
@@ -153,7 +163,7 @@ const ZoomPopup = (props) => {
           </div>
           <div className={styles.popupFooter}>
             {!recycleBin && (
-              <button className={styles.saveButton} onClick={handleSave}>
+              <button className={styles.saveButton} onClick={handleSave} disabled={readOnly}>
                 Ok
               </button>
             )}

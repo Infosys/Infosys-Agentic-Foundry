@@ -29,7 +29,7 @@
   display: flex;
   flex-direction: column;
   height: 90vh;
-  padding: 30px 40px;
+  padding: 10px 30px;
   padding-right: 0px;
   padding-bottom: 0px;
   position: relative;
@@ -43,10 +43,15 @@
   flex-wrap: wrap;
   gap: 40px;
   overflow-y: auto;
-  height: Calc(100vh - 218px);
+  height: Calc(100vh - 135px);
   width: 98%;
   padding-left: 0;
   padding-top: 0;
+  padding-bottom: 8px;
+}
+
+.tagOrSerachIsOn .visibleToolsContainer {
+  height: Calc(100vh - 182px);
 }
 
 .subHeaderContainer {
@@ -74,6 +79,99 @@
   position: relative;
   transition: transform 0.2s, box-shadow 0.2s;
   transform: translateY(0px);
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 5px 18px 10px #00000029;
+}
+
+.card-unused {
+  background: #3d4359 0% 0% no-repeat padding-box;
+  box-shadow: 5px 15px 6px #00000029;
+  border-radius: 4px;
+  width: 200px;
+  min-height: 140px;
+  height: 140px;
+  max-height: 160px;
+  padding: 11px;
+  color: white;
+  position: relative;
+  transition: transform 0.2s, box-shadow 0.2s;
+  transform: translateY(0px);
+}
+
+.card-unused:hover {
+  transform: translateY(-3px);
+  box-shadow: 5px 18px 10px #00000029;
+}
+
+.card-unused .card-title {
+  font-size: 16px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  word-wrap: break-word;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  max-height: 35px;
+}
+
+.card-unused .card-info {
+  margin-top: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-unused .info-item {
+  color: #ffffff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.card-unused .info-label {
+  color: #ffffff;
+  opacity: 0.7;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.card-unused .info-value {
+  color: #ffffff;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.card-unused .btn-grp {
+  display: flex;
+  justify-content: end;
+  position: absolute;
+  bottom: 20px;
+  right: 5px;
+}
+
+.card-unused .deleteBtn {
+  width: 30px;
+  height: 24px;
+  position: absolute;
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #6a2020;
+  right: 11px;
+  bottom: 8px;
 }
 .cardRecycle {
   background: #3d4359 0% 0% no-repeat padding-box;
@@ -187,7 +285,7 @@
   color: black;
   border: none;
   font: normal normal normal 12px/14px Segoe UI;
-  padding: 9px 14px 21px 14px;
+  padding: 5px 14px 21px 14px;
 }
 
 .cancel-btn {
@@ -223,7 +321,6 @@
   outline: none;
   border: none;
   width: 100%;
-  margin-top: 13px;
 }
 
 .email-id-input::placeholder {
@@ -274,23 +371,27 @@
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.searchedToolText {
-  margin-bottom: 16px;
-  font-weight: bold;
-  position: absolute;
-  top: 85px;
-  left: 240px;
-}
-
 .toolsList {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
 }
 
+.searchedToolText,
+.filteredToolText {
+  max-width: 48%;
+}
+
+.filterOrSearchText {
+  width: 98%;
+  overflow: hidden;
+  display: inline-block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .filteredToolText {
   margin-bottom: 0px;
-  font-weight: bold;
 }
 
 .deleteBtn,
@@ -303,6 +404,12 @@
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.editBtn:hover,
+.deleteBtn:hover {
+  transform: translateY(11px);
+  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.15);
 }
 
 .deleteBtn {
@@ -377,5 +484,5 @@
 .summaryLine {
   color: var(--muted);
   font-size: 13px;
-  margin: 0 0 5px 8px;
+  margin: 0 0 5px 0;
 }

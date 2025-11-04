@@ -15,6 +15,7 @@ const SubHeader = (props) => {
     onPlusClick,
     selectedTags,
     heading,
+    activeTab,
     handleRefresh,
     clearSearch,
     showAgentTypeDropdown = false,
@@ -22,6 +23,18 @@ const SubHeader = (props) => {
     selectedAgentType = "",
     handleAgentTypeChange = () => {},
   } = props;
+
+  // Determine placeholder based on the heading prop and activeTab
+  const getSearchPlaceholder = () => {
+    if (heading === "AGENTS") return "Search Agents";
+    if (heading === "SERVERS" || activeTab === "servers") return "Search Servers";
+    if (heading === "TOOLS" || activeTab === "tools") return "Search Tools";
+    if (heading === "") {
+      // For tools context
+      return "Search Tools";
+    }
+    return "Search";
+  };
 
   const userName = Cookies.get("userName");
 
@@ -92,7 +105,7 @@ const SubHeader = (props) => {
               </select>
             </div>
           )}
-          <SearchInputToolsAgents inputProps={{ placeholder: "SEARCH" }} handleSearch={handleSearch} heading={heading} clearSearch={clearSearch} searchValue={props.searchValue} />
+          <SearchInputToolsAgents inputProps={{ placeholder: getSearchPlaceholder() }} handleSearch={handleSearch} heading={heading} clearSearch={clearSearch} searchValue={props.searchValue} />
           <button type="button" onClick={handleSettingClick} className={styles.setting}>
             {selectedTags?.length > 0 && <span className={styles.badge}>{selectedTags?.length}</span>}
             <SVGIcons icon="slider-rect" width={20} height={18} fill="#C3C1CF" />

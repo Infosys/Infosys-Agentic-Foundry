@@ -90,9 +90,9 @@ const SuggestionPopover = ({ suggestions, userValue, onSelect, visible, onClose 
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-label="History" xmlns="http://www.w3.org/2000/svg" style={{ verticalAlign: "middle" }}>
               <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.3" fill="none" />
               <path d="M10 6V10L13 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              <path d="M4.5 10a5.5 5.5 5.5 0 1 1 2.5 4.7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
+              {/* <path d="M4.5 10a5.5 5.5 5.5 0 1 1 2.5 4.7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
               <path d="M4.5 10H7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-              <path d="M4.5 10l1.5 1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+              <path d="M4.5 10l1.5 1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /> */}
             </svg>
             <span>History</span>
           </div>

@@ -2,7 +2,8 @@ import React from "react";
 import styles from "./PartsRenderer.module.css";
 import DynamicWidget from "./DynamicWidget";
 
-const PartsRenderer = ({ parts, messageId }) => {
+const PartsRenderer = ({ parts, messageId,sendUserMessage,isMinimized,isFullscreen,selectedAgent
+ }) => {
   // Safely extract components from parts
   const getComponents = () => {
     if (!parts) return [];
@@ -32,7 +33,9 @@ const PartsRenderer = ({ parts, messageId }) => {
 
   // Process and render each component
   const renderComponent = (component, index) => {
-    const { type, data, metadata = {} } = component;
+  const { type, data, metadata = {} } = component;
+  // Only use is_last for non-'text' types
+  const isLast = type !== "text" ? component.is_last === true : undefined;
 
     // Map parts types to canvas types
     const getCanvasType = (partsType) => {
@@ -43,6 +46,7 @@ const PartsRenderer = ({ parts, messageId }) => {
         canvas_text: "canvas_text",
         code: "code",
         json: "json",
+        email: "email",
       };
 
       return typeMapping[partsType];
@@ -106,11 +110,19 @@ const PartsRenderer = ({ parts, messageId }) => {
           }
 
         case "json":
-          // Handle new code format with language and code content
-          return {
-            type:type,
-            data,
-          };
+          // Handle JSON format - return only the content inside data object
+          return data;
+        
+        case "email":
+          // Handle email format with to, subject, and body properties
+          if (data?.to || data?.subject || data?.body) {
+            return {
+              to: data?.to || "",
+              subject: data?.subject || "",
+              body: data?.body || "",
+            };
+          }
+          break;
 
         default:
           // For unknown types, try to extract text content safely
@@ -129,13 +141,17 @@ const PartsRenderer = ({ parts, messageId }) => {
     const content = processContent(type, data);
 
     return (
-      <div key={index} className={styles.componentWrapper}>
+      <div
+        key={index}
+        className={styles.componentWrapper}
+        data-is-last={isLast ? "true" : undefined}
+      >
         {/* Component Header (optional) */}
         {metadata.showHeader !== false && (
           <div className={styles.componentHeader}>
             <div className={styles.componentType}>
               <span className={styles.typeIndicator} data-type={type}>
-                {type}
+                {type === "email" && !isLast ? "Email Preview" : type}
               </span>
             </div>
           </div>
@@ -143,7 +159,19 @@ const PartsRenderer = ({ parts, messageId }) => {
 
         {/* Component Content */}
         <div className={styles.componentContent}>
-          <DynamicWidget type={canvasType} content={content} messageId={`${messageId}-part-${index}`} metadata={metadata} {...metadata} />
+          <DynamicWidget
+            type={canvasType}
+            content={content}
+            messageId={`${messageId}-part-${index}`}
+            metadata={metadata}
+            {...metadata}
+            is_last={isLast}
+            sendUserMessage={sendUserMessage}
+            isMinimized={isMinimized}
+            isFullscreen={isFullscreen}
+            selectedAgent={selectedAgent}
+
+          />
         </div>
       </div>
     );

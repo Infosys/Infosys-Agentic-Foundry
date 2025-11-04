@@ -10,6 +10,8 @@ import useFetch from "../../Hooks/useAxios.js";
 import FilterModal from "../commonComponents/FilterModal.jsx";
 import SubHeader from "../commonComponents/SubHeader.jsx";
 import { debounce } from "lodash";
+import axios from "axios";
+import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import { useActiveNavClick } from "../../events/navigationEvents";
 
 const AvailableTools = () => {
@@ -33,6 +35,7 @@ const AvailableTools = () => {
   const [loader, setLoaderState] = useState(false);
   const isLoadingRef = React.useRef(false);
   const { getToolsSearchByPageLimit, calculateDivs } = useToolsAgentsService();
+  const { handleError } = useErrorHandler();
 
   // Normalize API responses to always return a clean array of tool objects
   const sanitizeToolsResponse = (response) => {
@@ -64,7 +67,10 @@ const AvailableTools = () => {
           search: searchValue,
           tags: tagsForSearch?.length > 0 ? tagsForSearch : undefined,
         });
-        let dataToSearch = sanitizeToolsResponse(response.details);
+        let dataToSearch = sanitizeToolsResponse(response?.details);
+        if (tagsForSearch?.length > 0) {
+          dataToSearch = dataToSearch.filter((item) => item.tags && item.tags.some((tag) => tagsForSearch.includes(tag?.tag_name)));
+        }
 
         // Setting the total count
         setTotalToolsCount(response.total_count || 0);
@@ -74,7 +80,7 @@ const AvailableTools = () => {
         // If returned less than requested, no more pages
         setHasMore(dataToSearch.length >= divsCount);
       } catch (error) {
-        console.error("Error fetching search results:", error);
+        handleError(error, { context: "AvailableTools.handleSearch" });
         setVisibleData([]); // Clear visibleData on error
         setHasMore(false);
       } finally {
@@ -101,7 +107,7 @@ const AvailableTools = () => {
         search: "",
         tags: tagsToUse?.length > 0 ? tagsToUse : undefined,
       });
-      const data = sanitizeToolsResponse(response.details);
+      const data = sanitizeToolsResponse(response?.details);
       if (pageNumber === 1) {
         setToolList(data);
         setVisibleData(data); // Ensure initial load is rendered
@@ -121,7 +127,7 @@ const AvailableTools = () => {
       }
       return data; // return fetched data for caller decisions
     } catch (error) {
-      console.error("Error fetching tools:", error);
+      handleError(error, { context: "AvailableTools.getToolsData" });
       if (pageNumber === 1) {
         setToolList([]);
         setVisibleData([]);
@@ -138,12 +144,14 @@ const AvailableTools = () => {
     setSelectedTags([]); // Clear tags when clearing search
     setVisibleData([]);
     setHasMore(true);
-    // Trigger fetchToolsData with no search term and no tags (reset to first page)
-    const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
-    setPage(1);
-    pageRef.current = 1;
-    // Call getToolsData with explicitly empty tags
-    getToolsDataWithTags(1, divsCount, []);
+    setTimeout(() => {
+      // Trigger fetchToolsData with no search term and no tags (reset to first page)
+      const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+      setPage(1);
+      pageRef.current = 1;
+      // Call getToolsData with explicitly empty tags
+      getToolsDataWithTags(1, divsCount, []);
+    }, 5);
   };
 
   useEffect(() => {
@@ -195,6 +203,10 @@ const AvailableTools = () => {
           tags: selectedTags?.length > 0 ? selectedTags : undefined,
         });
         newData = sanitizeToolsResponse(res.details);
+
+        if (selectedTags?.length > 0) {
+          newData = newData.filter((item) => item.tags && item.tags.some((tag) => selectedTags.includes(tag?.tag_name)));
+        }
         if (newData.length > 0) {
           setVisibleData((prev) => (Array.isArray(prev) ? [...prev, ...newData] : [...newData]));
           // Only increment page if we actually appended data
@@ -277,11 +289,6 @@ const AvailableTools = () => {
     setVisibleData([]);
     setHasMore(true);
 
-    // Close modal if tags are cleared
-    if (!selectedTagsParam || selectedTagsParam.length === 0) {
-      setFilterModal(false);
-    }
-
     // Trigger new API call with selected tags - pass selectedTagsParam directly
     const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
     if (searchTerm.trim()) {
@@ -330,56 +337,74 @@ const AvailableTools = () => {
       )}
       {loading && <Loader />}
       <div className={style.container}>
-        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12, flexDirection: "column", alignItems: "baseline", gap: "4px" }}>
-          <div style={{ display: "flex", gap: 0 }}>
-            <button onClick={() => setActiveTab("tools")} className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}>
-              TOOLS
-            </button>
-            <button onClick={() => setActiveTab("servers")} className={`iafTabsBtn ${activeTab === "servers" ? " active" : ""}`}>
-              SERVERS
-            </button>
-          </div>
-          {/* SubHeader sits on its own row below the tabs (only when tools tab is active) */}
-          {activeTab === "tools" && (
-            <div style={{ marginBottom: "-2px", width: "98%" }} className={style.subHeaderContainer}>
-              <SubHeader
-                heading={"LIST OF TOOLS"}
-                onSearch={(value) => handleSearch(value, calculateDivs(toolListContainerRef, 200, 141, 40), 1)}
-                onSettingClick={onSettingClick}
-                onPlusClick={handlePlusIconClick}
-                handleRefresh={handleRefresh}
-                selectedTags={selectedTags}
-                clearSearch={clearSearch}
-              />
+        <div
+          className={`${
+            selectedTags.length > 0 || searchTerm.trim() ? (activeTab === "tools" ? style.tagOrSerachIsOn : activeTab === "servers" ? style.tagOrSerachIsOnServer : "") : ""
+          }`}
+          style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12, flexDirection: "column", alignItems: "baseline", gap: "2px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", width: "98%" }}>
+            <div style={{ display: "flex", gap: 0 }}>
+              <button
+                onClick={() => {
+                  if (activeTab !== "tools") {
+                    setActiveTab("tools");
+                    clearSearch();
+                  }
+                }}
+                className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}>
+                TOOLS
+              </button>
+              <button onClick={() => setActiveTab("servers")} className={`iafTabsBtn ${activeTab === "servers" ? " active" : ""}`}>
+                SERVERS
+              </button>
             </div>
-          )}
+            {/* SubHeader sits on its own row below the tabs (only when tools tab is active) */}
+            {activeTab === "tools" && (
+              <div style={{ width: "100%", marginBottom: 0 }} className={style.subHeaderContainer}>
+                <SubHeader
+                  heading={""}
+                  activeTab={activeTab}
+                  onSearch={(value) => handleSearch(value, calculateDivs(toolListContainerRef, 200, 141, 40), 1)}
+                  onSettingClick={onSettingClick}
+                  onPlusClick={handlePlusIconClick}
+                  handleRefresh={handleRefresh}
+                  selectedTags={selectedTags}
+                  clearSearch={clearSearch}
+                />
+              </div>
+            )}
+          </div>
           {activeTab === "servers" ? (
             <AvailableServers />
           ) : (
             <>
-              {/* Display searched tool text if searchTerm exists and results are found */}
-              {searchTerm.trim() && visibleData.length > 0 && (
-                <div className={style.searchedToolText}>
-                  <p>Tools Found: {searchTerm}</p>
-                </div>
-              )}
-              {/* Display filtered tools text if filters are applied */}
-              {selectedTags.length > 0 && visibleData.length > 0 && (
-                <div className={style.filteredToolText}>
-                  <p>Tools Found: {selectedTags.join(", ")}</p>
-                </div>
-              )}
-              {/* Display "No Tools Found" messages when search or filters applied but no results */}
-              {searchTerm.trim() && visibleData.length === 0 && (
-                <div className={style.filteredToolText}>
-                  <p>No Tools Found: {searchTerm}</p>
-                </div>
-              )}
-              {selectedTags.length > 0 && visibleData.length === 0 && (
-                <div className={style.searchedToolText}>
-                  <p>No Tools Found: {selectedTags.join(", ")}</p>
-                </div>
-              )}
+              {/* {((searchTerm.trim() && visibleData.length > 0) || (selectedTags.length > 0 && visibleData.length)) && ( */}
+              <div style={{ display: "flex", gap: "12px", marginBottom: "3px", width: "100%", overflow: "hidden" }}>
+                {/* Display searched tool text if searchTerm exists and results are found */}
+                {searchTerm.trim() && visibleData.length > 0 && (
+                  <div className={style.searchedToolText}>
+                    <p>
+                      Search term:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={searchTerm}>
+                        {searchTerm}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                {/* Display filtered tools text if filters are applied */}
+                {selectedTags.length > 0 && visibleData.length > 0 && (
+                  <div className={style.filteredToolText}>
+                    <p>
+                      Selected tags:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={selectedTags.join(", ")}>
+                        {selectedTags.join(", ")}
+                      </span>
+                    </p>
+                  </div>
+                )}
+              </div>
+              {/* )} */}
               {/* Display total count summary */}
               {visibleData.length > 0 && (
                 <div className={style.summaryLine}>
@@ -396,12 +421,33 @@ const AvailableTools = () => {
                         setIsAddTool={setIsAddTool}
                         isAddTool={isAddTool}
                         key={`tools-card-${index}`}
-                        style={style}
                         setEditTool={setEditTool}
                         loading={loading}
                         fetchPaginatedTools={fetchPaginatedTools}
                       />
                     ))}
+                  </div>
+                )}
+                {/* Display "No Tools Found" messages when search or filters applied but no results */}
+                {searchTerm.trim() && visibleData.length < 1 && (
+                  <div className={style.filteredToolText}>
+                    <p>
+                      No tools found for:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={searchTerm}>
+                        {searchTerm}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                {selectedTags.length > 0 && visibleData.length < 1 && (
+                  <div className={style.searchedToolText}>
+                    <p>
+                      No tools found for:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={selectedTags.join(", ")}>
+                        {selectedTags.join(", ")}
+                      </span>
+                    </p>
                   </div>
                 )}
               </div>

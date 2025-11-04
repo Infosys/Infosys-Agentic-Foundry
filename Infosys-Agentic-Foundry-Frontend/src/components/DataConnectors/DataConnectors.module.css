@@ -5,6 +5,8 @@
   margin: 0 auto;
   min-height: 100vh;
   /* background-color: #f8f9fa; */
+  overflow-y: auto;
+  height: 100vh;
 }
 
 .header {

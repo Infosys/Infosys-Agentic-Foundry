@@ -10,6 +10,7 @@ export const USER = "user";
 //   { label: "Custom Template", value: "custom_template" }
 
 export const agentTypesDropdown = [
+  { label: "Hybrid Agent", value: "hybrid_agent" },
   { label: "Meta", value: "meta_agent" },
   { label: "Meta Planner ", value: "planner_meta_agent" },
   { label: "Planner Executor", value: "planner_executor_agent" },
@@ -25,6 +26,7 @@ export const PLANNER_META_AGENT = "planner_meta_agent";
 export const CUSTOM_TEMPLATE = "custom_template";
 export const REACT_CRITIC_AGENT = "react_critic_agent";
 export const PLANNER_EXECUTOR_AGENT = "planner_executor_agent";
+export const HYBRID_AGENT = "hybrid_agent";
 
 export const like = "like";
 export const regenerate = "regenerate";
@@ -45,6 +47,10 @@ export const APIs = {
   UPDATE_APPROVAL_RESPONSE: "/feedback-learning/update/approval-response",
   GET_RESPONSES_DATA: "/feedback-learning/get/responses-data/",
 
+  //Unused Items APIs
+  AGENTS_UNUSED: "/agents/unused/get",
+  TOOLS_UNUSED: "/tools/unused/get",
+
   //Default APIs
   // LOGIN: "/login",
   // LOGOUT:"/logout",
@@ -57,6 +63,7 @@ export const APIs = {
   REGISTER: "/auth/register",
   UPDATE_PASSWORD_ROLE: "/auth/update-password",
   GUEST_LOGIN: "/auth/guest-login",
+  REFRESH_TOKEN: "/auth/refresh-token",
 
   //Utility APIs
   GET_VERSION: "/utility/get/version",
@@ -82,6 +89,16 @@ export const APIs = {
   UPLOAD_AND_EVALUATE_JSON: "/evaluation/upload-and-evaluate-json",
   DOWNLOAD_RESULTS: "/evaluation/download-result",
   DOWNLOAD_TEMPLATE: "/evaluation/download-groundtruth-template",
+  DOWNLOAD_CONSISTENCY_TEMPLATE: "/download-consistency-template",
+  SCORE_AND_DOWNLOAD_BASE: "/evaluation/agent/",
+  CONSISTENCY_PREVIEW_RESPONSES: "/evaluation/consistency/preview-responses",
+  CONSISTENCY_RERUN_RESPONSES: "/evaluation/consistency/rerun-response",
+  CONSISTENCY_APPROVE_RESPONSES: "/evaluation/consistency/approve-responses",
+  CONSISTENCY_DELETE_AGENT: "/evaluation/delete-agent/",
+  CONSISTENCY_AVAILABLE_AGENTS: "/evaluation/available_agents/",
+  CONSISTENCY_GENERATE_UPDATE_PREVIEW: "/evaluation/generate-update-preview/",
+  ROBUSTNESS_PREVIEW_QUERIES: "/evaluation/robustness/preview-queries/",
+  ROBUSTNESS_APPROVE_EVALUATION: "/evaluation/approve-robustness-evaluation/",
 
   // Chat APIs
   CHAT_INFERENCE: "/chat/inference",
@@ -105,6 +122,7 @@ export const APIs = {
   RESTORE_TOOLS: "/tools/recycle-bin/restore/",
   DELETE_TOOLS_PERMANENTLY: "/tools/recycle-bin/permanent-delete/",
   EXECUTE_CODE: "/tools/execute",
+  INLINE_MCP_RUN: "/tools/inline-mcp/run",
 
   // Agents APIs
   ONBOARD_AGENTS: "/agents/onboard",

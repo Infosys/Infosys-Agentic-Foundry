@@ -427,3 +427,10 @@
   overflow: auto;
   max-height: 260px;
 }
+.controlGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 80px;
+  flex: 1;
+}

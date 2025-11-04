@@ -240,7 +240,7 @@ body {
   width: 100%;
   position: fixed;
   right: 0;
-  top: 50;
+  top: 43px;
   overflow-x: hidden;
   transition: 0.5s;
   z-index: 1203;
@@ -383,7 +383,7 @@ body {
 .uploadfilesection span {
   font: normal normal 400 14px/19px Segoe UI;
   letter-spacing: 0px;
-  color: #343741;
+  color: #34374194;
   text-transform: uppercase;
   text-align: center;
   margin-top: 12px;
@@ -712,4 +712,76 @@ align-items: center;
 .icon-container.success {
   background-color: #8eaa20;
   padding: 5px;
+}
+
+.fileUploadContainer {
+  width: 100%;
+  margin-bottom: 12px;
+}
+.groundTruthFileUploadContainer {
+  border: 2px dashed #d3d3d3;
+  border-radius: 12px;
+  background: #fafbfc;
+  padding: 32px 0 20px 0;
+  text-align: center;
+  position: relative;
+  min-height: 120px;
+  box-sizing: border-box;
+}
+.groundTruthUploadPrompt {
+  font-size: 22px;
+  color: #888;
+  font-weight: 500;
+  letter-spacing: 1px;
+  display: block;
+  margin-bottom: 8px;
+}
+.groundTruthSupportedExtensions {
+  font-size: 16px;
+  color: #b0b0b0;
+  margin-top: 8px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+.customFileUploadContainer {
+  width: 100%;
+  margin-bottom: 12px;
+  position: relative;
+}
+.customDragDrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.customFileUploadBox {
+  border: 2px dashed #cccccc;
+  border-radius: 8px;
+  background: #fff;
+  padding: 24px 0;
+  text-align: center;
+  position: relative;
+  min-height: 80px;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.customFileUploadBox:hover,
+.customFileUploadBox:focus-within {
+  border-color: #007cc3;
+}
+.customUploadPrompt {
+  font-size: 20px;
+  color: #6c757d;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  display: block;
+}
+.customSupportedExtensions {
+  font-size: 14px;
+  color: #888;
+  margin-top: 6px;
+  font-weight: 400;
+  line-height: 1.3;
 }

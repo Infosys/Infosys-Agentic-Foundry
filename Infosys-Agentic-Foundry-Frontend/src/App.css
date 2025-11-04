@@ -1,8 +1,6 @@
 body,
-body *{
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+body * {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
 }
 
 .App {
@@ -43,7 +41,6 @@ body *{
     transform: rotate(360deg);
   }
 }
-
 
 *::-webkit-scrollbar {
   width: 12px;
@@ -101,4 +98,3 @@ body *{
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
-

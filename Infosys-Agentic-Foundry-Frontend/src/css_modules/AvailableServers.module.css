@@ -9,9 +9,9 @@
 }
 
 .container {
-  height: 100vh;
+  height: Calc(100vh - 95px);
   max-height: 100vh;
-  overflow-y: auto;
+  overflow-y: hidden;
   box-sizing: border-box;
   padding: 18px 22px;
   padding-left: 0;
@@ -23,18 +23,46 @@
   display: flex;
   justify-content: space-between;
   margin-bottom: 12px;
+  position: absolute;
+  top: 10px;
+  right: 25px;
+  width: Calc(100vw - 318px);
+}
+
+.searchedToolText,
+.filteredToolText {
+  max-width: 48%;
+}
+
+.filterOrSearchText {
+  width: 98%;
+  overflow: hidden;
+  display: inline-block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .summaryLine {
   color: var(--muted);
   font-size: 13px;
-  margin: 10px 0 5px 1px;
+  margin: 8px 0 5px 1px;
 }
 
 .serverGrid {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px; /* Reduced gap for tighter card spacing */
+  gap: 16px;
+  height: Calc(100vh - 131px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  border: 1px solid transparent;
+  padding-bottom: 10px;
+  padding-right: 20px;
+}
+
+.tagOrSerachIsOnServer.serverGrid {
+  height: Calc(100vh - 182px);
 }
 
 .serverCard {
@@ -48,6 +76,11 @@
   flex-direction: column;
   position: relative; /* allow overlay */
   overflow: hidden; /* ensure overlay cannot spill outside the card */
+}
+
+.serverCardBtnWrapper button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.15);
 }
 
 .typeCorner {
@@ -292,19 +325,34 @@
   z-index: 1200;
 }
 .modal {
-  width: 730px;
+  width: 385px;
   max-width: calc(100% - 40px);
   background: #fff;
   padding: 18px;
   position: relative;
-  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.18); /* Left shadow for drawer effect */
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  border-left: 1px solid #e0e0e0; /* Add left border for definition */
-  top: 44px;
+  /* border-left: 1px solid #e0e0e0;  */
+  top: 43px;
   padding-bottom: 15px;
   margin-bottom: 45px;
+}
+/* Widened modal variant specifically for LOCAL server code preview */
+.modalWide {
+  width: 700px; /* requested width */
+}
+.modalWide .modalBody {
+  flex-direction: row; /* ensure side-by-side layout */
+}
+.modalWide .modalLeft,
+.modalWide .modalRight {
+  flex: 0 0 50%;
+  max-width: 50%;
+}
+.modalWide .modalRight {
+  width: auto; /* override fixed width for normal modalRight */
 }
 .closeBtn {
   position: absolute;
@@ -329,10 +377,12 @@
   font-size: 17px;
 }
 .modalLeft {
-  flex: 0 0 46%;
+  /* flex: 0 0 46%; intentionally left flexible; adding min-height:0 to appease linter */
+  min-height: 0;
 }
 .modalRight {
-  flex: 1 1 54%;
+  /* flex: 1 1 54%; */
+  width: 500px;
 }
 .modalTitle {
   margin: 6px 0 8px 0;

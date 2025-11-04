@@ -206,7 +206,7 @@ const ToolCard = (props) => {
               })()
             : undefined
         }
-        codeSnippet={tool?.code_snippet || (server && String(server?.type || "").toUpperCase() !== "REMOTE" ? getServerCodePreview(server) : undefined)}
+        codeSnippet={tool?.code_snippet || (server && String(server?.type || "").toUpperCase() === "LOCAL" ? getServerCodePreview(server) : undefined)}
         agenticApplicationWorkflowDescription={
           tool?.agentic_application_workflow_description ||
           server?.workflow_description ||

@@ -25,7 +25,7 @@ const AgentForm = (props) => {
     email_id: loggedInUserEmail,
     agent_goal: "",
     workflow_description: "",
-    model_name: "gpt4-8k",
+    model_name: "", // Empty by default, forces user to select
     agent_type: selectedAgent,
   };
   const [formData, setFormData] = useState(initialState);
@@ -64,6 +64,7 @@ const AgentForm = (props) => {
 
   const onSubmit = (e) => {
     e.preventDefault();
+
     safeSubmitForm(
       {
         ...formData,
@@ -138,7 +139,7 @@ const AgentForm = (props) => {
   const resetSelectedCards = () => {
     const selectedCards = document?.querySelectorAll("[data-isclicked=true]");
     if (selectedCards?.length > 0) {
-      for (let card of selectedCards) {
+      for (const card of selectedCards) {
         card?.setAttribute("data-isclicked", false);
         const button = card?.querySelector("[data-selected=true]");
         button?.setAttribute("data-selected", false);
@@ -341,6 +342,8 @@ const AgentForm = (props) => {
             name="model_name"
             value={formData.model_name}
             onChange={handleChange}
+            placeholder={"Select Model"}
+            className={styles["select-class"]}
             required
           />
         </div>
@@ -358,7 +361,7 @@ const AgentForm = (props) => {
         <div className={styles.closeAndAddBtn}>
           <input type="submit" value="ADD AGENT" className={styles.submitBtn} disabled={isFormDisabled} />
           <button className={styles.closeBtn} disabled={isFormDisabled} onClick={safeHandleClose}>
-            Close
+            CANCEL
           </button>
         </div>
       </form>

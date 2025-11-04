@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.5.0]
+
+### Features
+- Refresh token implemented for logged in user.
+- Execution of code made as common for tools and servers page.
+- Chat screen:
+  - Prompt library updates on every query submit.
+  - Temperature slider for models.
+  - Canvas ui improvised with table, json, image updates.
+  - Canvas now supports Email and use-case specific card components.
+- Evaluation screen:
+  - Consistency robustness screen introduced.
+  - UI revamped with three column layout.
+  - Updated columns for efficiency screen.
+  - Implemented live data update with server sent events in LLM as Judge and Ground truth screens.
+- Admin screen:
+  - Unused screen , added newly to list tools , agents, 
+- Export agent functionality requires environmental variable configurations.
+- Ground truth added auto reset when ever user modifies a form.
+- Online evaluation added in chat screen for each system response.
+- New agent template "Hybrid Agent" introduced..
+- Improvised and made consistent look and feel for tools, server, agents listing pages.
+- Error handler introduced to track the error and to reduce the blackscreen to users.
+- File upload feature in tools onboarding.
+- Vault screen ui updated.
+- UI codebase ".env" file removed and replaced with ".env-example".
+- LLM as judge made to appear based on role.
+
+### Fixes
+- Code preview plugin changed.
+- Admin screen design issues sorted.
+- Made  primary and secondary buttons to have similar looks and feel.
+- Popups and overlays layer corrected.
+- Removed Guest user login.
+- 404 Error popup suppressed.
+- Filter and tag related fixes done on list of tools, server, agents and onboarding/updating agent.
+- Chat history modified to fetch respective sessionId to continue with respective conversation.
+- Update agent screen on update tool. 
+
+
 ## [1.4.2]
 
 ### Fix

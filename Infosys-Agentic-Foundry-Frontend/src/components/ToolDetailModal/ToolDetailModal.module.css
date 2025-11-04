@@ -104,11 +104,9 @@
 }
 
 .codeEditorContainer {
-  margin-top: 12px;
   margin-bottom: 12px;
   border-radius: 5px;
   overflow: hidden;
-  /* Monaco handles its own background and font */
 }
 
 .closeBtnContainer {

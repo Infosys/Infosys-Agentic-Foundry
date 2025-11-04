@@ -18,14 +18,14 @@
   text-transform: uppercase;
 }
 
-.brand img{
+.brand img {
   width: 42%;
   padding: 5px 0 0px 5px;
   margin-left: 4px;
   margin-top: 4px;
 }
-.version_number{
-  font-size:10px;
+.version_number {
+  font-size: 10px;
   color: #bbb;
   position: relative;
   top: -2px;
@@ -79,13 +79,11 @@
   position: relative;
   width: 22px;
   height: 23px;
-  border-radius: 50%;
   background-color: white;
   display: flex;
   justify-content: center;
   align-items: center;
   color: #333;
-  border: 1px solid black;
 }
 
 .faq_icon {
@@ -102,12 +100,25 @@
 
 .dropdown {
   position: absolute;
+  display: none;
   top: 100%;
   background-color: white;
   border: 1px solid #ccc;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   z-index: 1000;
   width: 90px;
+}
+
+.profile_icon:hover .dropdown {
+  display: block;
+}
+
+.profile_icon svg {
+  border-radius: 50%;
+  border: 1px solid black;
+  height: 20px;
+  width: 20px;
+  padding: 3px 2px;
 }
 
 .dropdown_item {

@@ -8,6 +8,7 @@ import { useToolsAgentsService } from "../../services/toolService";
 import AddServer from "../AgentOnboard/AddServer.jsx";
 import Cookies from "js-cookie";
 import { useMcpServerService } from "../../services/serverService";
+import CodeEditor from "../commonComponents/CodeEditor.jsx";
 
 const ToolDetailModal = ({
   isOpen,
@@ -82,8 +83,7 @@ const ToolDetailModal = ({
               className={styles.closeBtn}
               style={{ position: "static", fontSize: 24, background: "#fff", border: "none", color: "#3D4359", cursor: "pointer", marginLeft: "auto" }}
               aria-label="Close tool details modal"
-              onClick={onClose}
-            >
+              onClick={onClose}>
               ×
             </button>
           </div>
@@ -91,9 +91,9 @@ const ToolDetailModal = ({
             className={useToolCardDescriptionStyle ? `${styles.modalBody} ${styles.toolCardDescription}` : `${styles.modalBody} ${styles.description} ${styles.descriptionFont}`}>
             <textarea
               value={description}
-              onChange={(e) => {
-                if (typeof setShowForm === "function") setShowForm((prev) => ({ ...prev, description: e.target.value }));
-              }}
+              // onChange={(e) => {
+              //   if (typeof setShowForm === "function") setShowForm((prev) => ({ ...prev, description: e.target.value }));
+              // }}
               className={`${styles.descriptionFont} ${styles.descriptionTextarea}`}
             />
           </div>
@@ -104,40 +104,62 @@ const ToolDetailModal = ({
           )}
           {endpoint && (
             <div className={`${styles.modalBody} ${styles.description} ${styles.descriptionFont}`}>
-              <textarea
+              {/* <textarea
                 value={endpoint}
                 readOnly={true}
                 className={`${styles.descriptionFont} ${styles.descriptionTextarea}`}
-                style={{ backgroundColor: '#f5f5f5', cursor: 'default' }}
-              />
+                style={{ backgroundColor: "#f5f5f5", cursor: "default" }}
+              /> */}
+              <a href="{endpoint}" target="_blank" rel="noopener noreferrer">
+                {endpoint}
+              </a>
             </div>
           )}
-          {codeSnippet && (
+          {codeSnippet && tool?.mcp_type === "module" && (
+            <>
+              <div className={styles.modalHeader}>
+                <h2>Module</h2>
+              </div>
+              <div className={`${styles.modalBody} ${styles.description} ${styles.descriptionFont}`}>
+                <textarea
+                  value={codeSnippet}
+                  readOnly={true}
+                  className={`${styles.descriptionFont} ${styles.descriptionTextarea}`}
+                  style={{ backgroundColor: "#f5f5f5", cursor: "default" }}
+                />
+              </div>
+            </>
+          )}
+          {((codeSnippet && tool?.mcp_type === "file") || (codeSnippet && !tool.tool_id.includes("mcp_"))) && (
             <div className={styles.modalHeader}>
               <h2>Code Snippet</h2>
             </div>
           )}
-          {codeSnippet && (
+          {((codeSnippet && tool?.mcp_type === "file") || (codeSnippet && !tool.tool_id.includes("mcp_"))) && (
             <div className={`${styles.modalBody} ${styles.codeSnippet}`}>
               <div className={styles.codeEditorContainer}>
-                <textarea
-                  className={styles.codeTextarea}
+                <CodeEditor
+                  mode="python"
+                  theme="monokai"
+                  isDarkTheme={true}
                   value={codeSnippet}
-                  readOnly
-                  rows={12}
+                  width="100%"
+                  height="300px"
+                  fontSize={14}
+                  readOnly={true}
+                  setOptions={{
+                    enableBasicAutocompletion: false,
+                    enableLiveAutocompletion: false,
+                    enableSnippets: false,
+                    showLineNumbers: true,
+                    tabSize: 4,
+                    useWorker: false,
+                    wrap: false,
+                  }}
                   style={{
-                    width: "100%",
-                    resize: "vertical",
                     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-                    fontSize: "14px",
-                    lineHeight: "1.4",
-                    padding: "12px",
                     border: "1px solid #e0e0e0",
                     borderRadius: "8px",
-                    backgroundColor: "#1e1e1e",
-                    color: "#ffffff",
-                    outline: "none",
-                    boxSizing: "border-box"
                   }}
                 />
               </div>

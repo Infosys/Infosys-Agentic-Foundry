@@ -11,6 +11,7 @@ import styles from "./AdminScreen.module.css";
 // import EvaluationScore from "../AdminScreen/EvaluationScore.js";
 import UpdatePassword from "./UpdatePassword.jsx";
 import RecycleBin from "./RecycleBin.jsx";
+import Unused from "./Unused.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 
 const AdminScreen = () => {
@@ -154,29 +155,6 @@ const AdminScreen = () => {
         <button className={`iafTabsBtn ${activeTab === "learning" ? " active" : ""}`} onClick={() => setActiveTab("learning")}>
           Learning
         </button>
-        {/* Commented out - moved to separate Evaluation page
-        <button 
-          className={activeTab === "metrics" ? styles.activeTab : styles.tab} 
-          onClick={() => {
-            // window.history.replaceState(null, '', '/admin-evaluator');
-            setActiveTab("metrics");
-            setResponseDetail(null);
-            setSelectedAgentId(null);
-          }}
-        >
-          Metrics
-        </button>
-        <button 
-          className={activeTab === "evaluation" ? styles.activeTab : styles.tab} 
-          onClick={() => {
-            setActiveTab("evaluation");
-            setResponseDetail(null);
-            setSelectedAgentId(null);
-          }}
-        >
-          Evaluations
-        </button>
-        */}
         <button
           className={`iafTabsBtn ${activeTab === "Recycle Bin" ? " active" : ""}`}
           onClick={() => {
@@ -185,6 +163,15 @@ const AdminScreen = () => {
             setSelectedAgentId(null);
           }}>
           RecycleBin
+        </button>
+        <button
+          className={`iafTabsBtn ${activeTab === "unused" ? " active" : ""}`}
+          onClick={() => {
+            setActiveTab("unused");
+            setResponseDetail(null);
+            setSelectedAgentId(null);
+          }}>
+          Unused
         </button>
       </div>
       {/* Tab Content */}
@@ -209,7 +196,7 @@ const AdminScreen = () => {
               </div>
             )}
             {activeUserSubTab === "update" && (
-              <div className={styles.evaluateMetrics}>
+              <div className={styles.updatePassword}>
                 <UpdatePassword />
               </div>
             )}
@@ -253,23 +240,14 @@ const AdminScreen = () => {
             )}
           </div>
         )}
-        {/* Commented out - moved to separate Evaluation page
-        {/* Metrics Tab */}
-        {/* {activeTab === "metrics" && (
-          <div className={styles.evaluateMetrics}>
-            <AgentsEvaluator />
-          </div>
-        )} */}
-        {/* Evaluations Tab */}
-        {/* {activeTab === "evaluation" && (
-          <div className={styles.evaluateMetrics}>
-            <EvaluationScore />
-          </div>
-        )} */}
-        {/* End of commented evaluation sections */}
         {activeTab === "Recycle Bin" && (
           <div className={styles.adminRecycleBin}>
             <RecycleBin />
+          </div>
+        )}
+        {activeTab === "unused" && (
+          <div className={styles.adminUnused}>
+            <Unused />
           </div>
         )}
       </div>

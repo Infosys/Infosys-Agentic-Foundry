@@ -28,7 +28,6 @@ const AddToolsFilterModal = ({ show, onClose, tags, handleFilter, selectedTags }
 
   const clearFilter = () => {
     setTempSelectedTags([]);
-    handleFilter([]);
   };
 
   const handleClose = () => {
@@ -63,7 +62,7 @@ const AddToolsFilterModal = ({ show, onClose, tags, handleFilter, selectedTags }
             className={styles.applyButton}
             disabled={!hasChanges()}
         >
-          Update
+          Modify
         </button>
         <button onClick={clearFilter} className={styles.clearButton}>
           Clear All

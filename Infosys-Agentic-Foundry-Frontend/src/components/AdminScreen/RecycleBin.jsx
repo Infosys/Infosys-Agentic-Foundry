@@ -27,7 +27,7 @@ const RecycleBin = ({ loggedInUserEmail }) => {
   const [isAddTool, setIsAddTool] = useState(true);
   const [editTool, setEditTool] = useState({});
   const [restoreData, setRestoreData] = useState();
-  const { addMessage, setShowPopup } = useMessage();
+  const { addMessage } = useMessage();
   const [loader, setLoader] = useState(false);
   const onAgentEdit = (data) => {
     setEditAgentData(data);
@@ -41,7 +41,7 @@ const RecycleBin = ({ loggedInUserEmail }) => {
     if (selectedType === "agents") {
       url = `${APIs.RESTORE_AGENTS}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
     }
-    let response = await postData(url);
+    const response = await postData(url);
     if (response?.is_restored) {
       setLoader(false);
       addMessage(response?.status_message, "success");
@@ -61,7 +61,7 @@ const RecycleBin = ({ loggedInUserEmail }) => {
     } else if (selectedType === "tools") {
       url = `${APIs.DELETE_TOOLS_PERMANENTLY}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
     }
-    let response = await deleteData(url);
+    const response = await deleteData(url);
     if (response?.is_delete) {
       setLoader(false);
       addMessage(response.status_message, "success");
@@ -195,7 +195,7 @@ const RecycleBin = ({ loggedInUserEmail }) => {
                         <ToolsCard
                           tool={item}
                           setShowForm={(show) => {
-                            if (show) setLastTab("tools"); 
+                            if (show) setLastTab("tools");
                             if (!show) setActiveTab(lastTab);
                             setShowForm(show);
                           }}

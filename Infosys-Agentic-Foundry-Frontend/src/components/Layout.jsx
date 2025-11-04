@@ -8,12 +8,11 @@ import { useLocation } from "react-router-dom";
 const Layout = (props) => {
   const { children } = props;
   const { pathname } = useLocation();
-  
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
 
-  
   return (
     <div className={styles.mainContainer}>
       <div className={styles.header}>

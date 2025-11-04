@@ -1,10 +1,14 @@
+.container {
+  padding: 24px;
+}
+
 .groundTruthWrapper {
   width: 100%;
-  min-height: 100vh;
+  max-height: 100vh;
   padding: 20px;
   box-sizing: border-box;
   overflow-y: auto;
-  background: #f8f9fa;
+  /* background: #f8f9fa; */
 }
 
 .groundTruthWrapperNoBackground {
@@ -17,10 +21,9 @@
 }
 
 .groundTruthContainer {
-  max-width: 800px;
+  /* max-width: 800px; */
   margin: 0 auto;
-  /* padding: 20px; */
-  background: #ffffff;
+  padding: 20px;
   border-radius: 8px;
   /* box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); */
   overflow: visible;
@@ -43,18 +46,20 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 8px;
+  width: 100%;
 }
 
 .formGroup {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
 }
 
 .formRow {
   display: flex;
-  gap: 20px;
+  gap: 8px;
   align-items: flex-start;
 }
 
@@ -67,7 +72,6 @@
   font-size: 14px;
   font-weight: 500;
   color: #555;
-  margin-bottom: 4px;
 }
 
 .instructionText {
@@ -130,7 +134,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 0;
+  padding-block: 5px;
 }
 
 .checkbox {
@@ -152,7 +156,7 @@
   justify-content: flex-start;
 }
 
-.submitButton {
+/* .submitButton {
   background: #007bff;
   color: #fff;
   border: none;
@@ -162,6 +166,17 @@
   cursor: pointer;
   transition: background 0.2s;
   margin-right: 16px;
+} */
+
+.submitButton {
+  font-size: 14px;
+  background: #007cc3 0% 0% no-repeat padding-box;
+  opacity: 1;
+  color: white;
+  margin-right: 22px;
+  border-radius: 4px;
+  padding: 8px;
+  border: none;
 }
 
 .submitButton:disabled {
@@ -179,8 +194,9 @@
 .labelWithInfo {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 3px;
+  margin-bottom: 2px;
+  flex-direction: column;
 }
 
 .fileUploadContainer {
@@ -235,7 +251,6 @@
 
 .fileInfo {
   padding: 10px;
-  height: 20%;
   border: 1px solid #007cc3;
   background: #ffffff 0% 0% no-repeat padding-box;
   border-radius: 50px;
@@ -254,23 +269,11 @@
 }
 
 .evaluationResults {
-  margin-top: 30px;
-  padding: 20px;
-  background-color: #f8f9fa;
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  overflow: visible; /* Changed from having separate overflow settings */
-  max-width: 100%;
-  word-break: break-word;
+  padding: 10px;
 }
 
 .diagnosticSummary {
   margin-bottom: 20px;
-  padding: 15px;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 .diagnosticSummary h4 {
@@ -290,10 +293,7 @@
 }
 
 .averageScores {
-  padding: 15px;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  margin-bottom: 0;
 }
 
 .averageScores h4 {
@@ -306,7 +306,7 @@
 .scoresGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 15px;
+  gap: 0;
   max-width: 100%;
   overflow: hidden;
 }
@@ -329,20 +329,19 @@
   margin-bottom: 5px;
 }
 
-.form, 
+/* .form,
 .formGroup,
 .evaluationResults,
 .diagnosticSummary,
-.averageScores{
+.averageScores {
   max-width: 100%;
   word-wrap: break-word;
   overflow-wrap: break-word;
-}
+} */
 
- pre {
+pre {
   max-width: 100%;
   overflow-wrap: break-word;
-  white-space: normal;
   display: block;
 }
 
@@ -368,8 +367,8 @@
 
 .searchInput {
   width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e1e5e9;
+  padding: 6px 12px;
+  border: 1px solid #e1e5e9;
   border-radius: 6px;
   font-size: 14px;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
@@ -377,11 +376,11 @@
   box-sizing: border-box;
 }
 
-.searchInput:focus {
+/* .searchInput:focus {
   outline: none;
   border-color: #007bff;
   box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-}
+} */
 
 .searchInput:disabled {
   background-color: #f8f9fa;
@@ -410,7 +409,7 @@
 }
 
 .dropdownItem {
-  padding: 12px 16px;
+  padding: 8px 16px;
   cursor: pointer;
   transition: background-color 0.2s ease;
   font-size: 14px;
@@ -463,11 +462,11 @@
   .groundTruthWrapper {
     padding: 15px;
   }
-  
+
   .groundTruthContainer {
     margin-bottom: 30px;
   }
-  
+
   .labelWithInfo {
     gap: 6px;
   }
@@ -477,12 +476,12 @@
   .groundTruthWrapper {
     padding: 10px;
   }
-  
+
   .groundTruthContainer {
     margin-bottom: 20px;
     padding: 15px;
   }
-  
+
   .labelWithInfo {
     gap: 4px;
   }
@@ -492,7 +491,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 10px;
+  gap: 4px;
 }
 
 .templateDownloadContainer {
@@ -501,7 +500,7 @@
 
 .templateDownloadLink {
   color: #007acc !important;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   text-decoration: none;
   cursor: pointer;
@@ -513,4 +512,16 @@
 .templateDownloadLink:hover {
   text-decoration: underline;
   color: #005a9e !important;
+}
+.queriesScrollArea {
+  max-height: 160px;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: 12px 0 12px 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fafbfc;
+  border-radius: 10px;
+  border: 1.5px solid #eee;
 }
