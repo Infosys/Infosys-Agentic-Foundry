@@ -87,6 +87,51 @@ class AuthorizationService:
             log.error(f"Get user permissions error: {e}")
             return []
     
+    async def check_operation_permission(self, user_email: str, user_role: UserRole, operation: str, resource_type: str) -> bool:
+        """Centralized function to check if user has permission for CRUD and execute operations
+        
+        Args:
+            user_email: Email of the user
+            user_role: Role of the user (from user_data.role)
+            operation: 'create', 'read', 'update', 'delete', or 'execute'
+            resource_type: 'tools' or 'agents'
+            
+        Returns:
+            bool: True if user has permission, False otherwise
+        """
+        try:
+            # Map operation and resource to permission
+            permission_map = {
+                ('create', 'tools'): Permission.CREATE_TOOLS,
+                ('update', 'tools'): Permission.UPDATE_TOOLS,
+                ('delete', 'tools'): Permission.DELETE_TOOLS,
+                ('read', 'tools'):   Permission.READ_TOOLS,
+                ('execute', 'tools'): Permission.EXECUTE_TOOLS,
+                ('create', 'agents'): Permission.CREATE_AGENTS,
+                ('update', 'agents'): Permission.UPDATE_AGENTS,
+                ('delete', 'agents'): Permission.DELETE_AGENTS,
+                ('read', 'agents'):   Permission.READ_AGENTS,
+                ('execute', 'agents'): Permission.EXECUTE_AGENTS,
+            }
+            
+            required_permission = permission_map.get((operation.lower(), resource_type.lower()))
+            if not required_permission:
+                log.warning(f"Invalid operation '{operation}' or resource_type '{resource_type}'")
+                return False
+            
+            # Check if user role has the required permission
+            user_permissions = ROLE_PERMISSIONS.get(user_role, [])
+            has_permission = required_permission in user_permissions
+            
+            if not has_permission:
+                log.warning(f"User {user_email} with role {user_role.value} attempted {operation} on {resource_type} without permission")
+            
+            return has_permission
+            
+        except Exception as e:
+            log.error(f"Permission check error for {user_email}: {e}")
+            return False
+    
     async def grant_approval_permission(self, request: GrantApprovalPermissionRequest, 
                                       granted_by_user_email: str, ip_address: str = None, 
                                       user_agent: str = None) -> ApprovalPermissionResponse:

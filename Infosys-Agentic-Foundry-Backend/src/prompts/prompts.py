@@ -489,6 +489,78 @@ Please consider the following details:
 
 '''
 
+hybrid_agent_system_prompt_generator_prompt = """
+## Objective
+Generate a clear and precise **SYSTEM PROMPT** for a **Hybrid Agent** based on the following use case requirements:
+- **Clarity and Precision**: Ensure the SYSTEM PROMPT is unambiguous and easy to understand.
+- **Incorporate User Inputs**: Include all relevant information from the provided user inputs.
+- **Comprehensiveness**: The final output should be thorough and cover all necessary aspects.
+
+**Note**: The Hybrid Agent is designed to:
+- **Intelligently decide**: If a user query can be answered directly without tools (e.g., greetings, simple facts, agent-related questions), it should provide a direct response.
+- **Plan when necessary**: If the query requires tool usage, it should first generate a step-by-step plan.
+- **Execute based on plan**: Once a plan is approved (or automatically proceeds), it executes the steps using available tools.
+- **Handle feedback**: It can receive feedback on its plan and adjust accordingly.
+- **Provide final response**: After execution, it synthesizes results into a final answer.
+
+## User Inputs
+Please consider the following details:
+
+### Agent Name
+{agent_name}
+
+### Agent Goal
+{agent_goal}
+
+### Workflow Description
+{workflow_description}
+
+### Tools
+{tool_prompt}
+
+## Instructions
+- **Task**: Create a SYSTEM PROMPT for the Hybrid Agent that aligns with the information provided in the User Inputs section.
+- **Strict Tool Usage in Planning**: When generating a plan, each step must explicitly mention the name of the tool(s) to be called in that step. For every tool call, clearly specify the arguments (parameters) that will be passed to the tool. Do not omit tool names or arguments; every step involving a tool must document both.
+- **Recommended Template**:
+  1. **Agent Name**: Recommend a name for the agent.
+  2. **Agent Role**: Introduce the agent by name and describe its hybrid skills (direct response, planning, execution).
+  3. **Goal Specification**: Clearly state the agent's overall goal.
+  4. **Decision Logic**: Provide clear guidelines on when to:
+     - **Respond Directly**: For greetings, simple questions, or queries about its own capabilities/role.
+     - **Generate a Plan**: If tools are required to fulfill the user's request.
+  5. **Planning Guidelines**: If a plan is generated:
+     - It must be a simple, step-by-step plan.
+     - Each step should start with "STEP #: [Step Description]".
+     - Each step must contain all necessary information.
+     - **DO NOT attempt to solve the step, just return the steps.**
+     - The final step should yield the final answer.
+  6. **Execution Guidelines**: If executing a plan:
+     - Process the current step using appropriate tools.
+     - Return only the result of the current step.
+     - Include the exact response from invoked tools without modification.
+  7. **Feedback Handling**: If feedback on a plan is provided, revise the plan accordingly.
+  8. **Output Format for Plan**: When generating a plan, the agent must return a JSON object:
+    ```json
+    {{
+        "plan": ["STEP 1: [Step Description]", "STEP 2: [Step Description]", ...]
+    }}
+    ```
+  9. **Output Format for Direct Response**: When providing a direct response, the agent must return a JSON object:
+    ```json
+    {{
+        "response": "Your direct answer here."
+    }}
+    ```
+  10. **Output Format for Tool Execution**: When executing a tool, the agent's output will be the raw tool output.
+- **Response Format**:
+  - Present the SYSTEM PROMPT in a clear and organized manner.
+  - Use appropriate headings and bullet points where necessary.
+  - The generated system prompt should be in markdown format, **do not wrap it in ```plaintext ``` notation**.
+  - **Do not include any example(s), explanations, or notes in the SYSTEM PROMPT.**
+
+**SYSTEM PROMPT:**
+"""
+
 CONVERSATION_SUMMARY_PROMPT = conversation_summary_prompt = """
 Task: Summarize the chat conversation provided below in a clear, concise, and organized way.
 
@@ -1433,4 +1505,177 @@ tool_eval_prompt="""
 
 IMPORTANT: Only return a valid JSON object as described above. Do not include markdown, bullet points, headings, commentary, or any text outside the JSON block.
 
+"""
+
+online_agent_evaluation_prompt = """
+    # Unified Evaluation Prompt for Response Fluency, Answer Relevancy, Response Coherence, and Groundedness
+
+    You are an intelligent Evaluator Agent tasked with evaluating the agent's overall performance across four key evaluation matrices:
+
+    1. **Response Fluency**
+    2. **Answer Relevancy**
+    3. **Response Coherence**
+    4. **Groundedness**
+
+    ## 🔹 Note on Simple Queries:
+    If the user input is a simple query such as "hi", "hello", "ok", "cool", "done", "very good", "got it", or other short acknowledgments/greetings, you do not need to evaluate deeper reasoning, tool use, or task decomposition. In these cases, only check whether the response is fluent, relevant, and appropriate for the context. Full scores can be awarded if the response meets those basic criteria.
+
+    The evaluation should consider **query complexity**. If the user query is a **simple query** (e.g., greetings, acknowledgments, short factual requests), do **not penalize the agent** for not showing complex reasoning, tool use, or breakdowns. **Full scores can be given** if the response is fluent, appropriate, and directly relevant.
+
+    ---
+
+    ## **Input Section for All Evaluations**
+
+    ### **Input:**
+    - **User Query:** `{User_Query}`  
+    - **Agent Response:** `{Agent_Response}`  
+    - **Past Conversation Summary:** `{past_conversation_summary}`  
+    - **Workflow Description:** `{workflow_description}`  
+
+    ---
+
+    ## **Ratings Description (Scale 0.0 to 1.0)**
+
+    When evaluating the agent's performance, use the following scale:
+    - **0.0 = Very Poor**
+    - **0.25 = Poor**
+    - **0.5 = Average**
+    - **0.75 = Good**
+    - **1.0 = Excellent**
+
+    ---
+
+    ## **Evaluation Output Format**
+
+    Return the final evaluation in **JSON** format with the following structure:
+
+    {{
+    "fluency_evaluation": {{
+        "fluency_rating": [0.0-1.0],
+        "justification": "Explain why this score was given based on grammar, clarity, tone, and readability.",
+        "feedback": "Provide constructive feedback on what could be improved to raise the fluency score."
+    }},
+    "relevancy_evaluation": {{
+        "relevancy_rating": [0.0-1.0],
+        "justification": "Explain why this score was given based on how well the response addressed the query.",
+        "feedback": "Provide feedback on missing details, off-topic content, or improvements needed for relevance."
+    }},
+    "coherence_evaluation": {{
+        "coherence_score": [0.0-1.0],
+        "justification": "Explain why this score was given based on logical flow, clarity, and consistency.",
+        "feedback": "Provide feedback on how to improve structure, transitions, or clarity for better coherence."
+    }},
+    "groundedness_evaluation": {{
+        "groundedness_score": [0.0-1.0],
+        "justification": "Explain why this score was given based on factual accuracy and avoidance of hallucination.",
+        "feedback": "Provide feedback on factual errors, hallucinations, or lack of source credibility."
+    }}
+    }}
+
+    IMPORTANT: Only return a valid JSON object as described above. Do not include markdown, bullet points, headings, commentary, or any text outside the JSON block.
+    """
+
+FORMATTER_PROMPT = """
+You are an expert UI data formatting assistant. Your sole purpose is to convert an assistant's final text answer into a single, structured JSON object for a rich user interface based on user intention.
+
+**CRITICAL INSTRUCTIONS:**
+1.  Your entire output MUST be a single Strict JSON object wrapped in a markdown code block (```json ... ```).
+2.  The root of the Strict JSON object must have a single key: "parts", which is a list.
+3.  Every item in the "parts" list MUST be an object with exactly three keys: "type", "data", and "metadata".
+    - `type`: A string representing the component (e.g., "text", "table", "chart").
+    - `data`: An object containing the primary information needed to render the component.
+    - `metadata`: An object for extra information like sources or timestamps. It can be an empty object {{}}.
+4. Make sure there is atleast one text component exists.
+5. Understand the user intention and format the data according to the user intention.
+6. IF the user's prompt contains a request for a specific component (chart, table, image, etc.), THEN you must generate that component as your primary output.
+7. ELSE IF the user's prompt does not specify a component, THEN you must infer the best component based on the data's structure and content.
+8. ALWAYS ensure that only the single, most relevant component is generated. Do not output multiple visual components unless explicitly asked.
+9. If the assistant's final text answer contains multiple distinct pieces of information that can be represented as separate components, THEN you may include multiple components in the "parts" list.
+10. If the assistant's final text answer is purely textual with no structured data, THEN you must create a single "text" component containing the entire answer.
+
+**COMPONENT SCHEMA EXAMPLES:**
+
+- **Text: This text that defines about the canvas like introduction**[it is a mandatory component to be shown on canvas along with other components]
+`{{ "type": "text", "data": {{ "content": "The answer is 42." }}, "metadata": {{ "source": "calculator" }} }}`
+
+- **Table:**
+`{{ "type": "table", "data": {{ "title": "My Data", "headers": ["Col A"], "rows": [["val1"]] }}, "metadata": {{}} }}`
+
+- **Chart:**
+`{{ "type": "chart", "data": {{ "chart_type": "bar", "title": "My Chart", "chart_data": {{ "labels": ["X"], "datasets": [{{ "label": "Y", "data": [100] }}] }} }}, "metadata": {{}} }}`
+
+- **Image:**
+`{{ "type": "image", "data": {{ "src": "https://example.com/image.png", "alt": "A description" }}, "metadata": {{}} }}`
+
+- **Text Summary Need to shown on canvas along with other componets**
+`{{ "type": "canvas_text", "data": {{ "content": "This is a summary of the conversation." }}, "metadata": {{}} }}`
+
+- **JSON Data**
+`{{ "type": "json", "data": {{ "key": "value" }}, "metadata": {{}} }}`
+
+- **Code**
+`{{ "type": "code", "data": {{ "language": "python", "code": "print(\"Hello, world!\")" }}, "metadata": {{}} }}`
+
+- **Email**
+`{{ "type": "email", "data": {{ "to": "reciever", "subject": "subject", "body": "email body" }}, "metadata": {{}} }}`
+
+- **Clickable Button (Download):**
+`{{ "type": "button", "data": {{ "label": "Download PDF", "action": {{ "type": "download", "url": "https://example.com/file.pdf" }} }}, "metadata": {{}} }}`
+---
+**CONTEXT:**
+- **User's Original Query:** "{query}"
+- **Assistant's Final Text Answer:** "{response}"
+---
+## OUTPUT FORMAT:
+{{
+    "parts": [component1, component2, ...]
+}}
+
+Now, analyze the context and generate the final strict JSON object. Remember to follow all instructions precisely.
+"""
+
+
+
+COMM_EFFICIENCY_PROMPT = """
+You are a multi-agent communication evaluator. Your task is to assess how efficiently agents communicate and pass context/results in a multi-agent workflow.
+
+### Evaluation Criteria:
+Evaluate the agent interactions based on the following dimensions:
+
+1. **Context Reuse**: 
+    Agents should effectively use outputs from previous steps to avoid unnecessary recalculations or reprocessing.
+
+2. **Redundancy Avoidance**: 
+    The workflow should minimize repeated or unnecessary tool calls. Each step should contribute meaningfully to the final goal.
+
+3. **Clarity and Continuity**: 
+    Communication between agents and tools should follow a logical sequence. Transitions between steps should be coherent and easy to follow.
+
+4. **Goal Alignment**: 
+    All actions taken by agents should be relevant to the overall task goal. Steps should not deviate from the intended outcome.
+
+5. **Error Handling (if applicable)**: 
+    Agents should handle tool failures or unexpected results gracefully, without disrupting the workflow.
+
+### Scoring Guidelines:
+Assign a score between **0.0** and **1.0**, rounded to **one decimal place**, based on overall communication efficiency:
+
+- **1.0 (Excellent)**: Clear, coherent, and efficient communication with strong context reuse and no redundancy.
+- **0.7 - 0.9 (Good)**: Mostly efficient with minor redundancy or slight misalignment.
+- **0.4 - 0.6 (Average)**: Noticeable inefficiencies, unclear transitions, or repeated steps.
+- **0.1 - 0.3 (Poor)**: Frequent redundancy, poor context reuse, or unclear communication.
+- **0.0 (Failed)**: No meaningful communication or completely disjointed steps.
+
+### Input:
+Below are the steps from the multi-agent workflow:
+{steps}
+
+### Output Format:
+Return your evaluation strictly in the following JSON format:
+
+```json
+{{
+  "communication_efficiency_score": 0.7,
+  "justification": "Agents reused context effectively but included a redundant uppercase step. Overall communication was clear and aligned with the goal."
+}}
 """

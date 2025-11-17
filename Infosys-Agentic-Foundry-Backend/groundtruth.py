@@ -18,6 +18,8 @@ from rouge_score import rouge_scorer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer, util
+from src.utils.remote_model_client import RemoteSentenceTransformer, ModelServerClient
+from typing import Optional, Callable, Awaitable
 
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.schemas import AgentInferenceRequest
@@ -26,11 +28,20 @@ from telemetry_wrapper import logger as log
 # Load environment variables from .env file
 load_dotenv()
 
-# Get model name from environment
-model_name = os.getenv("SBERT_MODEL_PATH")
-
-# Load the model
-sbert_model = SentenceTransformer(model_name)
+# Initialize SBERT model 
+model_server_url = os.getenv("MODEL_SERVER_URL")
+sbert_model = None
+try:
+    log.info(f"Connecting to model server at {model_server_url} for SBERT model")
+    client = ModelServerClient(model_server_url)
+    health_url = f"{client.base_url}/health"
+    health_resp = client.session.get(health_url, timeout=5)
+    health_resp.raise_for_status()
+    sbert_model = RemoteSentenceTransformer(client=client)
+    log.info("Remote SBERT model initialized successfully.")
+except Exception as e:
+    sbert_model = None
+    log.error(f"Failed to connect to remote SBERT model at {model_server_url}: {e}")
 
 
 # ✅ LLM prompt templates
@@ -43,7 +54,7 @@ Your task is to assign a score between 0.0 and 1.0 based on how well the actual 
 
 Rate based on the following criteria:
 
-1. **Relevance** — Does the actual response directly address the user’s query?
+1. **Relevance** — Does the actual response directly address the user's query?
 2. **Correctness** — Is the information in the response factually or logically correct?
 3. **Completeness** — Does the actual response include all important elements found in the expected response?
 4. **Clarity & Language Quality** — Is the response understandable, coherent, and well-phrased?
@@ -71,7 +82,7 @@ diagnostic_prompt = PromptTemplate(
     template="""
 You are an AI evaluation analyst.
 
-You are given average metric scores from an evaluation of an AI agent’s responses compared to expected outputs.
+You are given average metric scores from an evaluation of an AI agent's responses compared to expected outputs.
 
 Here are the average scores:
 {scores_dict}
@@ -81,7 +92,7 @@ Each score represents a different aspect of similarity:
 - SBERT → semantic similarity.
 - LLM score → human-like judgment of correctness.
 
-Based on these scores, provide a diagnostic summary: What do these scores reveal about the agent’s performance? Highlight whether the responses were semantically aligned but textually different, or vice versa.
+Based on these scores, provide a diagnostic summary: What do these scores reveal about the agent's performance? Highlight whether the responses were semantically aligned but textually different, or vice versa.
 
 Be specific and concise. Do not just list the scores again — explain what the pattern means.
 """
@@ -114,11 +125,16 @@ async def evaluate_ground_truth_file(
     session_id: str,
     inference_service: CentralizedAgentInference,
     llm=None,
-    use_llm_grading: bool = False
+    use_llm_grading: bool = False,
+    progress_callback: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> tuple[pd.DataFrame, dict, str, str, str, Union[str, None]]:
     if file_path.endswith(".csv"):
+        if progress_callback:
+            await progress_callback("Reading CSV file...")
         df = pd.read_csv(file_path)
     elif file_path.endswith((".xlsx", ".xls")):
+        if progress_callback:
+            await progress_callback("Reading Excel file...")
         df = pd.read_excel(file_path)
     else:
         raise ValueError("File must be a CSV or Excel file.")
@@ -143,9 +159,18 @@ async def evaluate_ground_truth_file(
     for i, row in df.iterrows():
         query = str(row["queries"])
         expected = str(row["expected_outputs"])
+        if progress_callback:
+            await progress_callback(f"Evaluating query {i+1}/{len(df)}")
 
-        log.info(f"\nQuery {i+1}: {query}")
-        actual = await call_agent(query, model_name, agentic_application_id, session_id, agent_type, inference_service)
+        actual = await call_agent(
+            query=query,
+            model_name=model_name,
+            agentic_application_id=agentic_application_id,
+            session_id=session_id,
+            agent_type=agent_type,
+            inference_service=inference_service
+        )
+
         actual_outputs.append(actual)
         expected_texts.append(expected)
         actual_texts.append(actual)
@@ -167,7 +192,7 @@ async def evaluate_ground_truth_file(
         fuzzy_match_scores.append(fuzz.ratio(expected, actual) / 100.0)
 
         # LLM grading
-        if use_llm_grading and llm:
+        if grading_chain:
             try:
                 result = await grading_chain.ainvoke({
                     "query": query,
@@ -180,7 +205,9 @@ async def evaluate_ground_truth_file(
                 llm_scores.append(0.0)
                 log.error(f"Error during LLM grading: {str(e)}")
 
-    # TF-IDF similarity
+    if progress_callback:
+        await progress_callback("Computing TF-IDF similarity...")
+
     vectorizer = TfidfVectorizer().fit(expected_texts + actual_texts)
     expected_vecs = vectorizer.transform(expected_texts)
     actual_vecs = vectorizer.transform(actual_texts)
@@ -211,9 +238,9 @@ async def evaluate_ground_truth_file(
     ]
     if grading_chain:
         metric_cols.append("llm_score")
+
     avg_scores = df[metric_cols].mean().to_dict()
 
-    # Append average row
     avg_row = {
         "queries": "--- AVERAGES ---",
         "expected_outputs": "",
@@ -222,7 +249,7 @@ async def evaluate_ground_truth_file(
     }
     df = pd.concat([df, pd.DataFrame([avg_row])], ignore_index=True)
 
-    # Optional LLM diagnostic summary
+    # Diagnostic summary
     summary = ""
     if llm:
         scores_text = "\n".join(f"{k}: {v:.3f}" for k, v in avg_scores.items())
@@ -233,12 +260,13 @@ async def evaluate_ground_truth_file(
         log.warning("No LLM model provided for diagnostic summary generation.")
         summary = "No LLM diagnostic summary generated. Please provide an LLM model for detailed analysis."
 
-    # Save output to files
+    if progress_callback:
+        await progress_callback("Saving results to Excel...")
+
     output_dir = Path.cwd() / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
     generated_uuid = str(uuid.uuid4())
     base_filename = f"evaluation_results_{generated_uuid}"
-
     excel_path = output_dir / f"{base_filename}.xlsx"
     df.to_excel(excel_path, index=False)
 

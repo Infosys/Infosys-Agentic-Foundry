@@ -23,12 +23,14 @@ class Permission(str, Enum):
     CREATE_TOOLS = "create_tools"
     UPDATE_TOOLS = "update_tools"
     DELETE_TOOLS = "delete_tools"
+    EXECUTE_TOOLS = "execute_tools"
     
     # Agent permissions
     READ_AGENTS = "read_agents"
     CREATE_AGENTS = "create_agents"
     UPDATE_AGENTS = "update_agents"
     DELETE_AGENTS = "delete_agents"
+    EXECUTE_AGENTS = "execute_agents"
     
     # User management permissions
     MANAGE_USERS = "manage_users"
@@ -47,26 +49,31 @@ class Permission(str, Enum):
 # Role-based permission mapping
 ROLE_PERMISSIONS = {
     UserRole.USER: [
-        Permission.READ_TOOLS,
-        Permission.READ_AGENTS,
+        # Users have no tool/agent permissions - they are completely restricted
     ],
     UserRole.DEVELOPER: [
         Permission.READ_TOOLS,
         Permission.CREATE_TOOLS,
         Permission.UPDATE_TOOLS,
+        Permission.EXECUTE_TOOLS,
+        Permission.DELETE_TOOLS,
         Permission.READ_AGENTS,
         Permission.CREATE_AGENTS,
         Permission.UPDATE_AGENTS,
+        Permission.EXECUTE_AGENTS,
+        Permission.DELETE_AGENTS
     ],
     UserRole.ADMIN: [
         Permission.READ_TOOLS,
         Permission.CREATE_TOOLS,
         Permission.UPDATE_TOOLS,
         Permission.DELETE_TOOLS,
+        Permission.EXECUTE_TOOLS,
         Permission.READ_AGENTS,
         Permission.CREATE_AGENTS,
         Permission.UPDATE_AGENTS,
         Permission.DELETE_AGENTS,
+        Permission.EXECUTE_AGENTS,
         Permission.MANAGE_USERS,
         Permission.VIEW_ALL_USERS,
         Permission.VIEW_AUDIT_LOGS,
@@ -77,10 +84,12 @@ ROLE_PERMISSIONS = {
         Permission.CREATE_TOOLS,
         Permission.UPDATE_TOOLS,
         Permission.DELETE_TOOLS,
+        Permission.EXECUTE_TOOLS,
         Permission.READ_AGENTS,
         Permission.CREATE_AGENTS,
         Permission.UPDATE_AGENTS,
         Permission.DELETE_AGENTS,
+        Permission.EXECUTE_AGENTS,
         Permission.MANAGE_USERS,
         Permission.VIEW_ALL_USERS,
         Permission.APPROVE_AGENTS,
@@ -137,10 +146,30 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     approval: bool
     token: Optional[str] = None  # JWT token
+    refresh_token: Optional[str] = None  # Long-lived refresh token
     role: Optional[str] = None
     username: Optional[str] = None
     email: Optional[str] = None
     message: str
+
+
+class RefreshTokenRequest(BaseModel):
+    """Request payload for refreshing access token.
+
+    If refresh_token is not provided in body, the API will attempt to read it from the
+    HttpOnly cookie named 'refresh_token'. This keeps backward compatibility with existing
+    login response schema while enabling refresh flow.
+    """
+    refresh_token: Optional[str] = None
+
+
+class RefreshTokenResponse(BaseModel):
+    """Response returned when a refresh token is used to obtain a new access token."""
+    approval: bool
+    token: Optional[str] = None  # New access JWT
+    refresh_token: Optional[str] = None  # Rotated refresh token (if rotation enabled)
+    message: str
+    # (Intentionally NOT returning a new refresh token field in JSON to avoid breaking clients.)
 
 
 class RegisterRequest(BaseModel):

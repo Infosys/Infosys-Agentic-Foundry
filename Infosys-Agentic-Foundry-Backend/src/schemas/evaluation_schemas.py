@@ -1,5 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal
 
 class GroundTruthEvaluationRequest(BaseModel):
@@ -10,4 +10,12 @@ class GroundTruthEvaluationRequest(BaseModel):
     agentic_application_id: str = Field(..., description="The ID of the agentic application being evaluated.")
     session_id: str = Field(..., description="A session ID to use for the evaluation runs (can be temporary).")
     use_llm_grading: Optional[bool] = Field(False, description="If true, uses LLM for grading instead of rule-based.")
+    temperature: Optional[float] = Field(0.0, description="Temperature parameter for LLM model (0.0-1.0) - for evaluation, lower is better for consistency")
+    
+    @field_validator('temperature')
+    @classmethod
+    def validate_temperature(cls, v):
+        if v is not None and (v < 0.0 or v > 1.0):
+            raise ValueError('Temperature must be between 0.0 and 1.0')
+        return v
 

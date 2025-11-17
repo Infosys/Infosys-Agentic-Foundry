@@ -1,13 +1,15 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import asyncio
-from typing import Literal
+from typing import Literal, Union, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from sentence_transformers import SentenceTransformer, util
 from sentence_transformers import CrossEncoder
+import time 
 
 # Import the Redis-PostgreSQL manager
+from src.auth.authorization_service import AuthorizationService
 from src.database.redis_postgres_manager import RedisPostgresManager, TimedRedisPostgresManager, create_manager_from_env, create_timed_manager_from_env
 
 from src.schemas import AgentInferenceRequest, ChatSessionRequest, OldChatSessionsRequest, StoreExampleRequest, StoreExampleResponse, SDLCAgentInferenceRequest
@@ -16,12 +18,15 @@ from src.database.services import ChatService, FeedbackLearningService, AgentSer
 from src.inference.inference_utils import EpisodicMemoryManager
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.api.dependencies import ServiceProvider # The dependency provider
-from src.auth.dependencies import get_user_info_from_request
+from src.auth.dependencies import get_current_user, get_user_info_from_request
 
 
 from telemetry_wrapper import logger as log, update_session_context
 
 from src.models.model_service import ModelService
+from src.models.base_ai_model_service import BaseAIModelService
+
+from src.auth.models import UserRole, User
 
 
 
@@ -51,7 +56,10 @@ async def run_agent_inference_endpoint(
                         request: Request,
                         inference_request: AgentInferenceRequest,
                         inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
-                        feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service)
+                        feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service),
+                        chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+                        authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+                        user_data: User = Depends(get_current_user) 
                     ):
     """
     
@@ -69,6 +77,9 @@ async def run_agent_inference_endpoint(
     Returns:
     - Dict[str, Any]: A dictionary with the agent's response.
     """
+    role = user_data.role
+    
+    start_time = time.monotonic()
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -78,12 +89,12 @@ async def run_agent_inference_endpoint(
 
     existing_task = task_tracker.get(session_id)
     if existing_task and not existing_task.done():
-        log.info(f"[{session_id}] Cancelling existing task...")
-        existing_task.cancel()
-        try:
-            await existing_task
-        except asyncio.CancelledError:
-            log.warning(f"[{session_id}] Previous task cancelled.")
+        # New policy: Do NOT cancel the running task. Reject the new request instead.
+        log.info(f"[{session_id}] Concurrent inference request rejected; existing task still running.")
+        raise HTTPException(
+            status_code=499,
+            detail="Parallel inference requests are not allowed for this session. Previous request is still processing."
+        )
 
     # Update context to "processing"
     update_session_context(
@@ -93,14 +104,27 @@ async def run_agent_inference_endpoint(
         user_query=inference_request.query,
         response="Processing..."
     )
-
     log.info(f"[{session_id}] Starting agent inference...")
+
+    # Modify inference request flags based on user role
+    if role == UserRole.USER:
+        # For USER role, disable verifier flags for simplified experience
+        if inference_request.tool_verifier_flag:
+            inference_request.tool_verifier_flag = False
+            log.info(f"[{session_id}] Tool verifier flag disabled for USER role")
+        if inference_request.plan_verifier_flag:
+            inference_request.plan_verifier_flag = False
+            log.info(f"[{session_id}] Plan verifier flag disabled for USER role")
+        if inference_request.evaluation_flag:
+            inference_request.evaluation_flag = False
+            log.info(f"[{session_id}] evaluation flag disabled for USER role")
 
     # Define and create the inference task
     async def do_inference():
         try:
-            result = await inference_service.run(inference_request, sse_manager=sse_manager)
+            result = await inference_service.run(inference_request, sse_manager=sse_manager, role= role)
             log.info(f"[{session_id}] Inference completed.")
+            
             return result
         except asyncio.CancelledError:
             log.warning(f"[{session_id}] Task was cancelled during execution.")
@@ -139,7 +163,32 @@ async def run_agent_inference_endpoint(
     if session_id in task_tracker and task_tracker[session_id].done():
         del task_tracker[session_id]
         log.info(f"[{session_id}] Task completed and removed from tracker.")
+    end_time = time.monotonic()
+    time_taken = end_time - start_time
+    log.info(f"Time taken for inference: {time_taken:.2f} seconds")
+    
+    # Set response_time on the latest message
+    if "executor_messages" in response and isinstance(response["executor_messages"], list) and len(response["executor_messages"]) > 0:
+        try:
+            response["executor_messages"][-1]["response_time"] = time_taken
+            log.info(f"Set response_time {time_taken:.2f}s on latest message")
+        except (TypeError, KeyError) as e:
+            log.warning(f"Could not set response_time on executor_messages: {e}")
+    else:
+        log.warning("No executor_messages found in response to set response_time")
+    
+    # Update any recently saved chat messages with the centrally calculated response time
+    try:
+        if not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
+            await chat_service.update_latest_response_time(
+                agentic_application_id=inference_request.agentic_application_id,
+                session_id=session_id,
+                response_time=time_taken
+            )
+    except Exception as e:
+        log.warning(f"Could not update response time in chat history: {e}")
 
+    
     return response
 
 
@@ -169,14 +218,17 @@ async def send_feedback_endpoint(
     """
     
     async def process_feedback_in_background(
-        llm, feedback_prompt, feedback_learning_service,
+        llm: Union[BaseAIModelService, Any], feedback_prompt, feedback_learning_service: FeedbackLearningService,
         agent_id, original_query, old_response, old_steps,
         final_response, user_feedback, steps
     ):
         try:
             # Run the LLM invocation asynchronously
             lesson_response = await llm.ainvoke(feedback_prompt)
-            lesson = lesson_response.content
+            if isinstance(llm, BaseAIModelService):
+                lesson = lesson_response["final_response"]
+            else:
+                lesson = lesson_response.content
             
             # Save feedback asynchronously
             await feedback_learning_service.save_feedback(
@@ -192,8 +244,8 @@ async def send_feedback_endpoint(
             log.info("Data saved for future learnings in background.")
         except Exception as e:
             log.error(f"Background feedback processing error: {str(e)}")
-        
-        
+
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -232,6 +284,7 @@ async def send_feedback_endpoint(
 
         # Save feedback for learning
         try:
+
             final_response = response["response"]
             steps = response["executor_messages"][-1]["agent_steps"]
             if inference_request.prev_response:
@@ -241,9 +294,11 @@ async def send_feedback_endpoint(
                 old_response = ""
                 old_steps = ""
             
-            # llm = model_service.get_llm_model(inference_request.model_name)
-            llm = await model_service.get_llm_model(inference_request.model_name)
-                        
+            if await chat_service.is_python_based_agent(inference_request.agentic_application_id):
+                llm = await model_service.get_llm_model_using_python(inference_request.model_name, temperature=inference_request.temperature or 0.0)
+            else:
+                llm = await model_service.get_llm_model(inference_request.model_name, temperature=inference_request.temperature or 0.0)
+
             feedback_prompt = f"""
                 You are a lesson generator for an AI agent. Based on the original user query, the agent's initial response, user feedback on that response, and the improved final response, generate a concise lesson that the agent can apply in similar future situations.
 
@@ -264,7 +319,7 @@ async def send_feedback_endpoint(
 
                 **Example format:** "When a user mentions [trigger word/pattern], always [specific action] before [main task]."
                 """
-            
+
             asyncio.create_task(
                 process_feedback_in_background(
                     llm, feedback_prompt, feedback_learning_service,
@@ -417,7 +472,7 @@ async def store_episodic_example(
                         request: Request,
                         store_example_request: StoreExampleRequest,
                         chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
-                        embedding_model: HuggingFaceEmbeddings = Depends(ServiceProvider.get_embedding_model),
+                        embedding_model: SentenceTransformer = Depends(ServiceProvider.get_embedding_model),
                         cross_encoder: CrossEncoder = Depends(ServiceProvider.get_cross_encoder)
                     ):
     """
@@ -475,7 +530,7 @@ async def get_stored_examples(
                             agent_id: str,
                             limit: int = 10,
                             chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
-                            embedding_model: HuggingFaceEmbeddings = Depends(ServiceProvider.get_embedding_model),
+                            embedding_model: SentenceTransformer = Depends(ServiceProvider.get_embedding_model),
                             cross_encoder: CrossEncoder = Depends(ServiceProvider.get_cross_encoder)
                         ):
     """
@@ -553,7 +608,6 @@ async def update_stored_example(agent_id: str, key: str, label: str = None):
         if not manager:
             raise HTTPException(status_code=500, detail="Manager not found")
         records = await manager.get_records_by_category(agent_id)
-        print(records)
         if not records:
             raise HTTPException(status_code=404, detail="No records found")
         for record in records:

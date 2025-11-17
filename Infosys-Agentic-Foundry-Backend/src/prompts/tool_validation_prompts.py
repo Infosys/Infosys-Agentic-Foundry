@@ -69,10 +69,15 @@ You will be provided with a Python function, analyzes its parameters, and checks
 """
 
 safe_validation="""
+## Task
+Perform a Comprehensive security analysis on the provided python function to detect highly risk malicious or suspicious activity
+## Role
+Act as a highly skilled and cybersecurity analyst with expertise in Python code review and threat detection.
 ## Objective
+Analyze the code for high risk malicious or suspicious activity.
+Evaluate the code safety based on the analysis
 Evaluate whether a given Python function performs unsafe or potentially dangerous operations and determine if it is safe or unsafe.
 Determine whether a function is **safe** or **unsafe** based on strict security and safety criteria. A function is considered **unsafe** if it performs any of the following:
-- **Deletes files or directories (e.g., `rm -rf`, `os.remove`, `shutil.rmtree`)
 - **Performs system shutdown or restart (e.g., `shutdown`, `reboot`)
 - **Kills or modifies system processes
 - **Executes arbitrary or destructive shell/system commands
@@ -109,19 +114,25 @@ You will be provided with a Python function and must:
 - **Keep the suggestion short, specific, and actionable.
 - **Do **not** explain the decision. Just return the boolean and the suggestion.
 - **NEVER check for Hardcoded values, API keys, passwords, tokens, or other sensitive data if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
-- **Only check for malicious code which might cause harm to the system.
+- **Only** check for malicious code which might cause harm to the system.
 - **Do **not** check for any other validations except unsafe code.
-- **Do not check for eval() and exec() functions as unsafe code.
-- **Do not flag code that uses subprocess,os and shutil module as unsafe unless it performs any of the unsafe operations mentioned above.
-- **Do not flag code that uses system commands like 'ls', 'pwd', 'echo', 'dir', 'cd' as unsafe unless it performs any of the unsafe operations mentioned above.
-- **Do not flag code based on variable names that include terms like 'delete', 'remove', 'kill', 'shutdown', 'reboot', 'exec', 'eval', 'command', 'process', 'permission', 'privilege' etc., unless the function actually performs an unsafe operation as defined above.
-"""
+- **Do **not** check for eval() and exec() functions as unsafe code.
+- **Do **not** flag code that uses subprocess,os and shutil module as unsafe unless it performs any of the unsafe operations mentioned above.
+- **Do **not** flag code that uses system commands like 'ls', 'pwd', 'echo', 'dir', 'cd' as unsafe unless it performs any of the unsafe operations mentioned above.
+- **Do **not** flag code based on variable names that include terms like 'delete', 'remove', 'kill', 'shutdown', 'reboot', 'exec', 'eval', 'command', 'process', 'permission', 'privilege' etc., unless the function actually performs an unsafe operation as defined above.
+- **Do **not** flag file operations like reading, writing, or appending to files as unsafe.
+- **Do **not** flag file operations like creating, moving, or copying files and directories as unsafe.
+- **Do **not** flag network operations like making HTTP requests, opening sockets, or interacting with APIs as unsafe.
+- **Do **not** consider the information provided in comments when determining if a function is safe or unsafe.
+- **Do **not** consider the information provided in docstring when determining if a function is safe or unsafe.
+- **Do **not** consider the information provided in variable names when determining if a function is safe or unsafe.
+# """
 
 hardcoded_values="""
 ## Objective
 Detect the presence of hardcoded sensitive data such as passwords, API keys, and personally identifiable information (PII) within Python functions.
 Validate that the function does **not** contain any hardcoded values such as:
-- **API keys,endponits
+- **API keys,endpoints
 - **Passwords
 - **Authentication tokens
 - **Personally identifiable information (PII)
@@ -150,13 +161,14 @@ You will be provided with a Python function and:
    ```json
    {{
 		"validation": False,
-		"suggestion": <specify which values are hardcoded and suggest to store them securely using secret value>
+		"suggestion": <specify which values are hardcoded and suggest to store them securely using secret vault and access by using functions like get_user_secrets(),get_public_secrets()>
    }}
    ```
 - **Return a single-line feedback message** — both in the `suggestion` field only.
 - **Do NOT use a separate `code` field.**
 - **Do **not** explain your decision. Just return the boolean and the suggestion.
 - **Keep the suggestion as it is.
+- **Allow** flag if the hardcoded values are inside  get_user_secrets(), get_public_key(), os.environ[], or os.getenv() like get_user_secrets('base_url', 'https://default-weather-api.com'),get_public_secrets('url',"https://openai-ppcazure017.openai.azure.com/") anything.
 - **Check for only Keys,email ids, passwords, tokens, endpoints and urls if they are hardcoded directly in the code.
 - **Ignore other hardcoded values like str,integers, float, list, dict, tuples, set etc if they not come under confidential data.
 - **Ignore if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
@@ -168,6 +180,11 @@ You will be provided with a Python function and:
 - **Do not flag hardcoded values that are part of comments or docstrings within the code. These do not affect the execution of the program and are typically used for explanatory purposes.
 - **Do not flag hardcoded values that are assigned to variables or constants but are not sensitive in nature, such as configuration settings, feature flags, or non-confidential identifiers.
 - **Do **not** flag based on variable names that include terms like 'key', 'token', 'password', 'secret', or 'credential' unless the assigned value is actually a sensitive hardcoded value.
+- **Do **not** flag if the hardcoded values are inside  get_user_secrets(), get_public_key(), os.environ[], or os.getenv() like get_user_secrets('base_url', 'https://default-weather-api.com'),get_public_secrets('url',"https://openai-ppcazure017.openai.azure.com/") anything.
+- **Do **not** flag code that uses external libraries or modules to manage secrets, such as `dotenv`, `keyring`, or cloud provider SDKs, unless they contain hardcoded sensitive values as defined above.
+- **Do **not** flag if the values are hardcoded inside triple quotes (""" """) or (''' ''') as they are generally used for multi-line strings or docstrings.
+- **Do **not** flag if the values are hardcoded inside function definition parameters with default values.
+- **Do **not** flag file paths, directory names, or other non-sensitive strings that do not contain confidential information.
 """
 
 error_handling= """

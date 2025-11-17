@@ -10,6 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
+
+from src.utils.helper_functions import resolve_and_get_additional_no_proxys
+os.environ["NO_PROXY"] = resolve_and_get_additional_no_proxys()
 
 from src.api.app_container import app_container
 from src.api import (
@@ -22,7 +26,6 @@ from src.auth.middleware import AuditMiddleware, AuthenticationMiddleware
 from src.auth.routes import router as auth_router
 
 from src.utils.stream_sse import SSEManager
-from src.utils.helper_functions import resolve_and_get_additional_no_proxys
 
 from telemetry_wrapper import logger as log
 
@@ -30,7 +33,6 @@ from telemetry_wrapper import logger as log
 load_dotenv()
 
 # Set Phoenix collector endpoint
-os.environ["NO_PROXY"] = resolve_and_get_additional_no_proxys()
 os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
 os.environ["PHOENIX_GRPC_PORT"] = os.getenv("PHOENIX_GRPC_PORT",'50051')
 os.environ["PHOENIX_SQL_DATABASE_URL"] = os.getenv("PHOENIX_SQL_DATABASE_URL")
@@ -50,7 +52,16 @@ async def lifespan(app: FastAPI):
     try:
         await app_container.initialize_services()
         app.state.sse_manager = SSEManager()
+        
+        # Create background tasks
         asyncio.create_task(cleanup_old_files())
+        log.info("FastAPI Lifespan: Cleanup task created.")
+        
+        asyncio.create_task(app_container.core_consistency_service.schedule_continuous_reevaluations())
+        log.info("FastAPI Lifespan: Consistency evaluation task created.")
+        
+        asyncio.create_task(app_container.core_robustness_service.schedule_continuous_robustness_reevaluations())
+        log.info("FastAPI Lifespan: Robustness evaluation task created.")
 
         log.info("FastAPI Lifespan: Application startup complete. FastAPI is ready to serve requests.")
 
@@ -76,6 +87,7 @@ app = FastAPI(
         "usePkceWithAuthorizationCodeGrant": True
     }
 )
+
 
 # Add JWT Bearer security scheme to OpenAPI
 app.openapi_schema = None
@@ -103,8 +115,17 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
+UPLOAD_DIR = "user_uploads"
 
-app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=5)
+# Ensure the upload directory exists
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR) # os.makedirs creates all intermediate directories too
+
+# For loading the local swagger UI components
+app.mount("/user_uploads", StaticFiles(directory=UPLOAD_DIR), name="user_uploads")
+
+
+# app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=5)
 
 # Various routers for different functionalities
 app.include_router(auth_router)

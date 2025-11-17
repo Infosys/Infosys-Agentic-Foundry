@@ -11,7 +11,7 @@ from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
 from telemetry_wrapper import logger as log
-
+from src.prompts.prompts import online_agent_evaluation_prompt
 from src.inference.inference_utils import EpisodicMemoryManager
 
 
@@ -22,11 +22,14 @@ class ReactCriticWorkflowState(BaseWorkflowState):
     """
     response_quality_score: float
     critique_points: str
-    epoch: int
+    epoch: int = 0
     preference: str
     tool_feedback: str = None
     is_tool_interrupted: bool = False
     tool_calls: Optional[List[str]]
+    evaluation_score: float = None
+    evaluation_feedback: str = None
+    workflow_description: str = None
 
 
 
@@ -86,7 +89,7 @@ class ReactCriticAgentInference(BaseAgentInference):
 
         critic_chain_json = chains.get("critic_chain_json", None)
         critic_chain_str = chains.get("critic_chain_str", None)
-
+        evaluation_flag = flags.get("evaluation_flag", False)
 
         if not llm or not executor_agent or not critic_chain_json or not critic_chain_str :
             raise HTTPException(status_code=500, detail="Required chains or agent executor are missing")
@@ -99,6 +102,8 @@ class ReactCriticAgentInference(BaseAgentInference):
             conv_summary = new_preference = ""
             errors = []
             current_state_query = await self.inference_utils.add_prompt_for_feedback(state["query"])
+            agent_details = await self.agent_service.agent_repo.get_agent_record(state["agentic_application_id"])
+            workflow_description = agent_details[0]["agentic_application_workflow_description"]
             try:
                 if state["reset_conversation"]:
                     state["executor_messages"].clear()
@@ -117,7 +122,10 @@ class ReactCriticAgentInference(BaseAgentInference):
                         'response_quality_score': None,
                         'critique_points': None,
                         'epoch': 0,
-                        'errors': errors
+                        'errors': errors,
+                        'evaluation_score': None,
+                        'evaluation_feedback': None,
+                        'workflow_description': workflow_description
                     }
                     # Get summary via ChatService
                     conv_summary = await self.chat_service.get_chat_conversation_summary(
@@ -138,8 +146,6 @@ class ReactCriticAgentInference(BaseAgentInference):
                 log.error(error)
                 errors.append(error)
 
-            
-
             log.info(f"Generated past conversation summary for session {state['session_id']}.")
             new_state = {
                 'past_conversation_summary': conv_summary,
@@ -151,8 +157,11 @@ class ReactCriticAgentInference(BaseAgentInference):
                 'response_quality_score': None,
                 'critique_points': None,
                 'epoch': 0,
-                'errors': errors
-            }
+                'errors': errors,
+                'evaluation_score': None,
+                'evaluation_feedback': None,
+                'workflow_description': workflow_description
+            }        
             return new_state
 
         async def executor_agent_node(state: ReactCriticWorkflowState):
@@ -181,16 +190,28 @@ class ReactCriticAgentInference(BaseAgentInference):
                 messages = query
 
             try:
-                # feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
-                # feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
-
                 critic_messages = ""
                 formatter_node_prompt = ""
-                if state["response_formatting_flag"]:
-                    formatter_node_prompt = "\n\nYou are an intelligent assistant that provides data for a separate visualization tool. When a user asks for a chart, table, image, or any other visual element, you must not attempt to create the visual yourself in text. Your sole responsibility is to generate the raw, structured data. For example, for a chart, provide the JSON data; for an image, provide the <img> tag with a source URL; for a table, provide the data as a list of lists. Your output will be fed into another program that will handle the final formatting and display."
-                       
-                if state.get("response_quality_score", None) is not None:
-                    critic_messages = f"""
+                context_feedback_message = ""
+                # feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
+                # feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
+                if evaluation_flag: # Check the evaluation_flag directly
+                    if state.get("evaluation_score", None) is not None and state.get("evaluation_feedback", None) is not None:
+                        context_feedback_message = f"""
+    **PREVIOUS EVALUATION FEEDBACK:**
+    The last response was evaluated with a score of {state["evaluation_score"]:.2f}.
+    Here is the detailed feedback:
+    {state["evaluation_feedback"]}
+    Please carefully review this feedback and adjust your reasoning and response generation to address the identified issues and improve the overall quality.
+    """         
+                else:
+                
+                    
+                    if state["response_formatting_flag"]:
+                        formatter_node_prompt = "\n\nYou are an intelligent assistant that provides data for a separate visualization tool. When a user asks for a chart, table, image, or any other visual element, you must not attempt to create the visual yourself in text. Your sole responsibility is to generate the raw, structured data. For example, for a chart, provide the JSON data; for an image, provide the <img> tag with a source URL; for a table, provide the data as a list of lists. Your output will be fed into another program that will handle the final formatting and display."
+                        
+                    if state.get("response_quality_score", None) is not None:
+                        critic_messages = f"""
 Final Response Obtained:
 {state["response"]}
 
@@ -218,6 +239,8 @@ Preferences:
 
 {formatter_node_prompt}
 
+{context_feedback_message} 
+
 
 User Query:
 {messages}
@@ -238,8 +261,103 @@ User Query:
             return {
                 "response": executor_agent_response["messages"][-1].content,
                 "executor_messages": executor_agent_response["messages"],
-                "errors": errors,
+                "errors": errors
             }
+        
+        async def evaluator_agent(state: ReactCriticWorkflowState):
+            """
+            Evaluates the agent response across multiple dimensions and provides scores and feedback.
+            """
+            log.info(f"🎯 EVALUATOR AGENT CALLED for session {state['session_id']}")
+            
+            agent_evaluation_prompt = online_agent_evaluation_prompt      
+            try:
+                # Format the evaluation query
+                formatted_evaluation_query = agent_evaluation_prompt.format(
+                    User_Query=state["query"],
+                    Agent_Response=state["response"],
+                    past_conversation_summary=state["past_conversation_summary"],
+                    workflow_description=state.get("workflow_description", "Multi-agent workflow with planner, executor, and critic components")
+                )
+                
+                # Call the LLM for evaluation
+                evaluation_response = await llm.ainvoke(formatted_evaluation_query)
+                
+                # Parse the JSON response
+                evaluation_data = json.loads(evaluation_response.content.replace("```json", "").replace("```", "").strip())
+                
+                # Calculate aggregate score (average of all ratings)
+                fluency_score = evaluation_data["fluency_evaluation"]["fluency_rating"]
+                relevancy_score = evaluation_data["relevancy_evaluation"]["relevancy_rating"]
+                coherence_score = evaluation_data["coherence_evaluation"]["coherence_score"]
+                groundedness_score = evaluation_data["groundedness_evaluation"]["groundedness_score"]
+                
+                aggregate_score = (fluency_score + relevancy_score + coherence_score + groundedness_score) / 4
+                
+                # Compile feedback from all dimensions
+                feedback_parts = []
+                feedback_parts.append(f"**Fluency Feedback:** {evaluation_data['fluency_evaluation']['feedback']}")
+                feedback_parts.append(f"**Relevancy Feedback:** {evaluation_data['relevancy_evaluation']['feedback']}")
+                feedback_parts.append(f"**Coherence Feedback:** {evaluation_data['coherence_evaluation']['feedback']}")
+                feedback_parts.append(f"**Groundedness Feedback:** {evaluation_data['groundedness_evaluation']['feedback']}")
+                
+                compiled_feedback = "\n\n".join(feedback_parts)
+                
+                log.info(f"Evaluator completed for session {state['session_id']} with aggregate score: {aggregate_score}")
+                
+                return {
+                    "evaluation_score": aggregate_score,
+                    "evaluation_feedback": compiled_feedback,
+                    "executor_messages": ChatMessage(
+                        content=[{
+                            "evaluation_score": aggregate_score,
+                            "evaluation_details": evaluation_data,
+                            "feedback": compiled_feedback
+                        }],
+                        role="evaluator-response"
+                    ),
+                    "epoch": state.get('epoch',0)+1
+                }
+                
+            except json.JSONDecodeError as e:
+                log.error(f"Failed to parse evaluator JSON response for session {state['session_id']}: {e}")
+                return {
+                    "evaluation_score": 0.3,
+                    "evaluation_feedback": "Evaluation failed due to JSON parsing error. Please review the response format and content quality.",
+                    "executor_messages": ChatMessage(
+                        content="Evaluation failed - JSON parsing error",
+                        role="evaluator-error"
+                    )
+                }
+            except Exception as e:
+                log.error(f"Evaluator agent failed for session {state['session_id']}: {e}")
+                return {
+                    "evaluation_score": 0.3,
+                    "evaluation_feedback": f"Evaluation failed due to error: {str(e)}",
+                    "executor_messages": ChatMessage(
+                        content=f"Evaluation failed: {str(e)}",
+                        role="evaluator-error"
+                    )
+                }
+            
+        async def evaluator_decision(state: ReactCriticWorkflowState):
+            """
+            Decides whether to return the final response or continue with improvement cycle
+            based on evaluation score and threshold.
+            """
+            evaluation_threshold = 0.7  # Configurable threshold
+            max_evaluation_epochs = 3   # Maximum number of evaluation improvement cycles
+            
+            # Get current evaluation epoch (using existing epoch field or create new one)
+            current_epoch = state.get("epoch", 0)
+            evaluation_score = state.get("evaluation_score", 0.0)
+            
+            # Decision logic
+            if evaluation_score >= evaluation_threshold or current_epoch >= max_evaluation_epochs:
+                return "final_response"
+            else:
+                return "executor_agent_node"
+
 
         async def critic_agent(state: ReactCriticWorkflowState):
             """
@@ -251,6 +369,41 @@ User Query:
                             "So the final response should be based on the updated tool arguments. "
                             "Prioritize this part over the user query if there is a conflict."
                         )
+            
+            # Extract tool calls and outputs from executor messages
+            executor_messages = state["executor_messages"]
+            tool_calls_data = []
+            
+            # Iterate through messages to find AI messages with tool calls and corresponding tool messages
+            for i, msg in enumerate(executor_messages):
+                if hasattr(msg, 'type') and msg.type == "ai" and hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    for tool_call in msg.tool_calls:
+                        tool_data = {
+                            'name': tool_call['name'],
+                            'args': tool_call['args'],
+                            'id': tool_call['id'],
+                            'output': None
+                        }
+                        
+                        # Look for the corresponding tool message with the output
+                        for j in range(i + 1, len(executor_messages)):
+                            next_msg = executor_messages[j]
+                            if (hasattr(next_msg, 'type') and next_msg.type == "tool" and 
+                                hasattr(next_msg, 'tool_call_id') and next_msg.tool_call_id == tool_call['id']):
+                                tool_data['output'] = next_msg.content
+                                break
+                        
+                        tool_calls_data.append(tool_data)
+            
+            # Add tool information to context if any tools were used
+            if tool_calls_data:
+                tool_args_update_context += "\n\nTools used in the response generation:\n"
+                for tool_data in tool_calls_data:
+                    tool_name = tool_data['name']
+                    tool_args = json.dumps(tool_data['args'])
+                    tool_output = tool_data['output'] if tool_data['output'] else "No output captured."
+                    tool_args_update_context += f"- Tool Name: {tool_name}\n  Arguments: {tool_args}\n  Output: {tool_output}\n"
+            
             formatted_query = f'''\
 Past Conversation Summary:
 {state["past_conversation_summary"]}
@@ -358,9 +511,18 @@ Final Response:
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
             a = await executor_agent.aget_state(internal_thread)
-            if a.tasks == ():
-                return "critic_agent"
-            else:
+            
+            current_epoch = state.get("epoch", 0)
+            if current_epoch >= 2:
+                return "final_response"
+
+
+            if a.tasks == (): # If there are no pending tool calls, proceed to evaluation/critic
+                if evaluation_flag:
+                    return "evaluator_agent_node"
+                else:
+                    return "critic_agent_node"
+            else: # If there are tool calls, go to interrupt node
                 return "interrupt_node_for_tool"
 
         async def interrupt_node_for_tool(state: ReactCriticWorkflowState):
@@ -423,26 +585,67 @@ Final Response:
                 "executor_messages": executor_agent_response["messages"],
                 "is_tool_interrupted": False
             }
+        async def route_after_executor(state: ReactCriticWorkflowState) -> str:
+            current_epoch = state.get("epoch", 0)
+            if current_epoch >= 2:
+                return "final_response"
+
+            thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
+            internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
+            a = await executor_agent.aget_state(internal_thread)
+
+            if a.tasks == ():  # No pending tool calls
+                return "evaluator_agent_node" if evaluation_flag else "critic_agent_node"
+            else:
+                return "interrupt_node_for_tool"
+
 
 
         ### Build Graph
         workflow = StateGraph(ReactCriticWorkflowState)
         workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
         workflow.add_node("executor_agent_node", executor_agent_node)
-        workflow.add_node("critic_agent", critic_agent)
+        # workflow.add_node("critic_agent", critic_agent)
         workflow.add_node("final_response", final_response)
         workflow.add_node("tool_interrupt", tool_interrupt)
         workflow.add_node("interrupt_node_for_tool", interrupt_node_for_tool)
-        if flags["response_formatting_flag"]:
-            workflow.add_node("formatter", lambda state: InferenceUtils.format_for_ui_node(state, llm))
+        
+        if evaluation_flag:
+            workflow.add_node("evaluator_agent_node", evaluator_agent)
+            log.info("✅ Added online evaluation nodes")
+        else:
+            workflow.add_node("critic_agent_node", critic_agent)
+            log.info("✅ Added critic_agent node")
 
         workflow.add_edge(START, "generate_past_conversation_summary")
         workflow.add_edge("generate_past_conversation_summary", "executor_agent_node")
+
+        
+        conditional_targets = ["interrupt_node_for_tool"]
+        if evaluation_flag:
+            conditional_targets.append("evaluator_agent_node")
+        else:
+            conditional_targets.append("critic_agent_node")
+
         workflow.add_conditional_edges(
             "executor_agent_node",
-            final_decision,
-            ["interrupt_node_for_tool", "critic_agent"],
+            route_after_executor,
+            conditional_targets
         )
+
+        if evaluation_flag:
+            workflow.add_conditional_edges(
+                "evaluator_agent_node",
+                evaluator_decision,
+                ["final_response","executor_agent_node"]
+            )
+        else:
+            workflow.add_conditional_edges(
+                "critic_agent_node",
+                critic_decision,
+                ["final_response", "executor_agent_node"]
+            )
+
         workflow.add_conditional_edges(
             "interrupt_node_for_tool",
             interrupt_node_decision_for_tool,
@@ -450,17 +653,16 @@ Final Response:
         )
         workflow.add_conditional_edges(
             "tool_interrupt",
-            final_decision,
-            ["interrupt_node_for_tool", "critic_agent"],
+            route_after_executor,
+            conditional_targets,
         )
-        workflow.add_conditional_edges(
-            "critic_agent",
-            critic_decision,
-            ["final_response", "executor_agent_node"],
-        )
+
         if flags["response_formatting_flag"]:
+            workflow.add_node("formatter", lambda state: InferenceUtils.format_for_ui_node(state, llm))
+
             workflow.add_edge("final_response", "formatter")
             workflow.add_edge("formatter", END)
+
         else:
             workflow.add_edge("final_response", END)
         

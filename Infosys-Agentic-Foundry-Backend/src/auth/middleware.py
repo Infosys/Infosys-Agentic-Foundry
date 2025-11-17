@@ -24,7 +24,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         "/auth/me",
         "/utility/get/version",
         "/chat/sdlc-agent/inference",
-        "/files/user-uploads/download",
+        "/utility/files/user-uploads/download",
         "/download"
     }
 
@@ -92,7 +92,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             log.error(f"Authentication middleware error: {e}")
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"detail": "Authentication error"}
+                content={"detail": f"Error is {e}"}
             )
     
     def _is_public_endpoint(self, path: str) -> bool:
@@ -106,7 +106,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             "/auth/",
             "/docs",
             "/openapi.json",
-            "/redoc"
+            "/redoc",
+            "/static",
         ]
         
         return any(path.startswith(pattern) for pattern in public_patterns)

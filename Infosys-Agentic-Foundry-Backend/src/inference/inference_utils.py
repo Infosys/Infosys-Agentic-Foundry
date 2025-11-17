@@ -2,31 +2,28 @@
 import re
 import ast
 import json
-import os
-import numpy as np
-from typing import List, Dict, Tuple, Union, Any, Optional
+from typing import List, Dict, Union, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
-from langchain_core.tools import tool
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage, ChatMessage
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from sentence_transformers import SentenceTransformer, util
 from sentence_transformers import CrossEncoder
-from scipy.spatial.distance import cosine
 
 from src.models.model_service import ModelService
-from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService
+from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService, ConsistencyService
+from src.prompts.prompts import FORMATTER_PROMPT
 from telemetry_wrapper import logger as log
 
 # Import the Redis-PostgreSQL manager
 from src.database.redis_postgres_manager import RedisPostgresManager, TimedRedisPostgresManager, create_manager_from_env, create_timed_manager_from_env
+from src.utils.secrets_handler import current_user_email
 
 # Initialize the global manager
 _global_manager = None
 
-import asyncio
 async def get_global_manager():
     """Get or create the global RedisPostgresManager instance (async)"""
     global _global_manager
@@ -45,6 +42,7 @@ class InferenceUtils:
     Utility class providing static methods for common inference-related tasks
     like JSON repair, output parsing, and message formatting.
     """
+
     def __init__(
         self,
         chat_service: ChatService,
@@ -53,7 +51,8 @@ class InferenceUtils:
         model_service: ModelService,
         feedback_learning_service: FeedbackLearningService,
         evaluation_service: EvaluationService,
-        embedding_model: HuggingFaceEmbeddings,
+        consistency_service:ConsistencyService,
+        embedding_model: SentenceTransformer,
         cross_encoder: CrossEncoder
     ):
         # Getting all required services for Inference
@@ -63,19 +62,9 @@ class InferenceUtils:
         self.model_service = model_service
         self.feedback_learning_service = feedback_learning_service
         self.evaluation_service = evaluation_service
+        self.consistency_service = consistency_service
         self.embedding_model = embedding_model
         self.cross_encoder = cross_encoder
-        
-        # Initialize the global manager if not already done
-        try:
-            self.manager = asyncio.run(get_global_manager())
-            if self.manager:
-                log.info("RedisPostgresManager initialized for InferenceUtils")
-            else:
-                log.warning("RedisPostgresManager failed to initialize, falling back to direct Redis operations")
-        except Exception as e:
-            self.manager = None
-            log.warning(f"RedisPostgresManager failed to initialize due to error: {e}, falling back to direct Redis operations")
 
     @staticmethod
     async def force_persistence():
@@ -360,8 +349,7 @@ Output:
 
     @staticmethod
     async def create_manage_memory_tool():
-        @tool
-        async def manage_memory(user_id: str, memory_key: str, memory_data: Union[str, dict]) -> str:
+        async def manage_memory(memory_key: str, memory_data: Union[str, dict]) -> str:
             """
             Store information in long-term memory for future reference based on user queries.
             
@@ -372,15 +360,19 @@ Output:
             - Any data the user explicitly wants stored or that seems important for continuity
             
             Args:
-                user_id: The user's unique identifier
                 memory_key: A descriptive key for this memory
                 memory_data: The information to store (string or dictionary format)
             """
+            user_id = current_user_email.get("user_123")
+            if not user_id:
+                log.error("Error getting current user email: User context not available")
+                return "Error: Unable to get current user email - User context not available"
             if not isinstance(memory_data, dict):
                 memory_data = {"content": f"memory_key: {memory_key}, memory_data: {memory_data}"}
             
             # Use RedisPostgresManager instead of direct Redis xadd
             try:
+                user_id = current_user_email.get("test_user")
                 manager = await get_global_manager()
                 if manager:
                     record_id = f"{user_id}_{memory_key}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
@@ -401,24 +393,20 @@ Output:
         return manage_memory
 
     @staticmethod
-    async def create_search_memory_tool(embedding_model: HuggingFaceEmbeddings):
-        @tool
-        async def search_memory(user_id: str, query: str) -> str:
+    async def create_search_memory_tool(embedding_model: SentenceTransformer, agent_id : str = None):
+        async def search_memory(query: str) -> str:
             """
             Search through stored memories to find relevant information based on the user's query,
             using semantic similarity scoring via embeddings.
             
             Args:
-                user_id: The user's unique identifier
                 query: What to search for in the stored memories
             """
-
+            user_id = agent_id if agent_id else current_user_email.get("user_123")
             try:
-                query_embedding = embedding_model.embed_query(query)
-                # Use RedisPostgresManager to get records from both cache and database
+                query_embedding = embedding_model.encode(query, convert_to_tensor=True)
                 manager = await get_global_manager()
                 if manager:
-                    # Get records from both cache and database
                     records = await manager.get_records_by_category(user_id, limit=50)
                     if not records:
                         return "No memories found for this query."
@@ -426,16 +414,26 @@ Output:
                     for record in records:
                         record_data = record.data
                         content = record_data.get('content', str(record_data))
-                        # Get or compute embedding
-                        item_embedding = None
-                        if '_embedding' in record_data and record_data['_embedding']:
-                            try:
-                                item_embedding = ast.literal_eval(record_data['_embedding'])
-                            except:
-                                pass
-                        if item_embedding is None:
-                            item_embedding = embedding_model.embed_query(content)
-                        similarity = 1 - cosine(query_embedding, item_embedding)
+                        stored_query = record_data.get('query', '')
+                        stored_response = record_data.get('response', '')
+                        
+                        if stored_query.strip():
+                            # Calculate query-to-query similarity
+                            query_embedding_for_query = embedding_model.encode(stored_query, convert_to_tensor=True)
+                            query_similarity = float(util.cos_sim(query_embedding, query_embedding_for_query).item())
+                            
+                            # Calculate query-to-response similarity
+                            if stored_response.strip():
+                                response_embedding = embedding_model.encode(stored_response[:200], convert_to_tensor=True)  # Truncate response
+                                response_similarity = float(util.cos_sim(query_embedding, response_embedding).item())
+                            else:
+                                response_similarity = 0.0
+                            
+                            # Combined score: 70% query + 30% response
+                            similarity = 0.7 * query_similarity + 0.3 * response_similarity
+                        else:
+                            item_embedding = embedding_model.encode(content, convert_to_tensor=True)
+                            similarity = float(util.cos_sim(query_embedding, item_embedding).item())
                         scored_results.append({
                             'key': record_data.get('memory_key', record.id),
                             'content': content,
@@ -459,7 +457,7 @@ Output:
                 scored_results.sort(key=lambda x: x['score'], reverse=True)
                 top_score = scored_results[0]['score']
                 
-                result_top_five = scored_results[:5]  
+                result_top_five = scored_results[:5] 
                 return result_top_five
 
             except Exception as e:
@@ -470,16 +468,42 @@ Output:
     @staticmethod
     def extract_json_from_code_block(text: str) -> Optional[Dict]:
         """Finds and parses a JSON object from a markdown code block."""
-        pattern = r"```json\s*([\s\S]*?)\s*```"
-        match = re.search(pattern, text)
-        if match:
-            json_string = match.group(1).strip()
-            try:
-                return json.loads(json_string)
-            except json.JSONDecodeError:
-                print(f"Warning: Found JSON code block, but failed to parse. Content: {json_string}")
-                return None
-        print("Warning: No valid JSON code block found in the LLM response.")
+        try:
+            # Clean up the text - remove BOM, normalize whitespace, etc.
+            cleaned_text = text.strip().replace('\ufeff', '').replace('\u200b', '')
+            parsed_json = json.loads(cleaned_text)
+            log.info("Successfully parsed JSON without needing code block extraction.")
+            return parsed_json
+
+        except json.JSONDecodeError as e:
+            log.debug(f"Direct JSON parsing failed: {e}")
+            # Try to extract from code block
+            pattern = r"```json\s*([\s\S]*?)\s*```"
+            match = re.search(pattern, text)
+            if match:
+                json_string = match.group(1).strip()
+                # Clean up the extracted JSON string
+                json_string = json_string.replace('\ufeff', '').replace('\u200b', '')
+                try:
+                    parsed_json = json.loads(json_string)
+                    log.info("Successfully extracted JSON from code block.")
+                    return parsed_json
+
+                except json.JSONDecodeError as e:
+                    log.warning(f"Found JSON code block, but failed to parse. Error: {e}")
+                    log.debug(f"Content: {json_string}")
+                    # Try to find the specific issue and create a fallback
+                    try:
+                        # Sometimes the JSON might have trailing commas or other issues
+                        # Let's try basic cleaning
+                        cleaned_json = json_string.replace(',}', '}').replace(',]', ']')
+                        parsed_json = json.loads(cleaned_json)
+                        log.info("Successfully parsed JSON after basic cleaning.")
+                        return parsed_json
+                    except json.JSONDecodeError:
+                        log.error(f"JSON parsing failed even after cleaning. Content: {json_string}")
+                        return None
+        log.info("Warning: No valid JSON code block found in the LLM response.")
         return None
 
     @staticmethod
@@ -492,60 +516,7 @@ Output:
 
         # This prompt is the core of the solution. It is extremely specific and provides
         # clear examples of the required {type, data, metadata} structure.
-        formatter_prompt = f"""
-You are an expert UI data formatting assistant. Your sole purpose is to convert an assistant's final text answer into a single, structured JSON object for a rich user interface based on user intention.
-
-**CRITICAL INSTRUCTIONS:**
-1.  Your entire output MUST be a single Strict JSON object wrapped in a markdown code block (```json ... ```).
-2.  The root of the Strict JSON object must have a single key: "parts", which is a list.
-3.  Every item in the "parts" list MUST be an object with exactly three keys: "type", "data", and "metadata".
-    - `type`: A string representing the component (e.g., "text", "table", "chart").
-    - `data`: An object containing the primary information needed to render the component.
-    - `metadata`: An object for extra information like sources or timestamps. It can be an empty object {{}}.
-4. Make sure there is atleast one text component exists.
-5. Understand the user intention and format the data according to the user intention.
-6. IF the user's prompt contains a request for a specific component (chart, table, image, etc.), THEN you must generate that component as your primary output.
-7. ELSE IF the user's prompt does not specify a component, THEN you must infer the best component based on the data's structure and content.
-8. ALWAYS ensure that only the single, most relevant component is generated. Do not output multiple visual components unless explicitly asked.
-9. If the assistant's final text answer contains multiple distinct pieces of information that can be represented as separate components, THEN you may include multiple components in the "parts" list.
-10. If the assistant's final text answer is purely textual with no structured data, THEN you must create a single "text" component containing the entire answer.
-
-**COMPONENT SCHEMA EXAMPLES:**
-
-- **Text: This text will be shown in chat window**
-`{{ "type": "text", "data": {{ "content": "The answer is 42." }}, "metadata": {{ "source": "calculator" }} }}`
-
-- **Table:**
-`{{ "type": "table", "data": {{ "title": "My Data", "headers": ["Col A"], "rows": [["val1"]] }}, "metadata": {{}} }}`
-
-- **Chart:**
-`{{ "type": "chart", "data": {{ "chart_type": "bar", "title": "My Chart", "chart_data": {{ "labels": ["X"], "datasets": [{{ "label": "Y", "data": [100] }}] }} }}, "metadata": {{}} }}`
-
-- **Image:**
-`{{ "type": "image", "data": {{ "src": "https://example.com/image.png", "alt": "A description" }}, "metadata": {{}} }}`
-
-- **Text Summary Need to shown on canvas along with other componets**
-`{{ "type": "canvas_text", "data": {{ "content": "This is a summary of the conversation." }}, "metadata": {{}} }}`
-
-- **JSON Data**
-`{{ "type": "json", "data": {{ "key": "value" }}, "metadata": {{}} }}`
-
-- **Code**
-`{{ "type": "code", "data": {{ "language": "python", "code": "print(\"Hello, world!\")" }}, "metadata": {{}} }}`
-
----
-**CONTEXT:**
-- **User's Original Query:** "{state['query']}"
-- **Assistant's Final Text Answer:** "{state['response']}"
----
-"""+"""
-## OUTPUT FORMAT:
-{
-    "parts": [component1, component2, ...]
-}
-
-Now, analyze the context and generate the final strict JSON object. Remember to follow all instructions precisely.
-"""
+        formatter_prompt = FORMATTER_PROMPT.format(query=state["query"], response=state["response"])
 
         raw_response_text = llm.invoke(formatter_prompt).content
         log.info(f"Formatter LLM Raw Output Generated")
@@ -570,7 +541,7 @@ Now, analyze the context and generate the final strict JSON object. Remember to 
             parsed_json.update({"parts_storage_dict": {state["executor_messages"][-1].id: parsed_json.get("parts", [])}})
         
         return parsed_json
-    
+
     @staticmethod
     def add_parts(left_parts, right_parts):
         """
@@ -610,12 +581,12 @@ class EpisodicMemoryManager:
             self,
             user_id: str,
             *,
-            embedding_model: HuggingFaceEmbeddings = None,
+            embedding_model: SentenceTransformer = None,
             cross_encoder: CrossEncoder = None,
             max_examples: int = 3,
             max_queue_size: int = 30,
             retention_days: int = 30,
-            relevance_threshold: float = 0.3,
+            relevance_threshold: float = 0.65,
             cleanup_usage_threshold: int = 3,
             low_performer_threshold: float = 0.2
         ):
@@ -632,32 +603,25 @@ class EpisodicMemoryManager:
 
         if self.embedding_model is None:
             try:
-                from langchain_community.embeddings import HuggingFaceEmbeddings
-                base_model_path = os.getenv("EMBEDDING_MODEL_PATH")
-                self.embedding_model = HuggingFaceEmbeddings(
-                    model_name=base_model_path,
-                    model_kwargs={"device": "cpu"}
-                )
+                from src.api.dependencies import ServiceProvider
+                self.embedding_model = ServiceProvider.get_embedding_model()
             except Exception as e:
-                print(f"ERROR: Failed to initialize default embedding model: {e}")
+                log.error(f"ERROR: Failed to initialize default embedding model: {e}")
                 self.embedding_model = None
         
         if self.cross_encoder is None:
             try:
-                from sentence_transformers import CrossEncoder
-                cross_encoder_model = os.getenv("CROSS_ENCODER_PATH")
-                self.cross_encoder = CrossEncoder(cross_encoder_model)
+                from src.api.dependencies import ServiceProvider
+                self.cross_encoder = ServiceProvider.get_cross_encoder()
             except Exception as e:
-                print(f"ERROR: Failed to initialize default cross encoder: {e}")
+                log.error(f"ERROR: Failed to initialize default cross encoder: {e}")
                 self.cross_encoder = None
 
     async def store_interaction_example(self, query: str, response: str, label: str, tool_calls: Optional[List[str]] = None):
         try:
             await self.cleanup_expired_examples()
-            # Use RedisPostgresManager to get current items
             manager = await get_global_manager()
             if manager:
-                # Get records from both cache and database
                 records = await manager.get_records_by_category(self.user_id, limit=self.MAX_QUEUE_SIZE + 5)
             else:
                 log.error("Manager not available, cannot retrieve interaction records")
@@ -688,14 +652,13 @@ class EpisodicMemoryManager:
             if len(records) >= self.MAX_QUEUE_SIZE:
                 await self.cleanup_low_performing_examples(records)
 
+            # Use combined query + response for better semantic representation
             content = f"Query: {query.strip()} | Response: {response.strip()} | Label: {label}"
-            embedding = self.embedding_model.embed_query(content)
-
+            
             interaction_data = {
                 "query": query.strip(),
                 "response": response.strip(),
                 "content": content,
-                "_embedding": str(embedding),
                 "timestamp": datetime.now().isoformat(),
                 "total_usage_count": 0,
                 "total_relevance_sum": 0.0,
@@ -744,45 +707,42 @@ class EpisodicMemoryManager:
                         await manager.delete_record(key)
                         
                 except Exception as e:
-                    print(f"Error deleting record {key}: {e}")
                     log.error(f"Error deleting record {key}: {e}")
         
             if expired_keys:
-                print(f"Cleaned up {len(expired_keys)} expired examples")
+                log.info(f"Cleaned up {len(expired_keys)} expired examples")
         except Exception as e:
-            print(f"Error during cleanup of expired examples: {e}")
             log.error(f"Error during cleanup of expired examples: {e}")
 
     async def cleanup_low_performing_examples(self, current_items):
         candidates = []
         for item in current_items:
-            # Handle both old and new data structure
-            item_value = item.get('value') if isinstance(item, dict) else (item.value if hasattr(item, 'value') else None)
-            item_key = item.get('key') if isinstance(item, dict) else (item.key if hasattr(item, 'key') else None)
-            
-            if item_value:
-                uc = item_value.get('total_usage_count', 0)
-                rs = item_value.get('total_relevance_sum', 0.0)
+            # Support both dict and object types for item and its data/value
+            if isinstance(item, dict):
+                item_data = item.get('data') or item.get('value') or item
+                item_key = item.get('key') or item.get('id')
+            else:
+                item_data = getattr(item, 'data', None) or getattr(item, 'value', None)
+                item_key = getattr(item, 'key', None) or getattr(item, 'id', None)
+            if item_data:
+                uc = item_data.get('total_usage_count', 0)
+                rs = item_data.get('total_relevance_sum', 0.0)
                 if uc >= self.CLEANUP_USAGE_THRESHOLD:
-                    avg_rel = rs / uc
+                    avg_rel = rs / uc if uc else 0.0
                     if avg_rel < self.LOW_PERFORMER_THRESHOLD:
                         candidates.append({'key': item_key, 'avg_relevance': avg_rel})
         candidates.sort(key=lambda x: x['avg_relevance'])
         to_remove = candidates[:5]
-        
-        # Remove from both the manager and store
         manager = await get_global_manager()
         for c in to_remove:
             if manager:
-                # Remove from RedisPostgresManager (this handles both cache and database)
                 await manager.base_manager.delete_record(c['key'])
-                
         if to_remove:
-            print(f"Cleaned up {len(to_remove)} low-performing examples")
+            log.info(f"Cleaned up {len(to_remove)} low-performing examples")
 
     async def find_relevant_examples_for_query(self, query: str) -> Dict[str, List[Dict]]:
-        episodic_search_tool = await InferenceUtils.create_search_memory_tool(self.embedding_model)
-        raw_results = await episodic_search_tool.ainvoke({"user_id": self.user_id, "query": query})
+        episodic_search_tool = await InferenceUtils.create_search_memory_tool(self.embedding_model, self.user_id)
+        raw_results = await episodic_search_tool(query=query)
         if not raw_results or "No" in raw_results:
             return {"positive": [], "negative": []}
 
@@ -795,29 +755,66 @@ class EpisodicMemoryManager:
                 else:
                     positive_cands.append(c)
 
-        def score_with_cross_encoder(cands):
+        def rerank_with_cross_encoder(cands):
             if not cands:
                 return []
-            pairs = [[query, c['query']] for c in cands]
+            
+            query_pairs = []
+            query_response_pairs = []
+            for c in cands:
+                # Query-to-query comparison
+                query_pairs.append([query, c['query']])
+                # Query-to-response comparison (if response exists)
+                if c.get('response', '').strip():
+                    response_truncated = c['response'][:200]
+                    query_response_pairs.append([query, response_truncated])
+                else:
+                    query_response_pairs.append([query, ""])
+            
             try:
-                scores = self.cross_encoder.predict(pairs)
-            except Exception:
-                scores = [c['score'] for c in cands]
-            if not isinstance(scores, np.ndarray):
-                scores = np.array(scores)
-            return [{"candidate": cands[i], "score": float(scores[i])} for i in range(len(cands))]
+                # Get raw logits from cross-encoder for both query and response pairs
+                query_raw_scores = self.cross_encoder.predict(query_pairs)
+                response_raw_scores = self.cross_encoder.predict(query_response_pairs)
+                
+                # Apply sigmoid to convert logits to probabilities (0-1 range)
+                import torch
+                if not isinstance(query_raw_scores, torch.Tensor):
+                    query_raw_scores = torch.tensor(query_raw_scores)
+                if not isinstance(response_raw_scores, torch.Tensor):
+                    response_raw_scores = torch.tensor(response_raw_scores)
+                    
+                query_sigmoid_scores = torch.sigmoid(query_raw_scores).numpy()
+                response_sigmoid_scores = torch.sigmoid(response_raw_scores).numpy()
+            
+                combined_scores = 0.7 * query_sigmoid_scores + 0.3 * response_sigmoid_scores
+               
+                return [{"candidate": cands[i], "score": float(combined_scores[i]), "bi_score": cands[i]['score']} for i in range(len(cands))]
+                
+            except Exception as e:
+                log.error(f"Cross-encoder failed: {e}, falling back to bi-encoder scores")
+                return [{"candidate": cands[i], "score": cands[i]['score'], "bi_score": cands[i]['score']} for i in range(len(cands))]
 
-        scored_pos = score_with_cross_encoder(positive_cands)
-        scored_neg = score_with_cross_encoder(negative_cands)
-    
-        scored_pos = [x for x in scored_pos if x["score"] >= self.RELEVANCE_THRESHOLD]
-        scored_neg = [x for x in scored_neg if x["score"] >= self.RELEVANCE_THRESHOLD]
+        scored_pos = rerank_with_cross_encoder(positive_cands)
+        scored_neg = rerank_with_cross_encoder(negative_cands)
 
-        scored_pos.sort(key=lambda x: x["score"], reverse=True)
-        scored_neg.sort(key=lambda x: x["score"], reverse=True)
+        # Filter by relevance threshold and update usage statistics for qualifying examples
+        qualified_pos = []
+        for x in scored_pos:
+            if x["score"] >= self.RELEVANCE_THRESHOLD:
+                qualified_pos.append(x)
+                await self.update_example_usage_statistics(x['candidate']['key'], x['score'])
+        
+        qualified_neg = []
+        for x in scored_neg:
+            if x["score"] >= self.RELEVANCE_THRESHOLD:
+                qualified_neg.append(x)
+                await self.update_example_usage_statistics(x['candidate']['key'], x['score'])
 
-        scored_pos = scored_pos[:self.MAX_EXAMPLES]
-        scored_neg = scored_neg[:self.MAX_EXAMPLES]
+        qualified_pos.sort(key=lambda x: x["score"], reverse=True)
+        qualified_neg.sort(key=lambda x: x["score"], reverse=True)
+       
+        scored_pos = qualified_pos[:self.MAX_EXAMPLES]
+        scored_neg = qualified_neg[:self.MAX_EXAMPLES]
 
         positive_examples = [{
             "query": item['candidate']['query'],
@@ -826,7 +823,6 @@ class EpisodicMemoryManager:
             "key": item['candidate']['key'],
             "tool_calls": item['candidate']['tool_calls']
         } for item in scored_pos]
-
         negative_examples = [{
             "query": item['candidate']['query'],
             "response": item['candidate']['response'],
@@ -877,7 +873,7 @@ class EpisodicMemoryManager:
                 "1. Use positive examples as guidance for response style, structure, and problem solving approach.\n"
                 "2. Explicitly avoid generating response similar to negative examples (do not repeat their mistakes or undesirable style).\n"
                 "3. Prefer using available tools for specialized tasks.\n"
-                "4. Do not fabriate facts, hallucinate, or confidently assert things you are unsure about.\n"
+                "4. Do not fabricate facts, hallucinate, or confidently assert things you are unsure about.\n"
             )
         return context
-    
+

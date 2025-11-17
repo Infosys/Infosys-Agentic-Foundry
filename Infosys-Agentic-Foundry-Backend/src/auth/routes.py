@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from src.auth.models import (
     User, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
     UpdatePasswordRequest, GrantApprovalPermissionRequest, ApprovalPermissionResponse,
-    RevokeApprovalPermissionRequest, UserRole, Permission
+    RevokeApprovalPermissionRequest, UserRole, Permission, RefreshTokenRequest, RefreshTokenResponse
 )
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
@@ -27,8 +27,9 @@ async def login(
     user_agent = get_user_agent(request)
     log.info("Login attempt with data: %s")
     login_response = await auth_service.login(login_data, ip_address, user_agent)
-    log.info("login attempeted")
-    log.info("compelted login")
+    log.info("login attempted")
+    log.info("completed login")
+    # Return response directly; caller handles refresh token storage (no cookies set server-side)
     return login_response
 
 
@@ -43,9 +44,9 @@ async def logout(
     token = auth_header.split(" ", 1)[1]
     ip_address = get_client_ip(request)
     user_agent = get_user_agent(request)
-    await auth_service.logout(token, ip_address, user_agent)
+    refresh_token = request.cookies.get("refresh_token")
+    await auth_service.logout(token, refresh_token, ip_address, user_agent)
     return {"message": "Logged out successfully"}
-
 
 @router.post("/register", response_model=RegisterResponse)
 async def register(
@@ -71,6 +72,21 @@ async def guest_login(
     login_response = await auth_service.guest_login(ip_address, user_agent)
     log.info("Guest login attempted with response: %s", login_response)
     return login_response
+
+
+@router.post("/refresh-token", response_model=RefreshTokenResponse)
+async def refresh_access_token(
+    request: Request,
+    payload: RefreshTokenRequest | None = None,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """Use refresh token (from cookie or body) to obtain a new access token."""
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+    provided = (payload.refresh_token if payload else None) or request.cookies.get("refresh_token")
+    if not provided:
+        raise HTTPException(status_code=401, detail="Refresh token missing")
+    return await auth_service.refresh_access_token(provided, ip_address, user_agent)
 
 
 @router.post("/update-password")

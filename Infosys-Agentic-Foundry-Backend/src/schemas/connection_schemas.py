@@ -1,5 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal, Union, List, Dict, Any
 
 class ConnectionSchema(BaseModel):
@@ -12,7 +12,7 @@ class ConnectionSchema(BaseModel):
     connection_password: Optional[str] = Field("", example="password", description="Password for database authentication.")
     connection_database_name: str = Field(..., description="Name of the database, file path for SQLite, or URI for MongoDB.")
 
-    @validator('connection_database_type')
+    @field_validator('connection_database_type')
     def valid_db_type(cls, v):
         valid_types = ["postgresql", "mysql", "sqlite", "mongodb", "azuresql"]
         if v.lower() not in valid_types:
@@ -34,6 +34,14 @@ class QueryGenerationRequest(BaseModel):
     """Schema for requesting a natural language query to SQL/NoSQL conversion."""
     database_type: str = Field(..., description="Type of the database (e.g., 'PostgreSQL', 'MongoDB').")
     natural_language_query: str = Field(..., description="The natural language query to convert.")
+    temperature: Optional[float] = Field(0.0, description="Temperature parameter for LLM model (0.0-1.0) - controls randomness in responses")
+    
+    @field_validator('temperature')
+    @classmethod
+    def validate_temperature(cls, v):
+        if v is not None and (v < 0.0 or v > 1.0):
+            raise ValueError('Temperature must be between 0.0 and 1.0')
+        return v
 
 class QueryExecutionRequest(BaseModel):
     """Schema for executing a database query."""

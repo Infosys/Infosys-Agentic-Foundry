@@ -7,6 +7,8 @@ new/
 *.db-shm
 *.db-wal
 
+.env
+
 *.ipynb
 *.zip
 
@@ -15,9 +17,17 @@ new/
 user_uploads/
 evaluation_uploads/
 uploaded_sqlite_dbs/
+temp_previews/
+responses_temp/
+outputs/
 sdlc/
 Hugging_face/
 
-
+./personal_learning.py
+./index.html
+./index2.html
+./test.py
+./test1.py
+new_env
 my_env
 !Export_Agent/Agentcode/Agent_Frontend/.env

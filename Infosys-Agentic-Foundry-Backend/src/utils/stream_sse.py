@@ -5,6 +5,7 @@ from fastapi import Request
 import datetime
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_core.messages.base import message_to_dict
+from telemetry_wrapper import logger as log
 
 # How often to send a "keep-alive" message to prevent network timeouts.
 KEEP_ALIVE_INTERVAL_SECONDS = 15
@@ -57,7 +58,7 @@ class SSEConnection:
                 # WINNER: Disconnect Runner. The user has closed their browser.
                 if is_disconnected_task in done:
                     if is_disconnected_task.result():
-                        print("Client disconnected. Breaking event stream loop.")
+                        log.info("Client disconnected. Breaking event stream loop.")
                         break
 
                 # WINNER: Message Runner. We have new data to send.
@@ -80,7 +81,7 @@ class SSEConnection:
         
         except asyncio.CancelledError:
             # This exception is raised when the server shuts down.
-            print("Event stream cancelled (server shutdown).")
+            log.error("Event stream cancelled (server shutdown).")
         
         finally:
             # The "Cleanup Crew": This runs no matter how the loop exits.
@@ -99,13 +100,13 @@ class SSEManager:
         """Creates and stores a new connection for a given session_id."""
         conn = SSEConnection()
         self.connections[session_id] = conn
-        print(f"Session '{session_id}' registered. Total connections: {len(self.connections)}")
+        log.error(f"Session '{session_id}' registered. Total connections: {len(self.connections)}")
         return conn
 
     def unregister(self, session_id: str):
         """Removes a connection, freeing up its resources."""
         if self.connections.pop(session_id, None):
-            print(f"Session '{session_id}' unregistered. Total connections: {len(self.connections)}")
+            log.error(f"Session '{session_id}' unregistered. Total connections: {len(self.connections)}")
 
     async def send(self, session_id: str, data: dict):
         """Sends data to a specific client by their session_id."""
@@ -113,5 +114,5 @@ class SSEManager:
         if conn:
             await conn.send(data)
         else:
-             print(f"Attempted to send to non-existent session '{session_id}'.")
+            log.warning(f"Attempted to send to non-existent session '{session_id}'.")
 

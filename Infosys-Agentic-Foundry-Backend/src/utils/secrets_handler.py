@@ -9,6 +9,7 @@ from psycopg2.extras import RealDictCursor
 import hashlib
 from contextlib import contextmanager
 from contextvars import ContextVar
+from telemetry_wrapper import logger as log
 
 current_user_email: ContextVar[str] = ContextVar("current_user_email")
 
@@ -95,7 +96,7 @@ class PublicKeysManager:
             # Check if it's a duplicate key error
             if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
                 raise ValueError(f"Public key '{key_name}' already exists")
-            print(f"Error creating public key: {e}")
+            log.error(f"Error creating public key: {e}")
             return False
 
     def update_public_key(self, key_name: str, key_value: str, description: str = None, updated_by: str = None) -> bool:
@@ -127,9 +128,6 @@ class PublicKeysManager:
                         update_fields.append("description = %s")
                         params.append(description)
                     
-                    if updated_by is not None:
-                        update_fields.append("updated_by = %s")
-                        params.append(updated_by)
                     
                     params.append(key_name)  # For WHERE clause
                     
@@ -148,7 +146,7 @@ class PublicKeysManager:
             # Re-raise ValueError as is
             raise
         except Exception as e:
-            print(f"Error updating public key: {e}")
+            log.error(f"Error updating public key: {e}")
             return False
         
     def get_public_key(self, key_name: str) -> Optional[str]:
@@ -175,7 +173,7 @@ class PublicKeysManager:
                         return self._decrypt_value(result['encrypted_value'])
             return None
         except Exception as e:
-            print(f"Error retrieving public key: {e}")
+            log.error(f"Error retrieving public key: {e}")
             return None
     
     def get_public_keys(self, key_names: Optional[list] = None) -> Dict[str, str]:
@@ -211,11 +209,11 @@ class PublicKeysManager:
                         try:
                             keys[row['key_name']] = self._decrypt_value(row['encrypted_value'])
                         except Exception as decrypt_error:
-                            print(f"Error decrypting {row['key_name']}: {decrypt_error}")
+                            log.error(f"Error decrypting {row['key_name']}: {decrypt_error}")
                             continue
                             
         except Exception as e:
-            print(f"Error retrieving public keys: {e}")
+            log.error(f"Error retrieving public keys: {e}")
         
         return keys
     
@@ -231,7 +229,7 @@ class PublicKeysManager:
                     conn.commit()
                     return cur.rowcount > 0
         except Exception as e:
-            print(f"Error deleting public key: {e}")
+            log.error(f"Error deleting public key: {e}")
             return False
     
     def list_public_key_names(self) -> list:
@@ -246,7 +244,7 @@ class PublicKeysManager:
                     """)
                     return [{'name': row[0], 'description': row[1], 'created_by': row[2], 'created_at': row[3]} for row in cur.fetchall()]
         except Exception as e:
-            print(f"Error listing public keys: {e}")
+            log.error(f"Error listing public keys: {e}")
             return []
 
 
@@ -332,7 +330,7 @@ class UserSecretsManager:
             # Check if it's a duplicate key error
             if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
                 raise ValueError(f"Secret '{secret_name}' already exists for user '{user_email}'")
-            print(f"Error creating secret: {e}")
+            log.error(f"Error creating secret: {e}")
             return False
 
     def update_user_secret(self, user_email: str, secret_name: str, secret_value: str) -> bool:
@@ -370,7 +368,7 @@ class UserSecretsManager:
             # Re-raise ValueError as is
             raise
         except Exception as e:
-            print(f"Error updating secret: {e}")
+            log.error(f"Error updating secret: {e}")
             return False
     
     def get_user_secret(self, user_email: str, secret_name: str) -> Optional[str]:
@@ -398,7 +396,7 @@ class UserSecretsManager:
                         return self._decrypt_value(result['encrypted_value'])
             return None
         except Exception as e:
-            print(f"Error retrieving secret: {e}")
+            log.error(f"Error retrieving secret: {e}")
             return None
     
     def get_user_secrets(self, user_email: str, secret_names: Optional[list] = None) -> Dict[str, str]:
@@ -436,11 +434,11 @@ class UserSecretsManager:
                         try:
                             secrets[row['secret_name']] = self._decrypt_value(row['encrypted_value'])
                         except Exception as decrypt_error:
-                            print(f"Error decrypting {row['secret_name']}: {decrypt_error}")
+                            log.error(f"Error decrypting {row['secret_name']}: {decrypt_error}")
                             continue
                             
         except Exception as e:
-            print(f"Error retrieving secrets: {e}")
+            log.error(f"Error retrieving secrets: {e}")
         
         return secrets
     
@@ -456,7 +454,7 @@ class UserSecretsManager:
                     conn.commit()
                     return cur.rowcount > 0
         except Exception as e:
-            print(f"Error deleting secret: {e}")
+            log.error(f"Error deleting secret: {e}")
             return False
     
     def list_user_secret_names(self, user_email: str) -> list:
@@ -472,7 +470,7 @@ class UserSecretsManager:
                     """, (user_email,))
                     return [row[0] for row in cur.fetchall()]
         except Exception as e:
-            print(f"Error listing secrets: {e}")
+            log.error(f"Error listing secrets: {e}")
             return []
 
 
@@ -681,7 +679,7 @@ def setup_secrets_manager():
     # Generate master key if not exists (do this once and store securely)
     if not os.getenv('SECRETS_MASTER_KEY'):
         master_key = Fernet.generate_key().decode()
-        print(f"Generated master key (store this securely): {master_key}")
+        log.error(f"Generated master key (store this securely): {master_key}")
         os.environ['SECRETS_MASTER_KEY'] = master_key
     
     return UserSecretsManager(db_config)
@@ -706,7 +704,7 @@ def get_user_secrets(look_up_key, default_value=None):
     
     # Retrieve the secret
     secret_value = secrets_manager.get_user_secret(user_email, look_up_key)
-    print(f"Retrieved secret for {look_up_key}: {secret_value}")
+    log.error(f"Retrieved secret for {look_up_key}: {secret_value}")
     return secret_value if secret_value else default_value
 
 def set_user_secret(look_up_key, value):

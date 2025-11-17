@@ -1,0 +1,118 @@
+name: Build and Deploy to AKS 
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - .github/workflows/Test4selfH.yml
+  workflow_dispatch:
+
+env:
+  AZURE_CONTAINER_REGISTRY: acr10052.azurecr.io
+  CONTAINER_NAME: iafbackend
+  RESOURCE_GROUP: RG-PCS-AZ-CR-10052
+  CLUSTER_NAME: aks-REQ0848275
+  DEPLOYMENT_MANIFEST_PATH: iafbackend-deployment2.yaml
+
+jobs:
+  buildImage:
+    runs-on: [self-hosted, Linux, X64]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Build and push Docker image to JFrog Artifactory
+        env:
+          JFROG_USERNAME: ${{ secrets.JFROG_USERNAME }}
+          JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+        run: |
+          echo "Logging in to JFrog Docker registry..."
+          docker login infyartifactory.jfrog.io -u "$JFROG_USERNAME" -p "$JFROG_TOKEN"
+          echo "Building Docker image..."
+          docker build -t infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }} .
+          echo "Pushing Docker image to JFrog..."
+          docker push infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}
+
+      # - name: Install Zscaler Root CA ok
+      #   run: |
+      #     sudo update-ca-trust
+
+      # - name: Upgrade oauthlib (if needed)
+      #   run: pip install --upgrade oauthlib
+
+      - name: Azure login with Bash
+        shell: bash
+        env:
+          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+          SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+        run: |
+          clientId="${{ secrets.AZURE_CLIENT_ID }}"
+          tenantId="${{ secrets.AZURE_TENANT_ID }}"
+          subscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          clientSecret="${{ secrets.AZURE_CLIENT_SECRET }}"
+          az login --service-principal \
+            --username "$clientId" \
+            --password "$clientSecret" \
+            --tenant "$tenantId"
+          az account set --subscription "$subscriptionId"
+
+      - name: Pull image from JFrog and retag for ACR
+        run: |
+          docker pull infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}
+          docker tag infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }} ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
+          az acr login --name acr10052
+          docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
+
+  deploy:
+    needs: buildImage
+    runs-on: [self-hosted, Linux, X64]
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Azure login with Bash
+        shell: bash
+        env:
+          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+          SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+        run: |
+          clientId="${{ secrets.AZURE_CLIENT_ID }}"
+          tenantId="${{ secrets.AZURE_TENANT_ID }}"
+          subscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          clientSecret="${{ secrets.AZURE_CLIENT_SECRET }}"
+          az login --service-principal \
+            --username "$clientId" \
+            --password "$clientSecret" \
+            --tenant "$tenantId"
+          az account set --subscription "$subscriptionId"
+
+      - name: Set up kubelogin for non-interactive login
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: 'v0.0.25'
+
+      - name: Get K8s context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          admin: 'false'
+          use-kubelogin: 'true'
+
+      - name: Deploy application to AKS
+        uses: Azure/k8s-deploy@v4
+        with:
+          action: deploy
+          manifests: ${{ env.DEPLOYMENT_MANIFEST_PATH }}
+          images: |
+            ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
+          arguments: --validate=false

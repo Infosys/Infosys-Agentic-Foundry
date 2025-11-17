@@ -6,10 +6,10 @@ Infosys Agentic Foundry is a part of Infosys Topaz and provides a suite of compo
 
 To get started with Infosys Agentic Foundry UI:
 
-1. **Clone the repository:**
+1. **Clone the repository from ExportAgent_UI branch**
    ```sh
    git clone https://github.com/Infosys-Generative-AI/Agentic-Pro-UI.git
-   cd Agentic-Pro-UI
+   cd ExportAgent_UI
    ```
 
 2. **Install dependencies:**

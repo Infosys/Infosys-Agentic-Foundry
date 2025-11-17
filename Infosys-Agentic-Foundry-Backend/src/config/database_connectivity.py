@@ -1,6 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import asyncpg
 import os
+from telemetry_wrapper import logger as log
 
 async def create_database(db_name: str):
     """
@@ -19,9 +20,9 @@ async def create_database(db_name: str):
     try:
         await conn.execute(f'CREATE DATABASE "{db_name}";')
     except asyncpg.DuplicateDatabaseError:
-        print(f"Database '{db_name}' already exists.")
+        log.error(f"Database '{db_name}' already exists.")
     except asyncpg.PostgresError as e:
-        print(f"Error creating database: {e}")
+        log.error(f"Error creating database: {e}")
     finally:
         await conn.close()
 
@@ -39,7 +40,7 @@ async def create_connection(dsn):
         conn = await asyncpg.connect(dsn)
         return conn
     except asyncpg.PostgresError as e:
-        print("PostgreSQL error occurred:", e)
+        log.error(f"PostgreSQL error occurred: {e}")
         return None
 
 
@@ -60,4 +61,4 @@ async def close_connection(conn):
         try:
             await conn.close()
         except Exception as e:
-            print("Unable to close the connection:", e)
+            log.error(f"Unable to close the connection: {e}")

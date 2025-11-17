@@ -105,7 +105,7 @@ async def create_public_secret_endpoint(fastapi_request: Request, request: Publi
         log.error(f"Error creating public key '{request.secret_name}': {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"{str(e)}"
         )
 
 

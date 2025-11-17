@@ -1,4 +1,5 @@
 import asyncpg
+import hashlib
 from typing import List, Dict, Any, Optional
 from src.auth.models import UserRole
 from telemetry_wrapper import logger as log
@@ -279,3 +280,139 @@ class AuditLogRepository:
         except Exception as e:
             log.error(f"Error fetching audit logs: {e}")
             raise
+
+
+class RefreshTokenRepository:
+    """Repository for managing refresh tokens (stateful)"""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+        self.table_name = "refresh_tokens"
+        self._columns = None  # cache of existing columns
+
+    async def _load_columns(self, conn=None):
+        if self._columns is not None:
+            return self._columns
+        close_conn = False
+        if conn is None:
+            conn = await self.pool.acquire()
+            close_conn = True
+        try:
+            rows = await conn.fetch(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = $1", self.table_name
+            )
+            self._columns = {r['column_name'] for r in rows}
+            return self._columns
+        finally:
+            if close_conn:
+                await self.pool.release(conn)
+
+    async def create_table_if_not_exists(self):
+        """Create refresh token table; does not modify existing auth tables."""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_mail_id TEXT NOT NULL REFERENCES login_credential(mail_id) ON DELETE CASCADE,
+            refresh_token TEXT NOT NULL UNIQUE,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            revoked_at TIMESTAMP,
+            user_agent TEXT,
+            ip_address INET
+        );
+        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_user_mail_id ON {self.table_name}(user_mail_id);
+        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_expires_at ON {self.table_name}(expires_at);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+                # Defensive migration: ensure all expected columns exist (for earlier partial versions)
+                expected_columns = {
+                    'user_mail_id': "TEXT NOT NULL REFERENCES login_credential(mail_id) ON DELETE CASCADE",
+                    'refresh_token': "TEXT UNIQUE",
+                    'expires_at': "TIMESTAMP NOT NULL",
+                    'created_at': "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                    'revoked_at': "TIMESTAMP",
+                    'user_agent': "TEXT",
+                    'ip_address': "INET"
+                }
+                # Fetch existing columns
+                existing_cols_rows = await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = $1", self.table_name
+                )
+                existing_cols = {r['column_name'] for r in existing_cols_rows}
+                for col, ddl in expected_columns.items():
+                    if col not in existing_cols:
+                        try:
+                            await conn.execute(f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS {col} {ddl}")
+                            log.info(f"Added missing column '{col}' to {self.table_name}")
+                        except Exception as mig_e:
+                            log.error(f"Failed adding column {col} to {self.table_name}: {mig_e}")
+                # Ensure unique index on refresh_token (if not already via constraint)
+                await conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{self.table_name}_refresh_token ON {self.table_name}(refresh_token)")
+            log.info(f"Table '{self.table_name}' created or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+            raise
+
+    async def store_token(self, user_mail_id: str, refresh_token: str, expires_at, user_agent: str = None, ip_address: str = None):
+        async with self.pool.acquire() as conn:
+            cols = await self._load_columns(conn)
+            token_hash = hashlib.sha256(refresh_token.encode('utf-8')).hexdigest()
+            # Determine insert strategy based on existing columns
+            if 'token_hash' in cols and 'refresh_token' in cols:
+                query = f"""
+                INSERT INTO {self.table_name} (user_mail_id, refresh_token, token_hash, expires_at, user_agent, ip_address)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+                """
+                row = await conn.fetchrow(query, user_mail_id, refresh_token, token_hash, expires_at, user_agent, ip_address)
+            elif 'token_hash' in cols:  # hashed only storage
+                query = f"""
+                INSERT INTO {self.table_name} (user_mail_id, token_hash, expires_at, user_agent, ip_address)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+                """
+                row = await conn.fetchrow(query, user_mail_id, token_hash, expires_at, user_agent, ip_address)
+            else:  # legacy plain token storage
+                query = f"""
+                INSERT INTO {self.table_name} (user_mail_id, refresh_token, expires_at, user_agent, ip_address)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+                """
+                row = await conn.fetchrow(query, user_mail_id, refresh_token, expires_at, user_agent, ip_address)
+            return str(row['id']) if row else None
+
+    async def get_token(self, refresh_token: str):
+        async with self.pool.acquire() as conn:
+            cols = await self._load_columns(conn)
+            if 'token_hash' in cols:  # prefer hashed lookup
+                token_hash = hashlib.sha256(refresh_token.encode('utf-8')).hexdigest()
+                query = f"SELECT * FROM {self.table_name} WHERE token_hash = $1"
+                row = await conn.fetchrow(query, token_hash)
+            else:
+                query = f"SELECT * FROM {self.table_name} WHERE refresh_token = $1"
+                row = await conn.fetchrow(query, refresh_token)
+            return dict(row) if row else None
+
+    async def revoke_token(self, refresh_token: str):
+        async with self.pool.acquire() as conn:
+            cols = await self._load_columns(conn)
+            if 'token_hash' in cols:
+                token_hash = hashlib.sha256(refresh_token.encode('utf-8')).hexdigest()
+                query = f"UPDATE {self.table_name} SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = $1 AND revoked_at IS NULL"
+                result = await conn.execute(query, token_hash)
+            else:
+                query = f"UPDATE {self.table_name} SET revoked_at = CURRENT_TIMESTAMP WHERE refresh_token = $1 AND revoked_at IS NULL"
+                result = await conn.execute(query, refresh_token)
+            return result != "UPDATE 0"
+
+    async def revoke_all_tokens_for_user(self, user_mail_id: str):
+        query = f"UPDATE {self.table_name} SET revoked_at = CURRENT_TIMESTAMP WHERE user_mail_id = $1 AND revoked_at IS NULL"
+        async with self.pool.acquire() as conn:
+            await conn.execute(query, user_mail_id)
+
+    async def delete_expired(self):
+        query = f"DELETE FROM {self.table_name} WHERE expires_at < CURRENT_TIMESTAMP OR revoked_at IS NOT NULL"
+        async with self.pool.acquire() as conn:
+            await conn.execute(query)

@@ -8,11 +8,12 @@ from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentService, ChatService, ModelService,
-    FeedbackLearningService, EvaluationService, ExportService
+    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService
 )
-from src.database.core_evaluation_service import CoreEvaluationService
+from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.agent_templates.base_agent_onboard import BaseAgentOnboard, BaseMetaTypeAgentOnboard
 from src.inference.base_agent_inference import BaseAgentInference, BaseMetaTypeAgentInference
+from src.inference.python_based_inference.simple_ai_agent_inference import SimpleAIAgentInference
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.utils.file_manager import FileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
@@ -24,7 +25,12 @@ class ServiceProvider:
     Provides access to initialized application service instances.
     These methods are intended to be used as FastAPI dependencies.
     """
-
+    @staticmethod
+    def get_database_manager():
+        if app_container.db_manager is None:
+            raise HTTPException(status_code=500, detail="DatabaseManager not initialized.")
+        return app_container.db_manager
+    
     @staticmethod
     def get_tag_service() -> TagService:
         if app_container.tag_service is None:
@@ -72,6 +78,26 @@ class ServiceProvider:
         if app_container.evaluation_service is None:
             raise HTTPException(status_code=500, detail="EvaluationService not initialized.")
         return app_container.evaluation_service
+    
+
+    @staticmethod
+    def get_consistency_service()  -> ConsistencyService:
+        if app_container.consistency_service is None:
+            raise HTTPException(status_code=500, detail="Consistencyservice not initialized.")
+        return app_container.consistency_service
+    
+    @staticmethod
+    def get_core_consistency_service() -> CoreConsistencyEvaluationService:
+        if app_container.core_consistency_service is None: 
+            raise HTTPException(status_code=500, detail="CoreConsistencyEvaluationService not initialized.") 
+        return app_container.core_consistency_service
+    
+
+    @staticmethod
+    def get_core_robustness_service() -> CoreRobustnessEvaluationService:
+        if app_container.core_robustness_service is None:
+            raise HTTPException(status_code=500, detail="CoreRobustnessEvaluationService not initialized.")
+        return app_container.core_robustness_service
 
     @staticmethod
     def get_core_evaluation_service() -> CoreEvaluationService:
@@ -101,36 +127,44 @@ class ServiceProvider:
     def get_specialized_agent_service(agent_type: str) -> BaseAgentOnboard | BaseMetaTypeAgentOnboard:
         if agent_type == "react_agent":
             return app_container.react_agent_service
-        elif agent_type == "multi_agent":
+        if agent_type == "multi_agent":
             return app_container.multi_agent_service
-        elif agent_type == "planner_executor_agent":
+        if agent_type == "planner_executor_agent":
             return app_container.planner_executor_agent_service
-        elif agent_type == "react_critic_agent":
+        if agent_type == "react_critic_agent":
             return app_container.react_critic_agent_service
-        elif agent_type == "meta_agent":
+        if agent_type == "meta_agent":
             return app_container.meta_agent_service
-        elif agent_type == "planner_meta_agent":
+        if agent_type == "planner_meta_agent":
             return app_container.planner_meta_agent_service
+        if agent_type == "simple_ai_agent":
+            return app_container.simple_ai_agent_service
+        if agent_type == "hybrid_agent":
+            return app_container.hybrid_agent_service
         raise HTTPException(status_code=400, detail=f"Unsupported agent type: {agent_type}")
 
     @staticmethod
-    def get_specialized_inference_service(agent_type: str) -> BaseAgentInference | BaseMetaTypeAgentInference:
+    def get_specialized_inference_service(agent_type: str) -> BaseAgentInference | BaseMetaTypeAgentInference | SimpleAIAgentInference:
         """
         Returns the specialized inference service for the given agent type.
         This is used to handle inference requests for specific agent types.
         """
         if agent_type == "react_agent":
             return app_container.react_agent_inference
-        elif agent_type == "multi_agent":
+        if agent_type == "multi_agent":
             return app_container.multi_agent_inference
-        elif agent_type == "planner_executor_agent":
+        if agent_type == "planner_executor_agent":
             return app_container.planner_executor_agent_inference
-        elif agent_type == "react_critic_agent":
+        if agent_type == "react_critic_agent":
             return app_container.react_critic_agent_inference
-        elif agent_type == "meta_agent":
+        if agent_type == "meta_agent":
             return app_container.meta_agent_inference
-        elif agent_type == "planner_meta_agent":
+        if agent_type == "planner_meta_agent":
             return app_container.planner_meta_agent_inference
+        if agent_type == "simple_ai_agent":
+            return app_container.simple_ai_agent_inference
+        if agent_type == "hybrid_agent":
+            return app_container.hybrid_agent_inference
         raise HTTPException(status_code=400, detail=f"Unsupported inference service for agent type: {agent_type}")
 
     @staticmethod
@@ -181,4 +215,3 @@ class ServiceProvider:
         if app_container.cross_encoder is None:
             raise HTTPException(status_code=500, detail="Cross-encoder not initialized.")
         return app_container.cross_encoder
-

@@ -111,8 +111,10 @@ async def update_approval_response_endpoint(
         response_id=approval_request.response_id,
         update_data=update_data
     )
+    response["status_message"] = response.get("message", "")
+
     if not response.get("is_update"):
-        raise HTTPException(status_code=400, detail=response.get("status_message"))
+        raise HTTPException(status_code=400, detail=response.get("message"))
     return response
 
 

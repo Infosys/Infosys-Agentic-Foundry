@@ -22,10 +22,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Constant server name (can be overridden by env var)
+SERVER_NAME = os.getenv("SERVER_NAME", "localhost")
+
 # --- Global Configuration Flags ---
 USE_OTEL_LOGGING = os.getenv("USE_OTEL_LOGGING", "True").lower() == "true"
 # --- MODIFICATION 1: ADDED MASTER LOGGING SWITCH ---
-ENABLE_LOGGING = os.getenv("ENABLE_LOGGING", "False").lower() == "true"
+ENABLE_LOGGING = os.getenv("ENABLE_LOGGING", "True").lower() == "true"
 
 # --- 1. OpenTelemetryManager Class (No changes) ---
 class OpenTelemetryManager:
@@ -56,7 +59,8 @@ class OpenTelemetryManager:
             return self._otel_tracer_provider
 
         logger.info(f"Setting up OpenTelemetry Tracing for service: {service_name}")
-        resource = Resource(attributes={SERVICE_NAME: service_name})
+        # Include the server name as resource attributes so traces carry the host/service instance info
+        resource = Resource(attributes={SERVICE_NAME: service_name, "host.name": SERVER_NAME, "service.instance.id": SERVER_NAME})
 
         self._otel_tracer_provider = TracerProvider(resource=resource)
         trace.set_tracer_provider(self._otel_tracer_provider)
@@ -89,7 +93,8 @@ class OpenTelemetryManager:
             return self._otel_logger_provider
 
         logger.info(f"Setting up OpenTelemetry Logging for service: {service_name}")
-        resource = Resource(attributes={SERVICE_NAME: service_name})
+        # Include the server name as resource attributes so log records in OTLP carry the host/service instance info
+        resource = Resource(attributes={SERVICE_NAME: service_name, "host.name": SERVER_NAME, "service.instance.id": SERVER_NAME})
 
         ExporterClass = OTLPLogExporterHTTP
         default_endpoint = os.getenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_HTTP")
@@ -298,6 +303,11 @@ class CustomFilter(logging.Filter):
         record.action_on = action_on
         record.previous_value = previous_value
         record.new_value = new_value
+        # Always inject server name into each log record
+        try:
+            record.server_name = SERVER_NAME
+        except Exception:
+            record.server_name = "server"
         return True
 
 # --- 5. Global Logger Initialization ---
@@ -316,7 +326,7 @@ if ENABLE_LOGGING:
     if not logger.handlers:
         logger.addFilter(CustomFilter())
 
-        log_format = "%(asctime)s [%(levelname)s] - %(message)s"
+        log_format = "%(asctime)s [%(levelname)s] [%(server_name)s] - %(message)s"
         formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
         console_handler = logging.StreamHandler()

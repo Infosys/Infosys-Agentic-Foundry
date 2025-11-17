@@ -15,22 +15,18 @@ Features:
 """
 
 import json
-import time
-import logging
 import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, asdict
 import redis
-import psycopg2
 from psycopg2.pool import ThreadedConnectionPool
 from psycopg2.extras import RealDictCursor, execute_values
 import os
 from contextlib import contextmanager
+from telemetry_wrapper import logger as log
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = log
 
 
 @dataclass
@@ -211,7 +207,7 @@ class RedisPostgresManager:
             results = pipe.execute()
             
             if all(results):
-                print(f"Record {record_id} added to cache")
+                log.info(f"Record {record_id} added to cache")
                 
                 # Check if we need to persist to database
                 current_count = await self.get_cache_count()
@@ -220,11 +216,11 @@ class RedisPostgresManager:
                 
                 return True
             else:
-                print(f"Failed to add record {record_id} to cache")
+                log.warning(f"Failed to add record {record_id} to cache")
                 return False
                 
         except Exception as e:
-            print(f"Error adding record {record_id}: {e}")
+            log.error(f"Error adding record {record_id}: {e}")
             return False
     
     async def get_record(self, record_id: str) -> Optional[CacheRecord]:
@@ -710,40 +706,40 @@ async def main():
         manager = await create_manager_from_env()
         # Create timed manager with 15-minute persistence interval
         timed_manager = await create_timed_manager_from_env(time_threshold_minutes=15)
-        print("Testing TimedRedisPostgresManager...")
+        log.info("Testing TimedRedisPostgresManager...")
         # Add your strings with this method using timed manager
         success = await timed_manager.add_record("1", { "string": f"semantic memory string 1"}, "agent0_semanticmemory")
         if not success:
-            print("Failed to add record 1")
+            log.error("Failed to add record 1")
             return
         success = await timed_manager.add_record("2", { "string": f"semantic memory string 2"}, "agent0_semanticmemory")
         if not success:
-            print("Failed to add record 2")
+            log.error("Failed to add record 2")
             return
         success = await timed_manager.add_record("3", { "string": f"thumbs up string"}, "agent0_episodicmemory")
         if not success:
-            print("Failed to add record 3")
+            log.error("Failed to add record 3")
             return
         success = await timed_manager.add_record("4", { "string": f"thumbs down string"}, "agent0_episodicmemory")
         if not success:
-            print("Failed to add record 4")
+            log.error("Failed to add record 4")
             return
         # Get records for vector embeddings and semantic search
         process_for_embeddings_episodic = await timed_manager.get_records_by_category("agent0_episodicmemory")
-        print("Episodic memory records:", process_for_embeddings_episodic)
+        log.info(f"Episodic memory records: {process_for_embeddings_episodic}")
         process_for_embeddings_semantics = await timed_manager.get_records_by_category("agent0_semanticmemory")
-        print("Semantic memory records:", process_for_embeddings_semantics)
+        log.info(f"Semantic memory records: {process_for_embeddings_semantics}")
         # Display cache statistics
         cache_stats = await timed_manager.get_cache_stats()
-        print("Cache statistics:", cache_stats)
+        log.info(f"Cache statistics: {cache_stats}")
         # Force persistence for demonstration
-        print("Forcing persistence to PostgreSQL...")
+        log.info("Forcing persistence to PostgreSQL...")
         await timed_manager.force_persistence()
-        print("Persistence completed.")
+        log.info("Persistence completed.")
         # Close connections
         await timed_manager.close()
     except Exception as e:
-        print(f"Error in main: {e}")
+        log.error(f"Error in main: {e}")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi import HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
+from telemetry_wrapper import logger as log, update_session_context
  
 class MultiDBConnectionManager:
     def __init__(self):
@@ -21,7 +22,7 @@ class MultiDBConnectionManager:
         Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
         self.sql_engines[db_key] = engine
         self.sql_sessions[db_key] = Session
-        print(f"[SQL] Initialized engine for '{db_key}'")
+        log.debug(f"[SQL] Initialized engine for '{db_key}'")
 
     def get_sql_session(self, db_key):
         if db_key not in self.sql_sessions:
@@ -31,7 +32,7 @@ class MultiDBConnectionManager:
     def dispose_sql_engine(self, db_key):
         # if db_key in self.sql_engines:
         #     self.sql_engines[db_key].dispose()
-        #     print(f"[SQL] Disposed engine for '{db_key}'")
+        #     log.debug(f"[SQL] Disposed engine for '{db_key}'")
         if db_key in self.sql_sessions:
             session = self.sql_sessions[db_key]()
             session.close()
@@ -40,7 +41,7 @@ class MultiDBConnectionManager:
         if db_key in self.sql_engines:
             self.sql_engines[db_key].dispose()
             del self.sql_engines[db_key]
-            print(f"[SQL] Disposed engine for '{db_key}'")
+            log.debug(f"[SQL] Disposed engine for '{db_key}'")
 
     # MongoDB management
     def add_mongo_database(self, db_key, uri, db_name, max_pool_size=30):
@@ -49,7 +50,7 @@ class MultiDBConnectionManager:
         client = AsyncIOMotorClient(uri, maxPoolSize=max_pool_size)
         self.mongo_clients[db_key] = client
         self.mongo_databases[db_key] = client[db_name]
-        print(f"[MongoDB] Initialized client for '{db_key}'")
+        log.debug(f"[MongoDB] Initialized client for '{db_key}'")
 
     def get_mongo_database(self, db_key):
         if db_key not in self.mongo_databases:
@@ -63,7 +64,7 @@ class MultiDBConnectionManager:
             # Remove from dictionaries
             del self.mongo_clients[db_key]
             del self.mongo_databases[db_key]
-            print(f"[MongoDB] Closed and removed client for '{db_key}'")
+            log.debug(f"[MongoDB] Closed and removed client for '{db_key}'")
 
     async def close_all(self):
         # Close all SQL sessions and engines
@@ -77,14 +78,14 @@ class MultiDBConnectionManager:
             if key in self.sql_engines:
                 self.sql_engines[key].dispose()
                 del self.sql_engines[key]
-                print(f"[SQL] Disposed engine for '{key}'")
+                log.debug(f"[SQL] Disposed engine for '{key}'")
     
         # Close all MongoDB clients and databases
         for key in list(self.mongo_clients.keys()):
             if key in self.mongo_clients:
                 self.mongo_clients[key].close()
                 del self.mongo_clients[key]
-                print(f"[MongoDB] Closed client for '{key}'")
+                log.debug(f"[MongoDB] Closed client for '{key}'")
         
         for key in list(self.mongo_databases.keys()):
             if key in self.mongo_databases:
@@ -127,10 +128,10 @@ class MultiDBConnectionRepository:
             async with self.pool.acquire() as connection:
                 await connection.execute(create_statement)
 
-            print(f"Table '{self.table_name}' created successfully or already exists.")
+            log.debug(f"Table '{self.table_name}' created successfully or already exists.")
 
         except Exception as e:
-            print(f"Error creating table '{self.table_name}': {e}")
+            log.debug(f"Error creating table '{self.table_name}': {e}")
 
     async def insert_into_db_connections_table(self, connection_data: dict):
         """
@@ -178,8 +179,8 @@ class MultiDBConnectionRepository:
                 await connection.execute(insert_statement, *values)
 
             return {
-                "message": f"Successfully inserted connection with ID: {connection_data['connection_id']}",
-                "connection_id": connection_data["connection_id"],
+                "message": f"Successfully inserted connection with connection name: {connection_data.get('connection_name', '')}",
+                
                 "connection_name": connection_data.get("connection_name", ""),
                 "database_type": connection_data.get("database_type", ""),
                 "is_created": True
@@ -188,7 +189,6 @@ class MultiDBConnectionRepository:
         except asyncpg.UniqueViolationError as e:
             return {
                 "message": f"Integrity error inserting data into '{self.table_name}': {e}",
-                "connection_id": "",
                 "connection_name": connection_data.get("connection_name", ""),
                 "database_type": connection_data.get("database_type", ""),
                 "is_created": False
@@ -197,7 +197,6 @@ class MultiDBConnectionRepository:
         except Exception as e:
             return {
                 "message": f"Error inserting data into '{self.table_name}': {e}",
-                "connection_id": "",
                 "connection_name": connection_data.get("connection_name", ""),
                 "database_type": connection_data.get("database_type", ""),
                 "is_created": False

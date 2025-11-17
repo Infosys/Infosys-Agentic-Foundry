@@ -11,88 +11,47 @@ from fastapi import HTTPException
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from src.database.services import ToolService, AgentService
-
+from src.database.services import ToolService, AgentService,McpToolService
+from src.auth.repositories import UserRepository
+from telemetry_wrapper import logger as log
 if sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 class AgentExporter:
     STATIC_TEMPLATE_FOLDER = 'Export_Agent/Agentcode'    # Final export template base (configs etc.)
-    STATIC_EXPORT_ROOT = 'Export_Agent/export_root'      # Backend package source root for wheel build
-
-    ENDPOINTS = {
-        'react_agent': 'Export_Agent/endpoints/react_agent_endpoints.py',
-        'react_critic_agent': 'Export_Agent/endpoints/react_critic_agent_endpoints.py',
-        'planner_executor_agent': 'Export_Agent/endpoints/planner_executor_agent_endpoints.py',
-        'multi_agent': 'Export_Agent/endpoints/planner_executor_critic_agent_endpoints.py',
-        'meta_agent': 'Export_Agent/endpoints/meta_agent_endpoints.py',
-        'planner_meta_agent': 'Export_Agent/endpoints/planner_meta_agent_endpoints.py',
-        'multiple': 'Export_Agent/endpoints/multiple_agent_endpoints.py',
-    }
-
-    INFERENCE_SCRIPTS = {
-        'react_agent': ['src/inference/inference_utils.py', 'src/inference/react_agent_inference.py'],
-        'react_critic_agent': ['src/inference/inference_utils.py', 'src/inference/react_critic_agent_inference.py', 'src/inference/react_agent_inference.py'],
-        'planner_executor_agent': ['src/inference/inference_utils.py', 'src/inference/planner_executor_agent_inference.py', 'src/inference/react_agent_inference.py'],
-        'multi_agent': ['src/inference/inference_utils.py', 'src/inference/planner_executor_critic_agent_inference.py', 'src/inference/react_agent_inference.py'],
-        'meta_agent': ['src/inference/inference_utils.py', 'src/inference/meta_agent_inference.py', 'src/inference/react_agent_inference.py'],
-        'planner_meta_agent': ['src/inference/inference_utils.py', 'src/inference/planner_meta_agent_inference.py', 'src/inference/react_agent_inference.py'],
-        'multiple': [
-            'src/inference/inference_utils.py',
-            'src/inference/react_critic_agent_inference.py',
-            'src/inference/react_agent_inference.py',
-            'src/inference/planner_executor_agent_inference.py',
-            'src/inference/planner_executor_critic_agent_inference.py',
-            'src/inference/meta_agent_inference.py',
-            'src/inference/planner_meta_agent_inference.py',
-        ],
-    }
 
     SHARED_FILES = [
-        ('telemetry_wrapper.py', 'iaf/exportagent'),
-        ('groundtruth.py', 'iaf/exportagent'),
-        ('MultiDBConnection_Manager.py','iaf/exportagent'),
-        ('src/database/core_evaluation_service.py', 'iaf/exportagent/src/database'),
-        ('src/database/redis_postgres_manager.py', 'iaf/exportagent/src/database'),
-        ('src/utils/secrets_handler.py', 'iaf/exportagent/src/utils'),
-        ('src/utils/stream_sse.py', 'iaf/exportagent/src/utils'),
-        ('src/inference/base_agent_inference.py', 'iaf/exportagent/src/inference'),
+        ('telemetry_wrapper.py', 'Agent_Backend'),
+        ('groundtruth.py', 'Agent_Backend'),
+        ('MultiDBConnection_Manager.py','Agent_Backend'),
+        ('VERSION', 'Agent_Backend')
     ]
 
     def __init__(
         self,
         agent_ids: List[str],
         user_email: str,
+        file_names: List[str],
+        env_config: Dict[str, Any],
         tool_service,
         agent_service,
-        export_repo
+        mcp_service,
+        export_repo,
+        export_and_deploy,
+        login_pool: asyncpg.Pool
     ):
         self.agent_ids = agent_ids
         self.user_email = user_email
         self.work_dir = tempfile.mkdtemp(prefix='Agent_code_')
-        self.exp_dir = tempfile.mkdtemp(prefix='backend_build_')
+        self.filenames=file_names
+        self.env_config=env_config
         self.tool_service = tool_service
         self.agent_service = agent_service
+        self.mcp_service = mcp_service
         self.export_repo = export_repo
-    #------------------------------------------------------------------------
-    def patch_imports(self, pyfile: str):
-        replacements = [
-            ("from src.", "from exportagent.src."),
-            ("import src.", "import exportagent.src."),
-            ("from telemetry_wrapper", "from exportagent.telemetry_wrapper"),
-            ("from evaluation_metrics", "from exportagent.evaluation_metrics"),
-            ("from database_manager", "from exportagent.database_manager"),
-            ("from database_creation", "from exportagent.database_creation"),
-            ("from groundtruth", "from exportagent.groundtruth"),
-            ("from MultiDBConnection_Manager", "from exportagent.MultiDBConnection_Manager")
-        ]
-        with open(pyfile, 'r', encoding='utf-8') as f:
-            code = f.read()
-        for old, new in replacements:
-            if old in code:
-                code = code.replace(old, new)
-        with open(pyfile, 'w', encoding='utf-8') as f:
-            f.write(code)
+        self.export_and_deploy=export_and_deploy
+        self.login_pool = login_pool
+
     #------------------------------------------------------------------------
     async def gather_agent_configs(self) -> Dict[str, Any]:
         configs = {}
@@ -101,7 +60,7 @@ class AgentExporter:
             if not data or not isinstance(data, list):
                 raise Exception(f"No data found for Agent ID {agent_id}")
             agent_dict = data[0]
-            configs[agent_id] = self.serialize_agent(agent_dict)
+            configs[agent_id] = await self.serialize_agent(agent_dict)
         return configs
     #------------------------------------------------------------------------    
     def format_python_code_string(self,code_string: str) -> str:
@@ -114,7 +73,7 @@ class AgentExporter:
         except Exception as e:
             raise e
     #------------------------------------------------------------------------        
-    async def get_tool_data(self,agent_data, export_path, tool_service: ToolService = None, tools=[]):
+    async def get_tool_data(self,agent_data, export_path,tool_service: ToolService = None ,mcp_service:McpToolService=None, tools=[]):
         if not tool_service:
             raise ValueError("ToolService instance is required to fetch tool data.")
         import json
@@ -122,18 +81,33 @@ class AgentExporter:
             tools_id_str = agent_data.get("tools_id")
             tool_ids = tools_id_str
         else:
-            tool_ids = tools
-        if (any(s.startswith('mcp_file') for s in list(tool_ids)) or any(s.startswith('mcp_url') for s in list(tool_ids))) and len(self.agent_ids)==1:
-            # raise ValueError("Cannot Export Agent having MCP Tools. Please Ignore and select other agent")
-            raise ValueError("Current version does not support MCP agents Export.Hence this agent cannot be exported")
-        tools_data = {}  
+            tool_ids = tools 
+        tools_data = {}
+        prefixes = ('mcp_file_', 'mcp_url_', 'mcp_module_')
+        mcp_items = [item for item in tool_ids if item.startswith(prefixes)]
+        tool_ids = [item for item in tool_ids if not item.startswith(prefixes)]
+        if mcp_items:
+            for mcp_id in mcp_items:
+                mcp_data = await self.mcp_service.get_mcp_tool(tool_id=mcp_id)
+                if mcp_data:
+                    mcp_dict = mcp_data[0]
+                    processed_mcp_dict = {}
+                    for key, value in mcp_dict.items():
+                        if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                            if isinstance(value, datetime):
+                                processed_mcp_dict[key] = value.isoformat()
+                            else:
+                                processed_mcp_dict[key] = value
+                    tools_data[mcp_id] = processed_mcp_dict
+                else:
+                    tools_data[mcp_id] = None
         for tool_id in tool_ids:
             tool_data = await tool_service.get_tool(tool_id=tool_id)
             if tool_data:
                 tool_dict= tool_data[0]
                 processed_tool_dict = {}
                 for key, value in tool_dict.items():
-                    if key not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                    if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
                         if isinstance(value, datetime):
                             processed_tool_dict[key] = value.isoformat()
                         else:
@@ -161,10 +135,10 @@ class AgentExporter:
                 f.write('tools_data = ')
                 f.write(tools_data_json_str)
     #------------------------------------------------------------------------
-    def serialize_agent(self, agent_dict):
+    async def serialize_agent(self, agent_dict):
         agent_for_json_dump = {}#agent_dict.copy()
         for key, value in agent_dict.items():
-            if key not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+            if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
                 if isinstance(value, datetime):
                     agent_for_json_dump[key] = value.isoformat()
                 else:
@@ -172,18 +146,10 @@ class AgentExporter:
         return agent_for_json_dump
     #------------------------------------------------------------------------    
     async def get_user_from_email(self,user_email: str) -> Optional[tuple]:
-        conn = await asyncpg.connect(
-            host=os.getenv('POSTGRESQL_HOST', 'localhost'),
-            database='login',
-            user=os.getenv('POSTGRESQL_USER', 'postgres'),
-            password=os.getenv('POSTGRESQL_PASSWORD', 'password'),
-        )
-        user_data = await conn.fetchrow(
-            "SELECT user_name, role FROM login_credential WHERE mail_id = $1", user_email
-        )
-        await conn.close()
+        user_repo = UserRepository(pool=self.login_pool)
+        user_data = await user_repo.get_user_by_email(user_email)
         if user_data:
-            return user_data[0], user_data[1]
+            return user_data['user_name'], user_data['role']
         return None
     #------------------------------------------------------------------------   
     async def store_logs(self,agentic_application_id,agentic_application_name,user_email,user_name):
@@ -200,12 +166,22 @@ class AgentExporter:
         ) 
     #------------------------------------------------------------------------
     async def write_env_and_configs(self, target_path: str, agent_dict: dict):
+        remove_quotes=["DATABASE_URL","POSTGRESQL_HOST","POSTGRESQL_PORT","POSTGRESQL_USER","POSTGRESQL_PASSWORD","DATABASE","CONNECTION_POOL_SIZE","REDIS_HOST","REDIS_PORT","REDIS_DB","REDIS_PASSWORD","CACHE_EXPIRY_TIME","IAF_PASSWORD","ENABLE_CACHING","GITHUB_USERNAME","GITHUB_PAT","GITHUB_EMAIL","TARGET_REPO_NAME","TARGET_REPO_OWNER","TARGET_BRANCH"]
         user = role = None
         if self.user_email:
             res = await self.get_user_from_email(self.user_email)
             if res: user, role = res[0], res[1]
-
         env_path = os.path.join(target_path, 'Agent_Backend/.env')
+        # Write to a file
+        if self.env_config:
+            with open(env_path, "a") as env_file:
+                for key, value in self.env_config.items():
+                    if key not in remove_quotes:
+                        if value is not None:
+                            env_file.write(f'{key}="{value}"\n')
+                    else:
+                        if value is not None:
+                            env_file.write(f'{key}={value}\n')
         with open(env_path, 'a') as f:
             f.write(f"\nUSER_EMAIL={self.user_email or ''}\nUSER_NAME={user or ''}\nROLE={role or ''}\n")
         config_py_path = os.path.join(target_path, 'Agent_Backend/agent_config.py')
@@ -214,18 +190,25 @@ class AgentExporter:
             json.dump({agent_dict['agentic_application_id']: agent_dict}, f, indent=4)
         req_path =os.path.join(target_path, 'Agent_Backend/requirements.txt')
         shutil.copy('requirements.txt', req_path)
-        pack="exportagent-0.1.0-py3-none-any.whl"
-        with open(req_path, 'a',encoding='utf-16') as f:
-            f.write(f'\n{pack}\n')
         await self.store_logs(agent_dict['agentic_application_id'],agent_dict['agentic_application_name'],self.user_email,user)
     #------------------------------------------------------------------------
     async def write_env_and_agentconfigs(self, target_path: str, configs: dict):
+        remove_quotes=["DATABASE_URL","POSTGRESQL_HOST","POSTGRESQL_PORT","POSTGRESQL_USER","POSTGRESQL_PASSWORD","DATABASE","CONNECTION_POOL_SIZE","REDIS_HOST","REDIS_PORT","REDIS_DB","REDIS_PASSWORD","CACHE_EXPIRY_TIME","IAF_PASSWORD","ENABLE_CACHING"]
         user = role = None
         if self.user_email:
             res = await self.get_user_from_email(self.user_email)
             if res: user, role = res[0], res[1]
-
+        # Write to a file
         env_path = os.path.join(target_path, 'Agent_Backend/.env')
+        if self.env_config:
+            with open(env_path, "a") as env_file:
+                for key, value in self.env_config.items():
+                    if key not in remove_quotes:
+                        if value is not None:
+                            env_file.write(f'{key}="{value}"\n')
+                    else:
+                        if value is not None:
+                            env_file.write(f'{key}={value}\n')
         with open(env_path, 'a') as f:
             f.write(f"\nUSER_EMAIL={self.user_email or ''}\nUSER_NAME={user or ''}\nROLE={role or ''}\n")
 
@@ -236,17 +219,11 @@ class AgentExporter:
             json.dump(adict, f, indent=4)
         req_path =os.path.join(target_path, 'Agent_Backend/requirements.txt')
         shutil.copy('requirements.txt', req_path)
-        pack="exportagent-0.1.0-py3-none-any.whl"
-        with open(req_path, 'a',encoding='utf-16') as f:
-            f.write(f'\n{pack}\n')
         for agent_id, agent_dict in configs.items():
             await self.store_logs(agent_dict['agentic_application_id'],agent_dict['agentic_application_name'],self.user_email,user)
     #------------------------------------------------------------------------
     def copy_static_template_base(self, dst_folder: str):
         shutil.copytree(self.STATIC_TEMPLATE_FOLDER, dst_folder)
-    #------------------------------------------------------------------------
-    def copy_static_export_base(self, dst_folder: str):
-        shutil.copytree(self.STATIC_EXPORT_ROOT, dst_folder)
     #------------------------------------------------------------------------
     def copy_shared_files(self, target_folder: str):
         for src, subdir in self.SHARED_FILES:
@@ -254,59 +231,46 @@ class AgentExporter:
             os.makedirs(subdir_target, exist_ok=True)
             shutil.copy(src, subdir_target)
             py_target = os.path.join(subdir_target, os.path.basename(src))
-            if py_target.endswith('.py'):
-                self.patch_imports(py_target)
     #------------------------------------------------------------------------
-    def copy_inference_files(self, agent_type: str, target_folder: str):
-        scripts = self.INFERENCE_SCRIPTS.get(agent_type, [])
-        inference_dir = os.path.join(target_folder, 'iaf/exportagent/src/inference')
-        os.makedirs(inference_dir, exist_ok=True)
-        for script in scripts:
-            shutil.copy(script, inference_dir)
-            py_target = os.path.join(inference_dir, os.path.basename(script))
-            if py_target.endswith('.py'):
-                self.patch_imports(py_target)
+    def copy_user_uploads(self, target_folder: str):
+        src = os.path.join(os.getcwd(), 'user_uploads')
+        if self.filenames:
+            for file in self.filenames:
+                if "__files__/" in str(file):
+                    file = file.replace("__files__/", "")
+                source_file = os.path.join(src, file)
+                if os.path.isfile(source_file):
+                    # Replicate subdirectory structure in destination
+                    dest_file_path = os.path.join(target_folder, 'Agent_Backend', 'user_uploads', file)
+                    dest_dir = os.path.dirname(dest_file_path)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    shutil.copy(source_file, dest_file_path)
     #------------------------------------------------------------------------
-    def copy_agent_endpoints(self, agent_type: str, target_folder: str):
-        endpoints = self.ENDPOINTS.get(agent_type)
-        if endpoints:
-            backend_path = os.path.join(target_folder, 'iaf/exportagent')
-            os.makedirs(backend_path, exist_ok=True)
-            destination = os.path.join(backend_path, 'agent_endpoints.py')
-            shutil.copy(endpoints, destination)
-            self.patch_imports(destination)
-        else:
-            pass
-    #------------------------------------------------------------------------
-    def build_wheel(self, build_folder: str, target_agent_backend: str):
-        dist_dir = os.path.join(build_folder, "dist")
-        if os.path.exists(dist_dir):
-            shutil.rmtree(dist_dir)
 
-        result = subprocess.run(
-            [sys.executable, "-m", "build", "--wheel", "--outdir", dist_dir],
-            cwd=build_folder,
-            capture_output=True,
-            text=True,
+    def copy_src_folder(self, target_folder: str):
+        # Define source and destination paths
+        src = os.path.join(os.getcwd(), 'src')
+        api_src = os.path.join(os.getcwd(), 'Export_Agent', 'api')
+        dest = os.path.join(target_folder, 'Agent_Backend', 'src')
+
+        # Remove existing destination folder if it exists
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+
+        # Copy the src folder
+        shutil.copytree(
+            src,
+            dest,
+            ignore=shutil.ignore_patterns(
+                '__pycache__', '*.pyc', '*.pyo', '*.pyd', '.Python',
+                'env', 'venv', 'ENV', 'env.bak', 'venv.bak',
+                'api', 'agent_templates'
+            )
         )
-        if result.returncode != 0:
-            raise RuntimeError("Wheel build failed")
-
-        wheels = [f for f in os.listdir(dist_dir) if f.endswith(".whl")]
-        if not wheels:
-            raise RuntimeError("No wheel file found after build")
-
-        wheel_file = wheels[0]
-        wheel_source_path = os.path.join(dist_dir, wheel_file)
-
-        os.makedirs(target_agent_backend, exist_ok=True)
-        wheel_target_path = os.path.join(target_agent_backend, wheel_file)
-        shutil.move(wheel_source_path, wheel_target_path)
-        shutil.rmtree(dist_dir)
-        return wheel_target_path
+        api_dest = os.path.join(dest, 'api')
+        shutil.copytree(api_src, api_dest)
     #------------------------------------------------------------------------
     async def build_agent_folder(self, agent_id: str, agent_dict: dict) -> str:
-        unique_id = os.urandom(6).hex()
         agent_type = agent_dict['agentic_application_type']
         if agent_type== 'react_agent':
             foldername='React Agent'
@@ -320,15 +284,26 @@ class AgentExporter:
             foldername='Meta Agent'
         elif agent_type == 'planner_meta_agent':
             foldername='Planner Meta Agent'
+        elif agent_type == 'hybrid_agent':
+            foldername='Hybrid Agent'
         target_folder = os.path.join(self.work_dir, f"{foldername}")
-        build_folder = os.path.join(self.exp_dir, f"{foldername}_{unique_id}")
-
         self.copy_static_template_base(target_folder)     # final export folder (Agent_code)
-        self.copy_static_export_base(build_folder)        # backend code package copy for build
         await self.write_env_and_configs(target_folder, agent_dict)
-        self.copy_shared_files(build_folder)
-        self.copy_inference_files(agent_type, build_folder)
-        self.copy_agent_endpoints(agent_type, build_folder)
+        self.copy_shared_files(target_folder)
+        self.copy_src_folder(target_folder)
+        self.copy_user_uploads(target_folder)
+        tool = await self.tool_service.get_tool(tool_name="download_and_copy_repo")
+        if tool:
+            code = str(tool[0]["code_snippet"])
+            namespace={
+                'os': os,
+                'subprocess': subprocess,
+                'tempfile': tempfile,
+                'shutil': shutil,
+                'log': log
+            }
+            exec(code,namespace)
+            namespace['download_and_copy_repo'](target_folder) # type: ignore
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
         os.makedirs(agent_backend, exist_ok=True)
         if agent_type in {"meta_agent", "planner_meta_agent"}:
@@ -340,7 +315,7 @@ class AgentExporter:
                     worker_dict = worker_data[0]
                     processed_dict={}
                     for k, v in worker_dict.items():
-                        if k not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                        if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
                             if isinstance(v, datetime):
                                 processed_dict[k] = v.isoformat()
                             else:
@@ -363,29 +338,27 @@ class AgentExporter:
             with open(worker_agents_path, 'w') as f:
                 f.write('worker_agents = {}\n')
             await self.get_tool_data(agent_dict, export_path=target_folder,tool_service=self.tool_service)
-
-        self.build_wheel(build_folder, agent_backend)
         return target_folder
     #------------------------------------------------------------------------
-    async def test_mcp(self, tools_id_list):
-        for wid in tools_id_list:
-            worker_data =await self.agent_service.get_agent(agentic_application_id=wid)
-            if worker_data:
-                worker_dict = worker_data[0]
-                worker_tool_ids = worker_dict.get("tools_id")
-                if any(s.startswith('mcp_file') for s in list(worker_tool_ids)) or any(s.startswith('mcp_url') for s in list(worker_tool_ids)):
-                    return True
-
     async def build_multi_agent_folder(self, configs: Dict[str, Any]) -> str:
         target_folder = os.path.join(self.work_dir, "Multiple_Agents")
-        unique_id = os.urandom(6).hex()
-        build_folder = os.path.join(self.exp_dir, f"multiple_{unique_id}")
         self.copy_static_template_base(target_folder)
-        self.copy_static_export_base(build_folder)
         await self.write_env_and_agentconfigs(target_folder, configs)
-        self.copy_shared_files(build_folder)
-        self.copy_inference_files("multiple", build_folder)
-        self.copy_agent_endpoints("multiple", build_folder)
+        self.copy_shared_files(target_folder)
+        self.copy_src_folder(target_folder)
+        self.copy_user_uploads(target_folder)
+        tool = await self.tool_service.get_tool(tool_name="download_and_copy_repo")
+        if tool:
+            code = str(tool[0]["code_snippet"])
+            namespace={
+                'os': os,
+                'subprocess': subprocess,
+                'tempfile': tempfile,
+                'shutil': shutil,
+                'log': log
+            }
+            exec(code,namespace)
+            namespace['download_and_copy_repo'](target_folder) # type: ignore
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
         os.makedirs(agent_backend, exist_ok=True)
         tools_ids = set()
@@ -395,20 +368,10 @@ class AgentExporter:
             atype = agent['agentic_application_type']
             if atype in {"meta_agent", "planner_meta_agent"}:
                 worker_agent_ids = agent.get("tools_id")
-                if await self.test_mcp(worker_agent_ids):
-                    test.append(agent['agentic_application_name'])
-                else:
-                    worker_ids.update(worker_agent_ids)
+                worker_ids.update(worker_agent_ids)
             else:
                 tool_ids_list = agent.get('tools_id')
-                if any(s.startswith('mcp_file') for s in list(tool_ids_list)) or any(s.startswith('mcp_url') for s in list(tool_ids_list)):
-                    test.append(agent['agentic_application_name'])
                 tools_ids.update(tool_ids_list)
-        if test:
-            if len(test)==1:
-                raise ValueError(f"Current version does not support MCP agents Export.Hence Agent: \"{test[0]}\" is not exported")
-            test = ", ".join(test)
-            raise ValueError(f"Current version does not support MCP agents Export.Hence Agent: \"{test}\" are not exported")
         worker_agents = {}
         for wid in worker_ids:
             worker_data =await self.agent_service.get_agent(agentic_application_id=wid)
@@ -416,7 +379,7 @@ class AgentExporter:
                 worker_dict = worker_data[0]
                 processed_dict={}
                 for k, v in worker_dict.items():
-                    if k not in ["created_on", "updated_on", "tags","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                    if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
                         if isinstance(v, datetime):
                             processed_dict[k] = v.isoformat()
                         else:
@@ -433,7 +396,6 @@ class AgentExporter:
             for tid in tool_list:
                 tools_ids.add(tid)
         await self.get_tool_data(configs, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
-        self.build_wheel(build_folder, agent_backend)
         return target_folder
     #------------------------------------------------------------------------
     async def export(self):
@@ -451,4 +413,3 @@ class AgentExporter:
         archive_path = shutil.make_archive(zip_output, 'zip', self.work_dir)
         return archive_path
     #------------------------------------------------------------------------
-

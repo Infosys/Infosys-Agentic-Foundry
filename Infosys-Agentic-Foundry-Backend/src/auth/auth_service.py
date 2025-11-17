@@ -3,13 +3,13 @@ import jwt
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-from src.auth.models import User, UserRole, UserStatus, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
-from src.auth.repositories import UserRepository, AuditLogRepository
+from src.auth.models import User, UserRole, UserStatus, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, RefreshTokenResponse
+from src.auth.repositories import UserRepository, AuditLogRepository, RefreshTokenRepository
 from telemetry_wrapper import logger as log
-
-JWT_SECRET = "your_jwt_secret"  # Use config/env in production
-JWT_ALGORITHM = "HS256"
-JWT_EXP_DELTA_SECONDS = 3 * 60 * 60  # 3 hours
+from src.config.settings import (
+    JWT_SECRET, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_SECONDS,
+    REFRESH_TOKEN_EXPIRE_DAYS, ENABLE_REFRESH_TOKENS
+)
 
 # In-memory blacklist for demonstration (use persistent store in production)
 JWT_BLACKLIST = set()
@@ -17,9 +17,11 @@ JWT_BLACKLIST = set()
 class AuthService:
     """Service for authentication operations"""
 
-    def __init__(self, user_repo: UserRepository, audit_repo: AuditLogRepository):
+    def __init__(self, user_repo: UserRepository, audit_repo: AuditLogRepository, refresh_repo: RefreshTokenRepository = None):
         self.user_repo = user_repo
         self.audit_repo = audit_repo
+        # refresh_repo is optional to keep backward compatibility if not wired yet
+        self.refresh_repo = refresh_repo
 
     async def login(self, login_request: LoginRequest, ip_address: str = None, user_agent: str = None) -> LoginResponse:
         """Authenticate user and create session"""
@@ -63,14 +65,32 @@ class AuthService:
             elif user_role == UserRole.USER.value and requested_role in (UserRole.DEVELOPER.value, UserRole.ADMIN.value):
                 return LoginResponse(approval=False, message=f"You are not authorized as {requested_role}")
             
-            # Generate JWT token
+            # Generate short-lived access JWT token
             payload = {
                 "mail_id": user_data['mail_id'],
                 "user_name": user_data['user_name'],
-                "role": user_data['role'],
-                "exp": datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
+                "role": requested_role,  
+                "exp": datetime.utcnow() + timedelta(seconds=ACCESS_TOKEN_EXPIRE_SECONDS)
             }
             token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+            # Generate refresh token if repository configured
+            if self.refresh_repo and ENABLE_REFRESH_TOKENS:
+                refresh_token = secrets.token_urlsafe(64)
+                refresh_expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+                try:
+                    await self.refresh_repo.store_token(
+                        user_mail_id=user_data['mail_id'],
+                        refresh_token=refresh_token,
+                        expires_at=refresh_expires,
+                        user_agent=user_agent,
+                        ip_address=ip_address
+                    )
+                except Exception as e:
+                    log.error(f"Failed storing refresh token: {e}")
+                    refresh_token = None
+            else:
+                refresh_token = None
 
             # Log successful login
             await self.audit_repo.log_action(
@@ -86,10 +106,11 @@ class AuthService:
             return LoginResponse(
                 approval=True,
                 token=token,
+                refresh_token=refresh_token,
                 role=requested_role,
                 username=user_data['user_name'],
                 email=user_data['mail_id'],
-                message="Login successful"
+                message="Login successful",
             )
             
         except Exception as e:
@@ -126,9 +147,24 @@ class AuthService:
                 "mail_id": user_data['mail_id'],
                 "user_name": user_data['user_name'],
                 "role": user_data['role'],
-                "exp": datetime.utcnow() + timedelta(seconds=JWT_EXP_DELTA_SECONDS)
+                "exp": datetime.utcnow() + timedelta(seconds=ACCESS_TOKEN_EXPIRE_SECONDS)
             }
             token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            refresh_token = None
+            if self.refresh_repo and ENABLE_REFRESH_TOKENS:
+                refresh_token = secrets.token_urlsafe(64)
+                refresh_expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+                try:
+                    await self.refresh_repo.store_token(
+                        user_mail_id=user_data['mail_id'],
+                        refresh_token=refresh_token,
+                        expires_at=refresh_expires,
+                        user_agent=user_agent,
+                        ip_address=ip_address
+                    )
+                except Exception as e:
+                    log.error(f"Failed storing refresh token (guest): {e}")
+                    refresh_token = None
 
             # 3. Log the guest login action
             await self.audit_repo.log_action(
@@ -143,6 +179,7 @@ class AuthService:
             return LoginResponse(
                 approval=True,
                 token=token,
+                refresh_token=refresh_token,
                 role=user_data['role'],
                 username=user_data['user_name'],
                 email=user_data['mail_id'],
@@ -153,17 +190,20 @@ class AuthService:
             log.error(f"Guest login error: {e}")
             return LoginResponse(approval=False, message="Guest login failed due to an error.")
 
-    async def logout(self, token: str, ip_address: str = None, user_agent: str = None) -> bool:
-        """Logout user by blacklisting JWT token"""
+    async def logout(self, token: str, refresh_token: str = None, ip_address: str = None, user_agent: str = None) -> bool:
+        """Logout user by blacklisting JWT token and revoking refresh token if provided"""
         try:
             JWT_BLACKLIST.add(token)
             log.info(f"Token blacklisted for logout: {token}")
+            if refresh_token and self.refresh_repo:
+                await self.refresh_repo.revoke_token(refresh_token)
+                log.info("Refresh token revoked during logout")
             await self.audit_repo.log_action(
                 user_id=None,
                 action="LOGOUT",
                 resource_type="user",
                 resource_id=None,
-                new_value="JWT token blacklisted",
+                new_value="JWT token blacklisted" + (" & refresh token revoked" if refresh_token else ""),
                 ip_address=ip_address,
                 user_agent=user_agent
             )
@@ -171,6 +211,63 @@ class AuthService:
         except Exception as e:
             log.error(f"Logout error: {e}")
             return False
+
+    async def refresh_access_token(self, refresh_token: str, ip_address: str = None, user_agent: str = None) -> RefreshTokenResponse:
+        """Validate refresh token and issue a new access token. Rotates refresh token for improved security."""
+        if not self.refresh_repo or not ENABLE_REFRESH_TOKENS:
+            return RefreshTokenResponse(approval=False, message="Refresh token feature not enabled", token=None)
+        try:
+            token_row = await self.refresh_repo.get_token(refresh_token)
+            if not token_row:
+                return RefreshTokenResponse(approval=False, message="Invalid refresh token", token=None)
+            if token_row.get('revoked_at') is not None:
+                return RefreshTokenResponse(approval=False, message="Refresh token revoked", token=None)
+            expires_at = token_row.get('expires_at')
+            if expires_at and expires_at < datetime.utcnow():
+                return RefreshTokenResponse(approval=False, message="Refresh token expired", token=None)
+            user_mail_id = token_row['user_mail_id']
+            user_data = await self.user_repo.get_user_by_email(user_mail_id)
+            if not user_data:
+                return RefreshTokenResponse(approval=False, message="User no longer exists", token=None)
+            # Rotate refresh token: revoke old, store new
+            try:
+                await self.refresh_repo.revoke_token(refresh_token)
+            except Exception as e:
+                log.warning(f"Could not revoke old refresh token (continuing): {e}")
+            new_refresh_token = secrets.token_urlsafe(64)
+            new_refresh_expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+            try:
+                await self.refresh_repo.store_token(
+                    user_mail_id=user_mail_id,
+                    refresh_token=new_refresh_token,
+                    expires_at=new_refresh_expires,
+                    user_agent=user_agent,
+                    ip_address=ip_address
+                )
+            except Exception as e:
+                log.error(f"Failed to store rotated refresh token: {e}")
+                new_refresh_token = None
+            # Create new access token
+            payload = {
+                "mail_id": user_data['mail_id'],
+                "user_name": user_data['user_name'],
+                "role": user_data['role'],
+                "exp": datetime.utcnow() + timedelta(seconds=ACCESS_TOKEN_EXPIRE_SECONDS)
+            }
+            new_access_token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            await self.audit_repo.log_action(
+                user_id=user_mail_id,
+                action="ACCESS_TOKEN_REFRESHED",
+                resource_type="user",
+                resource_id=user_mail_id,
+                new_value="Issued new access token via refresh",
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            return RefreshTokenResponse(approval=True, token=new_access_token, refresh_token=new_refresh_token, message="Access token refreshed")
+        except Exception as e:
+            log.error(f"Refresh token error: {e}")
+            return RefreshTokenResponse(approval=False, message="Failed to refresh token", token=None)
     
     async def register(self, register_request: RegisterRequest, ip_address: str = None, user_agent: str = None) -> RegisterResponse:
         """Register new user"""
@@ -225,7 +322,7 @@ class AuthService:
                 id=user_data['mail_id'],
                 email=user_data['mail_id'],
                 username=user_data['user_name'],
-                role=UserRole(user_data['role']),
+                role=UserRole(payload['role']),
                 status=UserStatus.ACTIVE,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()

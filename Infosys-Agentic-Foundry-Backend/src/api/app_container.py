@@ -3,8 +3,7 @@ import os
 from dotenv import load_dotenv
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
-from src.auth.repositories import ApprovalPermissionRepository, AuditLogRepository, UserRepository
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from src.auth.repositories import ApprovalPermissionRepository, AuditLogRepository, UserRepository, RefreshTokenRepository
 from sentence_transformers import CrossEncoder
 
 from src.database.database_manager import DatabaseManager, REQUIRED_DATABASES
@@ -14,29 +13,37 @@ from src.database.repositories import (
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
     FeedbackLearningRepository, EvaluationDataRepository,
     ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
-    ExportAgentRepository
+    ExportAgentRepository, AgentMetadataRepository, AgentDataTableRepository, ChatStateHistoryManagerRepository
 )
 from src.tools.tool_code_processor import ToolCodeProcessor
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentServiceUtils, AgentService, ChatService,
-    FeedbackLearningService, EvaluationService, ExportService
+    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService
 )
-from src.database.core_evaluation_service import CoreEvaluationService
+from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.models.model_service import ModelService
 from src.agent_templates import (
     ReactAgentOnboard, MultiAgentOnboard, PlannerExecutorAgentOnboard,
     ReactCriticAgentOnboard, MetaAgentOnboard, PlannerMetaAgentOnboard
 )
+from src.agent_templates.simple_ai_agent_onboard import SimpleAIAgentOnboard
+from src.agent_templates.hybrid_agent_onboard import HybridAgentOnboard
 from src.inference import (
     InferenceUtils, ReactAgentInference, MultiAgentInference, PlannerExecutorAgentInference,
     ReactCriticAgentInference, MetaAgentInference, PlannerMetaAgentInference, CentralizedAgentInference
 )
+from src.inference.python_based_inference.simple_ai_agent_inference import SimpleAIAgentInference
+from src.inference.python_based_inference.hybrid_agent_inference import HybridAgentInference
 from src.utils.file_manager import FileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
 
 from telemetry_wrapper import logger as log
 
 from src.inference.inference_utils import EpisodicMemoryManager
+from sentence_transformers import SentenceTransformer
+from src.utils.remote_model_client import get_remote_models, ModelServerClient
+
+
 load_dotenv()
 
 
@@ -70,6 +77,7 @@ class AppContainer:
         self.tool_evaluation_metrics_repo: ToolEvaluationMetricsRepository = None
         self.agent_evaluation_metrics_repo: AgentEvaluationMetricsRepository = None
         self.export_repo: ExportAgentRepository = None
+        self.chat_state_history_manager_repo: ChatStateHistoryManagerRepository = None
 
         # Utility Processors
         self.tool_code_processor: ToolCodeProcessor = None
@@ -94,6 +102,8 @@ class AppContainer:
         self.react_critic_agent_service: ReactCriticAgentOnboard = None
         self.meta_agent_service: MetaAgentOnboard = None
         self.planner_meta_agent_service: PlannerMetaAgentOnboard = None
+        self.simple_ai_agent_service: SimpleAIAgentOnboard = None
+        self.hybrid_agent_service: HybridAgentOnboard = None
 
         # Inference Services (these are typically exposed via Depends for endpoints)
         self.react_agent_inference: ReactAgentInference = None
@@ -102,17 +112,20 @@ class AppContainer:
         self.react_critic_agent_inference: ReactCriticAgentInference = None
         self.meta_agent_inference: MetaAgentInference = None
         self.planner_meta_agent_inference: PlannerMetaAgentInference = None
+        self.simple_ai_agent_inference: SimpleAIAgentInference = None
+        self.hybrid_agent_inference: HybridAgentInference = None
         self.centralized_agent_inference: CentralizedAgentInference = None
         # Authentication repositories
         self.user_repo: UserRepository = None
         self.approval_permission_repo: ApprovalPermissionRepository = None
         self.audit_log_repo: AuditLogRepository = None
+        self.refresh_token_repo: RefreshTokenRepository = None
         self.multi_db_connection_manager: MultiDBConnectionRepository = None
 
         # Initialize the file manager with default base directory
         self.file_manager: FileManager = None
 
-        self.embedding_model: HuggingFaceEmbeddings = None
+        self.embedding_model: SentenceTransformer = None
         self.cross_encoder: CrossEncoder = None
         self.episodic_memory_manager: EpisodicMemoryManager = None
 
@@ -170,15 +183,19 @@ class AppContainer:
         self.recycle_agent_repo = RecycleAgentRepository(pool=recycle_pool)
         self.chat_history_repo = ChatHistoryRepository(pool=main_pool)
         self.feedback_learning_repo = FeedbackLearningRepository(pool=feedback_learning_pool)
-        self.evaluation_data_repo = EvaluationDataRepository(pool=logs_pool)
-        self.tool_evaluation_metrics_repo = ToolEvaluationMetricsRepository(pool=logs_pool)
-        self.agent_evaluation_metrics_repo = AgentEvaluationMetricsRepository(pool=logs_pool)
+        self.evaluation_data_repo = EvaluationDataRepository(pool=logs_pool, agent_repo=self.agent_repo)
+        self.tool_evaluation_metrics_repo = ToolEvaluationMetricsRepository(pool=logs_pool, agent_repo= self.agent_repo)
+        self.agent_evaluation_metrics_repo = AgentEvaluationMetricsRepository(pool=logs_pool,agent_repo= self.agent_repo)
+        self.agent_metadata_repo = AgentMetadataRepository(pool=logs_pool)
+        self.agent_data_repo = AgentDataTableRepository(pool=logs_pool)
         self.export_repo = ExportAgentRepository(pool=main_pool)
+        self.chat_state_history_manager_repo = ChatStateHistoryManagerRepository(pool=main_pool)
+
         # Initialize authentication repositories
-        
         self.user_repo = UserRepository(pool=login_pool)
         self.approval_permission_repo = ApprovalPermissionRepository(pool=login_pool)
         self.audit_log_repo = AuditLogRepository(pool=login_pool)
+        self.refresh_token_repo = RefreshTokenRepository(pool=login_pool)
         log.info("AppContainer: All repositories initialized.")
 
         # 5. Initialize Utility Processors
@@ -188,7 +205,7 @@ class AppContainer:
         # 6. Initialize Services (Order matters for dependencies)
         # Services contain business logic and orchestrate repository calls.
         self.export_service = ExportService(export_repo=self.export_repo)
-        self.model_service = ModelService()
+        self.model_service = ModelService(chat_state_history_manager=self.chat_state_history_manager_repo)
         self.tag_service = TagService(
             tag_repo=self.tag_repo,
             tag_tool_mapping_repo=self.tag_tool_mapping_repo,
@@ -226,9 +243,18 @@ class AppContainer:
         self.react_critic_agent_service = ReactCriticAgentOnboard(agent_service_utils=self.agent_service_utils)
         self.meta_agent_service = MetaAgentOnboard(agent_service_utils=self.agent_service_utils)
         self.planner_meta_agent_service = PlannerMetaAgentOnboard(agent_service_utils=self.agent_service_utils)
+        self.simple_ai_agent_service = SimpleAIAgentOnboard(agent_service_utils=self.agent_service_utils)
+        self.hybrid_agent_service = HybridAgentOnboard(agent_service_utils=self.agent_service_utils)
         log.info("AppContainer: Specialized agent onboarding services initialized.")
 
-        self.chat_service = ChatService(chat_history_repo=self.chat_history_repo, embedding_model = None, cross_encoder = None)
+        self.chat_service = ChatService(
+            chat_history_repo=self.chat_history_repo,
+            chat_state_history_manager=self.chat_state_history_manager_repo,
+            embedding_model = None,
+            cross_encoder = None,
+            tool_repo=self.tool_repo,
+            agent_repo = self.agent_repo
+        )
         self.feedback_learning_service = FeedbackLearningService(
             feedback_learning_repo=self.feedback_learning_repo,
             agent_service=self.agent_service
@@ -240,10 +266,16 @@ class AppContainer:
             agent_service=self.agent_service,
             tool_service=self.tool_service
         )
+        self.consistency_service = ConsistencyService(
+            metadata_repo=self.agent_metadata_repo,
+            data_repo=self.agent_data_repo,
+            
+        )
         # Initialize authentication services
         self.auth_service = AuthService(
             user_repo=self.user_repo,
-            audit_repo=self.audit_log_repo
+            audit_repo=self.audit_log_repo,
+            refresh_repo=self.refresh_token_repo
         )
         self.authorization_service = AuthorizationService(
             user_repo=self.user_repo,
@@ -253,16 +285,26 @@ class AppContainer:
 
         log.info("AppContainer: Services initialized.")
 
-        # Initialize Embeddings and Encoders
-        base_model_path = os.getenv("EMBEDDING_MODEL_PATH")
-        self.embedding_model = HuggingFaceEmbeddings(
-            model_name=base_model_path,
-            model_kwargs={"device": "cpu"}
-        )
-        cross_encoder_model = os.getenv("CROSS_ENCODER_PATH")
-        self.cross_encoder = CrossEncoder(cross_encoder_model)
-        
-        log.info("Embeddings and Encoders initialized.")
+        # Initialize Embeddings and Encoders using remote model server
+        model_server_url = os.getenv("MODEL_SERVER_URL")
+        self.embedding_model = None
+        self.cross_encoder = None
+        if not model_server_url:
+            log.error("MODEL_SERVER_URL environment variable is not set. Cannot initialize remote models.")
+            return 
+        try:
+            client = ModelServerClient(model_server_url)
+            health_url = f"{client.base_url}/health"
+            try:
+                health_resp = client.session.get(health_url, timeout=5)
+                health_resp.raise_for_status()
+                self.embedding_model, self.cross_encoder = get_remote_models(model_server_url)
+                log.info("Remote Embeddings and Encoders initialized successfully.")
+            except Exception as health_exc:
+                log.error(f"Model server health check failed: {health_exc}")
+        except Exception as e:
+            log.error(f"Failed to connect to remote model server at {model_server_url}: {e}")
+
 
         self.chat_service.embedding_model = self.embedding_model
         self.chat_service.cross_encoder = self.cross_encoder
@@ -276,7 +318,8 @@ class AppContainer:
             feedback_learning_service=self.feedback_learning_service,
             evaluation_service=self.evaluation_service,
             embedding_model=self.embedding_model,
-            cross_encoder=self.cross_encoder
+            cross_encoder=self.cross_encoder,
+            consistency_service=None
         )
         self.react_agent_inference = ReactAgentInference(inference_utils=self.inference_utils)
         self.multi_agent_inference = MultiAgentInference(inference_utils=self.inference_utils)
@@ -284,6 +327,8 @@ class AppContainer:
         self.react_critic_agent_inference = ReactCriticAgentInference(inference_utils=self.inference_utils)
         self.meta_agent_inference = MetaAgentInference(inference_utils=self.inference_utils)
         self.planner_meta_agent_inference = PlannerMetaAgentInference(inference_utils=self.inference_utils)
+        self.simple_ai_agent_inference = SimpleAIAgentInference(inference_utils=self.inference_utils)
+        self.hybrid_agent_inference = HybridAgentInference(inference_utils=self.inference_utils)
 
         self.centralized_agent_inference = CentralizedAgentInference(
             react_agent_inference=self.react_agent_inference,
@@ -292,6 +337,8 @@ class AppContainer:
             react_critic_agent_inference=self.react_critic_agent_inference,
             meta_agent_inference=self.meta_agent_inference,
             planner_meta_agent_inference=self.planner_meta_agent_inference,
+            simple_ai_agent_inference=self.simple_ai_agent_inference,
+            hybrid_agent_inference=self.hybrid_agent_inference,
             inference_utils=self.inference_utils
         )
         log.info("AppContainer: Inference services initialized.")
@@ -300,6 +347,18 @@ class AppContainer:
             evaluation_service=self.evaluation_service,
             centralized_agent_inference=self.centralized_agent_inference,
             model_service=self.model_service
+        )
+        self.core_consistency_service = CoreConsistencyEvaluationService(
+            consistency_service=self.consistency_service,
+            model_service=self.model_service,
+            centralized_agent_inference=self.centralized_agent_inference
+        )
+
+        self.core_robustness_service = CoreRobustnessEvaluationService(
+            consistency_service=self.consistency_service,
+            model_service=self.model_service,
+            centralized_agent_inference=self.centralized_agent_inference,
+            react_agent_inference=self.react_agent_inference
         )
 
         self.multi_db_connection_repo = MultiDBConnectionRepository(pool=main_pool)
@@ -310,6 +369,15 @@ class AppContainer:
         # Call create_tables_if_not_exists for each service/repository that manages tables.
         # Order matters for foreign key dependencies.
         await self.user_repo.create_table_if_not_exists()
+        await self.refresh_token_repo.create_table_if_not_exists()
+
+        #Creating a guest Account
+        try:
+            await self.user_repo.create_user("guest@example.com", "Guest", "User")
+            log.info(f"Guest User created")
+        except Exception as e:
+            log.info(f"Guest User already exists")
+
         await self.approval_permission_repo.create_table_if_not_exists()
         await self.audit_log_repo.create_table_if_not_exists()
         await self.tag_repo.create_table_if_not_exists()
@@ -319,8 +387,10 @@ class AppContainer:
         await self.chat_history_repo.create_agent_conversation_summary_table()
         await self.feedback_learning_repo.create_tables_if_not_exists()
         await self.evaluation_service.create_evaluation_tables_if_not_exists()
+        await self.consistency_service.create_evaluation_table_if_not_exists()
         await self.multi_db_connection_repo.create_db_connections_table_if_not_exists() # Create multi-DB connections table
         await self.export_repo.create_table_if_not_exists()
+        await self.chat_state_history_manager_repo.create_table_if_not_exists()
 
         # Mapping tables (depend on main tables)
         await self.tag_tool_mapping_repo.create_table_if_not_exists()
@@ -332,6 +402,7 @@ class AppContainer:
         await self.recycle_agent_repo.create_table_if_not_exists()
 
         # 9. Load all models into cache (optional, for pre-warming)
+
         await self.model_service.load_all_models_into_cache()
         log.info("AppContainer: All models loaded into cache.")
 
@@ -347,6 +418,7 @@ class AppContainer:
         await self.tool_service.fix_tool_agent_mapping_for_meta_agents()
         await self.feedback_learning_repo.migrate_agent_ids_to_hyphens()
         await self.mcp_tool_repo.migrate_file_mcp_tools_config()
+        await self.agent_service.migrate_agent_ids_and_references()
         log.info("AppContainer: Database data migrations/fixes completed.")
 
     async def shutdown_services(self):

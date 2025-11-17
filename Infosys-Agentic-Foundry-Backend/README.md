@@ -21,63 +21,111 @@
         - pip install uv
         - uv pip install -r requirements.txt
 
-    ### 4. Setup SBERT Model (`all-MiniLM-L6-v2`)
+    ### 4. Create and Configure the `.env` File
 
-    > If you face SSL issues while connecting to the model from Hugging Face, follow the manual setup below:
+    Before running the application, create a `.env` file in the project root directory. You can do this easily by copying the provided `.env.example` file:
 
-    #### Steps:
-
-    1. Download the **`all-MiniLM-L6-v2`** model manually : [[all-MiniLM-L6-v2](https://infosystechnologies.sharepoint.com/:u:/s/AgenticAI104/EZ6FQn8GaQFEs8NVuRPcl1sBkWzuH0-imLBjMzkXAIdpDw?e=JjK7nJ)]
-
-    2. Extract the downloaded folder to a local directory.
-
-    3. Update your `.env` file with the local model path:
-
-    ```env
-    SBERT_MODEL_PATH=path/to/your/local/all-MiniLM-L6-v2
+    ```sh
+    cp .env.example .env
     ```
 
-    > ✅ Replace `path/to/your/local/all-MiniLM-L6-v2` with the actual folder path where you extracted the model.
+    Then, open the `.env` file and fill in the values for the keys as required for your environment.
+    
 
-    ### 5. Setup e5-base-v2 Model (`e5-base-v2`)
+    ### 5. Setup SBERT and BGE-Reranker Models
 
-    > If you face SSL issues while connecting to the model from Hugging Face, follow the manual setup below:
+    > This section guides you through setting up the required models.
 
-    #### Steps:
+    You have two primary deployment options:
 
-    1. Download the **`e5-base-v2`** model manually : [[e5-base-v2](https://infosystechnologies.sharepoint.com/:u:/r/sites/AgenticAI104/Shared%20Documents/Agentic%20AI/e5-base-v2.zip?csf=1&web=1&e=syB8fl)]
+    **Local/VM Model Server Setup:** For hosting models on a dedicated machine (your local environment or a Virtual Machine).
 
-    2. Extract the downloaded folder to a local directory.
+    **Remote Client Setup:** For connecting to an already operational model server hosted elsewhere.
 
-    3. Update your `.env` file with the local model path:
+    #### Model Server Setup (Local/VM Deployment)
+
+    Use this approach when you want to host the embedding and reranker models on a dedicated server (localhost or VM).
+
+    ##### Steps:
+
+    1. **Setup Model Server Environment**
+
+       - Configure a model server (either on `localhost` or a dedicated VM) Ensure it runs on a distinct port from your primary application server.
+       - Verify the server machine possesses adequate RAM resources for efficient model inference.
+
+    2. **Download Required Models Manually**
+       
+       Download both models manually to avoid SSL connectivity issues:
+       
+       - **`all-MiniLM-L6-v2`** model: [[Download Link](https://infosystechnologies.sharepoint.com/:u:/s/AgenticAI104/EZ6FQn8GaQFEs8NVuRPcl1sBkWzuH0-imLBjMzkXAIdpDw?e=JjK7nJ)]
+       - **`bge-reranker-large`** model: [[Download Link](https://infosystechnologies.sharepoint.com/:u:/s/AgenticAI104/EZKCs4u0KxNOrtxxvGvWM_MBBnpxXyc72NsptreEPOyiCQ?e=bde1xJ)]
+       
+       After downloading, **extract both `.zip` archives** into a chosen directory on your server machine.
+
+    3. **Configure Environment Variables (`.env`)**
+       
+       Update your `.env` file to point to the local paths of your extracted models:
+
+       ```env
+       SBERT_MODEL_PATH=path/to/your/folder/all-MiniLM-L6-v2
+       CROSS_ENCODER_PATH=path/to/your/folder/bge-reranker-large
+       ```
+
+       > ⚠️ **Important:** Replace the placeholder paths with the actual folder paths where you extracted the models.
+
+    4. **Start Model Server**
+       
+        Execute the `model_server.py` script to launch your model server. This will load the models into memory and expose them via API endpoints
+       
+       **`model_server.py` file:** [Link to model_server.py (https://infosystechnologies.sharepoint.com/:u:/s/AgenticAI104/EW7g9SeUS7lNjUhmCX5NUo8BQ8FeAvY6Tc8WigIESEY3sQ?e=ZkCnm7)]
+       
+       ```bash
+       python model_server.py
+       ```
+       Keep this process running for the models to remain available.
+
+    #### Remote Client Setup
+
+    Use this approach when connecting to an existing model server hosted elsewhere.
+
+    ##### Steps:
+
+    1. **Configure Remote Model Server Connection**
+       
+       Update your `.env` file with the remote model server details:
 
     ```env
-    EMBEDDING_MODEL_PATH=path/to/your/local/e5-base-v2
+    MODEL_SERVER_URL="http://your-model-server-ip:port"
+    MODEL_SERVER_HOST="your-model-server-ip"   # Often derived from MODEL_SERVER_URL
+    MODEL_SERVER_PORT="port_number"           # Often derived from MODEL_SERVER_URL
     ```
 
-    > ✅ Replace `path/to/your/local/e5-base-v2` with the actual folder path where you extracted the model.
+    ### 6. Setup Vault / Master Secret
+    You need a cryptographically strong master secret used for encryption / signing (variable: `SECRETS_MASTER_KEY`).
 
-    ### 6. Setup stsb-roberta-base Model (`stsb-roberta-base`)
+    Recommended: use the helper script instead of typing a manual value.
 
-    > If you face SSL issues while connecting to the model from Hugging Face, follow the manual setup below:
+    #### Option A: Generate with helper script (preferred)
+    A minimal script `generate_master_secret_key.py` (at repository root) outputs a 256‑bit random base64 string.
 
-    #### Steps:
+    PowerShell (Windows):
+    ```powershell
+    # Run the generator
+    python .\generate_master_secret_key.py
+    ```
+    Copy the printed value.
 
-    1. Download the **`stsb-roberta-base`** model manually : [[stsb-roberta-base](https://infosystechnologies.sharepoint.com/:u:/r/sites/AgenticAI104/Shared%20Documents/Agentic%20AI/stsb-roberta-base.zip?csf=1&web=1&e=wSubQp)]
-
-    2. Extract the downloaded folder to a local directory.
-
-    3. Update your `.env` file with the local model path:
-
+    Then open your freshly copied `.env` file and set:
     ```env
-    CROSS_ENCODER_PATH=path/to/your/local/stsb-roberta-base
+    SECRETS_MASTER_KEY=PASTE_VALUE_HERE
     ```
 
-    > ✅ Replace `path/to/your/local/stsb-roberta-base` with the actual folder path where you extracted the model.
+    (Keep it on a single line, no quotes, no trailing spaces.)
 
+    #### Rotation
+    To rotate, regenerate a new key, update `.env`, then restart any running services. Ensure any previously encrypted data is either re-encrypted or still accessible via a key management / versioning strategy if applicable.
 
-    ### 7. Setup Vault secret
-    >  Fill the SECRETS_MASTER_KEY with the any Alfanumeric value of length more then 10 characters.
+    >  Legacy note: If you already manually set `SECRETS_MASTER_KEY` to an alphanumeric string > 10 chars, you may keep it, but regenerating with the script improves entropy.
 
 
 
@@ -173,8 +221,10 @@
         PHOENIX_COLLECTOR_ENDPOINT=your_phoenix_collector_endpoint
         PHOENIX_GRPC_PORT=your_phoenix_grpc_port
         SBERT_MODEL_PATH=path_to_your_local_all-MiniLM-L6-v2
-        EMBEDDING_MODEL_PATH = path_to_your_local_e5-base-v2
-        CROSS_ENCODER_PATH = path_to_your_local_stsb-roberta-base
+        CROSS_ENCODER_PATH = path_to_your_local_bge-reranker-large
+
+    # Master Secret (required for encryption / signing operations)
+    SECRETS_MASTER_KEY=your_generated_base64_secret_key  # Generate: python generate_master_secret_key.py
 
         # Redis Cache Configuration
         REDIS_HOST=your_redis_host

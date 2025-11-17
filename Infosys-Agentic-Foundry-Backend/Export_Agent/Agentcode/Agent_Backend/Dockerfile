@@ -39,5 +39,5 @@ EXPOSE 8000
 # Define the command to run your application.
 # --reload is removed as it's for development, not production containers.
 # --host 0.0.0.0 is CRITICAL to allow the container to accept connections from outside.
-CMD ["uvicorn", "agent_endpoints:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
  

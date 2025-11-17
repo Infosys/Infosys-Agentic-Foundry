@@ -1,5 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-from typing import Literal, Optional, List
+from typing import Literal, Optional, List, Union
 from fastapi import APIRouter, Depends, Request, Query, UploadFile, File, BackgroundTasks, Form
 
 from src.schemas import (
@@ -442,7 +442,7 @@ async def temporary_connect_to_database(
         database: Optional[str] = Form(None),
         flag_for_insert_into_db_connections_table: str = Form(None),
         # created_by: str = Form(...),  # <--- make sure to include this
-        sql_file: UploadFile = File(None),
+        sql_file: Union[UploadFile, str, None] = File(None),
         db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager)
     ):
     from src.api.data_connector_endpoints import connect_to_database_endpoint

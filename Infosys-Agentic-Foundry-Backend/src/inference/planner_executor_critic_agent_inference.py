@@ -11,7 +11,7 @@ from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
 from telemetry_wrapper import logger as log
-
+from src.prompts.prompts import online_agent_evaluation_prompt
 from src.inference.inference_utils import EpisodicMemoryManager
 
 class MultiWorkflowState(BaseWorkflowState):
@@ -24,12 +24,15 @@ class MultiWorkflowState(BaseWorkflowState):
     past_steps_output: List[str]
     response_quality_score: float
     critique_points: str
-    epoch: int
     step_idx: int # App Related vars
     preference: str
     tool_feedback: str = None
     is_tool_interrupted: bool = False
     current_query_status: Optional[Literal["plan", "feedback", None]] = None
+    epoch: int = 0
+    evaluation_score: float = None
+    evaluation_feedback: str = None
+    workflow_description: str = None
 
 class MultiHITLWorkflowState(MultiWorkflowState):
     is_plan_approved: Optional[Literal["yes", "no", None]] = None
@@ -156,6 +159,7 @@ class MultiAgentInference(BaseAgentInference):
 
         tool_interrupt_flag = flags.get("tool_interrupt_flag", False)
         plan_verifier_flag = flags.get("plan_verifier_flag", False)
+        evaluation_flag = flags.get("evaluation_flag", False)
 
         if not llm or not executor_agent or not planner_chain_json or not planner_chain_str or \
                 not critic_planner_chain_json or not critic_planner_chain_str or not general_query_chain or \
@@ -171,6 +175,8 @@ class MultiAgentInference(BaseAgentInference):
             conv_summary = new_preference = ""
             errors = []
             current_state_query = await self.inference_utils.add_prompt_for_feedback(state["query"])
+            agent_details = await self.agent_service.agent_repo.get_agent_record(state["agentic_application_id"])
+            workflow_description = agent_details[0]["agentic_application_workflow_description"]
             try:
                 if state["reset_conversation"]:
                     state["executor_messages"].clear()
@@ -193,7 +199,10 @@ class MultiAgentInference(BaseAgentInference):
                             'epoch': 0,
                             'step_idx': 0,
                             'current_query_status': None,
-                            'errors': errors
+                            'errors': errors,
+                            'evaluation_score': None,
+                            'evaluation_feedback': None,
+                            'workflow_description': workflow_description
                         }
                         if plan_verifier_flag:
                             new_state.update({
@@ -221,8 +230,6 @@ class MultiAgentInference(BaseAgentInference):
                 log.error(error)
                 errors.append(error)
 
-            
-
             log.info(f"Generated past conversation summary for session {state['session_id']}.")
             new_state = {
                 'past_conversation_summary': conv_summary,
@@ -239,8 +246,12 @@ class MultiAgentInference(BaseAgentInference):
                 'epoch': 0,
                 'step_idx': 0,
                 'current_query_status': None,
-                'errors': errors
+                'errors': errors,
+                'evaluation_score': None,
+                'evaluation_feedback': None,
+                'workflow_description': workflow_description
             }
+            
             if plan_verifier_flag:
                 new_state.update({
                     'is_plan_approved': None,
@@ -567,7 +578,7 @@ Final Response:
                         }],
                     role="critic-response"
                 ),
-                "epoch": state["epoch"]+1
+                "epoch": state.get('epoch',0)+1
             }
 
         async def critic_based_planner_agent(state: MultiWorkflowState | MultiHITLWorkflowState):
@@ -578,7 +589,18 @@ Final Response:
             feedback_context = "" if not plan_verifier_flag else f"""
 *Now user want to modify above query with below modification:
 {state["plan_feedback"]}
+
 """
+             # Include evaluator feedback if available
+            evaluator_context = ""
+            if evaluation_flag and state.get("evaluation_feedback"):
+                evaluator_context = f"""
+
+    **EVALUATOR FEEDBACK FOR IMPROVEMENT:**
+    {state["evaluation_feedback"]}
+    **Please address the above evaluator feedback in your new plan.**
+
+    """
 
             formatted_query = f'''
 Past Conversation Summary:
@@ -605,6 +627,7 @@ Response Quality Score:
 
 Critique Points:
 {await self.inference_utils.format_list_str(state["critique_points"])}
+{evaluator_context}
 '''
 
             invocation_input = {"messages": [("user", formatted_query)]}
@@ -710,6 +733,7 @@ Critique Points:
             feedback = interrupt("What went wrong??")
             return {
                 'plan_feedback': feedback,
+                'executor_messages': ChatMessage(content=feedback, role="re-plan-feedback"),
                 'current_query_status': None
             }
 
@@ -745,7 +769,7 @@ Critique Points:
                 if "yes" in is_successful:
                     return "increment_step" 
                 else:
-                    return "final_response"
+                    return "response_generator_agent"
             else:
                 return "interrupt_node_for_tool"
 
@@ -808,6 +832,104 @@ Critique Points:
                 "response": executor_agent_response["messages"][-1].content,
                 "executor_messages": executor_agent_response["messages"],
             }
+        
+         # NEW EVALUATOR AGENT NODE
+        async def evaluator_agent(state: MultiWorkflowState | MultiHITLWorkflowState):
+            """
+            Evaluates the agent response across multiple dimensions and provides scores and feedback.
+            """
+            log.info(f"EVALUATOR AGENT CALLED for session {state['session_id']}")
+            
+            agent_evaluation_prompt = online_agent_evaluation_prompt
+            try:
+                # Format the evaluation query
+                formatted_evaluation_query = agent_evaluation_prompt.format(
+                    User_Query=state["query"],
+                    Agent_Response=state["response"],
+                    past_conversation_summary=state["past_conversation_summary"],
+                    workflow_description=state.get("workflow_description", "Multi-agent workflow with planner, executor, and critic components")
+                )
+                
+                # Call the LLM for evaluation
+                evaluation_response = await llm.ainvoke(formatted_evaluation_query)
+                
+                # Parse the JSON response
+                evaluation_data = json.loads(evaluation_response.content.replace("```json", "").replace("```", "").strip())
+                
+                # Calculate aggregate score (average of all ratings)
+                fluency_score = evaluation_data["fluency_evaluation"]["fluency_rating"]
+                relevancy_score = evaluation_data["relevancy_evaluation"]["relevancy_rating"]
+                coherence_score = evaluation_data["coherence_evaluation"]["coherence_score"]
+                groundedness_score = evaluation_data["groundedness_evaluation"]["groundedness_score"]
+                
+                aggregate_score = (fluency_score + relevancy_score + coherence_score + groundedness_score) / 4
+                
+                # Compile feedback from all dimensions
+                feedback_parts = []
+                feedback_parts.append(f"**Fluency Feedback:** {evaluation_data['fluency_evaluation']['feedback']}")
+                feedback_parts.append(f"**Relevancy Feedback:** {evaluation_data['relevancy_evaluation']['feedback']}")
+                feedback_parts.append(f"**Coherence Feedback:** {evaluation_data['coherence_evaluation']['feedback']}")
+                feedback_parts.append(f"**Groundedness Feedback:** {evaluation_data['groundedness_evaluation']['feedback']}")
+                
+                compiled_feedback = "\n\n".join(feedback_parts)
+                
+                log.info(f"Evaluator completed for session {state['session_id']} with aggregate score: {aggregate_score}")
+                
+                return {
+                    "evaluation_score": aggregate_score,
+                    "evaluation_feedback": compiled_feedback,
+                    "executor_messages": ChatMessage(
+                        content=[{
+                            "evaluation_score": aggregate_score,
+                            "evaluation_details": evaluation_data,
+                            "feedback": compiled_feedback
+                        }],
+                        role="evaluator-response"
+                    ),
+                    "epoch": state.get('epoch',0)+1
+                }
+                
+            except json.JSONDecodeError as e:
+                log.error(f"Failed to parse evaluator JSON response for session {state['session_id']}: {e}")
+                return {
+                    "evaluation_score": 0.3,
+                    "evaluation_feedback": "Evaluation failed due to JSON parsing error. Please review the response format and content quality.",
+                    "executor_messages": ChatMessage(
+                        content="Evaluation failed - JSON parsing error",
+                        role="evaluator-error"
+                    )
+                }
+            except Exception as e:
+                log.error(f"Evaluator agent failed for session {state['session_id']}: {e}")
+                return {
+                    "evaluation_score": 0.3,
+                    "evaluation_feedback": f"Evaluation failed due to error: {str(e)}",
+                    "executor_messages": ChatMessage(
+                        content=f"Evaluation failed: {str(e)}",
+                        role="evaluator-error"
+                    )
+                }
+
+        # NEW EVALUATOR DECISION FUNCTION
+        async def evaluator_decision(state: MultiWorkflowState | MultiHITLWorkflowState):
+            """
+            Decides whether to return the final response or continue with improvement cycle
+            based on evaluation score and threshold.
+            """
+            evaluation_threshold = 0.7  # Configurable threshold
+            max_evaluation_epochs = 3   # Maximum number of evaluation improvement cycles
+            
+            # Get current evaluation epoch (using existing epoch field or create new one)
+            current_epoch = state.get("epoch", 0)
+            evaluation_score = state.get("evaluation_score", 0.0)
+            
+            # Decision logic
+            if evaluation_score >= evaluation_threshold or current_epoch >= max_evaluation_epochs:
+                log.info(f"Evaluation passed for session {state['session_id']} - Score: {evaluation_score}, Epoch: {current_epoch}")
+                return "final_response"
+            else:
+                log.info(f"Evaluation failed for session {state['session_id']} - Score: {evaluation_score}, Epoch: {current_epoch}. Routing for improvement.")
+                return "critic_based_planner_agent"
 
 
         ### Build Graph
@@ -825,7 +947,7 @@ Critique Points:
         workflow.add_node("executor_agent_node", executor_agent_node)
         workflow.add_node("increment_step", increment_step)
         workflow.add_node("response_generator_agent", response_generator_agent)
-        workflow.add_node("critic_agent", critic_agent)
+        # workflow.add_node("critic_agent", critic_agent)
         workflow.add_node("critic_based_planner_agent", critic_based_planner_agent)
         workflow.add_node("final_response", final_response)
         workflow.add_node("interrupt_node_for_tool", interrupt_node_for_tool)
@@ -833,6 +955,12 @@ Critique Points:
         if flags["response_formatting_flag"]:
             workflow.add_node("formatter", lambda state: InferenceUtils.format_for_ui_node(state, llm))
 
+        if evaluation_flag:
+            workflow.add_node("evaluator_agent", evaluator_agent)
+            log.info("✅ Added evaluator_agent node")
+        else:
+            workflow.add_node("critic_agent", critic_agent)
+            log.info("✅ Added critic_agent node")
 
 
         workflow.add_edge(START, "generate_past_conversation_summary")
@@ -855,7 +983,7 @@ Critique Points:
         workflow.add_conditional_edges(
             "executor_agent_node",
             final_decision,
-            ["interrupt_node_for_tool", "increment_step","final_response"],
+            ["interrupt_node_for_tool", "increment_step","response_generator_agent"],
         )
         workflow.add_conditional_edges(
             "interrupt_node_for_tool",
@@ -865,7 +993,7 @@ Critique Points:
         workflow.add_conditional_edges(
             "tool_interrupt",
             final_decision,
-            ["interrupt_node_for_tool", "increment_step","final_response"],
+            ["interrupt_node_for_tool", "increment_step","response_generator_agent"],
         )
 
         workflow.add_conditional_edges(
@@ -873,12 +1001,28 @@ Critique Points:
             check_plan_execution_status,
             ["executor_agent_node", "response_generator_agent"],
         )
-        workflow.add_edge("response_generator_agent", "critic_agent")
-        workflow.add_conditional_edges(
-            "critic_agent",
-            critic_decision,
-            ["final_response", "critic_based_planner_agent"],
-        )
+
+        if evaluation_flag:
+            log.info("✅ Setting up evaluation routing path")
+            # Route from response_generator_agent to evaluator
+            workflow.add_edge("response_generator_agent", "evaluator_agent")
+            
+            # Evaluator decision routing
+            workflow.add_conditional_edges(
+                "evaluator_agent",
+                evaluator_decision,
+                ["final_response", "critic_based_planner_agent"],
+            )
+        else:
+            log.info("✅ Setting up critic routing path")
+            # Original routing with critic
+            workflow.add_edge("response_generator_agent", "critic_agent")
+            workflow.add_conditional_edges(
+                "critic_agent",
+                critic_decision,
+                ["final_response", "critic_based_planner_agent"],
+            )
+
         workflow.add_edge("critic_based_planner_agent", "executor_agent_node")
         workflow.add_edge("general_llm_call","final_response")
         if flags["response_formatting_flag"]:

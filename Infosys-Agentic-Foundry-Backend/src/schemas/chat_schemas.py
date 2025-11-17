@@ -1,5 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Optional, Dict, List,Any
 
 
@@ -9,7 +9,7 @@ class AgentInferenceRequest(BaseModel):
     This model captures all necessary details for invoking an agent,
     including options for Human-In-The-Loop (HITL) interactions and knowledge base integration.
     """
-    query: str = Field(..., description="The user's primary query or a modified query for agent processing.")
+    query: str = Field("", description="The user's primary query or a modified query for agent processing.")
     agentic_application_id: str = Field(..., description="The unique ID of the agentic application to invoke.")
     session_id: str = Field(..., description="The unique session identifier for the ongoing conversation.")
     model_name: str = Field(..., description="The name of the LLM model to be used for this inference run.")
@@ -21,8 +21,11 @@ class AgentInferenceRequest(BaseModel):
 
     # --- Plan Verification / HITL Flags ---
     plan_verifier_flag: bool = Field(False, description="If true, enables human verification/interruption after the agent generates a plan. The agent will pause for user input.")
-    is_plan_approved: Optional[Literal["yes", "no", None]] = Field(None, description="User's approval status for a generated plan: 'yes' to proceed, 'no' to provide feedback.")
+    is_plan_approved: Optional[Literal[None, "yes", "no"]] = Field(None, description="User's approval status for a generated plan: 'yes' to proceed, 'no' to provide feedback.")
     plan_feedback: Optional[str] = Field(None, description="Text feedback from the user regarding a disapproved plan, used for replanning.")
+    
+    # --- Evaluation Flag ---
+    evaluation_flag: bool = Field(False, description="If true, enables post-response evaluation of the agent's output.")
 
     # --- Final Response Feedback ---
     final_response_feedback: Optional[str] = Field(None, description="Text feedback from the user regarding the agent's final response (e.g., for 'submit_feedback' action).")
@@ -34,6 +37,16 @@ class AgentInferenceRequest(BaseModel):
     # --- Enable and Disable Formatting ---
     response_formatting_flag: Optional[bool] = True
     context_flag: Optional[bool] = True
+    
+    # --- Model Parameters ---
+    temperature: Optional[float] = Field(0, description="Temperature parameter for LLM model (0.0-1.0) - controls randomness in responses")
+    mentioned_agentic_application_id: Optional[str] = None
+    @field_validator('temperature')
+    @classmethod
+    def validate_temperature(cls, v):
+        if v is not None and (v < 0.0 or v > 1.0):
+            raise ValueError('Temperature must be between 0.0 and 1.0')
+        return v
 
 class ChatSessionRequest(BaseModel):
     """Schema for retrieving previous chat conversations."""
@@ -91,4 +104,12 @@ class SDLCAgentInferenceRequest(BaseModel):
     chat_id: str = Field(..., description="The unique chat identifier for the ongoing conversation.")
     model_name: str = Field("gpt-4o", description="The name of the LLM model to be used for this inference.")
     reset_conversation: bool = Field(False, description="If true, the conversation history for this chat_id will be reset before inference.")
+    temperature: Optional[float] = Field(0.7, description="Temperature parameter for LLM model (0.0-1.0) - controls randomness in responses")
+    
+    @field_validator('temperature')
+    @classmethod
+    def validate_temperature(cls, v):
+        if v is not None and (v < 0.0 or v > 1.0):
+            raise ValueError('Temperature must be between 0.0 and 1.0')
+        return v
 

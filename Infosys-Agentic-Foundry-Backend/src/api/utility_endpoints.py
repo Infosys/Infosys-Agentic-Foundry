@@ -1,14 +1,17 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import os
+import json
 import shutil
 import asyncpg
-import speech_recognition as sr
-from typing import List
+import requests
+from typing import List, Dict
 from pathlib import Path
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
 
+import azure.cognitiveservices.speech as speechsdk
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import TextLoader
@@ -51,15 +54,19 @@ async def get_version_endpoint(request: Request):
 
 
 @router.get('/get/models')
-async def get_available_models_endpoint(request: Request, model_service: ModelService = Depends(ServiceProvider.get_model_service)):
+async def get_available_models_endpoint(
+    request: Request, 
+    temperature: float = Query(default=0.0, ge=0.0, le=1.0, description="Temperature for model inference (0.0 to 1.0)"),
+    model_service: ModelService = Depends(ServiceProvider.get_model_service)
+):
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
     try:
         data = await model_service.get_all_available_model_names()
-        log.debug(f"Models retrieved successfully: {data}")
-        return JSONResponse(content={"models": data})
+        log.debug(f"Models retrieved successfully: {data}, Temperature: {temperature}")
+        return JSONResponse(content={"models": data, "temperature": temperature})
 
     except asyncpg.PostgresError as e:
         log.error(f"Database error while fetching models: {str(e)}")
@@ -231,40 +238,119 @@ async def list_knowledge_base_directories_endpoint(request: Request):
 
     return {"knowledge_bases": directories}
 
+class DeleteFoldersRequest(BaseModel):
+    knowledgebase_names: list[str]
+
+@router.delete("/remove-knowledgebases")
+async def delete_folders(request: DeleteFoldersRequest):
+    deleted_folders = []
+    failed_folders = []
+
+    for knowledgebase_name in request.knowledgebase_names:
+        folder_path = Path(KB_DIR) / knowledgebase_name
+
+        if not folder_path.exists():
+            failed_folders.append({"KnowledgeBase": knowledgebase_name, "error": "KnowledgeBase not found"})
+            continue
+
+        if not folder_path.is_dir():
+            failed_folders.append({"KnowledgeBase": knowledgebase_name, "error": "Not a KnowledgeBase"})
+            continue
+
+        try:
+            shutil.rmtree(folder_path)
+            deleted_folders.append(knowledgebase_name)
+        except Exception as e:
+            failed_folders.append({"folder": knowledgebase_name, "error": str(e)})
+
+    return {
+        "deleted_kbs": deleted_folders,
+        "failed_kbs": failed_folders
+    }
+ 
 ## ==========================================================
 
 
 ## ============ speech-to-text ============
 
 @router.post("/transcribe/")
-async def transcribe_audio_endpoint(request: Request, file: UploadFile = File(...)):
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
+async def transcribe_audio_endpoint(file: UploadFile = File(...)) -> Dict[str, str]:
+    STT_ENDPOINT = os.getenv("STT_ENDPOINT")
+    SPEECH_KEY = os.getenv("SPEECH_KEY")
+    os.environ['HTTP_PROXY'] = ''
+    os.environ['HTTPS_PROXY'] = 'http://blrproxy.ad.infosys.com:443'
 
-    # Define the path to save the uploaded file
     os.makedirs('audios', exist_ok=True)
     file_location = os.path.join("audios", file.filename)
-
-    # Save the file to the 'audios' directory
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Initialize recognizer and perform transcription
-    recognizer = sr.Recognizer()
-    try:
-        with sr.AudioFile(file_location) as source:
-            audio_data = recognizer.record(source)
-        transcription = recognizer.recognize_google(audio_data)
-    except sr.UnknownValueError:
-        transcription = "Sorry, could not understand the audio."
-    except sr.RequestError as e:
-        transcription = f"Google API error: {e}"
-    finally:
-        # Optionally delete the file after transcription
-        os.remove(file_location)
+    url = f"{STT_ENDPOINT}speechtotext/transcriptions:transcribe?api-version=2024-05-15-preview"
+    headers = {
+        "Ocp-Apim-Subscription-Key": SPEECH_KEY,
+        "Accept": "application/json"
+    }
+    definition = {
+        "locales": ["en-US"],
+        "profanityFilterMode": "Masked",
+        "channels": [0]
+    }
 
-    return {"transcription": transcription}
+    proxies = {
+        'http': 'http://blrproxy.ad.infosys.com:443',
+        'https': 'http://blrproxy.ad.infosys.com:443'
+    }
+
+    try:
+        with open(file_location, 'rb') as audio_file:
+            files = {
+                'audio': (file.filename, audio_file, 'audio/wav'),
+                'definition': (None, json.dumps(definition), 'application/json')
+            }
+
+            response = requests.post(
+                url,
+                headers=headers,
+                files=files,
+                proxies=proxies,
+                timeout=300
+            )
+
+        response.raise_for_status()
+        result = response.json()
+
+        if 'combinedPhrases' in result and len(result['combinedPhrases']) > 0:
+            transcription = result['combinedPhrases'][0]['text']
+        elif 'phrases' in result and len(result['phrases']) > 0:
+            transcription = ' '.join([phrase['text'] for phrase in result['phrases']])
+        else:
+            transcription = "No speech could be recognized."
+
+        os.remove(file_location)
+        return {"transcription": transcription}
+
+    except requests.exceptions.HTTPError as e:
+        error_detail = e.response.text
+        try:
+            error_json = e.response.json()
+            error_detail = json.dumps(error_json, indent=2)
+        except:
+            pass
+
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"HTTP Error: {e.response.status_code} - {error_detail}"
+        )
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Request Error: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal Server Error: {str(e)}"
+        )
 
 ## ==========================================================
 

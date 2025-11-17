@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing_extensions import TypedDict
 from typing import Any, List, Dict, Optional, Annotated, Union, Literal
 from fastapi import HTTPException
+import time
 
 from langchain_core.tools import BaseTool, StructuredTool, tool
 from langgraph.types import Command
@@ -23,7 +24,7 @@ from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
 from src.schemas import AgentInferenceRequest
 from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key
-
+from src.auth.models import UserRole
 from phoenix.otel import register
 from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
@@ -330,17 +331,19 @@ class BaseAgentInference(ABC):
                                 *,
                                 plan_verifier_flag: bool = False,
                                 is_plan_approved: Literal["yes", "no", None] = None,
-                                response_formatting_flag:bool = True,
                                 plan_feedback: str = None,
+                                response_formatting_flag:bool = True,
                                 tool_interrupt_flag: bool = False,
                                 tool_feedback: str = None,
                                 context_flag: bool = True,
-                                sse_manager: SSEManager=None
+                                temperature: float = 0.0,
+                                sse_manager: SSEManager=None,
+                                evaluation_flag: bool = False
                             ):
         if not plan_verifier_flag:
             is_plan_approved = plan_feedback = None
 
-        llm = await self.model_service.get_llm_model(model_name=model_name)
+        llm = await self.model_service.get_llm_model(model_name=model_name, temperature=temperature)
         agent_resp = {}
 
         log.debug("Building agent and chains")
@@ -357,7 +360,8 @@ class BaseAgentInference(ABC):
                 "plan_verifier_flag": plan_verifier_flag,
                 "tool_interrupt_flag": tool_interrupt_flag,
                 "response_formatting_flag": response_formatting_flag,
-                "context_flag": context_flag
+                "context_flag": context_flag,
+                "evaluation_flag": evaluation_flag
             }
             log.debug("Building workflow")
             workflow = await self._build_workflow(chains, flags)
@@ -378,6 +382,7 @@ class BaseAgentInference(ABC):
                         'reset_conversation': reset_conversation,
                         'model_name': model_name,
                         'is_tool_interrupted': False,
+                        'evaluation_flag': evaluation_flag,
                         "response_formatting_flag": response_formatting_flag,
                         "context_flag": context_flag
                     }
@@ -427,7 +432,8 @@ class BaseAgentInference(ABC):
                   *,
                   agent_config: Optional[Union[dict, None]] = None,
                   insert_into_eval_flag: bool = True,
-                  sse_manager :SSEManager= None
+                  sse_manager :SSEManager= None,
+                  role: str = None
                 ) -> Any:
         """
         Runs the Agent inference workflow.
@@ -435,6 +441,7 @@ class BaseAgentInference(ABC):
         Args:
             request (AgentInferenceRequest): The request object containing all necessary parameters.
         """
+        start_time = time.monotonic()
         agentic_application_id = inference_request.agentic_application_id
         if not agent_config:
             try:
@@ -455,6 +462,8 @@ class BaseAgentInference(ABC):
             context_flag = inference_request.context_flag
             is_plan_approved = inference_request.is_plan_approved
             plan_feedback = inference_request.plan_feedback
+            evaluation_flag = inference_request.evaluation_flag
+            temperature=inference_request.temperature
 
             match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
             user_name = match.group(0) if match else "guest"
@@ -492,13 +501,15 @@ class BaseAgentInference(ABC):
                 project_name=project_name,
                 reset_conversation=reset_conversation,
                 plan_verifier_flag=plan_verifier_flag,
-                response_formatting_flag=response_formatting_flag,
-                context_flag=context_flag,
                 is_plan_approved=is_plan_approved,
                 plan_feedback=plan_feedback,
+                response_formatting_flag=response_formatting_flag,
+                context_flag=context_flag,
+                evaluation_flag=evaluation_flag,
                 tool_interrupt_flag=tool_interrupt_flag,
                 tool_feedback=tool_feedback,
-                sse_manager= sse_manager
+                temperature=temperature,
+                sse_manager=sse_manager
             )
 
             if isinstance(response, str):
@@ -509,15 +520,34 @@ class BaseAgentInference(ABC):
             else:
                 update_session_context(response=response['response'])
                 response_evaluation = deepcopy(response)
+                
+                
                 response_evaluation["executor_messages"] = await self.chat_service.segregate_conversation_from_raw_chat_history_with_json_like_steps(response)
-                response["executor_messages"] = await self.chat_service.segregate_conversation_from_raw_chat_history_with_pretty_steps(response)
+
+                # call segregate to ensure proper formatting
+                
+                response["executor_messages"] = await self.chat_service.segregate_conversation_from_raw_chat_history_with_pretty_steps(
+                    response, 
+                    agentic_application_id=agentic_application_id,
+                    session_id=session_id,
+                    role=role
+                )
 
             if insert_into_eval_flag:
                 try:
                     await self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name)
                 except Exception as e:
                     log.error(f"Error Occurred while inserting into evaluation data: {e}")
-
+            end_time = time.monotonic()
+            time_taken = end_time - start_time
+            log.info(f"Time taken for inference: {time_taken:.2f} seconds")
+            response["executor_messages"][-1]["response_time"] = time_taken
+            
+            # Filter entire response based on user role
+            if role == UserRole.USER:
+                # For USER role, return only executor_messages with filtered fields
+                return {"executor_messages": response.get("executor_messages", [])}
+            
             return response
 
         except Exception as e:
