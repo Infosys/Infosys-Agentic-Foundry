@@ -1483,6 +1483,8 @@ label {
   line-height: 1.4;
   text-align: left;
   margin-top: 0;
+   min-width: 100%;
+    white-space: pre-line;
 }
 
 .success_error_content.success {

@@ -1,50 +1,63 @@
 # Changelog
 
+
+## [1.5.3]
+### Fixes
+- Dataconnector defaut value modified. 
+- File upload format corrected.
+
+## [1.5.2]
+
+- **RBAC implementation** : If loged in with USER as a role then we hide Tools, Agents, Vault and dataconnectors screens from menu and also hide the plan verifier toggle, tool verifier toggle, online evaluator and the execution steps in the chat screen.
+
+## [1.5.1]
+### Fixes
+- Error popup now auto hides after showing error message.
+- Text overflow sorted in tool execution.
+
 ## [1.5.0]
 
-### Features
-- Refresh token implemented for logged in user.
-- Execution of code made as common for tools and servers page.
-- Chat screen:
-  - Prompt library updates on every query submit.
-  - Temperature slider for models.
-  - Canvas ui improvised with table, json, image updates.
-  - Canvas now supports Email and use-case specific card components.
-- Evaluation screen:
-  - Consistency robustness screen introduced.
-  - UI revamped with three column layout.
-  - Updated columns for efficiency screen.
-  - Implemented live data update with server sent events in LLM as Judge and Ground truth screens.
-- Admin screen:
-  - Unused screen , added newly to list tools , agents, 
-- Export agent functionality requires environmental variable configurations.
-- Ground truth added auto reset when ever user modifies a form.
-- Online evaluation added in chat screen for each system response.
-- New agent template "Hybrid Agent" introduced..
-- Improvised and made consistent look and feel for tools, server, agents listing pages.
-- Error handler introduced to track the error and to reduce the blackscreen to users.
-- File upload feature in tools onboarding.
-- Vault screen ui updated.
-- UI codebase ".env" file removed and replaced with ".env-example".
-- LLM as judge made to appear based on role.
+### Features and Fixes
 
-### Fixes
-- Code preview plugin changed.
-- Admin screen design issues sorted.
-- Made  primary and secondary buttons to have similar looks and feel.
-- Popups and overlays layer corrected.
-- Removed Guest user login.
-- 404 Error popup suppressed.
-- Filter and tag related fixes done on list of tools, server, agents and onboarding/updating agent.
-- Chat history modified to fetch respective sessionId to continue with respective conversation.
-- Update agent screen on update tool. 
-
+**Consistency & Robustness**
+- New screen added under Evaluation screen for user to run consistency and robustness on agents.
+Export Agent
+- Enhanced functionality with vulnerability fixes, updated configurations, and GitHub push support (requires environment variable configurations in UI).
+- Added support for consistency and robustness checks for exported agents.
+**Hybrid Agent**
+- Added a new Hybrid Agent template, which is a pure Python-based template, with advanced capabilities present in other templates.
+**Data Lifecycle Management**
+- Implemented Time-To-Live (TTL) for automatic cleanup of unused tools/agents.
+**Security**
+- Fixed SQL injection vulnerabilities.
+- Added malicious code detection and enhanced validation logic for tools.
+- Implemented refresh token support for authentication, enhancing security and session management.
+**Real-Time Updates**
+- Added Server-Sent Events (SSE) for live streaming of evaluation results (LLM as Judge & Ground Truth).
+**Model Integration**
+- Connected bi-encoder and cross-encoder models to hosted servers via URLs.
+- Added temperature slider for models in chat screen.
+**Improvements**
+- Revamped evaluation screen with three-column layout.
+- Added support for tables, JSON, images, email and use-case specific cards in Canvas.
+- Added error handler to control black screens.
+- Removed .env file from codebase and replaced with .env-example.
+- Evaluation screen modernized.
+- Expanded MCP Server tooling with support for running/testing mcp tools.
+- Introduced a new context flag that, when disabled, prevents old chat history from being included in the agent's context.
+**Online Evaluation**
+- Added support for running online evaluations during agent inference, enabling real-time assessment of agent outputs
+**Defect Fixes**
+- Fixed code preview plugin and Admin screen design issues.
+- Removed guest user login.
+- Fixed filter/tag issues in listing pages.
+- Updated chat history to fetch respective sessionId.
 
 ## [1.4.2]
 
 ### Fix
 
-- removed monaco code editor
+- Removed monaco editor
 
 ## [1.4.1]
 
@@ -65,6 +78,8 @@
 - Added page total count for list of tools, list of servers, list of servers.
 
 ## [1.4.0]
+
+### Deployed on 15th Sep
 
 ### Features
 

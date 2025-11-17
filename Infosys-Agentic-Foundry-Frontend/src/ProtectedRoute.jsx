@@ -4,6 +4,7 @@ import { useAuth, hasAuthArtifacts, getActiveUser } from "./context/AuthContext"
 
 const ProtectedRoute = ({ children, requiredRole }) => {
   const { isAuthenticated, role, loading, logout, user } = useAuth();
+  const restrictedForUser = ["/", "/agent", "/secret", "/dataconnector","/evaluation"];
 
   useEffect(() => {
     if (loading) return;
@@ -35,6 +36,10 @@ const ProtectedRoute = ({ children, requiredRole }) => {
       logout("protected-route-mismatch");
     }
   }, [loading, logout, user]);
+
+  if (role && role.toLowerCase() === "user" && restrictedForUser.includes(window.location.pathname)) {
+    return <Navigate to="/chat" replace />;
+  }
 
   if (loading) return null;
 

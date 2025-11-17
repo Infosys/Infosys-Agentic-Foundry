@@ -765,6 +765,7 @@ align-items: center;
   min-height: 80px;
   box-sizing: border-box;
   transition: border-color 0.2s;
+  width: 100%;
 }
 .customFileUploadBox:hover,
 .customFileUploadBox:focus-within {

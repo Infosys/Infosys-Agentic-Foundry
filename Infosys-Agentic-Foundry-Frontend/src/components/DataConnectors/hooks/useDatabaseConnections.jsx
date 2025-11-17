@@ -1,14 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
-import { APIs } from '../../../constant';
-import { useDatabase } from '../context/DatabaseContext';
-import { useMessage } from '../../../Hooks/MessageContext';
-import { useDatabases } from '../service/databaseService.js';
-import useFetch from '../../../Hooks/useAxios.js';
+import { useState, useEffect, useCallback } from "react";
+import { APIs } from "../../../constant";
+import { useDatabase } from "../context/DatabaseContext";
+import { useMessage } from "../../../Hooks/MessageContext";
+import { useDatabases } from "../service/databaseService.js";
+import useFetch from "../../../Hooks/useAxios.js";
 
 export const useDatabaseConnections = () => {
   // Use the database context
   const { addDatabase, fetchActiveConnections } = useDatabase();
-  
+
   // Get message context for toast notifications
   const { addMessage } = useMessage();
   // Use the database service
@@ -23,7 +23,7 @@ export const useDatabaseConnections = () => {
     port: "",
     username: "",
     password: "",
-    databaseName: ""
+    databaseName: "",
   });
 
   // State for selected connection management (separate from new connection form)
@@ -50,18 +50,18 @@ export const useDatabaseConnections = () => {
     setIsLoadingConnections(true);
     try {
       const result = await fetchConnections();
-      
+
       if (result.success) {
         const connections = result.data.connections || result.data || [];
-        
+
         setAvailableConnections(connections);
         setLastUpdateTime(Date.now());
       } else {
-        console.error('Failed to fetch connections:', result.error);
+        console.error("Failed to fetch connections:", result.error);
         setAvailableConnections([]);
       }
     } catch (error) {
-      console.error('loadAvailableConnections error:', error);
+      console.error("loadAvailableConnections error:", error);
       setAvailableConnections([]);
     } finally {
       setIsLoadingConnections(false);
@@ -85,47 +85,37 @@ export const useDatabaseConnections = () => {
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [lastUpdateTime, updateConnectionsImmediate]);
 
   // Handle connection selection from dropdown
   const handleConnectionSelect = (selectedConnectionName) => {
-    
-    
-    const selectedConn = availableConnections.find(
-      conn => conn.connection_name === selectedConnectionName
-    );
-    
-    
-    
+    const selectedConn = availableConnections.find((conn) => conn.connection_name === selectedConnectionName);
+
     if (selectedConn) {
       setSelectedConnection(selectedConnectionName);
       setSelectedConnectionData(selectedConn);
-      
     } else {
       setSelectedConnection("");
       setSelectedConnectionData(null);
-      
     }
   };
 
   const handleConnectionInputChange = (e) => {
-   
-    
     const { name, value } = e.target;
-    setConnectionData(prev => {
+    setConnectionData((prev) => {
       const newData = {
         ...prev,
-        [name]: value
+        [name]: value,
       };
-      
+
       return newData;
     });
-    
+
     // Reset connection status when user modifies the form
     if (isConnected) {
       setIsConnected(false);
@@ -134,57 +124,56 @@ export const useDatabaseConnections = () => {
 
   const handleConnectionSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Use temporary connection data if available (from DataConnectors modal)
     const currentConnectionData = window.tempConnectionData || connectionData;
 
     // Defensive: For SQLite, only validate the three required fields
     let requiredFields;
-    if (
-      currentConnectionData.databaseType &&
-      currentConnectionData.databaseType.toLowerCase() === 'sqlite'
-    ) {
-      requiredFields = ['connectionName', 'databaseType'];
+    if (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "sqlite") {
+      requiredFields = ["connectionName", "databaseType"];
     } else {
-      requiredFields = ['connectionName', 'databaseType', 'host', 'port', 'username', 'password', 'databaseName'];
+      requiredFields = ["connectionName", "databaseType", "host", "port", "username", "password", "databaseName"];
     }
-    const missingFields = requiredFields.filter(field => !currentConnectionData[field] || currentConnectionData[field].trim() === '');
+    const missingFields = requiredFields.filter((field) => !currentConnectionData[field] || currentConnectionData[field].trim() === "");
     if (missingFields.length > 0) {
-      addMessage(`Please fill in the following required fields: ${missingFields.join(', ')}`, "error");
+      addMessage(`Please fill in the following required fields: ${missingFields.join(", ")}`, "error");
       return;
     }
     setIsConnecting(true);
     try {
       let payload;
-      if (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'sqlite') {
+      if (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "sqlite") {
         payload = new FormData();
-        payload.append('name', currentConnectionData.connectionName);
-        payload.append('db_type', 'sqlite');
-        payload.append('host', '');
-        payload.append('port', '');
-        payload.append('username', '');
-        payload.append('password', '');
-        payload.append('flag_for_insert_into_db_connections_table', '1');
+        payload.append("name", currentConnectionData.connectionName);
+        payload.append("db_type", "sqlite");
+        payload.append("host", "");
+        payload.append("port", 0);
+        payload.append("username", "");
+        payload.append("password", "");
+        payload.append("flag_for_insert_into_db_connections_table", "1");
         if (currentConnectionData.uploaded_file) {
-          payload.append('sql_file', currentConnectionData.uploaded_file);
-          payload.append('database', '');
+          payload.append("sql_file", currentConnectionData.uploaded_file);
+          payload.append("database", "");
         } else {
-          payload.append('sql_file', '');
-          payload.append('database', currentConnectionData.databaseName);
+          payload.append("sql_file", "");
+          payload.append("database", currentConnectionData.databaseName);
         }
-      } else if (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'postgresql' || 
-        currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'mysql' || 
-        currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === 'mongodb') {
+      } else if (
+        (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "postgresql") ||
+        (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "mysql") ||
+        (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "mongodb")
+      ) {
         payload = new FormData();
-        payload.append('name', currentConnectionData.connectionName);
-        payload.append('db_type', currentConnectionData.databaseType.toLowerCase());
-        payload.append('host', currentConnectionData.host);
-        payload.append('port', currentConnectionData.port);
-        payload.append('username', currentConnectionData.username);
-        payload.append('password', currentConnectionData.password);
-        payload.append('database', currentConnectionData.databaseName);
-        payload.append('flag_for_insert_into_db_connections_table', '1');
-        payload.append('sql_file', '');
+        payload.append("name", currentConnectionData.connectionName);
+        payload.append("db_type", currentConnectionData.databaseType.toLowerCase());
+        payload.append("host", currentConnectionData.host);
+        payload.append("port", currentConnectionData.port);
+        payload.append("username", currentConnectionData.username);
+        payload.append("password", currentConnectionData.password);
+        payload.append("database", currentConnectionData.databaseName);
+        payload.append("flag_for_insert_into_db_connections_table", "1");
+        payload.append("sql_file", "");
       }
       const apiUrl = APIs.CONNECT_DATABASE;
       try {
@@ -202,7 +191,7 @@ export const useDatabaseConnections = () => {
             host: currentConnectionData.host,
             port: currentConnectionData.port,
             username: currentConnectionData.username,
-            databaseName: currentConnectionData.databaseName
+            databaseName: currentConnectionData.databaseName,
           });
           addMessage(response.message || "Database connected successfully!", "success");
           setIsConnected(true); // Disable the connect button after successful connection
@@ -212,11 +201,9 @@ export const useDatabaseConnections = () => {
           }
         }
       } catch (apiError) {
-        
         throw apiError;
       }
     } catch (error) {
-      
       addMessage(error.response.data.detail, "error");
     } finally {
       setIsConnecting(false);
@@ -234,7 +221,7 @@ export const useDatabaseConnections = () => {
       const payload = {
         name: connectionName,
         db_type: databaseType.toLowerCase(),
-        flag: flag.toString()
+        flag: flag.toString(),
       };
       // Make the API call to disconnect
       const response = await postData(APIs.DISCONNECT_DATABASE, payload);
@@ -251,21 +238,18 @@ export const useDatabaseConnections = () => {
         addMessage(response.message, "success");
       }
     } catch (error) {
-      
       // Show error message
       let errorMessage = "Failed to disconnect from database.";
-      
+
       if (error.response) {
-        errorMessage = error.response.message || 
-                      error.response.error || 
-                      `Server error (${error.response.status})`;
+        errorMessage = error.response.message || error.response.error || `Server error (${error.response.status})`;
       } else if (error.request) {
         errorMessage = "No response from server. Please check if the server is running.";
       } else {
-        console.error('Hook handleDisconnect - General error:', error.message);
+        console.error("Hook handleDisconnect - General error:", error.message);
         errorMessage = error.message;
       }
-      
+
       addMessage(`Disconnection failed: ${errorMessage}`, "error");
     } finally {
       setIsDisConnecting(false);
@@ -277,41 +261,43 @@ export const useDatabaseConnections = () => {
     setIsConnecting(true);
     try {
       let payload;
-      const dbTypeValue = (connectionData.databaseType || connectionData.db_type || connectionData.connection_database_type || '').toLowerCase();
-      if (dbTypeValue === 'sqlite') {
+      const dbTypeValue = (connectionData.databaseType || connectionData.db_type || connectionData.connection_database_type || "").toLowerCase();
+      if (dbTypeValue === "sqlite") {
         payload = new FormData();
-        payload.append('name', connectionData.connectionName || connectionData.name || connectionData.connection_name || '');
-        payload.append('db_type', 'sqlite');
-        payload.append('host', '');
-        payload.append('port', '');
-        payload.append('username', '');
-        payload.append('password', '');
-        payload.append('flag_for_insert_into_db_connections_table', flag);
+        payload.append("name", connectionData.connectionName || connectionData.name || connectionData.connection_name || "");
+        payload.append("db_type", "sqlite");
+        payload.append("host", "");
+        payload.append("port", 0);
+        payload.append("username", "");
+        payload.append("password", "");
+        payload.append("flag_for_insert_into_db_connections_table", flag);
         if (connectionData.uploaded_file) {
-          payload.append('sql_file', connectionData.uploaded_file);
-          payload.append('database', '');
+          payload.append("sql_file", connectionData.uploaded_file);
+          payload.append("database", "");
         } else {
-          payload.append('sql_file', '');
-          payload.append('database', connectionData.databaseName || connectionData.database || connectionData.connection_database_name || '');
+          payload.append("sql_file", "");
+          payload.append("database", connectionData.databaseName || connectionData.database || connectionData.connection_database_name || "");
         }
-      } else if (dbTypeValue === 'postgresql' || dbTypeValue === 'mysql' || dbTypeValue === 'mongodb') {
+      } else if (dbTypeValue === "postgresql" || dbTypeValue === "mysql" || dbTypeValue === "mongodb") {
         payload = new FormData();
-        payload.append('name', connectionData.connectionName || connectionData.name || connectionData.connection_name || '');
-        payload.append('db_type', dbTypeValue);
-        payload.append('host', connectionData.host || connectionData.connection_host || '');
-        payload.append('port', connectionData.port || connectionData.connection_port || '');
-        payload.append('username', connectionData.username || connectionData.connection_username || '');
-        payload.append('password', connectionData.password || connectionData.connection_password || '');
-        payload.append('database', connectionData.databaseName || connectionData.database || connectionData.connection_database_name || '');
-        payload.append('flag_for_insert_into_db_connections_table', flag);
-        payload.append('sql_file', '');
+        payload.append("name", connectionData.connectionName || connectionData.name || connectionData.connection_name || "");
+        payload.append("db_type", dbTypeValue);
+        payload.append("host", connectionData.host || connectionData.connection_host || "");
+        payload.append("port", connectionData.port || connectionData.connection_port || "");
+        payload.append("username", connectionData.username || connectionData.connection_username || "");
+        payload.append("password", connectionData.password || connectionData.connection_password || "");
+        payload.append("database", connectionData.databaseName || connectionData.database || connectionData.connection_database_name || "");
+        payload.append("flag_for_insert_into_db_connections_table", flag);
+        payload.append("sql_file", "");
       }
       const apiUrl = APIs.CONNECT_DATABASE;
       const response = await postData(apiUrl, payload);
       if (response) {
-        try { await fetchActiveConnections(); } catch {}
+        try {
+          await fetchActiveConnections();
+        } catch {}
         await updateConnectionsImmediate();
-        addMessage(response.message , "success");
+        addMessage(response.message, "success");
         setIsConnected(flag === "1");
       }
     } catch (error) {
@@ -326,51 +312,51 @@ export const useDatabaseConnections = () => {
     setIsActivating(true);
     try {
       let payload;
-      if(connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'sqlite'){
+      if (connection.connection_database_type && connection.connection_database_type.toLowerCase() === "sqlite") {
         payload = new FormData();
-        payload.append('name', connection.connection_name);
-        payload.append('db_type', 'sqlite');
-        payload.append('host', '');
-        payload.append('port', '');
-        payload.append('username', '');
-        payload.append('password', '');
-        payload.append('flag_for_insert_into_db_connections_table', '0');
+        payload.append("name", connection.connection_name);
+        payload.append("db_type", "sqlite");
+        payload.append("host", "");
+        payload.append("port", 0);
+        payload.append("username", "");
+        payload.append("password", "");
+        payload.append("flag_for_insert_into_db_connections_table", "0");
         if (connection.uploaded_file) {
-          payload.append('sql_file', connection.uploaded_file);
-          payload.append('database', '');
+          payload.append("sql_file", connection.uploaded_file);
+          payload.append("database", "");
         } else {
-          payload.append('sql_file', '');
-          payload.append('database', connection.connection_database_name);
+          payload.append("sql_file", "");
+          payload.append("database", connection.connection_database_name);
         }
-      } else if (connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'postgresql' || 
-        connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'mysql' || 
-        connection.connection_database_type && connection.connection_database_type.toLowerCase() === 'mongodb') {
+      } else if (
+        (connection.connection_database_type && connection.connection_database_type.toLowerCase() === "postgresql") ||
+        (connection.connection_database_type && connection.connection_database_type.toLowerCase() === "mysql") ||
+        (connection.connection_database_type && connection.connection_database_type.toLowerCase() === "mongodb")
+      ) {
         payload = new FormData();
-        payload.append('name', connection.connection_name);
-        payload.append('db_type', connection.connection_database_type.toLowerCase());
-        payload.append('host', connection.connection_host);
-        payload.append('port', connection.connection_port);
-        payload.append('username', connection.connection_username);
-        payload.append('password', connection.connection_password);
-        payload.append('database', connection.connection_database_name);
-        payload.append('flag_for_insert_into_db_connections_table', '0');
-        payload.append('sql_file', '');
+        payload.append("name", connection.connection_name);
+        payload.append("db_type", connection.connection_database_type.toLowerCase());
+        payload.append("host", connection.connection_host);
+        payload.append("port", connection.connection_port);
+        payload.append("username", connection.connection_username);
+        payload.append("password", connection.connection_password);
+        payload.append("database", connection.connection_database_name);
+        payload.append("flag_for_insert_into_db_connections_table", "0");
+        payload.append("sql_file", "");
       }
-      
-      
-      
+
       // Basic validation (skip for FormData)
       if (!(payload instanceof FormData) && (isNaN(payload.port) || payload.port <= 0)) {
         throw new Error("Port must be a valid positive number");
       }
-      
+
       // Check if the API endpoint is defined
       if (!APIs.CONNECT_DATABASE) {
         throw new Error("Database connection API endpoint not configured");
       }
-      try{
-      // Construct the URL
-      const apiUrl = APIs.CONNECT_DATABASE;
+      try {
+        // Construct the URL
+        const apiUrl = APIs.CONNECT_DATABASE;
 
         const response = await postData(apiUrl, payload);
 
@@ -381,17 +367,15 @@ export const useDatabaseConnections = () => {
         }
 
         if (response) {
-          
-          
           // Add the activated database connection to our context
-          if (payload.db_type === 'sqlite') {
+          if (payload.db_type === "sqlite") {
             addDatabase({
               name: payload.name,
-              type: 'sqlite',
-              host: '',
-              port: '',
-              username: '',
-              databaseName: payload.database
+              type: "sqlite",
+              host: "",
+              port: 0,
+              username: "",
+              databaseName: payload.database,
             });
           } else {
             addDatabase({
@@ -400,30 +384,22 @@ export const useDatabaseConnections = () => {
               host: connection.connection_host,
               port: connection.connection_port,
               username: connection.connection_username,
-              databaseName: connection.connection_database_name
+              databaseName: connection.connection_database_name,
             });
           }
-          
+
           // Refresh active connections to show the newly activated connection
           try {
             await fetchActiveConnections();
-            
-          } catch (error) {
-            
-          }
-          
+          } catch (error) {}
+
           // Refresh available connections to update the dropdown immediately
           try {
             await updateConnectionsImmediate();
-            
-          } catch (error) {
-            
-          }
-          
+          } catch (error) {}
+
           addMessage(response.message || `Connection "${connection.connection_name}" activated successfully!`, "success");
-          
         } else {
-          
           addMessage("API response received but no data", "warning");
         }
       } catch (apiError) {
@@ -441,7 +417,6 @@ export const useDatabaseConnections = () => {
         addMessage(`Connection activation failed: ${errorMessage}`, "error");
       }
     } catch (error) {
-      
       addMessage(error.response.data.detail, "error");
     } finally {
       setIsActivating(false);
@@ -460,7 +435,7 @@ export const useDatabaseConnections = () => {
       const payload = {
         name: connectionName,
         db_type: databaseType.toLowerCase(),
-        flag: flag.toString()
+        flag: flag.toString(),
       };
       const response = await postData(APIs.DISCONNECT_DATABASE, payload);
       if (response) {
@@ -476,7 +451,6 @@ export const useDatabaseConnections = () => {
         addMessage(response.message || "Database deactivated successfully!", "success");
       }
     } catch (error) {
-      
       addMessage(error.response.data.detail, "error");
     } finally {
       setIsDisConnecting(false);
@@ -501,6 +475,6 @@ export const useDatabaseConnections = () => {
     handleDisconnect,
     handleConnectOrActivate,
     handleActivateConnection,
-    handleDeactivate
+    handleDeactivate,
   };
 };

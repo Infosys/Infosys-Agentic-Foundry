@@ -18,6 +18,7 @@ export default function NavBar() {
   const role = Cookies.get("role");
   const isAdmin = role && role.toLowerCase() === "admin";
   const isDeveloper = role && role.toLowerCase() === "developer";
+  const isUser = role && role.toLowerCase() === "user";
 
   // Reset active button state when user logs out
   useEffect(() => {
@@ -46,7 +47,12 @@ export default function NavBar() {
       }
     };
     return (
-      <NavLink to={to} onClick={handleClick} className={({ isActive }) => (isActive ? "active" : undefined)} {...extraProps}>
+      <NavLink
+        to={to}
+        onClick={handleClick}
+        className={({ isActive }) => (isActive ? "active" : "")}
+        {...extraProps}
+      >
         {children}
       </NavLink>
     );
@@ -56,24 +62,29 @@ export default function NavBar() {
     <div className={styles.navSection}>
       <nav className={styles.nav}>
         <ul>
-          <li>
-            {mainNavLink(
-              "/",
-              <>
-                <SVGIcons icon="fa-screwdriver-wrench" fill="#343741" />
-                <span>Tools</span>
-              </>
-            )}
-          </li>
-          <li>
-            {mainNavLink(
-              "/agent",
-              <>
-                <SVGIcons icon="fa-robot" fill="#343741" />
-                <span>Agents</span>
-              </>
-            )}
-          </li>
+          {/* Hide Tools, Agents, Vault for USER role */}
+          {!isUser && (
+            <>
+              <li>
+                {mainNavLink(
+                  "/",
+                  <>
+                    <SVGIcons icon="fa-screwdriver-wrench" fill="#343741" />
+                    <span>Tools</span>
+                  </>
+                )}
+              </li>
+              <li>
+                {mainNavLink(
+                  "/agent",
+                  <>
+                    <SVGIcons icon="fa-robot" fill="#343741" />
+                    <span>Agents</span>
+                  </>
+                )}
+              </li>
+            </>
+          )}
           <li>
             {mainNavLink(
               "/chat",
@@ -83,24 +94,29 @@ export default function NavBar() {
               </>
             )}
           </li>
-          <li>
-            {mainNavLink(
-              "/secret",
-              <>
-                <FontAwesomeIcon icon={faKey} />
-                <span>Vault</span>
-              </>
-            )}
-          </li>
-          <li>
-            {mainNavLink(
-              "/dataconnector",
-              <>
-                <SVGIcons icon="data-connectors" fill="#343741" />
-                <span>Data Connectors</span>
-              </>
-            )}
-          </li>
+          {/* Vault should be below Chat */}
+          {!isUser && (
+            <li>
+              {mainNavLink(
+                "/secret",
+                <>
+                  <FontAwesomeIcon icon={faKey} />
+                  <span>Vault</span>
+                </>
+              )}
+            </li>
+          )}
+          {!isUser && (
+            <li>
+              {mainNavLink(
+                "/dataconnector",
+                <>
+                  <SVGIcons icon="data-connectors" fill="#343741" />
+                  <span>Data Connectors</span>
+                </>
+              )}
+            </li>
+          )}
           <li>
             <button onClick={handleFileClick} className={activeButton === "files" ? "active" : ""}>
               <SVGIcons icon="file" fill="#343741" />
@@ -119,7 +135,7 @@ export default function NavBar() {
             </li>
           )}
           {/* Show Admin nav only if user is admin (case-insensitive) */}
-          {(role && role.toUpperCase() === "ADMIN" || isDeveloper)&& (
+          {((role && role.toUpperCase() === "ADMIN") || isDeveloper )&& (
             <li>
               {mainNavLink(
                 "/evaluation",

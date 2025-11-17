@@ -21,7 +21,7 @@ export const MessageProvider = ({ children }) => {
 
   // Auto-hide success messages after 3 seconds
   useEffect(() => {
-    if (showPopup && message && message.type === "success") {
+    if (showPopup && message && (message.type === "success" || message.type === "error")) {
       const timer = setTimeout(() => {
         removeMessage();
       }, 3000);

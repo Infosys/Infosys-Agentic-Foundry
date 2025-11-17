@@ -271,14 +271,14 @@ function MessageUpdateform(props) {
                         <div className={style["customFileUploadBox"]}>
                           <span className={style["customUploadPrompt"]}>Click to upload or drag and drop</span>
                           <div className={style["customSupportedExtensions"]}>
-                            Supported: .pdf, .docx, .pptx, .txt, .xlsx, .msg, .json, .img, .db, .jpg, .png, .jpeg, .csv, .pkl, .zip, .tar, .eml
+                            Supported: {showKnowledge ? ".pdf,.txt" : ".pdf, .docx, .pptx, .txt, .xlsx, .msg, .json, .img, .db, .jpg, .png, .jpeg, .csv, .pkl, .zip, .tar, .eml"}
                           </div>
                           <input
                             type="file"
                             id="browse"
                             onChange={handleFileChange}
-                            accept=".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml"
-                            multiple={true}
+                            accept={showKnowledge ? ".pdf,.txt" : ".pdf, .docx, .pptx, .txt, .xlsx, .msg, .json, .img, .db, .jpg, .png, .jpeg, .csv, .pkl, .zip, .tar, .eml"}
+                            multiple={showKnowledge ? true : false}
                             style={{ display: "none" }}
                           />
                           <label htmlFor="browse" style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 2 }}></label>

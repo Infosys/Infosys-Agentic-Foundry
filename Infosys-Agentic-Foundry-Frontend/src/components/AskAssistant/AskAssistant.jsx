@@ -45,6 +45,7 @@ const DEBOUNCE_DELAY = 100; // Delay for debounce operations
 const STATE_UPDATE_DELAY = 2000; // Delay for state updates
 
 const AskAssistant = () => {
+  const userRole = Cookies.get("role") ? Cookies.get("role")?.toLowerCase() : "";
   const loggedInUserEmail = Cookies.get("email");
   const user_session = Cookies.get("user_session");
   const [messageData, setMessageData] = useState([]);
@@ -244,6 +245,7 @@ const AskAssistant = () => {
   };
 
   const shouldShowHumanVerifier = () => {
+    if (userRole === "user") return false;
     return agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "multi_agent" || agentType === HYBRID_AGENT;
   };
 
@@ -258,6 +260,7 @@ const AskAssistant = () => {
   };
 
   const shouldShowToolVerifier = () => {
+    if (userRole === "user") return false;
     return agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "react_agent" || agentType === HYBRID_AGENT;
   };
 
@@ -1375,6 +1378,7 @@ const AskAssistant = () => {
 
   const shouldShowOnlineEvaluator = () => {
     if (!agentType) return false;
+    if (userRole === "user") return false;
     return ONLINE_EVAL_AGENT_TYPES.includes(agentType);
   };
   const [onlineEvaluatorFlag, setOnlineEvaluatorFlag] = useState(false);
