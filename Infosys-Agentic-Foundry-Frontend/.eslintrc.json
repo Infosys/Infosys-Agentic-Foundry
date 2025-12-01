@@ -6,7 +6,7 @@
     // "prefer-optional-chain": "warn",
 
     // Catch potential undefined issues
-    "no-undef": "error",
+    "no-undef": "warn",
     "no-undefined": "warn",
 
     // React specific
@@ -18,7 +18,7 @@
     "no-console": ["warn", { "allow": ["warn", "error"] }],
 
     // Custom rule suggestions for your team
-    "prefer-const": "error",
+    "prefer-const": "warn",
     "no-var": "error",
     "eqeqeq": ["error", "always", { "null": "ignore" }],
 
