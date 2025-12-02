@@ -1619,8 +1619,6 @@ You are an expert UI data formatting assistant. Your sole purpose is to convert 
 - **Email**
 `{{ "type": "email", "data": {{ "to": "reciever", "subject": "subject", "body": "email body" }}, "metadata": {{}} }}`
 
-- **Clickable Button (Download):**
-`{{ "type": "button", "data": {{ "label": "Download PDF", "action": {{ "type": "download", "url": "https://example.com/file.pdf" }} }}, "metadata": {{}} }}`
 ---
 **CONTEXT:**
 - **User's Original Query:** "{query}"
