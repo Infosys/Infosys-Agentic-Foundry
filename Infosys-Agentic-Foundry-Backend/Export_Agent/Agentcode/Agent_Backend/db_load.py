@@ -7,7 +7,10 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from src.utils.cache_utils import CacheableRepository
 from src.config.cache_config import EXPIRY_TIME, ENABLE_CACHING
 from telemetry_wrapper import logger as log
-
+import os
+from dotenv import load_dotenv
+load_dotenv()
+user_id = os.getenv("USER_EMAIL")
 # --- Base Repository ---
 
 
@@ -267,7 +270,8 @@ class ExportedToolRepository(BaseRepository, CacheableRepository):
                             tool_data.get("tool_id"), tool_data.get("tool_name"),
                             tool_data.get("tool_description"), code_snippet,
                             tool_data.get("model_name"),
-                            tool_data["created_by"]
+                            user_id
+                            # tool_data["created_by"]
                         )
                     log.info(f"Tool record {tool_data.get('tool_name')} inserted successfully.")
             return True
@@ -334,7 +338,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                 system_prompt = json.dumps(system_prompt)
                 tools_id = agent.get("tools_id", [])
                 tools_id=json.dumps(tools_id)
-                created_by=agent.get("created_by","")
+                # created_by=agent.get("created_by","")
+                created_by=user_id
 
                 insert_statement = f"""
                 INSERT INTO {self.table_name} (
@@ -383,7 +388,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                     tools_id = agent.get("tools_id", [])
                     tools_id=json.dumps(tools_id)
                     # tools_id = agent.get("tools_id", [])
-                    created_by=agent.get("created_by","")
+                    # created_by=agent.get("created_by","")
+                    created_by=user_id
 
                     insert_statement = f"""
                     INSERT INTO {self.table_name} (
@@ -496,7 +502,8 @@ class ExportedMcpToolRepository(BaseRepository):
                     tool_data.get("tool_name"),
                     tool_data.get("tool_description"),
                     json.dumps(tool_data.get("mcp_config")), # Ensure JSONB is dumped
-                    tool_data.get("created_by")
+                    # tool_data.get("created_by")
+                    user_id
                 )
             log.info(f"MCP tool record '{tool_data.get('tool_name')}' inserted successfully.")
             return True

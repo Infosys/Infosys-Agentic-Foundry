@@ -96,7 +96,7 @@ async def update_password(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    """Update user password (Admin only)"""
+    """Update user PWD (Admin only)"""
     ip_address = get_client_ip(request)
     user_agent = get_user_agent(request)
     

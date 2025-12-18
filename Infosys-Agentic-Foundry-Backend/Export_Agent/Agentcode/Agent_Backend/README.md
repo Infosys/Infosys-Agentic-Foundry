@@ -184,7 +184,7 @@
     .env file as:
 
     ```env
-    IAF_PASSWORD= DefaultPassword@123
+    IAF_PASSWORD= Default@123
     ``
     
     If you wish to change this password, you can do so by modifying the value of IAF_PASSWORD in the .env file
@@ -205,10 +205,6 @@
 
     ### 4. To run backend-server (first activate the virtual environment)
         python main.py
-                OR
-        python run_server.py
-                OR
-        python run_server.py --reload
 
     # --------------------------------------------------------------------------------------
         
@@ -227,10 +223,6 @@
 
     ### 4. To run backend-server (first activate the virtual environment)
         python main.py --host 0.0.0.0 --port 8000
-                OR
-        python run_server.py --host 0.0.0.0 --port 8000
-                OR
-        python run_server.py --host 0.0.0.0 --port 8000 --workers 2
 
 
     > **Note:** The `--reload` and `--workers` options are only supported when starting the server with `run_server.py`. If you use `main.py`, you can only configure the `--host` and `--port` options.

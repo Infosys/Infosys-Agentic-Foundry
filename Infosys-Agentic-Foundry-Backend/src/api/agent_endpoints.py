@@ -16,9 +16,8 @@ from Export_Agent.AgentsExport import AgentExporter
 
 from github_pusher import push_project
 
-from phoenix.otel import register
-from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.phoenix_manager import ensure_project_registered, traced_project_context_sync
 from src.auth.authorization_service import AuthorizationService
 from src.auth.models import UserRole, User
 from src.auth.dependencies import get_current_user
@@ -67,13 +66,14 @@ async def onboard_agent_endpoint(
                            tools_binded=onboarding_request.tools_id)
     project_name = f"onboard-{onboarding_request.agent_type.replace('_', '-')}"
     try:
-        register(
+        # Register Phoenix project (only once per unique project name)
+        ensure_project_registered(
                 project_name=project_name,
                 auto_instrument=True,
                 set_global_tracer_provider=False,
                 batch=True
             )
-        with using_project(project_name):
+        with traced_project_context_sync(project_name):
             update_session_context(
                 model_used=onboarding_request.model_name,
                 agent_name=onboarding_request.agent_name,
@@ -98,7 +98,8 @@ async def onboard_agent_endpoint(
                     model_name=onboarding_request.model_name,
                     tools_id=onboarding_request.tools_id,
                     user_id=onboarding_request.email_id,
-                    tag_ids=onboarding_request.tag_ids
+                    tag_ids=onboarding_request.tag_ids,
+                    validation_criteria=onboarding_request.validation_criteria
                 )
         update_session_context(model_used='Unassigned',
                             agent_name='Unassigned',
@@ -393,7 +394,7 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
     is_admin = False
     if update_request.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN)
-    is_creator = (agent_current_data.get("created_by") == user_id)
+    is_creator = (agent_current_data.get("created_by") == user_data.username)
     if not (is_admin or is_creator):
         log.warning(f"User {user_id} attempted to update agent without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Admin privileges or agent creator access required to update this agent")
@@ -408,7 +409,8 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                            action_on='agent',
                            previous_value=agent_current_data)
     project_name = f"update-{agent_type.replace('_', '-')}"
-    register(
+    # Register Phoenix project (only once per unique project name)
+    ensure_project_registered(
             project_name=project_name,
             auto_instrument=True,
             set_global_tracer_provider=False,
@@ -417,14 +419,14 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
 
     specialized_agent_service = ServiceProvider.get_specialized_agent_service(agent_type=agent_type)
 
-    with using_project(project_name):
+    with traced_project_context_sync(project_name):
         if agent_type in specialized_agent_service.meta_type_templates:
             response = await specialized_agent_service.update_agent(
                 agentic_application_id=update_request.agentic_application_id_to_modify,
                 agentic_application_description=update_request.agentic_application_description,
                 agentic_application_workflow_description=update_request.agentic_application_workflow_description,
                 model_name=update_request.model_name,
-                created_by=update_request.user_email_id,
+                created_by=user_data.username,
                 system_prompt=update_request.system_prompt,
                 is_admin=is_admin,
                 worker_agents_id_to_add=update_request.tools_id_to_add,
@@ -437,12 +439,13 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                 agentic_application_description=update_request.agentic_application_description,
                 agentic_application_workflow_description=update_request.agentic_application_workflow_description,
                 model_name=update_request.model_name,
-                created_by=update_request.user_email_id,
+                created_by=agent_current_data.get("created_by"),
                 system_prompt=update_request.system_prompt,
                 is_admin=is_admin,
                 tools_id_to_add=update_request.tools_id_to_add,
                 tools_id_to_remove=update_request.tools_id_to_remove,
-                updated_tag_id_list=update_request.updated_tag_id_list
+                updated_tag_id_list=update_request.updated_tag_id_list,
+                validation_criteria=update_request.validation_criteria
             )
         response["status_message"] = response.get("message", "")
         log.info(f"Agent update response: {response}")
@@ -510,7 +513,7 @@ async def delete_agent_endpoint(request: Request, agent_id: str, delete_request:
     is_admin = False
     if delete_request.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN)
-    is_creator = (previous_value.get("created_by") == user_id)
+    is_creator = (previous_value.get("created_by") == user_data.username)
     if not (is_admin or is_creator):
         log.warning(f"User {user_id} attempted to delete agent without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Admin privileges or agent creator access required to delete this agent")
@@ -522,7 +525,7 @@ async def delete_agent_endpoint(request: Request, agent_id: str, delete_request:
     
     response = await agent_service.delete_agent(
         agentic_application_id=agent_id,
-        user_id=delete_request.user_email_id,
+        user_id=user_data.username,
         is_admin=is_admin
     )
     response["status_message"] = response.get("message", "")

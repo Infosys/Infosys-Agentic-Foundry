@@ -31,8 +31,8 @@ from src.auth.dependencies import get_current_user
 from src.auth.models import User, UserRole
 
 from phoenix.otel import register
-from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.phoenix_manager import ensure_project_registered, traced_project_context_sync
 
 from src.auth.authorization_service import AuthorizationService
 from src.auth.models import UserRole, User
@@ -567,7 +567,8 @@ async def add_tool_endpoint(
     tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user),
-    force_add: Optional[bool] = False
+    force_add: Optional[bool] = False,
+    is_validator: Optional[bool] = Query(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
 ):
     """
     Adds a new tool to the tool table.
@@ -586,6 +587,8 @@ async def add_tool_endpoint(
         Optional comma-separated list of tag IDs for the tool.
     tool_file : UploadFile, optional
         Upload a .py file for the tool (required if code_snippet is empty).
+    is_validator : bool, optional
+        Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.
 
     Returns:
     -------
@@ -653,8 +656,8 @@ async def add_tool_endpoint(
             set_global_tracer_provider=False,
             batch=True
         )
-    with using_project('add-tool'):
-        status = await tool_service.create_tool(tool_data=tool_data_dict, force_add=force_add)
+    with traced_project_context_sync('add-tool'):
+        status = await tool_service.create_tool(tool_data=tool_data_dict, force_add=force_add, is_validator=is_validator)
         log.debug(f"Tool creation status: {status}")
 
     update_session_context(model_used='Unassigned',
@@ -670,12 +673,13 @@ async def add_tool_endpoint(
 @router.get("/get")
 async def get_all_tools_endpoint(request: Request, tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
-    Retrieves all tools from the tool table.
+    Retrieves all regular tools from the tool table (excludes validator tools).
 
     Returns:
     -------
     list
-        A list of tools. If no tools are found, raises an HTTPException with status code 404.
+        A list of regular tools. If no tools are found, raises an HTTPException with status code 404.
+        Use /tools/validators/get to retrieve validator tools.
     """
     # Check permissions first
     if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
@@ -751,7 +755,7 @@ async def search_paginated_tools_endpoint(
         authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
         user_data: User = Depends(get_current_user)
     ):
-    """Searches tools with pagination."""
+    """Searches regular tools with pagination (excludes validator tools). Use /tools/validators/get/search-paginated/ for validator tools."""
     # Check permissions first
     if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
         raise HTTPException(status_code=403, detail="You don't have permission to view tools. Only admins and developers can perform this action")
@@ -762,6 +766,39 @@ async def search_paginated_tools_endpoint(
     
 
     result = await tool_service.get_tools_by_search_or_page(search_value=search_value, limit=page_size, page=page_number,tag_names=tag_names, created_by=created_by)
+    if not result["details"]:
+        raise HTTPException(status_code=404, detail="No tools found matching criteria.")
+    return result
+
+
+@router.get("/get/tools-and-validators-search-paginated/")
+async def search_paginated_tools_and_validators_endpoint(
+        request: Request,
+        search_value: Optional[str] = Query(None),
+        page_number: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1),
+        tag_names: List[str] = Query(None, description="Filter by tag names"),
+        created_by: Optional[str] = Query(None, description="Filter by creator's email ID"),
+        tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+        authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+        user_data: User = Depends(get_current_user)
+    ):
+    """Searches tools and validators with pagination. This endpoint returns both regular tools and validator tools in a single response."""
+    # Check permissions first
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools. Only admins and developers can perform this action")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    result = await tool_service.get_all_tools_and_validators_by_search_or_page(
+        search_value=search_value, 
+        limit=page_size, 
+        page=page_number,
+        tag_names=tag_names, 
+        created_by=created_by
+    )
     if not result["details"]:
         raise HTTPException(status_code=404, detail="No tools found matching criteria.")
     return result
@@ -809,10 +846,12 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
 
     Parameters:
     ----------
-    id : str
+    tool_id : str
         The ID of the tool to be updated.
-    request : UpdateToolRequest
+    update_request : UpdateToolRequest
         The request body containing the update details.
+    force_add : bool, optional
+        Force add flag for bypassing certain validations.
 
     Returns:
     -------
@@ -832,7 +871,7 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
     if update_request.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN)
     
-    is_creator = (previous_value and previous_value[0].get("created_by") == user_id)
+    is_creator = (previous_value and previous_value[0].get("created_by") == user_data.username)
     if not (is_admin or is_creator):
         log.warning(f"User {user_id} attempted to update tool without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Only admin or creator are allowed to update the tool")
@@ -845,7 +884,7 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
             set_global_tracer_provider=False,
             batch=True
         )
-    with using_project('update-tool'):
+    with traced_project_context_sync('update-tool'):
         response = await tool_service.update_tool(
             tool_id=tool_id,
             model_name=update_request.model_name,
@@ -853,8 +892,9 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
             code_snippet=update_request.code_snippet,
             tool_description=update_request.tool_description,
             updated_tag_id_list=update_request.updated_tag_id_list,
-            user_id=update_request.user_email_id,
-            is_admin=is_admin
+            user_id=user_data.username,
+            is_admin=is_admin,
+            is_validator=update_request.is_validator
         )
 
     if response["is_update"]:
@@ -862,8 +902,13 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
         update_session_context(new_value=new_value)
         log.debug(f"Tool update status: {response}")
         update_session_context(new_value='Unassigned')
-    update_session_context(tool_id='Unassigned',tags='Unassigned',model_used='Unassigned',action_type='Unassigned',
-                        action_on='Unassigned',previous_value='Unassigned',new_value='Unassigned')
+    
+    # Clean up session context - wrap in try-catch to prevent middleware errors
+    try:
+        update_session_context(tool_id='Unassigned',tags='Unassigned',model_used='Unassigned',action_type='Unassigned',
+                            action_on='Unassigned',previous_value='Unassigned',new_value='Unassigned')
+    except Exception as session_error:
+        log.warning(f"Session context cleanup error (non-critical): {session_error}")
 
     if not response.get("is_update"):
 
@@ -918,7 +963,7 @@ async def delete_tool_endpoint(request: Request, tool_id: str, delete_request: D
     is_admin = False
     if delete_request.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN)
-    is_creator = (previous_value.get("created_by") == user_id)
+    is_creator = (previous_value.get("created_by") == user_data.username)
     if not (is_admin or is_creator):
         log.warning(f"User {user_id} attempted to delete tool without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Admin privileges or tool creator access required to delete this tool")
@@ -926,7 +971,7 @@ async def delete_tool_endpoint(request: Request, tool_id: str, delete_request: D
     update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id, action_on='tool', action_type='delete', previous_value=previous_value)
     status = await tool_service.delete_tool(
         tool_id=tool_id,
-        user_id=delete_request.user_email_id,
+        user_id=user_data.username,
         is_admin=is_admin
     )
     status["status_message"] = status.get("message", "")
@@ -955,7 +1000,7 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
     # --- Function extraction ---
     try:
         tree = ast.parse(execute_request.code)
-        func_defs = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
+        func_defs = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
         if len(func_defs) == 0:
             return ExecuteResponse(success=False, error="No function definition found in code")
         if len(func_defs) > 1:
@@ -963,10 +1008,13 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
         func = func_defs[0]
     except Exception as e:
         return ExecuteResponse(success=False, error=f"Error parsing code: {str(e)}")
-
+    model_service = ServiceProvider.get_model_service()
+    models = await model_service.get_all_available_model_names()
+    model = models[0]
+    print("Model_name:",model)
     initial_state = {
         "code": execute_request.code,
-        "model": "gpt-4o",
+        "model": model,
         "validation_case1": None,
         "feedback_case1": None,
         "validation_case3": None,
@@ -985,7 +1033,7 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
 
     # Await workflow validation results
     workflow_result = await graph.ainvoke(input=initial_state)
-    e_cases = ["validation_case1","validation_case8","validation_case4","validation_case7"]
+    e_cases = ["validation_case1","validation_case8","validation_case4"]
     feedbacks = []
     for j in e_cases:
         if not workflow_result.get(j):
@@ -1030,20 +1078,23 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
         func_object = global_ns[func.name]
         sig = inspect.signature(func_object)
         
-        # Create the new list of ParamInfo objects
+        # Create the new list of ParamInfo objects       
         all_params_info = []
         required_params = []
+        mandatory = True
         for p in sig.parameters.values():
-            default_val = None
-            if p.default is not inspect.Parameter.empty or p.default is None:
-                if p.default is None:
-                    default_val = "None"
-                else:
-                    default_val = p.default
-            else:
+            if p.default is inspect.Parameter.empty:
+                # No default → required
+                default_val = None
+                mandatory = True
                 required_params.append(p.name)
-            
-            all_params_info.append(ParamInfo(name=p.name, default=default_val))
+            else:
+                # Has default → optional
+                default_val = p.default
+                mandatory = False
+
+            all_params_info.append(ParamInfo(name=p.name, default=default_val, mandatory=mandatory))
+
 
         supplied_inputs = execute_request.inputs or {}
         missing_required = [arg for arg in required_params if arg not in supplied_inputs]
@@ -1115,7 +1166,13 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
         try:
             old_stdout = sys.stdout
             sys.stdout = mystdout = StringIO()
-            result = global_ns[func.name](**converted_inputs)
+            # result = global_ns[func.name](**converted_inputs)
+            func_object = global_ns[func.name]
+
+            if inspect.iscoroutinefunction(func_object):
+                result = await func_object(**converted_inputs)
+            else:
+                result = func_object(**converted_inputs)
             output = mystdout.getvalue()
             if result is not None:
                 output = result
@@ -1385,7 +1442,7 @@ async def update_mcp_tool_endpoint(
     is_admin = False
     if update_request_data.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN)
-    is_creator = (existing_tool[0].get("created_by") == user_id)
+    is_creator = (existing_tool[0].get("created_by") == user_data.username)
     if not (is_admin or is_creator):
         log.warning(f"User {user_id} attempted to update MCP tool without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Admin privileges or tool creator access required to update this MCP tool")
@@ -1395,7 +1452,7 @@ async def update_mcp_tool_endpoint(
     try:
         status = await mcp_tool_service.update_mcp_tool(
             tool_id=tool_id,
-            user_id=update_request_data.user_email_id,
+            user_id=user_data.username,
             is_admin=is_admin,
             tool_description=update_request_data.tool_description,
             code_content=update_request_data.code_content,
@@ -1473,7 +1530,7 @@ async def delete_mcp_tool_endpoint(
     is_admin = False
     if delete_request_data.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN)
-    is_creator = (existing_tool[0].get("created_by") == user_id)
+    is_creator = (existing_tool[0].get("created_by") == user_data.username)
     if not (is_admin or is_creator):
         log.warning(f"User {user_id} attempted to delete MCP tool without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Admin privileges or tool creator access required to delete this MCP tool")
@@ -1483,7 +1540,7 @@ async def delete_mcp_tool_endpoint(
     try:
         status = await mcp_tool_service.delete_mcp_tool(
             tool_id=tool_id,
-            user_id=delete_request_data.user_email_id,
+            user_id=user_data.username,
             is_admin=is_admin
         )
         status["status_message"] = status.get("message", "")
@@ -1941,4 +1998,74 @@ async def get_unused_tools_endpoint(
     except Exception as e:
         log.error(f"Error retrieving unused tools: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving unused tools: {str(e)}")
+
+
+
+# --- Validator Tool Endpoints ---
+
+@router.get("/validators/get")
+async def get_all_validators_endpoint(request: Request, tool_service: ToolService = Depends(ServiceProvider.get_tool_service)):
+    """
+    Retrieves all validator tools from the tool table.
+
+    Returns:
+    -------
+    list
+        A list of validator tools. If no validator tools are found, raises an HTTPException with status code 404.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    validators = await tool_service.get_all_validators()
+    if not validators:
+        raise HTTPException(status_code=404, detail="No validator tools found")
+    return validators
+
+
+@router.get("/validators/get/search-paginated/")
+async def search_paginated_validators_endpoint(
+        request: Request,
+        search_value: Optional[str] = Query(None),
+        page_number: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1),
+        tag_names: List[str] = Query(None, description="Filter by tag names"),
+        created_by: Optional[str] = Query(None, description="Filter by creator's email ID"),
+        tool_service: ToolService = Depends(ServiceProvider.get_tool_service)
+    ):
+    """
+    Searches validator tools with pagination.
+    
+    Parameters:
+    ----------
+    search_value : str, optional
+        Search term to filter validator tool names.
+    page_number : int
+        Page number for pagination (starts from 1).
+    page_size : int
+        Number of validator tools per page.
+    tag_names : List[str], optional
+        Filter by tag names.
+    created_by : str, optional
+        Filter by creator's email ID.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the total count and paginated validator tool details.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    result = await tool_service.get_validators_by_search_or_page(
+        search_value=search_value, 
+        limit=page_size, 
+        page=page_number,
+        tag_names=tag_names, 
+        created_by=created_by
+    )
+    if not result["details"]:
+        raise HTTPException(status_code=404, detail="No validator tools found matching criteria.")
+    return result
+
 

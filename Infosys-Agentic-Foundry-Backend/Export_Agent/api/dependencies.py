@@ -8,10 +8,11 @@ from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentService, ChatService, ModelService,
-    FeedbackLearningService, EvaluationService
+    FeedbackLearningService, EvaluationService, ConsistencyService
 )
-from src.database.core_evaluation_service import CoreEvaluationService,ConsistencyService,CoreConsistencyEvaluationService,CoreRobustnessEvaluationService
+from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.inference.base_agent_inference import BaseAgentInference, BaseMetaTypeAgentInference
+from src.inference.python_based_inference.base_python_based_agent_inference import BasePythonBasedAgentInference
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.utils.file_manager import FileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
@@ -21,7 +22,12 @@ class ServiceProvider:
     Provides access to initialized application service instances.
     These methods are intended to be used as FastAPI dependencies.
     """
-
+    @staticmethod
+    def get_database_manager():
+        if app_container.db_manager is None:
+            raise HTTPException(status_code=500, detail="DatabaseManager not initialized.")
+        return app_container.db_manager
+    
     @staticmethod
     def get_tag_service() -> TagService:
         if app_container.tag_service is None:
@@ -70,6 +76,7 @@ class ServiceProvider:
             raise HTTPException(status_code=500, detail="EvaluationService not initialized.")
         return app_container.evaluation_service
     
+
     @staticmethod
     def get_consistency_service()  -> ConsistencyService:
         if app_container.consistency_service is None:

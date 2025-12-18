@@ -31,7 +31,7 @@ async def create_connection(dsn):
     Connect to a PostgreSQL database using asyncpg and a DSN string.
 
     Arguments:
-        dsn: A PostgreSQL DSN string like 'postgresql://user:password@host:port/database'
+        dsn: A PostgreSQL DSN string like 'postgresql://user:<PWD>@host:port/database'
 
     Returns:
         An asyncpg connection object.

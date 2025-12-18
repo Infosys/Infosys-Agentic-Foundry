@@ -9,6 +9,7 @@ class ToolData(BaseModel):
     model_name: str = Field(..., description="The name of the LLM model to be used for docstring regeneration.")
     created_by: str = Field(..., description="The email ID of the user who created the tool.")
     tag_ids: Optional[Union[List[str], str]] = Field(None, description="Optional list of tag IDs for the tool.")
+    is_validator: Optional[bool] = Field(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
 
 class UpdateToolRequest(BaseModel):
     """Schema for updating an existing tool."""
@@ -18,6 +19,7 @@ class UpdateToolRequest(BaseModel):
     tool_description: Optional[str] = Field(None, description="New description for the tool.")
     code_snippet: Optional[str] = Field(None, description="New Python code snippet for the tool.")
     updated_tag_id_list: Optional[Union[List[str], str]] = Field(None, description="Optional list of new tag IDs for the tool.")
+    is_validator: Optional[bool] = Field(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
 
 class DeleteToolRequest(BaseModel):
     """Schema for deleting a tool."""
@@ -40,6 +42,7 @@ class ExecuteRequest(BaseModel):
 class ParamInfo(BaseModel):
     name: str
     default: Optional[Any] = None
+    mandatory: bool = True
 
 class ExecuteResponse(BaseModel):
     inputs_required: List[ParamInfo] = []

@@ -9,18 +9,21 @@ import asyncio
 import difflib
 import subprocess
 import pandas as pd
-import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional, Union, Dict, Any, Literal, Tuple
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, ChatMessage, AnyMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from sentence_transformers import SentenceTransformer
-from sentence_transformers import CrossEncoder
+from google.adk.events.event import Event
+from google.adk.sessions.session import Session
+from google.adk.sessions import InMemorySessionService
+
+from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
+from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
 from pathlib import Path
 from src.auth.models import User, UserRole
 
@@ -2061,7 +2064,7 @@ class ToolService:
 
     # --- Tool Creation Operations ---
 
-    async def create_tool(self, tool_data: Dict[str, Any],force_add) -> Dict[str, Any]:
+    async def create_tool(self, tool_data: Dict[str, Any],force_add, is_validator: Optional[bool] = False) -> Dict[str, Any]:
         """
         Creates a new tool, including validation, docstring generation, and saving to the database.
 
@@ -2113,8 +2116,8 @@ class ToolService:
                     "feedback_case8": None
                 }
             workflow_result = await graph.ainvoke(input=initial_state)
-            w_cases=["validation_case3","validation_case5","validation_case6"]
-            e_cases=["validation_case8","validation_case1","validation_case4","validation_case7"]
+            w_cases=["validation_case3","validation_case5","validation_case6","validation_case7"]
+            e_cases=["validation_case8","validation_case1","validation_case4"]
             warnings={}
             errors={}
             log.info(f"Tool validation results: {workflow_result}")
@@ -2146,8 +2149,27 @@ class ToolService:
                         "warnings":True,
                         "is_created": False
                     }
+        
+        # [INFO] Validator-specific validation for validator tools
+        if is_validator:
+            validator_validation = await self.tool_code_processor.validate_validator_function(code_str=tool_data["code_snippet"])
+            if "error" in validator_validation or not validator_validation.get("is_valid", False):
+                log.error(f"Validator tool validation failed: {validator_validation.get('error', 'Unknown validation error')}")
+                return {
+                    "message": validator_validation.get('error', 'Validator tool validation failed'),
+                    "tool_id": "",
+                    "tool_name": tool_data['tool_name'],
+                    "model_name": tool_data.get('model_name', ''),
+                    "created_by": tool_data.get('created_by', ''),
+                    "is_created": False
+                }
+            log.info(f"[SUCCESS] Validator tool validation passed for tool: {tool_data['tool_name']}")
+        
         if not tool_data.get("tool_id"):
-            tool_data["tool_id"] = str(uuid.uuid4())
+            if is_validator:
+                tool_data["tool_id"] = f"_validator_{str(uuid.uuid4())}"
+            else:
+                tool_data["tool_id"] = str(uuid.uuid4())
             update_session_context(tool_id=tool_data.get("tool_id", None))
 
         if not tool_data.get("tag_ids"):
@@ -2172,6 +2194,9 @@ class ToolService:
                 "is_created": False
             }
         tool_data["code_snippet"] = docstring_generation["code_snippet"]
+
+        # Set the is_validator flag in the tool data
+        tool_data["is_validator"] = is_validator
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         tool_data['created_on'] = now
@@ -2208,17 +2233,25 @@ class ToolService:
 
     async def get_all_tools(self) -> List[Dict[str, Any]]:
         """
-        Retrieves all tools with their associated tags.
+        Retrieves all regular tools (excludes validator tools) with their associated tags.
 
         Returns:
-            list: A list of tools, represented as dictionaries.
+            list: A list of regular tools, represented as dictionaries.
         """
         tool_records = await self.tool_repo.get_all_tool_records()
         tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
 
+        # Filter out validator tools
+        regular_tools = []
         for tool in tool_records:
+            # Skip validator tools (check both flag and ID prefix)
+            if tool.get('is_validator', False) or tool.get('tool_id', '').startswith('_validator'):
+                continue
             tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
-        return tool_records
+            regular_tools.append(tool)
+        
+        log.info(f"Retrieved {len(regular_tools)} regular tools (excluding validators)")
+        return regular_tools
 
     async def get_tools_by_tags(self, tag_ids: Optional[Union[List[str], str]] = None, tag_names: Optional[Union[List[str], str]] = None) -> List[Dict[str, Any]]:
         """
@@ -2250,6 +2283,10 @@ class ToolService:
         all_tool_records = await self.tool_repo.get_all_tool_records()
         filtered_tools = []
         for tool in all_tool_records:
+            # Skip validator tools
+            if tool.get('is_validator', False) or tool.get('tool_id', '').startswith('_validator'):
+                continue
+                
             tool_tag_ids = await self.tag_service.get_tags_by_tool(tool['tool_id'])
             if any(t['tag_id'] in tag_ids for t in tool_tag_ids):
                 filtered_tools.append(tool)
@@ -2287,7 +2324,7 @@ class ToolService:
 
     async def get_tools_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1, tag_names: Optional[List[str]] = None, created_by:str = None) -> Dict[str, Any]:
         """
-        Retrieves tools with pagination and search filtering, including associated tags.
+        Retrieves regular tools (excludes validator tools) with pagination and search filtering, including associated tags.
 
         Args:
             search_value (str, optional): Tool name to filter by.
@@ -2299,34 +2336,54 @@ class ToolService:
         """
         total_count = await self.tool_repo.get_total_tool_count(search_value, created_by)
 
+        # Always get ALL matching records first, then filter and paginate in Python
+        # This ensures validator filtering works correctly with pagination
+        tool_records = await self.tool_repo.get_tools_by_search_or_page_records(search_value, total_count, 1, created_by)
+        
         if tag_names:
             tag_names = set(tag_names)
-            tool_records = await self.tool_repo.get_tools_by_search_or_page_records(search_value, total_count, 1, created_by)
-        else:
-            tool_records = await self.tool_repo.get_tools_by_search_or_page_records(search_value, limit, page, created_by)
 
         tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
         filtered_tools = []
 
+        validator_count = 0
         for tool in tool_records:
+            tool_id = tool.get('tool_id', '')
+            is_validator_flag = tool.get('is_validator', False)
+            starts_with_validator = tool_id.startswith('_validator')
+            
+            # Skip validator tools
+            if is_validator_flag or starts_with_validator:
+                validator_count += 1
+                log.info(f"Filtering out validator tool: {tool_id} (is_validator={is_validator_flag}, starts_with_validator={starts_with_validator})")
+                continue
+                
+            log.info(f"Including regular tool: {tool_id}")
             tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
             if tag_names:
                 for tag in tool['tags']:
                     if tag['tag_name'] in tag_names:
                         filtered_tools.append(tool)
                         break
+            else:
+                filtered_tools.append(tool)
+        
+        log.info(f"Filtered out {validator_count} validator tools, kept {len(filtered_tools)} regular tools")
 
-        if tag_names:
-            total_count = len(filtered_tools)
-            offset = limit * max(0, page - 1)
-            filtered_tools = filtered_tools[offset : offset + limit]
-        else:
-            filtered_tools = tool_records
+        # Recalculate total count for non-validator tools (after filtering)
+        total_count = len(filtered_tools)
+        log.info(f"After filtering validators: {total_count} tools found (originally {len(tool_records)})")
+        
+        # Apply pagination to filtered results
+        offset = limit * max(0, page - 1)
+        paginated_tools = filtered_tools[offset : offset + limit]
+        log.info(f"Page {page} (size {limit}): returning {len(paginated_tools)} tools (offset {offset})")
 
         return {
             "total_count": total_count,
-            "details": filtered_tools
+            "details": paginated_tools
         }
+
 
     async def get_unused_tools(self, threshold_days: int = 0) -> List[Dict[str, Any]]:
         """
@@ -2351,8 +2408,29 @@ class ToolService:
             result = await self.tool_repo.pool.fetch(query, threshold_days)
             
             tools = []
+            # Collect all unique created_by email addresses
+            email_set = set(row.get('created_by') for row in result if row.get('created_by'))
+
+            # Batch fetch usernames for all emails
+            if email_set:
+                email_list = list(email_set)
+                async with self.tool_repo.login_pool.acquire() as conn:
+                    user_rows = await conn.fetch(
+                        "SELECT mail_id, user_name FROM login_credential WHERE mail_id = ANY($1)", email_list
+                    )
+                email_to_username = {row['mail_id']: row['user_name'] for row in user_rows}
+            else:
+                email_to_username = {}
+
             for row in result:
                 tool_dict = dict(row)
+                email = tool_dict.get('created_by')
+                if email:
+                    username = email_to_username.get(email)
+                    if username:
+                        tool_dict['created_by'] = username
+                    elif '@' in email:
+                        tool_dict['created_by'] = email.split('@')[0]
                 tools.append(tool_dict)
                 
             return tools
@@ -2361,9 +2439,132 @@ class ToolService:
             log.error(f"Error retrieving unused tools: {str(e)}")
             raise Exception(f"Failed to retrieve unused tools: {str(e)}")
 
+    # --- Validator Tool Retrieval Operations ---
+
+    async def get_all_validators(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all validator tools with their associated tags.
+
+        Returns:
+            list: A list of validator tools, represented as dictionaries.
+        """
+        tool_records = await self.tool_repo.get_all_tool_records()
+        tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+
+        # Filter for validator tools only
+        validator_tools = []
+        for tool in tool_records:
+            if tool.get('is_validator', False) or tool.get('tool_id', '').startswith('_validator'):
+                tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+                validator_tools.append(tool)
+        
+        log.info(f"Retrieved {len(validator_tools)} validator tools")
+        return validator_tools
+
+    async def get_validators_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1, tag_names: Optional[List[str]] = None, created_by: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Retrieves validator tools with pagination and search filtering, including associated tags.
+
+        Args:
+            search_value (str, optional): Tool name to filter by.
+            limit (int, optional): Number of results per page.
+            page (int, optional): Page number for pagination.
+            tag_names (List[str], optional): Filter by tag names.
+            created_by (str, optional): Filter by creator's email ID.
+
+        Returns:
+            dict: A dictionary containing the total count of validator tools and the paginated tool details.
+        """
+        # Get all validator tools first
+        all_validators = await self.get_all_validators()
+        
+        # Apply search filter
+        filtered_validators = []
+        for tool in all_validators:
+            # Apply search filter
+            if search_value and search_value.lower() not in tool.get('tool_name', '').lower():
+                continue
+            
+            # Apply creator filter
+            if created_by and tool.get('created_by') != created_by:
+                continue
+            
+            # Apply tag filter
+            if tag_names:
+                tool_tag_names = {tag.get('tag_name') for tag in tool.get('tags', [])}
+                if not any(tag_name in tool_tag_names for tag_name in tag_names):
+                    continue
+            
+            filtered_validators.append(tool)
+
+        total_count = len(filtered_validators)
+        
+        # Apply pagination
+        offset = limit * max(0, page - 1)
+        paginated_validators = filtered_validators[offset : offset + limit]
+
+        log.info(f"Retrieved {len(paginated_validators)} validator tools (page {page}, total: {total_count})")
+        return {
+            "total_count": total_count,
+            "details": paginated_validators
+        }
+
+    async def get_all_tools_and_validators_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1, tag_names: Optional[List[str]] = None, created_by: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Retrieves both regular tools AND validator tools combined with pagination and search filtering, including associated tags.
+
+        Args:
+            search_value (str, optional): Tool name to filter by.
+            limit (int, optional): Number of results per page.
+            page (int, optional): Page number for pagination.
+            tag_names (List[str], optional): Filter by tag names.
+            created_by (str, optional): Filter by creator's email ID.
+
+        Returns:
+            dict: A dictionary containing the total count of tools (regular + validators) and the paginated tool details.
+        """
+        # Get all tools (regular and validators) first
+        total_count = await self.tool_repo.get_total_tool_count(search_value, created_by)
+        
+        # Get ALL matching records first - we'll filter in Python
+        tool_records = await self.tool_repo.get_tools_by_search_or_page_records(search_value, total_count, 1, created_by)
+        
+        if tag_names:
+            tag_names = set(tag_names)
+
+        tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+        filtered_tools = []
+
+        for tool in tool_records:
+            tool_id = tool.get('tool_id', '')
+            
+            # Apply tag filter
+            if tag_names:
+                tool_tags = tool_id_to_tags.get(tool_id, [])
+                tool_tag_names = {tag.get('tag_name') for tag in tool_tags}
+                if not any(tag_name in tool_tag_names for tag_name in tag_names):
+                    continue
+            
+            # Include tags in tool data
+            tool_tags = tool_id_to_tags.get(tool_id, [])
+            tool['tags'] = tool_tags
+            
+            filtered_tools.append(tool)
+
+        # Apply pagination to filtered results
+        total_filtered_count = len(filtered_tools)
+        offset = limit * max(0, page - 1)
+        paginated_tools = filtered_tools[offset : offset + limit]
+
+        log.info(f"Retrieved {len(paginated_tools)} tools (regular + validators) (page {page}, total: {total_filtered_count})")
+        return {
+            "total_count": total_filtered_count,
+            "details": paginated_tools
+        }
+
     # --- Tool Updation Operations ---
 
-    async def update_tool(self, tool_id: str, model_name: str,force_add,code_snippet: str = "", tool_description: str = "", updated_tag_id_list: Optional[Union[List[str], str]] = None, user_id: Optional[str] = None, is_admin: bool = False) -> Dict[str, Any]:
+    async def update_tool(self, tool_id: str, model_name: str,force_add,code_snippet: str = "", tool_description: str = "", updated_tag_id_list: Optional[Union[List[str], str]] = None, user_id: Optional[str] = None, is_admin: bool = False, is_validator: bool = False) -> Dict[str, Any]:
         """
         Updates an existing tool record, including code validation, docstring regeneration,
         permission checks, dependency checks, and tag updates.
@@ -2371,11 +2572,13 @@ class ToolService:
         Args:
             tool_id (str): The ID of the tool to update.
             model_name (str): The model name to use for docstring generation.
+            force_add (bool): Force add flag for bypassing certain validations.
             code_snippet (str, optional): New code snippet for the tool.
             tool_description (str, optional): New description for the tool.
             updated_tag_id_list (Union[List, str], optional): List of new tag IDs for the tool.
             user_id (str, optional): The ID of the user performing the update.
             is_admin (bool, optional): Whether the user has admin privileges.
+            is_validator (bool, optional): Whether the tool is a validator tool.
 
         Returns:
             dict: Status of the update operation.
@@ -2399,10 +2602,18 @@ class ToolService:
                 "is_update": False
             }
 
-        if not tool_description and not code_snippet and updated_tag_id_list is None:
-            log.error("Error: Please specify at least one of the following fields to modify: tool_description, code_snippet, tags.")
+        # Check if any field is being updated (including is_validator flag)
+        current_is_validator = tool_data.get('is_validator', False) or tool_data.get('tool_id', '').startswith('_validator')
+        validator_flag_changed = is_validator != current_is_validator
+        
+        log.info(f"Validator status check: current={current_is_validator}, requested={is_validator}, changed={validator_flag_changed}")
+        validator_flag_value = tool_data.get('is_validator', 'not_present') if isinstance(tool_data, dict) else 'invalid_data'
+        log.info(f"Tool ID: {tool_data.get('tool_id', '') if isinstance(tool_data, dict) else 'unknown'}, has_is_validator_flag: {validator_flag_value}")
+        
+        if not tool_description and not code_snippet and updated_tag_id_list is None and not validator_flag_changed:
+            log.error("Error: Please specify at least one of the following fields to modify: tool_description, code_snippet, tags, is_validator.")
             return {
-                "message": "Error: Please specify at least one of the following fields to modify: tool_description, code_snippet, tags.",
+                "message": "Error: Please specify at least one of the following fields to modify: tool_description, code_snippet, tags, is_validator.",
                 "details": [],
                 "is_update": False
             }
@@ -2413,7 +2624,7 @@ class ToolService:
             tag_update_status = await self.tag_service.assign_tags_to_tool(tag_ids=updated_tag_id_list, tool_id=tool_id)
             log.info("Successfully updated tags for the tool.")
 
-        if not tool_description and not code_snippet: # Only tags were updated
+        if not tool_description and not code_snippet and not validator_flag_changed: # Only tags were updated
             log.info("No modifications made to the tool attributes.")
             return {
                 "message": "Tags updated successfully",
@@ -2457,8 +2668,8 @@ class ToolService:
                     "feedback_case7": None
                 }
                 workflow_result = await graph.ainvoke(input=initial_state)
-                w_cases=["validation_case5","validation_case6"]
-                e_cases=["validation_case1","validation_case4","validation_case7"]
+                w_cases=["validation_case5","validation_case6","validation_case7"]
+                e_cases=["validation_case1","validation_case4"]
                 warnings={}
                 errors={}
                 log.info(f"Tool validation results: {workflow_result}")
@@ -2491,6 +2702,38 @@ class ToolService:
 
         if tool_description:
             tool_data["tool_description"] = tool_description
+
+        # Update is_validator flag if provided - DISABLED: database column doesn't exist
+        # if is_validator is not None:
+        #     tool_data["is_validator"] = is_validator
+
+        # [INFO] Validator-specific validation for validator tools
+        # Always validate when converting to validator OR updating validator tool code
+        if is_validator:
+            # Use the current code snippet from tool_data if no new code provided
+            code_to_validate = code_snippet or tool_data.get("code_snippet", "")
+            log.info(f"Validating tool code for validator conversion: {tool_data['tool_name']}")
+            validator_validation = await self.tool_code_processor.validate_validator_function(code_str=code_to_validate)
+            if "error" in validator_validation or not validator_validation.get("is_valid", False):
+                error_msg = validator_validation.get('error', 'Unknown validation error')
+                log.error(f"Validator tool validation failed during update: {error_msg}")
+                
+                # Create detailed error message
+                detailed_msg = f"❌ Validator Conversion Failed\n\n" \
+                              f"Issue: {error_msg}\n\n" \
+                              f"📋 Validator Requirements:\n" \
+                              f"• Function must have exactly 2 parameters named: 'query', 'response'\n" \
+                              f"• Function must return a dictionary with these keys:\n" \
+                              f"  - 'validation_score' (float between 0.0 and 1.0)\n" \
+                              f"  - 'feedback' (string with explanation)\n" \
+                              f"  - 'validation_status' (string: 'valid' or 'invalid')\n\n" \
+                              f"💡 Please update your tool's function signature and return format before converting to validator."
+                
+                raise HTTPException(
+                    status_code=400,
+                    detail=detailed_msg
+                )
+            log.info(f"[SUCCESS] Validator tool validation passed for updated tool: {tool_data['tool_name']}")
 
         # Check for agent dependencies before updating core tool data
         agents_using_this_tool_raw = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
@@ -2529,7 +2772,22 @@ class ToolService:
         tool_data["code_snippet"] = docstring_generation["code_snippet"]
         tool_data["model_name"] = model_name # Ensure model name is updated if changed
 
-        success = await self.tool_repo.update_tool_record(tool_data, tool_id)
+        # Handle validator status change by updating tool_id prefix
+        update_tool_id = tool_id  # Original tool_id for the update query
+        if validator_flag_changed:
+            current_tool_id = tool_data.get('tool_id', '')
+            if is_validator and not current_tool_id.startswith('_validator'):
+                # Convert to validator: add _validator prefix
+                new_tool_id = f"_validator{current_tool_id}"
+                tool_data["tool_id"] = new_tool_id
+                log.info(f"Converting tool to validator: {current_tool_id} -> {new_tool_id}")
+            elif not is_validator and current_tool_id.startswith('_validator'):
+                # Convert from validator: remove _validator prefix
+                new_tool_id = current_tool_id[10:]  # Remove '_validator' prefix
+                tool_data["tool_id"] = new_tool_id
+                log.info(f"Converting tool from validator: {current_tool_id} -> {new_tool_id}")
+
+        success = await self.tool_repo.update_tool_record(tool_data, update_tool_id)
 
         if success:
             status = {
@@ -2591,10 +2849,12 @@ class ToolService:
                 "is_delete": False
             }
 
+        # Check for regular tool dependencies in tool-agent mappings
         agents_using_this_tool_raw = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_data['tool_id'])
+        agent_details = []
+        
         if agents_using_this_tool_raw:
             agent_ids = [m['agentic_application_id'] for m in agents_using_this_tool_raw]
-            agent_details = []
             for agent_id in agent_ids:
                 agent_record = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
                 agent_record = agent_record[0] if agent_record else None
@@ -2602,15 +2862,40 @@ class ToolService:
                     agent_details.append({
                         "agentic_application_id": agent_record['agentic_application_id'],
                         "agentic_application_name": agent_record['agentic_application_name'],
-                        "agentic_app_created_by": agent_record['created_by']
+                        "agentic_app_created_by": agent_record['created_by'],
+                        "dependency_type": "tool_binding"
                     })
-            if agent_details:
-                log.error(f"The tool you are trying to delete is being referenced by {len(agent_details)} agentic applications.")
-                return {
-                    "message": f"The tool you are trying to delete is being referenced by {len(agent_details)} agentic application(s).",
-                    "details": agent_details,
-                    "is_delete": False
-                }
+        
+        # Check for validator tool dependencies (OPTIMIZED: only for validator tools)
+        is_validator = tool_data.get('is_validator', False) or tool_data.get('tool_id', '').startswith('_validator')
+        if is_validator:
+            # Use database LIKE query to find agents with this validator ID in their validation_criteria
+            # This is much faster than loading and parsing all agents
+            validator_using_agents = await self.agent_repo.find_agents_using_validator(tool_data['tool_id'])
+            for agent in validator_using_agents:
+                # Check if already added (avoid duplicates from tool_binding)
+                if not any(detail.get('agentic_application_id') == agent['agentic_application_id'] for detail in agent_details):
+                    agent_details.append({
+                        "agentic_application_id": agent['agentic_application_id'],
+                        "agentic_application_name": agent['agentic_application_name'],
+                        "agentic_app_created_by": agent['created_by'],
+                        "dependency_type": "validator_criteria"
+                    })
+        
+        if agent_details:
+            # Generate appropriate error message based on tool type
+            tool_type = "validator tool" if is_validator else "tool"
+            dependency_details = []
+            for detail in agent_details:
+                dependency_type_msg = "validation criteria" if detail["dependency_type"] == "validator_criteria" else "tool binding"
+                dependency_details.append(f"Agent '{detail['agentic_application_name']}' (ID: {detail['agentic_application_id']}) uses it in {dependency_type_msg}")
+            
+            log.error(f"The {tool_type} you are trying to delete is being referenced by {len(agent_details)} agentic applications.")
+            return {
+                "message": f"Cannot delete {tool_type}: It is being used by {len(agent_details)} agent(s). Dependencies: {'; '.join(dependency_details[:3])}{'...' if len(dependency_details) > 3 else ''}",
+                "details": agent_details,
+                "is_delete": False
+            }
 
         # Move to recycle bin
         recycle_success = await self.recycle_tool_repo.insert_recycle_tool_record(tool_data)
@@ -2806,9 +3091,20 @@ class ToolService:
                     tools_info_user[f"Tool_{idx+1}"] = {"error": f"Error connecting to MCP server '{tool_id_single}': {e}"}
 
             else:
+                # Skip validator tools by tool_id prefix
+                if tool_id_single.startswith("_validator"):
+                    log.warning(f"Skipping validator tool with ID: {tool_id_single}")
+                    continue
+                    
                 tool_record = await self.tool_repo.get_tool_record(tool_id=tool_id_single)
                 if tool_record:
                     tool_record = tool_record[0]
+                    
+                    # Additional check: Skip if is_validator flag is True
+                    if tool_record.get("is_validator", False):
+                        log.warning(f"Skipping validator tool '{tool_record.get('tool_name')}' (is_validator=True)")
+                        continue
+                        
                     tools_info_user[f"Tool_{idx+1}"] = {
                         "Tool_Name": tool_record.get("tool_name"),
                         "Tool_Description": tool_record.get("tool_description"),
@@ -2849,6 +3145,9 @@ class ToolService:
         for tool_id, tool_info_desc in tools_info.items():
             if "error" in tool_info_desc:
                 log.error(f"Error in tool info: {tool_info_desc['error']}")
+                continue
+            if tool_id.startswith("_validator"):
+                log.warning(f"Tool '{tool_id}' is a validator tool and will be skipped.")
                 continue
             tool_nm = tool_info_desc.get("Tool_Name", "")
             tool_desc = tool_info_desc.get("Tool_Description", "")
@@ -3210,6 +3509,10 @@ class AgentService:
         """
         agent_data['system_prompt'] = json.dumps(agent_data['system_prompt'])
         agent_data['tools_id'] = json.dumps(agent_data.get('tools_id', []))
+        
+        # Serialize validation_criteria if present
+        if 'validation_criteria' in agent_data and agent_data['validation_criteria'] is not None:
+            agent_data['validation_criteria'] = json.dumps(agent_data['validation_criteria'])
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         agent_data["created_on"] = now
@@ -3281,7 +3584,8 @@ class AgentService:
                              model_name: str,
                              associated_ids: List[str],
                              user_id: str,
-                             tag_ids: Optional[Union[str, List[str]]] = None) -> Dict[str, Any]:
+                             tag_ids: Optional[Union[str, List[str]]] = None,
+                             validation_criteria: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Onboards a new Agent.
 
@@ -3294,6 +3598,7 @@ class AgentService:
             associated_ids (List[str]): A list of Tool IDs or Agent IDs that the agent will use.
             user_id (str): The user ID associated with the agent.
             tag_ids (Union[List[str], str], optional): A list of tag IDs for the agent.
+            validation_criteria (List[Dict[str, Any]], optional): List of validation test cases for the agent.
 
         Returns:
             dict: Status of the onboarding operation.
@@ -3362,6 +3667,10 @@ class AgentService:
             "created_by": user_id,
             "tag_ids": tag_ids
         }
+        
+        # Only add validation_criteria for non-meta agents
+        if agent_type not in self.meta_type_templates and validation_criteria is not None:
+            agent_data["validation_criteria"] = validation_criteria
         agent_creation_status = await self._save_agent_data(agent_data)
         log.info(f"Agentic Application '{agent_name}' of type {agent_type.replace('_', ' ').title()} created successfully.")
         return agent_creation_status
@@ -3402,6 +3711,9 @@ class AgentService:
                 # Ensure JSONB fields are loaded as Python objects (asyncpg usually handles this)
                 agent_record['system_prompt'] = json.loads(agent_record['system_prompt']) if isinstance(agent_record['system_prompt'], str) else agent_record['system_prompt']
                 agent_record['tools_id'] = json.loads(agent_record['tools_id']) if isinstance(agent_record['tools_id'], str) else agent_record['tools_id']
+                # Deserialize validation_criteria if present
+                if 'validation_criteria' in agent_record and agent_record['validation_criteria'] is not None:
+                    agent_record['validation_criteria'] = json.loads(agent_record['validation_criteria']) if isinstance(agent_record['validation_criteria'], str) else agent_record['validation_criteria']
                 agent_record['tags'] = await self.tag_service.get_tags_by_agent(agent_record['agentic_application_id'])
                 log.info(f"Retrieved agentic application with name: {agentic_application_name}")
         return agent_records
@@ -3422,6 +3734,9 @@ class AgentService:
         for agent in agent_records:
             agent['system_prompt'] = json.loads(agent['system_prompt']) if isinstance(agent['system_prompt'], str) else agent['system_prompt']
             agent['tools_id'] = json.loads(agent['tools_id']) if isinstance(agent['tools_id'], str) else agent['tools_id']
+            # Deserialize validation_criteria if present
+            if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
+                agent['validation_criteria'] = json.loads(agent['validation_criteria']) if isinstance(agent['validation_criteria'], str) else agent['validation_criteria']
             agent['tags'] = agent_id_to_tags.get(agent['agentic_application_id'], [])
         log.info(f"Retrieved {len(agent_records)} agentic applications.")
         return agent_records
@@ -3460,6 +3775,9 @@ class AgentService:
         for agent in agent_records:
             agent['system_prompt'] = json.loads(agent['system_prompt']) if isinstance(agent['system_prompt'], str) else agent['system_prompt']
             agent['tools_id'] = json.loads(agent['tools_id']) if isinstance(agent['tools_id'], str) else agent['tools_id']
+            # Deserialize validation_criteria if present
+            if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
+                agent['validation_criteria'] = json.loads(agent['validation_criteria']) if isinstance(agent['validation_criteria'], str) else agent['validation_criteria']
             agent['tags'] = agent_id_to_tags.get(agent['agentic_application_id'], [])
             if tag_names:
                 for tag in agent['tags']:
@@ -3521,6 +3839,9 @@ class AgentService:
         for agent in filtered_agents:
             agent['system_prompt'] = json.loads(agent['system_prompt']) if isinstance(agent['system_prompt'], str) else agent['system_prompt']
             agent['tools_id'] = json.loads(agent['tools_id']) if isinstance(agent['tools_id'], str) else agent['tools_id']
+            # Deserialize validation_criteria if present
+            if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
+                agent['validation_criteria'] = json.loads(agent['validation_criteria']) if isinstance(agent['validation_criteria'], str) else agent['validation_criteria']
             agent['tags'] = agent_id_to_tags.get(agent['agentic_application_id'], [])
         log.info(f"Filtered {len(filtered_agents)} agents by tags: {tag_ids or tag_names}.")
         return filtered_agents
@@ -3544,6 +3865,9 @@ class AgentService:
         agent_details = agent_record
         agent_details['system_prompt'] = json.loads(agent_details['system_prompt']) if isinstance(agent_details['system_prompt'], str) else agent_details['system_details']
         agent_details['tools_id'] = json.loads(agent_details['tools_id']) if isinstance(agent_details['tools_id'], str) else agent_details['tools_id']
+        # Deserialize validation_criteria if present
+        if 'validation_criteria' in agent_details and agent_details['validation_criteria'] is not None:
+            agent_details['validation_criteria'] = json.loads(agent_details['validation_criteria']) if isinstance(agent_details['validation_criteria'], str) else agent_details['validation_criteria']
 
         associated_ids = agent_details.get("tools_id", [])
         associated_info_list = []
@@ -3597,9 +3921,29 @@ class AgentService:
             
             result = await self.agent_repo.pool.fetch(query, threshold_days)
             
+            # Collect all unique created_by email addresses
+            email_set = set(row.get('created_by') for row in result if row.get('created_by'))
+
+            # Batch fetch usernames for all emails
+            email_to_username = {}
+            if email_set:
+                email_list = list(email_set)
+                async with self.agent_repo.login_pool.acquire() as conn:
+                    user_rows = await conn.fetch(
+                        "SELECT mail_id, user_name FROM login_credential WHERE mail_id = ANY($1)", email_list
+                    )
+                email_to_username = {row['mail_id']: row['user_name'] for row in user_rows}
+
             agents = []
             for row in result:
                 agent_dict = dict(row)
+                email = agent_dict.get('created_by')
+                if email:
+                    username = email_to_username.get(email)
+                    if username:
+                        agent_dict['created_by'] = username
+                    elif '@' in email:
+                        agent_dict['created_by'] = email.split('@')[0]
                 agents.append(agent_dict)
                 
             return agents
@@ -3663,7 +4007,8 @@ class AgentService:
                             associated_ids: List[str] = [],
                             associated_ids_to_add: List[str] = [],
                             associated_ids_to_remove: List[str] = [],
-                            updated_tag_id_list: Optional[Union[str, List[str]]] = None) -> Dict[str, Any]:
+                            updated_tag_id_list: Optional[Union[str, List[str]]] = None,
+                            validation_criteria: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Updates a agent in the database.
 
@@ -3680,6 +4025,7 @@ class AgentService:
             associated_ids_to_add (list, optional): Tool IDs to add.
             associated_ids_to_remove (list, optional): Tool IDs to remove.
             updated_tag_id_list (Union[List, str], optional): New list of tag IDs.
+            validation_criteria (List[Dict[str, Any]], optional): List of validation test cases for the agent.
 
         Returns:
             dict: Status of the update operation.
@@ -3691,7 +4037,11 @@ class AgentService:
         agent = agent_records[0]
         agentic_application_id = agent["agentic_application_id"]
 
-        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove and updated_tag_id_list is None:
+        # Check if any fields are provided for update
+        is_meta_agent = agent["agentic_application_type"] in self.meta_type_templates
+        validation_criteria_check = validation_criteria is None if not is_meta_agent else True  # Skip validation_criteria check for meta agents
+        
+        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove and updated_tag_id_list is None and validation_criteria_check:
             log.error("No fields provided to update the agentic application.")
             return {"message": "Error: Please specify at least one field to modify.", "is_update": False}
 
@@ -3704,7 +4054,7 @@ class AgentService:
             await self.tag_service.clear_tags(agent_id=agentic_application_id)
             tag_status = await self.tag_service.assign_tags_to_agent(tag_ids=updated_tag_id_list, agentic_application_id=agentic_application_id)
 
-        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove:
+        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove and validation_criteria_check:
             log.info("Tags updated successfully. No other fields modified.")
             return {"message": "Tags updated successfully", "tag_update_status": tag_status, "is_update": True}
 
@@ -3735,6 +4085,10 @@ class AgentService:
             current_associated_ids_set.difference_update(associated_ids_to_remove)
         agent["tools_id"] = list(current_associated_ids_set)
         agent["model_name"] = model_name
+        
+        # Only update validation_criteria for non-meta agents
+        if agent["agentic_application_type"] not in self.meta_type_templates and validation_criteria is not None:
+            agent["validation_criteria"] = validation_criteria
 
         if not system_prompt: # Regenerate system prompt if not explicitly provided
             tool_or_worker_agents_prompt = None
@@ -3756,6 +4110,10 @@ class AgentService:
 
         agent['system_prompt'] = json.dumps(agent['system_prompt'])
         agent['tools_id'] = json.dumps(agent['tools_id'])
+        
+        # Serialize validation_criteria if present
+        if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
+            agent['validation_criteria'] = json.dumps(agent['validation_criteria'])
         
         success = await self._update_agent_data_util(agent_data=agent, agentic_application_id=agentic_application_id)
         
@@ -4580,7 +4938,8 @@ class ChatService:
             embedding_model: SentenceTransformer,
             cross_encoder: CrossEncoder,
             tool_repo: ToolRepository = None,
-            agent_repo: AgentRepository = None
+            agent_repo: AgentRepository = None,
+            gadk_session_service: InMemorySessionService = None
         ):
         """
         Initializes the ChatService.
@@ -4600,9 +4959,20 @@ class ChatService:
         self.agent_repo = agent_repo
         self.conversation_summary_prompt_template = PromptTemplate.from_template(CONVERSATION_SUMMARY_PROMPT)
         self.python_based_agent_types = ["simple_ai_agent", "hybrid_agent"] # List of agent types using the Python-based agent
+        self.gadk_session_service = InMemorySessionService()
 
 
     # --- Private Helper Methods (Business Logic) ---
+
+    @staticmethod
+    def _extract_user_email_from_session_id(session_id: str) -> str:
+        """
+        Extracts the user email from the session ID using regex.
+        """
+        match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
+        user_email = match.group(0) if match else "guest"
+        log.info(f"Extracted user email: {user_email} from session ID: {session_id}")
+        return user_email
 
     @staticmethod
     async def _get_chat_history_table_name(agentic_application_id: str) -> str:
@@ -4716,76 +5086,146 @@ class ChatService:
             return False
 
     async def get_chat_history_from_short_term_memory(
-            self,
-            agentic_application_id: str,
-            session_id: str
-        ) -> Dict[str, Any]:
+        self,
+        agentic_application_id: str,
+        session_id: str,
+        framework_type: Literal["langgraph", "google_adk"] = "langgraph"
+    ) -> Dict[str, Any]:
         """
-        Retrieves the previous conversation history for a given session.
-        Handles both LangGraph-based and Python-based agents.
+        Retrieves the conversation history for a session, supporting multiple agent frameworks.
 
         Args:
-            agentic_application_id (str): The ID of the agent.
+            agentic_application_id (str): The ID of the agent or application.
             session_id (str): The session ID of the user.
+            framework_type (str): The framework type, either 'langgraph' or 'google_adk'.
 
         Returns:
-            Dict[str, Any]: A dictionary containing the previous conversation history,
-                            or an error message if retrieval fails.
+            A dictionary containing the conversation history or an error message.
         """
-
-        thread_id = await self._get_thread_id(agentic_application_id, session_id)
-
-        if await self.is_python_based_agent(agentic_application_id):
+        if framework_type == "google_adk":
+            user_id = self._extract_user_email_from_session_id(session_id)
+            
+            log.info(f"Retrieving Google ADK history for session '{session_id}' and user '{user_id}'.")
             try:
-                history_entries = await self.chat_state_history_manager.get_recent_history(thread_id)
-                if not history_entries:
-                    log.warning(f"No previous conversation found for Python-based agent session ID: {session_id}.")
+                # Assuming `self.gadk_session_service` is an initialized ADK client
+                gadk_chat_session = await self.gadk_session_service.get_session(
+                    user_id=user_id,
+                    session_id=session_id,
+                    app_name=agentic_application_id
+                )
+
+                if not gadk_chat_session:
+                    log.warning(f"No previous conversation found for Google ADK session ID: {session_id}.")
                     return {"executor_messages": []}
 
-                # Format the history entries into the desired structure
-                formatted_history = await self._format_python_based_agent_history(history_entries)
-                log.info(f"Previous conversation retrieved and formatted for Python-based agent session ID: {session_id}.")
+                # Call the static method to format the history
+                formatted_history = await self._format_google_adk_agent_history(gadk_chat_session)
+                
+                log.info(f"Previous conversation retrieved and formatted for Google ADK session ID: {session_id}.")
                 return formatted_history
 
             except Exception as e:
-                log.error(f"Error retrieving Python-based agent history for session {session_id}: {e}", exc_info=True)
+                log.error(f"Error retrieving Google ADK history for session {session_id}: {e}", exc_info=True)
                 return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
-            finally:
-                update_session_context(session_id='Unassigned',agent_id='Unassigned')
 
-        else:
-            try:
-                async with await self.get_checkpointer_context_manager() as checkpointer:
+            finally:
+                update_session_context(session_id='Unassigned', agent_id='Unassigned')
+
+        elif framework_type == "langgraph":
+            # --- This block contains all the original logic for LangGraph agents ---
+            thread_id = await self._get_thread_id(agentic_application_id, session_id)
+
+            if await self.is_python_based_agent(agentic_application_id):
+                try:
+                    # ... (original logic for Python-based agents)
+                    history_entries = await self.chat_state_history_manager.get_recent_history(thread_id)
+                    if not history_entries:
+                        log.warning(f"No previous conversation found for Python-based agent session ID: {session_id}.")
+                        return {"executor_messages": []}
+
+                    # Format the history entries into the desired structure
+                    formatted_history = await self._format_python_based_agent_history(history_entries)
+                    formatted_history["agentic_application_id"] = agentic_application_id
+                    formatted_history["session_id"] = session_id
+
+                    # Restore response_time from long-term memory for executor_messages
+                    executor_messages = formatted_history.get("executor_messages", [])
+                    if executor_messages:
+                        try:
+                            db_records = await self.get_chat_history_from_long_term_memory(
+                                agentic_application_id=agentic_application_id,
+                                session_id=session_id,
+                                limit=len(executor_messages) + 5
+                            )
+                            log.info(f"Retrieved {len(db_records)} database records for response_time restoration in get_chat_history")
+                            
+                            # Create a lookup dict for faster matching
+                            db_lookup = {record.get('human_message', ''): record for record in db_records}
+                            
+                            # Restore response_time and timestamp values by matching user queries
+                            for message in executor_messages:
+                                user_query = message.get('user_query', '')
+                                if user_query in db_lookup:
+                                    record = db_lookup[user_query]
+                                    db_response_time = record.get('response_time')
+                                    db_start_ts = record.get('start_timestamp')
+                                    db_end_ts = record.get('end_timestamp')
+                                    
+                                    # Set timestamps from DB
+                                    message['time_stamp'] = db_end_ts
+                                    message['start_timestamp'] = db_start_ts
+                                    message['end_timestamp'] = db_end_ts
+                                    
+                                    # Calculate response_time from timestamps if not stored in DB
+                                    if db_response_time is not None:
+                                        message['response_time'] = db_response_time
+                                    elif db_start_ts and db_end_ts:
+                                        try:
+                                            calculated_time = (db_end_ts - db_start_ts).total_seconds()
+                                            message['response_time'] = calculated_time
+                                        except Exception:
+                                            pass
+                        except Exception as e:
+                            log.warning(f"Could not restore response times in get_chat_history: {e}")
+
+                    log.info(f"Previous conversation retrieved and formatted for Python-based agent session ID: {session_id}.")
+                    return formatted_history
+
+                except Exception as e:
+                    log.error(f"Error retrieving Python-based agent history for session {session_id}: {e}", exc_info=True)
+                    return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
+
+                finally:
+                    update_session_context(session_id='Unassigned', agent_id='Unassigned')
+
+            else:
+                try:
+                    # ... (original logic for standard LangGraph agents)
+                    async with await self.get_checkpointer_context_manager() as checkpointer:
                     # checkpointer.setup() is often called implicitly or handled by LangGraph's app.compile()
                     # but explicitly calling it here ensures the table exists if it's the first time.
                     # However, for just retrieving, it might not be strictly necessary if tables are pre-created.
-                    await checkpointer.setup() # Ensure table exists
-                    config = await self._get_thread_config(thread_id)
-                    data = await checkpointer.aget(config) # Retrieve the state
-                    if data:
-                        # data.channel_values contains the state of the graph, including messages
-                        data = data.get("channel_values", {})
-                    else:
-                        data = {}
-                if not data:
-                    log.warning(f"No previous conversation found for LangGraph agent session ID: {session_id} and agent ID: {agentic_application_id}.")
-                    return {"executor_messages": []} # Return empty list if no data
-                
-                # Segregate messages using the static method
-                data["executor_messages"] = await self.segregate_conversation_from_raw_chat_history_with_pretty_steps(
-                    data,
-                    agentic_application_id=agentic_application_id,
-                    session_id=session_id
-                )
-                
-                log.info(f"Previous conversation retrieved successfully for session ID: {session_id} and agent ID: {agentic_application_id}.")
-                return data
+                        await checkpointer.setup() # Ensure table exists
+                        config = await self._get_thread_config(thread_id)
+                        data = await checkpointer.aget(config) # Retrieve the state
+                        data = data.get("channel_values", {}) if data else {}
+                    if not data:
+                        log.warning(f"No previous conversation found for LangGraph agent session ID: {session_id} and agent ID: {agentic_application_id}.")
+                        return {"executor_messages": []} # Return empty list if no data
 
-            except Exception as e:
-                log.error(f"Error occurred while retrieving previous conversation for LangGraph agent session {session_id}: {e}", exc_info=True)
-                return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
-            finally:
-                update_session_context(session_id='Unassigned',agent_id='Unassigned')
+                    # Segregate messages using the static method
+                    data["executor_messages"] = await self.segregate_conversation_from_raw_chat_history_with_pretty_steps(data, agentic_application_id=agentic_application_id, session_id=session_id)
+
+                    log.info(f"Previous conversation retrieved successfully for session ID: {session_id} and agent ID: {agentic_application_id}.")
+                    return data
+                except Exception as e:
+                    log.error(f"Error occurred while retrieving previous conversation for LangGraph agent session {session_id}: {e}", exc_info=True)
+                    return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
+                finally:
+                    update_session_context(session_id='Unassigned', agent_id='Unassigned')
+        else:
+            log.warning(f"Attempted to get history for session '{session_id}' with an unknown framework_type: '{framework_type}'.")
+            return {"error": f"Retrieval failed: Unknown framework_type '{framework_type}'. Supported types are 'google_adk' and 'langgraph'."}
 
     async def get_chat_history_from_long_term_memory(
             self,
@@ -4891,7 +5331,55 @@ class ChatService:
         log.info(f"New chat session ID generated for user '{email}': {session_id}.")
         return session_id
 
-    async def get_old_chats_by_user_and_agent(self, user_email: str, agent_id: str) -> Dict[str, Any]:
+    async def get_detailed_chats_by_user_and_app_for_gadk(self, user_id: str, app_name: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Retrieves detailed chat histories for all sessions of a specific user and Google ADK application.
+
+        Args:
+            user_id (str): The ID of the user (typically their email).
+            app_name (str): The name of the Google ADK application (agent ID).
+        Returns:
+            Dict[str, List[Dict[str, Any]]]: A dictionary where keys are session IDs and values are lists of chat records.
+        """
+        all_sessions_history: Dict[str, List[Dict[str, Any]]] = {}
+        log.info(f"Starting detailed chat retrieval for user '{user_id}' and app '{app_name}'.")
+
+        try:
+            sessions_list = await self.gadk_session_service.list_sessions(user_id=user_id, app_name=app_name)
+            sessions_list = sessions_list.sessions
+
+            if not sessions_list:
+                log.info(f"No sessions found for user '{user_id}' and app '{app_name}'.")
+                return {}
+
+            for session in sessions_list:
+                log.info(f"Fetching and parsing full details for session_id: {session.id}")
+                complete_session_chat_history = await self.gadk_session_service.get_session(
+                    app_name=app_name, user_id=user_id, session_id=session.id
+                )
+
+                current_chat = []
+                formatted_session_chat_history = await self._format_google_adk_agent_history(gadk_chat_session=complete_session_chat_history)
+                for chat_record in formatted_session_chat_history.get("executor_messages", []):
+                    chat_record: dict = chat_record
+                    current_chat.append({
+                        "user_input": chat_record.get("user_query", ""),
+                        "agent_response": chat_record.get("final_response", ""),
+                        "timestamp_start": chat_record.get("st_time_stamp", ""),
+                        "timestamp_end": chat_record.get("time_stamp", ""),
+                    })
+
+                if current_chat:
+                    all_sessions_history[session.id] = current_chat
+
+            log.info(f"Finished retrieving and parsing chats for user '{user_id}' and app '{app_name}'.")
+            return all_sessions_history
+
+        except Exception as e:
+            log.error(f"An error occurred while retrieving detailed chats for user '{user_id}': {e}")
+            return {}
+
+    async def get_old_chats_by_user_and_agent(self, user_email: str, agent_id: str, framework_type: Literal["langgraph", "google_adk"] = "langgraph") -> Dict[str, Any]:
         """
         Retrieves old chat sessions for a specific user and agent.
         Handles both LangGraph-based and Python-based agents.
@@ -4899,10 +5387,14 @@ class ChatService:
         Args:
             user_email (str): The email of the user.
             agent_id (str): The ID of the agent.
+            framework_type (str): The framework used by the agent ('google_adk', 'langgraph').
 
         Returns:
             Dict[str, Any]: A dictionary where keys are session IDs and values are lists of chat records.
         """
+        if framework_type == "google_adk":
+            return await self.get_detailed_chats_by_user_and_app_for_gadk(user_id=user_email, app_name=agent_id)
+
         table_name = await self._get_chat_history_table_name(agent_id)
         result = {}
 
@@ -4978,55 +5470,91 @@ class ChatService:
         log.info(f"Retrieved old chats for user '{user_email}' and agent '{agent_id}'.")
         return result
 
-    async def delete_session(self, agentic_application_id: str, session_id: str) -> Dict[str, Any]:
+    async def delete_session(self, agentic_application_id: str, session_id: str, framework_type: Literal["langgraph", "google_adk"] = "langgraph") -> Dict[str, Any]:
         """
-        Deletes the entire conversation history for a specific session.
-        This involves deleting from chat history and checkpoint tables transactionally.
+        Deletes the entire conversation history for a specific session based on the agent's framework.
 
         Args:
-            agentic_application_id (str): The ID of the agent.
-            session_id (str): The session ID to delete records for.
+            agentic_application_id (str): The ID of the agent or application.
+            session_id (str): The session ID to delete.
+            framework_type (str): The framework used by the agent ('google_adk', 'langgraph').
 
         Returns:
-            dict: A status dictionary indicating the result of the operation.
+            A dictionary indicating the status of the deletion operation.
         """
-        thread_id = await self._get_thread_id(agentic_application_id, session_id)
-
-        # Determine if it's a Python-based agent or LangGraph-based
-        if await self.is_python_based_agent(agentic_application_id):
-            # For Python-based agents, delete from ChatStateHistoryManagerRepository
+        if framework_type == "google_adk":
+            # --- Handle Google ADK Session Deletion ---
+            user_id = self._extract_user_email_from_session_id(session_id)
+            log.info(f"Attempting to delete Google ADK session '{session_id}' for user '{user_id}'.")
             try:
-                success = await self.chat_state_history_manager.clear_chat_history(thread_id)
-                if success:
-                    return {
-                        "status": "success",
-                        "message": f"Memory history deleted successfully for Python-based agent session {session_id}.",
-                        "chat_rows_deleted": "N/A" # Not directly applicable for this repo
-                    }
-                else:
-                    return {"status": "error", "message": f"Failed to clear history for Python-based agent session {session_id}."}
-            except Exception as e:
-                log.error(f"Service-level error during delete for Python-based agent session '{session_id}': {e}")
-                return {"status": "error", "message": f"An error occurred during deletion: {e}"}
-
-        else:
-            # For LangGraph-based agents, use the existing transactional delete
-            chat_table_name = await self._get_chat_history_table_name(agentic_application_id)
-            
-            try:
-                chat_rows_deleted = await self.repo.delete_session_transactional(
-                    chat_table_name=chat_table_name,
-                    thread_id=thread_id,
+                # Assuming `self.gadk_session_service` is an initialized ADK session service client
+                await self.gadk_session_service.delete_session(
+                    app_name=agentic_application_id,
+                    user_id=user_id,
                     session_id=session_id
                 )
+
                 return {
                     "status": "success",
-                    "message": f"Memory history deleted successfully for LangGraph agent session {session_id}.",
-                    "chat_rows_deleted": chat_rows_deleted
+                    "message": f"Session history deleted successfully for Google ADK session {session_id}."
                 }
             except Exception as e:
-                log.error(f"Service-level error during transactional delete for LangGraph agent session '{session_id}': {e}")
-                return {"status": "error", "message": f"An error occurred during deletion: {e}"}
+                log.error(f"Service-level error during delete for Google ADK session '{session_id}': {e}")
+                return {"status": "error", "message": f"An error occurred during Google ADK session deletion: {e}"}
+
+        elif framework_type == "langgraph":
+            # --- Handle LangGraph Session Deletion (maintaining original logic) ---
+            thread_id = await self._get_thread_id(agentic_application_id, session_id)
+
+            if await self.is_python_based_agent(agentic_application_id):
+                # Handle "Python-based" LangGraph agents
+                log.info(f"Attempting to delete Python-based LangGraph session '{session_id}'.")
+                try:
+                    success = await self.chat_state_history_manager.clear_chat_history(thread_id)
+                    if success:
+                        return {
+                            "status": "success",
+                            "message": f"Memory history deleted successfully for Python-based agent session {session_id}.",
+                            "chat_rows_deleted": "N/A"
+                        }
+                    else:
+                        return {"status": "error", "message": f"Failed to clear history for Python-based agent session {session_id}."}
+                except Exception as e:
+                    log.error(f"Service-level error during delete for Python-based agent session '{session_id}': {e}")
+                    return {"status": "error", "message": f"An error occurred during deletion: {e}"}
+            else:
+                # Handle standard LangGraph agents
+                log.info(f"Attempting to delete standard LangGraph session '{session_id}'.")
+                chat_table_name = await self._get_chat_history_table_name(agentic_application_id)
+
+                try:
+                    chat_rows_deleted = await self.repo.delete_session_transactional(
+                        chat_table_name=chat_table_name,
+                        thread_id=thread_id,
+                        session_id=session_id
+                    )
+                    conversation_summary_and_preference_deleted = await self.repo.delete_agent_conversation_summary(
+                        agentic_application_id=agentic_application_id,
+                        session_id=session_id
+                    )
+                    if conversation_summary_and_preference_deleted:
+                        log.info(f"Deleted conversation summary and preference for session '{session_id}'.")
+
+                    return {
+                        "status": "success",
+                        "message": f"Memory history deleted successfully for LangGraph agent session {session_id}.",
+                        "chat_rows_deleted": chat_rows_deleted
+                    }
+                except Exception as e:
+                    log.error(f"Service-level error during transactional delete for LangGraph agent session '{session_id}': {e}")
+                    return {"status": "error", "message": f"An error occurred during deletion: {e}"}
+        else:
+            # --- Handle Unknown Framework Type ---
+            log.warning(f"Attempted to delete session '{session_id}' with an unknown framework_type: '{framework_type}'.")
+            return {
+                "status": "error",
+                "message": f"Deletion failed: Unknown framework_type '{framework_type}'. Supported types are 'google_adk' and 'langgraph'."
+            }
 
     async def delete_internal_thread(self, internal_thread:str):
         """
@@ -5186,8 +5714,8 @@ class ChatService:
                 await self.agent_repo.update_last_used_agent(agentic_application_id)
             except Exception as e:
                 # Log the error but don't fail the conversation processing
-                print(f"Warning: Failed to update last_used for agent {agentic_application_id}: {e}")
-        
+                log.warning(f"Warning: Failed to update last_used for agent {agentic_application_id}: {e}")
+
         # Extract existing response_time values
         existing_response_times = {}
         if (executor_messages and isinstance(executor_messages, list) and len(executor_messages) > 0 and
@@ -5297,6 +5825,7 @@ class ChatService:
                     # Initialize response_time field for non-USER roles
                     preserved_response_time = existing_response_times.get(message.content)
                     new_conversation["response_time"] = preserved_response_time
+                    new_conversation["time_stamp"] = response.get("end_timestamp")
                     
                     # Apply tool call logic only for non-USER roles
                     if (agent_steps[0].type == "ai") and (("tool_calls" in agent_steps[0].additional_kwargs) or ("function_call" in agent_steps[0].additional_kwargs)):
@@ -5333,6 +5862,9 @@ class ChatService:
                         for record in db_records:
                             if record.get('human_message') == user_query and record.get('response_time') is not None:
                                 message['response_time'] = record['response_time']
+                                message['time_stamp'] = record.get('start_timestamp')
+                                message['start_timestamp'] = record.get('start_timestamp')
+                                message['end_timestamp'] = record.get('end_timestamp')
                                 break
                                 
             except Exception as e:
@@ -5987,10 +6519,31 @@ class ChatService:
             A list of dictionaries, each representing a formatted conversation turn.
         """
         formatted_conversation_list = []
+        ongoing_conversation = []
         final_formatted_conversation = {
             "query": "",
             "response": "",
-            "executor_messages": formatted_conversation_list
+            "past_conversation_summary": "",
+            "executor_messages": formatted_conversation_list,
+            "ongoing_conversation": ongoing_conversation,
+            "agentic_application_id": "",
+            "session_id": "",
+            "model_name": "",
+            "start_timestamp": "",
+            "end_timestamp": "",
+            "reset_conversation": False,
+            "errors": [],
+            "parts": [],
+            "response_formatting_flag": None,
+            "context_flag": None,
+            "validation_score": None,
+            "validation_feedback": None,
+            "mentioned_agent_id": None,
+            "preference": "",
+            "is_tool_interrupted": None,
+            "evaluation_score": None,
+            "evaluation_feedback": None,
+            "workflow_description": "",
         }
         last_conversation_plan: List[str] = None
 
@@ -6100,8 +6653,19 @@ class ChatService:
                     break
 
 
+            # Adding other fields for consistency in response format
             final_formatted_conversation["query"] = user_query
             final_formatted_conversation["response"] = final_response
+            ongoing_conversation.append(additional_details[-1])
+            if final_response:
+                ongoing_conversation.append(additional_details[0])
+            final_formatted_conversation["parts"] = parts
+            if "response_time" in entry:
+                final_formatted_conversation["response_time"] = entry["response_time"]
+            if "start_timestamp" in entry:
+                final_formatted_conversation["start_timestamp"] = entry["start_timestamp"]
+            if "end_timestamp" in entry:
+                final_formatted_conversation["end_timestamp"] = entry["end_timestamp"]
 
             formatted_conversation_list.append({
                 "user_query": user_query,
@@ -6123,6 +6687,265 @@ class ChatService:
 
         return final_formatted_conversation
 
+    @staticmethod
+    async def _format_google_adk_agent_history(gadk_chat_session: Session) -> Dict[str, Any]:
+        """
+        Formats the conversation history from a Google ADK chat session into a structured dictionary.
+
+        Args:
+            gadk_chat_session (Session): The Google ADK chat session containing events and state.
+        Returns:
+            Dict[str, Any]: A dictionary representing the formatted conversation history.
+        """
+
+        def get_message_pretty_string(message: Any, msg_type: Literal["human", "ai", "tool", "chat"]) -> str:
+            if hasattr(message, "model_dump"):
+                message = message.model_dump()
+                message = json.dumps(message, indent=2)
+
+            if msg_type == "human":
+                return f"\n================================ Human Message =================================\n\n{message}\n\n"
+            elif msg_type == "ai":
+                return f"\n================================== AI Message ==================================\n\n{message}\n\n"
+            elif msg_type == "tool":
+                return f"\n================================== Tool Message =================================\n\n{message}\n\n"
+            elif msg_type == "chat":
+                return f"\n================================= Chat Message =================================\n\n{message}\n\n"
+            else:
+                return f"\n==================================== Message ====================================\n\n{message}\n\n"
+
+        def resolve_duplicate_nested_key(state: dict, key: str, default: Any = None) -> Any:
+            val = state.get(key, default)
+            if isinstance(val, dict) and len(val) == 1 and key in val:
+                return val[key]
+            return val
+
+        plan_feedback_collector_tool = "get_user_approval_or_feedback"
+        ignore_tool_call_names = [plan_feedback_collector_tool, "set_model_response", "exit_replanner_loop"]
+        executor_message = []
+        ongoing_conversation = []
+        cur_state = gadk_chat_session.state or {}
+        final_formatted_conversation = {
+            "query": cur_state.get("query", ""),
+            "response": resolve_duplicate_nested_key(state=cur_state, key="response"),
+            "past_conversation_summary": "",
+            "executor_messages": executor_message,
+            "ongoing_conversation": ongoing_conversation,
+            "agentic_application_id": gadk_chat_session.app_name,
+            "session_id": gadk_chat_session.id,
+            "model_name": "",
+            "start_timestamp": "",
+            "end_timestamp": "",
+            "reset_conversation": False,
+            "errors": [],
+            "parts": [],
+            "response_formatting_flag": None,
+            "context_flag": None,
+            "validation_score": None,
+            "validation_feedback": None,
+            "mentioned_agent_id": None,
+            "preference": "",
+            "is_tool_interrupted": None,
+            "evaluation_score": None,
+            "evaluation_feedback": None,
+            "workflow_description": "",
+        }
+
+        if "plan" in cur_state:
+            final_formatted_conversation["plan"] = resolve_duplicate_nested_key(state=cur_state, key="plan")
+
+        events = gadk_chat_session.events
+        if not events:
+            return final_formatted_conversation
+        
+        # Segment events by invocation_id and process each invocation
+        log.info(f"Formatting {len(events)} events from Google ADK session '{gadk_chat_session.id}'")
+        current_invocation_id: str = None
+        segmented_events: List[List[Event]] = []
+        for event in events:
+            if event.invocation_id != current_invocation_id:
+                current_invocation_id = event.invocation_id
+                segmented_events.append([])
+            segmented_events[-1].append(event)
+
+
+        # Process each invocation's Events to build executor messages and ongoing conversation
+        log.info(f"Processing {len(segmented_events)} invocations from segmented events")
+        empty_part = [{"type": "text", "data": {"content": ""}, "metadata": {}}]
+        for invocation_events in segmented_events:
+            query_event = invocation_events[0]
+            user_query = query_event.content.parts[0].text
+            tools_used: Dict[str, Dict[str, Any]] = {}
+            additional_details = [{
+                "content": user_query,
+                "additional_kwargs": {},
+                "type": "human",
+                "name": None,
+                "id": query_event.id,
+                "role": "user_query"
+            }]
+            start_timestamp = query_event.timestamp
+            end_timestamp = invocation_events[-1].timestamp
+            datetime_start_timestamp = datetime.fromtimestamp(start_timestamp)
+            datetime_end_timestamp = datetime.fromtimestamp(end_timestamp)
+            final_formatted_conversation["start_timestamp"] = datetime_start_timestamp
+            final_formatted_conversation["end_timestamp"] = datetime_end_timestamp
+
+            new_invocation = {
+                "user_query": user_query,
+                "final_response": "",
+                "tools_used": tools_used,
+                "agent_steps": get_message_pretty_string(user_query, "human"),
+                "additional_details": additional_details,
+                "parts": empty_part,
+                "show_canvas": False,
+                "response_time": end_timestamp - start_timestamp,
+                "st_time_stamp": datetime_start_timestamp,
+                "time_stamp": datetime_end_timestamp
+            }
+            executor_message.append(new_invocation)
+            ongoing_conversation.append(additional_details[0])
+
+
+            log.info(f"Processing invocation with query: '{user_query}' and {len(invocation_events)} events")
+            final_response_msg: Dict[str, Any] = None
+            for event in invocation_events:
+                content = event.content
+                if not content or not content.parts or event.id == query_event.id:
+                    continue
+
+                author = event.author or ""
+                state_delta = event.actions.state_delta or {}
+                usage_metadata = event.usage_metadata
+
+                for part in content.parts:
+                    current_msg = {
+                        "content": "",
+                        "additional_kwargs": {},
+                        "type": "",
+                        "name": None,
+                        "id": event.id,
+                    }
+                    if usage_metadata:
+                        current_msg["usage_metadata"] = usage_metadata.model_dump()
+
+                    if part.function_call:
+                        func_call = part.function_call
+                        if func_call.name in ignore_tool_call_names:
+                            continue
+                        current_msg["type"] = "ai"
+                        current_msg["tool_calls"] = [func_call.model_dump()]
+                        current_msg["tool_calls"][0]["type"] = "tool_call"
+                        current_msg["additional_kwargs"]["tool_calls"] = [{
+                            "id": func_call.id,
+                            "function": {
+                                "arguments": json.dumps(func_call.args),
+                                "name": func_call.name
+                            },
+                            "type": "function"
+                        }]
+                        tools_used[func_call.id] = func_call.model_dump()
+                        tools_used[func_call.id].update({
+                            "type": "tool_call",
+                            "status": "unknown",
+                            "output": None
+                        })
+                        new_invocation["agent_steps"] += get_message_pretty_string(func_call, "ai")
+
+                    elif part.function_response:
+                        func_resp = part.function_response
+                        if func_resp.name == plan_feedback_collector_tool:
+                            # Append feedback as a chat message
+                            feedback = func_resp.response.get("result", "")
+                            if str(feedback).lower() == "approved":
+                                continue
+                            current_msg["content"] = feedback
+                            current_msg["type"] = "chat"
+                            current_msg["role"] = "re-plan-feedback"
+                            new_invocation["agent_steps"] += get_message_pretty_string(feedback, "chat")
+                        elif func_resp.name in ignore_tool_call_names:
+                            continue
+                        else:
+                            current_msg["content"] = func_resp.response.get("result", func_resp.response)
+                            current_msg["type"] = "tool"
+                            current_msg["name"] = func_resp.name
+                            current_msg["tool_call_id"] = func_resp.id
+                            current_msg["status"] = "success"
+                            tools_used[func_resp.id]["status"] = "success"
+                            tools_used[func_resp.id]["output"] = func_resp.response.get("result", None)
+                            new_invocation["agent_steps"] += get_message_pretty_string(func_resp, "tool")
+
+                    elif "plan" in state_delta:
+                        final_response_msg = None
+                        new_invocation["final_response"] = ""
+                        new_invocation["parts"] = empty_part
+                        new_invocation["show_canvas"] = False
+                        plan = resolve_duplicate_nested_key(state_delta, "plan")
+                        if not plan:
+                            continue
+                        current_msg["content"] = plan
+                        current_msg["type"] = "chat"
+                        current_msg["role"] = "plan"
+                        new_invocation["agent_steps"] += get_message_pretty_string(plan, "chat")
+
+                    elif "response" in state_delta:
+                        response_content = str(resolve_duplicate_nested_key(state_delta, "response"))
+                        current_msg["content"] = response_content
+                        current_msg["type"] = "ai"
+                        current_msg["tool_calls"] = []
+                        final_response_msg = current_msg
+                        new_invocation["final_response"] = response_content
+                        new_invocation["agent_steps"] += get_message_pretty_string(response_content, "ai")
+                        canvas_parts = [{"type": "text", "data": {"content": str(response_content)}, "metadata": {}}]
+                        new_invocation["parts"] = canvas_parts
+                        new_invocation["show_canvas"] = False
+
+                    elif "critic_response" in state_delta:
+                        critic_response = state_delta.get("critic_response", {})
+                        current_msg["content"] = [critic_response]
+                        current_msg["type"] = "chat"
+                        current_msg["role"] = "critic-response"
+                        new_invocation["agent_steps"] += get_message_pretty_string(critic_response, "chat")
+
+                    elif "canvas_parts" in state_delta:
+                        canvas_parts = state_delta.get("canvas_parts", {}).get("parts", [])
+                        canvas_parts = json.loads(canvas_parts)
+                        new_invocation["parts"] = canvas_parts
+                        for canvas_part in canvas_parts:
+                            if canvas_part.get("type", None) != "text":
+                                new_invocation["show_canvas"] = True
+                                break
+                        continue
+
+                    elif content.role == "model":
+                        current_msg["content"] = part.text
+                        current_msg["type"] = "ai"
+                        current_msg["tool_calls"] = []
+                        new_invocation["agent_steps"] += get_message_pretty_string(part.text, "ai")
+
+                    else:
+                        current_msg["content"] = part.text
+                        current_msg["type"] = "human"
+                        new_invocation["agent_steps"] += get_message_pretty_string(part.text, "human")
+
+                    additional_details.append(current_msg)
+
+            if final_response_msg:
+                ongoing_conversation.append(final_response_msg)
+                if final_response_msg != additional_details[-1]:
+                    additional_details.append(final_response_msg)
+            additional_details.reverse()
+
+        last_executor_message = executor_message[-1]
+        # final_formatted_conversation["query"] = last_executor_message["user_query"]
+        # final_formatted_conversation["response"] = last_executor_message["final_response"]
+        final_formatted_conversation["parts"] = last_executor_message["parts"]
+
+        for canvas_part in last_executor_message["parts"]:
+            if canvas_part.get("type") not in ("text", "image"):
+                canvas_part["is_last"] = True
+        log.info(f"Formatted conversation from Google ADK session '{gadk_chat_session.id}' successfully.")
+        return final_formatted_conversation
 
 # --- Feedback Learning Service ---
 
@@ -6449,65 +7272,7 @@ class ExportService:
     async def get_unique_exporters_by_agent_id(self, agent_id: str) -> List[str]:
         return await self.export_repo.get_unique_exporters_record_by_agent_id(agent_id=agent_id)
 
-    async def send_email(self, agentic_application_id: str, agentic_application_name: str, updater: str) -> bool:
-        import smtplib
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        SENDER_EMAIL_ADDRESS = 'BLRKECSMTP01.ad.infosys.com'
-        SMTP_IP = '172.21.5.10'
-        SMTP_PORT = 25
-        SMTP_USER = None
-        SMTP_PASS = None
-        SMTP_REQUIRES_AUTH = False
-        USE_SSL_CONNECTION = False
-        USE_TLS_CONNECTION = False
-        from datetime import date
-        current_date = date.today()
-        recipient_list = await self.get_unique_exporters_by_agent_id(agentic_application_id)
-        if not recipient_list:
-            return True  # No recipients, nothing to send
-        actual_smtp_username = SMTP_USER if SMTP_USER else SENDER_EMAIL_ADDRESS
-        subject = f"Important: The '{agentic_application_name}' You Exported Has Been Updated"
-        body = f"""
-        Dear User,
- 
-        This is an automated notification from the Infosys Agentic Foundry Team.
-	    The agent, '{agentic_application_name}', which you previously exported, has recently been updated.
- 
-        Update Details:
-        Agent Name: {agentic_application_name}
-        Updated By: {updater}
-        Date of Update: {current_date}
- 
-        For a detailed understanding of the changes, please contact the individual who performed the update.
- 
-        Regards,
-        Infosys Agentic Foundry Team
-        """
-        msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL_ADDRESS
-        msg['To'] = ', '.join(recipient_list)
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-        server = None
-        try:
-            server = smtplib.SMTP(SMTP_IP, SMTP_PORT)
-            if USE_TLS_CONNECTION:
-                server.starttls()
-            if SMTP_REQUIRES_AUTH:
-                if not actual_smtp_username or not SMTP_PASS:
-                    return False
-                server.login(actual_smtp_username, SMTP_PASS)
-            server.sendmail(SENDER_EMAIL_ADDRESS, recipient_list, msg.as_string())
-            return True
-        except Exception as e:
-            return False
-        finally:
-            if server:
-                try:
-                    server.quit()
-                except Exception as e:
-                    log.error('Error while quitting SMTP server: {e}')
+
 
 
 

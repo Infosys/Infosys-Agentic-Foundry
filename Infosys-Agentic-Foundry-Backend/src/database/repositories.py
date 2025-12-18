@@ -23,7 +23,7 @@ class BaseRepository:
     Provides the database connection pool to subclasses.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str):
         """
         Initializes the BaseRepository with a database connection pool.
 
@@ -32,8 +32,53 @@ class BaseRepository:
         """
         if not pool:
             raise ValueError("Connection pool is not provided.")
+        if not login_pool:
+            raise ValueError("Login connection pool is not provided.")
         self.pool = pool
+        self.login_pool = login_pool
         self.table_name = table_name
+
+    async def _transform_emails_to_usernames(self, rows: List[Dict], email_fields: List[str]) -> List[Dict]:
+        """
+        Batch-transforms email addresses to usernames for specified fields.
+        
+        Args:
+            rows: List of row dictionaries to transform
+            email_fields: List of field names containing email addresses to transform
+            
+        Returns:
+            List of transformed row dictionaries with emails replaced by usernames
+        """
+        if not rows:
+            return rows
+            
+        # Collect unique emails from all specified fields
+        emails = set()
+        for row in rows:
+            for field in email_fields:
+                if row.get(field):
+                    emails.add(row[field])
+        
+        # Fetch all usernames in one query
+        email_to_username = {}
+        if emails:
+            async with self.login_pool.acquire() as conn:
+                user_records = await conn.fetch(
+                    "SELECT mail_id, user_name FROM login_credential WHERE mail_id = ANY($1)",
+                    list(emails)
+                )
+                email_to_username = {r['mail_id']: r['user_name'] for r in user_records}
+        
+        # Transform rows
+        for row in rows:
+            for field in email_fields:
+                if row.get(field):
+                    username = email_to_username.get(row[field])
+                    if username:
+                        row[field] = username
+                    elif '@' in row[field]:
+                        row[field] = row[field].split('@')[0]
+        return rows
 
 
 
@@ -43,7 +88,7 @@ class TagRepository(BaseRepository, CacheableRepository):
     Repository for the 'tags_table'. Handles direct database interactions for tags.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tags_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tags_table"):
         """
         Initializes the TagRepository.
 
@@ -51,7 +96,7 @@ class TagRepository(BaseRepository, CacheableRepository):
             pool (asyncpg.Pool): The asyncpg connection pool.
             table_name (str): The name of the tags table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -126,12 +171,14 @@ class TagRepository(BaseRepository, CacheableRepository):
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing a tag record.
         """
-        query = f"SELECT * FROM {self.table_name}"
+        query = f"SELECT * FROM {self.table_name} ORDER BY tag_name ASC"
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query)
             log.info(f"Retrieved {len(rows)} tag records from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all tag records: {e}")
             return []
@@ -165,7 +212,9 @@ class TagRepository(BaseRepository, CacheableRepository):
                 row = await conn.fetchrow(query, param)
             if row:
                 log.info(f"Tag record '{tag_id or tag_name}' retrieved successfully.")
-                return dict(row)
+                row = dict(row)
+                await self._transform_emails_to_usernames([row], ['created_by'])
+                return row
             else:
                 log.info(f"Tag record '{tag_id or tag_name}' not found.")
                 return {}
@@ -240,15 +289,16 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
     Repository for the 'tag_tool_mapping_table'. Handles direct database interactions for tag-tool mappings.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tag_tool_mapping_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tag_tool_mapping_table"):
         """
         Initializes the TagToolMappingRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the tag-tool mapping table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -440,15 +490,16 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
     Repository for the 'tag_agentic_app_mapping_table'. Handles direct database interactions for tag-agent mappings.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tag_agentic_app_mapping_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tag_agentic_app_mapping_table"):
         """
         Initializes the TagAgentMappingRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the tag-agent mapping table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -602,15 +653,16 @@ class ToolRepository(BaseRepository, CacheableRepository):
     Repository for the 'tool_table'. Handles direct database interactions for tools.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tool_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tool_table"):
         """
         Initializes the ToolRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the tools table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -731,7 +783,9 @@ class ToolRepository(BaseRepository, CacheableRepository):
                 rows = await conn.fetch(query, *params)
             if rows:
                 log.info(f"Tool record '{tool_id or tool_name}' retrieved successfully.")
-                return [dict(row) for row in rows]
+                updated_rows = [dict(row) for row in rows]
+                await self._transform_emails_to_usernames(updated_rows, ['created_by'])
+                return updated_rows
             else:
                 log.info(f"Tool record '{tool_id or tool_name}' not found.")
                 return []
@@ -749,13 +803,22 @@ class ToolRepository(BaseRepository, CacheableRepository):
         """
         # query = f"SELECT * FROM {self.table_name} WHERE  (status = 'approved' OR created_by = '{current_user_email.get(None)}') ORDER BY created_on DESC"
         
-        query = f"SELECT * FROM {self.table_name} ORDER BY created_on DESC"
+        query = f"""
+            SELECT 
+                tool_id, tool_name, tool_description, code_snippet, 
+                model_name, created_on, created_by, updated_on, last_used, is_public, 
+                status, comments, approved_at, approved_by 
+            FROM {self.table_name} 
+            ORDER BY created_on DESC
+        """
         log.info(f"Executing query to retrieve all tool records: {query}")
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query)
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
             log.info(f"Retrieved {len(rows)} tool records from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all tool records: {e}")
             return []
@@ -775,25 +838,37 @@ class ToolRepository(BaseRepository, CacheableRepository):
         """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
         offset = limit * max(0, page - 1)
+        columns_to_select = """
+            tool_id, tool_name, tool_description, code_snippet, model_name, 
+            created_on, created_by, updated_on, last_used, is_public, status, 
+            comments, approved_at, approved_by
+        """
         if created_by:
             query = f"""
-                SELECT * FROM {self.table_name}
-                WHERE  (status = 'approved' OR created_by = '{created_by}') AND LOWER(tool_name) LIKE $1
+                SELECT {columns_to_select}
+                FROM {self.table_name}
+                WHERE (status = 'approved' OR created_by = $4) AND LOWER(tool_name) LIKE $1
                 ORDER BY created_on DESC
                 LIMIT $2 OFFSET $3;
             """
+            # Note: Parameter index is now $4 for created_by
+            params = (name_filter, limit, offset, created_by)
         else:
             query = f"""
-                SELECT * FROM {self.table_name}
+                SELECT {columns_to_select}
+                FROM {self.table_name}
                 WHERE LOWER(tool_name) LIKE $1
                 ORDER BY created_on DESC
                 LIMIT $2 OFFSET $3;
             """
+            params = (name_filter, limit, offset)
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, name_filter, limit, offset)
+                rows = await conn.fetch(query, *params)
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
             log.info(f"Retrieved {len(rows)} tool records for search '{search_value}', page {page}.")
-            return [dict(row) for row in rows]
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving tool records by search/page: {e}")
             return []
@@ -905,7 +980,9 @@ class ToolRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query)
             log.info(f"Retrieved {len(rows)} tool records for approval from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all tool records for approval: {e}")
             return []
@@ -938,7 +1015,9 @@ class ToolRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} tool records for approval with search '{search_value}', page {page}.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving tool records for approval by search/page: {e}")
             return []
@@ -1034,15 +1113,16 @@ class McpToolRepository(BaseRepository):
     """
     Repository for the 'mcp_tool_table'. Handles direct database interactions for MCP server definitions.
     """
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "mcp_tool_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "mcp_tool_table"):
         """
         Initializes the McpToolRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the MCP tools table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -1150,8 +1230,9 @@ class McpToolRepository(BaseRepository):
                 rows = await conn.fetch(query, *params)
             if rows:
                 log.info(f"MCP tool record '{tool_id or tool_name}' retrieved successfully.")
-                # Ensure JSONB is loaded as Python object (asyncpg usually handles this)
-                return [dict(row) for row in rows]
+                updated_rows = [dict(row) for row in rows]
+                await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+                return updated_rows
             else:
                 log.info(f"MCP tool record '{tool_id or tool_name}' not found.")
                 return []
@@ -1171,8 +1252,9 @@ class McpToolRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query)
             log.info(f"Retrieved {len(rows)} MCP tool records from '{self.table_name}'.")
-            # Ensure JSONB is loaded as Python object
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all MCP tool records: {e}")
             return []
@@ -1221,8 +1303,9 @@ class McpToolRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} MCP tool records for search '{search_value}', page {page}, type '{mcp_type}'.")
-            # Ensure JSONB is loaded as Python object
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving MCP tool records by search/page: {e}")
             return []
@@ -1409,15 +1492,16 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
     Repository for the 'tool_agent_mapping_table'. Handles direct database interactions for tool-agent mappings.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tool_agent_mapping_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tool_agent_mapping_table"):
         """
         Initializes the ToolAgentMappingRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the tool-agent mapping table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
     async def create_table_if_not_exists(self):
         """
@@ -1500,7 +1584,9 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(select_statement, *values)
             log.info(f"Retrieved {len(rows)} tool-agent mappings from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['tool_created_by', 'agentic_app_created_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving tool-agent mappings: {e}")
             return []
@@ -1591,15 +1677,16 @@ class RecycleToolRepository(BaseRepository):
     Repository for the 'recycle_tool' table. Handles direct database interactions for recycled tools.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "recycle_tool"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "recycle_tool"):
         """
         Initializes the RecycleToolRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the recycle tools table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -1737,7 +1824,9 @@ class RecycleToolRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query)
             log.info(f"Retrieved {len(rows)} recycle tool records from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all recycle tool records: {e}")
             return []
@@ -1770,7 +1859,9 @@ class RecycleToolRepository(BaseRepository):
                 row = await conn.fetchrow(query, *params)
             if row:
                 log.info(f"Recycle tool record '{tool_id or tool_name}' retrieved successfully.")
-                return dict(row)
+                row = dict(row)
+                await self._transform_emails_to_usernames([row], ['created_by', 'approved_by'])
+                return row
             else:
                 log.info(f"Recycle tool record '{tool_id or tool_name}' not found.")
                 return None
@@ -1787,15 +1878,16 @@ class AgentRepository(BaseRepository, CacheableRepository):
     Repository for the 'agent_table'. Handles direct database interactions for agents.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "agent_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "agent_table"):
         """
         Initializes the AgentRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the agents table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -1836,6 +1928,7 @@ class AgentRepository(BaseRepository, CacheableRepository):
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN last_used SET DEFAULT CURRENT_TIMESTAMP",
                     f"UPDATE {self.table_name} SET last_used = CURRENT_TIMESTAMP WHERE last_used IS NULL",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS validation_criteria JSONB DEFAULT '[]'",
                     f"DO $$ BEGIN "
                     f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_status_check') THEN "
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')); "
@@ -1881,8 +1974,8 @@ class AgentRepository(BaseRepository, CacheableRepository):
             bool: True if the agent was inserted successfully, False if a unique violation occurred or on other error.
         """
         insert_statement = f"""
-        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, created_on, updated_on)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, created_on, updated_on, validation_criteria)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         """
         try:
             async with self.pool.acquire() as conn:
@@ -1898,7 +1991,8 @@ class AgentRepository(BaseRepository, CacheableRepository):
                     agent_data["tools_id"],
                     agent_data["created_by"],
                     agent_data["created_on"],
-                    agent_data["updated_on"]
+                    agent_data["updated_on"],
+                    agent_data.get("validation_criteria", "[]")
                 )
             await self.invalidate_entity("get_agent_record", agentic_application_id=agent_data.get("agentic_application_id"))
             await self.invalidate_entity("get_agents_details_for_chat_records")
@@ -1952,10 +2046,11 @@ class AgentRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
 
-            results_as_dicts = [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
 
-            log.info(f"Retrieved {len(results_as_dicts)} agent records from '{self.table_name}'.")
-            return results_as_dicts
+            log.info(f"Retrieved {len(updated_rows)} agent records from '{self.table_name}'.")
+            return updated_rows
 
         except Exception as e:
             log.error(f"Error retrieving agent record '{agentic_application_id or agentic_application_name}': {e}")
@@ -1973,7 +2068,13 @@ class AgentRepository(BaseRepository, CacheableRepository):
             List[Dict[str, Any]]: A list of dictionaries, each representing an agent record.
         """
         # query = f"SELECT * FROM {self.table_name} WHERE  (status = 'approved' OR created_by = '{current_user_email.get(None)}')"
-        query = f"SELECT * FROM {self.table_name}"
+        columns_to_select = """
+            agentic_application_id, agentic_application_name, agentic_application_description, 
+            agentic_application_workflow_description, agentic_application_type, model_name, 
+            system_prompt, tools_id, created_on, created_by, updated_on, last_used, is_public, 
+            status, comments, approved_at, approved_by
+        """
+        query = f"SELECT {columns_to_select} FROM {self.table_name}"
         parameters = []
         if agentic_application_type:
             if isinstance(agentic_application_type, str):
@@ -1988,7 +2089,9 @@ class AgentRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *parameters)
             log.info(f"Retrieved {len(rows)} agent records from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all agent records: {e}")
             return []
@@ -2007,11 +2110,17 @@ class AgentRepository(BaseRepository, CacheableRepository):
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing an agent record.
         """
+        columns_to_select = """
+            agentic_application_id, agentic_application_name, agentic_application_description, 
+            agentic_application_workflow_description, agentic_application_type, model_name, 
+            system_prompt, tools_id, created_on, created_by, updated_on, last_used, is_public, 
+            status, comments, approved_at, approved_by
+        """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
         offset = limit * max(0, page - 1)
 
         query = f"""
-            SELECT * FROM {self.table_name}
+            SELECT {columns_to_select} FROM {self.table_name}
             WHERE LOWER(agentic_application_name) LIKE $1
         """
         params = [name_filter]
@@ -2036,7 +2145,9 @@ class AgentRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} agent records for search '{search_value}', page {page}.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving agent records by search/page: {e}")
             return []
@@ -2184,7 +2295,9 @@ class AgentRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query)
             log.info(f"Retrieved {len(rows)} agent records for approval from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all agent records for approval: {e}")
             return []
@@ -2217,7 +2330,9 @@ class AgentRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} agent records for approval with search '{search_value}', page {page}.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving agent records for approval by search/page: {e}")
             return []
@@ -2300,7 +2415,69 @@ class AgentRepository(BaseRepository, CacheableRepository):
                 return False
         except Exception as e:
             log.error(f"ERROR REPOSITORY: Error updating last_used for tool '{agentic_application_id}': {e}")
-            return False
+            return False    
+        
+    async def find_agents_using_validator(self, validator_tool_id: str) -> List[Dict[str, Any]]:
+        """
+        Efficiently finds agents that reference a specific validator tool in their validation_criteria.
+        Uses database LIKE query instead of loading and parsing all agents.
+
+        Args:
+            validator_tool_id (str): The ID of the validator tool to search for.
+
+        Returns:
+            List[Dict[str, Any]]: List of agent records that use this validator tool.
+        """
+        # Use PostgreSQL's JSON containment and text search capabilities
+        # This is much faster than Python loops over all agents
+        query = f"""
+            SELECT agentic_application_id, agentic_application_name, created_by
+            FROM {self.table_name}
+            WHERE validation_criteria IS NOT NULL 
+            AND validation_criteria::text LIKE $1
+        """
+        
+        # Search for the validator ID in the JSON text
+        search_pattern = f'%{validator_tool_id}%'
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, search_pattern)
+            
+            # Filter to exact matches (LIKE might have false positives)
+            exact_matches = []
+            for row in rows:
+                agent_dict = dict(row)
+                # Get the validation_criteria and verify exact match
+                agent_full = await self.get_agent_record(agentic_application_id=agent_dict['agentic_application_id'])
+                if agent_full:
+                    agent_data = agent_full[0]
+                    validation_criteria = agent_data.get('validation_criteria')
+                    if validation_criteria:
+                        # Handle both string and already parsed JSON
+                        if isinstance(validation_criteria, str):
+                            try:
+                                import json
+                                validation_criteria = json.loads(validation_criteria)
+                            except (json.JSONDecodeError, TypeError):
+                                continue
+                        
+                        # Check for exact match
+                        if isinstance(validation_criteria, list):
+                            for criteria in validation_criteria:
+                                validator_id = criteria.get('validator_tool_id') or criteria.get('validator')
+                                if validator_id == validator_tool_id:
+                                    exact_matches.append(agent_dict)
+                                    break
+            
+            log.info(f"Found {len(exact_matches)} agents using validator tool '{validator_tool_id}'.")
+            return exact_matches
+            
+        except Exception as e:
+            log.error(f"Error finding agents using validator '{validator_tool_id}': {e}")
+            return []
+
+
 
 # --- RecycleAgentRepository ---
 # --- CACHE NOT IMPLEMENTED FOR THIS CLASS ---
@@ -2309,15 +2486,16 @@ class RecycleAgentRepository(BaseRepository):
     Repository for the 'recycle_agent' table. Handles direct database interactions for recycled agents.
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "recycle_agent"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "recycle_agent"):
         """
         Initializes the RecycleAgentRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
             table_name (str): The name of the recycle agents table.
         """
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -2441,7 +2619,9 @@ class RecycleAgentRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query)
             log.info(f"Retrieved {len(rows)} recycle agent records from '{self.table_name}'.")
-            return [dict(row) for row in rows]
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by'])
+            return updated_rows
         except Exception as e:
             log.error(f"Error retrieving all recycle agent records: {e}")
             return []
@@ -2474,7 +2654,9 @@ class RecycleAgentRepository(BaseRepository):
                 row = await conn.fetchrow(query, *params)
             if row:
                 log.info(f"Recycle agent record '{agentic_application_id or agentic_application_name}' retrieved successfully.")
-                return dict(row)
+                row_dict = dict(row)
+                await self._transform_emails_to_usernames([row_dict], ['created_by'])
+                return row_dict
             else:
                 log.info(f"Recycle agent record '{agentic_application_id or agentic_application_name}' not found.")
                 return None
@@ -2492,15 +2674,16 @@ class ChatHistoryRepository(BaseRepository):
     dynamically named chat tables and the shared checkpoint tables.
     """
 
-    def __init__(self, pool: asyncpg.Pool):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool):
         """
         Initializes the ChatHistoryRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
         """
         # We pass a empty table_name to super, as this repo handles multiple tables.
-        super().__init__(pool, table_name="")
+        super().__init__(pool, login_pool, table_name="")
         self.DB_URL = os.getenv("POSTGRESQL_DATABASE_URL")  # Ensure this is correctly loaded
         self.checkpoints_table = "checkpoints"
         self.checkpoint_blobs_table = "checkpoint_blobs"
@@ -2642,13 +2825,19 @@ class ChatHistoryRepository(BaseRepository):
             summary TEXT,
             preference TEXT,
             created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(agentic_application_id, session_id)
         );
         """
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
-            log.info(f"Table '{table_name}' created successfully or already exists.")
+                # Add updated_on column if table already exists without it
+                alter_statement = f"""
+                ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+                """
+                await conn.execute(alter_statement)
+            log.info(f"Table '{table_name}' created successfully or already exists with updated_on column.")
         except Exception as e:
             log.error(f"Error creating table '{table_name}': {e}")
             raise
@@ -2660,10 +2849,10 @@ class ChatHistoryRepository(BaseRepository):
         """
         table_name = "agent_conversation_summary_table"
         insert_statement = f"""
-        INSERT INTO {table_name} (agentic_application_id, session_id, preference)
-        VALUES ($1, $2, $3)
+        INSERT INTO {table_name} (agentic_application_id, session_id, preference, updated_on)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
         ON CONFLICT (agentic_application_id, session_id)
-        DO UPDATE SET preference = $3
+        DO UPDATE SET preference = $3, updated_on = CURRENT_TIMESTAMP
         """
         try:
             async with self.pool.acquire() as conn:
@@ -2750,7 +2939,7 @@ class ChatHistoryRepository(BaseRepository):
         table_name = "agent_conversation_summary_table"
         update_statement = f"""
         UPDATE {table_name}
-        SET summary = $1, created_on = CURRENT_TIMESTAMP
+        SET summary = $1, updated_on = CURRENT_TIMESTAMP
         WHERE agentic_application_id = $2 AND session_id = $3
         """
         try:
@@ -2857,6 +3046,28 @@ class ChatHistoryRepository(BaseRepository):
                 log.info(f"Deleted records from checkpoint tables for thread_id: {internal_thread}")
 
         return True  # No chat rows to delete in this internal method, as it only handles checkpoints.
+
+    async def delete_agent_conversation_summary(self, agentic_application_id: str, session_id: str) -> bool:
+        """
+        Deletes the conversation summary for a specific agent and session.
+        """
+        table_name = "agent_conversation_summary_table"
+        delete_statement = f"""
+        DELETE FROM {table_name}
+        WHERE agentic_application_id = $1 AND session_id = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, agentic_application_id, session_id)
+                if result != "DELETE 0":
+                    log.info(f"Deleted agent conversation summary for session '{session_id}' in table '{table_name}'.")
+                    return True
+                else:
+                    log.warning(f"No agent conversation summary found for session '{session_id}', no deletion performed.")
+                    return False
+        except Exception as e:
+            log.error(f"Failed to delete agent conversation summary in '{table_name}': {e}")
+            return False
 
     async def get_checkpointer_context_manager(self):
         """
@@ -3021,9 +3232,10 @@ class FeedbackLearningRepository(BaseRepository):
     """
 
     def __init__(self, pool: asyncpg.Pool,
+                 login_pool: asyncpg.Pool,
                  feedback_table_name: str = "feedback_response",
                  agent_feedback_table_name: str = "agent_feedback"):
-        super().__init__(pool, table_name=feedback_table_name)
+        super().__init__(pool, login_pool, table_name=feedback_table_name)
         self.feedback_table_name = feedback_table_name
         self.agent_feedback_table_name = agent_feedback_table_name
 
@@ -3254,8 +3466,8 @@ class EvaluationDataRepository(BaseRepository):
     Repository for 'evaluation_data' table. Handles direct database interactions.
     """
 
-    def __init__(self, pool: asyncpg.Pool,agent_repo: AgentRepository, table_name: str = "evaluation_data"):
-        super().__init__(pool, table_name)
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo: AgentRepository,  table_name: str = "evaluation_data"):
+        super().__init__(pool, login_pool, table_name)
         self.agent_repo = agent_repo
 
 
@@ -3483,8 +3695,8 @@ class ToolEvaluationMetricsRepository(BaseRepository):
     Repository for 'tool_evaluation_metrics' table. Handles direct database interactions.
     """
 
-    def __init__(self, pool: asyncpg.Pool,agent_repo: AgentRepository, table_name: str = "tool_evaluation_metrics"):
-        super().__init__(pool, table_name)
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo: AgentRepository, table_name: str = "tool_evaluation_metrics"):
+        super().__init__(pool, login_pool, table_name)
         self.agent_repo = agent_repo
 
 
@@ -3632,8 +3844,8 @@ class AgentEvaluationMetricsRepository(BaseRepository):
     Repository for 'agent_evaluation_metrics' table. Handles direct database interactions.
     """
 
-    def __init__(self, pool: asyncpg.Pool, agent_repo :AgentRepository, table_name: str = "agent_evaluation_metrics"):
-        super().__init__(pool, table_name)
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo :AgentRepository, table_name: str = "agent_evaluation_metrics"):
+        super().__init__(pool, login_pool, table_name)
         self.agent_repo = agent_repo
 
     async def create_table_if_not_exists(self):
@@ -3797,8 +4009,8 @@ class AgentEvaluationMetricsRepository(BaseRepository):
 
 class ExportAgentRepository(BaseRepository):
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "export_agent"):
-        super().__init__(pool, table_name)
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "export_agent"):
+        super().__init__(pool, login_pool, table_name)
 
 
     async def create_table_if_not_exists(self):
@@ -3887,12 +4099,11 @@ class ChatStateHistoryManagerRepository(BaseRepository):
     Each entry represents a single turn of interaction (user query + agent steps + final response).
     """
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "agent_chat_state_history_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "agent_chat_state_history_table"):
         """
         Initializes the ChatHistoryManager with a database connection pool and table name.
         """
-        super().__init__(pool, table_name)
-
+        super().__init__(pool, login_pool, table_name)
 
     async def create_table_if_not_exists(self):
         """
@@ -4113,10 +4324,10 @@ class AgentMetadataRepository(BaseRepository):
     Handles all interactions with the main 'agent_evaluations' table and
     the 'agent_context_config' table.
     """
-    def __init__(self, pool):
+    def __init__(self, pool, login_pool):
         # We explicitly provide the table name this repository manages.
         table_name = "agent_evaluations"
-        super().__init__(pool, table_name)
+        super().__init__(pool, login_pool, table_name)
         log.info(f"AgentMetadataRepository initialized for table: '{table_name}'.")
     
     async def create_agent_consistency_robustness(self):
@@ -4235,11 +4446,11 @@ class AgentDataTableRepository(BaseRepository):
     (e.g., 'consistency_AGENT_ID', 'robustness_AGENT_ID').
     """
 
-    def __init__(self, pool):
+    def __init__(self, pool, login_pool):
         # This repository doesn't have one single table name, as it's dynamic.
         # So, we can pass a placeholder or None to the parent, as its methods
         # will always generate the table name dynamically anyway.
-        super().__init__(pool, table_name=None) # Pass None for the table_name
+        super().__init__(pool, login_pool, table_name=None) # Pass None for the table_name
         log.info("AgentDataTableRepository initialized (manages dynamic tables).")
     
     def _get_safe_table_name(self, table_name: str) -> str:

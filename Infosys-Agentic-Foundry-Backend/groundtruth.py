@@ -10,14 +10,16 @@ import uuid
 from langchain.prompts import PromptTemplate
 from langchain_core.runnables import Runnable
 from pathlib import Path
-from fuzzywuzzy import fuzz  
+from rapidfuzz import fuzz  
 from dotenv import load_dotenv
 import psutil
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from rouge_score import rouge_scorer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer, util
+from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
+from src.utils.remote_model_client import RemoteSentenceTransformersUtil
+util = RemoteSentenceTransformersUtil()
 from src.utils.remote_model_client import RemoteSentenceTransformer, ModelServerClient
 from typing import Optional, Callable, Awaitable
 
@@ -29,19 +31,23 @@ from telemetry_wrapper import logger as log
 load_dotenv()
 
 # Initialize SBERT model 
-model_server_url = os.getenv("MODEL_SERVER_URL")
+model_server_url = os.getenv("MODEL_SERVER_URL", "").strip()
 sbert_model = None
-try:
-    log.info(f"Connecting to model server at {model_server_url} for SBERT model")
-    client = ModelServerClient(model_server_url)
-    health_url = f"{client.base_url}/health"
-    health_resp = client.session.get(health_url, timeout=5)
-    health_resp.raise_for_status()
-    sbert_model = RemoteSentenceTransformer(client=client)
-    log.info("Remote SBERT model initialized successfully.")
-except Exception as e:
-    sbert_model = None
-    log.error(f"Failed to connect to remote SBERT model at {model_server_url}: {e}")
+
+if not model_server_url or model_server_url.lower() == "none":
+    log.info("MODEL_SERVER_URL not configured. SBERT model will be unavailable for ground truth evaluation.")
+else:
+    try:
+        log.info(f"Connecting to model server at {model_server_url}")
+        client = ModelServerClient(model_server_url)
+        if client.server_available:
+            sbert_model = RemoteSentenceTransformer(client=client)
+            log.info("Remote SBERT model initialized successfully.")
+        else:
+            log.warning("Model server is not available. SBERT model will be unavailable for ground truth evaluation.")
+    except Exception as e:
+        sbert_model = None
+        log.error(f"Failed to connect to remote SBERT model: {e}")
 
 
 # ✅ LLM prompt templates
@@ -98,7 +104,23 @@ Be specific and concise. Do not just list the scores again — explain what the 
 """
 )
 
-# ✅ Unified agent call
+# Unified agent call
+# async def call_agent(query, model_name, agentic_application_id, session_id, agent_type, inference_service: CentralizedAgentInference):
+#     req = AgentInferenceRequest(
+#         query=query,
+#         agentic_application_id=agentic_application_id,
+#         session_id=session_id,
+#         model_name=model_name,
+#         reset_conversation=True
+#     )
+#     try:
+#         response = await anext(inference_service.run(req))
+#         result = response if isinstance(response, dict) else {"response": f"Error: {response}"}
+#     except Exception as e:
+#         log.error(f"Error calling agent: {str(e)}")
+#         result = {"response": f"Exception: {str(e)}"}
+#     return result.get("response", f"Invalid or error response for query: {query}")
+
 async def call_agent(query, model_name, agentic_application_id, session_id, agent_type, inference_service: CentralizedAgentInference):
     req = AgentInferenceRequest(
         query=query,
@@ -107,13 +129,46 @@ async def call_agent(query, model_name, agentic_application_id, session_id, agen
         model_name=model_name,
         reset_conversation=True
     )
+    
+    final_result = {}
+    
     try:
-        response = await inference_service.run(req)
-        result = response if isinstance(response, dict) else {"response": f"Error: {response}"}
+        # FIX 1: Don't use anext(). Iterate to get the actual data.
+        # If the agent streams, we want the chunk that contains the answer.
+        async for response in inference_service.run(req):
+            if isinstance(response, dict):
+                # Log for debugging (remove later if too noisy)
+                log.info(f"DEBUG - Agent Chunk: {response}")
+                
+                # Update our final result with the latest chunk
+                final_result = response
+                
+                # Optional: If you know the agent stops after sending the answer, 
+                # and you found a valid key, you could break here.
+                if any(k in response for k in ["response", "answer", "output", "content"]):
+                    final_result = response
+                    # break # Uncomment if you want to stop at the first valid chunk
+            else:
+                # Handle cases where response might be a raw string
+                final_result = {"response": str(response)}
+
     except Exception as e:
         log.error(f"Error calling agent: {str(e)}")
-        result = {"response": f"Exception: {str(e)}"}
-    return result.get("response", f"Invalid or error response for query: {query}")
+        return f"Exception: {str(e)}"
+
+    # FIX 2: Check for multiple common keys, not just "response"
+    if "response" in final_result:
+        return final_result["response"]
+    elif "answer" in final_result:
+        return final_result["answer"]
+    elif "output" in final_result:
+        return final_result["output"]
+    elif "content" in final_result:
+        return final_result["content"]
+    else:
+        # Debugging: Print what keys actually exist so you can fix the code
+        log.error(f"Missing expected key. keys found: {final_result.keys()} | Full Payload: {final_result}")
+        return f"Invalid or error response. Raw Output: {str(final_result)}"
 
 
 
@@ -186,7 +241,7 @@ async def evaluate_ground_truth_file(
 
         emb1 = sbert_model.encode(expected, convert_to_tensor=True)
         emb2 = sbert_model.encode(actual, convert_to_tensor=True)
-        sbert_scores.append(util.cos_sim(emb1, emb2).item())
+        sbert_scores.append(util.cos_sim(emb1, emb2))
 
         exact_match_scores.append(1.0 if expected.strip() == actual.strip() else 0.0)
         fuzzy_match_scores.append(fuzz.ratio(expected, actual) / 100.0)
@@ -265,7 +320,7 @@ async def evaluate_ground_truth_file(
 
     output_dir = Path.cwd() / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
-    generated_uuid = str(uuid.uuid4())
+    generated_uuid = session_id
     base_filename = f"evaluation_results_{generated_uuid}"
     excel_path = output_dir / f"{base_filename}.xlsx"
     df.to_excel(excel_path, index=False)

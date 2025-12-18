@@ -27,8 +27,8 @@ from src.inference import CentralizedAgentInference
 
 from groundtruth import evaluate_ground_truth_file
 from phoenix.otel import register
-from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.phoenix_manager import ensure_project_registered, traced_project_context
 from src.auth.dependencies import get_user_info_from_request
 
 router = APIRouter(prefix="/evaluation", tags=["Evaluation"])
@@ -136,12 +136,15 @@ async def _evaluate_agent_performance(
     if progress_callback:
         await progress_callback("Starting evaluation of ground truth file...")
 
+    # Generate a unique session ID for this evaluation run
+    session_id = str(uuid.uuid4())
+
     avg_scores, summary, excel_path = await evaluate_ground_truth_file(
         model_name=evaluation_request.model_name,
         agent_type=evaluation_request.agent_type,
         file_path=file_path,
         agentic_application_id=evaluation_request.agentic_application_id,
-        session_id=evaluation_request.session_id,
+        session_id=session_id,
         inference_service=inference_service,
         llm=llm,
         use_llm_grading=evaluation_request.use_llm_grading,
@@ -227,7 +230,7 @@ async def process_unprocessed_evaluations_endpoint(
     )
 
     async def event_stream():
-        with using_project('evaluation-metrics'):
+        async with traced_project_context('evaluation-metrics'):
             async for update in core_evaluation_service.process_unprocessed_evaluations(
                 model1=evaluating_model1,
                 model2=evaluating_model2,
@@ -929,7 +932,7 @@ async def generate_update_preview(
                 agentic_application_id=agentic_application_id,
                 query=query, session_id=f"{session_id}_{i}", model_name=model_name, reset_conversation=True
             )
-            res = await inference_service.run(req, insert_into_eval_flag=False)
+            res = await anext(inference_service.run(req, insert_into_eval_flag=False))
             responses.append(res.get("response", "") if isinstance(res, dict) else str(res))
         except Exception as e:
             log.error(f"Error running inference for query {i+1} in update preview: {e}", exc_info=True)

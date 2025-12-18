@@ -6,3 +6,4 @@ from src.schemas.feedback_learning_schemas import *
 from src.schemas.secrets_schemas import *
 from src.schemas.tag_schemas import *
 from src.schemas.tool_schemas import *
+from src.schemas.output_schemas import *

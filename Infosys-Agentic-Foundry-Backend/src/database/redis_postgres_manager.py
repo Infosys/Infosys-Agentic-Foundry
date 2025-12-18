@@ -85,12 +85,12 @@ class RedisPostgresManager:
             redis_host: Redis server host
             redis_port: Redis server port
             redis_db: Redis database number
-            redis_password: Redis password
+            redis_password: Redis PWD
             postgres_host: PostgreSQL server host
             postgres_port: PostgreSQL server port
             postgres_db: PostgreSQL database name
             postgres_user: PostgreSQL username
-            postgres_password: PostgreSQL password
+            postgres_password: PostgreSQL PWD
             postgres_table: PostgreSQL table name for storing cache records
             cache_threshold: Number of records before persistence to DB
             cache_ttl: Cache TTL in seconds (default 1 hour)

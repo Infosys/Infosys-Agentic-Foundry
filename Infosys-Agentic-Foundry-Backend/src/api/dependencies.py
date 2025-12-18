@@ -1,4 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+from typing import Literal
 from fastapi import HTTPException
 
 # Import the global app_container instance
@@ -13,7 +14,7 @@ from src.database.services import (
 from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.agent_templates.base_agent_onboard import BaseAgentOnboard, BaseMetaTypeAgentOnboard
 from src.inference.base_agent_inference import BaseAgentInference, BaseMetaTypeAgentInference
-from src.inference.python_based_inference.simple_ai_agent_inference import SimpleAIAgentInference
+from src.inference.python_based_inference.base_python_based_agent_inference import BasePythonBasedAgentInference
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.utils.file_manager import FileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
@@ -144,28 +145,15 @@ class ServiceProvider:
         raise HTTPException(status_code=400, detail=f"Unsupported agent type: {agent_type}")
 
     @staticmethod
-    def get_specialized_inference_service(agent_type: str) -> BaseAgentInference | BaseMetaTypeAgentInference | SimpleAIAgentInference:
+    def get_specialized_inference_service(agent_type: str, framework_type: Literal["langgraph", "google_adk"] = "langgraph") -> BaseAgentInference | BaseMetaTypeAgentInference | BasePythonBasedAgentInference:
         """
         Returns the specialized inference service for the given agent type.
         This is used to handle inference requests for specific agent types.
         """
-        if agent_type == "react_agent":
-            return app_container.react_agent_inference
-        if agent_type == "multi_agent":
-            return app_container.multi_agent_inference
-        if agent_type == "planner_executor_agent":
-            return app_container.planner_executor_agent_inference
-        if agent_type == "react_critic_agent":
-            return app_container.react_critic_agent_inference
-        if agent_type == "meta_agent":
-            return app_container.meta_agent_inference
-        if agent_type == "planner_meta_agent":
-            return app_container.planner_meta_agent_inference
-        if agent_type == "simple_ai_agent":
-            return app_container.simple_ai_agent_inference
-        if agent_type == "hybrid_agent":
-            return app_container.hybrid_agent_inference
-        raise HTTPException(status_code=400, detail=f"Unsupported inference service for agent type: {agent_type}")
+        try:
+            return app_container.centralized_agent_inference.get_specialized_agent_inference(agent_type=agent_type, framework_type=framework_type)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error getting specialized inference service: {str(e)}")
 
     @staticmethod
     def get_file_manager() -> FileManager:

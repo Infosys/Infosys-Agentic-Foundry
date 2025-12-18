@@ -6,12 +6,13 @@ from datetime import datetime
 from copy import deepcopy
 from abc import ABC, abstractmethod
 from typing_extensions import TypedDict
-from typing import Any, List, Dict, Optional, Annotated, Union, Literal
+from typing import Any, Callable, List, Dict, Optional, Annotated, Union, Literal
 from fastapi import HTTPException
 import time
-
+import asyncio
 from langchain_core.tools import BaseTool, StructuredTool, tool
 from langgraph.types import Command
+from langgraph.errors import GraphRecursionError
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from langgraph.prebuilt import create_react_agent
@@ -25,9 +26,8 @@ from src.inference.inference_utils import InferenceUtils
 from src.schemas import AgentInferenceRequest
 from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key
 from src.auth.models import UserRole
-from phoenix.otel import register
-from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.phoenix_manager import ensure_project_registered, traced_project_context, log_trace_context
 from src.utils.stream_sse import SSEManager
 
 
@@ -50,6 +50,13 @@ class BaseWorkflowState(TypedDict):
     parts_storage_dict: Annotated[Dict[Any, Any], InferenceUtils.add_parts]  # For storing parts temporarily
     response_formatting_flag: bool = True
     context_flag : bool = True
+    validation_score: Optional[float] = None
+    validation_feedback: Optional[str] = None
+    validation_attempts: int = 0
+    mentioned_agent_id: str = None
+    evaluation_score: float = None
+    evaluation_feedback: str = None
+    evaluation_attempts: int = 0
 
 class BaseAgentInference(ABC):
     """
@@ -233,66 +240,39 @@ class BaseAgentInference(ABC):
         sse_manager: SSEManager = None,
         session_id: str = None
         ):
-
-        def process_output_by_key(output):
-            """Process the output dictionary and return formatted data based on specific keys"""
-            for key in output.keys():
-                if key == "generate_past_conversation_summary":
-                    return {
-                        "debug_key": "generate_past_conversation_summary",
-                        "debug_value": output[key]
-                    }
-                elif key == "executor_agent":
-                    return {
-                        "debug_key": "executor_agent", 
-                        "debug_value": output[key].get("response", "")
-                    }
-                elif key == "final_response":
-                    return {
-                        "debug_key": "final_response",
-                        "debug_value": "Data Formatting completed"
-                    }
-                else:
-                    return {
-                        "debug_key": key,
-                        "debug_value": str(output[key])
-                    }
-            return {}
-
-        async def process_stream(stream_generator):
-            """Helper function to process any stream"""
-            nonlocal final_response
-            async for output in stream_generator:
-                # Send processed output via SSE
-                if sse_manager is not None:
-                    processed_data = process_output_by_key(output)
-                    log.info(f"sending data to {session_id}")
-                    if processed_data:
-                        await sse_manager.send(session_id, processed_data)
-                    else:
-                        await sse_manager.send(session_id, output)
-                
-                # Update final_response
-                for k in output.keys():
-                    final_response = await InferenceUtils.update_dictionary(final_response, output[k])
+        try:
+            # Determine which stream to use based on conditions
+            if not is_plan_approved and not tool_feedback:
+                temp = app.astream(invocation_input, config=config, stream_mode="custom")
+                async for state in temp:
+                    yield state
+            elif is_plan_approved == "yes":
+                async for state in app.astream(Command(resume="yes"), config=config,stream_mode="custom"):
+                    yield state
+            elif is_plan_approved == "no" and not plan_feedback:
+                async for state in app.astream(Command(resume="no"), config=config,stream_mode="custom"):
+                    yield state
+            elif is_plan_approved == "no" and plan_feedback is not None:
+                async for state in app.astream(Command(resume=plan_feedback), config=config,stream_mode="custom"):
+                    yield state
+            elif tool_feedback is not None:
+                async for state in app.astream(Command(resume=tool_feedback), config=config,stream_mode="custom"):
+                    yield state
+            else:
+                yield {"error": "Invalid parameters provided for astream."}
         
-        final_response = copy.deepcopy(invocation_input)
+        except GraphRecursionError as e:
+            # LangGraph hit recursion limit during streaming; return controlled error
+            log.error(f"GraphRecursionError during streaming: {e}")
+            yield {
+                "error": "Agent hit recursion limit and was stopped.",
+                "error_type": "GRAPH_RECURSION_LIMIT",
+                "details": str(e),
+            }
         
-        # Determine which stream to use based on conditions
-        if not is_plan_approved and not tool_feedback:
-            await process_stream(app.astream(invocation_input, config=config))
-        elif is_plan_approved == "yes":
-            await process_stream(app.astream(Command(resume="yes"), config=config))
-        elif is_plan_approved == "no" and not plan_feedback:
-            await process_stream(app.astream(Command(resume="no"), config=config))
-        elif is_plan_approved == "no" and plan_feedback is not None:
-            await process_stream(app.astream(Command(resume=plan_feedback), config=config))
-        elif tool_feedback is not None:
-            await process_stream(app.astream(Command(resume=tool_feedback), config=config))
-        else:
-            return {"error": "Invalid parameters provided for astream."}
-        
-        return final_response
+        except Exception as e:
+            log.info(f"Error during streaming: {e}")
+            yield {"error": "Having error in astream " + str(e)}
 
     @staticmethod
     async def _ainvoke(
@@ -338,7 +318,10 @@ class BaseAgentInference(ABC):
                                 context_flag: bool = True,
                                 temperature: float = 0.0,
                                 sse_manager: SSEManager=None,
-                                evaluation_flag: bool = False
+                                enable_streaming_flag: bool = False,
+                                evaluation_flag: bool = False,
+                                validator_flag: bool = False,
+                                mentioned_agent_id: str = None
                             ):
         if not plan_verifier_flag:
             is_plan_approved = plan_feedback = None
@@ -361,7 +344,8 @@ class BaseAgentInference(ABC):
                 "tool_interrupt_flag": tool_interrupt_flag,
                 "response_formatting_flag": response_formatting_flag,
                 "context_flag": context_flag,
-                "evaluation_flag": evaluation_flag
+                "evaluation_flag": evaluation_flag,
+                "validator_flag": validator_flag
             }
             log.debug("Building workflow")
             workflow = await self._build_workflow(chains, flags)
@@ -373,7 +357,11 @@ class BaseAgentInference(ABC):
             graph_config = await self.chat_service._get_thread_config(thread_id)
 
             log.info(f"Invoking executor agent for query: {query}\n with Session ID: {session_id} and Agent Id: {agentic_application_id}")
-            with using_project(project_name):
+            
+            # Use the context-aware traced context manager to prevent trace mixing
+            log_trace_context(f"before_agent_invocation_session_{session_id}")
+            async with traced_project_context(project_name):
+                log_trace_context(f"inside_traced_context_session_{session_id}")
                 try:
                     invocation_input = {
                         'query': query,
@@ -384,35 +372,55 @@ class BaseAgentInference(ABC):
                         'is_tool_interrupted': False,
                         'evaluation_flag': evaluation_flag,
                         "response_formatting_flag": response_formatting_flag,
-                        "context_flag": context_flag
+                        "context_flag": context_flag,
+                        "mentioned_agent_id": mentioned_agent_id
                     }
+                    if enable_streaming_flag:
+                        streammer = self._astream(
+                            app,
+                            invocation_input,
+                            config=graph_config,
+                            is_plan_approved=is_plan_approved,
+                            plan_feedback=plan_feedback,
+                            tool_feedback=tool_feedback,
+                            sse_manager= sse_manager,
+                            session_id=session_id
+                        )
+                        async for step in streammer:
+                            yield step
+                        agent_resp = await checkpointer.aget(graph_config)
+                        if agent_resp:
+                            agent_resp = agent_resp.get("channel_values", {})
+                        else:
+                            agent_resp = {}
+                        if not agent_resp:
+                            log.warning(f"unable to retrive response for this Session Id")
+                        yield agent_resp
 
-                    # final_step = None
-                    # final_step = await self._astream(
-                    #     app,
-                    #     invocation_input,
-                    #     config=graph_config,
-                    #     is_plan_approved=is_plan_approved,
-                    #     plan_feedback=plan_feedback,
-                    #     tool_feedback=tool_feedback,
-                    #     sse_manager= sse_manager,
-                    #     session_id=session_id
-                    # )
 
-                    # agent_resp = final_step if final_step is not None else {"error": "No response received from streaming"}
+                        log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
+                    else:
+                        agent_resp = await self._ainvoke(
+                            app,
+                            invocation_input,
+                            config=graph_config,
+                            is_plan_approved=is_plan_approved,
+                            plan_feedback=plan_feedback,
+                            tool_feedback=tool_feedback
+                        )
 
-                    # log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
+                        log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
+                        yield agent_resp
 
-                    agent_resp = await self._ainvoke(
-                        app,
-                        invocation_input,
-                        config=graph_config,
-                        is_plan_approved=is_plan_approved,
-                        plan_feedback=plan_feedback,
-                        tool_feedback=tool_feedback
-                    )
-
-                    log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
+                except GraphRecursionError as e:
+                    # LangGraph hit recursion limit; return controlled error
+                    log.error(f"GraphRecursionError during inference: {e}")
+                    agent_resp = {
+                        "error": "Agent hit recursion limit and was stopped.",
+                        "error_type": "GRAPH_RECURSION_LIMIT",
+                        "details": str(e),
+                    }
+                    yield agent_resp
 
                 except Exception as e:
                     await checkpointer.setup()
@@ -423,9 +431,13 @@ class BaseAgentInference(ABC):
                         agent_resp = {"error": f"Error Occurred while inferencing: {e}\nError Trace:\n{error_trace}"}
                     else:
                         agent_resp = {"error": f"Error Occurred while inferencing: {e}"}
+                    
                     log.error(agent_resp.get("error", "Unknown error occurred during agent inference."))
+                    yield agent_resp
+                
+                finally:
+                    log_trace_context(f"after_agent_invocation_session_{session_id}")
 
-            return agent_resp
 
     async def run(self,
                   inference_request: AgentInferenceRequest,
@@ -463,14 +475,18 @@ class BaseAgentInference(ABC):
             is_plan_approved = inference_request.is_plan_approved
             plan_feedback = inference_request.plan_feedback
             evaluation_flag = inference_request.evaluation_flag
+            validator_flag = inference_request.validator_flag
             temperature=inference_request.temperature
+            enable_streaming_flag = inference_request.enable_streaming_flag
+            mentioned_agent_id = inference_request.mentioned_agentic_application_id
 
             match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
             user_name = match.group(0) if match else "guest"
             agent_name = agent_config["AGENT_NAME"]
             project_name=agent_name+'_'+user_name
 
-            register(
+            # Register Phoenix project (only once per unique project name)
+            ensure_project_registered(
                 project_name=project_name,
                 auto_instrument=True,
                 set_global_tracer_provider=False,
@@ -485,14 +501,15 @@ class BaseAgentInference(ABC):
                 knowledgebase_retriever_id = knowledgebase_retriever_tool[0]["tool_id"] if knowledgebase_retriever_tool else None
                 if not knowledgebase_retriever_id:
                     log.error("Knowledge Base Retriever tool not found. Please ensure it is registered in the system.")
-                    return {"response": "Knowledge Base Retriever tool not found. Please ensure it is registered in the system."}
+                    yield {"response": "Knowledge Base Retriever tool not found. Please ensure it is registered in the system."}
+                    return 
 
                 agent_config['TOOLS_INFO'].append(knowledgebase_retriever_id)
                 agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REACT_AGENT'] += f" ;Use Knowledge Base: {inference_request.knowledgebase_name} regarding the query and if any useful information found use it and pass it to any tools if no useful content is extracted call use the agent as if the knowledgebase tool is not existing, but use the instructions for each of tools and execute the query."
 
 
             # Generate response using the React agent workflow
-            response = await self._generate_response(
+            async for response in self._generate_response(
                 query=query,
                 agentic_application_id=agentic_application_id,
                 session_id=session_id,
@@ -506,12 +523,16 @@ class BaseAgentInference(ABC):
                 response_formatting_flag=response_formatting_flag,
                 context_flag=context_flag,
                 evaluation_flag=evaluation_flag,
+                validator_flag=validator_flag,
                 tool_interrupt_flag=tool_interrupt_flag,
                 tool_feedback=tool_feedback,
                 temperature=temperature,
-                sse_manager=sse_manager
-            )
-
+                sse_manager=sse_manager,
+                enable_streaming_flag=enable_streaming_flag,
+                mentioned_agent_id=mentioned_agent_id
+            ):
+                if "executor_messages" not in response:
+                    yield response
             if isinstance(response, str):
                 update_session_context(response=response)
                 response = {"error": response}
@@ -535,7 +556,10 @@ class BaseAgentInference(ABC):
 
             if insert_into_eval_flag:
                 try:
-                    await self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name)
+                    time_start = time.monotonic()
+                    asyncio.create_task(self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name))
+                    time_end = time.monotonic()
+                    log.info(f"Time taken to log evaluation data asynchronously: {time_end - time_start:.2f} seconds")
                 except Exception as e:
                     log.error(f"Error Occurred while inserting into evaluation data: {e}")
             end_time = time.monotonic()
@@ -546,9 +570,10 @@ class BaseAgentInference(ABC):
             # Filter entire response based on user role
             if role == UserRole.USER:
                 # For USER role, return only executor_messages with filtered fields
-                return {"executor_messages": response.get("executor_messages", [])}
-            
-            return response
+                yield {"executor_messages": response.get("executor_messages", [])}
+                return
+
+            yield response
 
         except Exception as e:
             # Catch any unhandled exceptions and raise a 500 internal server error
@@ -809,10 +834,10 @@ Final Response:
 {state["response"]}
 
 Response Quality Score:
-{state["response_quality_score"]}
+{state.get("response_quality_score", "Not yet evaluated")}
 
 Critique Points:
-{await self.inference_utils.format_list_str(state["critique_points"])}
+{await self.inference_utils.format_list_str(state["critique_points"]) if state.get("critique_points") else "No critique points available yet."}
 '''
 
             invocation_input = {"messages": [("user", formatted_query)]}
@@ -1014,15 +1039,17 @@ Critique Points:
             )
 
         try:
+            interrupt_before = ["tools"] if interrupt_tool and worker_agents_as_tools_list else None
             supervisor_agent = create_react_agent(
                 model=llm,
                 prompt=system_prompt,
-                tools=worker_agents_as_tools_list
+                tools=worker_agents_as_tools_list,
+                interrupt_before=interrupt_before,
+                checkpointer=checkpointer
             )
             return supervisor_agent, worker_agents_as_tools_list
 
         except Exception as e:
             log.error(err)
             raise HTTPException(status_code=500, detail=f"Error occured while creating meta agent\nError: {e}")
-
 

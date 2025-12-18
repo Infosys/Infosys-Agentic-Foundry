@@ -9,3 +9,4 @@ from src.api.tag_endpoints import router as tag_router
 from src.api.utility_endpoints import router as utility_router
 from src.api.data_connector_endpoints import router as data_connector_router
 from src.api.deprecated_endpoints import router as deprecated_router
+from src.api.chat_endpoints_v2 import router as chat_router_v2

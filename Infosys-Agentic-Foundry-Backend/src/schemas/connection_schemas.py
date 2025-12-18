@@ -46,7 +46,8 @@ class QueryGenerationRequest(BaseModel):
 class QueryExecutionRequest(BaseModel):
     """Schema for executing a database query."""
     name: str = Field(..., description="The name of the established database connection.")
-    query: str = Field(..., description="The database query to execute.")
+    data: str = Field(..., description="The data.")
+    created_by: Optional[str] = Field(None, description="The user requesting the query execution.")
 
 class CRUDRequest(BaseModel):
     """Schema for performing CRUD operations via a connected database."""
@@ -70,6 +71,7 @@ class DBDisconnectRequest(BaseModel):
     name: str = Field(..., description="The name of the connection to disconnect.")
     db_type: str = Field(..., description="The type of the database (e.g., 'postgresql', 'mongodb').")
     flag: str = Field(..., description="Flag to indicate if connection details should be removed from DB.")
+    created_by: Optional[str] = Field(None, description="The user requesting the disconnection.")
 
 class MONGODBOperation(BaseModel):
     """Schema for performing MongoDB operations."""

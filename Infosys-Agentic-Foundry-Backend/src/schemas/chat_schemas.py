@@ -2,6 +2,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Optional, Dict, List,Any
 
+_DEFAULT_FRAMEWORK_TYPE = "langgraph"
 
 class AgentInferenceRequest(BaseModel):
     """
@@ -23,9 +24,14 @@ class AgentInferenceRequest(BaseModel):
     plan_verifier_flag: bool = Field(False, description="If true, enables human verification/interruption after the agent generates a plan. The agent will pause for user input.")
     is_plan_approved: Optional[Literal[None, "yes", "no"]] = Field(None, description="User's approval status for a generated plan: 'yes' to proceed, 'no' to provide feedback.")
     plan_feedback: Optional[str] = Field(None, description="Text feedback from the user regarding a disapproved plan, used for replanning.")
-    
+
+    framework_type: Literal["langgraph", "google_adk"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph', 'google_adk').")
+
     # --- Evaluation Flag ---
     evaluation_flag: bool = Field(False, description="If true, enables post-response evaluation of the agent's output.")
+    
+    # --- Validation Flag ---
+    validator_flag: bool = Field(False, description="If true, enables response validation using agent's validation criteria or general relevancy check.")
 
     # --- Final Response Feedback ---
     final_response_feedback: Optional[str] = Field(None, description="Text feedback from the user regarding the agent's final response (e.g., for 'submit_feedback' action).")
@@ -36,6 +42,7 @@ class AgentInferenceRequest(BaseModel):
 
     # --- Enable and Disable Formatting ---
     response_formatting_flag: Optional[bool] = True
+    enable_streaming_flag: Optional[bool] = True
     context_flag: Optional[bool] = True
     
     # --- Model Parameters ---
@@ -52,11 +59,13 @@ class ChatSessionRequest(BaseModel):
     """Schema for retrieving previous chat conversations."""
     agent_id: str = Field(..., description="The ID of the agent the user is interacting with.")
     session_id: str = Field(..., description="The unique session ID for the conversation.")
+    framework_type: Literal["langgraph", "google_adk"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph', 'google_adk').")
 
 class OldChatSessionsRequest(BaseModel): # This is the new class for get_old_chats
     """Schema for requesting a list of old chat sessions for a user and agent."""
     user_email: str = Field(..., description="The email ID of the user whose old chat sessions are requested.")
     agent_id: str = Field(..., description="The ID of the agent for which old chat sessions are requested.")
+    framework_type: Literal["langgraph", "google_adk"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph', 'google_adk').")
 
 class StoreExampleRequest(BaseModel):
     agent_id: str

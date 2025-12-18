@@ -12,10 +12,10 @@ from src.models.base_ai_model_service import BaseAIModelService
 from src.tools.mcp_tool_adapter import MCPToolAdapter
 from src.prompts.prompts import FORMATTER_PROMPT, online_agent_evaluation_prompt
 from src.inference.inference_utils import InferenceUtils
+from src.utils.helper_functions import get_timestamp
 
-from phoenix.otel import register
-from phoenix.trace import using_project
 from telemetry_wrapper import logger as log, update_session_context
+from src.utils.phoenix_manager import ensure_project_registered, traced_project_context, log_trace_context
 
 
 class BasePythonBasedAgentInference(AbstractBaseInference):
@@ -288,7 +288,11 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
         log.info("Agent build successfully")
 
         log.info(f"Invoking agent for query: {query}\n with Session ID: {session_id} and Agent Id: {agentic_application_id}")
-        with using_project(project_name):
+        
+        # Use the context-aware traced context manager to prevent trace mixing
+        log_trace_context(f"before_python_agent_invocation_session_{session_id}")
+        async with traced_project_context(project_name):
+            log_trace_context(f"inside_python_traced_context_session_{session_id}")
             try:
                 if query:
                     messages = [app.format_content_with_role(query)]
@@ -302,6 +306,9 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             except Exception as e:
                 log.error(f"Error occurred during agent invocation: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"Error occurred during agent invocation: {str(e)}")
+            
+            finally:
+                log_trace_context(f"after_python_agent_invocation_session_{session_id}")
 
     async def run(self,
                   inference_request: AgentInferenceRequest,
@@ -361,7 +368,8 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             agent_name = agent_config["AGENT_NAME"]
             project_name=agent_name+'_'+user_name
 
-            register(
+            # Register Phoenix project (only once per unique project name)
+            ensure_project_registered(
                 project_name=project_name,
                 auto_instrument=True,
                 set_global_tracer_provider=False,
@@ -369,6 +377,8 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             )
 
             update_session_context(agent_type=agent_config["AGENT_TYPE"], agent_name=agent_name)
+
+            start_timestamp = get_timestamp()
 
             # Generate response using the agent's _generate_response method
             response = await self._generate_response(
@@ -390,10 +400,93 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                 temperature=temperature
             )
 
+
             formatted_response: dict = await self.chat_service._format_python_based_agent_history(response)
+
+            # Adding metadata in response for consistency
+            log.info("Adding metadata to the final response.")
+            formatted_response["agentic_application_id"] = agentic_application_id
+            formatted_response["session_id"] = session_id
+            formatted_response["model_name"] = model_name
+            formatted_response["reset_conversation"] = reset_conversation
+            formatted_response["response_formatting_flag"] = response_formatting_flag
+            formatted_response["context_flag"] = context_flag
+            formatted_response["is_tool_interrupted"] = tool_interrupt_flag
+            formatted_response["workflow_description"] = agent_config.get("WORKFLOW_DESCRIPTION", "")
+            formatted_response["start_timestamp"] = start_timestamp
+            end_timestamp = get_timestamp()
+            formatted_response["end_timestamp"] = end_timestamp
+
+            # Add response_time and timestamps to executor_messages from long-term memory
+            executor_messages = formatted_response.get("executor_messages", [])
+            if executor_messages:
+                try:
+                    db_records = await self.chat_service.get_chat_history_from_long_term_memory(
+                        agentic_application_id=agentic_application_id,
+                        session_id=session_id,
+                        limit=len(executor_messages) + 5  # Get a few extra to ensure we have all matches
+                    )
+                    log.info(f"Retrieved {len(db_records)} database records for response_time restoration")
+                    
+                    # Log the db_records for debugging
+                    for i, record in enumerate(db_records):
+                        log.debug(f"DB Record {i}: human_message='{record.get('human_message', '')[:50]}...', response_time={record.get('response_time')}")
+                    
+                    # Create a lookup dict for faster matching
+                    db_lookup = {record.get('human_message', ''): record for record in db_records}
+                    
+                    # Log executor messages for debugging
+                    for i, msg in enumerate(executor_messages):
+                        log.debug(f"Executor Message {i}: user_query='{msg.get('user_query', '')[:50]}...'")
+                    
+                    # Restore response_time and timestamp values by matching user queries
+                    for message in executor_messages:
+                        user_query = message.get('user_query', '')
+                        if user_query in db_lookup:
+                            record = db_lookup[user_query]
+                            db_response_time = record.get('response_time')
+                            db_start_ts = record.get('start_timestamp')
+                            db_end_ts = record.get('end_timestamp')
+                            
+                            # Set timestamps from DB
+                            message['time_stamp'] = db_start_ts
+                            message['start_timestamp'] = db_start_ts
+                            message['end_timestamp'] = db_end_ts
+                            
+                            # Calculate response_time from timestamps if not stored in DB
+                            if db_response_time is not None:
+                                message['response_time'] = db_response_time
+                            elif db_start_ts and db_end_ts:
+                                # Calculate from timestamps (they are datetime objects)
+                                try:
+                                    calculated_time = (db_end_ts - db_start_ts).total_seconds()
+                                    message['response_time'] = calculated_time
+                                    log.debug(f"Calculated response_time={calculated_time}s from timestamps for '{user_query[:30]}...'")
+                                except Exception as calc_error:
+                                    log.debug(f"Could not calculate response_time from timestamps: {calc_error}")
+                            
+                            log.debug(f"Matched query '{user_query[:30]}...' with response_time={message.get('response_time')}")
+                        else:
+                            log.debug(f"No match found for query '{user_query[:30]}...'")
+                except Exception as e:
+                    log.warning(f"Could not restore response times from long-term memory: {e}")
+                
+                # For the most recent message, set timestamps from current execution context
+                # This handles the case where save_chat_message (async task) hasn't completed yet
+                if executor_messages:
+                    last_message = executor_messages[-1]
+                    if last_message.get('response_time') is None and last_message.get('final_response'):
+                        # Calculate response time in seconds
+                        response_time = (end_timestamp - start_timestamp).total_seconds()
+                        last_message['response_time'] = response_time
+                        last_message['time_stamp'] = start_timestamp
+                        last_message['start_timestamp'] = start_timestamp
+                        last_message['end_timestamp'] = end_timestamp
+                        log.info(f"Set timestamps for current query: response_time={response_time}s")
 
             if insert_into_eval_flag:
                 eval_executor_messages = []
+                log.info("Preparing executor messages for evaluation logging.")
                 for exe_msg in formatted_response.get("executor_messages", []):
                     eval_executor_messages.append({
                         "user_query": exe_msg["user_query"],
@@ -408,11 +501,12 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                 }
 
                 try:
+                    log.info("Inserting evaluation data into the database.")
                     await self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name)
                 except Exception as e:
                     log.error(f"Error Occurred while inserting into evaluation data: {e}")
 
-            return formatted_response
+            yield formatted_response
 
         except Exception as e:
             # Catch any unhandled exceptions and raise a 500 internal server error

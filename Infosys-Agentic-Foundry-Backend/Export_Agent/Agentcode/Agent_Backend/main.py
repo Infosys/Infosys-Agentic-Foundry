@@ -7,10 +7,14 @@ import argparse
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
 
+from src.utils.helper_functions import resolve_and_get_additional_no_proxys
+os.environ["NO_PROXY"] = resolve_and_get_additional_no_proxys()
+
+from src.config.settings import IS_PRODUCTION
 from src.api.app_container import app_container
 from src.api import app_router
 from src.api import cleanup_old_files
@@ -19,7 +23,7 @@ from src.auth.middleware import AuditMiddleware, AuthenticationMiddleware
 from src.auth.routes import router as auth_router
 
 from src.utils.stream_sse import SSEManager
-from src.utils.helper_functions import resolve_and_get_additional_no_proxys
+from src.utils.gzip_middleware import CustomGZipMiddleware
 
 from telemetry_wrapper import logger as log
 
@@ -27,7 +31,6 @@ from telemetry_wrapper import logger as log
 load_dotenv()
 
 # Set Phoenix collector endpoint
-os.environ["NO_PROXY"] = resolve_and_get_additional_no_proxys()
 os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
 os.environ["PHOENIX_GRPC_PORT"] = os.getenv("PHOENIX_GRPC_PORT",'50051')
 os.environ["PHOENIX_SQL_DATABASE_URL"] = os.getenv("PHOENIX_SQL_DATABASE_URL")
@@ -47,8 +50,23 @@ async def lifespan(app: FastAPI):
     try:
         await app_container.initialize_services()
         app.state.sse_manager = SSEManager()
+        
+        # Create background tasks
         asyncio.create_task(cleanup_old_files())
+        log.info("FastAPI Lifespan: Cleanup task created.")
+        
+        asyncio.create_task(app_container.core_consistency_service.schedule_continuous_reevaluations())
+        log.info("FastAPI Lifespan: Consistency evaluation task created.")
+        
+        asyncio.create_task(app_container.core_robustness_service.schedule_continuous_robustness_reevaluations())
+        log.info("FastAPI Lifespan: Robustness evaluation task created.")
 
+        # Log environment-specific startup information
+        if IS_PRODUCTION:
+            log.info("PRODUCTION MODE: Security features enabled, API documentation disabled")
+        else:
+            log.info("DEVELOPMENT MODE: API documentation available at /docs")
+        
         log.info("FastAPI Lifespan: Application startup complete. FastAPI is ready to serve requests.")
 
         yield
@@ -65,14 +83,28 @@ async def lifespan(app: FastAPI):
         log.info("FastAPI Lifespan: Shutdown complete.")
 
 
-app = FastAPI(
-    lifespan=lifespan,
-    title="Infosys Agentic Foundry API",
-    description="API for Infosys Agentic Foundry",
-    swagger_ui_init_oauth={
+# Configure FastAPI with environment-based settings
+fastapi_config = {
+    "lifespan": lifespan,
+    "title": "Infosys Agentic Foundry API",
+    "description": "API for Infosys Agentic Foundry",
+    "swagger_ui_init_oauth": {
         "usePkceWithAuthorizationCodeGrant": True
     }
-)
+}
+
+# In production, disable Swagger UI and OpenAPI for security
+if IS_PRODUCTION:
+    fastapi_config.update({
+        "docs_url": None,
+        "redoc_url": None,
+        "openapi_url": None  # Completely disable OpenAPI JSON endpoint in production
+    })
+    log.info("Production mode: Swagger UI and OpenAPI documentation disabled for security")
+
+
+app = FastAPI(**fastapi_config)
+
 
 # Add JWT Bearer security scheme to OpenAPI
 app.openapi_schema = None
@@ -100,8 +132,27 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
+UPLOAD_DIR = "user_uploads"
 
-app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=5)
+# Ensure the upload directory exists
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR) # os.makedirs creates all intermediate directories too
+
+# Mount static files and user uploads
+app.mount("/user_uploads", StaticFiles(directory=UPLOAD_DIR), name="user_uploads")
+
+if IS_PRODUCTION:
+    # In production, return 404 for /docs to prevent access
+    @app.get("/docs", include_in_schema=False)
+    async def docs_disabled():
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=404, 
+            detail="API documentation is disabled in production mode for security reasons."
+        )
+
+
+app.add_middleware(CustomGZipMiddleware, minimum_size=500, compresslevel=5)
 
 # Various routers for different functionalities
 app.include_router(auth_router)

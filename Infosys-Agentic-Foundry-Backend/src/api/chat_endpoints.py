@@ -3,10 +3,14 @@ import asyncio
 from typing import Literal, Union, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
 from fastapi.encoders import jsonable_encoder
-from sentence_transformers import SentenceTransformer, util
-from sentence_transformers import CrossEncoder
+from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
+from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
+from src.utils.remote_model_client import RemoteSentenceTransformersUtil
+util = RemoteSentenceTransformersUtil()
 import time 
+import json
 
 # Import the Redis-PostgreSQL manager
 from src.auth.authorization_service import AuthorizationService
@@ -51,16 +55,65 @@ async def get_global_manager():
             _global_manager = None
     return _global_manager
 
+async def save_feedback_and_logs(
+    inference_request, 
+    final_response, 
+    feedback_learning_service, 
+    chat_service, 
+    session_id, 
+    time_taken, 
+    is_streaming=False
+):
+    """
+    Helper function to handle post-inference logic:
+    1. Saving Plan/Verifier Feedback
+    2. Updating Chat History Response Time
+    """
+    # 1. Handle Feedback / Verifier Data
+    if inference_request.plan_verifier_flag:
+        try:
+            # Adjust extraction logic based on whether response is a dict or accumulated chunks
+            # For this example, assuming final_response follows the standard dictionary structure
+            if isinstance(final_response, dict) and "plan" in final_response:
+                current_plan = "\n".join(i for i in final_response.get("plan", []))
+                old_plan = "\n".join(i for i in inference_request.prev_response.get("plan", []))
+                
+                await feedback_learning_service.save_feedback(
+                    agent_id=inference_request.agentic_application_id,
+                    query=inference_request.query,
+                    old_final_response=old_plan,
+                    old_steps="", # Adjust based on actual data availability
+                    new_final_response=current_plan,
+                    feedback=inference_request.plan_feedback, 
+                    new_steps=""
+                )
+                log.info(f"[{session_id}] Data saved for future learnings.")
+        except Exception as e:
+            log.warning(f"[{session_id}] Could not save data for future learnings: {e}")
+
+    # 2. Update Chat History Response Time
+    try:
+        if not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
+            await chat_service.update_latest_response_time(
+                agentic_application_id=inference_request.agentic_application_id,
+                session_id=session_id,
+                response_time=time_taken
+            )
+            log.info(f"[{session_id}] Updated chat history response time: {time_taken:.2f}s")
+    except Exception as e:
+        log.warning(f"[{session_id}] Could not update response time in chat history: {e}")
+
+
 @router.post("/inference")
 async def run_agent_inference_endpoint(
-                        request: Request,
-                        inference_request: AgentInferenceRequest,
-                        inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
-                        feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service),
-                        chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
-                        authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-                        user_data: User = Depends(get_current_user) 
-                    ):
+    request: Request,
+    inference_request: AgentInferenceRequest,
+    inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
+    feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service),
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     
     API endpoint to run agent inference.
@@ -80,23 +133,29 @@ async def run_agent_inference_endpoint(
     role = user_data.role
     
     start_time = time.monotonic()
-    user_id = request.cookies.get("user_id")
+    
+    # 1. User & Session Setup
+    role = user_data.role
+    user_id = request.cookies.get("user_id") or user_data.email
     user_session = request.cookies.get("user_session")
+    session_id = inference_request.session_id
+    
+    # Update context
     update_session_context(user_session=user_session, user_id=user_id)
     sse_manager = request.app.state.sse_manager
-    session_id = inference_request.session_id
-    log.info(f"[{session_id}] Received new request for {inference_request.agentic_application_id}")
 
+    log.info(f"[{session_id}] Received inference request. Streaming: {inference_request.enable_streaming_flag}")
+
+    # 2. Concurrency Control (Task Locking)
     existing_task = task_tracker.get(session_id)
     if existing_task and not existing_task.done():
-        # New policy: Do NOT cancel the running task. Reject the new request instead.
-        log.info(f"[{session_id}] Concurrent inference request rejected; existing task still running.")
+        log.info(f"[{session_id}] Concurrent inference request rejected.")
         raise HTTPException(
             status_code=499,
-            detail="Parallel inference requests are not allowed for this session. Previous request is still processing."
+            detail="Parallel inference requests are not allowed for this session."
         )
 
-    # Update context to "processing"
+    # 3. Update Context to 'Processing'
     update_session_context(
         agent_id=inference_request.agentic_application_id,
         session_id=session_id,
@@ -104,104 +163,158 @@ async def run_agent_inference_endpoint(
         user_query=inference_request.query,
         response="Processing..."
     )
-    log.info(f"[{session_id}] Starting agent inference...")
 
-    # Modify inference request flags based on user role
+    # 4. Role-Based Flag Modification
     if role == UserRole.USER:
-        # For USER role, disable verifier flags for simplified experience
         if inference_request.tool_verifier_flag:
             inference_request.tool_verifier_flag = False
-            log.info(f"[{session_id}] Tool verifier flag disabled for USER role")
         if inference_request.plan_verifier_flag:
             inference_request.plan_verifier_flag = False
-            log.info(f"[{session_id}] Plan verifier flag disabled for USER role")
         if inference_request.evaluation_flag:
             inference_request.evaluation_flag = False
-            log.info(f"[{session_id}] evaluation flag disabled for USER role")
 
-    # Define and create the inference task
-    async def do_inference():
-        try:
-            result = await inference_service.run(inference_request, sse_manager=sse_manager, role= role)
-            log.info(f"[{session_id}] Inference completed.")
+    # ---------------------------------------------------------
+    # Scenario A: Streaming Response
+    # ---------------------------------------------------------
+    if inference_request.enable_streaming_flag:
+        
+        async def stream_generator():
+            full_accumulated_response = {} # To store data needed for post-processing logic
             
-            return result
-        except asyncio.CancelledError:
-            log.warning(f"[{session_id}] Task was cancelled during execution.")
-            raise
-
-    new_task = asyncio.create_task(do_inference())
-    task_tracker[session_id] = new_task
-
-    try:
-        response = await new_task
-        if inference_request.plan_verifier_flag:
             try:
-                final_response = "\n".join(i for i in response["plan"])
-                steps = ""
-                old_response = "\n".join(i for i in inference_request.prev_response["plan"])
-                old_steps = ""
-                await feedback_learning_service.save_feedback(
-                    agent_id=inference_request.agentic_application_id,
-                    query=inference_request.query,
-                    old_final_response= old_response,
-                    old_steps=old_steps,
-                    new_final_response=final_response,
-                    feedback=inference_request.plan_feedback, 
-                    new_steps=steps
-                )
-                log.info("Data saved for future learnings.")
+                # Add task to tracker (Self-reference not easily possible in generator, 
+                # so we rely on the tracker logic wrapping the endpoint or simple key existence)
+                task_tracker[session_id] = asyncio.current_task()
+                
+                async for chunk in inference_service.run(inference_request, sse_manager=sse_manager, role=role):
+                    # 1. Yield the intermediate chunk to the client
+                    yield json.dumps(jsonable_encoder(chunk)) + "\n"
+                    
+                    # 2. Accumulate chunk data if needed for post-processing (e.g., feedback saving)
+                    # This logic depends on your chunk structure. 
+                    # If the last chunk contains the full result, verify that.
+                    if isinstance(chunk, dict) and "query" in chunk:
+                        full_accumulated_response.update(chunk) 
+
             except Exception as e:
-                log.info("Could not save data for future learnings.")
+                log.error(f"[{session_id}] Streaming error: {e}")
+                yield json.dumps({"error": str(e)}) + "\n"
+            finally:
+                # --- Post-Processing inside Generator (After stream ends) ---
+                end_time = time.monotonic()
+                time_taken = end_time - start_time
+                
+                # Cleanup Task Tracker
+                if session_id in task_tracker:
+                    del task_tracker[session_id]
+                
+                update_session_context(
+                    agent_id='Unassigned', session_id='Unassigned', 
+                    model_used='Unassigned', user_query='Unassigned', response='Unassigned'
+                )
 
-    except asyncio.CancelledError:
-        raise HTTPException(status_code=499, detail="Request was cancelled")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+                log.info(f"[{session_id}] Streaming completed in {time_taken:.2f}s")
+                if "executor_messages" in full_accumulated_response and isinstance(full_accumulated_response["executor_messages"], list) and full_accumulated_response["executor_messages"]:
+                    last_message = full_accumulated_response["executor_messages"][-1]
+                    # Only set response_time if it's not already set (preserve values from base class)
+                    if last_message.get("response_time") is None:
+                        last_message["response_time"] = time_taken
+                    # Always copy timestamps from response to last_message if available
+                    if "start_timestamp" in full_accumulated_response:
+                        last_message["time_stamp"] = full_accumulated_response.get("start_timestamp")
+                        last_message["start_timestamp"] = full_accumulated_response.get("start_timestamp")
+                    if "end_timestamp" in full_accumulated_response:
+                        last_message["end_timestamp"] = full_accumulated_response.get("end_timestamp")
+                # Run background logic (Feedback, DB updates)
+                # We await here to ensure it completes before the connection fully closes
+                await save_feedback_and_logs(
+                    inference_request=inference_request,
+                    final_response=full_accumulated_response,
+                    feedback_learning_service=feedback_learning_service,
+                    chat_service=chat_service,
+                    session_id=session_id,
+                    time_taken=time_taken,
+                    is_streaming=True
+                )
 
-    update_session_context(agent_id='Unassigned', session_id='Unassigned', model_used='Unassigned', user_query='Unassigned', response='Unassigned')
-    if session_id in task_tracker and task_tracker[session_id].done():
-        del task_tracker[session_id]
-        log.info(f"[{session_id}] Task completed and removed from tracker.")
-    end_time = time.monotonic()
-    time_taken = end_time - start_time
-    log.info(f"Time taken for inference: {time_taken:.2f} seconds")
-    
-    # Set response_time on the latest message
-    if "executor_messages" in response and isinstance(response["executor_messages"], list) and len(response["executor_messages"]) > 0:
-        try:
-            response["executor_messages"][-1]["response_time"] = time_taken
-            log.info(f"Set response_time {time_taken:.2f}s on latest message")
-        except (TypeError, KeyError) as e:
-            log.warning(f"Could not set response_time on executor_messages: {e}")
+        return StreamingResponse(stream_generator(), media_type="application/json")
+
+    # ---------------------------------------------------------
+    # Scenario B: Non-Streaming Response (Blocking)
+    # ---------------------------------------------------------
     else:
-        log.warning("No executor_messages found in response to set response_time")
-    
-    # Update any recently saved chat messages with the centrally calculated response time
-    try:
-        if not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
-            await chat_service.update_latest_response_time(
-                agentic_application_id=inference_request.agentic_application_id,
+        async def do_inference():
+            try:
+                # Assuming non-streaming returns a single result via anext or a list
+                result = await anext(inference_service.run(inference_request, sse_manager=sse_manager, role=role))
+                return result
+            except asyncio.CancelledError:
+                log.warning(f"[{session_id}] Task cancelled.")
+                raise
+            except StopAsyncIteration:
+                # Handle case where generator is empty
+                return {}
+
+        # Create Task
+        new_task = asyncio.create_task(do_inference())
+        task_tracker[session_id] = new_task
+
+        try:
+            response = await new_task
+            end_time = time.monotonic()
+            time_taken = end_time - start_time
+
+            # Inject Response Time into the last message payload only if not already set
+            # (Historical messages should already have response_time from the base class)
+            if "executor_messages" in response and isinstance(response["executor_messages"], list) and response["executor_messages"]:
+                last_message = response["executor_messages"][-1]
+                # Only set response_time if it's not already set (preserve values from base class)
+                if last_message.get("response_time") is None:
+                    last_message["response_time"] = time_taken
+                # Always copy timestamps from response to last_message if available
+                if "start_timestamp" in response:
+                    last_message["time_stamp"] = response.get("start_timestamp")
+                    last_message["start_timestamp"] = response.get("start_timestamp")
+                if "end_timestamp" in response:
+                    last_message["end_timestamp"] = response.get("end_timestamp")
+
+            # Run Post-Processing
+            await save_feedback_and_logs(
+                inference_request=inference_request,
+                final_response=response,
+                feedback_learning_service=feedback_learning_service,
+                chat_service=chat_service,
                 session_id=session_id,
-                response_time=time_taken
+                time_taken=time_taken,
+                is_streaming=False
             )
-    except Exception as e:
-        log.warning(f"Could not update response time in chat history: {e}")
+            
+            return response
 
-    
-    return response
-
+        except asyncio.CancelledError:
+            raise HTTPException(status_code=499, detail="Request was cancelled")
+        except Exception as e:
+            log.error(f"[{session_id}] Inference failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        finally:
+            # Cleanup
+            update_session_context(
+                agent_id='Unassigned', session_id='Unassigned', 
+                model_used='Unassigned', user_query='Unassigned', response='Unassigned'
+            )
+            if session_id in task_tracker and task_tracker[session_id].done():
+                del task_tracker[session_id]
 
 @router.post("/get/feedback-response/{feedback_type}")
 async def send_feedback_endpoint(
-                    request: Request,
-                    feedback_type: Literal["like", "regenerate", "submit_feedback"],
-                    inference_request: AgentInferenceRequest,
-                    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
-                    inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
-                    feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service),
-                    model_service: ModelService = Depends(ServiceProvider.get_model_service)
-                ):
+    request: Request,
+    feedback_type: Literal["like", "regenerate", "submit_feedback"],
+    inference_request: AgentInferenceRequest,
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
+    feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service),
+    model_service: ModelService = Depends(ServiceProvider.get_model_service)
+):
     """
     API endpoint to handle like/unlike feedback for the latest message.
 
@@ -269,7 +382,7 @@ async def send_feedback_endpoint(
     inference_request.is_plan_approved = None
     inference_request.plan_feedback = None
     inference_request.tool_feedback = None
-
+    inference_request.enable_streaming_flag = False
     if feedback_type == "regenerate":
         # Modify inference_request for regeneration
         inference_request.query = "[regenerate:][:regenerate]" # Special query for regeneration
@@ -280,7 +393,7 @@ async def send_feedback_endpoint(
         raise HTTPException(status_code=400, detail="Invalid feedback type.")
 
     try:
-        response = await inference_service.run(inference_request)
+        response = await anext(inference_service.run(inference_request))
 
         # Save feedback for learning
         try:
@@ -359,6 +472,7 @@ async def get_chat_history_endpoint(request: Request, chat_session_request: Chat
     history = await chat_service.get_chat_history_from_short_term_memory(
         agentic_application_id=chat_session_request.agent_id,
         session_id=chat_session_request.session_id,
+        framework_type=chat_session_request.framework_type
     )
     update_session_context(user_session="Unassigned", user_id="Unassigned", session_id="Unassigned", agent_id="Unassigned")
     return history
@@ -383,7 +497,8 @@ async def clear_chat_history_endpoint(request: Request, chat_session_request: Ch
     
     result = await chat_service.delete_session(
         agentic_application_id=chat_session_request.agent_id,
-        session_id=chat_session_request.session_id
+        session_id=chat_session_request.session_id,
+        framework_type=chat_session_request.framework_type
     )
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=result.get("message"))
@@ -409,7 +524,8 @@ async def get_old_conversations_endpoint(request: Request, chat_session_request:
 
     result = await chat_service.get_old_chats_by_user_and_agent(
         user_email=chat_session_request.user_email,
-        agent_id=chat_session_request.agent_id
+        agent_id=chat_session_request.agent_id,
+        framework_type=chat_session_request.framework_type
     )
 
     if not result:

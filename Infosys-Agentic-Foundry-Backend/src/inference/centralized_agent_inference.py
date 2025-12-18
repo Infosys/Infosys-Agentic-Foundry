@@ -1,4 +1,6 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+from typing import Literal
+
 from src.schemas import AgentInferenceRequest
 from src.inference.base_agent_inference import BaseAgentInference
 from src.inference.react_agent_inference import ReactAgentInference
@@ -44,7 +46,7 @@ class CentralizedAgentInference:
         
 
 
-    async def get_specialized_agent_inference(self, agent_type: str) -> BaseAgentInference:
+    async def get_specialized_agent_inference(self, agent_type: str, framework_type: Literal["langgraph", "google_adk"] = "langgraph") -> BaseAgentInference:
         """Return the appropriate specialized service instance"""
         if agent_type == "react_agent":
             return self.react_agent_inference
@@ -98,7 +100,6 @@ After drafting your response, verify that you've correctly applied all relevant 
             insert_into_eval_flag: bool = True,
             sse_manager: SSEManager = None,
             role: str = None
-            
         ):
         """
         Run the inference request using the appropriate agent inference service based on the agent type.
@@ -146,15 +147,25 @@ After drafting your response, verify that you've correctly applied all relevant 
                 agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_HYBRID_AGENT'] += self.get_lesson_prompt(feedback_msg)
 
 
-        agent_inference: BaseAgentInference = await self.get_specialized_agent_inference(agent_type=agent_config["AGENT_TYPE"])
-        return await agent_inference.run(
-            inference_request=inference_request,
-            agent_config=agent_config,
-            insert_into_eval_flag=insert_into_eval_flag,
-            sse_manager=sse_manager,
-            role=role
-        )
+        agent_inference: BaseAgentInference = await self.get_specialized_agent_inference(agent_type=agent_config["AGENT_TYPE"], framework_type=inference_request.framework_type)
+        # if inference_request.enable_streaming_flag:
+        #     async for output in agent_inference.run(
+        #         inference_request=inference_request,
+        #         agent_config=agent_config,
+        #         insert_into_eval_flag=insert_into_eval_flag,
+        #         sse_manager=sse_manager,
+        #         role=role
+        #     ):
+        #         yield output
+        # else:
         
-        
+        async for response in agent_inference.run(
+                inference_request=inference_request,
+                agent_config=agent_config,
+                insert_into_eval_flag=insert_into_eval_flag,
+                sse_manager=sse_manager,
+                role=role
+            ):
+            yield response
 
 

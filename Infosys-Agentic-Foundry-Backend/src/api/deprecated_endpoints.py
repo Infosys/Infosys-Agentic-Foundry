@@ -383,7 +383,7 @@ async def temporary_get_version(fastapi_request: Request):
 @router.post("/files/user-uploads/upload-file/", summary="Deprecated: Use [ /utility/files/user-uploads/upload/ ] instead")
 async def temporary_upload_file_endpoint(fastapi_request: Request, file: UploadFile = File(...), subdirectory: str = "", file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
     from src.api.utility_endpoints import upload_file_endpoint
-    return await upload_file_endpoint(fastapi_request, file=file, subdirectory=subdirectory, file_manager=file_manager)
+    return await upload_file_endpoint(fastapi_request, files=[file], subdirectory=subdirectory, file_manager=file_manager)
 
 @router.get("/files/user-uploads/get-file-structure/", summary="Deprecated: Use [ /utility/files/user-uploads/get-file-structure/ ] instead")
 async def temporary_get_file_structure_endpoint(fastapi_request: Request, file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):

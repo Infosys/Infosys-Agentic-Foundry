@@ -81,15 +81,18 @@ async def get_available_models_endpoint(
 ## ============ User Uploaded Files Endpoints ============
 
 @router.post("/files/user-uploads/upload/")
-async def upload_file_endpoint(request: Request, file: UploadFile = File(...), subdirectory: str = "", file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
+async def upload_file_endpoint(request: Request, files: List[UploadFile] = File(...), subdirectory: str = "", file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
-    file_location = await file_manager.save_uploaded_file(uploaded_file=file, subdirectory=subdirectory)
+    file_names = []
+    for file in files:
+        file_location = await file_manager.save_uploaded_file(uploaded_file=file, subdirectory=subdirectory)
+        log.info(f"File '{file.filename}' uploaded successfully to '{file_location}'")
+        file_names.append(file.filename)
 
-    log.info(f"File '{file.filename}' uploaded successfully to '{file_location}'")
-    return {"info": f"File '{file.filename}' saved at '{file_location}'"}
+    return {"info": f"Files {file_names} saved successfully."}
 
 @router.get("/files/user-uploads/get-file-structure/")
 async def get_file_structure_endpoint(request: Request, file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):

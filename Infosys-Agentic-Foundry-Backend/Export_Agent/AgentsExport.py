@@ -93,7 +93,7 @@ class AgentExporter:
                     mcp_dict = mcp_data[0]
                     processed_mcp_dict = {}
                     for key, value in mcp_dict.items():
-                        if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                        if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
                             if isinstance(value, datetime):
                                 processed_mcp_dict[key] = value.isoformat()
                             else:
@@ -107,7 +107,7 @@ class AgentExporter:
                 tool_dict= tool_data[0]
                 processed_tool_dict = {}
                 for key, value in tool_dict.items():
-                    if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                    if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
                         if isinstance(value, datetime):
                             processed_tool_dict[key] = value.isoformat()
                         else:
@@ -138,7 +138,7 @@ class AgentExporter:
     async def serialize_agent(self, agent_dict):
         agent_for_json_dump = {}#agent_dict.copy()
         for key, value in agent_dict.items():
-            if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+            if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
                 if isinstance(value, datetime):
                     agent_for_json_dump[key] = value.isoformat()
                 else:
@@ -315,7 +315,7 @@ class AgentExporter:
                     worker_dict = worker_data[0]
                     processed_dict={}
                     for k, v in worker_dict.items():
-                        if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                        if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
                             if isinstance(v, datetime):
                                 processed_dict[k] = v.isoformat()
                             else:
@@ -379,7 +379,7 @@ class AgentExporter:
                 worker_dict = worker_data[0]
                 processed_dict={}
                 for k, v in worker_dict.items():
-                    if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by"]:
+                    if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
                         if isinstance(v, datetime):
                             processed_dict[k] = v.isoformat()
                         else:

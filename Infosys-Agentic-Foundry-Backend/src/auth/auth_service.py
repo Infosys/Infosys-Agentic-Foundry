@@ -41,7 +41,7 @@ class AuthService:
                 )
                 return LoginResponse(approval=False, message="User not found")
             
-            # Check password
+            # Check pwd
             if not bcrypt.checkpw(login_request.password.encode('utf-8'), user_data['password'].encode('utf-8')):
                 await self.audit_repo.log_action(
                     user_id=str(user_data['mail_id']),
@@ -57,6 +57,8 @@ class AuthService:
             # Check role authorization
             user_role = user_data['role']
             requested_role = login_request.role
+            if requested_role not in ["User", "Developer", "Admin", "SuperAdmin"]:
+                return LoginResponse(approval=False, message="Invalid role requested")
             
             if user_role == UserRole.ADMIN.value:
                 pass  # Admin can access any role
@@ -64,6 +66,7 @@ class AuthService:
                 return LoginResponse(approval=False, message="You are not authorized as Admin")
             elif user_role == UserRole.USER.value and requested_role in (UserRole.DEVELOPER.value, UserRole.ADMIN.value):
                 return LoginResponse(approval=False, message=f"You are not authorized as {requested_role}")
+            
             
             # Generate short-lived access JWT token
             payload = {
@@ -277,7 +280,7 @@ class AuthService:
             if existing_user:
                 return RegisterResponse(approval=False, message="User already exists")
             
-            # Hash password
+            # Hash PWD
             password_hash = bcrypt.hashpw(register_request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
             # Create user
@@ -333,19 +336,19 @@ class AuthService:
     
     async def update_password(self, email: str, new_password: str, current_user_id: str, 
                             ip_address: str = None, user_agent: str = None) -> bool:
-        """Update user password"""
+        """Update user PWD"""
         try:
-            # Hash new password
+            # Hash new PWD
             password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
-            # Update password
+            # Update PWD
             success = await self.user_repo.update_user_password(email, password_hash)
             
             if success:
                 # Get user for audit log
                 user_data = await self.user_repo.get_user_by_email(email)
                 
-                # Log password change
+                # Log PWD change
                 await self.audit_repo.log_action(
                     user_id=current_user_id,
                     action="PASSWORD_UPDATED",

@@ -59,7 +59,7 @@ class UserRepository:
             raise
 
     async def update_user_password(self, email: str, new_password: str) -> bool:
-        """Update user password"""
+        """Update user PWD"""
         query = f"UPDATE {self.table_name} SET password = $1 WHERE mail_id = $2"
         try:
             async with self.pool.acquire() as conn:

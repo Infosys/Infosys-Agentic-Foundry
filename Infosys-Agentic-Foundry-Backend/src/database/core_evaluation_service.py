@@ -322,7 +322,7 @@ class CoreEvaluationService:
             result_text = result.content.strip().lower()
             return result_text == "true"
         except Exception as e:
-            log.warning(f"⚠️ LLM failed to classify interaction: {e}")
+            log.warning(f"[WARNING] LLM failed to classify interaction: {e}")
             return True  # fallback to processing to avoid data loss
 
 
@@ -371,10 +371,10 @@ class CoreEvaluationService:
             eval_llm = await self.model_service.get_llm_model(model_name=eval_llm_model_name, temperature=0.0)
             
             try:
-                # ✅ Check if interaction is meaningful
+                # [SUCCESS] Check if interaction is meaningful
                 is_valid = await self.is_meaningful_interaction(data["query"], data["response"], eval_llm)
                 if not is_valid:
-                    log.info(f"⚠️ Skipping trivial interaction for evaluation_id {evaluation_id}")
+                    log.info(f"[WARNING] Skipping trivial interaction for evaluation_id {evaluation_id}")
                     await self.evaluation_service.update_evaluation_status(evaluation_id, "skipped")
                     yield {
                         "status": "skipped",
@@ -594,7 +594,7 @@ class CoreConsistencyEvaluationService:
                 reset_conversation=True
             )
             # Use the injected service instance
-            res = await self.centralized_agent_inference.run(req, insert_into_eval_flag=False)
+            res = await anext(self.centralized_agent_inference.run(req, insert_into_eval_flag=False))
             return res.get("response") if isinstance(res, dict) else str(res)
         except Exception as e:
             log.error(f"❌ Error during agent call for query: {query} — {e}", exc_info=True)
@@ -973,7 +973,7 @@ class CoreRobustnessEvaluationService:
                     reset_conversation=True
                 )
                 # MODULAR CHANGE: Uses the injected centralized inference service
-                res = await self.centralized_agent_inference.run(req, insert_into_eval_flag=False)
+                res = await anext(self.centralized_agent_inference.run(req, insert_into_eval_flag=False))
                 item[response_col] = res.get("response", "") if isinstance(res, dict) else str(res)
             except Exception as e:
                 log.error(f"Error running agent on query {i+1}: {e}", exc_info=True)

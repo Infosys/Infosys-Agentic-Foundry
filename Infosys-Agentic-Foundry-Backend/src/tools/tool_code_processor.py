@@ -125,3 +125,187 @@ class ToolCodeProcessor:
             log.error(err)
             return {"error": err}
 
+    @staticmethod
+    async def validate_validator_function(code_str: str):
+        """
+        Validates that a validator function has the correct signature and return values.
+        Validator functions must:
+        1. Have exactly 2 parameters: 'query' and 'response'
+        2. Return validation_score/validation_status and feedback
+        """
+        try:
+            parsed_code = ast.parse(code_str)
+        except Exception as e:
+            err = f"Validator Tool Validation Failed: Function parsing error.\n{e}"
+            log.error(err)
+            return {"error": err, "is_valid": False}
+
+        # Find the function definition
+        function_node = None
+        for node in parsed_code.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                function_node = node
+                break
+
+        if not function_node:
+            err = "Validator Tool Validation Failed: No function definition found."
+            log.error(err)
+            return {"error": err, "is_valid": False}
+
+        # Check function parameters
+        args = function_node.args.args
+        if len(args) != 2:
+            err = "Validator Tool Validation Failed: Validator functions must have exactly 2 parameters: 'query' and 'response'."
+            log.error(err)
+            return {"error": err, "is_valid": False}
+
+        param_names = [arg.arg for arg in args]
+        if param_names != ['query', 'response']:
+            err = f"Validator Tool Validation Failed: Parameters must be named 'query' and 'response', got: {param_names}"
+            log.error(err)
+            return {"error": err, "is_valid": False}
+
+        # Check return statements to ensure they return validation results
+        return_statements = []
+        for node in ast.walk(function_node):
+            if isinstance(node, ast.Return) and node.value is not None:
+                return_statements.append(node)
+
+        if not return_statements:
+            err = "Validator Tool Validation Failed: Function must return validation results."
+            log.error(err)
+            return {"error": err, "is_valid": False}
+
+        # Enhanced validation - check return statement structure
+        valid_return_found = False
+        required_fields = {'validation_score', 'feedback', 'validation_status'}
+        
+        for return_node in return_statements:
+            if isinstance(return_node.value, ast.Dict):
+                # Check if return is a dictionary literal
+                dict_keys = []
+                for key in return_node.value.keys:
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                        dict_keys.append(key.value)
+                    elif isinstance(key, ast.Str):  # For older Python versions
+                        dict_keys.append(key.s)
+                
+                # Check if all required fields are present
+                if required_fields.issubset(set(dict_keys)):
+                    valid_return_found = True
+                    break
+            elif isinstance(return_node.value, ast.Call):
+                # Check if return is a dict() call - this is harder to validate statically
+                if (isinstance(return_node.value.func, ast.Name) and 
+                    return_node.value.func.id == 'dict'):
+                    # For dict() constructor, we'll do a runtime validation instead
+                    valid_return_found = True
+                    break
+            elif isinstance(return_node.value, ast.Name):
+                # Return is a variable - we can't validate structure statically
+                # This would need runtime validation
+                valid_return_found = True
+                break
+
+        # If we couldn't find a clearly valid return, try runtime validation
+        if not valid_return_found:
+            try:
+                # Attempt runtime validation with sample inputs
+                runtime_valid = await ToolCodeProcessor._runtime_validate_validator(code_str)
+                if not runtime_valid:
+                    err = ("Validator Tool Validation Failed: Function must return a dictionary with "
+                           "required fields: 'validation_score' (float), 'feedback' (string), "
+                           "and 'validation_status' (string).")
+                    log.error(err)
+                    return {"error": err, "is_valid": False}
+            except Exception as e:
+                err = (f"Validator Tool Validation Failed: Could not validate return structure. "
+                       f"Ensure function returns dict with 'validation_score', 'feedback', "
+                       f"and 'validation_status'. Error: {str(e)}")
+                log.error(err)
+                return {"error": err, "is_valid": False}
+
+        # Validation passed
+        log.info("Validator function validation passed")
+        return {"is_valid": True}
+
+    @staticmethod
+    async def _runtime_validate_validator(code_str: str) -> bool:
+        """
+        Runtime validation of validator function to ensure it returns proper structure.
+        Tests the function with sample inputs and validates the return format.
+        """
+        try:
+            # Create a safe execution environment
+            local_namespace = {}
+            
+            # Execute the code to define the function
+            exec(code_str, {"__builtins__": __builtins__}, local_namespace)
+            
+            # Find the validator function
+            validator_function = None
+            for name, obj in local_namespace.items():
+                if callable(obj) and not name.startswith('_'):
+                    validator_function = obj
+                    break
+            
+            if not validator_function:
+                return False
+            
+            # Test with sample inputs
+            test_cases = [
+                ("2 + 2", "4"),
+                ("What is the capital of France?", "The capital of France is Paris."),
+                ("", "No response provided")
+            ]
+            
+            for query, response in test_cases:
+                try:
+                    result = validator_function(query=query, response=response)
+                    
+                    # Handle async functions
+                    if hasattr(result, '__await__'):
+                        import asyncio
+                        result = await result
+                    
+                    # Validate return structure
+                    if not isinstance(result, dict):
+                        log.warning(f"Validator function returned {type(result)} instead of dict")
+                        return False
+                    
+                    # Check required fields
+                    required_fields = {'validation_score', 'feedback', 'validation_status'}
+                    if not required_fields.issubset(result.keys()):
+                        missing_fields = required_fields - result.keys()
+                        log.warning(f"Validator function missing required fields: {missing_fields}")
+                        return False
+                    
+                    # Validate field types
+                    if not isinstance(result['validation_score'], (int, float)):
+                        log.warning("validation_score must be numeric")
+                        return False
+                    
+                    if not isinstance(result['feedback'], str):
+                        log.warning("feedback must be a string")
+                        return False
+                    
+                    if not isinstance(result['validation_status'], str):
+                        log.warning("validation_status must be a string")
+                        return False
+                    
+                    # Validate score range
+                    score = result['validation_score']
+                    if not (0.0 <= score <= 1.0):
+                        log.warning(f"validation_score should be between 0.0 and 1.0, got {score}")
+                        # This is a warning, not a failure
+                
+                except Exception as e:
+                    log.warning(f"Runtime validation failed for test case ({query}, {response}): {e}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            log.warning(f"Runtime validation error: {e}")
+            return False
+

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List, Dict, Optional, Union, Callable
 from fastapi import HTTPException
 
+from src.database.services import ChatService
 from src.inference.inference_utils import InferenceUtils
 from src.schemas import AgentInferenceRequest
 from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key
@@ -37,10 +38,7 @@ class AbstractBaseInference(ABC):
         """
         Extracts the user email from the session ID using regex.
         """
-        match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
-        user_email = match.group(0) if match else "guest"
-        log.info(f"Extracted user email: {user_email} from session ID: {session_id}")
-        return user_email
+        return ChatService._extract_user_email_from_session_id(session_id)
 
     @abstractmethod
     async def _get_mcp_tools_instances(self, tool_ids: List[str] = []) -> list:

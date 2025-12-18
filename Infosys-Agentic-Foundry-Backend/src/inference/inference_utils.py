@@ -2,20 +2,36 @@
 import re
 import ast
 import json
-from typing import List, Dict, Union, Any, Optional
+import os
+from copy import deepcopy
+from typing import List, Dict, Tuple, Union, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import HumanMessage, ChatMessage
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
-from sentence_transformers import SentenceTransformer, util
-from sentence_transformers import CrossEncoder
+
+from src.utils.remote_model_client import (
+    RemoteSentenceTransformer, 
+    RemoteCrossEncoder, 
+    RemoteTensorUtils,
+    RemoteNumpyUtils,
+    RemoteSentenceTransformersUtil,
+    get_remote_models_and_utils
+)
+
+# Create instances to replace local modules
+torch = RemoteTensorUtils()
+np = RemoteNumpyUtils()
+util = RemoteSentenceTransformersUtil()
+SentenceTransformer = RemoteSentenceTransformer
+CrossEncoder = RemoteCrossEncoder
 
 from src.models.model_service import ModelService
 from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService, ConsistencyService
 from src.prompts.prompts import FORMATTER_PROMPT
-from telemetry_wrapper import logger as log
+from telemetry_wrapper import logger as log, update_session_context
 
 # Import the Redis-PostgreSQL manager
 from src.database.redis_postgres_manager import RedisPostgresManager, TimedRedisPostgresManager, create_manager_from_env, create_timed_manager_from_env
@@ -52,8 +68,8 @@ class InferenceUtils:
         feedback_learning_service: FeedbackLearningService,
         evaluation_service: EvaluationService,
         consistency_service:ConsistencyService,
-        embedding_model: SentenceTransformer,
-        cross_encoder: CrossEncoder
+        embedding_model: Any,
+        cross_encoder: Any
     ):
         # Getting all required services for Inference
         self.chat_service = chat_service
@@ -223,16 +239,27 @@ Please review and fix the JSON response above based on the exception provided. R
         return msg_formatted.strip()
 
     @staticmethod
-    async def add_prompt_for_feedback(query: str) -> ChatMessage | HumanMessage:
+    async def add_prompt_for_feedback(query: str, original_query: str = None) -> ChatMessage | HumanMessage:
         """
         Helper to format user query or feedback into a ChatMessage.
+        
+        Args:
+            query: The raw query string (may be regenerate/feedback marker or actual query)
+            original_query: The original user query (used for regenerate/feedback scenarios)
         """
         if query == "[regenerate:][:regenerate]":
-            prompt = "The previous response did not meet expectations. Please review the query and provide a new, more accurate response."
+            if original_query:
+                prompt = f"{original_query}\n\n**User Feedback**: User requested to regenerate the response. Please provide a different/better answer."
+            else:
+                prompt = "The previous response did not meet expectations. Please review the query and provide a new, more accurate response."
             return ChatMessage(role="feedback", content=prompt)
         elif query.startswith("[feedback:]") and query.endswith("[:feedback]"):
-            prompt = f"""The previous response was not satisfactory. Here is the feedback on your previous response:
-{query[11:-11]}
+            user_feedback = query[11:-11]
+            if original_query:
+                prompt = f"{original_query}\n\n**User Feedback**: {user_feedback}"
+            else:
+                prompt = f"""The previous response was not satisfactory. Here is the feedback on your previous response:
+{user_feedback}
 
 Please review the query and feedback, and provide an appropriate answer.
 """
@@ -393,7 +420,7 @@ Output:
         return manage_memory
 
     @staticmethod
-    async def create_search_memory_tool(embedding_model: SentenceTransformer, agent_id : str = None):
+    async def create_search_memory_tool(embedding_model: Any, agent_id : str = None):
         async def search_memory(query: str) -> str:
             """
             Search through stored memories to find relevant information based on the user's query,
@@ -420,12 +447,12 @@ Output:
                         if stored_query.strip():
                             # Calculate query-to-query similarity
                             query_embedding_for_query = embedding_model.encode(stored_query, convert_to_tensor=True)
-                            query_similarity = float(util.cos_sim(query_embedding, query_embedding_for_query).item())
+                            query_similarity = float(util.cos_sim(query_embedding, query_embedding_for_query))
                             
                             # Calculate query-to-response similarity
                             if stored_response.strip():
                                 response_embedding = embedding_model.encode(stored_response[:200], convert_to_tensor=True)  # Truncate response
-                                response_similarity = float(util.cos_sim(query_embedding, response_embedding).item())
+                                response_similarity = float(util.cos_sim(query_embedding, response_embedding))
                             else:
                                 response_similarity = 0.0
                             
@@ -433,7 +460,7 @@ Output:
                             similarity = 0.7 * query_similarity + 0.3 * response_similarity
                         else:
                             item_embedding = embedding_model.encode(content, convert_to_tensor=True)
-                            similarity = float(util.cos_sim(query_embedding, item_embedding).item())
+                            similarity = float(util.cos_sim(query_embedding, item_embedding))
                         scored_results.append({
                             'key': record_data.get('memory_key', record.id),
                             'content': content,
@@ -573,6 +600,664 @@ Output:
 
         # Fallback: return right_parts
         return {}
+    
+    # ===== VALIDATION UTILITIES =====
+    
+    async def validate_general_relevancy(self, query: str, response: str, llm):
+        """
+        General relevancy validation when no specific criteria match.
+        """
+        log.info(f"Executing general relevancy validation for query: '{query[:50]}...'")
+        try:
+            relevancy_prompt = f"""
+            Evaluate if the response is relevant and appropriate for the given query.
+            
+            Query: {query}
+            Response: {response}
+            
+            Rate the relevancy on a scale of 0.0 to 1.0 where:
+            - 1.0 = Highly relevant and directly addresses the query
+            - 0.8+ = Mostly relevant with good coverage
+            - 0.6+ = Somewhat relevant but could be better
+            - 0.4+ = Partially relevant with some gaps
+            - 0.2+ = Minimally relevant
+            - 0.0 = Not relevant at all
+            
+            Respond in JSON format:
+            {{
+                "validation_score": <score_0.0_to_1.0>,
+                "validation_status": "<pass|fail>",
+                "feedback": "<explanation_of_relevancy_assessment>"
+            }}
+            
+            Consider "pass" if score >= 0.7, otherwise "fail".
+            """
+            
+            result = await llm.ainvoke(relevancy_prompt)
+            
+            # Parse LLM response
+            try:
+                import json
+                
+                # Clean the response content to handle markdown code blocks
+                content = result.content.strip()
+                
+                # Remove markdown code blocks if present
+                if content.startswith("```json"):
+                    content = content.replace("```json", "").replace("```", "").strip()
+                elif content.startswith("```"):
+                    content = content.replace("```", "").strip()
+
+                validation_data = json.loads(content)
+                log.info(f"General relevancy validation completed - Score: {validation_data.get('validation_score', 0.0)}, Status: {validation_data.get('validation_status', 'fail')}")
+                return {
+                    "validation_status": validation_data.get("validation_status", "fail"),
+                    "validation_score": float(validation_data.get("validation_score", 0.0)),
+                    "feedback": validation_data.get("feedback", "General relevancy check completed"),
+                    "validation_type": "general_relevancy"
+                }
+            except (json.JSONDecodeError, ValueError):
+                # Fallback parsing
+                log.warning("General relevancy JSON parsing failed, using fallback logic")
+                content = result.content.lower()
+                if "pass" in content:
+                    log.info("General relevancy validation passed via fallback parsing")
+                    return {
+                        "validation_status": "pass",
+                        "validation_score": 0.75,
+                        "feedback": "General relevancy check passed with fallback parsing",
+                        "validation_type": "general_relevancy_fallback"
+                    }
+                else:
+                    log.info("General relevancy validation failed via fallback parsing")
+                    return {
+                        "validation_status": "fail",
+                        "validation_score": 0.25,
+                        "feedback": "General relevancy check failed with fallback parsing",
+                        "validation_type": "general_relevancy_fallback"
+                    }
+                    
+        except Exception as e:
+            log.error(f"General relevancy validation error: {e}")
+            return {
+                "validation_status": "error",
+                "validation_score": 0.0,
+                "feedback": f"General relevancy validation failed: {str(e)}",
+                "validation_type": "general_relevancy_error"
+            }
+
+    async def execute_validator_tool(self, validator_tool_id: str, query: str, response: str):
+        """Execute a specific validator tool"""
+        log.info(f"Executing validator tool: {validator_tool_id}")
+        try:
+            # Get validator tool
+            validator_tools = await self.tool_service.get_tool(tool_id=validator_tool_id)
+            if not validator_tools:
+                log.error(f"Validator tool {validator_tool_id} not found")
+                raise ValueError(f"Validator tool {validator_tool_id} not found")
+            
+            validator_tool = validator_tools[0]
+            tool_code = validator_tool.get("code_snippet", "")
+            
+            if not tool_code:
+                log.error(f"Validator tool {validator_tool_id} has no code snippet")
+                raise ValueError(f"Validator tool {validator_tool_id} has no code snippet")
+            
+            log.debug(f"Validator tool code loaded, executing function...")
+            
+            # Execute validator tool function
+            try:
+                # Create a local namespace for execution
+                local_namespace = {}
+                
+                # Execute the tool code to define the function
+                exec(tool_code, {"__builtins__": __builtins__}, local_namespace)
+                
+                # Find the validator function (should have _validator in the name or be the only function)
+                validator_function = None
+                for name, obj in local_namespace.items():
+                    if callable(obj) and not name.startswith('_'):
+                        validator_function = obj
+                        break
+                
+                if not validator_function:
+                    log.error(f"No callable function found in validator tool {validator_tool_id}")
+                    raise ValueError(f"No callable function found in validator tool {validator_tool_id}")
+                
+                log.debug(f"Found validator function: {validator_function.__name__ if hasattr(validator_function, '__name__') else 'anonymous'}")
+                
+                # Execute the validator function with query and response
+                result = validator_function(query=query, response=response)
+                
+                # Handle both sync and async functions
+                if hasattr(result, '__await__'):
+                    result = await result
+                
+                log.info(f" Validator tool {validator_tool_id} executed successfully")
+                
+                # Parse tool output for validation results
+                if isinstance(result, dict):
+                    log.info(f"Tool validation result - Status: {result.get('validation_status', 'unknown')}, Score: {result.get('validation_score', 0.0)}")
+                    return {
+                        "validation_status": result.get("validation_status", "unknown"),
+                        "validation_score": float(result.get("validation_score", 0.0)),
+                        "feedback": result.get("feedback", "Validator tool executed"),
+                        "validation_type": "tool_validator",
+                        "validator_tool_id": validator_tool_id
+                    }
+                else:
+                    # Tool returned non-dict output
+                    log.info(f"Tool validation non-dict result: {str(result)[:100]}...")
+                    return {
+                        "validation_status": "pass" if result else "fail",
+                        "validation_score": 1.0 if result else 0.0,
+                        "feedback": f"Validator tool output: {str(result)}",
+                        "validation_type": "tool_validator",
+                        "validator_tool_id": validator_tool_id
+                    }
+                    
+            except Exception as exec_error:
+                raise ValueError(f"Error executing validator tool code: {str(exec_error)}")
+                
+        except Exception as e:
+            log.error(f"Validator tool execution error: {e}")
+            return {
+                "validation_status": "error",
+                "validation_score": 0.0,
+                "feedback": f"Validator tool execution failed: {str(e)}",
+                "validation_type": "tool_validator_error",
+                "validator_tool_id": validator_tool_id
+            }
+
+    async def validate_with_llm(self, criteria_query: str, expected_answer: str, actual_response: str, llm, user_query: str = None):
+        """Use LLM to validate response against expected criteria"""
+        log.info(f"Executing LLM validation for criteria: '{criteria_query[:50]}...'")
+        try:         
+            # Generic validation prompt that works for any domain
+            validation_prompt = f"""
+            Validate if the actual response appropriately addresses the criteria query.
+            
+            User Query: {user_query or "Not provided"}
+            Criteria Query: {criteria_query}
+            Expected Answer: {expected_answer}
+            Actual Response: {actual_response}
+            
+            Task: Evaluate if the actual response is relevant and appropriate for the given criteria query.
+            
+            IMPORTANT CONTEXT:
+            - Evaluate based on the specific user query that was asked: "{user_query}"
+            - The expected answer describes general behavior for this type of query
+            - Judge whether the actual response appropriately handles the specific inputs provided in the user query
+            - If the user query contains specific data (like numbers), the response should work with that data
+            
+            Consider the following aspects:
+            1. Does the response address the intent of the criteria query?
+            2. Is the response factually accurate and well-reasoned?
+            3. Does the response quality meet reasonable expectations?
+            4. Does the response appropriately handle the specific inputs provided in the user query?
+            
+            Rate the response on a scale of 0.0 to 1.0:
+            - 1.0 = Excellent response, fully addresses the criteria and user query
+            - 0.8+ = Good response with minor gaps
+            - 0.6+ = Adequate response but could be improved
+            - 0.4+ = Partially addresses criteria but has significant issues
+            - 0.2+ = Minimal relevance to criteria
+            - 0.0 = Completely irrelevant or inappropriate
+            
+            Respond in JSON format:
+            {{
+                "validation_score": <score_0.0_to_1.0>,
+                "validation_status": "<pass|fail>",
+                "feedback": "<detailed_explanation_of_validation>"
+            }}
+            
+            Consider "pass" if score >= 0.75, otherwise "fail".
+            """
+            
+            result = await llm.ainvoke(validation_prompt)
+            
+            # Parse LLM response
+            try:
+                import json
+                
+                # Clean the response content to handle markdown code blocks
+                content = result.content.strip()
+                
+                # Remove markdown code blocks if present
+                if content.startswith("```json"):
+                    content = content.replace("```json", "").replace("```", "").strip()
+                elif content.startswith("```"):
+                    content = content.replace("```", "").strip()
+
+                validation_data = json.loads(content)
+                
+                log.info(f"LLM validation completed - Status: {validation_data.get('validation_status', 'fail')}, Score: {validation_data.get('validation_score', 0.0)}")
+                
+                validation_result = {
+                    "validation_status": validation_data.get("validation_status", "fail"),
+                    "validation_score": float(validation_data.get("validation_score", 0.0)),
+                    "feedback": validation_data.get("feedback", "LLM validation completed"),
+                    "validation_type": "llm_validator"
+                }
+               
+                return validation_result
+                
+            except json.JSONDecodeError as e:
+                log.warning(f"LLM validation JSON parsing failed: {e}, using fallback logic")
+                # Fallback parsing
+                score = 0.5  # Default moderate score
+                status = "pass" if score >= 0.75 else "fail"
+                log.info(f"LLM validation fallback - Status: {status}, Score: {score}")
+                fallback_result = {
+                    "validation_status": status,
+                    "validation_score": score,
+                    "feedback": "LLM validation completed with fallback parsing",
+                    "validation_type": "llm_validator"
+                }
+                
+                return fallback_result
+                
+        except Exception as e:
+            log.error(f"LLM validation error: {e}")
+            error_result = {
+                "validation_status": "error",
+                "validation_score": 0.0,
+                "feedback": f"LLM validation failed: {str(e)}",
+                "validation_type": "llm_validator_error"
+            }
+            
+            return error_result
+
+    def aggregate_validation_results(self, validation_results: list):
+        """Aggregate multiple validation results into a single result"""
+        log.info(f"Aggregating {len(validation_results)} validation results")
+
+        if not validation_results:
+            log.warning("No validation results to aggregate")
+            return {
+                "validation_status": "no_criteria",
+                "validation_score": 1.0,
+                "feedback": "No validation criteria to process"
+            }
+        
+        # Calculate average score
+        scores = [result["validation_result"]["validation_score"] for result in validation_results]
+        total_score = sum(scores)
+        avg_score = total_score / len(validation_results)
+        
+        log.debug(f"Individual scores: {scores}, Average: {avg_score:.3f}")
+        
+        # Determine overall status (all must pass for overall pass)
+        statuses = [result["validation_result"]["validation_status"] for result in validation_results]
+        all_passed = all(status == "pass" for status in statuses)
+        overall_status = "pass" if all_passed else "fail"
+        
+        log.debug(f"Individual statuses: {statuses}, Overall: {overall_status}")
+        
+        # Compile feedback
+        feedback_parts = []
+        for i, result in enumerate(validation_results, 1):
+            criteria_feedback = result["validation_result"]["feedback"]
+            criteria_status = result["validation_result"]["validation_status"]
+            criteria_score = result["validation_result"]["validation_score"]
+            
+            feedback_parts.append(
+                f"Criteria {i}: {criteria_status.upper()} (Score: {criteria_score:.2f}) - {criteria_feedback}"
+            )
+        
+        log.info(f"Validation aggregation complete - Status: {overall_status}, Average Score: {avg_score:.3f}")
+        
+        return {
+            "validation_status": overall_status,
+            "validation_score": avg_score,
+            "feedback": "; ".join(feedback_parts),
+            "validation_type": "aggregated",
+            "individual_results": validation_results
+        }
+
+    async def find_all_matching_validation_patterns(self, query: str, validation_criteria: list, llm):
+        """
+        Find ALL matching validation patterns for the given query using semantic similarity.
+        Returns a list of matching criteria instead of just the best one.
+        """
+        if not validation_criteria or not query:
+            log.warning("No validation criteria or query provided for pattern matching")
+            return []
+        
+        matching_patterns = []
+        
+        # Strategy 1: SBERT Semantic Similarity Matching for all criteria
+        log.debug("Attempting SBERT semantic matching...")
+        sbert_matches = await self.find_all_sbert_semantic_matches(query, validation_criteria)
+        if sbert_matches:
+            matching_patterns.extend(sbert_matches)
+            log.debug(f"SBERT found {len(sbert_matches)} matches")
+        
+        # Strategy 2: LLM fallback for criteria that didn't match with SBERT
+        unmatched_criteria = [c for c in validation_criteria if c not in matching_patterns]
+        if unmatched_criteria:
+            log.debug(f"Using LLM fallback for {len(unmatched_criteria)} unmatched criteria")
+            llm_matches = await self.find_all_semantic_matches(query, unmatched_criteria, llm)
+            if llm_matches:
+                matching_patterns.extend(llm_matches)
+                log.debug(f"LLM fallback found {len(llm_matches)} additional matches")
+        
+        if matching_patterns:
+            criteria_names = [pattern.get("query", "Unknown") for pattern in matching_patterns]
+            log.info(f"Found {len(matching_patterns)} matching validation patterns for query: '{query}' - {criteria_names}")
+        else:
+            log.info(f"No matching validation patterns found for query: '{query}'")
+        
+        return matching_patterns
+
+    async def find_all_sbert_semantic_matches(self, query: str, validation_criteria: list):
+        """
+        Use SBERT to find ALL semantic matches above threshold between user query and validation scenarios.
+        """
+        log.info(f"Starting SBERT semantic matching for query: '{query}' against {len(validation_criteria)} criteria")
+        try:
+            # Check if embedding model is available
+            if not self.embedding_model:
+                log.warning("SBERT embedding model not available, falling back to LLM matching")
+                return []
+            
+            # Extract validation scenario texts
+            scenario_texts = []
+            for criteria in validation_criteria:
+                # Handle case where criteria might be a string instead of dict
+                if isinstance(criteria, str):
+                    scenario_text = criteria
+                elif isinstance(criteria, dict):
+                    scenario_text = criteria.get("query", "")
+                else:
+                    log.warning(f"Unexpected criteria type: {type(criteria)}")
+                    continue
+                    
+                if scenario_text:
+                    scenario_texts.append(scenario_text)
+            
+            if not scenario_texts:
+                log.warning("No scenario texts found for SBERT matching")
+                return []
+            
+            log.debug(f"Extracted {len(scenario_texts)} scenario texts for embedding")
+            
+            # Encode query and scenarios using SBERT
+            query_embedding = self.embedding_model.encode(query, convert_to_tensor=True)
+            scenario_embeddings = self.embedding_model.encode(scenario_texts, convert_to_tensor=True)
+            
+            # Calculate cosine similarities using remote utility
+            similarities = []
+            for scenario_emb in scenario_embeddings:
+                sim_score = util.cos_sim(query_embedding, scenario_emb)
+                similarities.append(sim_score)
+            
+            # Set threshold for semantic similarity
+            similarity_threshold = 0.5  # 50% similarity threshold
+            
+            # Find ALL matches above threshold
+            matching_criteria = []
+            match_details = []
+            for i, similarity in enumerate(similarities):
+                # Handle both tensor and float returns from cos_sim
+                if hasattr(similarity, 'item'):
+                    similarity_score = similarity.item()
+                else:
+                    similarity_score = float(similarity)
+                scenario_text = scenario_texts[i]
+                
+                log.debug(f"SBERT similarity for '{scenario_text[:30]}...': {similarity_score:.3f}")
+                
+                if similarity_score >= similarity_threshold:
+                    matched_criteria = validation_criteria[i]
+                    matching_criteria.append(matched_criteria)
+                    match_details.append(f"'{scenario_text}' (score: {similarity_score:.3f})")
+            
+            if matching_criteria:
+                log.info(f"SBERT found {len(matching_criteria)} matches: {', '.join(match_details)}")
+            else:
+                log.info(f"No SBERT semantic matches found for query: '{query}' (threshold: {similarity_threshold})")
+            
+            return matching_criteria
+                
+        except Exception as e:
+            log.error(f"SBERT semantic matching error: {e}")
+            return []
+
+    async def find_all_semantic_matches(self, query: str, validation_criteria: list, llm):
+        """
+        Use LLM to find ALL semantic matches between user query and validation scenarios.
+        """
+        log.info(f"Starting LLM semantic matching for query: '{query}' against {len(validation_criteria)} criteria")
+        try:
+            # Create a prompt to match the query with validation scenarios
+            scenarios_text = ""
+            for i, criteria in enumerate(validation_criteria):
+                # Handle case where criteria might be a string instead of dict
+                if isinstance(criteria, str):
+                    criteria_query = criteria
+                elif isinstance(criteria, dict):
+                    criteria_query = criteria.get("query", "")
+                else:
+                    log.warning(f"Unexpected criteria type in LLM matching: {type(criteria)}")
+                    continue
+                    
+                scenarios_text += f"{i+1}. {criteria_query}\n"
+            
+            semantic_matching_prompt = f"""
+            You are an expert at understanding query intent and matching them to predefined scenarios.
+            
+            User Query: "{query}"
+            
+            Available Validation Scenarios:
+            {scenarios_text}
+            
+            Task: Determine which scenarios (if any) match the intent of the user query. A query can match MULTIPLE scenarios.
+            
+            Guidelines:
+            - Look for semantic similarity, not just keyword matching
+            - Consider the underlying intent and domain
+            - A single query can match multiple scenarios (e.g., "3-1+9?" matches both addition and subtraction)
+            
+            Respond in JSON format:
+            {{
+                "matches": [
+                    {{
+                        "scenario_number": <number_1_to_N>,
+                        "confidence_score": <0.0_to_1.0>,
+                        "reasoning": "<brief_explanation>"
+                    }}
+                ]
+            }}
+            
+            Only include matches with confidence_score >= 0.7
+            """
+            
+            result = await llm.ainvoke(semantic_matching_prompt)
+            log.debug(f"LLM semantic matching response received, length: {len(result.content)} chars")
+            
+            # Parse the LLM response
+            try:
+                import json
+                # Clean the response content
+                content = result.content.strip()
+                if content.startswith("```json"):
+                    content = content.replace("```json", "").replace("```", "").strip()
+                elif content.startswith("```"):
+                    content = content.replace("```", "").strip()
+                
+                matching_data = json.loads(content)
+                matches = matching_data.get("matches", [])
+                
+                matching_criteria = []
+                match_details = []
+                for match in matches:
+                    scenario_number = match.get("scenario_number")
+                    confidence = match.get("confidence_score", 0.0)
+                    reasoning = match.get("reasoning", "")
+                    
+                    if scenario_number and confidence >= 0.5:  # Lower threshold for LLM fallback
+                        # Get the matched criteria (convert from 1-based to 0-based index)
+                        matched_criteria = validation_criteria[scenario_number - 1]
+                        
+                        # Get scenario text for logging
+                        if isinstance(matched_criteria, dict):
+                            scenario_text = matched_criteria.get("query", f"Scenario {scenario_number}")
+                        else:
+                            scenario_text = str(matched_criteria)[:30]
+                        
+                        matching_criteria.append(matched_criteria)
+                        match_details.append(f"'{scenario_text}' (confidence: {confidence}, reasoning: {reasoning})")
+                        
+                        log.debug(f"LLM match found: scenario {scenario_number}, confidence {confidence}")
+                
+                if matching_criteria:
+                    log.info(f"LLM found {len(matching_criteria)} semantic matches: {', '.join(match_details)}")
+                else:
+                    log.info(f"No LLM semantic matches found for query: '{query}' (threshold: 0.5)")
+                
+                return matching_criteria
+                    
+            except (json.JSONDecodeError, ValueError, IndexError) as e:
+                log.warning(f"Failed to parse LLM semantic matching response: {e}")
+                return []
+                
+        except Exception as e:
+            log.error(f"LLM semantic matching error: {e}")
+            return []
+    
+    async def process_validation_pattern(self, pattern, state, llm, effective_query: str = None):
+        """
+        Process a single validation pattern (either tool-based or LLM-based).
+        This method is reusable across all agent templates.
+        
+        Args:
+            pattern: Validation pattern configuration
+            state: Workflow state
+            llm: Language model instance
+            effective_query: Optional effective query with user updates. If not provided, uses state["query"]
+        """
+        # Use effective_query if provided and non-empty, otherwise fall back to state["query"]
+        # Handle both None and empty string cases
+        query_for_validation = effective_query if (effective_query is not None and effective_query.strip()) else state.get("query", "")
+        
+        log.info(f"Processing validation pattern: {pattern.get('query', 'Unknown')[:50]}...")
+        try:
+            # Check if pattern has a validator tool
+            validator_tool_id = pattern.get("validator_tool_id") or pattern.get("validator")
+            
+            if validator_tool_id:
+                # Tool-based validation
+                log.info(f"Using tool-based validation with tool: {validator_tool_id}")
+                validation_result = await self.execute_validator_tool(
+                    validator_tool_id, query_for_validation, state["response"]
+                )
+            else:
+                # LLM-based validation
+                criteria_query = pattern.get("query", "")
+                expected_answer = pattern.get("expected_answer", "")
+                
+                validation_result = await self.validate_with_llm(
+                    criteria_query, expected_answer, state["response"], llm, query_for_validation
+                )
+
+            log.info(f"Pattern validation completed - Status: {validation_result.get('validation_status', 'unknown')}, Score: {validation_result.get('validation_score', 0.0)}")
+
+            return {
+                "validation_pattern": pattern,
+                "validation_result": validation_result
+            }
+            
+        except Exception as e:
+            log.error(f"Error processing validation pattern: {e}")
+            return {
+                "validation_pattern": pattern,
+                "validation_result": {
+                    "validation_status": "error",
+                    "validation_score": 0.0,
+                    "feedback": f"Pattern processing failed: {str(e)}",
+                    "validation_type": "pattern_error"
+                }
+            }
+
+    @staticmethod
+    async def prepare_episodic_memory_context(agent_id :str, query: str) -> Union[List[dict], str]:
+        """
+        Standard function to prepare episodic memory context that can be used across all inference files.
+        
+        Args:
+            state (dict): The workflow state containing context_flag and agentic_application_id
+            query (str): The user query to find relevant examples for
+            
+        Returns:
+            Union[List[dict], str]: Either a list of message dictionaries with episodic context 
+                                   or the original query string if no context is available
+        """
+        try:
+            
+            
+            # Get user ID from state
+            user_id = agent_id
+            if not user_id:
+                log.warning("No agentic_application_id found in state, skipping episodic memory")
+                return query
+            
+            # Initialize episodic memory manager
+            episodic_memory = EpisodicMemoryManager(user_id)
+            log.info("Fetching relevant examples from episodic memory")
+            
+            # Find relevant examples
+            relevant = await episodic_memory.find_relevant_examples_for_query(query)
+            pos_examples = relevant.get("positive", [])
+            neg_examples = relevant.get("negative", [])
+            
+            # Create context from examples
+            context = await episodic_memory.create_context_from_examples(pos_examples, neg_examples)
+            
+            # Prepare messages structure
+            messages = []
+            if context:
+                messages.append({"role": "user", "content": context})
+                messages.append({
+                    "role": "assistant", 
+                    "content": "I will use positive examples as guidance and explicitly avoid negative examples."
+                })
+            
+            # Add the actual user query
+            messages.append({"role": "user", "content": query})
+            
+            # If no examples found, return original query
+            if pos_examples == [] and neg_examples == []:
+                log.info("No relevant episodic examples found, using original query")
+                return query
+            
+            log.info(f"Prepared episodic context with {len(pos_examples)} positive and {len(neg_examples)} negative examples")
+            return messages
+            
+        except Exception as e:
+            log.error(f"Error preparing episodic memory context: {e}")
+            # Fallback to original query if anything goes wrong
+            return query
+
+    async def post_agent_response_formatting(response, insert_into_eval_flag, chat_service, evaluation_service, session_id, agentic_application_id, agent_config, model_name):
+        if isinstance(response, str):
+            update_session_context(response=response)
+            response = {"error": response}
+        elif "error" in response:
+            update_session_context(response=response["error"])
+        else:
+            update_session_context(response=response['response'])
+            response_evaluation = deepcopy(response)
+            response_evaluation["executor_messages"] = await chat_service.segregate_conversation_from_raw_chat_history_with_json_like_steps(response)
+            response["executor_messages"] = await chat_service.segregate_conversation_from_raw_chat_history_with_pretty_steps(response)
+
+        if insert_into_eval_flag:
+            try:
+                await evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name)
+            except Exception as e:
+                log.error(f"Error Occurred while inserting into evaluation data: {e}")
+        return response
+
 
 
 
@@ -581,8 +1266,8 @@ class EpisodicMemoryManager:
             self,
             user_id: str,
             *,
-            embedding_model: SentenceTransformer = None,
-            cross_encoder: CrossEncoder = None,
+            embedding_model: Any = None,
+            cross_encoder: Any = None,
             max_examples: int = 3,
             max_queue_size: int = 30,
             retention_days: int = 30,
@@ -776,17 +1461,22 @@ class EpisodicMemoryManager:
                 query_raw_scores = self.cross_encoder.predict(query_pairs)
                 response_raw_scores = self.cross_encoder.predict(query_response_pairs)
                 
-                # Apply sigmoid to convert logits to probabilities (0-1 range)
-                import torch
-                if not isinstance(query_raw_scores, torch.Tensor):
+                # Apply sigmoid to convert logits to probabilities (0-1 range) using remote operations
+                if not torch.is_tensor(query_raw_scores):
                     query_raw_scores = torch.tensor(query_raw_scores)
-                if not isinstance(response_raw_scores, torch.Tensor):
+                if not torch.is_tensor(response_raw_scores):
                     response_raw_scores = torch.tensor(response_raw_scores)
-                    
-                query_sigmoid_scores = torch.sigmoid(query_raw_scores).numpy()
-                response_sigmoid_scores = torch.sigmoid(response_raw_scores).numpy()
+                query_sigmoid_scores = torch.sigmoid(query_raw_scores)
+                response_sigmoid_scores = torch.sigmoid(response_raw_scores)
             
-                combined_scores = 0.7 * query_sigmoid_scores + 0.3 * response_sigmoid_scores
+                # Handle list arithmetic operations for remote setup
+                if isinstance(query_sigmoid_scores, list) and isinstance(response_sigmoid_scores, list):
+                    combined_scores = []
+                    for i in range(len(query_sigmoid_scores)):
+                        combined_score = 0.7 * query_sigmoid_scores[i] + 0.3 * response_sigmoid_scores[i]
+                        combined_scores.append(combined_score)
+                else:
+                    combined_scores = 0.7 * query_sigmoid_scores + 0.3 * response_sigmoid_scores
                
                 return [{"candidate": cands[i], "score": float(combined_scores[i]), "bi_score": cands[i]['score']} for i in range(len(cands))]
                 

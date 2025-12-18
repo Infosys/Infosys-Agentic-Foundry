@@ -238,11 +238,11 @@ class PublicKeysManager:
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT key_name, description, created_by, created_at
+                        SELECT key_name, created_at
                         FROM public_keys 
                         ORDER BY key_name
                     """)
-                    return [{'name': row[0], 'description': row[1], 'created_by': row[2], 'created_at': row[3]} for row in cur.fetchall()]
+                    return [{'name': row[0], 'created_at': row[1]} for row in cur.fetchall()]
         except Exception as e:
             log.error(f"Error listing public keys: {e}")
             return []
@@ -293,63 +293,63 @@ class UserSecretsManager:
             conn.close()
     
     def _encrypt_value(self, value: str) -> str:
-        """Encrypt a secret value"""
+        """Encrypt a secret_data value"""
         return self.cipher_suite.encrypt(value.encode()).decode()
     
     def _decrypt_value(self, encrypted_value: str) -> str:
-        """Decrypt a secret value"""
+        """Decrypt a secret_data value"""
         return self.cipher_suite.decrypt(encrypted_value.encode()).decode()
     
-    def create_user_secret(self, user_email: str, secret_name: str, secret_value: str) -> bool:
+    def create_user_secret(self, user_email: str, key_name: str, key_value: str) -> bool:
         """
-        Create a new encrypted secret for a user
+        Create a new encrypted secret_data for a user
         
         Args:
             user_email: User's email (unique identifier)
-            secret_name: Name of the secret (e.g., 'notion_token', 'openai_key')
-            secret_value: The actual secret value
+            key_name: Name of the secret_data (e.g., 'notion_token', 'openai_key')
+            key_value: The actual secret_data value
             
         Returns:
             bool: Success status
             
         Raises:
-            ValueError: If secret already exists for this user
+            ValueError: If secret_data already exists for this user
         """
         try:
-            encrypted_value = self._encrypt_value(secret_value)
+            encrypted_value = self._encrypt_value(key_value)
             
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO user_secrets (user_email, secret_name, encrypted_value)
                         VALUES (%s, %s, %s)
-                    """, (user_email, secret_name, encrypted_value))
+                    """, (user_email, key_name, encrypted_value))
                     conn.commit()
             return True
         except Exception as e:
             # Check if it's a duplicate key error
             if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
-                raise ValueError(f"Secret '{secret_name}' already exists for user '{user_email}'")
+                raise ValueError(f"Secret '{key_name}' already exists for user '{user_email}'")
             log.error(f"Error creating secret: {e}")
             return False
 
-    def update_user_secret(self, user_email: str, secret_name: str, secret_value: str) -> bool:
+    def update_user_secret(self, user_email: str, key_name: str, key_value: str) -> bool:
         """
-        Update an existing encrypted secret for a user
+        Update an existing encrypted secret_data for a user
         
         Args:
             user_email: User's email (unique identifier)
-            secret_name: Name of the secret (e.g., 'notion_token', 'openai_key')
-            secret_value: The new secret value
+            key_name: Name of the secret_data (e.g., 'notion_token', 'openai_key')
+            key_value: The new secret_data value
             
         Returns:
             bool: Success status
             
         Raises:
-            ValueError: If secret doesn't exist for this user
+            ValueError: If secret_data doesn't exist for this user
         """
         try:
-            encrypted_value = self._encrypt_value(secret_value)
+            encrypted_value = self._encrypt_value(key_value)
             
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -357,10 +357,10 @@ class UserSecretsManager:
                         UPDATE user_secrets 
                         SET encrypted_value = %s, updated_at = CURRENT_TIMESTAMP
                         WHERE user_email = %s AND secret_name = %s
-                    """, (encrypted_value, user_email, secret_name))
+                    """, (encrypted_value, user_email, key_name))
                     
                     if cur.rowcount == 0:
-                        raise ValueError(f"Secret '{secret_name}' not found for user '{user_email}'")
+                        raise ValueError(f"Secret '{key_name}' not found for user '{user_email}'")
                         
                     conn.commit()
             return True
@@ -371,16 +371,16 @@ class UserSecretsManager:
             log.error(f"Error updating secret: {e}")
             return False
     
-    def get_user_secret(self, user_email: str, secret_name: str) -> Optional[str]:
+    def get_user_secret(self, user_email: str, key_name: str) -> Optional[str]:
         """
-        Retrieve and decrypt a user's secret
+        Retrieve and decrypt a user's secret_data
         
         Args:
             user_email: User's email
-            secret_name: Name of the secret
+            key_name: Name of the secret_data
             
         Returns:
-            Optional[str]: Decrypted secret value or None if not found
+            Optional[str]: Decrypted secret_data value or None if not found
         """
         try:
             with self._get_db_connection() as conn:
@@ -389,7 +389,7 @@ class UserSecretsManager:
                         SELECT encrypted_value 
                         FROM user_secrets 
                         WHERE user_email = %s AND secret_name = %s
-                    """, (user_email, secret_name))
+                    """, (user_email, key_name))
                     
                     result = cur.fetchone()
                     if result:
@@ -399,29 +399,29 @@ class UserSecretsManager:
             log.error(f"Error retrieving secret: {e}")
             return None
     
-    def get_user_secrets(self, user_email: str, secret_names: Optional[list] = None) -> Dict[str, str]:
+    def get_user_secrets(self, user_email: str, key_names: Optional[list] = None) -> Dict[str, str]:
         """
         Get multiple secrets for a user (your main function)
         
         Args:
             user_email: User's email
-            secret_names: Optional list of specific secret names to retrieve
+            key_names: Optional list of specific secret_data names to retrieve
             
         Returns:
-            Dict[str, str]: Dictionary of secret_name -> decrypted_value
+            Dict[str, str]: Dictionary of key_name -> decrypted_value
         """
         secrets = {}
         
         try:
             with self._get_db_connection() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                    if secret_names:
-                        placeholders = ','.join(['%s'] * len(secret_names))
+                    if key_names:
+                        placeholders = ','.join(['%s'] * len(key_names))
                         cur.execute(f"""
                             SELECT secret_name, encrypted_value 
                             FROM user_secrets 
                             WHERE user_email = %s AND secret_name IN ({placeholders})
-                        """, [user_email] + secret_names)
+                        """, [user_email] + key_names)
                     else:
                         cur.execute("""
                             SELECT secret_name, encrypted_value 
@@ -442,23 +442,23 @@ class UserSecretsManager:
         
         return secrets
     
-    def delete_user_secret(self, user_email: str, secret_name: str) -> bool:
-        """Delete a specific user secret"""
+    def delete_user_secret(self, user_email: str, key_name: str) -> bool:
+        """Delete a specific user secret_data"""
         try:
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
                         DELETE FROM user_secrets 
                         WHERE user_email = %s AND secret_name = %s
-                    """, (user_email, secret_name))
+                    """, (user_email, key_name))
                     conn.commit()
                     return cur.rowcount > 0
         except Exception as e:
             log.error(f"Error deleting secret: {e}")
             return False
     
-    def list_user_secret_names(self, user_email: str) -> list:
-        """List all secret names for a user (without values)"""
+    def list_user_key_names(self, user_email: str) -> list:
+        """List all secret_data names for a user (without values)"""
         try:
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -489,7 +489,7 @@ class UserEnvironmentManager:
         
         Args:
             user_email: User's email
-            required_secrets: List of required user secret names
+            required_secrets: List of required user secret_data names
             required_public_keys: List of required public key names
             
         Returns:
@@ -552,9 +552,11 @@ def create_public_key(key_name: str, key_value: str, description: str = None) ->
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
         'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
-    
+    if key_name=="":
+        raise ValueError(f"Please provide valid key name")
     public_keys_manager = PublicKeysManager(db_config)
     current_user = current_user_email.get(None)
+
     return public_keys_manager.create_public_key(key_name, key_value, description, current_user)
 
 def update_public_key(key_name: str, key_value: str, description: str = None) -> bool:
@@ -566,7 +568,8 @@ def update_public_key(key_name: str, key_value: str, description: str = None) ->
         'password': os.getenv('POSTGRESQL_PASSWORD', ''),
         'port': os.getenv('POSTGRESQL_PORT', 5432)
     }
-    
+    if key_value=="":
+        raise ValueError(f"Please provide valid key name")
     public_keys_manager = PublicKeysManager(db_config)
     current_user = current_user_email.get(None)
     return public_keys_manager.update_public_key(key_name, key_value, description, current_user)
@@ -634,7 +637,7 @@ def get_user_environment(user_email: str, required_secrets: list = None, require
     
     Args:
         user_email: User's email
-        required_secrets: List of required user secret names
+        required_secrets: List of required user secret_data names
         required_public_keys: List of required public key names
         
     Returns:
@@ -689,11 +692,11 @@ def get_user_secrets(look_up_key, default_value=None):
     Retrieve user secrets based on a lookup key.
     
     Args:
-        look_up_key: The key to look up the user's secret.
-        default_value: Default value if the secret is not found.
+        look_up_key: The key to look up the user's secret_data.
+        default_value: Default value if the secret_data is not found.
         
     Returns:
-        str: The user's secret or default value.
+        str: The user's secret_data or default value.
     """
     secrets_manager = setup_secrets_manager()
     
@@ -702,14 +705,14 @@ def get_user_secrets(look_up_key, default_value=None):
     if not user_email:
         raise ValueError("Current user email is not set in context")
     
-    # Retrieve the secret
-    secret_value = secrets_manager.get_user_secret(user_email, look_up_key)
-    log.error(f"Retrieved secret for {look_up_key}: {secret_value}")
-    return secret_value if secret_value else default_value
+    # Retrieve the secret_data
+    key_value = secrets_manager.get_user_secret(user_email, look_up_key)
+    log.error(f"Retrieved secret_data for {look_up_key}: {key_value}")
+    return key_value if key_value else default_value
 
 def set_user_secret(look_up_key, value):
     """
-    Set or update a user secret.
+    Set or update a user secret_data.
     """
     secrets_manager = setup_secrets_manager()
 
@@ -719,13 +722,13 @@ def set_user_secret(look_up_key, value):
     if not user_email:
         raise ValueError("Current user email is not set in context")
 
-    # Set the secret
+    # Set the secret_data
     secrets_manager.set_user_secret(user_email, look_up_key, value)
     return f"Set secret for {look_up_key}: {value}"
 
 def delete_user_secret(look_up_key):
     """
-    Delete a user secret.
+    Delete a user secret_data.
     """
     secrets_manager = setup_secrets_manager()
 
@@ -735,7 +738,7 @@ def delete_user_secret(look_up_key):
     if not user_email:
         raise ValueError("Current user email is not set in context")
 
-    # Delete the secret
+    # Delete the secret_data
     success = secrets_manager.delete_user_secret(user_email, look_up_key)
     return f"Deleted secret for {look_up_key}: {'Success' if success else 'Not found'}"
 
@@ -751,8 +754,8 @@ def list_user_secrets():
         raise ValueError("Current user email is not set in context")
 
     # List all secrets
-    secret_names = secrets_manager.list_user_secret_names(user_email)
-    return f"User secrets for {user_email}: {secret_names}" if secret_names else "No secrets found for the user."
+    key_names = secrets_manager.list_user_key_names(user_email)
+    return f"User secrets for {user_email}: {key_names}" if key_names else "No secrets found for the user."
 
 def get_user_secrets_dict():
     """Retrieve all user secrets as a dictionary.

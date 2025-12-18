@@ -27,10 +27,11 @@ class ModelService:
         self.azure_openai_models = self.convert_string_to_list(os.getenv("AZURE_OPENAI_MODELS", ""))
         self.azure_openai_gpt_5_models = self.convert_string_to_list(os.getenv("AZURE_OPENAI_GPT_5_MODELS", ""))
         self.google_genai_models = self.convert_string_to_list(os.getenv("GOOGLE_GENAI_MODELS", ""))
+        self.gpt_oss_models = self.convert_string_to_list(os.getenv("GPT_OSS_MODELS", ""))
 
         self.azure_ai_model_service, self.azure_ai_model_service_gpt_5 = self.get_azure_ai_model_service()
 
-        self.available_models = self.azure_openai_models + self.azure_openai_gpt_5_models + self.google_genai_models
+        self.available_models = self.azure_openai_models + self.azure_openai_gpt_5_models + self.google_genai_models + self.gpt_oss_models
         self.available_models.sort()
 
 
@@ -129,6 +130,21 @@ class ModelService:
             log.info(f"Loading Google Generative AI model: {model_name}")
             return ChatGoogleGenerativeAI(
                 api_key=api_key,
+                model=model_name,
+                temperature=temperature,
+            )
+
+        if model_name in self.gpt_oss_models:
+            api_key = "gpt-oss-api-key"
+            base_url = os.getenv("GPT_OSS_BASE_URL_ENDPOINT", None)
+            if not base_url:
+                log.error("GPT_OSS_BASE_URL_ENDPOINT environment variable is not set.")
+                raise ValueError("GPT_OSS_BASE_URL_ENDPOINT is not set in environment variables.")
+
+            log.info(f"Loading GPT-OSS model: {model_name}")
+            return ChatOpenAI(
+                openai_api_key=api_key,
+                openai_api_base=base_url,
                 model=model_name,
                 temperature=temperature,
             )

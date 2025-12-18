@@ -8,7 +8,6 @@ class GroundTruthEvaluationRequest(BaseModel):
     agent_type: str = Field(..., description="The type of the agent being evaluated (e.g., 'react_agent', 'multi_agent').")
     agent_name: str = Field(..., description="The name of the agent being evaluated.")
     agentic_application_id: str = Field(..., description="The ID of the agentic application being evaluated.")
-    session_id: str = Field(..., description="A session ID to use for the evaluation runs (can be temporary).")
     use_llm_grading: Optional[bool] = Field(False, description="If true, uses LLM for grading instead of rule-based.")
     temperature: Optional[float] = Field(0.0, description="Temperature parameter for LLM model (0.0-1.0) - for evaluation, lower is better for consistency")
     

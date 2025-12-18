@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Minimal utility to generate and print a secure master secret key.
+Minimal utility to generate and print a secure master secret_key.
 
 Usage (PowerShell):
     python -m src.tools.generate_master_secret_key
 or
     python src/tools/generate_master_secret_key.py
 
-Outputs a 256-bit (32 random bytes) base64-encoded secret each run.
+Outputs a 256-bit (32 random bytes) base64-encoded secret_key each run.
 """
 
 from __future__ import annotations

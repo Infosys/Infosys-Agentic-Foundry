@@ -48,7 +48,8 @@ class BaseAgentOnboard(AgentService, ABC):
                             model_name: str,
                             tools_id: List[str],
                             user_id: str,
-                            tag_ids: Optional[Union[str, List[str]]] = None) -> Dict[str, Any]:
+                            tag_ids: Optional[Union[str, List[str]]] = None,
+                            validation_criteria: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         return await self._onboard_agent(
             agent_name=agent_name,
             agent_goal=agent_goal,
@@ -57,7 +58,8 @@ class BaseAgentOnboard(AgentService, ABC):
             model_name=model_name,
             associated_ids=tools_id,
             user_id=user_id,
-            tag_ids=tag_ids
+            tag_ids=tag_ids,
+            validation_criteria=validation_criteria
         )
 
     async def update_agent(self,
@@ -72,7 +74,8 @@ class BaseAgentOnboard(AgentService, ABC):
                            tools_id: List[str] = [],
                            tools_id_to_add: List[str] = [],
                            tools_id_to_remove: List[str] = [],
-                           updated_tag_id_list: Optional[Union[str, List[str]]] = None) -> Dict[str, Any]:
+                           updated_tag_id_list: Optional[Union[str, List[str]]] = None,
+                           validation_criteria: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         return await self._update_agent(
             agentic_application_id=agentic_application_id,
             agentic_application_name=agentic_application_name,
@@ -85,7 +88,8 @@ class BaseAgentOnboard(AgentService, ABC):
             associated_ids=tools_id,
             associated_ids_to_add=tools_id_to_add,
             associated_ids_to_remove=tools_id_to_remove,
-            updated_tag_id_list=updated_tag_id_list
+            updated_tag_id_list=updated_tag_id_list,
+            validation_criteria=validation_criteria
         )
 
 

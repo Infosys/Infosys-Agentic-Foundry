@@ -7,9 +7,10 @@ from src.models.base_ai_model_service import BaseAIModelService
 from src.inference.inference_utils import InferenceUtils
 from src.inference.python_based_inference.base_python_based_agent_inference import BasePythonBasedAgentInference
 from src.inference.inference_utils import EpisodicMemoryManager
+from src.utils.helper_functions import get_timestamp
 
-from phoenix.trace import using_project
 from telemetry_wrapper import logger as log
+from src.utils.phoenix_manager import traced_project_context_sync
 
 
 class HybridAgentInference(BasePythonBasedAgentInference):
@@ -66,6 +67,9 @@ class HybridAgentInference(BasePythonBasedAgentInference):
         Generates a response from the Python-based agent, handling history, tool calls,
         and plan/tool interruption. This is a common method for Python-based agents.
         """
+        # Record start timestamp for response time tracking
+        start_timestamp = get_timestamp()
+        
         thread_id = await self.chat_service._get_thread_id(agentic_application_id, session_id)
         
         # Construct config for ainvoke method of BaseAIModelService
@@ -113,8 +117,10 @@ Please review the query and feedback, and provide an appropriate answer.
         log.info("Agent build successfully")
 
         log.info(f"Invoking agent for query: {query}\n with Session ID: {session_id} and Agent Id: {agentic_application_id}")
-        with using_project(project_name):
+        with traced_project_context_sync(project_name):
             try:
+                # Track user updates to tool arguments for this query
+                user_update_events: list = []
                 if query:
                     messages = [app.format_content_with_role(query)]
                     if previous_response_feedback_type:
@@ -133,18 +139,9 @@ Please review the query and feedback, and provide an appropriate answer.
                     config["tool_choice"] = "none"
 
                     if context_flag and query:
-                        user_id = agentic_application_id
-                        episodic_memory = EpisodicMemoryManager(user_id)
-                        log.info("Fetching relevant examples from episodic memory")
-                        relevant = await episodic_memory.find_relevant_examples_for_query(query)
-                        pos_examples = relevant.get("positive", [])
-                        neg_examples = relevant.get("negative", [])
-                        context = await episodic_memory.create_context_from_examples(pos_examples, neg_examples)
-                        if context and (pos_examples or neg_examples):
-                            messages.append({"role": "user", "content": context})
-                            messages.append({"role": "assistant", "content":
-                                "I will use positive examples as guidance and explicitly avoid negative examples."})
-                            messages.append({"role": "user", "content": query})
+                        context_messages = await InferenceUtils.prepare_episodic_memory_context(agentic_application_id, query)
+                        if context_messages and  isinstance(context_messages, list) and len(context_messages) >= 3:
+                            messages.extend(context_messages)
 
                 elif is_plan_approved.lower() == "yes":
                     config["configurable"]["resume_previous_chat"] = True
@@ -163,6 +160,41 @@ Please review the query and feedback, and provide an appropriate answer.
                 # If there are no messages (tool interrupt or plan approved), set tool_choice to auto
                 if not messages:
                     config["tool_choice"] = "auto"
+
+                # Record tool feedback updates into user_update_events and augment the initial query
+                try:
+                    if tool_interrupt_flag and tool_feedback and tool_feedback != "yes":
+                        import json as _json
+                        parsed = _json.loads(tool_feedback)
+                        event = {
+                            "tool_name": parsed.get("name", "unknown"),
+                            "old_args": None,
+                            "new_args": parsed,
+                            "message": f"User modified tool arguments: {tool_feedback}",
+                            "query": query,
+                        }
+                        user_update_events.append(event)
+                except Exception:
+                    # Ignore malformed feedback; proceed without recording
+                    pass
+
+                # If we have an initial user message and recorded updates, append them for evaluator/agent awareness
+                if messages and user_update_events:
+                    updates_lines = []
+                    for ev in user_update_events:
+                        if ev.get("query") and ev.get("query") != query:
+                            continue
+                        updates_lines.append(
+                            f"message : {ev.get('message','N/A')}\n"
+                        )
+                    if updates_lines:
+                        updates_block = "\n".join(updates_lines)
+                        # messages[0] is a dict formatted by format_content_with_role
+                        content_key = "content" if "content" in messages[0] else next((k for k in messages[0].keys() if isinstance(messages[0][k], str)), None)
+                        if content_key:
+                            messages[0][content_key] = (
+                                f"{messages[0][content_key]}\n\n--- User Tool Feedback Updates ---\n{updates_block}\n--- End Updates ---"
+                            )
 
 
                 evaluation_score = 0.0      # Initial score
@@ -188,7 +220,52 @@ Please review the query and feedback, and provide an appropriate answer.
                         break
 
                     try:
+                        # Build effective query with user_update_events for evaluator awareness
+                        effective_query = query
+                        if user_update_events:
+                            updates_lines = []
+                            for ev in user_update_events:
+                                if ev.get("query") and ev.get("query") != query:
+                                    continue
+                                tool_name = ev.get('tool_name', 'unknown')
+                                old_args = ev.get('old_args', 'N/A')
+                                new_args = ev.get('new_args', {})
+                                
+                                # Format the arguments clearly
+                                if isinstance(new_args, dict):
+                                    args_str = ', '.join(f"{k}={v}" for k, v in new_args.get('arguments', new_args).items() if k != 'name')
+                                    if not args_str:  # If arguments key doesn't exist, try direct keys
+                                        args_str = ', '.join(f"{k}={v}" for k, v in new_args.items() if k != 'name')
+                                else:
+                                    args_str = str(new_args)
+                                
+                                updates_lines.append(
+                                    f"- Tool: {tool_name}\n"
+                                    f"  Modified Arguments: {args_str}\n"
+                                    f"  Note: {ev.get('message', 'User modified tool arguments')}"
+                                )
+                            
+                            if updates_lines:
+                                updates_block = "\n".join(updates_lines)
+                                effective_query = (
+                                    f"{query}\n\n"
+                                    f"--- IMPORTANT: User Tool Feedback Updates ---\n"
+                                    f"The user modified the following tool arguments during execution:\n\n"
+                                    f"{updates_block}\n\n"
+                                    f"EVALUATION INSTRUCTION: Evaluate the response based on the MODIFIED tool arguments shown above, "
+                                    f"NOT the original query. The agent correctly executed with the user's updated arguments.\n"
+                                    f"--- End Updates ---"
+                                )
+                        
+                        # Temporarily update agent_resp with effective query for evaluation
+                        original_query = agent_resp["user_query"]
+                        agent_resp["user_query"] = effective_query
+                        
                         evaluation_results = await self.evaluate_agent_response(agent_response=agent_resp, llm=llm)
+                        
+                        # Restore original query
+                        agent_resp["user_query"] = original_query
+                        
                         await self._add_additional_data_to_final_response(
                                 data={"online_evaluation_results": evaluation_results},
                                 thread_id=thread_id
@@ -202,8 +279,13 @@ Please review the query and feedback, and provide an appropriate answer.
                         evaluation_score = evaluation_results.get("evaluation_score")
                         evaluation_feedback = evaluation_results.get("evaluation_feedback")
 
+                        # Reset any in-progress tool interruption so the agent retries from a fresh state
                         messages = [llm.format_content_with_role(evaluation_feedback, online_evaluation_epoch=current_epoch+1)]
                         config["configurable"]["resume_previous_chat"] = True
+                        # Mirror other workflows: ensure tool interruption does not persist across evaluation epochs
+                        config["tool_interrupt"] = False
+                        # Also prefer not to automatically choose tools during retry; keep control explicit
+                        config["tool_choice"] = "none"
 
                     except Exception as e:
                         log.error(f"Error during evaluation: {e}. Proceeding without further evaluations.")
@@ -215,7 +297,24 @@ Please review the query and feedback, and provide an appropriate answer.
                     response_custom_metadata = agent_steps[-1].get("response_custom_metadata", {})
                     final_response_generated_flag = bool(agent_resp["final_response"]) and "plan" not in response_custom_metadata and "tool_calls" not in agent_steps[-1]
 
+                    # Record end timestamp when final response is generated
+                    end_timestamp = None
+                    response_time = None
                     if final_response_generated_flag:
+                        end_timestamp = get_timestamp()
+                        # Calculate response time in seconds
+                        response_time = (end_timestamp - start_timestamp).total_seconds()
+                        asyncio.create_task(
+                            self.chat_service.save_chat_message(
+                                agentic_application_id=agentic_application_id,
+                                session_id=session_id,
+                                start_timestamp=start_timestamp,
+                                end_timestamp=end_timestamp,
+                                human_message=agent_resp["user_query"],
+                                ai_message=agent_resp["final_response"],
+                                response_time=response_time
+                            )
+                        )
                         asyncio.create_task(
                             self.chat_service.update_preferences_and_analyze_conversation(
                                 user_input=agent_resp["user_query"],
@@ -240,12 +339,23 @@ Please review the query and feedback, and provide an appropriate answer.
                         else:
                             log.warning("Formatted response could not be parsed as JSON. Returning unformatted response.")
 
+                        # Attach recorded user update events (if any) to the final response metadata
+                        if user_update_events:
+                            try:
+                                await self._add_additional_data_to_final_response(
+                                    data={"user_update_events": user_update_events},
+                                    thread_id=thread_id
+                                )
+                            except Exception as e:
+                                log.warning(f"Failed to attach user_update_events: {e}")
+
                 except Exception as e:
                     log.error(f"Error during response formatting: {e}. Returning unformatted response.")
 
 
                 log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
                 final_response = await self.chat_state_history_manager.get_recent_history(thread_id=thread_id)
+                
                 return final_response
 
             except Exception as e:

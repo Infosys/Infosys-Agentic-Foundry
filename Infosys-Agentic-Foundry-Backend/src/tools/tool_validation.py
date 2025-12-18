@@ -34,9 +34,9 @@ class ToolValidationState(BaseModel):
 async def get_llm(model_name: str):
     from src.api.dependencies import ServiceProvider
     model_service = ServiceProvider.get_model_service()
-    if model_name=="gpt-35-turbo":
-        if "gpt-4o" in model_service.available_models:
-            model_name="gpt-4o"
+    # if model_name=="gpt-35-turbo":
+    #     if "gpt-4o" in model_service.available_models:
+    #         model_name="gpt-4o"
     llm = await model_service.get_llm_model(model_name=model_name)
     return llm
 def extract_json(response):
@@ -169,7 +169,6 @@ async def test_Case7_hardcoded_values(function_code: str, model:str):
         "phone_numbers": r"\b(?:\+?\d{1,3})?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
         # "api_keys": r"\b[A-Za-z0-9]{32,}\b",
         "urls": r"https?://[^\s'\"]+",
-        # "credentials":r'\b(password|pwd|passwd|token|username)\s*=\s*[\'"].+[\'"]',
         "passwords":r'\b(password|pwd|passwd)\s*=\s*[\'"].+[\'"]',
         "env_vars": r"os\\.environ\\[['\"]?[A-Za-z_]+['\"]?\\]",
         "git_pat": r"ghp_[A-Za-z0-9]{36}",
@@ -247,7 +246,8 @@ async def test_Case8_is_valid_function_name(function_code:str):
         import ast
         tree = ast.parse(function_code)
         for node in tree.body:
-            if isinstance(node, ast.FunctionDef):
+            # if isinstance(node, ast.FunctionDef):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 func_name = node.name
                 if len(func_name) > 64:
                     return False, f"Tool name exceeds 64 characters."               

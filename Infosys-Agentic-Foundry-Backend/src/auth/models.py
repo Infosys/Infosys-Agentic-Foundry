@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
@@ -202,5 +202,5 @@ class ApprovalPermissionResponse(BaseModel):
 
 class UpdatePasswordRequest(BaseModel):
     email_id: str
-    new_password: Optional[str] = None
+    new_password: Optional[str] = Field(None, description="New password for the user", alias="newPassword")
     role: Optional[str] = None

@@ -6,8 +6,8 @@ import asyncio
 from langgraph.types import interrupt
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AIMessage, ChatMessage
-
-from src.utils.helper_functions import get_timestamp
+from langgraph.types import StreamWriter
+from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
 from telemetry_wrapper import logger as log
@@ -32,7 +32,10 @@ class MultiWorkflowState(BaseWorkflowState):
     epoch: int = 0
     evaluation_score: float = None
     evaluation_feedback: str = None
+    validation_score: float = None
+    validation_feedback: str = None
     workflow_description: str = None
+    user_update_events: list = []
 
 class MultiHITLWorkflowState(MultiWorkflowState):
     is_plan_approved: Optional[Literal["yes", "no", None]] = None
@@ -136,6 +139,8 @@ class MultiAgentInference(BaseAgentInference):
         """
         Builds the LangGraph workflow for a Planner-Executor-Critic Agent.
         """
+        
+        
         llm = chains.get("llm", None)
         executor_agent = chains.get("agent_executor", None)
         tool_list = chains.get("tool_list", [])
@@ -160,6 +165,10 @@ class MultiAgentInference(BaseAgentInference):
         tool_interrupt_flag = flags.get("tool_interrupt_flag", False)
         plan_verifier_flag = flags.get("plan_verifier_flag", False)
         evaluation_flag = flags.get("evaluation_flag", False)
+        validator_flag = flags.get("validator_flag", False)
+        
+        # DEBUG: Log the extracted flag values
+        log.info(f"Extracted flags - validator_flag: {validator_flag}, evaluation_flag: {evaluation_flag}, tool_interrupt_flag: {tool_interrupt_flag}, plan_verifier_flag: {plan_verifier_flag}")
 
         if not llm or not executor_agent or not planner_chain_json or not planner_chain_str or \
                 not critic_planner_chain_json or not critic_planner_chain_str or not general_query_chain or \
@@ -169,12 +178,30 @@ class MultiAgentInference(BaseAgentInference):
 
         # Nodes
 
-        async def generate_past_conversation_summary(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def generate_past_conversation_summary(state: MultiWorkflowState | MultiHITLWorkflowState, writer:StreamWriter):
             """Generates past conversation summary from the conversation history."""
+            
             strt_tmstp = get_timestamp()
             conv_summary = new_preference = ""
             errors = []
-            current_state_query = await self.inference_utils.add_prompt_for_feedback(state["query"])
+            
+            # Handle regenerate/feedback scenarios - extract original query from ongoing_conversation
+            raw_query = state["query"]
+            original_query = None
+            is_regenerate = raw_query == "[regenerate:][:regenerate]"
+            is_feedback = raw_query.startswith("[feedback:]") and raw_query.endswith("[:feedback]")
+            
+            if is_regenerate or is_feedback:
+                # For regenerate/feedback, get original query from existing ongoing_conversation
+                for msg in reversed(state.get("ongoing_conversation", [])):
+                    if hasattr(msg, 'role') and msg.role == "user_query":
+                        original_query = msg.content
+                        break
+                log.info(f"[CONTEXT] Regenerate/Feedback detected. Original query: {original_query}")
+            
+            # Use add_prompt_for_feedback with original_query for proper context
+            current_state_query = await self.inference_utils.add_prompt_for_feedback(raw_query, original_query)
+            
             agent_details = await self.agent_service.agent_repo.get_agent_record(state["agentic_application_id"])
             workflow_description = agent_details[0]["agentic_application_workflow_description"]
             try:
@@ -186,6 +213,7 @@ class MultiAgentInference(BaseAgentInference):
                     if state["context_flag"] == False:
                         new_state = {
                             'past_conversation_summary': "No past conversation summary available.",
+                            'query': current_state_query.content,
                             'ongoing_conversation': current_state_query,
                             'executor_messages': current_state_query,
                             'preference': "No specific preferences provided.",
@@ -197,19 +225,26 @@ class MultiAgentInference(BaseAgentInference):
                             'past_steps_input': None,
                             'past_steps_output': None,
                             'epoch': 0,
+                            'validation_attempts': 0,
+                            'evaluation_attempts': 0,
                             'step_idx': 0,
                             'current_query_status': None,
+                            'validation_score': None,
+                            'validation_feedback': None,
                             'errors': errors,
                             'evaluation_score': None,
                             'evaluation_feedback': None,
-                            'workflow_description': workflow_description
+                            'workflow_description': workflow_description,
+                            'user_update_events': []
                         }
                         if plan_verifier_flag:
                             new_state.update({
                                 'is_plan_approved': None,
                                 'plan_feedback': None
                             })
+                       
                         return new_state
+                    writer({"Node Name": "Generating Context", "Status": "Started"})
                     # Get summary via ChatService
                     conv_summary = await self.chat_service.get_chat_conversation_summary(
                         agentic_application_id=state["agentic_application_id"],
@@ -223,16 +258,20 @@ class MultiAgentInference(BaseAgentInference):
 
                     new_preference = conv_summary.get("preference", "")
                     conv_summary = conv_summary.get("summary", "")
-                
+                writer({"raw": {"past_conversation_summary": conv_summary}, "content": conv_summary[:100] + ("..." if len(conv_summary) > 100 else "")}) if conv_summary else writer({"raw": {"past_conversation_summary": conv_summary}, "content": "No past conversation summary available."})
+                writer({"Node Name": "Generating Context", "Status": "Completed"})
                 log.debug("Preferences updated successfully")
             except Exception as e:
                 error = f"Error occurred while generating past conversation summary: {e}"
+                writer({"Node Name": "Generating Context", "Status": "Failed"})
                 log.error(error)
                 errors.append(error)
 
             log.info(f"Generated past conversation summary for session {state['session_id']}.")
+            
             new_state = {
                 'past_conversation_summary': conv_summary,
+                'query': current_state_query.content,
                 'ongoing_conversation': current_state_query,
                 'executor_messages': current_state_query,
                 'preference': new_preference,
@@ -244,12 +283,17 @@ class MultiAgentInference(BaseAgentInference):
                 'past_steps_input': None,
                 'past_steps_output': None,
                 'epoch': 0,
+                'validation_attempts': 0,
+                'evaluation_attempts': 0,
                 'step_idx': 0,
                 'current_query_status': None,
                 'errors': errors,
                 'evaluation_score': None,
                 'evaluation_feedback': None,
-                'workflow_description': workflow_description
+                'validation_score': None,
+                'validation_feedback': None,
+                'workflow_description': workflow_description,
+                'user_update_events': []
             }
             
             if plan_verifier_flag:
@@ -260,30 +304,17 @@ class MultiAgentInference(BaseAgentInference):
 
             return new_state
 
-        async def planner_agent(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def planner_agent(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
             This function takes the current state of the conversation and generates a plan for the agent to follow.
             """
+            writer({"Node Name": "Generating Plan", "Status": "Started"})
             # feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
             # feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
-            if state["context_flag"]:
-                user_id = state["agentic_application_id"]
-                query = state["query"]
-                episodic_memory = EpisodicMemoryManager(user_id)
-                relevant = await episodic_memory.find_relevant_examples_for_query(query)
-                pos_examples = relevant.get("positive", [])
-                neg_examples = relevant.get("negative", [])
-                context = await episodic_memory.create_context_from_examples(pos_examples, neg_examples)
-                messages = []
-                if context:
-                    messages.append({"role": "user", "content": context})
-                    messages.append({"role": "assistant", "content":
-                        "I will use positive examples as guidance and explicitly avoid negative examples."})
-                messages.append({"role": "user", "content": query})
-                if pos_examples == [] and neg_examples == []:
-                    messages = query
-            else:
-                messages = state["query"]
+            agent_id = state['agentic_application_id']
+            # Use the standard episodic memory function
+            query = state["query"]
+            messages = await InferenceUtils.prepare_episodic_memory_context(state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, query)
 
             # Format the query for the planner
             formatted_query = f'''\
@@ -301,6 +332,7 @@ Follow these preferences for every step:
 Preferences:
 {state["preference"]}
 - When applicable, use these instructions to guide your responses to the user's query.
+
 
 Input Query:
 {messages}
@@ -326,20 +358,45 @@ Input Query:
                                                             error_return_key="plan"
                                                         )
 
-            response_state = {"plan": planner_response['plan']}
+            response_state = {
+                "plan": planner_response['plan'],
+                "step_idx": 0,  # Always reset step index when generating new plan
+                "is_tool_interrupted": False  # Reset to allow fresh execution
+            }
             if planner_response['plan']:
                 response_state.update({
                     "executor_messages": ChatMessage(content=planner_response['plan'], role="plan"),
                     "current_query_status": "plan" if plan_verifier_flag else None
                 })
 
-            log.info(f"Plan generated for session {state['session_id']}")
+          
+            writer({"raw": {"plan": response_state["plan"]}, "content": f"Generated execution plan with {len(response_state['plan'])} steps"})
+            # if planner_response['plan']:
+            #     writer({"raw": {"planner_response": planner_response['plan']}, "content": f"{planner_response['plan']})"})
+            
+            log.info(f"Plan generated for session {state['session_id']} with reset step_idx")
+            writer({"Node Name": "Generating Plan", "Status": "Completed"})
+            
             return response_state
 
-        async def replanner_agent(state: MultiHITLWorkflowState):
+        async def replanner_agent(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
-            This function takes the current state of the conversation and revises the previous plan based on user feedback.
+            This function takes the current state of the conversation and revises the previous plan based on user feedback,
+            evaluation feedback, or validation feedback.
             """
+            writer({"Node Name": "Replanning", "Status": "Started"})
+            
+            # Build feedback section from various sources
+            feedback_parts = []
+            if state.get("plan_feedback"):
+                feedback_parts.append(f"User Feedback:\n{state['plan_feedback']}")
+            if state.get("evaluation_feedback"):
+                feedback_parts.append(f"Evaluation Feedback:\n{state['evaluation_feedback']}")
+            if state.get("validation_feedback"):
+                feedback_parts.append(f"Validation Feedback:\n{state['validation_feedback']}")
+            
+            combined_feedback = "\n\n".join(feedback_parts) if feedback_parts else "No specific feedback provided."
+            
             # Format the query for the replanner
             formatted_query = f'''\
 Past Conversation Summary:
@@ -357,11 +414,10 @@ Previous Plan:
 Input Query:
 {state["query"]}
 
-User Feedback:
-{state["plan_feedback"]}
+{combined_feedback}
 
 **Note**:
-- Update or revise the current plan according to the user's feedback correctly.
+- Update or revise the current plan according to the feedback provided above.
 - If you are not able to come up with a plan or input query is greetings, just return empty list:
     ```json
     {{
@@ -377,19 +433,46 @@ User Feedback:
                                                                 chain_2=replanner_chain_str,
                                                                 invocation_input=invocation_input,
                                                                 error_return_key="plan"
-                                                            )
+            )
+
+            writer({"raw": {"replan": replanner_response.get('plan', [])}, "content": f"Generated revised plan with {len(replanner_response.get('plan', []))} steps"})
+            writer({"Node Name": "Replanning", "Status": "Completed"})
+            
             log.info(f"New plan generated for session {state['session_id']}")
             return {
                 "plan": replanner_response.get('plan', []),
                 "response": replanner_response.get('response', ''),
                 "executor_messages": ChatMessage(content=replanner_response.get('plan', []), role="re-plan"),
-                "current_query_status": "plan"
+                "current_query_status": "plan" if plan_verifier_flag and state.get("plan_feedback") else None,
+                "step_idx": 0,
+                "is_tool_interrupted": False
             }
 
-        async def general_llm_call(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def replanner_decision(state: MultiWorkflowState | MultiHITLWorkflowState):
+            """
+            Decides where to route after replanning based on source of feedback.
+            - If plan is empty, go to general_llm_call
+            - If plan_feedback is set (HITL flow), go to interrupt_node for approval
+            - If evaluation/validation feedback (automated flow), go directly to executor
+            """
+            # Check if plan is empty - route to general_llm_call
+            if not state["plan"] or (isinstance(state["plan"], list) and len(state["plan"]) == 0):
+                log.info(f"Replanner routing to general_llm_call (empty plan) for session {state['session_id']}")
+                return "general_llm_call"
+            
+            if plan_verifier_flag and state.get("plan_feedback"):
+                log.info(f"Replanner routing to interrupt_node (HITL flow) for session {state['session_id']}")
+                return "interrupt_node"
+            else:
+                log.info(f"Replanner routing to executor_agent_node (evaluation/validation flow) for session {state['session_id']}")
+                return "executor_agent_node"
+
+
+        async def general_llm_call(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
             This function calls the LLM with the user's query and returns the LLM's response.
             """
+            writer({"Node Name": "Processing...", "Status": "Started"})
             formatted_query = f'''\
 Past Conversation Summary:
 {state["past_conversation_summary"]}
@@ -401,16 +484,46 @@ Note:
     -Only respond if the above User Query including greetings, feedback, and appreciation, engage in getting to know each other type of conversation, or queries related to the agent itself, such as its expertise or purpose.
     - If the query is not related to the agent's expertise, agent's goal, agent's role, workflow description, and tools it has access to and it requires external knowledge, DO NOT provide a answer to such a query, just politely inform the user that you are not capable to answer such queries.
 '''
-            response = await general_query_chain.ainvoke({"messages": [("user", formatted_query)]})
-            log.info(f"General LLM response generated for session {state['session_id']}")
-            return {
-                "response": response
-            }
+            final_content_parts = []
+            invocation_input = {"messages": [("user", formatted_query)]}
 
-        async def executor_agent_node(state: MultiWorkflowState | MultiHITLWorkflowState):
+    
+    # 2. Loop through the stream. Each item is a "chunk".
+            async for chunk in general_query_chain.astream(invocation_input):
+                # The chunk object from a chain usually has a `.content` attribute.
+                # We check for it to be safe.
+                content_piece = ""
+                if hasattr(chunk, 'content'):
+                    # This handles the case where the chunk is an object like AIMessageChunk
+                    content_piece = chunk.content
+                elif isinstance(chunk, str):
+                    # This handles the case where the chunk IS the string token itself
+                    content_piece = chunk
+                else:
+                    # This handles any other unexpected data types by ignoring them
+                    continue
+                
+                # Add the extracted string piece to our list.
+                final_content_parts.append(content_piece)
+        
+        # Stream the piece out to the frontend for a real-time typing effect
+                
+            
+            # Join all the collected parts together to form the complete response string.
+            full_response = "".join(final_content_parts)
+            writer({"raw": {"general_llm_response": full_response}, "content": full_response[:50] + ("..." if len(full_response) > 50 else "")})
+            writer({"Node Name": "Processing...", "Status": "Completed"})
+            log.info(f"General LLM response generated for session {state['session_id']}")
+            
+            return {
+                "response": full_response.strip() # Use .strip() to remove any leading/trailing whitespace
+            }
+        
+        async def executor_agent_node(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
             Executes the current step in the plan using the executor agent.
             """
+            
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
             formatter_node_prompt = ""
@@ -422,6 +535,34 @@ Note:
             completed_steps_responses = []
             feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
             feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
+
+            # Add evaluation guidance if available
+            evaluation_guidance = ""
+            if state.get("evaluation_feedback"):
+                evaluation_guidance = f"""
+
+--- Previous Evaluation Feedback ---
+Based on the last evaluation, improve your response considering the following points:
+{state["evaluation_feedback"]}
+--- End Previous Evaluation Feedback ---
+
+Ensure you address the shortcomings identified above.
+"""
+                log.info(f"Executor agent incorporating evaluation feedback for epoch {state.get('epoch', 0)}.")
+
+            # Add validation guidance if available  
+            validation_guidance = ""
+            if state.get("validation_feedback"):
+                validation_guidance = f"""
+
+--- Validation Feedback ---
+Based on the validation results, improve your response considering the following points:
+{state["validation_feedback"]}
+--- End Validation Feedback ---
+
+Ensure you address the validation concerns identified above.
+"""
+                log.info(f"Executor agent incorporating validation feedback for epoch {state.get('epoch', 0)}.")
 
             task_formatted = f"""\
 Past Conversation Summary:
@@ -435,6 +576,9 @@ Review the previous feedback carefully and make sure the same mistakes are not r
 {feedback_msg}
 **END FEEDBACK**
 
+{evaluation_guidance}
+
+{validation_guidance}
 
 {formatter_node_prompt}
 
@@ -447,38 +591,144 @@ Review the previous feedback carefully and make sure the same mistakes are not r
                 task_formatted += f"Past Steps:\n{await self.inference_utils.format_past_steps_list(completed_steps, completed_steps_responses)}"
             task_formatted += f"\n\nCurrent Step:\n{step}"
 
-            if state["is_tool_interrupted"]:
-                executor_agent_response = await executor_agent.ainvoke(None, internal_thread)
-            else:
-                executor_agent_response = await executor_agent.ainvoke({"messages": [("user", task_formatted.strip())]}, internal_thread)
+            # --- Start of Corrected Logic ---
 
+            if state["is_tool_interrupted"]:
+                final_content_parts = []                
+                stream_source = executor_agent.astream(None, internal_thread)
+            else:
+                final_content_parts = [ChatMessage(content=task_formatted, role="context")]
+                writer({"Node Name": "Thinking...", "Status": "Started"})
+                stream_source = executor_agent.astream({"messages": [("user", task_formatted.strip())]}, internal_thread)
+            writer({"raw": {"Current Step": step}, "content": f"Executing step: {step}"})
+            async for msg in stream_source:
+                if isinstance(msg, dict) and "agent" in msg:
+                    agent_output = msg.get("agent", {})
+                    messages = []
+                    if isinstance(agent_output, dict) and "messages" in agent_output:
+                        messages = agent_output.get("messages", [])
+                
+                    for message in messages:
+                        # The message can be an object (like AIMessage) with a .content attribute
+                        # or it could be a dictionary with a 'content' key. This handles both.
+                        
+                        if message.tool_calls:
+                            writer({"raw": {"executor_agent": message.tool_calls}, "content": f"Agent is calling tools"})
+                            tool_call = message.tool_calls[0]
+                            writer({"Node Name": "Tool Call", "Status": "Started", "Tool Name": tool_call['name'], "Tool Arguments": tool_call['args']})
+                            tool_name = tool_call["name"]
+                            tool_args = tool_call["args"]
+
+                            if tool_args:   # Non-empty dict means arguments exist
+                                if isinstance(tool_args, dict):
+                                    args_str = ", ".join(f"{k}={v}" for k, v in tool_args.items())
+                                else:
+                                    args_str = str(tool_args)
+                                tool_call_content = f"Agent called the tool '{tool_name}', passing arguments: {args_str}."
+                            else:
+                                tool_call_content = f"Agent called the tool '{tool_name}', passing no arguments."
+
+                            writer({"content": tool_call_content})  
+                        
+                    final_content_parts.extend(messages)
+                elif "tools" in msg:
+                    tool_messages = msg.get("tools", [])
+                    
+                    for tool_message in tool_messages["messages"]:
+                        writer({"Tool Name": tool_message.name, "Tool Output": tool_message.content})
+                        if hasattr(tool_message, "name"):
+                            writer({"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_message.name})
+                    final_content_parts.extend(tool_messages["messages"])
+                else:
+                    writer({"executor_agent_node": msg})
+                    if "agent" in msg:
+                        final_content_parts.extend(msg["agent"]["messages"])
             completed_steps.append(step)
-            completed_steps_responses.append(executor_agent_response["messages"][-1].content)
+            completed_steps_responses.append(final_content_parts[-1].content)
             log.info(f"Executor Agent response generated for session {state['session_id']} at step {state['step_idx']}")
+            # writer({"raw": {"Executor Agent": final_content_parts[-1].content}, "content": final_content_parts[-1].content[:50] + ("..." if len(final_content_parts[-1].content) > 50 else "")})
+
+            has_active_tasks = True
+            if (
+                hasattr(final_content_parts[-1], "type")      # Checks if 'type' attribute exists
+                and final_content_parts[-1].type == "ai"      # Checks if type is 'ai'
+                and final_content_parts[-1].tool_calls == []  # Checks if tool_calls is empty list
+                ):
+                has_active_tasks = False
+            if has_active_tasks:
+                log.info(f"[{state['session_id']}] Agent has active tasks remaining after executor agent completion.")
+            else :
+                writer({"Node Name": "Thinking...", "Status": "Completed"})  
+            
             return {
-                "response": completed_steps_responses[-1],
+                "response": final_content_parts[-1].content,
                 "past_steps_input": completed_steps,
                 "past_steps_output": completed_steps_responses,
-                "executor_messages": executor_agent_response["messages"]
+                "executor_messages": final_content_parts
             }
 
-        async def increment_step(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def increment_step(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
+            writer({"increment_step": f"Incrementing step index for session {state['session_id']} to {state['step_idx'] + 1}"})
             log.info(f"Incrementing step index for session {state['session_id']} to {state['step_idx'] + 1}")
             return {"step_idx": state["step_idx"]+1, "is_tool_interrupted": False}
 
-        async def response_generator_agent(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def response_generator_agent(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
             This function takes the current state of the conversation and generates a response using a response generation chain.
             """
+            writer({"Node Name": "Generating Response", "Status": "Started"})
             formatter_node_prompt = ""
             if state["response_formatting_flag"]:
                 formatter_node_prompt = "You are an intelligent assistant that provides data for a separate visualization tool. When a user asks for a chart, table, image, or any other visual element, you must not attempt to create the visual yourself in text. Your sole responsibility is to generate the raw, structured data. For example, for a chart, provide the JSON data; for an image, provide the <img> tag with a source URL; for a table, provide the data as a list of lists. Your output will be fed into another program that will handle the final formatting and display."
-                    
+            
             feedback_context = "" if not plan_verifier_flag else f"""
 User Feedback (prioritize this over the user Query for final response ):
 {state["plan_feedback"]}
 """
+            
+            # Build tool modifications context from user_update_events (CONCISE & CLEAR VERSION with enhanced safeguards)
+            tool_modifications_context = ""
+            
+            # Safeguard 1: Check if tool_interrupt_flag is enabled
+            # Only process user_update_events if tool interruption is actually enabled
+            if tool_interrupt_flag:
+                user_updates = state.get("user_update_events", [])
+                
+                # Safeguard 2: Verify user_updates is a list and not empty
+                if user_updates and isinstance(user_updates, list):
+                    # Safeguard 3: Filter events for current query to prevent cross-contamination
+                    query_updates = [ev for ev in user_updates if isinstance(ev, dict) and ev.get("query") == state.get("query")]
+                    
+                    # Safeguard 4: Only proceed if there are relevant query-specific updates
+                    if query_updates:
+                        modifications = []
+                        for ev in query_updates:
+                            # Safeguard 5: Verify event structure and message content
+                            message = ev.get("message", "")
+                            if message and isinstance(message, str) and message.strip():
+                                modifications.append(message)
+                        
+                        # Safeguard 6: Only build context if there are valid modifications
+                        if modifications:
+                            mods_text = "\n- ".join(modifications)
+                            tool_modifications_context = f"\n\n⚠️ USER MODIFIED TOOLS:\n- {mods_text}\n**Use these actual executed values in your response.**\n"
+                            log.info(f"Tool modifications context built with {len(modifications)} modifications for session {state['session_id']}")
+                        else:
+                            log.debug(f"No valid tool modifications found for session {state['session_id']}")
+                    else:
+                        log.debug(f"No query-specific tool updates found for session {state['session_id']}")
+                else:
+                    log.debug(f"No user_update_events or invalid format for session {state['session_id']}")
+            else:
+                log.debug(f"Tool interrupt flag is False, skipping tool modifications context for session {state['session_id']}")
+            
+            # Safeguard 7: Only add tool feedback section if conditions are met
+            if tool_interrupt_flag and state.get("tool_feedback") and state["tool_feedback"] != "yes":
+                feedback_context += f"""\n\nTool Feedback:
+user modified the tool values, consider the new values. 
+{state["tool_feedback"]}
 
+"""
             formatted_query = f'''\
 Past Conversation Summary:
 {state["past_conversation_summary"]}
@@ -496,6 +746,7 @@ Preferences:
 User Query:
 {state["query"]}
 {feedback_context}
+{tool_modifications_context}
 
 Steps Completed to generate final response:
 {await self.inference_utils.format_past_steps_list(state["past_steps_input"], state["past_steps_output"])}
@@ -512,23 +763,92 @@ Final Response from Executor Agent:
                                                                 invocation_input=invocation_input,
                                                                 error_return_key="response"
                                                             )
+            # writer({"raw": {"response_gen_response": response_gen_response}, "content": str(response_gen_response)[:50] + ("..." if len(str(response_gen_response)) > 50 else "")})
             if isinstance(response_gen_response, dict) and "response" in response_gen_response:
+                writer({"raw": {"Generated Response": response_gen_response["response"]}, "content": response_gen_response["response"][:50] + ("..." if len(response_gen_response["response"]) > 50 else "")})
+                writer({"Node Name": "Generating Response", "Status": "Completed"})
                 log.info(f"Response generated for session {state['session_id']}")
                 return {"response": response_gen_response["response"]}
             else:
+                writer({"Node Name": "Generating Response", "Status": "Failed"})
                 log.error(f"Response generation failed for session {state['session_id']}")
                 result = await llm.ainvoke(f"Format the response in Markdown Format.\n\nResponse: {response_gen_response}")
                 return {"response": result.content}
 
-        async def critic_agent(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def critic_agent(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
             This function takes a state object containing information about the conversation and the generated response,
             formats it into a query for the critic model, and returns the critic's evaluation of the response.
             """
+            writer({"Node Name": "Reviewing Response", "Status": "Started"})
             feedback_context = "" if not plan_verifier_flag else f"""
 Now user want to modify above query with below modification:
 {state["plan_feedback"]}
 """
+            
+            # Extract tool calls and outputs from executor messages
+            executor_messages = state["executor_messages"]
+            tool_calls_data = []
+            
+            # Iterate through messages to find AI messages with tool calls and corresponding tool messages
+            for i, msg in enumerate(executor_messages):
+                if hasattr(msg, 'type') and msg.type == "ai" and hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    for tool_call in msg.tool_calls:
+                        tool_data = {
+                            'name': tool_call['name'],
+                            'args': tool_call['args'],
+                            'id': tool_call['id'],
+                            'output': None
+                        }
+                        
+                        # Look for the corresponding tool message with the output
+                        for j in range(i + 1, len(executor_messages)):
+                            next_msg = executor_messages[j]
+                            if (hasattr(next_msg, 'type') and next_msg.type == "tool" and 
+                                hasattr(next_msg, 'tool_call_id') and next_msg.tool_call_id == tool_call['id']):
+                                tool_data['output'] = next_msg.content
+                                break
+                        
+                        tool_calls_data.append(tool_data)
+            
+            # Add tool execution information to context
+            tool_execution_context = ""
+            if tool_calls_data:
+                tool_execution_context += "\n\nTools used in the response generation:\n"
+                for tool_data in tool_calls_data:
+                    tool_name = tool_data['name']
+                    tool_args = json.dumps(tool_data['args'])
+                    tool_output = tool_data['output'] if tool_data['output'] else "No output captured."
+                    tool_execution_context += f"- Tool Name: {tool_name}\n  Arguments: {tool_args}\n  Output: {tool_output}\n"
+            
+            # Include user_update_events (from tool interruptions)
+            # THIS SHOWS: What the user manually modified during tool execution
+            updates_lines = []
+            for ev in state.get("user_update_events", []):
+                if ev.get("query") and ev.get("query") != state.get("query"):
+                    continue
+                line = f"tool_update_feedback : {ev.get('message','N/A')}\n"
+                updates_lines.append(line)
+
+            user_modifications_context = ""
+            if updates_lines:
+                join_updates="\n".join(updates_lines)
+                user_modifications_context = f"""\n\nUser Tool Modifications (Manual Interruptions):\n
+original_user_query: {state['query']}
+{join_updates}
+
+- original_user_query: the user's initial question/instruction.
+- tool_update_feedback: a free-form statement describing corrected parameters or revised intent.
+
+Your job:
+1) Infer the revised/expected query and parameters solely from tool_update_feedback.
+2) Treat the revision as the single source of truth. Do NOT proceed with the original query if there is any conflict.
+3) Execute using the revised intent/parameters and produce the answer accordingly.
+
+Rules:
+- If tool_update_feedback indicates parameter changes (e.g., "a=8 and b=9 were modified into a=8 and b=8"), infer the corrected query (e.g., "what is 8*8") and use the revised parameters.
+- If tool_update_feedback states a direct correction (e.g., "expected question was 8*8", "corrected to 8*8"), answer that.\n
+                """
 
             formatted_query = f'''\
 Past Conversation Summary:
@@ -543,6 +863,8 @@ Tools Info:
 User Query:
 {state["query"]}
 {feedback_context}
+{tool_execution_context}
+{user_modifications_context}
 
 Steps Completed to generate final response:
 {await self.inference_utils.format_past_steps_list(state["past_steps_input"], state["past_steps_output"])}
@@ -552,6 +874,8 @@ Final Response:
 
 ##Instructions
 - Consider the modifications given by user along with actual query
+- Review the tool execution details to ensure proper tool usage
+- Consider any user modifications to tool arguments during execution
 - Only Verify Final Response which is aligned to the query and make sure all the data in final response are grounded from the past steps output
 - Consider plan and final response as a whole and verify if the final response is aligned with the user query.
 '''
@@ -567,6 +891,12 @@ Final Response:
 
             if critic_response["critique_points"] and "error" in critic_response["critique_points"][0]:
                 critic_response = {'response_quality_score': 0, 'critique_points': critic_response["critique_points"]}
+            writer({"raw": {"Critic Score": critic_response["response_quality_score"]}, "content": f"Critic evaluation score: {critic_response['response_quality_score']}/1.0"})    
+            critique_content = ', '.join(critic_response['critique_points']) if isinstance(critic_response['critique_points'], list) else str(critic_response['critique_points'])
+            if critique_content:
+                writer({"raw": {"Critique Points": critic_response["critique_points"]}, "content": f"Critic feedback: {critique_content[:100] + ('...' if len(critique_content) > 100 else '')}"})
+            
+            writer({"Node Name": "Reviewing Response", "Status": "Completed"})
             log.info(f"Critic response generated for session {state['session_id']}")
             return {
                 "response_quality_score": critic_response["response_quality_score"],
@@ -577,15 +907,15 @@ Final Response:
                             "critique_points": critic_response["critique_points"]
                         }],
                     role="critic-response"
-                ),
-                "epoch": state.get('epoch',0)+1
+                )
             }
 
-        async def critic_based_planner_agent(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def critic_based_planner_agent(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
             This function takes a state object containing information about the current conversation, tools, and past steps,
             and uses a critic-based planner to generate a plan for the next step.
             """
+            writer({"Node Name": "Refactoring Plan", "Status": "Started"})
             feedback_context = "" if not plan_verifier_flag else f"""
 *Now user want to modify above query with below modification:
 {state["plan_feedback"]}
@@ -599,6 +929,17 @@ Final Response:
     **EVALUATOR FEEDBACK FOR IMPROVEMENT:**
     {state["evaluation_feedback"]}
     **Please address the above evaluator feedback in your new plan.**
+
+    """
+
+            # Include validator feedback if available
+            validator_context = ""
+            if validator_flag and state.get("validation_feedback"):
+                validator_context = f"""
+
+    **VALIDATOR FEEDBACK FOR IMPROVEMENT:**
+    {state["validation_feedback"]}
+    **Please address the above validation feedback in your new plan.**
 
     """
 
@@ -623,11 +964,12 @@ Final Response:
 {state["response"]}
 
 Response Quality Score:
-{state["response_quality_score"]}
+{state.get("response_quality_score", "Not yet evaluated")}
 
 Critique Points:
-{await self.inference_utils.format_list_str(state["critique_points"])}
+{await self.inference_utils.format_list_str(state["critique_points"]) if state.get("critique_points") else "No critique points available yet."}
 {evaluator_context}
+{validator_context}
 '''
 
             invocation_input = {"messages": [("user", formatted_query)]}
@@ -638,17 +980,24 @@ Critique Points:
                                                                     invocation_input=invocation_input,
                                                                     error_return_key="plan"
                                                                 )
+            writer({"raw": {"critic_based_planner_agent": critic_planner_response["plan"]}, "content": f"Generated refactored plan with {len(critic_planner_response['plan'])} steps"})
+            writer({"raw": {"critic_based_planner_agent_full_response": critic_planner_response}, "content": f"{critic_planner_response['plan']}"})
+            writer({"Node Name": "Refactoring Plan", "Status": "Completed"})
             log.info(f"Critic-based planner response generated for session {state['session_id']}")
+
             return {
                 "plan": critic_planner_response["plan"],
                 "executor_messages": ChatMessage(content=critic_planner_response['plan'], role="critic-plan"),
-                "step_idx": 0
+                "step_idx": 0,
+                "is_tool_interrupted": False,  # Reset to allow fresh execution
+                "epoch": state.get('epoch', 0) + 1
             }
 
-        async def final_response(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def final_response(state: MultiWorkflowState | MultiHITLWorkflowState,writer: StreamWriter):
             """
             This function handles the final response of the conversation.
             """
+            writer({"Node Name": "Memory Update", "Status": "Started"})
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread_id = f"inside{thread_id}"
             asyncio.create_task(self.chat_service.delete_internal_thread(internal_thread_id))
@@ -675,10 +1024,13 @@ Critique Points:
                 # asyncio.create_task(self.chat_service.analyze_conversation_for_episodic_storage(llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
             except Exception as e:
                 error = f"Error occurred in Final response: {e}"
+                writer({"Node Name": "Memory Update", "Status": "Failed"})
                 log.error(error)
                 errors.append(error)
 
             final_response_message = AIMessage(content=state["response"])
+            writer({"raw":{"final_response":"Memory Updated"}, "content":"Memory Updated"})
+            writer({"Node Name": "Memory Update", "Status": "Completed"})
             log.info(f"Final response generated for session {state['session_id']}")
             return {
                 "ongoing_conversation": final_response_message,
@@ -687,14 +1039,16 @@ Critique Points:
                 "errors": errors
             }
 
-        async def critic_decision(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def critic_decision(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """
             Decides whether to return the final response or continue
             with the critic-based planner agent.
             """
             if state["response_quality_score"]>=0.7 or state["epoch"]==3:
+                writer({"raw": {"analyzing": "Moving to final response as response feels fine"}, "content": "Analysis complete: Response quality is acceptable, proceeding to final output"})
                 return "final_response"
             else:
+                writer({"raw": {"analyzing": "Asking agent to work again as it has not met our expectation"}, "content": "Analysis complete: Response needs improvement, requesting agent to revise output"})
                 return "critic_based_planner_agent"
 
         async def check_plan_execution_status(state: MultiWorkflowState | MultiHITLWorkflowState):
@@ -715,9 +1069,18 @@ Critique Points:
             else:
                 return "interrupt_node" if plan_verifier_flag else "executor_agent_node"
 
-        async def interrupt_node(state: MultiHITLWorkflowState):
+        async def interrupt_node(state: MultiHITLWorkflowState, writer: StreamWriter):
             """Asks the human if the plan is ok or not"""
+           
             is_plan_approved = interrupt("Is this plan acceptable?").lower()
+
+            writer({"raw": {"plan_verifier": "Is this plan acceptable? yes/no"}, "content": "Please review the execution plan and confirm if it's acceptable"})
+            if is_plan_approved =="yes":
+                writer({"raw": {"plan_verifier": "User approved the plan by clicking the thumbs up button"}, "content": "User approved the plan by clicking the thumbs up button"})
+            else:
+                writer({"raw": {"plan_verifier": "User clicked the thumbs down button and provided feedback for plan execution"}, "content": "User clicked the thumbs down button and provided feedback for plan execution"})
+             
+                log.info(f"is_approved {is_plan_approved}")
             return {
                 "is_plan_approved": is_plan_approved,
                 "current_query_status": "feedback" if is_plan_approved == 'no' else None,
@@ -729,7 +1092,8 @@ Critique Points:
             else:
                 return "executor_agent_node"
 
-        async def feedback_collector(state: MultiHITLWorkflowState):
+        async def feedback_collector(state: MultiHITLWorkflowState, writer: StreamWriter):
+            # writer({"raw": {"feedback_collector": "Please confirm your feedback for the plan"}, "content": "Please provide your feedback on the proposed execution plan"})
             feedback = interrupt("What went wrong??")
             return {
                 'plan_feedback': feedback,
@@ -739,7 +1103,8 @@ Critique Points:
 
 
 
-        async def final_decision(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def final_decision(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
+            # writer({"Node Name": "Final Decision", "Status": "Started"})
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
             a = await executor_agent.aget_state(internal_thread)
@@ -757,6 +1122,7 @@ Critique Points:
                 You are a critic agent, your task is to check if the tool call is 
                 successful or not. If the tool call is successful, return "yes", otherwise return "no".
                 Tool Call Response: {response}
+                
                 Instructions:
                 - If the response content "ERROR" or something similar to error then return "no".
                 - If the response content is a valid response, then return "yes".
@@ -773,10 +1139,13 @@ Critique Points:
             else:
                 return "interrupt_node_for_tool"
 
-        async def interrupt_node_for_tool(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def interrupt_node_for_tool(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
             """Asks the human if the plan is ok or not"""
             if tool_interrupt_flag:
                 is_plan_approved = interrupt("approved?(yes/feedback)") 
+                writer({"raw": {"tool_verifier": "Please confirm to execute the tool"}, "content": "Tool execution requires confirmation. Please approve to proceed."})
+                if is_plan_approved =="yes":
+                    writer({"raw": {"tool_verifier": "User approved the tool execution by clicking the thumbs up button"}, "content": "User approved the tool execution by clicking the thumbs up button"})
             else:
                 is_plan_approved = "yes"
             return {"tool_feedback": is_plan_approved, "is_tool_interrupted": True}
@@ -787,7 +1156,10 @@ Critique Points:
             else:
                 return "tool_interrupt"
 
-        async def tool_interrupt(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def tool_interrupt(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
+
+            # writer({"Node Name": "Updating Tool Arguments", "Status": "Started"}) 
+            writer({"raw": {"tool_interrupt_update_argument": "User updated the tool arguments"}, "content": "User updated the tool arguments, updating the agent state accordingly."})
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
             model_name = state["model_name"]
@@ -818,33 +1190,106 @@ Critique Points:
                             usage_metadata=usage_metadata
                         )
 
+            # Record a user update event for evaluator/critic awareness
+            try:
+                event = {
+                    "tool_name": tool_name,
+                    "old_args": old_arg,
+                    "new_args": feedback_dict,
+                    "message": new_ai_msg.content,
+                    "timestamp": get_timestamp(),
+                    "query": state.get("query")
+                }
+            except Exception as e:
+                event = {"tool_name": tool_name, "message": new_ai_msg.content, "error": str(e), "timestamp": get_timestamp(), "query": state.get("query")}
+
             # Modify the thread with the new input
             await executor_agent.aupdate_state(
                 internal_thread,
                 {"messages": [new_ai_msg]}
             )
-            # state["executor_messages"].append(new_ai_msg)
-            executor_agent_response = await executor_agent.ainvoke(None, internal_thread)
-            # for i in executor_agent_response['messages']:
-            #     i.pretty_print()
+            executor_agent_response = {"messages":[]}
+            final_content_parts=[new_ai_msg]
+            stream_source = executor_agent.astream(None, internal_thread)
+            async for msg in stream_source :
+                executor_agent_response["messages"].append(msg)
+                # writer({"raw": {"tool_interrupt": msg}, "content": f"Tool execution interrupted for manual input: {msg}"})
+
+                if isinstance(msg, dict) and "agent" in msg:
+                    agent_output = msg.get("agent", {})
+                    if isinstance(agent_output, dict) and "messages" in agent_output:
+                        messages = agent_output.get("messages", [])
+                
+                    for message in messages:
+                        # The message can be an object (like AIMessage) with a .content attribute
+                        # or it could be a dictionary with a 'content' key. This handles both.
+                        if message.tool_calls:
+                            writer({"raw": {"executor_agent": "Agent is calling tools"}, "content": f"Agent is calling tools"})
+                            tool_call = message.tool_calls[0]
+                            writer({"Node Name": "Tool Call", "Status": "Started", "Tool Name": tool_call['name'], "Tool Arguments": tool_call['args']})
+                        
+                        
+                    final_content_parts.extend(messages)
+                elif "tools" in msg:
+                    tool_messages = msg.get("tools", [])
+                    
+                    for tool_message in tool_messages["messages"]:
+                        writer({"raw": {"Tool Name": tool_message.name, "Tool Output": tool_message.content}, "content": f"Tool {tool_message.name} returned: {tool_message.content}"})
+                        if hasattr(tool_message, "name"):
+                            writer({"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_message.name})
+                    final_content_parts.extend(tool_messages["messages"])
+                else:
+                    writer({"executor_agent_node": msg})
+                    if "agent" in msg:
+                        final_content_parts.extend(msg["agent"]["messages"])
+
+            
+            # writer({"Node Name": "Updating Tool Arguments", "Status": "Completed"})   
+            
+            final_ai_message = final_content_parts[-1]
+            writer({"raw": {"tool_interrupt_final_ai_message": final_ai_message.content}, "content": f"Tool execution with user's feedback completed"})
+            
+            # Safely append to user_update_events without mutating the original state
+            existing_events = list(state.get("user_update_events", []))
+            existing_events.append(event)
+
+            has_active_tasks = True
+            if (
+                hasattr(final_ai_message, "type")      # Checks if 'type' attribute exists
+                and final_ai_message.type == "ai"      # Checks if type is 'ai'
+                and final_ai_message.tool_calls == []  # Checks if tool_calls is empty list
+                ):
+                has_active_tasks = False
+            if has_active_tasks:
+                log.info(f"[{state['session_id']}] Agent has active tasks remaining after executor agent completion.")
+            else :
+                writer({"Node Name": "Thinking...", "Status": "Completed"})  
                         
             return {
-                "response": executor_agent_response["messages"][-1].content,
-                "executor_messages": executor_agent_response["messages"],
+                "response": final_ai_message.content,
+                "executor_messages": final_content_parts,
+                "user_update_events": existing_events
             }
         
          # NEW EVALUATOR AGENT NODE
-        async def evaluator_agent(state: MultiWorkflowState | MultiHITLWorkflowState):
+        async def evaluator_agent(state: MultiWorkflowState | MultiHITLWorkflowState,writer: StreamWriter):
             """
             Evaluates the agent response across multiple dimensions and provides scores and feedback.
             """
             log.info(f"EVALUATOR AGENT CALLED for session {state['session_id']}")
-            
+            writer({"Node Name": "Evaluating Response", "Status": "Started"})
             agent_evaluation_prompt = online_agent_evaluation_prompt
             try:
+                # Build effective query considering user_update_events tied to this query
+                effective_query = build_effective_query_with_user_updates(
+                    state["query"], 
+                    state.get("user_update_events", []), 
+                    state.get("query")
+                )
+
                 # Format the evaluation query
                 formatted_evaluation_query = agent_evaluation_prompt.format(
-                    User_Query=state["query"],
+                    User_Query=effective_query,
                     Agent_Response=state["response"],
                     past_conversation_summary=state["past_conversation_summary"],
                     workflow_description=state.get("workflow_description", "Multi-agent workflow with planner, executor, and critic components")
@@ -874,7 +1319,8 @@ Critique Points:
                 compiled_feedback = "\n\n".join(feedback_parts)
                 
                 log.info(f"Evaluator completed for session {state['session_id']} with aggregate score: {aggregate_score}")
-                
+                writer({"raw": {"Evaluator Aggregate Score": aggregate_score}, "content": f"Evaluator completed with aggregate score: {aggregate_score}"})
+                writer({"Node Name": "Evaluating Response", "Status": "Completed"})
                 return {
                     "evaluation_score": aggregate_score,
                     "evaluation_feedback": compiled_feedback,
@@ -885,12 +1331,12 @@ Critique Points:
                             "feedback": compiled_feedback
                         }],
                         role="evaluator-response"
-                    ),
-                    "epoch": state.get('epoch',0)+1
+                    )
                 }
                 
             except json.JSONDecodeError as e:
                 log.error(f"Failed to parse evaluator JSON response for session {state['session_id']}: {e}")
+                writer({"Node Name": "Evaluating Response", "Status": "Failed"})
                 return {
                     "evaluation_score": 0.3,
                     "evaluation_feedback": "Evaluation failed due to JSON parsing error. Please review the response format and content quality.",
@@ -901,6 +1347,7 @@ Critique Points:
                 }
             except Exception as e:
                 log.error(f"Evaluator agent failed for session {state['session_id']}: {e}")
+                writer({"Node Name": "Evaluating Response", "Status": "Failed"})
                 return {
                     "evaluation_score": 0.3,
                     "evaluation_feedback": f"Evaluation failed due to error: {str(e)}",
@@ -920,7 +1367,7 @@ Critique Points:
             max_evaluation_epochs = 3   # Maximum number of evaluation improvement cycles
             
             # Get current evaluation epoch (using existing epoch field or create new one)
-            current_epoch = state.get("epoch", 0)
+            current_epoch = state.get("evaluation_attempts", 0)
             evaluation_score = state.get("evaluation_score", 0.0)
             
             # Decision logic
@@ -928,8 +1375,158 @@ Critique Points:
                 log.info(f"Evaluation passed for session {state['session_id']} - Score: {evaluation_score}, Epoch: {current_epoch}")
                 return "final_response"
             else:
-                log.info(f"Evaluation failed for session {state['session_id']} - Score: {evaluation_score}, Epoch: {current_epoch}. Routing for improvement.")
-                return "critic_based_planner_agent"
+                log.info(f"Evaluation failed for session {state['session_id']} - Score: {evaluation_score}, Epoch: {current_epoch}. Routing to replanner for improvement.")
+                return "replanner_agent"
+
+        # VALIDATOR AGENT NODE
+        async def validator_agent_node(state: MultiWorkflowState | MultiHITLWorkflowState, writer: StreamWriter):
+            """
+            Validates the agent response using validator tools or LLM-based validation.
+            """
+            
+            
+            if not validator_flag:
+                
+                return {
+                    "validation_score": 1.0,
+                    "validation_feedback": "Validation skipped (validator disabled)"
+                }
+            writer({"Node Name": "Validating Response", "Status": "Started"})
+            log.info(f"[INFO] VALIDATOR AGENT CALLED for session {state['session_id']}")
+            validation_attempts = state.get("validation_attempts", 0) + 1
+            try:
+                # Get agent configuration for validation criteria
+                # Use mentioned_agent_id if present, otherwise use agentic_application_id
+                agent_id_for_validation = state.get("mentioned_agent_id") if state.get("mentioned_agent_id") else state["agentic_application_id"]
+                agent_config = await self.agent_service.agent_repo.get_agent_record(agent_id_for_validation)
+                if not agent_config:
+                    log.warning(f"[WARNING] No agent config found for {agent_id_for_validation}, falling back to general relevancy validation")
+                    # Consider user tool updates even in fallback
+                    effective_query_for_validation = build_effective_query_with_user_updates(
+                        state["query"], 
+                        state.get("user_update_events", []), 
+                        state.get("query")
+                    )
+                    
+                    result = await self.inference_utils.validate_general_relevancy(effective_query_for_validation, state["response"], llm)
+                    writer({"raw": {"Validation Score": result.get("validation_score", 0.0)}, "content": f"Validation score: {result.get('validation_score', 0.0)}"})
+                    writer({"Node Name": "Validating Response", "Status": "Completed"})
+                    return {
+                        "validation_score": result.get("validation_score", 0.0),
+                        "validation_feedback": result.get("feedback", "No agent config found"),
+                        "validation_attempts": validation_attempts
+                    }
+                
+                # Consider any recorded user tool argument changes in validation
+                # Only include updates associated with the current query to avoid cross-query leakage
+                effective_query_for_validation = build_effective_query_with_user_updates(
+                    state["query"], 
+                    state.get("user_update_events", []), 
+                    state.get("query")
+                )
+                
+                agent_data = agent_config[0]
+                validation_criteria = agent_data.get("validation_criteria", [])
+                
+                # Handle case where validation_criteria might be a string
+                if isinstance(validation_criteria, str):
+                    try:
+                        import json
+                        validation_criteria = json.loads(validation_criteria)
+                    except json.JSONDecodeError:
+                        log.warning(f"Failed to parse validation_criteria string: {validation_criteria}")
+                        validation_criteria = []
+                
+                if not validation_criteria:
+                    log.info("[INFO] No validation criteria found, falling back to general relevancy validation")
+                    result = await self.inference_utils.validate_general_relevancy(effective_query_for_validation, state["response"], llm)
+                    log.info(f"General relevancy result: {result}")
+                    writer({"raw": {"Validation Score": result.get("validation_score", 0.0)}, "content": f"No validation criteria found, falling back to general relevancy validation. Validation score: {result.get('validation_score', 0.0)}"})
+                    writer({"Node Name": "Validating Response", "Status": "Completed"})
+                    return {
+                        "validation_score": result.get("validation_score", 0.0),
+                        "validation_feedback": result.get("feedback", "No validation criteria found"),
+                        "validation_attempts": validation_attempts
+                    }
+                
+                # Find all matching validation patterns using InferenceUtils
+                matching_patterns = await self.inference_utils.find_all_matching_validation_patterns(
+                    effective_query_for_validation, validation_criteria, llm
+                )
+                
+                if not matching_patterns:
+                    log.info("[INFO] No matching validation patterns found, falling back to general relevancy validation")
+                    result = await self.inference_utils.validate_general_relevancy(effective_query_for_validation, state["response"], llm)
+                    log.info(f"General relevancy fallback result: {result}")
+                    writer({"raw": {"Validation Score": result.get("validation_score", 0.0)}, "content": f"No matching validation patterns found, falling back to general relevancy validation, Validation score: {result.get('validation_score', 0.0)}"})
+                    writer({"Node Name": "Validating Response", "Status": "Completed"})
+                    return {
+                        "validation_score": result.get("validation_score", 0.0),
+                        "validation_feedback": result.get("feedback", "No matching validation patterns found"),
+                        "validation_attempts": validation_attempts
+                    }
+                
+                # Process each matching pattern
+                validation_results = []
+                for pattern in matching_patterns:
+                    pattern_result = await self.inference_utils.process_validation_pattern(
+                        pattern, state, llm, effective_query_for_validation
+                    )
+                    validation_results.append(pattern_result)
+                
+                # Aggregate all validation results
+                final_result = self.inference_utils.aggregate_validation_results(validation_results)
+                
+                log.info(f"Validator completed for session {state['session_id']} with status: {final_result['validation_status']}")
+                writer({"raw": {"Validation Score": final_result["validation_score"]}, "content": f"Validation score: {final_result['validation_score']}"})
+                writer({"Node Name": "Validating Response", "Status": "Completed"})
+                
+                
+                return {
+                    "validation_score": final_result["validation_score"],
+                    "validation_feedback": final_result["feedback"],
+                    "validation_attempts": validation_attempts
+                }
+                
+            except Exception as e:
+                log.error(f"Validator agent failed for session {state['session_id']}: {e}")
+                writer({"raw": {"Validation Error": str(e)}, "content": f"Validation failed due to error: {str(e)}"})
+                writer({"Node Name": "Validating Response", "Status": "Failed"})
+                return {
+                    "validation_score": 0.3,
+                    "validation_feedback": f"Validation failed due to error: {str(e)}",
+                    "validation_attempts": validation_attempts
+                }
+
+        async def validator_decision_node(state: MultiWorkflowState | MultiHITLWorkflowState):
+            """
+            Decides the next step based on validation results and current epoch.
+            """
+            validation_threshold = 0.7
+            max_validation_epochs = 2
+            
+            current_epoch = state.get("validation_attempts", 0)
+            validation_score = state.get("validation_score", 0.0)
+            
+            if validation_score >= validation_threshold:
+                log.info(f"Validation passed for session {state['session_id']} - Score: {validation_score}, Epoch: {current_epoch}")
+                if evaluation_flag:
+                    log.info(f"Routing to evaluator_agent (both validation and evaluation enabled)")
+                    return "evaluator_agent"
+                else:
+                    log.info(f"Routing to critic_agent (only validation enabled)")
+                    return "critic_agent"
+            elif current_epoch >= max_validation_epochs:
+                log.info(f"Max validation epochs reached for session {state['session_id']} - Score: {validation_score}, Epoch: {current_epoch}")
+                if evaluation_flag:
+                    log.info(f"Routing to evaluator_agent despite validation failure (max epochs reached)")
+                    return "evaluator_agent"
+                else:
+                    log.info(f"Routing to critic_agent despite validation failure (max epochs reached)")
+                    return "critic_agent"
+            else:
+                log.info(f"Validation failed for session {state['session_id']} - Score: {validation_score}, Epoch: {current_epoch}. Routing to replanner for improvement.")
+                return "replanner_agent"
 
 
         ### Build Graph
@@ -937,9 +1534,9 @@ Critique Points:
 
         workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
         workflow.add_node("planner_agent", planner_agent)
+        workflow.add_node("replanner_agent", replanner_agent)
 
         if plan_verifier_flag:
-            workflow.add_node("replanner_agent", replanner_agent)
             workflow.add_node("interrupt_node", interrupt_node)
             workflow.add_node("feedback_collector", feedback_collector)
 
@@ -957,10 +1554,17 @@ Critique Points:
 
         if evaluation_flag:
             workflow.add_node("evaluator_agent", evaluator_agent)
-            log.info("✅ Added evaluator_agent node")
+            log.info("[SUCCESS] Added evaluator_agent node")
         else:
             workflow.add_node("critic_agent", critic_agent)
-            log.info("✅ Added critic_agent node")
+            log.info("[SUCCESS] Added critic_agent node")
+
+        if validator_flag:
+            workflow.add_node("validator_agent", validator_agent_node)
+            log.info("[SUCCESS] Added validator_agent node")
+        
+        # Debug logging for flag values
+        log.info(f"[INFO] Node addition complete - validator_flag={validator_flag}, evaluation_flag={evaluation_flag}")
 
 
         workflow.add_edge(START, "generate_past_conversation_summary")
@@ -978,7 +1582,19 @@ Critique Points:
                 ["executor_agent_node", "feedback_collector"],
             )
             workflow.add_edge("feedback_collector", "replanner_agent")
-            workflow.add_edge("replanner_agent", "interrupt_node")
+            # Replanner has conditional routing when plan_verifier_flag is True
+            workflow.add_conditional_edges(
+                "replanner_agent",
+                replanner_decision,
+                ["interrupt_node", "executor_agent_node", "general_llm_call"],
+            )
+        else:
+            # When plan_verifier_flag is False, replanner has conditional routing for empty plans
+            workflow.add_conditional_edges(
+                "replanner_agent",
+                replanner_decision,
+                ["executor_agent_node", "general_llm_call"],
+            )
 
         workflow.add_conditional_edges(
             "executor_agent_node",
@@ -1002,25 +1618,80 @@ Critique Points:
             ["executor_agent_node", "response_generator_agent"],
         )
 
+        # Add a router to decide between validation and evaluation/critic
+        async def post_response_router(state: MultiWorkflowState | MultiHITLWorkflowState):
+            """Routes after response generation to validation or evaluation/critic"""
+            log.info(f"[{state['session_id']}] post_response_router called - validator_flag={validator_flag}, evaluation_flag={evaluation_flag}")
+            
+            if validator_flag:
+                log.info(f"[{state['session_id']}] Routing to validator_agent (validation_flag: {validator_flag}, evaluation_flag: {evaluation_flag})")
+                return "validator_agent"
+            elif evaluation_flag:
+                log.info(f"[{state['session_id']}] Routing to evaluator_agent (evaluation_flag: {evaluation_flag})")
+                return "evaluator_agent"
+            else:
+                log.info(f"[{state['session_id']}] Routing to critic_agent (no validation or evaluation flags)")
+                return "critic_agent"
+
         if evaluation_flag:
-            log.info("✅ Setting up evaluation routing path")
-            # Route from response_generator_agent to evaluator
-            workflow.add_edge("response_generator_agent", "evaluator_agent")
+            log.info("[SUCCESS] Setting up evaluation routing path")
+            # Route from response_generator_agent - targets based on what router can return
+            # Router returns: validator_agent if validator_flag, else evaluator_agent
+            post_response_targets = []
+            if validator_flag:
+                post_response_targets.append("validator_agent")
+            post_response_targets.append("evaluator_agent")
+            
+            log.info(f"[DEBUG] post_response_targets for evaluation path: {post_response_targets}")
+            
+            workflow.add_conditional_edges(
+                "response_generator_agent",
+                post_response_router,
+                post_response_targets
+            )
             
             # Evaluator decision routing
             workflow.add_conditional_edges(
                 "evaluator_agent",
                 evaluator_decision,
-                ["final_response", "critic_based_planner_agent"],
+                ["final_response", "replanner_agent"],
             )
         else:
-            log.info("✅ Setting up critic routing path")
-            # Original routing with critic
-            workflow.add_edge("response_generator_agent", "critic_agent")
+            log.info("[SUCCESS] Setting up critic routing path")
+            # Route from response_generator_agent - targets based on what router can return
+            # Router returns: validator_agent if validator_flag, else critic_agent
+            post_response_targets = []
+            if validator_flag:
+                post_response_targets.append("validator_agent")
+            post_response_targets.append("critic_agent")
+            
+            log.info(f"[DEBUG] post_response_targets for critic path: {post_response_targets}")
+                
+            workflow.add_conditional_edges(
+                "response_generator_agent", 
+                post_response_router,
+                post_response_targets
+            )
+            
             workflow.add_conditional_edges(
                 "critic_agent",
                 critic_decision,
                 ["final_response", "critic_based_planner_agent"],
+            )
+
+        # Validator routing (when enabled)
+        if validator_flag:
+            # Define possible targets based on enabled flags
+            validator_targets = ["replanner_agent"]
+            if evaluation_flag:
+                validator_targets.append("evaluator_agent")
+            else:
+                validator_targets.append("critic_agent")
+            
+            workflow.add_conditional_edges(
+                "validator_agent",
+                validator_decision_node,
+                validator_targets
             )
 
         workflow.add_edge("critic_based_planner_agent", "executor_agent_node")

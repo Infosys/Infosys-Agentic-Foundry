@@ -23,6 +23,9 @@ outputs/
 sdlc/
 Hugging_face/
 
+all-MiniLM-L6-v2 (3)/
+bge-reranker-large/
+
 ./personal_learning.py
 ./index.html
 ./index2.html
