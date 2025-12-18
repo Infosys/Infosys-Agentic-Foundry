@@ -11,9 +11,9 @@ import useFetch from "../../Hooks/useAxios.js";
 import Loader from "../commonComponents/Loader.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
 
-const Unused = () => {
-  const [selectedType, setSelectedType] = useState("agents"); // for data fetching
-  const [activeTab, setActiveTab] = useState("agents"); // for tab highlight
+const Unused = ({ initialType = "agents" }) => {
+  const [selectedType, setSelectedType] = useState(initialType); // for data fetching
+  const [activeTab, setActiveTab] = useState(initialType); // for tab highlight
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -141,22 +141,24 @@ const Unused = () => {
   return (
     <>
       <div className={style.containerCss}>
-        <div className={styles.toggleWrapper}>
-          <button
-            type="button"
-            className={`iafTabsBtn ${activeTab === "agents" ? " active" : ""}`}
-            onClick={() => handleTabClick("agents")}
-          >
-            Agents
-          </button>
-          <button
-            type="button"
-            className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}
-            onClick={() => handleTabClick("tools")}
-          >
-            Tools
-          </button>
-        </div>
+        {!initialType && (
+          <div className={styles.toggleWrapper}>
+            <button
+              type="button"
+              className={`iafTabsBtn ${activeTab === "agents" ? " active" : ""}`}
+              onClick={() => handleTabClick("agents")}
+            >
+              Agents
+            </button>
+            <button
+              type="button"
+              className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}
+              onClick={() => handleTabClick("tools")}
+            >
+              Tools
+            </button>
+          </div>
+        )}
 
         <div className={styles.listArea}>
           {loading && <Loader />}

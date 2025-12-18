@@ -7,6 +7,12 @@ import { useVersion } from "../../context/VersionContext"; // Import version con
 const Register = ({ isAdminScreen = false }) => {
   const { combinedVersion } = useVersion(); // Properly extract the combinedVersion from the hook
   
+  // If rendering inside admin screen, just return the form without wrapper
+  if (isAdminScreen) {
+    return <SignUp isAdminScreen={isAdminScreen} />;
+  }
+  
+  // Otherwise, render the full page with background and logo
   return (
     <div className="app-container">
       <img src={brandlogotwo} alt="Brandlogo" />

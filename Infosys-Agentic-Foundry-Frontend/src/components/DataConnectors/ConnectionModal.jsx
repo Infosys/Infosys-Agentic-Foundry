@@ -17,9 +17,9 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
   // Initialize form data based on database fields
   useEffect(() => {
     const initialData = {};
-    database.fields.forEach(field => {
+    database.fields.forEach((field) => {
       // Set default values for readonly fields
-      initialData[field.name] = field.defaultValue || '';
+      initialData[field.name] = field.defaultValue || "";
     });
     setFormData(initialData);
   }, [database]);
@@ -27,19 +27,19 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
   // Field-specific input restrictions for each field
   const getSanitizedValue = (name, value) => {
     switch (name) {
-      case 'connectionName':
+      case "connectionName":
         // return value.replace(/[^a-zA-Z0-9_\s()\-\[\]{}]/g, ""); // Remove all escapes for [ and ]
         return value.replace(/[^a-zA-Z0-9_\s()-{}[\]]/g, "");
-      case 'host':
+      case "host":
         return value.replace(/[^a-zA-Z0-9.-]/g, "");
-      case 'port':
+      case "port":
         return value.replace(/[^0-9]/g, "");
-      case 'username':
+      case "username":
         return value.replace(/[^a-zA-Z]/g, "");
-      case 'password':
+      case "password":
         return value.replace(/[^a-zA-Z0-9]/g, "");
-      case 'databaseName':
-       return value.replace(/[^a-zA-Z0-9]/g, "");
+      case "databaseName":
+        return value.replace(/[^a-zA-Z0-9_]/g, "");
       default:
         return value;
     }
@@ -47,34 +47,34 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
 
   const handleInputChange = (e) => {
     const { name } = e.target;
-    let value = getSanitizedValue(name, e.target.value);
-    setFormData(prev => ({
+    const value = getSanitizedValue(name, e.target.value);
+    setFormData((prev) => ({
       ...prev,
       [name]: value,
       // If user types in databaseName, clear uploaded_file
-      ...(isSqlite && name === 'databaseName' && value ? { uploaded_file: null } : {})
+      ...(isSqlite && name === "databaseName" && value ? { uploaded_file: null } : {}),
     }));
   };
 
   const handleFileInputChange = (e) => {
     const file = e.target.files[0];
     if (file && validateFile(file)) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         uploaded_file: file,
         // If user uploads file, clear databaseName
-        ...(isSqlite ? { databaseName: '' } : {})
+        ...(isSqlite ? { databaseName: "" } : {}),
       }));
       setSuccessMessage("File uploaded successfully.");
     }
-    e.target.value = '';
+    e.target.value = "";
   };
 
   const handleRemoveFile = () => {
-    setFormData(prev => ({ ...prev, uploaded_file: null }));
+    setFormData((prev) => ({ ...prev, uploaded_file: null }));
     setSuccessMessage(""); // Clear the success message when file is removed
-    const fileInput = document.getElementById('sqlite_uploaded_file');
-    if (fileInput) fileInput.value = '';
+    const fileInput = document.getElementById("sqlite_uploaded_file");
+    if (fileInput) fileInput.value = "";
   };
 
   const handleDragEnter = (e) => {
@@ -102,7 +102,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (validateFile(file)) {
-        setFormData(prev => ({ ...prev, uploaded_file: file }));
+        setFormData((prev) => ({ ...prev, uploaded_file: file }));
         setSuccessMessage("File uploaded successfully.");
       }
     }
@@ -110,16 +110,16 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
 
   const validateFile = (file) => {
     if (!file) return false;
-    const validExtensions = ['.db', '.sqlite', '.sqlite3'];
+    const validExtensions = [".db", ".sqlite", ".sqlite3"];
     const fileName = file.name.toLowerCase();
-    const isValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+    const isValidExtension = validExtensions.some((ext) => fileName.endsWith(ext));
     if (!isValidExtension) {
       setErrorMessage("Invalid file format. Please upload a .db, .sqlite, or .sqlite3 file.");
       return false;
     }
     const maxSize = 200 * 1024 * 1024; // 200MB
     if (file.size > maxSize) {
-      setErrorMessage('File size exceeds 200MB limit.');
+      setErrorMessage("File size exceeds 200MB limit.");
       return false;
     }
     setErrorMessage("");
@@ -127,8 +127,8 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
   };
 
   // Helper: check if either path or file is filled for SQLite
-  const isSqlite = database.id === 'sqlite';
-  const hasDbPath = isSqlite && formData.databaseName && formData.databaseName.trim() !== '';
+  const isSqlite = database.id === "sqlite";
+  const hasDbPath = isSqlite && formData.databaseName && formData.databaseName.trim() !== "";
   const hasDbFile = isSqlite && formData.uploaded_file;
 
   const handleSubmit = async (e) => {
@@ -137,25 +137,25 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
     let requiredFields;
     if (isSqlite) {
       if (!hasDbPath && !hasDbFile) {
-        addMessage('Please provide either a filename or upload a file for SQLite.', 'error');
+        addMessage("Please provide either a filename or upload a file for SQLite.", "error");
         return;
       }
       if (hasDbPath && hasDbFile) {
-        addMessage('Please provide only one: filename or file upload for SQLite.', 'error');
+        addMessage("Please provide only one: filename or file upload for SQLite.", "error");
         return;
       }
       // Only require connectionName and databaseType for SQLite
-      requiredFields = database.fields.filter(field => ['connectionName', 'databaseType'].includes(field.name));
-      const missingFields = requiredFields.filter(field => !formData[field.name]);
+      requiredFields = database.fields.filter((field) => ["connectionName", "databaseType"].includes(field.name));
+      const missingFields = requiredFields.filter((field) => !formData[field.name]);
       if (missingFields.length > 0) {
-        addMessage(`Please fill in required fields: ${missingFields.map(f => f.label).join(', ')}`, "error");
+        addMessage(`Please fill in required fields: ${missingFields.map((f) => f.label).join(", ")}`, "error");
         return;
       }
     } else {
-      requiredFields = database.fields.filter(field => field.required);
-      const missingFields = requiredFields.filter(field => !formData[field.name]);
+      requiredFields = database.fields.filter((field) => field.required);
+      const missingFields = requiredFields.filter((field) => !formData[field.name]);
       if (missingFields.length > 0) {
-        addMessage(`Please fill in required fields: ${missingFields.map(f => f.label).join(', ')}`, "error");
+        addMessage(`Please fill in required fields: ${missingFields.map((f) => f.label).join(", ")}`, "error");
         return;
       }
     }
@@ -167,28 +167,30 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
         elements: Object.keys(formData).reduce((acc, key) => {
           acc[key] = { value: formData[key] };
           return acc;
-        }, {})
-      }
+        }, {}),
+      },
     };
 
     // Call the passed onSubmit function with the form data
     if (onSubmit) {
-      let connectionData = {
+      const connectionData = {
         connectionName: formData.connectionName,
         databaseType: formData.databaseType,
-        host: '',
-        port: '',
-        username: '',
-        password: '',
+        host: "",
+        port: "",
+        username: "",
         // For SQLite, only include the selected one
         ...(isSqlite && hasDbPath ? { databaseName: formData.databaseName } : {}),
         ...(isSqlite && hasDbFile ? { uploaded_file: formData.uploaded_file } : {}),
       };
-      if (formData.databaseType.toLowerCase() !== 'sqlite') {
+      if (formData.databaseType.toLowerCase() !== "sqlite") {
         connectionData.host = formData.host;
         connectionData.port = formData.port;
         connectionData.username = formData.username;
-        connectionData.password = formData.password;
+        // Only include pwd if it's provided by the user
+        if (formData["password"] && formData["password"].trim() !== "") {
+          connectionData["password"] = formData["password"];
+        }
         connectionData.databaseName = formData.databaseName;
       }
       window.tempConnectionData = connectionData;
@@ -213,11 +215,11 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
       if (!hasDbPath && !hasDbFile) return false;
       if (hasDbPath && hasDbFile) return false;
       // Only require connectionName and databaseType for SQLite
-      const requiredFields = database.fields.filter(field => ['connectionName', 'databaseType'].includes(field.name));
-      return requiredFields.every(field => formData[field.name]);
+      const requiredFields = database.fields.filter((field) => ["connectionName", "databaseType"].includes(field.name));
+      return requiredFields.every((field) => formData[field.name]);
     } else {
-      const requiredFields = database.fields.filter(field => field.required);
-      return requiredFields.every(field => formData[field.name]);
+      const requiredFields = database.fields.filter((field) => field.required);
+      return requiredFields.every((field) => formData[field.name]);
     }
   })();
 
@@ -226,35 +228,21 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.modalHeader}>
           <div className={styles.modalTitle}>
-            <div 
-              className={styles.modalIcon}
-              style={{ backgroundColor: database.color }}
-            >
-              <SVGIcons
-                icon={database.icon}
-                width={24}
-                height={24}
-                fill="white"
-              />
+            <div className={styles.modalIcon} style={{ backgroundColor: database.color }}>
+              <SVGIcons icon={database.icon} width={24} height={24} fill="white" />
             </div>
             <div>
               <h2>Connect to {database.name}</h2>
               <p>{database.description}</p>
             </div>
           </div>
-          <button 
-            className={styles.closeButton}
-            onClick={onClose}
-            type="button"
-          >
+          <button className={styles.closeButton} onClick={onClose} type="button">
             <SVGIcons icon="close" width={24} height={24} fill="#666" />
           </button>
         </div>
 
         <form className={styles.form} onSubmit={handleSubmit}>
-          {loading && (
-            <Loader />
-            )}
+          {loading && <Loader />}
           <div className={styles.formBody}>
             {database.fields.map((field, index) => (
               <div key={field.name} className={styles.formGroup}>
@@ -262,37 +250,28 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
                   {field.label}
                   {field.required && <span className={styles.required}>*</span>}
                 </label>
-                
-                {field.type === 'password' ? (
+
+                {field.type === "password" ? (
                   <div className={styles.passwordContainer}>
                     <input
                       id={field.name}
                       name={field.name}
-                      type={showPassword ? 'text' : 'password'}
-                      value={formData[field.name] || ''}
+                      type={showPassword ? "text" : "password"}
+                      value={formData[field.name] || ""}
                       onChange={handleInputChange}
                       className={styles.input}
                       required={field.required}
                     />
-                    <button
-                      type="button"
-                      className={styles.passwordToggle}
-                      onClick={togglePasswordVisibility}
-                    >
-                      <SVGIcons
-                        icon={showPassword ? "eye-slash" : "eye"}
-                        width={20}
-                        height={20}
-                        fill="#666"
-                      />
+                    <button type="button" className={styles.passwordToggle} onClick={togglePasswordVisibility}>
+                      <SVGIcons icon={showPassword ? "eye-slash" : "eye"} width={20} height={20} fill="#666" />
                     </button>
                   </div>
-                ) : field.name === 'databaseName' && database.id === 'sqlite' ? (
+                ) : field.name === "databaseName" && database.id === "sqlite" ? (
                   <input
                     id={field.name}
                     name={field.name}
                     type={field.type}
-                    value={formData[field.name] || ''}
+                    value={formData[field.name] || ""}
                     onChange={handleInputChange}
                     className={styles.input}
                     required={field.required}
@@ -304,7 +283,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
                     id={field.name}
                     name={field.name}
                     type={field.type}
-                    value={formData[field.name] || ''}
+                    value={formData[field.name] || ""}
                     onChange={handleInputChange}
                     className={styles.input}
                     required={field.required}
@@ -313,12 +292,9 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
                 )}
               </div>
             ))}
-            {database.id === 'sqlite' && (
-            <div className={styles.warningMessage}>
-                  Please upload a file or enter a new file name.
-                </div>)}
+            {database.id === "sqlite" && <div className={styles.warningMessage}>Please upload a file or enter a new file name.</div>}
             {/* SQLite Upload File Field */}
-            {database.id === 'sqlite' && (
+            {database.id === "sqlite" && (
               <div className={groundTruthStyles.formGroup}>
                 <div className={groundTruthStyles.labelWithInfo}>
                   <label htmlFor="sqlite_uploaded_file" className={groundTruthStyles.label}>
@@ -332,62 +308,47 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
                   onChange={handleFileInputChange}
                   className={groundTruthStyles.fileInput}
                   accept=".db,.sqlite,.sqlite3"
-                  style={{ display: 'none' }}
+                  style={{ display: "none" }}
                 />
                 {!formData.uploaded_file ? (
                   <div
-                    className={`${groundTruthStyles.fileUploadContainer} ${isDragging ? groundTruthStyles.dragging : ''}`}
+                    className={`${groundTruthStyles.fileUploadContainer} ${isDragging ? groundTruthStyles.dragging : ""}`}
                     onDragEnter={handleDragEnter}
                     onDragLeave={handleDragLeave}
                     onDragOver={handleDragOver}
                     onDrop={hasDbPath ? undefined : handleDrop}
-                    onClick={() => !hasDbPath && document.getElementById('sqlite_uploaded_file').click()}
-                    style={{ pointerEvents: hasDbPath ? 'none' : 'auto', opacity: hasDbPath ? 0.5 : 1 }}
-                  >
+                    onClick={() => !hasDbPath && document.getElementById("sqlite_uploaded_file").click()}
+                    style={{ pointerEvents: hasDbPath ? "none" : "auto", opacity: hasDbPath ? 0.5 : 1 }}>
                     <div className={groundTruthStyles.uploadPrompt}>
                       <span>{isDragging ? "Drop file here" : "Click to upload or drag and drop"}</span>
-                      <span><small>Supported Extensions db, sqlite, sqlite3</small></span>
+                      <span>
+                        <small>Supported Extensions db, sqlite, sqlite3</small>
+                      </span>
                     </div>
                   </div>
                 ) : (
                   <div className={groundTruthStyles.fileCard}>
                     <div className={groundTruthStyles.fileInfo}>
                       <span className={groundTruthStyles.fileName}> {formData.uploaded_file.name}</span>
-                      <button
-                        type="button"
-                        onClick={handleRemoveFile}
-                        className={groundTruthStyles.removeFileButton}
-                        aria-label="Remove file"
-                      >&times;</button>
+                      <button type="button" onClick={handleRemoveFile} className={groundTruthStyles.removeFileButton} aria-label="Remove file">
+                        &times;
+                      </button>
                     </div>
                   </div>
                 )}
-                {errorMessage && (
-                  <div className={styles.errorMessage}>{errorMessage}</div>
-                )}
-                {successMessage && !errorMessage && (
-                  <div className={styles.successMessage}>{successMessage}</div>
-                )}
+                {errorMessage && <div className={styles.errorMessage}>{errorMessage}</div>}
+                {successMessage && !errorMessage && <div className={styles.successMessage}>{successMessage}</div>}
               </div>
             )}
           </div>
 
           <div className={styles.modalFooter}>
-            <button
-              type="button"
-              className={styles.cancelButton}
-              onClick={onClose}
-              disabled={isConnecting}
-            >
+            <button type="button" className={styles.cancelButton} onClick={onClose} disabled={isConnecting}>
               Cancel
             </button>
-            <button
-              type="submit"
-              className={styles.connectButton}
-              disabled={isConnecting || !areAllRequiredFieldsFilled}
-            >
-                  <SVGIcons icon="plug" width={16} height={16} fill="white" />
-                    Connect
+            <button type="submit" className={styles.connectButton} disabled={isConnecting || !areAllRequiredFieldsFilled}>
+              <SVGIcons icon="plug" width={16} height={16} fill="white" />
+              Connect
             </button>
           </div>
         </form>

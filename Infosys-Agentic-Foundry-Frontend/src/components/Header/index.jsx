@@ -2,9 +2,8 @@ import React from "react";
 import styles from "../../css_modules/Header.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import brandlogotwo from "../../Assets/Agentic-Foundry-Logo-Blue-2.png";
-import { useNavigate } from "react-router-dom";
 import Cookies from "js-cookie";
-import { APIs, mkDocs_baseURL } from "../../constant";
+import { APIs, mkDocs_baseURL,grafanaDashboardUrl } from "../../constant";
 import { useApiUrl } from "../../context/ApiUrlContext"; // Import the hook
 import { useVersion } from "../../context/VersionContext"; // Import version context hook
 import useFetch from "../../Hooks/useAxios";
@@ -19,12 +18,9 @@ export default function Header() {
   const { addMessage } = useMessage();
 
   const handleLogout = async () => {
-    console.log("🔴 LOGOUT TRIGGERED: Header - Manual logout button clicked");
     try {
       await postData(APIs.LOGOUT);
-      console.log("✅ Backend logout API call successful");
     } catch (error) {
-      console.error("❌ Backend logout API call failed:", error);
       addMessage("Logout request failed, but clearing local session.", "error");
     } finally {
       // Clear any extra cookies not managed by auth
@@ -44,6 +40,10 @@ export default function Header() {
 
   const handleFaqclick = () => {
     window.open(mkDocs_baseURL + mkDocsInternalPath, "_blank");
+  };
+
+  const handleGrafanaClick = () => {
+    window.open(grafanaDashboardUrl, "_blank");
   };
 
   return (
@@ -67,6 +67,9 @@ export default function Header() {
               </button>
             </div>
           </div>
+        </div>
+        <div className={styles.grafana_icon} onClick={handleGrafanaClick} title="Grafana Dashboard">
+          <SVGIcons icon="grafana" width={14} height={14} />
         </div>
         {/* <a href="http://10.208.85.72:9000/" target="_blank"> */}
         <div className={styles.faq_icon} onClick={handleFaqclick}>

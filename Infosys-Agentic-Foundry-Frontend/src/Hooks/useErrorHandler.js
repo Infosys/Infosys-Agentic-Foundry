@@ -53,10 +53,8 @@ export const useErrorHandler = () => {
   useEffect(() => {
     const handle401Event = (event) => {
       const { error, url, method } = event.detail;
-      console.log("🔐 Global 401 event received - logging out user");
 
       if (addMessage) {
-        console.log("SESSION Logged out");
         addMessage("Session expired. Logging out...", "error");
       }
 
@@ -112,12 +110,7 @@ export const useErrorHandler = () => {
 
       if (logError && process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console
-        console.error("Error details:", {
-          original: error,
-          extracted: extractedError,
-          suppressed: isSuppressed,
-          timestamp: new Date().toISOString(),
-        });
+        console.error("Error occured - check error handler");
       }
 
       if (showToast && addMessage && !isSuppressed) {
@@ -202,20 +195,6 @@ export const useErrorHandler = () => {
       }
 
       // Removed automatic logout on 401 (handled via globalAuth401 after failed refresh)
-
-      if (process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.error("API Error handled:", {
-          context,
-          statusCode,
-          suppressed: isSuppressed,
-          noResponse,
-          connRefused,
-          url,
-          userMessage,
-          original: rawError,
-        });
-      }
 
       return finalErrorObject;
     },

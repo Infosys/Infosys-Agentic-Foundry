@@ -60,7 +60,7 @@ const DocViewerModal = ({ url, onClose }) => {
             setBlobUrl(URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' })));
           }
         } else if (isDocx) {
-          let docBlob = response.data;
+          const docBlob = response.data;
           if (typeof docBlob === "string" || response.headers["content-type"]?.includes("application/json")) {
             setError("DOCX preview not available. File is not a valid DOCX.");
             return;

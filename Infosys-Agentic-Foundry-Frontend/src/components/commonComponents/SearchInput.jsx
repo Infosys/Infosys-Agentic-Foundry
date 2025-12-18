@@ -17,7 +17,7 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
     const value = e.target.value;
     setLocalSearchValue(value);
     if (value.trim() === "") {
-      let toClearTheValueFully = setTimeout(() => {
+      const toClearTheValueFully = setTimeout(() => {
         safeClearSearch();
         handleSearch("");
         clearTimeout(toClearTheValueFully);

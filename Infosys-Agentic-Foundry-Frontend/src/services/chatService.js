@@ -1,12 +1,11 @@
 import { APIs } from "../constant";
 import useFetch from "../Hooks/useAxios";
-import { useSSE } from "../context/SSEContext";
 import React from "react";
 import Cookies from "js-cookie";
 
 export const useChatServices = () => {
-  const { fetchData, postData, deleteData } = useFetch();
-  const { sseMessages, connectionStatus } = useSSE();
+  const { fetchData, postData, deleteData, postDataStream } = useFetch();
+ // const { sseMessages, connectionStatus } = useSSE();
 
   // Persist callback across renders using ref so parent can register once
   const sseMessageCallbackRef = React.useRef(null);
@@ -17,17 +16,17 @@ export const useChatServices = () => {
   };
 
   // Listen for new SSE messages and pass to callback + log
-  React.useEffect(() => {
-    if (sseMessages && sseMessages.length > 0) {
-      const lastMsg = sseMessages[sseMessages.length - 1];
-      if (sseMessageCallbackRef.current) {
-        try {
-          sseMessageCallbackRef.current(lastMsg);
-        } catch (err) {
-        }
-      }
-    }
-  }, [sseMessages]);
+  // React.useEffect(() => {
+  //   if (sseMessages && sseMessages.length > 0) {
+  //     const lastMsg = sseMessages[sseMessages.length - 1];
+  //     if (sseMessageCallbackRef.current) {
+  //       try {
+  //         sseMessageCallbackRef.current(lastMsg);
+  //       } catch (err) {
+  //       }
+  //     }
+  //   }
+  // }, [sseMessages]);
 
   const resetChat = async (data) => {
     try {
@@ -44,16 +43,23 @@ export const useChatServices = () => {
     }
   };
 
-  const getChatQueryResponse = async (chatData, url) => {
-    try {
-      const response = await postData(url, chatData);
-
-      if (response) {
-        return response;
-      } else {
-        return null;
+  const getChatQueryResponse = async (chatData, url, onChunk) => {
+    if (!url) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[chatService.getChatQueryResponse] Missing URL argument");
       }
+      return null;
+    }
+    try {
+      const streamArray = await postDataStream(url, chatData, {}, typeof onChunk === "function" ? onChunk : undefined);
+      if (!Array.isArray(streamArray) || streamArray.length === 0) return null;
+      const finalObj = [...streamArray].reverse().find(o => o && (o.executor_messages || o.response || o.raw || o.tool_verifier || o.plan_verifier)) || streamArray[streamArray.length - 1];
+      try { Object.defineProperty(finalObj, '__raw_chunks', { value: streamArray, enumerable: false }); } catch (_) {}
+      return finalObj;
     } catch (error) {
+      if (process.env.NODE_ENV === "development") {
+        console.error("[chatService.getChatQueryResponse] Streaming error", error);
+      }
       return null;
     }
   };
@@ -155,9 +161,6 @@ export const useChatServices = () => {
     fetchOldChats,
     fetchNewChats,
     getQuerySuggestions,
-    setSseMessageCallback,
-    sseMessages,
-    connectionStatus,
     storeMemoryExample,
   };
 };

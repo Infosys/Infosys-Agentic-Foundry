@@ -16,7 +16,7 @@ const ResponsesList = ({ responses, onSelect, onBack, agentName }) => {
           Back to Agents
         </button>
       </div>
-      <div style={{ marginBottom: "16px" }}>
+      <div className={styles.subLabel}>
         <strong> Agent:</strong> <span style={{ fontWeight: "normal" }}>{displayAgentName || "--"}</span>
       </div>
       {safeResponses.length > 0 ? (

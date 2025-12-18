@@ -4,8 +4,9 @@ import { useMessage } from "../../Hooks/MessageContext";
 import { APIs, agentTypesDropdown } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
+import { storageService } from "../../core/storage/storageService";
 
-const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) => {
+const GroundTruth = () => {
   const [progressMessages, setProgressMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const hideStreamingTimeoutRef = useRef(null);
@@ -24,14 +25,13 @@ const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) =
     agent_name: "",
     agent_type: "",
     agentic_application_id: "",
-    session_id: "test_groundTruth",
     use_llm_grading: false,
     uploaded_file: null,
   });
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState([]);
   const { addMessage, setShowPopup } = useMessage();
-  const { fetchData, postData } = useFetch();
+  const { fetchData } = useFetch();
   const [agentsListData, setAgentsListData] = useState([]);
   const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
@@ -285,7 +285,6 @@ const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) =
         `agent_type=${encodeURIComponent(formData.agent_type)}`,
         `agent_name=${encodeURIComponent(agentDisplayName)}`,
         `agentic_application_id=${encodeURIComponent(agentic_application_id)}`,
-        `session_id=${encodeURIComponent("test_groundTruth")}`,
         `use_llm_grading=${encodeURIComponent(formData.use_llm_grading.toString())}`,
       ].join("&");
       const baseUrl = process.env.REACT_APP_BASE_URL || "";
@@ -299,34 +298,29 @@ const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) =
       } else {
         return;
       }
-
-      // Use fetch for streaming SSE
-       // Get JWT token from cookies
-      const getJwtToken = () => {
-        const match = document.cookie.match(/(^|;)\s*jwt-token=([^;]*)/);
-        return match ? decodeURIComponent(match[2]) : null;
-      };
-      const jwtToken = getJwtToken();
+      // Get JWT token from storage service instead of direct cookie access
+      const jwtToken = storageService.getCookie("jwt-token");
+      const postMethod = "POST";
       // Use fetch directly for streaming
       const fetchResponse = await fetch(finalUrl, {
-        method: 'POST',
+        method: postMethod,
         headers: {
-          "Accept": "text/event-stream",
-          ...(jwtToken ? { "Authorization": `Bearer ${jwtToken}` } : {})
+          Accept: "text/event-stream",
+          ...(jwtToken ? { Authorization: `Bearer ${jwtToken}` } : {}),
         },
-        credentials: "include",
-        body: formDataToSend
+        credentials: "omit", // previously was include , but dude to sast and not using any cookie changed to omit
+        body: formDataToSend,
       });
       if (!fetchResponse.body) {
-        addMessage('Streaming not supported by backend.', 'error');
+        addMessage("Streaming not supported by backend.", "error");
         setIsStreaming(false);
         return;
       }
       const reader = fetchResponse.body.getReader();
       const decoder = new TextDecoder();
-      let receivedText = '';
+      let receivedText = "";
       let done = false;
-      let finalResultLine = '';
+      let finalResultLine = "";
       while (!done) {
         const { value, done: streamDone } = await reader.read();
         done = streamDone;
@@ -334,7 +328,7 @@ const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) =
           const chunk = decoder.decode(value, { stream: true });
           receivedText += chunk;
           // Split by newlines and process each line
-          const lines = receivedText.split('\n');
+          const lines = receivedText.split("\n");
           // Keep last incomplete line in receivedText
           receivedText = lines.pop();
           for (const line of lines) {
@@ -342,9 +336,9 @@ const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) =
             try {
               const obj = JSON.parse(line);
               if (obj.progress) {
-                setProgressMessages(prev => [...prev, obj.progress]);
-                if (obj.progress === 'Evaluation completed successfully.') {
-                    setIsStreaming(false);
+                setProgressMessages((prev) => [...prev, obj.progress]);
+                if (obj.progress === "Evaluation completed successfully.") {
+                  setIsStreaming(false);
                 }
               }
               if (obj.result) {
@@ -361,20 +355,20 @@ const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) =
         try {
           const data = JSON.parse(finalResultLine);
           const result = data.result || {};
-          addMessage(result.message || 'Evaluation executed successfully!', 'success');
+          addMessage(result.message || "Evaluation executed successfully!", "success");
           setEvaluationResults({
             averageScores: result.average_scores || null,
-            diagnosticSummary: result.diagnostic_summary || '',
-            message: result.message || '',
+            diagnosticSummary: result.diagnostic_summary || "",
+            message: result.message || "",
             fileName: null,
             showResults: true,
           });
           if (result.download_url) {
-            const fileName = result.download_url.split('file_name=')[1];
+            const fileName = result.download_url.split("file_name=")[1];
             setDownloadableResponse({ url: result.download_url, fileName: fileName });
           }
         } catch (e) {
-          addMessage('Failed to parse final result.', 'error');
+          addMessage("Failed to parse final result.", "error");
         }
       }
     } catch (error) {
@@ -918,17 +912,31 @@ const GroundTruth = ({ isInAdminScreen = false, isInDeveloperScreen = false }) =
           {isStreaming && (
             <div className={styles.evaluationResults}>
               <h4>Evaluation Progress</h4>
-              <div style={{ padding: '16px 0' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ padding: "16px 0" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
                   {progressMessages.map((msg, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'flex-start' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '12px' }}>
-                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#007cc3', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: 12 }}>{idx + 1}</div>
-                        {idx < progressMessages.length - 1 && <div style={{ width: 2, height: 32, background: '#e0e7ff', margin: '0 auto' }} />}
+                    <div key={idx} style={{ display: "flex", alignItems: "flex-start" }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginRight: "12px" }}>
+                        <div
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: "50%",
+                            background: "#007cc3",
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontWeight: "bold",
+                            fontSize: 12,
+                          }}>
+                          {idx + 1}
+                        </div>
+                        {idx < progressMessages.length - 1 && <div style={{ width: 2, height: 32, background: "#e0e7ff", margin: "0 auto" }} />}
                       </div>
-                      <div style={{ background: '#f6f8fa', padding: '10px 16px', borderRadius: '8px', minWidth: 180 }}>
-                        <div style={{ fontWeight: 600, color: '#222', marginBottom: 4 }}>{`Step ${idx + 1}`}</div>
-                        <div style={{ color: '#555', fontSize: 14 }}>{msg}</div>
+                      <div style={{ background: "#f6f8fa", padding: "10px 16px", borderRadius: "8px", minWidth: 180 }}>
+                        <div style={{ fontWeight: 600, color: "#222", marginBottom: 4 }}>{`Step ${idx + 1}`}</div>
+                        <div style={{ color: "#555", fontSize: 14 }}>{msg}</div>
                       </div>
                     </div>
                   ))}

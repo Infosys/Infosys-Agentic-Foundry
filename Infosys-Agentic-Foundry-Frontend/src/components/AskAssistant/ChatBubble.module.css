@@ -660,3 +660,118 @@ li {
     font-size: 11px;
   }
 }
+
+/* Scrollable execution steps list (node details dropdown) */
+.executionStepsList {
+  list-style: none;
+  margin: 2px 0 0 0;
+  padding: 4px 0; /* inner vertical padding so border encloses items */
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  max-height: 240px; /* enable scrollbar when long */
+  overflow-y: auto;
+  scrollbar-width: thin; /* Firefox */
+  border: 1px solid #d1d5db; /* subtle container border */
+  border-radius: 6px;
+  background: #eeeeee70; /* unify background so scrollbar not floating */
+}
+.executionStepsList::-webkit-scrollbar {
+  width: 6px;
+}
+.executionStepsList::-webkit-scrollbar-track {
+  background: #f8fafc; /* match container */
+  border-radius: 6px;
+}
+.executionStepsList::-webkit-scrollbar-thumb {
+  background: #c3ced9;
+  border-radius: 6px;
+}
+.executionStepsList::-webkit-scrollbar-thumb:hover {
+  background: #9aa7b3;
+}
+
+.nodeDetails {
+  padding-block: 3px !important;
+  font-size: 12px !important;
+}
+
+/* Node Details List Item - unified styling for all node lists */
+.nodeDetailsItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border-radius: 0;
+  transition: background 0.15s ease;
+  border-bottom: 1px solid rgb(229, 231, 235);
+}
+
+.nodeDetailsItem:hover {
+  background: #f9fafb;
+}
+
+.nodeDetailsItemLast {
+  border-bottom: none !important;
+}
+
+.nodeDetailsItemActive {
+  background: #f3f4f6;
+  border-radius: 6px;
+}
+
+/* Node Number Badge */
+.nodeNumber {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: 50%;
+  background: #007cc3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.nodeNumberLarge {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  font-size: 11px;
+}
+
+.nodeNumberInactive {
+  background: #d1d5db;
+  color: #374151;
+}
+
+/* Node Name Text */
+.nodeName {
+  flex: 1;
+  min-width: 0;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.nodeNameBold {
+  font-weight: 600;
+}
+
+/* Node Status Badge */
+.nodeStatus {
+  font-size: 10px;
+  text-transform: capitalize;
+  white-space: nowrap;
+  color: #000;
+}
+
+.nodeStatusLarge {
+  font-size: 11px;
+}

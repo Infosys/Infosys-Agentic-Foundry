@@ -1,6 +1,9 @@
 import axios from "axios";
 import { extractErrorMessage } from "../utils/errorUtils";
 
+// Module-level counter for request IDs
+let requestIdCounter = 0;
+
 // Exported registration function so we can attach timing + standardization logic to any axios instance (global or custom)
 export function registerAxiosInterceptors(instance = axios) {
   const FLAG = "__IAF_INTERCEPTORS_REGISTERED__";
@@ -11,7 +14,7 @@ export function registerAxiosInterceptors(instance = axios) {
   const GLOBAL401_DEBOUNCE_MS = 1000;
 
   const canPerf = typeof performance !== "undefined" && typeof performance.now === "function" && typeof performance.getEntriesByType === "function";
-  const mkId = () => Math.random().toString(36).slice(2, 10);
+  const mkId = () => `req-${++requestIdCounter}`;
   const VERBOSE = process.env.REACT_APP_API_TIMING_VERBOSE === "true";
   const DRIFT_WARN_THRESHOLD_MS = 80;
 
@@ -43,12 +46,6 @@ export function registerAxiosInterceptors(instance = axios) {
       }
       if (VERBOSE) {
         // eslint-disable-next-line no-console
-        console.log(
-          `[${reqId}] Candidates for ${url}:`,
-          candidates.map((e) => ({ dur: Math.round(e.duration), start: Math.round(e.startTime), respEnd: Math.round(e.responseEnd) })),
-          "-> chosen",
-          best?.entry && { dur: Math.round(best.entry.duration) }
-        );
       }
       return best?.entry || null;
     } catch (e) {
@@ -111,10 +108,8 @@ export function registerAxiosInterceptors(instance = axios) {
             .map(([k, v]) => `${k}=${Math.max(0, Math.round(v))}ms`)
             .join(" ");
           // eslint-disable-next-line no-console
-          console.log(baseMsg, `| phases: ${phaseStr}`);
         } else {
           // eslint-disable-next-line no-console
-          console.log(baseMsg);
         }
         if (!VERBOSE && netDur != null && appDur != null && appDur - netDur > DRIFT_WARN_THRESHOLD_MS) {
           // eslint-disable-next-line no-console
@@ -151,10 +146,8 @@ export function registerAxiosInterceptors(instance = axios) {
             .map(([k, v]) => `${k}=${Math.max(0, Math.round(v))}ms`)
             .join(" ");
           // eslint-disable-next-line no-console
-          console.log(baseMsg, `| phases: ${phaseStr}`);
         } else {
           // eslint-disable-next-line no-console
-          console.log(baseMsg);
         }
         if (!VERBOSE && netDur != null && appDur != null && appDur - netDur > DRIFT_WARN_THRESHOLD_MS) {
           // eslint-disable-next-line no-console
@@ -180,7 +173,6 @@ export function registerAxiosInterceptors(instance = axios) {
               lastGlobal401Ts = now;
               try {
                 // eslint-disable-next-line no-console
-                console.log("🔐 401 (post-refresh or non-refreshable) - triggering global logout event");
                 window.dispatchEvent(
                   new CustomEvent("globalAuth401", {
                     detail: { error: standardized, url, method, timestamp: now, postRefresh: isRetry || isRefreshEndpoint },

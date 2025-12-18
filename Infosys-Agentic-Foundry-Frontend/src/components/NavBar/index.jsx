@@ -4,6 +4,7 @@ import SVGIcons from "../../Icons/SVGIcons";
 import { NavLink, useLocation } from "react-router-dom";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext";
 import { useAuth } from "../../context/AuthContext";
+import { usePermissions } from "../../context/PermissionsContext";
 import Cookies from "js-cookie";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faKey } from "@fortawesome/free-solid-svg-icons";
@@ -19,6 +20,9 @@ export default function NavBar() {
   const isAdmin = role && role.toLowerCase() === "admin";
   const isDeveloper = role && role.toLowerCase() === "developer";
   const isUser = role && role.toLowerCase() === "user";
+  const { permissions, hasPermission } = usePermissions();
+
+
 
   // Reset active button state when user logs out
   useEffect(() => {
@@ -62,27 +66,31 @@ export default function NavBar() {
     <div className={styles.navSection}>
       <nav className={styles.nav}>
         <ul>
-          {/* Hide Tools, Agents, Vault for USER role */}
-          {!isUser && (
+          {/* If role is 'user' show only Chat, Files, Ground Truth. Other roles follow existing permission logic. */}
+          { !isUser && (
             <>
-              <li>
-                {mainNavLink(
-                  "/",
-                  <>
-                    <SVGIcons icon="fa-screwdriver-wrench" fill="#343741" />
-                    <span>Tools</span>
-                  </>
-                )}
-              </li>
-              <li>
-                {mainNavLink(
-                  "/agent",
-                  <>
-                    <SVGIcons icon="fa-robot" fill="#343741" />
-                    <span>Agents</span>
-                  </>
-                )}
-              </li>
+              {(typeof hasPermission === "function" ? hasPermission("read_access.tools") : !(permissions && permissions.read_access && permissions.read_access.tools === false)) && (
+                <li>
+                  {mainNavLink(
+                    "/",
+                    <>
+                      <SVGIcons icon="fa-screwdriver-wrench" fill="#343741" />
+                      <span>Tools</span>
+                    </>
+                  )}
+                </li>
+              )}
+              {(typeof hasPermission === "function" ? hasPermission("read_access.agents") : !(permissions && permissions.read_access && permissions.read_access.agents === false)) && (
+                <li>
+                  {mainNavLink(
+                    "/agent",
+                    <>
+                      <SVGIcons icon="fa-robot" fill="#343741" />
+                      <span>Agents</span>
+                    </>
+                  )}
+                </li>
+              )}
             </>
           )}
           <li>
@@ -94,28 +102,32 @@ export default function NavBar() {
               </>
             )}
           </li>
-          {/* Vault should be below Chat */}
-          {!isUser && (
-            <li>
-              {mainNavLink(
-                "/secret",
-                <>
-                  <FontAwesomeIcon icon={faKey} />
-                  <span>Vault</span>
-                </>
+          {/* Vault and Data Connectors are not shown for simple users */}
+          { !isUser && (
+            <>
+              {(typeof hasPermission === "function" ? hasPermission("vault_access") : !(permissions && permissions.vault_access === false)) && (
+                <li>
+                  {mainNavLink(
+                    "/secret",
+                    <>
+                      <FontAwesomeIcon icon={faKey} />
+                      <span>Secret</span>
+                    </>
+                  )}
+                </li>
               )}
-            </li>
-          )}
-          {!isUser && (
-            <li>
-              {mainNavLink(
-                "/dataconnector",
-                <>
-                  <SVGIcons icon="data-connectors" fill="#343741" />
-                  <span>Data Connectors</span>
-                </>
+              {(typeof hasPermission === "function" ? hasPermission("data_connector_access") : !(permissions && permissions.data_connector_access === false)) && (
+                <li>
+                  {mainNavLink(
+                    "/dataconnector",
+                    <>
+                      <SVGIcons icon="data-connectors" fill="#343741" />
+                      <span>Data Connectors</span>
+                    </>
+                  )}
+                </li>
               )}
-            </li>
+            </>
           )}
           <li>
             <button onClick={handleFileClick} className={activeButton === "files" ? "active" : ""}>
@@ -123,7 +135,10 @@ export default function NavBar() {
               <span>Files</span>
             </button>
           </li>
-          {(!isAdmin && !isDeveloper) && (
+          {/* Ground Truth should be visible to simple users as requested. Non-user roles keep existing visibility (current logic made it hidden for admin/dev). */}
+          { (
+              isUser || (!isAdmin && !isDeveloper)
+            ) && (
             <li>
               {mainNavLink(
                 "/groundtruth",

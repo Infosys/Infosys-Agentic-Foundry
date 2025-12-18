@@ -1,28 +1,16 @@
 {
   "extends": ["react-app", "react-app/jest"],
   "rules": {
-    // Prevent undefined property access
     "no-unsafe-optional-chaining": "error",
-    // "prefer-optional-chain": "warn",
-
-    // Catch potential undefined issues
     "no-undef": "warn",
     "no-undefined": "warn",
-
-    // React specific
     "react-hooks/exhaustive-deps": "warn",
     "react/prop-types": "off",
-
-    // General safety
     "no-unused-vars": "warn",
     "no-console": ["warn", { "allow": ["warn", "error"] }],
-
-    // Custom rule suggestions for your team
     "prefer-const": "warn",
     "no-var": "error",
     "eqeqeq": ["error", "always", { "null": "ignore" }],
-
-    // Prevent common React pitfalls
     "jsx-a11y/alt-text": "error",
     "jsx-a11y/anchor-has-content": "error"
   },
@@ -30,7 +18,6 @@
     {
       "files": ["**/*.js", "**/*.jsx"],
       "rules": {
-        // Additional rules for JavaScript files
         "no-implicit-coercion": "warn",
         "no-magic-numbers": ["warn", { "ignore": [0, 1, -1] }]
       }

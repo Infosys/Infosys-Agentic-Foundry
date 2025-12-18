@@ -19,7 +19,7 @@ const UnifiedEvaluationTab = ({ activeSubTab }) => {
           }}
         >
           {/* Render content based on sub-tab */}
-          {activeSubTab === "groundtruth" && <GroundTruth isInAdminScreen={false} />}
+          {activeSubTab === "groundtruth" && <GroundTruth/>}
           {activeSubTab === "consistency" && <ConsistencyTab />}
         </div>
       </div>

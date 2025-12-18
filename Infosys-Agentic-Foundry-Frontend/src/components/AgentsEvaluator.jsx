@@ -4,8 +4,9 @@ import Loader from "./commonComponents/Loader";
 import { useMessage } from "../Hooks/MessageContext";
 import styles from "../css_modules/AgentsEvaluator.module.css";
 import useFetch from "../Hooks/useAxios";
+import { storageService } from "../core/storage/storageService";
 
-const AgentsEvaluator = () => {
+const AgentsEvaluator = ({ onResponse }) => {
   const [modelOptions, setModelOptions] = useState([]);
   const [model1, setModel1] = useState("");
   const [model2, setModel2] = useState("");
@@ -16,17 +17,11 @@ const AgentsEvaluator = () => {
   const { fetchData } = useFetch();
   const [isStreaming, setIsStreaming] = useState(false);
 
-
   // Reset response when model1 or model2 changes
   useEffect(() => {
-  setResponse([]);
+    setResponse([]);
+    if (onResponse) onResponse(null);
   }, [model1, model2]);
-
-   // Get JWT token from cookies
-  const getJwtToken = () => {
-    const match = document.cookie.match(/(^|;)\s*jwt-token=([^;]*)/);
-    return match ? decodeURIComponent(match[2]) : null;
-  };
 
   const fetchModels = async () => {
     setLoading(true);
@@ -50,20 +45,25 @@ const AgentsEvaluator = () => {
   }, []);
 
   const handleEvaluate = async () => {
-   setResponse([]);
+    setResponse([]);
+    if (onResponse) onResponse(null);
     setIsStreaming(true);
+
     // Use BASE_URL from constant.js
     const baseUrl = process.env.REACT_APP_BASE_URL || "";
     const apiUrl = `${baseUrl}${APIs.PROCESS_UNPROCESSED}?evaluating_model1=${encodeURIComponent(model1)}&evaluating_model2=${encodeURIComponent(model2)}`;
+
     try {
-      const jwtToken = getJwtToken();
+      // Get JWT token from storage service instead of direct cookie access
+      const jwtToken = storageService.getCookie("jwt-token");
+      const postMethod = "POST";
       const response = await fetch(apiUrl, {
-        method: "POST",
+        method: postMethod,
         headers: {
-          "Accept": "text/event-stream",
-          ...(jwtToken ? { "Authorization": `Bearer ${jwtToken}` } : {})
+          Accept: "text/event-stream",
+          ...(jwtToken ? { Authorization: `Bearer ${jwtToken}` } : {}),
         },
-        credentials: "include"
+        credentials: "omit", // previously was include , but dude to sast and not using any cookie changed to omit
       });
       if (!response.body) {
         addMessage("No response stream received", "error");
@@ -74,33 +74,40 @@ const AgentsEvaluator = () => {
       const decoder = new TextDecoder();
       let done = false;
       let shouldStop = false;
+      let latestFormatted = null;
       while (!done && !shouldStop) {
         const { value, done: streamDone } = await reader.read();
         done = streamDone;
         if (value) {
           const chunk = decoder.decode(value, { stream: true });
           // Split by SSE event delimiter\n\n
-        const events = chunk.split("\n\n");
-        for (const event of events) {
-          if (event.trim()) {
-            // Remove 'data:' prefix if present
-            const lines = event.split("\n").map(l => l.replace(/^data:/, "").trim());
-            const eventData = lines.join("\n");
-            let formatted;
-            try {
-              const parsed = JSON.parse(eventData);
-              formatted = JSON.stringify(parsed, null, 2);
-              if (parsed.status === "all_done") {
-                shouldStop = true;
+          const events = chunk.split("\n\n");
+          for (const event of events) {
+            if (event.trim()) {
+              // Remove 'data:' prefix if present
+              const lines = event.split("\n").map((l) => l.replace(/^data:/, "").trim());
+              const eventData = lines.join("\n");
+              let formatted;
+              try {
+                const parsed = JSON.parse(eventData);
+                formatted = JSON.stringify(parsed, null, 2);
+                if (parsed.status === "all_done") {
+                  shouldStop = true;
+                }
+              } catch {
+                formatted = eventData;
               }
-            } catch {
-              formatted = eventData;
+              setResponse((prev) => {
+                const updated = [...prev, formatted];
+                if (onResponse) onResponse(formatted);
+                return updated;
+              });
+              latestFormatted = formatted;
             }
-            setResponse(prev => [...prev, formatted]);
           }
         }
       }
-    }
+      if (onResponse && latestFormatted) onResponse(latestFormatted);
       setIsStreaming(false);
     } catch (error) {
       addMessage("Failed to start evaluation (stream)", "error");
@@ -175,9 +182,18 @@ const AgentsEvaluator = () => {
                     }
                     return (
                       <div style={{ display: "flex", alignItems: "flex-start" }}>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginRight: "12px" }}>
-                        </div>
-                        <div style={{background: "#f8f8f8", padding: "10px 16px", borderRadius: "4px", minWidth: 180, width: "100%", height: "112px", textAlign: "center", margin: "20px 0"}}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginRight: "12px" }}></div>
+                        <div
+                          style={{
+                            background: "#f8f8f8",
+                            padding: "10px 16px",
+                            borderRadius: "4px",
+                            minWidth: 180,
+                            width: "100%",
+                            height: "112px",
+                            textAlign: "center",
+                            margin: "20px 0",
+                          }}>
                           <div style={{ fontWeight: 600, color: "#222", marginBottom: 4 }}>{stepName}</div>
                           <div style={{ color: "#555", fontSize: 14 }}>{description}</div>
                           {typeof parsed.processed !== "undefined" && (

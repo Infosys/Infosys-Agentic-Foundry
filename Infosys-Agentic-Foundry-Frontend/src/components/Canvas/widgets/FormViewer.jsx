@@ -1,6 +1,5 @@
 import React from 'react';
 import styles from './FormViewer.module.css';
-import SVGIcons from '../../../Icons/SVGIcons';
 
 const FormViewer = ({ content, messageId }) => {
   // Simple form renderer for demo purposes

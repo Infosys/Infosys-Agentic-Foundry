@@ -119,3 +119,6 @@
 .statusPending {
   background-color: #ff9800;
 }
+.subLabel{
+  margin-bottom: 16px;
+}

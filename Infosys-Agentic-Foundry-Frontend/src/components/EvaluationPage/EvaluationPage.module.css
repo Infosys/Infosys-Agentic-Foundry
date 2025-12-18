@@ -1,3 +1,15 @@
+/* JSON key styling for SplitLayout response */
+.splitLayoutJsonKey {
+  color: #495057;
+  font-size: 16px;
+  font-weight: 630;
+  text-transform: capitalize;
+}
+/* Response title for SplitLayout */
+.splitLayoutResponseTitle {
+  color: #495057;
+  font-size: 16px;
+}
 .tabHeader {
   display: flex;
   border-bottom: none;
@@ -293,8 +305,9 @@
 .consistencyResponsePanel {
   flex: 1;
   min-width: 0;
-  background: #f9f9f9;
-  border-radius: 8px;
+  /* background: #f9f9f9; */
+  border-left: 1px solid #e0e0e0;
+  /* border-radius: 8px; */
   padding: 24px;
   overflow: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);

@@ -48,7 +48,6 @@ export default function useAutoLogout() {
       if (!ts) return; // safety
       const elapsed = Date.now() - ts;
       if (elapsed >= SESSION_TIMEOUT_MS) {
-        console.log("loggedOut Due to UI session timeOut");
         doLogout();
         return;
       }

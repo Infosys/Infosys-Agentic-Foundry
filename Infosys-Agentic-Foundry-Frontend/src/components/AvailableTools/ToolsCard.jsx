@@ -4,6 +4,7 @@ import { useToolsAgentsService } from "../../services/toolService";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faBan } from "@fortawesome/free-solid-svg-icons";
 import { useMessage } from "../../Hooks/MessageContext";
+import { usePermissions } from "../../context/PermissionsContext";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import Cookies from "js-cookie";
 import DeleteModal from "../commonComponents/DeleteModal";
@@ -24,10 +25,11 @@ function ToolsCard(props) {
       id: tool.id || tool.tool_id,
       name: displayName,
       description: tool.description || tool.tool_description,
-      created_by: tool.created_by,
+      created_by: createdBy,
       created_on: tool.created_on,
     };
   }, [tool, isUnusedSection]);
+ 
 
   // Validate required props
   useEffect(() => {
@@ -62,6 +64,11 @@ function ToolsCard(props) {
   }, [loading, setShowPopup]);
 
   const { handleApiError, handleApiSuccess } = useErrorHandler();
+
+  const { permissions, hasPermission } = usePermissions();
+
+  const canUpdate = typeof hasPermission === "function" ? hasPermission("update_access.tools") : !(permissions && permissions.update_access && permissions.update_access.tools === false);
+  const canDelete = typeof hasPermission === "function" ? hasPermission("delete_access.tools") : !(permissions && permissions.delete_access && permissions.delete_access.tools === false);
 
   const handelDeleteTools = async (toolId) => {
     if (!toolId) {
@@ -100,10 +107,7 @@ function ToolsCard(props) {
     }
   };
 
-  const handleChange = (e) => {
-    setEmailId(e?.target?.value);
-    setErrorMessage("");
-  };
+  // handleChange removed - email input is disabled in delete flow and email is managed elsewhere
 
   const { logout } = useAuth();
 
@@ -134,7 +138,7 @@ function ToolsCard(props) {
       <div
         key={normalizedTool.id}
         className={`${isDeleteClicked ? styles["delete-card"] : ""} ${props?.recycle ? styles["cardRecycle"] : ""} ${isUnusedSection ? styles["card-unused"] : styles["card"]}`}
-        onClick={props?.recycle ? handleEditClick : undefined}>
+        onClick={props?.recycle ? handleEditClick : () => {}}>
         {!isDeleteClicked && (
           <>
             <div>
@@ -146,6 +150,40 @@ function ToolsCard(props) {
                   <p className={styles["card-description-title"]}>{normalizedTool.description}</p>
                 </>
               )}
+              <div
+                style={{
+                  position: "absolute",
+                  left: "2px",
+                  bottom: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  pointerEvents: "none", // ensure underlying buttons remain clickable
+                }}>
+                {(() => {
+                  const isValidatorFlag = (() => {
+                    if (tool.tool_id  && String(tool.tool_id).toLowerCase().startsWith("_validator")) return true;
+                    return false;
+                  })();
+
+                  return (
+                    <span
+                      className={styles.typePill}
+                      style={{
+                        fontSize: "12px",
+                        padding: "4px 10px",
+                        background: "#6b7280",
+                        color: "#fff",
+                        borderRadius: "8px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                      }}
+                      title={isValidatorFlag ? "Validator tool" : "Standard tool"}>
+                      {isValidatorFlag ? "VALIDATOR" : "TOOL"}
+                    </span>
+                  );
+                })()}
+              </div>
               {isUnusedSection && (
                 <div className={styles["card-info"]}>
                   <div className={styles["info-item"]}>
@@ -164,17 +202,22 @@ function ToolsCard(props) {
               )}
               {!props?.recycle && (
                 <div className={styles["btn-grp"]}>
-                  <button
-                    onClick={() => {
-                      setErrorMessage(false);
-                      setIsDeleteClicked(true);
-                    }}
-                    title="Delete"
-                    className={styles["deleteBtn"]}>
-                    <SVGIcons icon="fa-solid fa-user-xmark" width={20} height={16} />
-                  </button>
-                  {!isUnusedSection && (
-                    <button onClick={handleEditClick} className={styles["editBtn"]} title="Edit">
+                  {canDelete && (
+                    <button
+                      onClick={() => {
+                        setErrorMessage(false);
+                        setIsDeleteClicked(true);
+                      }}
+                      title={"Delete"}
+                      className={styles["deleteBtn"]}>
+                      <SVGIcons icon="recycle-bin" width={20} height={16} />
+                    </button>
+                  )}
+                  {!isUnusedSection && canUpdate && (
+                    <button
+                      onClick={handleEditClick}
+                      className={styles["editBtn"]}
+                      title={"Edit"}>
                       <SVGIcons icon="fa-solid fa-pen" width={16} height={16} />
                     </button>
                   )}
@@ -189,7 +232,7 @@ function ToolsCard(props) {
             <button className={styles["cancel-btn"]} onClick={() => setIsDeleteClicked(false)}>
               <SVGIcons icon="fa-xmark" fill="#3D4359" />
             </button>
-            <input className={styles["email-id-input"]} type="text" value={tool?.created_by} disabled></input>
+            <input className={styles["email-id-input"]} type="text" value={createdBy} disabled></input>
             <div className={styles["action-info"]}>
               <span className={styles.warningIcon}>
                 <SVGIcons icon="warnings" width={16} height={16} fill="#B8860B" />

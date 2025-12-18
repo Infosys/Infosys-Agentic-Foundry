@@ -10,7 +10,6 @@ import RightResultsPanel from "../commonComponents/RightResultsPanel";
 import ConsistencyAgentCard from "./ConsistencyAgentCard";
 import listStyles from "../../css_modules/ListOfAgents.module.css";
 import consistencyStyles from "./ConsistencyTab.module.css";
-import toolOnboardingStyles from "../../css_modules/ToolOnboarding.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import useErrorHandler from "../../Hooks/useErrorHandler";
 
@@ -788,7 +787,7 @@ const ConsistencyTab = () => {
         } else {
           setModels([]);
         }
-      } catch {
+      } catch(error){
         handleApiError(error, {
           context: "fetch_models",
           customMessage: "Failed to fetch models",
@@ -803,7 +802,7 @@ const ConsistencyTab = () => {
       try {
         const data = await fetchData(APIs.GET_AGENTS_BY_DETAILS);
         setAgentsListData(data);
-      } catch {
+      } catch(error) {
         handleApiError(error, {
           context: "fetch_agents",
           customMessage: "Failed to fetch agents",

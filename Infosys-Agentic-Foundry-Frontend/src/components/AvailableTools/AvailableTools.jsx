@@ -5,16 +5,17 @@ import ToolsCard from "./ToolsCard.jsx";
 import AvailableServers from "./AvailableServers.jsx";
 import { useToolsAgentsService } from "../../services/toolService.js";
 import Loader from "../commonComponents/Loader.jsx";
+import { usePermissions } from "../../context/PermissionsContext";
 import { APIs } from "../../constant";
 import useFetch from "../../Hooks/useAxios.js";
 import FilterModal from "../commonComponents/FilterModal.jsx";
 import SubHeader from "../commonComponents/SubHeader.jsx";
 import { debounce } from "lodash";
-import axios from "axios";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import { useActiveNavClick } from "../../events/navigationEvents";
 
 const AvailableTools = () => {
+  const { permissions, loading: permissionsLoading } = usePermissions();
   const [toolList, setToolList] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -34,8 +35,17 @@ const AvailableTools = () => {
   const pageRef = useRef(1);
   const [loader, setLoaderState] = useState(false);
   const isLoadingRef = React.useRef(false);
-  const { getToolsSearchByPageLimit, calculateDivs } = useToolsAgentsService();
+  const { getToolsAndValidatorsPaginated, calculateDivs } = useToolsAgentsService();
+  // Track validator tools fetched once (backend returns full list without pagination)
+  const validatorToolsRef = useRef([]);
+  const hasLoadedValidatorsOnce = useRef(false);
   const { handleError } = useErrorHandler();
+
+  // Helper to force re-fetch of validator tools on explicit refreshes (e.g. after adding a validator)
+  const resetValidatorsCache = useCallback(() => {
+    hasLoadedValidatorsOnce.current = false;
+    validatorToolsRef.current = [];
+  }, []);
 
   // Normalize API responses to always return a clean array of tool objects
   const sanitizeToolsResponse = (response) => {
@@ -46,7 +56,17 @@ const AvailableTools = () => {
     if (response.length === 1 && response[0] && typeof response[0] === "object" && "message" in response[0] && !("tool_id" in response[0])) {
       return [];
     }
-    return response.filter((item) => item && typeof item === "object" && ("tool_id" in item || "tool_name" in item));
+    return response
+      .filter((item) => item && typeof item === "object" && ("tool_id" in item || "tool_name" in item))
+      .map((item) => {
+        let isValidator = false;
+        if (item.tool_id) {
+          if (String(item.tool_id).startsWith("_validator_")) {
+            isValidator = true;
+          }
+        }
+        return { ...item, is_validator: isValidator };
+      });
   };
 
   const handleSearch = async (searchValue, divsCount, pageNumber, tagsToUse = null) => {
@@ -58,10 +78,8 @@ const AvailableTools = () => {
     if (searchValue.trim()) {
       try {
         setLoading(true);
-        // Use the new API endpoint for search with tag filtering
-        // Use provided tagsToUse or fall back to selectedTags state
         const tagsForSearch = tagsToUse !== null ? tagsToUse : selectedTags;
-        const response = await getToolsSearchByPageLimit({
+        const response = await getToolsAndValidatorsPaginated({
           page: pageNumber,
           limit: divsCount,
           search: searchValue,
@@ -71,13 +89,8 @@ const AvailableTools = () => {
         if (tagsForSearch?.length > 0) {
           dataToSearch = dataToSearch.filter((item) => item.tags && item.tags.some((tag) => tagsForSearch.includes(tag?.tag_name)));
         }
-
-        // Setting the total count
         setTotalToolsCount(response.total_count || 0);
-
-        // Update visibleData with the API filtered data (no client-side filtering needed)
         setVisibleData(dataToSearch);
-        // If returned less than requested, no more pages
         setHasMore(dataToSearch.length >= divsCount);
       } catch (error) {
         handleError(error, { context: "AvailableTools.handleSearch" });
@@ -100,32 +113,33 @@ const AvailableTools = () => {
   const getToolsDataWithTags = async (pageNumber, divsCount, tagsToUse) => {
     setLoading(true);
     try {
-      // Use the new API endpoint for paginated tools with tag filtering
-      const response = await getToolsSearchByPageLimit({
+      const response = await getToolsAndValidatorsPaginated({
         page: pageNumber,
         limit: divsCount,
         search: "",
         tags: tagsToUse?.length > 0 ? tagsToUse : undefined,
       });
       const data = sanitizeToolsResponse(response?.details);
+      let finalData = data;
+      if ((tagsToUse || []).length > 0) {
+        finalData = data.filter((item) => item.tags && item.tags.some((tag) => (tagsToUse || []).includes(tag?.tag_name)));
+      }
       if (pageNumber === 1) {
-        setToolList(data);
-        setVisibleData(data); // Ensure initial load is rendered
+        setToolList(finalData);
+        setVisibleData(finalData);
       } else {
-        if (data.length > 0) {
-          setVisibleData((prev) => (Array.isArray(prev) ? [...prev, ...data] : [...data]));
+        if (finalData.length > 0) {
+          setVisibleData((prev) => (Array.isArray(prev) ? [...prev, ...finalData] : [...finalData]));
         }
       }
-      // Use total_count from response if available, otherwise use current data length
       setTotalToolsCount(response.total_count || data?.length || 0);
-      // If fewer items than requested were returned, we've reached the end
       if (data.length < divsCount) {
         setHasMore(false);
       } else if (pageNumber === 1) {
         // Reset hasMore on fresh load only when page is full
         setHasMore(true);
       }
-      return data; // return fetched data for caller decisions
+      return finalData; // return fetched merged data for caller decisions
     } catch (error) {
       handleError(error, { context: "AvailableTools.getToolsData" });
       if (pageNumber === 1) {
@@ -144,6 +158,8 @@ const AvailableTools = () => {
     setSelectedTags([]); // Clear tags when clearing search
     setVisibleData([]);
     setHasMore(true);
+    // Also reset validators so they re-fetch on next load (captures newly added validator tools)
+    resetValidatorsCache();
     setTimeout(() => {
       // Trigger fetchToolsData with no search term and no tags (reset to first page)
       const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
@@ -196,7 +212,7 @@ const AvailableTools = () => {
       setLoading && setLoading(true);
       let newData = [];
       if (searchTerm.trim()) {
-        const res = await getToolsSearchByPageLimit({
+        const res = await getToolsAndValidatorsPaginated({
           page: nextPage,
           limit: divsCount,
           search: searchTerm,
@@ -278,6 +294,7 @@ const AvailableTools = () => {
     setSelectedTags([]);
     setVisibleData([]);
     setHasMore(true);
+    resetValidatorsCache();
     const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
     // Call getToolsData with explicitly empty tags
     getToolsDataWithTags(1, divsCount, []);
@@ -300,18 +317,29 @@ const AvailableTools = () => {
     }
   };
 
-  const fetchPaginatedTools = async (pageNumber = 1) => {
+  const fetchPaginatedTools = async (pageNumber = 1, refreshValidators = false) => {
     setVisibleData([]);
     setPage(pageNumber);
     pageRef.current = pageNumber;
     setHasMore(true);
     const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+    if (refreshValidators || pageNumber === 1) {
+      // If explicitly requested or first page reset, invalidate validator cache so latest validators appear
+      resetValidatorsCache();
+    }
     await getToolsData(pageNumber, divsCount);
   };
 
   useActiveNavClick(["/", "/tools"], () => {
     setShowForm((open) => (open ? false : open));
   });
+
+  if (permissionsLoading) {
+    return <Loader />;
+  }
+  if (permissions && permissions.read_access && permissions.read_access.tools === false) {
+    return <div style={{ padding: 24, color: '#b91c1c', fontWeight: 600 }}>You do not have permission to view tools.</div>;
+  }
 
   return (
     <>
@@ -424,6 +452,7 @@ const AvailableTools = () => {
                         setEditTool={setEditTool}
                         loading={loading}
                         fetchPaginatedTools={fetchPaginatedTools}
+                        createdBy={item.created_by || ""}
                       />
                     ))}
                   </div>

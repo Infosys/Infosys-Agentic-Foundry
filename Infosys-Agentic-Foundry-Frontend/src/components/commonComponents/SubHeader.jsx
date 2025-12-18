@@ -3,6 +3,7 @@ import SearchInputToolsAgents from "./SearchInputTools";
 import SVGIcons from "../../Icons/SVGIcons";
 import styles from "./SubHeader.module.css";
 import Cookies from "js-cookie";
+import { usePermissions } from "../../context/PermissionsContext";
 import DeleteModal from "./DeleteModal";
 import { faRefresh } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -110,12 +111,39 @@ const SubHeader = (props) => {
             {selectedTags?.length > 0 && <span className={styles.badge}>{selectedTags?.length}</span>}
             <SVGIcons icon="slider-rect" width={20} height={18} fill="#C3C1CF" />
           </button>
-          <button type="button" onClick={handlePlusClick} className={styles.plus}>
-            <SVGIcons icon="fa-plus" fill="#007CC3" width={16} height={16} />
-          </button>
+          {/* Add button: only enabled when role has add permission for the current activeTab or heading */}
+          <AddButton activeTab={activeTab} heading={heading} onPlusClick={handlePlusClick} />
         </div>
       </div>
     </>
+  );
+};
+
+const AddButton = ({ activeTab, heading, onPlusClick }) => {
+  const { permissions, hasPermission } = usePermissions();
+
+  // Decide which permission key to use based on context (heading or activeTab)
+  let permissionKey = "add_access.tools";
+  if (typeof heading === "string" && heading.toUpperCase() === "AGENTS") {
+    permissionKey = "add_access.agents";
+  } else if (activeTab === "agents" || activeTab === "AGENTS") {
+    permissionKey = "add_access.agents";
+  } else if (typeof heading === "string" && heading.toUpperCase().includes("TOOL")) {
+    permissionKey = "add_access.tools";
+  }
+
+  const canAdd = typeof hasPermission === "function" ? hasPermission(permissionKey) : !(permissions && permissions.add_access && permissions.add_access[permissionKey.split(".")[1]] === false);
+  if (!canAdd) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={onPlusClick}
+      className={styles.plus}
+      title={"Add"}
+    >
+      <SVGIcons icon="fa-plus" fill="#007CC3" width={16} height={16} />
+    </button>
   );
 };
 

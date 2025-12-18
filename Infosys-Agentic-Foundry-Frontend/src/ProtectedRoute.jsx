@@ -11,13 +11,6 @@ const ProtectedRoute = ({ children, requiredRole }) => {
     const active = getActiveUser();
 
     if (!hasAuthArtifacts()) {
-      console.log("🔴 LOGOUT TRIGGERED: ProtectedRoute - missing auth artifacts", {
-        hasStrictArtifacts: hasAuthArtifacts(true),
-        hasCoreArtifacts: hasAuthArtifacts(false),
-        activeUser: active,
-        userState: user?.name,
-        currentPath: window.location.pathname,
-      });
       logout("protected-route-check");
       return;
     }
@@ -28,11 +21,6 @@ const ProtectedRoute = ({ children, requiredRole }) => {
         // Soft redirect to trigger contexts to re-evaluate if necessary
         return;
       }
-      console.log("🔴 LOGOUT TRIGGERED: ProtectedRoute - user mismatch", {
-        userName: user.name,
-        activeUser: active,
-        currentPath: window.location.pathname,
-      });
       logout("protected-route-mismatch");
     }
   }, [loading, logout, user]);

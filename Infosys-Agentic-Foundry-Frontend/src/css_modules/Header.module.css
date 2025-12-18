@@ -86,6 +86,18 @@
   color: #333;
 }
 
+.grafana_icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
 .faq_icon {
   width: 22px;
   height: 22px;

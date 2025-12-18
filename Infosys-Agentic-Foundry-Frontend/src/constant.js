@@ -40,6 +40,7 @@ export const mkDocs_baseURL = process.env.REACT_APP_MKDOCS_BASE_URL;
 
 export const liveTrackingUrl = process.env.REACT_APP_LIVE_TRACKING_URL;
 
+export const grafanaDashboardUrl = process.env.REACT_APP_GRAFANA_DASHBOARD_URL;
 export const APIs = {
   //Feedback Learning APIs
   GET_APPROVALS_LIST: "/feedback-learning/get/approvals-list",
@@ -51,13 +52,7 @@ export const APIs = {
   AGENTS_UNUSED: "/agents/unused/get",
   TOOLS_UNUSED: "/tools/unused/get",
 
-  //Default APIs
-  // LOGIN: "/login",
-  // LOGOUT:"/logout",
-  // REGISTER: "/registration",
-  // UPDATE_PASSWORD_ROLE: "/update-password-role",
-  // GUEST_LOGIN: "/login_guest",
-
+  // Default APIs
   LOGIN: "/auth/login",
   LOGOUT: "/auth/logout",
   REGISTER: "/auth/register",
@@ -113,11 +108,17 @@ export const APIs = {
 
   // Tools APIs
   GET_TOOLS_SEARCH_PAGINATED: "/tools/get/search-paginated/",
+  GET_TOOLS_AND_VALIDATORS_SEARCH_PAGINATED: "/tools/get/tools-and-validators-search-paginated/",
   ADD_TOOLS: "/tools/add",
   GET_TOOLS_BY_LIST: "/tools/get/by-list",
   UPDATE_TOOLS: "/tools/update/",
   DELETE_TOOLS: "/tools/delete/",
+  // Validator-specific tool segregation
+  // Backend expected to return only non-validator tools for existing endpoints.
+  // New endpoints explicitly differentiate validator tools so UI can fetch them for validation patterns.
+  GET_VALIDATOR_TOOLS: "/tools/validators/get", 
   TOOLS_BY_TAGS: "/tools/get/by-tags",
+  GET_TOOLS_BY_ID:"/tools/get/{tool_id}",
   TOOLS_RECYCLE_BIN: "/tools/recycle-bin/get",
   RESTORE_TOOLS: "/tools/recycle-bin/restore/",
   DELETE_TOOLS_PERMANENTLY: "/tools/recycle-bin/permanent-delete/",
@@ -138,6 +139,40 @@ export const APIs = {
   DELETE_AGENTS_PERMANENTLY: "/agents/recycle-bin/permanent-delete/",
   EXPORT_AGENTS: "/agents/export",
 
+  // Agent Assignment APIs
+  GET_USERS: "/user-agent-access/all",
+  GRANT_USER_AGENT_ACCESS: "/user-agent-access/grant",
+  REVOKE_USER_AGENT_ACCESS: "/user-agent-access/revoke",
+  GET_USER_AGENT_ACCESS: "/user-agent-access/user/",
+  GET_GROUPS: "/groups/get/list",
+  GET_DOMAINS: "/domains/get-all-domains",
+  GET_DOMAINS_BY_USER: "/domains/by-user/",
+  CREATE_DOMAIN: "/domains/create-domain",
+  GET_AGENT_ASSIGNMENTS: "/agents/assignments/get",
+  CREATE_AGENT_ASSIGNMENT: "/agents/assignments/create",
+  UPDATE_AGENT_ASSIGNMENT: "/agents/assignments/update",
+  UPDATE_DOMAIN: "/domains/update-domain/{domain_name}",
+  DELETE_DOMAIN: "/domains/delete-domain/{domain_name}",
+  DELETE_AGENT_ASSIGNMENT: "/agents/assignments/delete",
+
+  // Role Management APIs
+  GET_ROLES: "/roles/list",
+  ADD_ROLE: "/roles/add",
+  DELETE_ROLE: "/roles",
+  
+  // Role Assignment APIs  
+  GET_ROLE_ASSIGNMENTS: "/role-agent-access/get/assignments",
+  CREATE_ROLE_ASSIGNMENT: "/role-agent-access/create",
+  DELETE_ROLE_ASSIGNMENT: "/role-agent-access/delete",
+  ASSIGN_USER_ROLE: "/roles/users/assign",
+
+  // Role Permissions APIs
+  GET_ROLE_PERMISSIONS: "/roles/permissions",
+  CREATE_ROLE_PERMISSIONS: "/roles/permissions/create",
+  UPDATE_ROLE_PERMISSIONS: "/roles/permissions/update",
+  DELETE_ROLE_PERMISSIONS: "/roles/permissions/delete",
+  SET_ROLE_PERMISSIONS: "/roles/permissions/set",
+
   // MCP APIs
   MCP_ADD_TOOLS: "/tools/mcp/add",
   MCP_DELETE_TOOLS: "/tools/mcp/delete/",
@@ -155,6 +190,7 @@ export const APIs = {
   SQL_CONNECTIONS: "/data-connector/connections/sql",
   MONGODB_CONNECTIONS: "/data-connector/connections/mongodb",
   MONGODB_OPERATION: "/data-connector/mongodb-operation/",
+  ACTIVATE_CONNECTION: "/data-connector/connect-by-name",
 
   // Secrets APIs
   ADD_SECRET: "/secrets/create",

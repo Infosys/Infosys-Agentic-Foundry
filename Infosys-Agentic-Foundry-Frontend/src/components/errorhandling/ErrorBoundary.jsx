@@ -8,9 +8,6 @@ let apiCallsBlocked = false;
 const ERROR_THRESHOLD = 3;
 const ERROR_WINDOW = 5000; // 5 seconds
 const BLOCK_DURATION = 10000; // 10 seconds
-const ERROR_ID_RADIX = 36;
-const ERROR_ID_PREFIX_LENGTH = 2;
-const ERROR_ID_SUFFIX_LENGTH = 9;
 const ERROR_COUNT_LIMIT = 2;
 
 // Global function to block API calls
@@ -75,7 +72,7 @@ class ErrorBoundary extends React.Component {
     return {
       hasError: true,
       // Provide an errorId early so the UI can show something deterministic on first render
-      errorId: `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      errorId: `error_${Date.now()}_${crypto.randomUUID()}`,
     };
   }
 
@@ -96,7 +93,7 @@ class ErrorBoundary extends React.Component {
     }
 
     // ----- Instance (component-level) tracking -----
-    this.setState(prev => {
+    this.setState((prev) => {
       const isRapidError = prev.lastErrorTime && now - prev.lastErrorTime < 1000;
       const nextCount = isRapidError ? (prev.errorCount || 0) + 1 : 1;
       return {

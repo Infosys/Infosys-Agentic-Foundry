@@ -1,5 +1,6 @@
 // export default AgentList;
 import styles from './AgentsList.module.css';
+import headerStyles from './PageWithHeader.module.css';
 
 // AgentList component
 const AgentList = ({ agents, onSelect }) => {
@@ -7,7 +8,7 @@ const AgentList = ({ agents, onSelect }) => {
   return (
     <div className={styles.container}>
       <div className={styles.headerActions}>
-        <h2 className={styles.heading}>Agents</h2>
+  <h6 className={headerStyles.h6Heading}>Agents</h6>
       </div>
       {agentList.length === 0 ? (
         <div className={styles.noAgents}>

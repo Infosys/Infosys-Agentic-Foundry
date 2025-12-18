@@ -328,7 +328,6 @@
 .actionButton.active {
   background: #007acc;
   color: white;
-  border-color: #007acc;
 }
 
 .actionButton.disabled{
@@ -727,6 +726,45 @@
   background: #e6f2fa;
 }
 
+/* Mention button specific styles */
+.mentionButton {
+  border: 1px solid #ccc;
+  color: #222 !important;
+  transition: all 0.2s ease;
+}
+
+
+.mentionButton.active {
+  background: #e6f2fa;
+  color: #007bc1 !important;
+}
+
+/* Mentioned agent item at top of dropdown */
+.mentionedAgentItem {
+  background: #f0f9ff !important;
+  border: 1px solid #0ea5e9 !important;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px;
+}
+
+.mentionedLabel {
+  color: #0284c7;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 4px;
+}
+
+.mentionedAgentItem .mentionAgentName {
+  flex: 1;
+  margin-left: 0;
+}
+
 .disabled {
   pointer-events: none;
   opacity: 0.9;
@@ -737,6 +775,22 @@
 .relativeWrapper {
   position: relative;
   display: inline-block;
+}
+
+/* Mention dropdown positioning within relative wrapper */
+.relativeWrapper .mentionDropdown {
+  position: absolute;
+  bottom: 30px;
+  left: 0;
+  width: 250px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  margin-top: 4px;
+  max-height: 300px;
+  overflow: hidden;
 }
 
 /* Knowledge base dropdown positioning */
@@ -871,4 +925,125 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Mention Dropdown Styles */
+.mentionDropdown {
+  position: absolute;
+  bottom: 30px;
+  left: 0;
+  width: 250px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  margin-top: 4px;
+  max-height: 250px;
+  overflow: hidden;
+}
+
+.mentionHeader {
+  position: relative;
+  padding: 7px;
+}
+
+.mentionSearchInput {
+  width: 100%;
+  padding: 6px 8px;
+  padding-left: 35px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+  background: #f9fafb;
+}
+
+.mentionSearchInput:focus {
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+  background: #ffffff;
+}
+
+.mentionList {
+  max-height: 180px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 4px 8px;
+}
+
+.mentionList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.mentionList::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.mentionList::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.mentionList::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.mentionItem {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.mentionItem:hover {
+  background: #f8fafc;
+  border-left-color: #e2e8f0;
+}
+
+.mentionItem.highlighted {
+  background: #e0f2fe;
+  border-left-color: #007acc;
+  box-shadow: inset 0 0 0 1px rgba(0, 122, 204, 0.1);
+}
+
+.mentionAgentName {
+  font-size: 14px;
+  color: #334155;
+  font-weight: 500;
+}
+
+/* Mentioned Agent Indicator */
+.mentionedAgentIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #e0f2f1;
+  border: 1px solid #80cbc4;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.mentionedAgentText {
+  color: #00695c;
+  font-weight: 500;
+}
+
+.removeMentionButton {
+  background: none;
+  border: none;
+  color:#222;
+  /* color: #ef4444; */
+  cursor: pointer;
+  padding: 2px;
+  margin-left: 8px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
 }

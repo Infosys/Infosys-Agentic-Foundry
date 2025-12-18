@@ -7,11 +7,10 @@ import AgentList from "./AgentsList";
 import ResponsesList from "./ResponseList";
 import ResponseDetail from "./ResponseDetail";
 import styles from "./AdminScreen.module.css";
-// import AgentsEvaluator from "../AgentsEvaluator";
-// import EvaluationScore from "../AdminScreen/EvaluationScore.js";
-import UpdatePassword from "./UpdatePassword.jsx";
+import UpdatePwd from "./UpdatePassword.jsx";
 import RecycleBin from "./RecycleBin.jsx";
 import Unused from "./Unused.jsx";
+import AgentAssignment from "./AgentAssignment.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 
 const AdminScreen = () => {
@@ -137,7 +136,7 @@ const AdminScreen = () => {
   };
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", marginLeft: 20, marginTop: 10, overflowY: "hidden" }}>
+    <div className={styles.adminScreenContainer}>
       {loadingAgents && <Loader />}
       {/* Tabs Header */}{" "}
       <div className={styles.tabHeader}>
@@ -173,6 +172,15 @@ const AdminScreen = () => {
           }}>
           Unused
         </button>
+        <button
+          className={`iafTabsBtn ${activeTab === "agentAssignment" ? " active" : ""}`}
+          onClick={() => {
+            setActiveTab("agentAssignment");
+            setResponseDetail(null);
+            setSelectedAgentId(null);
+          }}>
+          Control
+        </button>
       </div>
       {/* Tab Content */}
       <div className={styles.tabContent}>
@@ -180,7 +188,7 @@ const AdminScreen = () => {
         {activeTab === "user" && (
           <div>
             {/* Sub-tabs Header */}
-            <div style={{ marginBottom: "16px" }}>
+            <div className={styles.tabSubHeader}>
               <button className={`iafTabsBtn ${activeUserSubTab === "register" ? " active" : ""}`} onClick={() => setActiveUserSubTab("register")}>
                 Register
               </button>
@@ -197,7 +205,7 @@ const AdminScreen = () => {
             )}
             {activeUserSubTab === "update" && (
               <div className={styles.updatePassword}>
-                <UpdatePassword />
+                <UpdatePwd />
               </div>
             )}
           </div>
@@ -248,6 +256,11 @@ const AdminScreen = () => {
         {activeTab === "unused" && (
           <div className={styles.adminUnused}>
             <Unused />
+          </div>
+        )}
+        {activeTab === "agentAssignment" && (
+          <div className={styles.agentAssignment}>
+            <AgentAssignment />
           </div>
         )}
       </div>

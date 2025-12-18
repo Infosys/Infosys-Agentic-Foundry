@@ -421,3 +421,45 @@ textarea {
   display: flex;
   align-items: center;
 }
+
+/* --- Validator Patterns Group Styles --- */
+.validatorGroup { padding:8px; margin-top:8px; border-radius:6px; padding-left: 0px; }
+.validatorRow { display:grid; grid-template-columns:1fr 1fr 1fr 40px; gap:8px; margin-bottom:8px; align-items:end; }
+.col, .colSmall { display:flex; flex-direction:column; gap:4px; }
+.validatorHeader { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.validatorHeader h3 { text-align:left; font: normal normal 400 12px/16px Segoe UI; letter-spacing:0px; color:#343741; text-transform:uppercase; margin:0; }
+.validatorHeader .addBtn { margin-left:12px; margin-top:0; }
+.validatorGroup label { text-align:left; font: normal normal 400 12px/16px Segoe UI; letter-spacing:0px; color:#343741; text-transform:uppercase; margin-bottom:7px; }
+.addBtn { color:#343741; background:#ffffff; border:1px solid #d0d7de; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; line-height:16px; font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,0.05); }
+.addBtn:hover { background:#f6f8fa; }
+.addBtn:active { background:#eaecef; }
+.removeBtn { padding:6px; }
+.muted { font-size:12px; color:#666; }
+.helpText { font-size:11px; color:#666; }
+
+/* Specific input styling for validator pattern text inputs */
+.validatorGroup input[type="text"] {
+  background: #eaeaea;
+  box-shadow: inset 0px 1px 4px #00000029;
+  border-radius: 5px;
+  padding: 8px;
+  border: none;
+  font: normal normal 400 12px/16px Segoe UI;
+  box-sizing: border-box;
+}
+
+.validatorGroup select {
+  background: #eaeaea;
+  box-shadow: inset 0px 1px 4px #00000029;
+  border-radius: 5px;
+  padding: 8px;
+  border: none;
+  font: normal normal 400 12px/16px Segoe UI;
+  box-sizing: border-box;
+}
+
+.validatorGroup select:focus {
+  outline: 2px solid #007cc3;
+  outline-offset: 1px;
+}
+

@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { APIs } from "../../../constant";
 import { useDatabase } from "../context/DatabaseContext";
 import { useMessage } from "../../../Hooks/MessageContext";
 import { useDatabases } from "../service/databaseService.js";
 import useFetch from "../../../Hooks/useAxios.js";
+import Cookies from "js-cookie";
 
 export const useDatabaseConnections = () => {
   // Use the database context
@@ -12,7 +13,7 @@ export const useDatabaseConnections = () => {
   // Get message context for toast notifications
   const { addMessage } = useMessage();
   // Use the database service
-  const { fetchConnections } = useDatabases();
+  const { fetchConnections, activateConnection } = useDatabases();
   const { postData } = useFetch();
 
   // State for database connection form (new connections)
@@ -39,48 +40,69 @@ export const useDatabaseConnections = () => {
   const [isDisConnecting, setIsDisConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
-  // State for tracking last update time to prevent unnecessary refreshes
-  const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
+  // Ref for tracking last update time to prevent unnecessary refreshes
+  const lastUpdateTimeRef = useRef(Date.now());
 
   // State for activating connections
   const [isActivating, setIsActivating] = useState(false);
 
+  // Ref to store fetchConnections to avoid dependency issues
+  const fetchConnectionsRef = useRef(fetchConnections);
+  useEffect(() => {
+    fetchConnectionsRef.current = fetchConnections;
+  }, [fetchConnections]);
+
+  // Ref to track if currently loading (to avoid stale closure issues)
+  const isLoadingRef = useRef(false);
+
   // Fetch available connections from API
   const loadAvailableConnections = useCallback(async () => {
+    // Prevent multiple simultaneous calls using ref
+    if (isLoadingRef.current) {
+      return;
+    }
+    isLoadingRef.current = true;
     setIsLoadingConnections(true);
     try {
-      const result = await fetchConnections();
+      const result = await fetchConnectionsRef.current();
 
       if (result.success) {
         const connections = result.data.connections || result.data || [];
 
         setAvailableConnections(connections);
-        setLastUpdateTime(Date.now());
+        lastUpdateTimeRef.current = Date.now();
       } else {
-        console.error("Failed to fetch connections:", result.error);
+        // Only log in development, don't spam console
+        if (process.env.NODE_ENV === "development") {
+          console.error("Failed to fetch connections:", result.error);
+        }
         setAvailableConnections([]);
       }
     } catch (error) {
-      console.error("loadAvailableConnections error:", error);
+      // Only log in development, don't spam console
+      if (process.env.NODE_ENV === "development") {
+        console.error("loadAvailableConnections error:", error);
+      }
       setAvailableConnections([]);
     } finally {
+      isLoadingRef.current = false;
       setIsLoadingConnections(false);
     }
-  }, []);
+  }, []); // Empty dependency - uses refs for mutable values
 
   // Immediate update function for after connection changes
   const updateConnectionsImmediate = useCallback(async () => {
     // Only update if it's been more than 1 second since last update
-    if (Date.now() - lastUpdateTime > 1000) {
+    if (Date.now() - lastUpdateTimeRef.current > 1000) {
       await loadAvailableConnections();
     }
-  }, [lastUpdateTime, loadAvailableConnections]);
+  }, [loadAvailableConnections]);
 
   // Add visibility change listener for better UX
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // Tab became visible, refresh connections
+        // Tab became visible, refresh connections (with debounce check)
         updateConnectionsImmediate();
       }
     };
@@ -90,7 +112,7 @@ export const useDatabaseConnections = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [lastUpdateTime, updateConnectionsImmediate]);
+  }, [updateConnectionsImmediate]);
 
   // Handle connection selection from dropdown
   const handleConnectionSelect = (selectedConnectionName) => {
@@ -135,7 +157,15 @@ export const useDatabaseConnections = () => {
     } else {
       requiredFields = ["connectionName", "databaseType", "host", "port", "username", "password", "databaseName"];
     }
-    const missingFields = requiredFields.filter((field) => !currentConnectionData[field] || currentConnectionData[field].trim() === "");
+    const missingFields = requiredFields.filter((field) => {
+      const value = currentConnectionData[field];
+      // For pwd value, check if  exists and is not empty
+      if (field === "password") {
+        return !value || value.trim() === "";
+      }
+      // Check if value exists and are not empty
+      return !value || (typeof value === "string" && value.trim() === "");
+    });
     if (missingFields.length > 0) {
       addMessage(`Please fill in the following required fields: ${missingFields.join(", ")}`, "error");
       return;
@@ -159,6 +189,7 @@ export const useDatabaseConnections = () => {
           payload.append("sql_file", "");
           payload.append("database", currentConnectionData.databaseName);
         }
+        payload.append("created_by", Cookies.get("email"));
       } else if (
         (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "postgresql") ||
         (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "mysql") ||
@@ -170,10 +201,12 @@ export const useDatabaseConnections = () => {
         payload.append("host", currentConnectionData.host);
         payload.append("port", currentConnectionData.port);
         payload.append("username", currentConnectionData.username);
-        payload.append("password", currentConnectionData.password);
+        // Only append if pwd it's provided and not empty
+        payload.append("password", currentConnectionData["password"]);
         payload.append("database", currentConnectionData.databaseName);
         payload.append("flag_for_insert_into_db_connections_table", "1");
         payload.append("sql_file", "");
+        payload.append("created_by", Cookies.get("email"));
       }
       const apiUrl = APIs.CONNECT_DATABASE;
       try {
@@ -222,6 +255,7 @@ export const useDatabaseConnections = () => {
         name: connectionName,
         db_type: databaseType.toLowerCase(),
         flag: flag.toString(),
+        created_by: Cookies.get("email"),
       };
       // Make the API call to disconnect
       const response = await postData(APIs.DISCONNECT_DATABASE, payload);
@@ -278,6 +312,7 @@ export const useDatabaseConnections = () => {
           payload.append("sql_file", "");
           payload.append("database", connectionData.databaseName || connectionData.database || connectionData.connection_database_name || "");
         }
+        payload.append("created_by", Cookies.get("email"));
       } else if (dbTypeValue === "postgresql" || dbTypeValue === "mysql" || dbTypeValue === "mongodb") {
         payload = new FormData();
         payload.append("name", connectionData.connectionName || connectionData.name || connectionData.connection_name || "");
@@ -285,10 +320,11 @@ export const useDatabaseConnections = () => {
         payload.append("host", connectionData.host || connectionData.connection_host || "");
         payload.append("port", connectionData.port || connectionData.connection_port || "");
         payload.append("username", connectionData.username || connectionData.connection_username || "");
-        payload.append("password", connectionData.password || connectionData.connection_password || "");
+        payload.append("password", connectionData["password"] || connectionData.connection_password || "");
         payload.append("database", connectionData.databaseName || connectionData.database || connectionData.connection_database_name || "");
         payload.append("flag_for_insert_into_db_connections_table", flag);
         payload.append("sql_file", "");
+        payload.append("created_by", Cookies.get("email"));
       }
       const apiUrl = APIs.CONNECT_DATABASE;
       const response = await postData(apiUrl, payload);
@@ -321,6 +357,7 @@ export const useDatabaseConnections = () => {
         payload.append("username", "");
         payload.append("password", "");
         payload.append("flag_for_insert_into_db_connections_table", "0");
+        payload.append("created_by", Cookies.get("email"));
         if (connection.uploaded_file) {
           payload.append("sql_file", connection.uploaded_file);
           payload.append("database", "");
@@ -339,12 +376,13 @@ export const useDatabaseConnections = () => {
         payload.append("host", connection.connection_host);
         payload.append("port", connection.connection_port);
         payload.append("username", connection.connection_username);
-        payload.append("password", connection.connection_password);
+        // Only append if pwd it's provided and not empty
+        payload.append("password", connection.connection_password || "");
         payload.append("database", connection.connection_database_name);
         payload.append("flag_for_insert_into_db_connections_table", "0");
         payload.append("sql_file", "");
+        payload.append("created_by", Cookies.get("email"));
       }
-
       // Basic validation (skip for FormData)
       if (!(payload instanceof FormData) && (isNaN(payload.port) || payload.port <= 0)) {
         throw new Error("Port must be a valid positive number");
@@ -436,6 +474,7 @@ export const useDatabaseConnections = () => {
         name: connectionName,
         db_type: databaseType.toLowerCase(),
         flag: flag.toString(),
+        created_by: Cookies.get("email"),
       };
       const response = await postData(APIs.DISCONNECT_DATABASE, payload);
       if (response) {
@@ -454,6 +493,36 @@ export const useDatabaseConnections = () => {
       addMessage(error.response.data.detail, "error");
     } finally {
       setIsDisConnecting(false);
+    }
+  };
+
+  // Handle activate connection using the new ACTIVATE_CONNECTION endpoint
+  const handleActivate = async (connectionName) => {
+    if (!connectionName) {
+      addMessage("Connection name is required for activation", "error");
+      return;
+    }
+    setIsActivating(true);
+    try {
+      const result = await activateConnection(connectionName);
+      if (result.success) {
+        // Refresh active connections to reflect the activation
+        try {
+          await fetchActiveConnections();
+        } catch (error) {
+          console.error("Error refreshing active connections:", error);
+        }
+        // Refresh available connections immediately
+        await updateConnectionsImmediate();
+        addMessage(result.data?.message || "Connection activated successfully!", "success");
+      } else {
+        addMessage(`Failed to activate connection: ${result.error}`, "error");
+      }
+    } catch (error) {
+      console.error("handleActivate error:", error);
+      addMessage(`Error activating connection: ${error.message}`, "error");
+    } finally {
+      setIsActivating(false);
     }
   };
 
@@ -476,5 +545,6 @@ export const useDatabaseConnections = () => {
     handleConnectOrActivate,
     handleActivateConnection,
     handleDeactivate,
+    handleActivate,
   };
 };

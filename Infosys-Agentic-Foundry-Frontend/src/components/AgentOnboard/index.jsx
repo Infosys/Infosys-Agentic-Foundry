@@ -15,6 +15,7 @@ import { debounce } from "lodash";
 import { useMcpServerService } from "../../services/serverService";
 import FilterModal from "../commonComponents/FilterModal";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
+import { usePermissions } from "../../context/PermissionsContext";
 // Note: Centralized error handling integrated (handleError) replacing scattered console.error occurrences
 
 const AgentOnboard = (props) => {
@@ -40,7 +41,7 @@ const AgentOnboard = (props) => {
 
   const { addMessage } = useMessage();
   const { postData, fetchData } = useFetch();
-  const { getToolsSearchByPageLimit, getAgentsSearchByPageLimit, calculateDivs } = useToolsAgentsService();
+  const { getToolsSearchByPageLimit, getAgentsSearchByPageLimit, calculateDivs,getValidatorTools } = useToolsAgentsService();
   const { getServersSearchByPageLimit } = useMcpServerService();
 
   const containerRef = useRef(null);
@@ -48,6 +49,7 @@ const AgentOnboard = (props) => {
   const hasLoadedOnce = useRef(false);
 
   const { handleError } = useErrorHandler();
+  const { hasPermission, permissions } = usePermissions();
 
   const fetchPaginatedData = useCallback(
     async (pageNumber, divsCount, tagParams = null) => {
@@ -82,7 +84,7 @@ const AgentOnboard = (props) => {
     const hasUrl = Boolean(raw?.mcp_config?.url || raw?.mcp_url || raw?.endpoint || raw?.mcp_config?.mcp_url || raw?.mcp_config?.endpoint);
     const derivedType = hasCode ? "LOCAL" : hasUrl ? "REMOTE" : String(raw.mcp_type || raw.type || "").toUpperCase() || "UNKNOWN";
     return {
-      tool_id: raw.tool_id || raw.id || raw._id || Math.random().toString(36).substr(2, 9), // Always unique!
+      tool_id: raw.tool_id || raw.id || raw._id || crypto.randomUUID(), // Always unique!
       name: raw.tool_name || raw.name,
       status: raw.status || "approved",
       type: derivedType,
@@ -525,6 +527,15 @@ const AgentOnboard = (props) => {
   );
 
   const submitForm = async (value, callBack) => {
+    // Frontend defensive permission check: ensure user can add agents
+    const canAddAgents = typeof hasPermission === "function" ? hasPermission("add_access.agents") : !(permissions && permissions.add_access && permissions.add_access.agents === false);
+    if (!canAddAgents) {
+      // show a friendly message and abort
+      try {
+        addMessage("You do not have permission to add agents.", "error");
+      } catch (e) {}
+      return;
+    }
     setLoading(true);
     const payload = { ...value };
     // Fix: Always send both selected tool and server IDs in payload.tools_id
@@ -755,8 +766,6 @@ const AgentOnboard = (props) => {
         <div className={styles.agentDetailContainer}>
           <AgentForm
             styles={styles}
-            selectedTool={selectedTool}
-            selectedAgents={selectedAgents}
             handleClose={handleClose}
             submitForm={submitForm}
             isMetaAgent={selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT}
@@ -766,7 +775,6 @@ const AgentOnboard = (props) => {
             setSelectedAgents={setSelectedAgents}
             setSelectedTool={setSelectedTool}
             setSelectedServers={setSelectedServers}
-            selectedServers={selectedServers}
           />
         </div>
       </div>

@@ -3,7 +3,7 @@ import useFetch from "../Hooks/useAxios";
 
 
 export const useEndpointsService = () => {
-    const { fetchData, postData, putData, deleteData } = useFetch();
+    const { fetchData } = useFetch();
 
 const getEvaluationData = async (agentNames,page = 1,limit = 10) => {
   try {

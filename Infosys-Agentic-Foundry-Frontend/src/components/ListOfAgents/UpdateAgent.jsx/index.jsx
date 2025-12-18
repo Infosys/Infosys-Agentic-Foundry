@@ -29,8 +29,10 @@ import ToolOnBoarding from "../../AvailableTools/ToolOnBoarding";
 import { useToolsAgentsService } from "../../../services/toolService";
 import { debounce } from "lodash";
 import { useMcpServerService } from "../../../services/serverService";
+import { sanitizeFormField, isValidEvent } from "../../../utils/sanitization";
 import { useAuth } from "../../../context/AuthContext";
 import { useErrorHandler } from "../../../Hooks/useErrorHandler";
+import ValidatorPatternsGroup from "../../validators/ValidatorPatternsGroup";
 
 const UpdateAgent = (props) => {
   const { getServersSearchByPageLimit } = useMcpServerService();
@@ -51,7 +53,7 @@ const UpdateAgent = (props) => {
   const [removedToolsId, setremovedToolsId] = useState([]);
   const [addedAgentsId, setAddedAgentsId] = useState([]);
   const [removedAgentsId, setRemovedAgentsId] = useState([]);
-  const [systemPromptType, setSystemPromptType] = useState(SystemPromptsMultiAgent[0].value);
+  const [systemPromptType, setAgentSystemPromptType] = useState(SystemPromptsMultiAgent[0].value);
   const [plannersystempromtType, setPlannersystempromptType] = useState(SystemPromptsPlannerMetaAgent[0].value);
   const [reactCriticSystemPromptType, setReactCriticSystemPromptType] = useState(systemPromptReactCriticAgents[0].value);
   const [plannerExecutorSystemPromptType, setPlannerExecutorSystemPromptType] = useState(systemPromptPlannerExecutorAgents[0].value);
@@ -94,6 +96,7 @@ const UpdateAgent = (props) => {
   });
 
   const [copiedStates, setCopiedStates] = useState({});
+  const [validationPatterns, setValidationPatterns] = useState([]);
 
   const { addMessage, setShowPopup } = useMessage();
   const { handleApiError, handleError } = useErrorHandler();
@@ -121,10 +124,19 @@ const UpdateAgent = (props) => {
   };
 
   const handleChange = (event) => {
+    // Validate event structure before destructuring
+    if (!isValidEvent(event)) {
+      return;
+    }
+
     const { name, value } = event.target;
+
+    // Sanitize value using centralized utility
+    const sanitizedValue = sanitizeFormField(name, value);
+
     setFormData({
       ...formData,
-      [name]: value,
+      [name]: sanitizedValue,
     });
   };
 
@@ -157,6 +169,26 @@ const UpdateAgent = (props) => {
           model_name: data[0]?.model_name,
           agentic_application_name: data[0]?.agentic_application_name,
         }));
+        // Load validation criteria (new field). Fallback to legacy validation_patterns if present.
+        if (Array.isArray(data[0]?.validation_criteria)) {
+          setValidationPatterns(
+            data[0].validation_criteria.map((p) => ({
+              query: p.query || "",
+              expected_answer: p.expected_answer || "none",
+              validator: p.validator || null,
+            }))
+          );
+        } else if (Array.isArray(data[0]?.validation_patterns)) {
+          setValidationPatterns(
+            data[0].validation_patterns.map((p) => ({
+              query: p.query_detail || "",
+              expected_answer: p.criteria || "none",
+              validator: p.validator_id || null,
+            }))
+          );
+        } else {
+          setValidationPatterns([]);
+        }
 
         // Load tools separately
         if (agentType) {
@@ -370,6 +402,15 @@ const UpdateAgent = (props) => {
     }
   }, [systemPromptType, systemPromptData, plannersystempromtType, reactCriticSystemPromptType, plannerExecutorSystemPromptType]);
 
+   const isValidatorPatternHidden = ()=>{
+  if (!agentData.agentic_application_type) return false;
+  return (
+    agentData.agentic_application_type === META_AGENT  ||
+    agentData.agentic_application_type === PLANNER_META_AGENT||
+    agentData.agentic_application_type === HYBRID_AGENT
+  );
+  }
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (userName === "Guest") {
@@ -389,6 +430,14 @@ const UpdateAgent = (props) => {
       return JSON.stringify(systemPromptData) !== JSON.stringify(parsedSystemPrompt);
     })();
 
+    const filteredPatterns = isValidatorPatternHidden() ? [] : validationPatterns
+      .filter((p) => p.query && p.expected_answer)
+      .map((p) => ({
+        query: p.query,
+        expected_answer: p.expected_answer,
+        validator: p.validator || null,
+      }));
+
     const payload = {
       ...formData,
       created_by: fullAgentData.created_by, // Always use creator email from fullAgentData
@@ -400,6 +449,9 @@ const UpdateAgent = (props) => {
       tools_id_to_add: agentType === META_AGENT || agentType === PLANNER_META_AGENT ? addedAgentsId : addedToolsId,
       tools_id_to_remove: agentType === META_AGENT || agentType === PLANNER_META_AGENT ? removedAgentsId : removedToolsId,
     };
+    if (filteredPatterns.length > 0) {
+      payload.validation_criteria = filteredPatterns;
+    }
 
     try {
       const url = APIs.UPDATE_AGENTS;
@@ -429,31 +481,40 @@ const UpdateAgent = (props) => {
 
   const handlePromptChange = (e) => {
     e.preventDefault();
+
+    // Validate event structure
+    if (!isValidEvent(e)) {
+      return;
+    }
+
+    // Sanitize the system prompt value
+    const sanitizedValue = sanitizeFormField("system_prompt", e.target.value);
+
     if (agentType === MULTI_AGENT) {
       setSystemPromptData({
         ...systemPromptData,
-        [systemPromptType]: e?.target?.value,
+        [systemPromptType]: sanitizedValue,
       });
     } else if (agentType === PLANNER_META_AGENT) {
       setSystemPromptData({
         ...systemPromptData,
-        [plannersystempromtType]: e?.target?.value,
+        [plannersystempromtType]: sanitizedValue,
       });
     } else if (agentType === REACT_CRITIC_AGENT) {
       setSystemPromptData({
         ...systemPromptData,
-        [reactCriticSystemPromptType]: e?.target?.value,
+        [reactCriticSystemPromptType]: sanitizedValue,
       });
     } else if (agentType === PLANNER_EXECUTOR_AGENT) {
       setSystemPromptData({
         ...systemPromptData,
-        [plannerExecutorSystemPromptType]: e?.target?.value,
+        [plannerExecutorSystemPromptType]: sanitizedValue,
       });
     } else {
       // Default handling for REACT_AGENT, HYBRID_AGENT, etc.
       setSystemPromptData({
         ...systemPromptData,
-        [Object.keys(systemPromptData)[0]]: e?.target?.value,
+        [Object.keys(systemPromptData)[0]]: sanitizedValue,
       });
     }
   };
@@ -775,7 +836,7 @@ const UpdateAgent = (props) => {
                   }
                   onChange={(e) => {
                     if (agentType === MULTI_AGENT) {
-                      setSystemPromptType(e?.target?.value);
+                      setAgentSystemPromptType(e?.target?.value);
                     } else if (agentType === PLANNER_META_AGENT) {
                       setPlannersystempromptType(e?.target?.value);
                     } else if (agentType === REACT_CRITIC_AGENT) {
@@ -846,6 +907,14 @@ const UpdateAgent = (props) => {
               </>
             )}
           </div>
+          {/* Validation Patterns (Optional) placed directly above AddTools section */}
+          {!props?.recycleBin && !(
+            isValidatorPatternHidden()
+          ) && (
+            <div className={styles.validationPatternsRow}>
+              <ValidatorPatternsGroup value={validationPatterns} onChange={setValidationPatterns} disabled={props?.recycleBin} />
+            </div>
+          )}
           {props?.recycleBin ? (
             <>
               {selectedToolsLoading && <Loader />}
