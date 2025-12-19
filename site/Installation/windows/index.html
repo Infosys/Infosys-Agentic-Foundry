@@ -16,7 +16,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
     
     
       
@@ -24,7 +24,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.342714a4.min.css">
       
       
 
@@ -1516,29 +1516,36 @@ npm -v
 <ul>
 <li>If Node.js is installed, running the version command will display the installed version.</li>
 <li>If Node.js is not installed, you will see an error in the terminal such as <code>"node" is not recognized as an internal or external command</code>.</li>
-<li>To install Node.js:<ol>
-<li>Go to <a href="https://nodejs.org/en/download">https://nodejs.org/en/download</a>.</li>
-<li>Choose version <strong>22.16.0</strong> or any higher stable version.</li>
-<li>Download and install Node.js (NPM comes bundled with Node.js).</li>
-</ol>
+</ul>
+<p><strong>For Local Windows Setup</strong></p>
+<ul>
+<li>To install Node.js:<ul>
+<li>Go to Software Center / Company Portal on your laptop  </li>
+<li>Search for NodeJs  </li>
+<li>Choose version <strong>22</strong> or any higher stable version.</li>
+<li>Install Node.js (NPM comes bundled with Node.js).</li>
+</ul>
 </li>
 <li>After installation, open your command prompt or terminal.</li>
-<li>
-<p>Run <code>node -v</code> to confirm that it shows version 22 or higher.</p>
-</li>
-<li>
+<li>Run <code>node -v</code> to confirm that it shows version 22 or higher.</li>
+</ul>
 <p><strong>JFrog Access for Node Dependencies:</strong></p>
 <ul>
 <li>You need JFrog access to download node dependencies for the React UI application.</li>
 <li>If you already have JFrog access, you can proceed.</li>
-<li>If not, follow these steps:<ol>
+<li>If not, follow these steps:<ul>
 <li>Ensure you are connected to the Infosys network or that Zscaler is enabled.</li>
 <li>Follow the instructions in the guide: <strong>NPM – Install and Publish with JFrog Artifactory SAAS and ZS</strong>.</li>
-<li>(Note: You may skip the 7th step mentioned in that guide.)</li>
-</ol>
-</li>
 </ul>
 </li>
+</ul>
+<p><strong>For Akaash VM or Production VM Setup</strong></p>
+<ul>
+<li><strong>Important:</strong> In Akaash VMs or Production VMs, public internet access and access to Software Center or Company Portal may not be available.</li>
+<li>In such cases, you must request all required software installation files (such as Node.js, Python, Git, etc.) from your CCD (Cloud/Compute/Desktop support) team.</li>
+<li>CCD will provide the necessary installers and instructions for offline installation.</li>
+<li>Ensure you have JFrog access configured, as node dependencies will still be downloaded from internal repositories.</li>
+<li>If you face any issues with installations or access, contact your CCD or VM administrator for support.</li>
 </ul>
 <h2 id="setting-up-proxy-in-system-environment-variables-if-required">Setting Up Proxy in System Environment Variables (If Required)</h2>
 <p>If your network requires a proxy to access the internet, follow these steps to set proxy values as system environment variables:</p>
@@ -1615,9 +1622,11 @@ cd Infyagentframework
 </ul>
 </li>
 </ul>
-<p><strong>Release Process:</strong>
-- Once QA verifies that the application is working as expected in the <code>development</code> branch, the code is merged into <code>main</code>.
-- The updated <code>main</code> branch is then deployed to production for demos and further testing.</p>
+<p><strong>Release Process:</strong></p>
+<ul>
+<li>Once QA verifies that the application is working as expected in the <code>development</code> branch, the code is merged into <code>main</code>.</li>
+<li>The updated <code>main</code> branch is then deployed to production for demos and further testing.</li>
+</ul>
 <p>This workflow ensures that only tested and approved code reaches production, while active development happens separately.</p>
 <h2 id="download-the-frontend-project-code">Download the Frontend Project Code</h2>
 <p>You can obtain the project files using one of the following methods:</p>
@@ -1647,10 +1656,10 @@ cd Agentic-Pro-UI
 <h2 id="setting-up-the-backend-environment">Setting Up the Backend Environment</h2>
 <p>Follow these steps in Terminal (opened in the project directory):</p>
 <p><strong>1. Create a Virtual Environment for the Backend:</strong></p>
-<pre><code class="language-bash">cd backend
+<pre><code class="language-bash">cd Infyagentframework
 python -m venv .venv
 </code></pre>
-<p>This creates a virtual environment named <code>.venv</code> in the backend directory.</p>
+<p>This creates a virtual environment named <code>.venv</code> in the Infyagentframework directory.</p>
 <p><strong>2. Activate the Virtual Environment:</strong></p>
 <pre><code class="language-bash">.\.venv\Scripts\activate
 </code></pre>
@@ -1666,55 +1675,66 @@ uv pip install -r requirements.txt
 </code></pre>
 <h2 id="setting-up-the-frontend-environment">Setting Up the Frontend Environment</h2>
 <p>In a new Terminal window, navigate to the project's frontend directory:</p>
-<pre><code class="language-bash">cd frontend
+<pre><code class="language-bash">cd Agentic-Pro-UI
 </code></pre>
 <p><strong>Install Frontend Dependencies</strong></p>
+<p>After cloning or pulling the UI code from GitHub, delete the <code>package-lock.json</code> file (if present) before installing dependencies. This helps avoid potential conflicts.</p>
 <ul>
-<li>Open a terminal in the <code>frontend</code> directory.</li>
-<li>Run the following command to install all required packages:</li>
-</ul>
-<pre><code class="language-bash">npm install
-</code></pre>
-<ul>
-<li>You can also use the shorthand</li>
-</ul>
-<pre><code class="language-bash">npm i
-</code></pre>
-<ul>
-<li>This will start installing all the dependencies.</li>
+<li>Open a terminal in the <code>Agentic-Pro-UI</code> directory.</li>
+<li>Delete the <code>package-lock.json</code> file if it exists:
+    <code>bash
+    del package-lock.json</code></li>
+<li>Run the following command to install all required packages:
+    <code>bash
+    npm install</code></li>
+<li>You can also use the shorthand:
+    <code>bash
+    npm i</code></li>
+<li>To see detailed progress during installation, use:
+    <code>bash
+    npm install --verbose</code></li>
 <li>Wait for the installation to complete. This may take a few minutes.</li>
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<ul>
-<li>If you see only a blinking cursor or a loader for more than 3 minutes and no progress, check your Zscaler or JFrog access settings. This usually indicates a network or authentication issue.</li>
-</ul>
+<p>If you see only a blinking cursor or a loader for more than 3 minutes and no progress, check your Zscaler or JFrog access settings. This usually indicates a network or authentication issue.</p>
 </div>
 <h2 id="configuration-setup">Configuration Setup</h2>
-<p><strong>Frontend Configuration</strong></p>
-<p>Open <code>src/constants.js</code> and update it according to your VM configuration:</p>
-<pre><code class="language-bash">export const BASE_URL = &quot;http://10.779.18.602:8000&quot;; // Windows
+<p><strong>Frontend Configuration (.env file)</strong></p>
+<p>Open the <code>.env</code> file in your frontend project (<code>Agentic-Pro-UI/.env</code>) and set the base URL for the API server:</p>
+<pre><code class="language-env"># Base URL for the API server
+REACT_APP_BASE_URL=&quot;http://10.77.18.62:8000&quot;
 </code></pre>
 <ul>
-<li>10.779.18.602 is the IP address of the VM.</li>
-<li>8000 is the port where the FastAPI backend is running.</li>
+<li>Replace <code>10.77.18.62</code> with your VM's IP address.</li>
+<li><code>8000</code> is the port where the FastAPI backend runs.</li>
 </ul>
-<p><strong>Backend Configuration (CORS)</strong></p>
-<p>Make sure your backend allows requests from the frontend. You will find these lines in <code>agentic_workflow_as_service_endpoints.py</code>:</p>
+<p><strong>Backend Configuration (.env file)</strong></p>
+<p>Open the <code>.env</code> file in your backend project (<code>Infyagentframework/.env</code>) and set the allowed frontend origins:</p>
+<pre><code class="language-env"># Add your frontend IP address
+UI_CORS_IP=&quot;http://10.77.18.62&quot;
+
+# Add your frontend IP with port number
+UI_CORS_IP_WITH_PORT=&quot;http://10.77.18.62:3000&quot;
+</code></pre>
+<ul>
+<li>Replace <code>10.77.18.62</code> and <code>3000</code> with your frontend's actual IP and port.</li>
+</ul>
+<p><strong>CORS Origins List</strong></p>
+<p>In <code>run_server.py</code> (or <code>agentic_workflow_as_service_endpoints.py</code>), you will find an <code>origins</code> list:</p>
 <pre><code class="language-python">origins = [
-    &quot;http://localhost&quot;,              # Allow localhost
-    &quot;http://localhost:3000&quot;,        # Frontend running on port 3000
-    &quot;http://10.779.18.602&quot;,           # Local network IP
-    &quot;http://10.779.18.602:3000&quot;,      # Local network IP with port
-    &quot;null&quot;,                         # For file:// or sandboxed environments
+    &quot;http://localhost&quot;,
+    &quot;http://localhost:3000&quot;,
+    &quot;http://10.77.18.62&quot;,
+    &quot;http://10.77.18.62:3000&quot;,
+    &quot;null&quot;,
     # Add other origins as needed, such as your deployed frontend URL
 ]
 </code></pre>
 <ul>
-<li>Instead of 10.779.18.602 you can have your own VM IP address.</li>
-<li>Instead of 3000 mention the port number where the frontend is running.</li>
+<li>If you want to allow connections to the backend from other hosts, add their IP and port numbers to this <code>origins</code> list.</li>
 </ul>
-<p>Make sure to update the .env file with your API keys.</p>
+<p>Make sure to update the <code>.env</code> files with your API keys and other required configuration values.</p>
 <h2 id="running-the-project">Running the Project</h2>
 <p><strong>1. Start the Backend Server</strong></p>
 <p>Set the environment variables to enable telemetry:</p>
@@ -1722,23 +1742,22 @@ uv pip install -r requirements.txt
 set NO_PROXY=localhost,127.0.0.1
 </code></pre>
 <p>In the Terminal with the active virtual environment:</p>
-<pre><code class="language-bash">cd backend  # If not already in the backend directory
-uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4
+<pre><code class="language-bash">cd Infyagentframework  # If not already in the backend directory
+python run_server.py --host 0.0.0.0 --port 5001
 </code></pre>
 <div class="admonition info">
 <p class="admonition-title">Backend Server Details</p>
 <ul>
-<li><strong>Server</strong>: Uvicorn (ASGI server)</li>
-<li><strong>Module</strong>: <code>agentic_workflow_as_service_endpoints:app</code></li>
+<li><strong>Server</strong>: FastAPI (run via Python)</li>
+<li><strong>Module</strong>: <code>run_server.py</code></li>
 <li><strong>Host</strong>: 0.0.0.0 (accessible from any network interface)</li>
-<li><strong>Port</strong>: 8000</li>
-<li><strong>Workers</strong>: 4 processes to handle requests</li>
+<li><strong>Port</strong>: 5001</li>
 </ul>
 </div>
-<p>Once running, you can access the backend API at <a href="http://localhost:8000">http://localhost:8000</a></p>
+<p>Once running, you can access the backend API at <a href="http://localhost:5001">http://localhost:5001</a></p>
 <p><strong>2. Start the React Frontend</strong></p>
 <p>In a new Terminal window:</p>
-<pre><code class="language-bash">cd frontend  # If not already in the frontend directory
+<pre><code class="language-bash">cd Agentic-Pro-UI  # If not already in the frontend directory
 npm start
 </code></pre>
 <div class="admonition info">
@@ -1764,15 +1783,21 @@ REM Activate Python virtual environment
 cd /d &quot;C:\Code\Infyagentframework-main\Infyagentframework-main\.venv\Scripts&quot;
 call activate.bat
 
-REM Change to project directory
+REM Change to backend project directory
 cd /d &quot;C:\Code\Infyagentframework-main\Infyagentframework-main\backend&quot;
 
-REM Start FastAPI backend
-start cmd /k &quot;uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4&quot;
+REM Ensure logs directory exists
+if not exist logs mkdir logs
 
-REM Start Node.js frontend
-cd /d &quot;C:\Code\Agentic-Pro-UI\frontend&quot;
-start cmd /k &quot;npm start&quot;
+REM Get today's date in YYYY-MM-DD format
+for /f %%i in ('powershell -Command &quot;Get-Date -Format yyyy-MM-dd&quot;') do set datetime=%%i
+
+REM Start FastAPI backend and log to logs\server_YYYY-MM-DD.log
+start cmd /k &quot;python run_server.py --host 0.0.0.0 --port 5001 &gt;&gt; logs\server_%datetime%.log 2&gt;&amp;1&quot;
+
+REM Start Node.js frontend on port 3003
+cd /d &quot;C:\Code\Agentic-Pro-UI&quot;
+start cmd /k &quot;set PORT=3003 &amp;&amp; npm start&quot;
 
 pause
 </code></pre>
@@ -1821,31 +1846,52 @@ pause
 <p>You can also go to <strong>Windows Services</strong> (press <code>Win + R</code>, type <code>services.msc</code>) to start, stop, or set the service to run automatically on startup.</p>
 <h2 id="project-structure">Project Structure</h2>
 <p>The structure shown below is a sample. The full project includes additional files and directories not listed here.</p>
+<p>Backend project structure:</p>
 <pre><code>Infyagentframework/
-├── backend/                  # Backend FastAPI application
-│   ├── .venv/                # Python virtual environment (generated)
-│   ├── requirements.txt      # Python dependencies
-│   └── agentic_workflow_as_service_endpoints.py  # Main API file
-├── frontend/                 # React frontend application
-│   ├── node_modules/         # Node.js dependencies (generated)
-│   ├── public/               # Static assets
-│   ├── src/                  # React source code
-│   │   ├── components/       # React components
-│   │   ├── pages/            # Page components
-│   │   ├── services/         # API service functions
-│   │   ├── constants.js      # Configuration constants (BASE_URL)
-│   │   ├── App.js            # Main App component
-│   │   └── index.js          # Entry point
-│   ├── package.json          # Node.js dependencies and scripts
-│   └── package-lock.json     # Lock file for dependencies
-└── README.md                 # Project documentation
+├── src/                  # Source code
+│   ├── agent_templates/  # Agent onboarding templates and configurations   
+│   ├── api/              # REST API endpoints and route handlers
+│   ├── auth/             # Authentication and authorization services
+│   ├── config/           # Database connectivity and cache configurations
+│   ├── database/         # Database models, repositories, and services
+│   ├── file_templates/   # Template files for various operations
+│   ├── inference/        # AI model inference and agent execution logic
+│   ├── models/           # Data models and business logic
+│   ├── prompts/          # Prompt templates for AI interactions
+│   ├── schemas/          # Pydantic schemas for data validation
+│   ├── tools/            # Utility tools and helper functions
+│   └── utils/            # Common utilities and shared functions
+├── .venv/                # Python virtual environment (auto-generated)
+├── requirements.txt      # Python dependencies specification
+├── main.py               # Application entry point
+├── run_server.py         # Development server runner with additional options
+├── .env                  # Environment variables (create from .env.example)
+├── .env.example          # Template for environment configuration
+└── README.md             # Project documentation
 </code></pre>
-<ul>
-<li><code>src/components/</code>: Contains reusable React components.</li>
-<li><code>src/constants.js</code>: Stores configuration constants.</li>
-<li><code>src/App.js</code>: Main application component.</li>
-<li><code>public/</code>: Static assets and the HTML template.</li>
-</ul>
+<p>Frontend project structure:</p>
+<pre><code>Agentic-Pro-UI/                    # React frontend application
+├── .github/                       # GitHub configuration
+├── node_modules/                  # Node.js dependencies (generated)
+├── public/                        # Static assets
+├── src/                           # React source code
+│   ├── Assets/                    # Image and media assets
+│   ├── components/                # React components
+│   ├── context/                   # React context providers
+│   ├── css_modules/               # CSS module files
+│   ├── Hooks/                     # Custom React hooks
+│   ├── Icons/                     # SVG icons and graphics
+│   ├── services/                  # API service functions
+│   ├── App.js                     # Main App component with routing
+│   ├── constant.js                # Configuration constants (BASE_URL, APIs)
+│   ├── index.js                   # Entry point
+│   ├── index.css                  # Global styles
+│   └── ProtectedRoute.js          # Route protection component
+├── package.json                   # Node.js dependencies and scripts
+├── package-lock.json              # Lock file for dependencies
+├── README.md                      # Project documentation
+└── .env.example                   # Environment variables (not shown but referenced)
+</code></pre>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <p><strong>Connection Issues Between Frontend and Backend</strong></p>
 <p>If your React UI cannot connect to the backend:</p>
@@ -1923,10 +1969,10 @@ pause
     
     
       
-      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="../../assets/javascripts/bundle.13a4f30d.min.js"></script>
       
     
   </body>

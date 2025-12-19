@@ -16,7 +16,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
     
     
       
@@ -24,7 +24,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.342714a4.min.css">
       
       
 
@@ -493,6 +493,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Prerequisites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#system-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      System Requirements
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#access-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Access Requirements
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -505,11 +529,35 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#azure-vm-deployment" class="md-nav__link">
+  <a href="#azure-deployment" class="md-nav__link">
     <span class="md-ellipsis">
-      Azure VM Deployment
+      Azure Deployment
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Azure Deployment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      BACKEND
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontend" class="md-nav__link">
+    <span class="md-ellipsis">
+      FRONTEND
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1269,6 +1317,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Prerequisites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#system-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      System Requirements
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#access-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Access Requirements
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1281,11 +1353,35 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#azure-vm-deployment" class="md-nav__link">
+  <a href="#azure-deployment" class="md-nav__link">
     <span class="md-ellipsis">
-      Azure VM Deployment
+      Azure Deployment
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Azure Deployment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      BACKEND
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontend" class="md-nav__link">
+    <span class="md-ellipsis">
+      FRONTEND
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1335,13 +1431,45 @@
 <h1 id="project-setup-guide">Project Setup Guide</h1>
 <p>This document provides comprehensive step-by-step instructions to set up and run the project on your local machine and deploy it to Azure VM.</p>
 <h2 id="prerequisites">Prerequisites</h2>
-<p>Before proceeding, ensure you have the following installed on your system:</p>
+<p>Before setting up the project, ensure you have the following requirements and access permissions:</p>
+<h3 id="system-requirements">System Requirements</h3>
+<ul>
+<li><strong>Azure Linux VM</strong> - Virtual machine for deployment</li>
+<li><strong>Azure Kubernetes Cluster (AKS)</strong> - Container orchestration service</li>
+<li><strong>Azure Container Registry (ACR)</strong> - Container image registry</li>
+<li><strong>Python 3.12+</strong> - Required Python version</li>
+<li><strong>React</strong> - Frontend framework</li>
+<li><strong>Azure Postgres DB</strong> - Database service</li>
+</ul>
+<h3 id="access-requirements">Access Requirements</h3>
 <ol>
-<li><strong>Python</strong> (version 3.8 or higher)</li>
-<li><strong>pip</strong> (Python package manager)</li>
-<li><strong>Virtual Environment Support</strong> (comes pre-installed with Python 3.3+)</li>
-<li><strong>Streamlit and Uvicorn dependencies</strong> (will be installed during setup)</li>
+<li>
+<p><strong>JFrog Repository Access</strong></p>
+<ul>
+<li>Ensure you have access to: <code>https://infyartifactory.jfrog.io/artifactory/infyagenticrepo</code></li>
+<li>This is the IAF JFrog Repository for container images</li>
+</ul>
+</li>
+<li>
+<p><strong>Azure Resource Access</strong></p>
+<ul>
+<li><strong>Azure Container Registry (ACR)</strong> - [Raise IHD ticket if access needed]</li>
+<li><strong>Azure Kubernetes Service (AKS)</strong> - [Raise IHD ticket if access needed]</li>
+<li><strong>Azure Postgres Service</strong> - [Try enabling yourself; raise IHD if access issues occur]</li>
+</ul>
+</li>
+<li>
+<p><strong>Image Availability</strong></p>
+<ul>
+<li>Ensure the latest frontend and backend images are present in JFrog Artifactory</li>
+<li>Verify images contain the desired functionality</li>
+</ul>
+</li>
 </ol>
+<div class="admonition warning">
+<p class="admonition-title">Important</p>
+<p>Make sure you have push and pull permissions for all Azure resources before proceeding with deployment.</p>
+</div>
 <h2 id="local-development-setup">Local Development Setup</h2>
 <p><strong>Step 1: Create a Virtual Environment</strong></p>
 <p>A virtual environment is used to isolate project dependencies. Run the following command in the terminal or command prompt:</p>
@@ -1400,39 +1528,71 @@
 - <code>http://0.0.0.0:8501</code> (local access)
 - <code>http://&lt;your-local-ip&gt;:8501</code> (network access)</p>
 </div>
-<h2 id="azure-vm-deployment">Azure VM Deployment</h2>
-<p><strong>Prerequisites for Azure Deployment</strong></p>
+<h2 id="azure-deployment">Azure Deployment</h2>
+<h3 id="backend">BACKEND</h3>
 <ol>
-<li><strong>Valid Azure Subscription</strong></li>
-<li><strong>CCD Request</strong> for Azure Windows VM resource</li>
-<li><strong>Required Software(to be installed on Azure VM)</strong>:<ul>
-<li>Python 3.12 or above (avoid latest unstable versions)</li>
-<li>VS Code</li>
-<li>GitBash (if required)</li>
-<li>NSSM (for service management)</li>
-</ul>
-</li>
+<li>Login in to Azure VM</li>
+<li>Login in to Infosys Jfrog artifactory:
+    <code>bash
+    docker login infyartifactory.jfrog.io</code></li>
+<li>Pull the docker image pushed from Akaash VM:
+    <code>bash
+    docker pull infyartifactory.jfrog.io/infyagenticrepo/iafbackend:08jul</code></li>
+<li>Retag the pulled image to ACR name:
+    <code>bash
+    docker tag infyartifactory.jfrog.io/infyagenticrepo/iafbackend:08jul &lt;acr login server&gt;/&lt;imagename&gt;:&lt;tag&gt;</code></li>
+<li>Login to az and then login to acr:
+    <code>bash
+    docker login &lt;acr login servername&gt;</code></li>
+<li>Push the retagged image to ACR:
+    <code>bash
+    docker push &lt;acr login servername&gt;/&lt;imagename&gt;:&lt;tag&gt;</code></li>
+<li>Create backend deployment file:
+    <code>bash
+    nano &lt;deployment filename.yaml&gt;</code></li>
+<li>Login to Azure Kubernetes</li>
+<li>Execute the deployment file:
+    <code>bash
+    kubectl apply -f &lt;deployment filename.yaml&gt;</code></li>
+<li>Check if the pods is deployed successfully:
+     <code>bash
+     kubectl get pods</code></li>
+<li>Check if the service is up &amp; running successfully:
+     <code>bash
+     kubectl get svc</code></li>
 </ol>
-<p><strong>Deployment Steps</strong></p>
-<p><strong>Step 1: Azure VM Setup</strong></p>
+<h3 id="frontend">FRONTEND</h3>
 <ol>
-<li>Request a valid Azure Subscription</li>
-<li>Raise a CCD request to add an Azure Windows VM resource</li>
-<li>Wait for CCD team to create the VM resource and share credentials</li>
-<li>Install required software on Azure VM:</li>
-<li>Use CCD team assistance, or</li>
-<li>Install locally and transfer via "infydrive"</li>
+<li>Login in to Azure VM</li>
+<li>Login into Infosys Jfrog Artifactory:
+    <code>bash
+    docker login infyartifactory.jfrog.io</code></li>
+<li>Pull the docker image pushed from Akaash VM:
+    <code>bash
+    docker pull infyartifactory.jfrog.io/infyagenticrepo/iaffrontend:08jul</code></li>
+<li>Retag the pulled image to ACR name:
+    <code>bash
+    docker tag infyartifactory.jfrog.io/infyagenticrepo/iaffrontend:08jul &lt;acr login server&gt;/&lt;imagename&gt;:&lt;tag&gt;</code></li>
+<li>Login to az and then login to acr:
+    <code>bash
+    docker login &lt;acr login servername&gt;</code></li>
+<li>Push the retagged image to ACR:
+    <code>bash
+    docker push &lt;acr login servername&gt;/&lt;imagename&gt;:&lt;tag&gt;</code></li>
+<li>Create frontend deployment file:
+    <code>bash
+    nano &lt;deployment filename.yaml&gt;</code></li>
+<li>Login to Azure Kubernetes</li>
+<li>Execute the deployment file:
+    <code>bash
+    kubectl apply -f &lt;deployment filename.yaml&gt;</code></li>
+<li>Check if the pods is deployed successfully:
+     <code>bash
+     kubectl get pods</code></li>
+<li>Check if the service is up &amp; running successfully:
+     <code>bash
+     kubectl get svc</code></li>
 </ol>
-<p><strong>Step 2: Application Deployment</strong></p>
-<ol>
-<li>Move your application folder to Azure VM</li>
-<li>Follow Steps 1-5 from the <a href="#local-development-setup">Local Development Setup</a> section</li>
-<li>Verify application accessibility from outside the VM by sharing network URL with external users</li>
-</ol>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>At this stage, the application will only remain active while the Azure VM is running. VM shutdown will cause application downtime.</p>
-</div>
 <h2 id="how-to-make-the-server-run-247-on-windows-using-nssm">How to Make the Server Run 24/7 on Windows Using NSSM</h2>
 <p><strong>Step 1: Create a Batch File</strong></p>
 <p>Create a new file named <code>servers.bat</code> (you can choose any name).</p>
@@ -1564,10 +1724,10 @@ pause
     
     
       
-      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="../../assets/javascripts/bundle.13a4f30d.min.js"></script>
       
     
   </body>

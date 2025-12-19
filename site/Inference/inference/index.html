@@ -16,7 +16,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
     
     
       
@@ -24,7 +24,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.342714a4.min.css">
       
       
 
@@ -935,9 +935,27 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#chat-interface-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Chat Interface Features
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#react-agent-inference" class="md-nav__link">
     <span class="md-ellipsis">
       React Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#react-critic-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      React Critic Agent Inference
     </span>
   </a>
   
@@ -953,9 +971,36 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#planner-executor-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      Planner Executor Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#meta-agent-inference" class="md-nav__link">
     <span class="md-ellipsis">
       Meta Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#meta-planner-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      Meta Planner Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hybrid-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hybrid Agent Inference
     </span>
   </a>
   
@@ -1272,9 +1317,27 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#chat-interface-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Chat Interface Features
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#react-agent-inference" class="md-nav__link">
     <span class="md-ellipsis">
       React Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#react-critic-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      React Critic Agent Inference
     </span>
   </a>
   
@@ -1290,9 +1353,36 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#planner-executor-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      Planner Executor Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#meta-agent-inference" class="md-nav__link">
     <span class="md-ellipsis">
       Meta Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#meta-planner-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      Meta Planner Agent Inference
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hybrid-agent-inference" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hybrid Agent Inference
     </span>
   </a>
   
@@ -1317,7 +1407,6 @@
 <h1 id="inference">Inference</h1>
 <h2 id="what-is-inference">What is Inference?</h2>
 <p>Inference is the section where you can interact with the agents you have created through a chat interface. It allows you to select and model, initiate a conversation, and observe how the agent responds bsed on its reasoning.</p>
-<p><img alt="Inference" src="../../images/react_main.png" /></p>
 <h2 id="steps-to-onboard-agent-in-inference">Steps to onboard Agent in Inference</h2>
 <p>This guide walks you through the steps required to run an inference using our framework.</p>
 <h2 style="color: black;">Step 1: Select an Agent Type</h2>
@@ -1326,10 +1415,11 @@
 <p>Available Agent Types:</p>
 <ul>
 <li><strong>React Agent</strong></li>
+<li><strong>React Critic Agent</strong></li>
 <li><strong>Multi Agent</strong></li>
+<li><strong>Planner Executor Agent</strong></li>
 <li><strong>Meta Agent</strong></li>
-<li><strong>Custom Agent</strong>
-<img alt="Select Agent Type" src="../../images/agent_type.png" /></li>
+<li><strong>Meta Planner Agent</strong></li>
 </ul>
 <h2 style="color: black;">Step 2: Select a Model Type</h2>
 
@@ -1343,20 +1433,136 @@
 <li><strong>GPT-4o-3</strong></li>
 <li><strong>Gemini-1.5-Flash</strong></li>
 </ul>
-<p><img alt="Select Model Type" src="../../images/model_type.png" /></p>
 <h2 style="color: black;">Step 3: Select the Agent</h2>
 
 <p>Finally, choose the specific agent from the dropdown.</p>
-<p><img alt="Select Agent" src="../../images/agent_selection.png" /></p>
+<h2 id="chat-interface-features">Chat Interface Features</h2>
+<p>The inference interface offers several features to enhance your interaction experience:</p>
+<p><strong>Interface Options</strong></p>
+<p>The main interface includes interactive elements for improved usability:</p>
+<ul>
+<li><strong>Prompt Suggestions</strong>: Provides intelligent recommendations for queries to streamline interactions.</li>
+<li><strong>Toggle Settings</strong>: Allows customization of the chat experience, including options for canvas view, context flag, and other preferences.</li>
+<li><strong>Temperature Settings</strong>: Lets you adjust the model's temperature (from 0 to 1) to control the creativity and randomness of responses.</li>
+<li><strong>Knowledge Base</strong>: Enables access to integrated knowledge resources to support agent responses.</li>
+<li><strong>Chat Options</strong>: Includes controls for starting new chats, viewing chat history, and managing sessions.</li>
+<li><strong>Live Tracking</strong>: Offers real-time monitoring of agent activities with Phoenix integration.</li>
+</ul>
+<p><strong>1. Prompt Suggestions</strong></p>
+<p>Smart prompt suggestions help you interact more efficiently by providing contextual recommendations for queries.</p>
+<p><strong>2. Toggle Settings</strong></p>
+<p>You can configure your chat experience with toggle options for canvas view, context flag, and other interface preferences.</p>
+<ul>
+<li>
+<p><strong>Tool Verifier:</strong></p>
+<p>The Tool Interrupt feature allows you to verify and control tool executions during agent interactions.</p>
+</li>
+<li>
+<p><strong>Validators:</strong></p>
+<p>The Validator feature allows you to validate agent responses using custom logic. You can enable the validator toggle in the chat interface to activate this feature for supported agent templates.</p>
+<p>Supported Agent Templates:</p>
+<p><code>React</code>, <code>React Critic</code>, <code>Planner Executor Critic</code>, <code>Planner Executor</code></p>
+<p><strong>Onboarding a Validator</strong></p>
+<ul>
+<li>Go to the Tools page and select the <code>Validator</code> option.</li>
+<li>Provide a code snippet for the validator. The code must include functions with the arguments <code>query</code> and <code>response</code>, and should return a <code>validation score</code>, <code>validation status</code>, and <code>feedback</code> regarding the response's compliance with expected formats.</li>
+</ul>
+<p><strong>Adding Validation Patterns to Agents</strong></p>
+<p>To add validation patterns, click the <code>plus (+) icon</code> in the agent onboarding interface. 
+For each pattern:</p>
+<ul>
+<li>Provide a sample query and a generic expected response.</li>
+<li>Select a validator for the pattern, or choose "None" if not required.</li>
+<li>You can add one or more validation patterns per agent.</li>
+</ul>
+<p><strong>Using the Validator in Chat Inference</strong></p>
+<ul>
+<li>Enable the <code>Validator</code> toggle in the chat interface.</li>
+</ul>
+<p><strong>How it works</strong>:</p>
+<ul>
+<li>When a user submits a query, the system checks for semantic similarity with existing validation patterns.</li>
+<li>If a matching pattern is found and a validator is assigned, the validator runs and returns a validation score, status, and feedback.</li>
+<li>If no validator is assigned to the matched pattern, the system performs a standard LLM call and returns a validation score, status, and feedback.</li>
+<li>For Planner Executor Critic and Planner Executor templates, validation results are sent to the replanner agent, which generates the response.</li>
+<li>For React and React Critic templates, the agent receives the validation results and regenerates its response based on the feedback.</li>
+</ul>
+<p>This workflow ensures agent responses are evaluated and improved in real time, enhancing reliability and interaction quality.</p>
+</li>
+<li>
+<p><strong>Canvas View:</strong></p>
+<p>Provides a comprehensive visual overview of agent interactions and workflows.</p>
+</li>
+<li>
+<p><strong>Context Flag:</strong></p>
+<p>When disabled, the agent operates without memory retention, treating each query as an independent interaction without access to past conversations or memory data.</p>
+</li>
+<li>
+<p><strong>Online Evaluator:</strong></p>
+<p>The Online Evaluator assesses the quality of agent responses in real time:</p>
+<ol>
+<li>When you submit a query, the agent's response is evaluated for quality.</li>
+<li>If the score is below 0.75, feedback is provided and the response is regenerated.</li>
+<li>This process repeats until the response achieves a score of 0.75 or higher.</li>
+<li>Only then is the final response presented to you.</li>
+</ol>
+</li>
+</ul>
+<p><strong>3. Temperature Settings</strong></p>
+<p>The temperature setting controls the randomness and creativity of responses. Lower values make replies more focused and deterministic, while higher values increase creativity and variability. Adjust the temperature slider to fine-tune agent behavior.</p>
+<p><strong>4. Knowledge Base Integration</strong></p>
+<p>Integrated knowledge base resources are available to enhance agent responses and provide additional information.</p>
+<p><strong>5. Chat Options and Chat History</strong></p>
+<p>You can manage chat sessions with options for starting new chats, accessing chat history, and controlling session settings.</p>
+<p><strong>6. Context Agent</strong></p>
+<p>The Context Agent feature allows you to add an additional agent to your chat session using the "@" button in the chat interface. This enables you to train the context agent on the main agent’s queries and responses, enhancing its ability to understand and respond based on ongoing conversation data.</p>
+<p><strong>How to Use the Context Agent</strong></p>
+<ol>
+<li>
+<p><strong>Activate Context Agent</strong>  </p>
+<ul>
+<li>Click the "@" icon in the chat screen to open the context agent selection menu.</li>
+<li>Select the desired agent type and agent name. The context agent supports all available agent templates.</li>
+</ul>
+</li>
+<li>
+<p><strong>Session Awareness</strong>  </p>
+<ul>
+<li>When you activate a context agent during an ongoing chat, it inherits the current session's conversation data. This means the context agent is aware of previous queries and responses, allowing it to respond appropriately.</li>
+</ul>
+</li>
+<li>
+<p><strong>Interact with Context Agent</strong>  </p>
+<ul>
+<li>Once activated, all subsequent queries will be handled by the selected context agent until you disable it by clicking the "@" icon again.</li>
+<li>The context agent becomes active within the chat interface, indicated by visual confirmation in the interface.</li>
+<li>The context agent responds to queries that reference the ongoing session, using previous conversation history to generate context-aware and relevant responses.</li>
+<li>This demonstrates the agent's ability to maintain continuity and provide informed answers based on prior interactions from the current chat session.</li>
+</ul>
+</li>
+</ol>
+<p>This feature enables seamless switching between agents and ensures that the context agent maintains awareness of the conversation, providing relevant and informed responses.</p>
 <h2 id="react-agent-inference">React Agent Inference</h2>
 <p><strong><a href="../reactAgent_inference/">React Agent</a></strong>
 The React Agent inference is a simple chat window where you can chat with the agent you have onboarded and can see the steps taken by the agent to answer your queries.</p>
+<h2 id="react-critic-agent-inference">React Critic Agent Inference</h2>
+<p><strong><a href="../ReactCriticAgent_inference/">React Critic Agent</a></strong>
+The React Critic Agent inference provides a chat interface with enhanced transparency, showing both the agent's reasoning and the critic's evaluation at each step.</p>
 <h2 id="multi-agent-inference">Multi Agent Inference</h2>
 <p><strong><a href="../multiAgent_inference/">Multi Agent</a></strong>
-In the Multi Agent Inference setup, we offer a <strong>Human-in-the-Loop</strong> option. This feature allows users to review and approve each step the agent plans to execute before it proceeds. </p>
+In the Multi Agent Inference setup, we offer a <strong>Human-in-the-Loop</strong> option. This feature allows users to review and approve each step the agent plans to execute before it proceeds.</p>
+<h2 id="planner-executor-agent-inference">Planner Executor Agent Inference</h2>
+<p><strong><a href="../PlannerExecutorAgent_inference/">Planner Executor Agent</a></strong>
+This inference mode displays the planner, executor, and critic steps, providing detailed insight into each stage of the workflow.</p>
 <h2 id="meta-agent-inference">Meta Agent Inference</h2>
 <p><strong><a href="../metaAgent_inference/">Meta Agent</a></strong>
 The Meta Agent inference offers a chat interface similar to the React Agent. It allows you to interact with the onboarded agent and view the steps it takes to process your queries, providing transparency into its decision-making process.</p>
+<h2 id="meta-planner-agent-inference">Meta Planner Agent Inference</h2>
+<p><strong><a href="../metaAgent_inference/">Meta Planner Agent</a></strong>
+The Meta Planner Agent inference showcases multi-level orchestration, displaying the planner, supervisor, and response generation steps for advanced agent workflows.</p>
+<h2 id="hybrid-agent-inference">Hybrid Agent Inference</h2>
+<p><strong><a href="../HybridAgent_inference/">Hybrid Agent</a></strong>
+The Hybrid Agent inference combines features from multiple agent types, enabling flexible reasoning and decision-making. It provides a chat interface where you can observe both collaborative and independent agent actions, offering a comprehensive view of hybrid workflows.</p>
 
 
 
@@ -1405,10 +1611,10 @@ The Meta Agent inference offers a chat interface similar to the React Agent. It 
     
     
       
-      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="../../assets/javascripts/bundle.13a4f30d.min.js"></script>
       
     
   </body>

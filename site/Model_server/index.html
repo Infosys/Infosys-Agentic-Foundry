@@ -1,0 +1,1800 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
+    
+    
+      
+        <title>Model server - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.342714a4.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#how-it-works" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Model server
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Definitions
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Definitions
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/Vocabulary%20-%20Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Vocabulary - Definitions
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Human in the loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Architecture
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Installation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Linux
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Azure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Database%20setup/Database%20Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    PostgreSQL setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agents Design
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Agents Design
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents%20Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents%20Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents%20Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents%20Design/Orchestration%20Meta%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Orchestration Meta Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tools Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Validation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool%20Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Interrupt
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agent Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Agent Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Inference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            Inference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Files
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Telemetry
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            Telemetry
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Open Telemetry
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/configurations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Configurations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Connecting%20to%20Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Connecting to Grafana
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Arize Phoenix
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Evaluation Metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      How It Works
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-model-server-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      Example Model Server Script
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-benefits" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key Benefits
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+  <h1>Model server</h1>
+
+<p>To optimize the deployment and usage of bi-encoder and cross-encoder models, we have enhanced our integration to support accessing hosted models via server URLs. Previously, models had to be manually downloaded from Hugging Face and their local paths specified in the <code>.env</code> file. This process was inefficient, consuming significant disk space (several GBs per model) and complicating deployments across multiple virtual machines (VMs), as each VM required its own copy of the models.</p>
+<p>To resolve these challenges, we introduced a model server based on FastAPI. With this architecture, models are hosted on a single machine (either local or remote), and clients connect to the model server by specifying its URL in their <code>.env</code> file. This eliminates redundant downloads and local storage, streamlining both setup and ongoing maintenance.</p>
+<h3 id="how-it-works">How It Works</h3>
+<ol>
+<li>
+<p><strong>Model Server Deployment</strong>:<br />
+    Deploy the model server script on the machine designated to host your Hugging Face models.</p>
+</li>
+<li>
+<p><strong>Client Configuration</strong>:<br />
+    On each client, specify the model server URL in the <code>.env</code> file. The application will then access models via the server, rather than loading them locally.</p>
+</li>
+<li>
+<p><strong>Centralized Model Management</strong>:<br />
+    All model-related operations (such as generating embeddings or reranking candidates) are handled by the server, ensuring consistency and efficiency across all environments.</p>
+</li>
+</ol>
+<p>The model server hosts both bi-encoder and cross-encoder models, allowing clients to request embeddings and reranking results through simple API calls. The client connects to the server, requests embeddings from the bi-encoder, and performs reranking with the cross-encoder, all via HTTP endpoints.</p>
+<h3 id="example-model-server-script">Example Model Server Script</h3>
+<p>Below is an example FastAPI script for hosting the <code>all-MiniLM-L6-v2</code> (bi-encoder) and <code>bge-reranker-large</code> (cross-encoder) models. Run this script on the server where the Hugging Face models will be hosted:</p>
+<pre><code class="language-python">&quot;&quot;&quot;
+Model Server for hosting all-MiniLM-L6-v2 and bge-reranker-large models
+&quot;&quot;&quot;
+
+import os
+from contextlib import asynccontextmanager
+from typing import List, Union
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import uvicorn
+from sentence_transformers import SentenceTransformer, CrossEncoder
+import logging
+from dotenv import load_dotenv
+import numpy as np
+import torch
+
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Global model variables
+embedding_model = None
+cross_encoder_model = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    &quot;&quot;&quot;Load models on startup and cleanup on shutdown&quot;&quot;&quot;
+    global embedding_model, cross_encoder_model
+    try:
+        embedding_model_name = os.getenv(&quot;SBERT_MODEL_PATH&quot;)
+        cross_encoder_model_name = os.getenv(&quot;CROSS_ENCODER_PATH&quot;)
+        embedding_model = SentenceTransformer(embedding_model_name)
+        logger.info(&quot;Embedding model loaded successfully&quot;)
+        cross_encoder_model = CrossEncoder(cross_encoder_model_name)
+        logger.info(&quot;Cross encoder model loaded successfully&quot;)
+        logger.info(&quot;All models loaded successfully!&quot;)
+    except Exception as e:
+        logger.error(f&quot;Failed to load models: {str(e)}&quot;)
+        raise e
+    yield
+    logger.info(&quot;Shutting down model server...&quot;)
+
+app = FastAPI(title=&quot;Model Server&quot;, version=&quot;1.0.0&quot;, lifespan=lifespan)
+
+# Request/Response models
+class EmbeddingRequest(BaseModel):
+    texts: Union[str, List[str]]
+    convert_to_tensor: bool = False
+
+class EmbeddingResponse(BaseModel):
+    embeddings: List[List[float]]
+
+class RerankRequest(BaseModel):
+    query: str
+    candidates: List[str]
+
+class RerankResponse(BaseModel):
+    scores: List[float]
+
+class CosineSimilarityRequest(BaseModel):
+    vector_a: List[float]
+    vector_b: Union[List[float], List[List[float]]]
+
+class CosineSimilarityResponse(BaseModel):
+    similarity: Union[float, List[float]]
+
+class TensorOpsRequest(BaseModel):
+    data: Union[List[float], List[List[float]]]
+    operation: str
+    kwargs: dict = {}
+
+class TensorOpsResponse(BaseModel):
+    result: Union[List[float], List[List[float]], float, bool]
+
+class ArrayOpsRequest(BaseModel):
+    data: Union[List[float], List[List[float]]]
+    operation: str
+    kwargs: dict = {}
+
+class ArrayOpsResponse(BaseModel):
+    result: Union[List[float], List[List[float]], float, bool]
+
+@app.get(&quot;/health&quot;)
+async def health_check():
+    return {
+        &quot;status&quot;: &quot;healthy&quot;,
+        &quot;embedding_model_loaded&quot;: embedding_model is not None,
+        &quot;cross_encoder_loaded&quot;: cross_encoder_model is not None
+    }
+
+@app.post(&quot;/embeddings&quot;, response_model=EmbeddingResponse)
+async def get_embeddings(request: EmbeddingRequest):
+    if embedding_model is None:
+        raise HTTPException(status_code=500, detail=&quot;Embedding model not loaded&quot;)
+    try:
+        texts = request.texts if isinstance(request.texts, list) else [request.texts]
+        embeddings = embedding_model.encode(texts, show_progress_bar=False)
+        if len(embeddings.shape) == 1:
+            embeddings = [embeddings.tolist()]
+        else:
+            embeddings = embeddings.tolist()
+        return EmbeddingResponse(embeddings=embeddings)
+    except Exception as e:
+        logger.error(f&quot;Error generating embeddings: {str(e)}&quot;)
+        raise HTTPException(status_code=500, detail=f&quot;Error generating embeddings: {str(e)}&quot;)
+
+@app.post(&quot;/rerank&quot;, response_model=RerankResponse)
+async def rerank_texts(request: RerankRequest):
+    if cross_encoder_model is None:
+        raise HTTPException(status_code=500, detail=&quot;Cross encoder model not loaded&quot;)
+    try:
+        pairs = [[request.query, candidate] for candidate in request.candidates]
+        scores = cross_encoder_model.predict(pairs)
+        if hasattr(scores, 'tolist'):
+            scores = scores.tolist()
+        return RerankResponse(scores=scores)
+    except Exception as e:
+        logger.error(f&quot;Error in reranking: {str(e)}&quot;)
+        raise HTTPException(status_code=500, detail=f&quot;Error in reranking: {str(e)}&quot;)
+
+@app.post(&quot;/cosine_similarity&quot;, response_model=CosineSimilarityResponse)
+async def calculate_cosine_similarity(request: CosineSimilarityRequest):
+    &quot;&quot;&quot;Calculate cosine similarity between vectors&quot;&quot;&quot;
+    try:
+        vector_a = np.array(request.vector_a)
+        if isinstance(request.vector_b[0], list):
+            similarities = []
+            for vec_b in request.vector_b:
+                vector_b = np.array(vec_b)
+                norm_a = np.linalg.norm(vector_a)
+                norm_b = np.linalg.norm(vector_b)
+                if norm_a == 0 or norm_b == 0:
+                    similarity = 0.0
+                else:
+                    similarity = np.dot(vector_a, vector_b) / (norm_a * norm_b)
+                similarities.append(float(similarity))
+            return CosineSimilarityResponse(similarity=similarities)
+        else:
+            vector_b = np.array(request.vector_b)
+            norm_a = np.linalg.norm(vector_a)
+            norm_b = np.linalg.norm(vector_b)
+            if norm_a == 0 or norm_b == 0:
+                similarity = 0.0
+            else:
+                similarity = np.dot(vector_a, vector_b) / (norm_a * norm_b)
+            return CosineSimilarityResponse(similarity=float(similarity))
+
+    except Exception as e:
+        logger.error(f&quot;Error calculating cosine similarity: {str(e)}&quot;)
+        raise HTTPException(status_code=500, detail=f&quot;Error calculating cosine similarity: {str(e)}&quot;)
+
+@app.post(&quot;/tensor_ops&quot;, response_model=TensorOpsResponse)
+async def tensor_operations(request: TensorOpsRequest):
+    &quot;&quot;&quot;Handle tensor operations to replace torch operations&quot;&quot;&quot;
+    try:
+        data = request.data
+        operation = request.operation
+        kwargs = request.kwargs
+
+        if operation == &quot;to_tensor&quot;:
+            tensor = torch.tensor(data)
+            result = tensor.tolist()
+        elif operation == &quot;sigmoid&quot;:
+            tensor = torch.tensor(data)
+            result = torch.sigmoid(tensor).tolist()
+        elif operation == &quot;is_tensor&quot;:
+            result = False
+        elif operation == &quot;flatten&quot;:
+            if isinstance(data, list) and len(data) &gt; 0 and isinstance(data[0], list):
+                result = [item for sublist in data for item in sublist]
+            else:
+                result = data
+        else:
+            logger.warning(f&quot;Unknown tensor operation: {operation}&quot;)
+            result = data
+
+        return TensorOpsResponse(result=result)
+
+    except Exception as e:
+        logger.error(f&quot;Error in tensor operation {request.operation}: {str(e)}&quot;)
+        raise HTTPException(status_code=500, detail=f&quot;Error in tensor operation: {str(e)}&quot;)
+
+@app.post(&quot;/array_ops&quot;, response_model=ArrayOpsResponse)
+async def array_operations(request: ArrayOpsRequest):
+    &quot;&quot;&quot;Handle array operations to replace numpy operations&quot;&quot;&quot;
+    try:
+        data = request.data
+        operation = request.operation
+        kwargs = request.kwargs
+
+        if operation == &quot;create_array&quot;:
+            result = data
+        elif operation == &quot;mean&quot;:
+            if isinstance(data[0], list):
+                axis = kwargs.get('axis', None)
+                np_array = np.array(data)
+                if axis is not None:
+                    result = np.mean(np_array, axis=axis).tolist()
+                else:
+                    result = float(np.mean(np_array))
+            else:
+                result = float(np.mean(data))
+        elif operation == &quot;std&quot;:
+            if isinstance(data[0], list):
+                np_array = np.array(data)
+                axis = kwargs.get('axis', None)
+                if axis is not None:
+                    result = np.std(np_array, axis=axis).tolist()
+                else:
+                    result = float(np.std(np_array))
+            else:
+                result = float(np.std(data))
+        elif operation == &quot;reshape&quot;:
+            shape = kwargs.get('shape', (-1,))
+            np_array = np.array(data)
+            result = np_array.reshape(shape).tolist()
+        elif operation == &quot;transpose&quot;:
+            np_array = np.array(data)
+            result = np_array.T.tolist()
+        else:
+            logger.warning(f&quot;Unknown array operation: {operation}&quot;)
+            result = data
+
+        return ArrayOpsResponse(result=result)
+
+    except Exception as e:
+        logger.error(f&quot;Error in array operation {request.operation}: {str(e)}&quot;)
+        raise HTTPException(status_code=500, detail=f&quot;Error in array operation: {str(e)}&quot;)
+
+if __name__ == &quot;__main__&quot;:
+    host = os.getenv(&quot;MODEL_SERVER_HOST&quot;)
+    port = int(os.getenv(&quot;MODEL_SERVER_PORT&quot;))
+
+    logger.info(f&quot;Starting Model Server on {host}:{port}&quot;)
+    uvicorn.run(&quot;model_server:app&quot;, host=host, port=port, reload=False)
+
+</code></pre>
+<p>Below is the script for the Model Client, which enables communication with the FastAPI model server hosting two models: <code>all-MiniLM-L6-v2</code> (bi-encoder) and <code>bge-reranker-large</code> (cross-encoder). This client allows you to connect to the server, request embeddings from the bi-encoder, and perform reranking with the cross-encoder, all via simple API calls.</p>
+<pre><code class="language-python">&quot;&quot;&quot;
+Model Client for communicating with the FastAPI model server
+&quot;&quot;&quot;
+import os
+import requests
+from typing import List, Union, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ModelServerClient:
+    &quot;&quot;&quot;Client for communicating with the model server&quot;&quot;&quot;
+    _warning_logged = False  
+    _connection_failed = {}  
+
+    def __init__(self, base_url: str = None):
+        self.base_url = base_url or os.getenv(&quot;MODEL_SERVER_URL&quot;)
+        if self.base_url:
+            self.base_url = self.base_url.strip()
+            if not self.base_url or self.base_url.lower() == &quot;none&quot;:
+                self.base_url = None
+
+        self.session = requests.Session()
+        self.server_available = False
+
+        if not self.base_url:
+            if not ModelServerClient._warning_logged:
+                logger.info(&quot;MODEL_SERVER_URL not configured. Remote model features will be unavailable.&quot;)
+                ModelServerClient._warning_logged = True
+            return
+
+        try:
+            response = self.session.get(f&quot;{self.base_url}/health&quot;, timeout=5)
+            if response.status_code == 200:
+                if self.base_url in ModelServerClient._connection_failed:
+                    del ModelServerClient._connection_failed[self.base_url]
+                logger.info(f&quot;Connected to model server at {self.base_url}&quot;)
+                self.server_available = True
+            else:
+                if self.base_url not in ModelServerClient._connection_failed:
+                    logger.warning(f&quot;Model server at {self.base_url} responded with status {response.status_code}, remote features unavailable&quot;)
+                    ModelServerClient._connection_failed[self.base_url] = True
+        except Exception as e:
+            if self.base_url not in ModelServerClient._connection_failed:
+                logger.error(f&quot;Failed to connect to model server at {self.base_url}: {e}&quot;)
+                ModelServerClient._connection_failed[self.base_url] = True
+
+class RemoteUtils:
+    &quot;&quot;&quot;Remote utilities to replace torch, numpy operations and sentence-transformers utilities&quot;&quot;&quot;
+
+    def __init__(self, client: ModelServerClient = None):
+        self.client = client or ModelServerClient()
+
+    def cos_sim(self, a: List[float], b: Union[List[float], List[List[float]]]) -&gt; Union[float, List[float]]:
+        &quot;&quot;&quot;Remote cosine similarity calculation to replace sentence_transformers.util.cos_sim&quot;&quot;&quot;
+        if not self.client.base_url or self.client.base_url == &quot;None&quot;:
+            raise Exception(&quot;MODEL_SERVER_URL not configured. Cannot perform cosine similarity without remote server.&quot;)
+        try:
+            def flatten_embedding(embedding):
+                if isinstance(embedding, list) and len(embedding) &gt; 0:
+                    if isinstance(embedding[0], list):
+                        return embedding[0]
+                    else:
+                        return embedding
+                return embedding
+            vector_a = flatten_embedding(a)
+            vector_b = b
+            if isinstance(b, list) and len(b) &gt; 0:
+                if isinstance(b[0], list):
+                    if len(b) == 1 and isinstance(b[0][0], (int, float)):
+                        vector_b = b[0]
+                    elif isinstance(b[0][0], list):
+                        vector_b = [flatten_embedding(vec) for vec in b]
+                    else:
+                        vector_b = b
+            payload = {
+                &quot;vector_a&quot;: vector_a,
+                &quot;vector_b&quot;: vector_b
+            }
+            response = self.client.session.post(
+                f&quot;{self.client.base_url}/cosine_similarity&quot;,
+                json=payload,
+                timeout=30
+            )
+            if response.status_code != 200:
+                raise Exception(f&quot;Model server error: {response.status_code} - {response.text}&quot;)
+            result = response.json()
+            return result[&quot;similarity&quot;]
+        except Exception as e:
+            logger.error(f&quot;Error calculating cosine similarity: {e}&quot;)
+            raise e
+
+    def tensor_operations(self, data: Any, operation: str, **kwargs) -&gt; Any:
+        &quot;&quot;&quot;Remote tensor operations to replace torch operations&quot;&quot;&quot;
+        if not self.client.base_url or self.client.base_url == &quot;None&quot;:
+            raise Exception(&quot;MODEL_SERVER_URL not configured. Cannot perform tensor operations without remote server.&quot;)
+        try:
+            payload = {
+                &quot;data&quot;: data,
+                &quot;operation&quot;: operation,
+                &quot;kwargs&quot;: kwargs
+            }
+            response = self.client.session.post(
+                f&quot;{self.client.base_url}/tensor_ops&quot;,
+                json=payload,
+                timeout=30
+            )
+            if response.status_code != 200:
+                raise Exception(f&quot;Model server error: {response.status_code} - {response.text}&quot;)
+            result = response.json()
+            return result[&quot;result&quot;]
+        except Exception as e:
+            logger.error(f&quot;Error performing tensor operation {operation}: {e}&quot;)
+            raise e
+
+    def array_operations(self, data: Any, operation: str, **kwargs) -&gt; Any:
+        &quot;&quot;&quot;Remote array operations to replace numpy operations&quot;&quot;&quot;
+        if not self.client.base_url or self.client.base_url == &quot;None&quot;:
+            raise Exception(&quot;MODEL_SERVER_URL not configured. Cannot perform array operations without remote server.&quot;)
+        try:
+            payload = {
+                &quot;data&quot;: data,
+                &quot;operation&quot;: operation,
+                &quot;kwargs&quot;: kwargs
+            }
+            response = self.client.session.post(
+                f&quot;{self.client.base_url}/array_ops&quot;,
+                json=payload,
+                timeout=30
+            )
+            if response.status_code != 200:
+                raise Exception(f&quot;Model server error: {response.status_code} - {response.text}&quot;)
+            result = response.json()
+            return result[&quot;result&quot;]
+        except Exception as e:
+            logger.error(f&quot;Error performing array operation {operation}: {e}&quot;)
+            raise e
+
+class RemoteSentenceTransformer:
+    &quot;&quot;&quot;Drop-in replacement for SentenceTransformer&quot;&quot;&quot;
+
+    def __init__(self, model_name: str = None, client: ModelServerClient = None):
+        self.model_name = model_name
+        self.client = client or ModelServerClient()
+
+    def encode(self, sentences: Union[str, List[str]], 
+               convert_to_tensor: bool = False, 
+               show_progress_bar: bool = False,
+               **kwargs) -&gt; Union[List[List[float]], List[float]]:
+        try:
+            payload = {
+                &quot;texts&quot;: sentences,
+                &quot;convert_to_tensor&quot;: False
+            }
+            response = self.client.session.post(
+                f&quot;{self.client.base_url}/embeddings&quot;,
+                json=payload,
+                timeout=30
+            )
+            if response.status_code != 200:
+                raise Exception(f&quot;Model server error: {response.status_code} - {response.text}&quot;)
+            result = response.json()
+            embeddings = result[&quot;embeddings&quot;]
+            if isinstance(sentences, str):
+                return embeddings[0] if embeddings else []
+            else:
+                return embeddings
+        except Exception as e:
+            logger.error(f&quot;Error encoding sentences: {e}&quot;)
+            raise e
+
+class RemoteCrossEncoder:
+    &quot;&quot;&quot;Drop-in replacement for CrossEncoder&quot;&quot;&quot;
+
+    def __init__(self, model_name: str = None, client: ModelServerClient = None):
+        self.model_name = model_name
+        self.client = client or ModelServerClient()
+
+    def predict(self, sentences: List[List[str]], **kwargs) -&gt; Union[List[float], float]:
+        try:
+            if len(sentences) == 0:
+                return []
+            if isinstance(sentences[0], str):
+                query, candidates = sentences[0], [sentences[1]]
+            else:
+                query = sentences[0][0]
+                candidates = [pair[1] for pair in sentences]
+            payload = {
+                &quot;query&quot;: query,
+                &quot;candidates&quot;: candidates
+            }
+            response = self.client.session.post(
+                f&quot;{self.client.base_url}/rerank&quot;,
+                json=payload,
+                timeout=30
+            )
+            if response.status_code != 200:
+                raise Exception(f&quot;Model server error: {response.status_code} - {response.text}&quot;)
+            result = response.json()
+            scores = result[&quot;scores&quot;]
+            if isinstance(sentences[0], str):
+                return scores[0] if scores else 0.0
+            return scores
+
+        except Exception as e:
+            logger.error(f&quot;Error predicting with cross encoder: {e}&quot;)
+            raise e
+
+class RemoteTensorUtils:
+    &quot;&quot;&quot;Utility class to replace torch tensor operations with remote calls&quot;&quot;&quot;
+
+    def __init__(self, client: ModelServerClient = None):
+        self.client = client or ModelServerClient()
+        self.remote_utils = RemoteUtils(client)
+
+    def tensor(self, data: List) -&gt; List:
+        &quot;&quot;&quot;Replace torch.tensor() with remote operation&quot;&quot;&quot;
+        return self.remote_utils.tensor_operations(data, &quot;to_tensor&quot;)
+
+    def sigmoid(self, data: List) -&gt; List:
+        &quot;&quot;&quot;Replace torch.sigmoid() with remote operation&quot;&quot;&quot;
+        return self.remote_utils.tensor_operations(data, &quot;sigmoid&quot;)
+
+    def is_tensor(self, obj: Any) -&gt; bool:
+        &quot;&quot;&quot;Check if object is tensor-like (in remote setup, check if it's a list of numbers)&quot;&quot;&quot;
+        return isinstance(obj, (list, tuple)) and len(obj) &gt; 0 and isinstance(obj[0], (int, float))
+
+class RemoteNumpyUtils:
+    &quot;&quot;&quot;Utility class to replace numpy operations with remote calls&quot;&quot;&quot;
+
+    def __init__(self, client: ModelServerClient = None):
+        self.client = client or ModelServerClient()
+        self.remote_utils = RemoteUtils(client)
+
+    def array(self, data: List) -&gt; List:
+        &quot;&quot;&quot;Replace numpy.array() with remote operation&quot;&quot;&quot;
+        return self.remote_utils.array_operations(data, &quot;create_array&quot;)
+
+class RemoteSentenceTransformersUtil:
+    &quot;&quot;&quot;Utility class to replace sentence_transformers.util operations&quot;&quot;&quot;
+
+    def __init__(self, client: ModelServerClient = None):
+        self.client = client or ModelServerClient()
+        self.remote_utils = RemoteUtils(client)
+
+    def cos_sim(self, a: List[float], b: Union[List[float], List[List[float]]]) -&gt; Union[float, List[float]]:
+        &quot;&quot;&quot;Replace sentence_transformers.util.cos_sim with remote calculation&quot;&quot;&quot;
+        return self.remote_utils.cos_sim(a, b)
+
+def get_remote_models_and_utils(base_url: str = None):
+    &quot;&quot;&quot;Factory function to get all remote model instances and utilities&quot;&quot;&quot;
+    client = ModelServerClient(base_url)
+    embedding_model = RemoteSentenceTransformer(client=client)
+    cross_encoder = RemoteCrossEncoder(client=client)
+    torch_utils = RemoteTensorUtils(client=client)
+    numpy_utils = RemoteNumpyUtils(client=client) 
+    util = RemoteSentenceTransformersUtil(client=client)
+    logger.info(&quot;Remote models and utilities initialized successfully.&quot;)
+    return {
+        &quot;embedding_model&quot;: embedding_model,
+        &quot;cross_encoder&quot;: cross_encoder,
+        &quot;torch&quot;: torch_utils,
+        &quot;np&quot;: numpy_utils,
+        &quot;util&quot;: util,
+        &quot;client&quot;: client
+    }
+
+def get_remote_models(base_url: str = None):
+    &quot;&quot;&quot;Original function for backwards compatibility&quot;&quot;&quot;
+    components = get_remote_models_and_utils(base_url)
+    return components[&quot;embedding_model&quot;], components[&quot;cross_encoder&quot;]
+</code></pre>
+<h3 id="key-benefits">Key Benefits</h3>
+<ul>
+<li><strong>Reduced Storage Requirements</strong>: Models are downloaded and stored only once on the server.</li>
+<li><strong>Simplified Deployment</strong>: No need to manage model files on every VM or environment.</li>
+<li><strong>Centralized Updates</strong>: Updating a model on the server instantly benefits all connected clients.</li>
+<li><strong>Scalability</strong>: Multiple clients can access the same models concurrently via the server API.</li>
+</ul>
+<p>This architecture ensures efficient, scalable, and maintainable model usage across your infrastructure.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["content.code.copy", "navigation.path"], "search": "../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.13a4f30d.min.js"></script>
+      
+    
+  </body>
+</html>

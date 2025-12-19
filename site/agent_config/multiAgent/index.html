@@ -16,7 +16,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
     
     
       
@@ -24,7 +24,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.342714a4.min.css">
       
       
 
@@ -1279,7 +1279,7 @@
 
 
 <h1 id="multi-agent-configuration">Multi Agent Configuration</h1>
-<p>The <strong>Multi Agent</strong> operates on the <strong>Planner-Executor-Critic</strong> paradigm. It begins with a <strong>Planner Agent</strong> that generates a step-by-step plan based on the user query. The <strong>Executor Agent</strong> then executes each step of the plan. The <strong>Critic</strong> evaluates the outputs by scoring the results of each step.</p>
+<p>The <strong>Multi Agent</strong> operates on the <code>Planner-Executor-Critic</code> paradigm. It begins with a <code>Planner Agent</code> that generates a step-by-step plan based on the user query. The <code>Executor Agent</code> then executes each step of the plan. The <code>Critic</code> evaluates the outputs by scoring the results of each step.</p>
 <!-- #### **Multi AI Agent**
 
 <div style="display: flex; justify-content: space-around; align-items: center;">
@@ -1297,66 +1297,33 @@
 </div> -->
 
 <h3 id="multi-agent-onboarding"><strong>Multi Agent Onboarding</strong></h3>
-<p>The following are the steps for onboarding a Multi Agent with an example:</p>
-<ol>
-<li>
-<p><strong>Select Template</strong>: Select agent template.</p>
-<ul>
-<li><code>Agent Template</code>  MULTI AGENT
-<img alt="Agents Template1" src="../../images/Agent_types1.png" /></li>
-</ul>
-</li>
-<li>
-<p><strong>Select Tools</strong>: from the listed tools - select the tool/s using which we want to create the agent.</p>
-<ul>
-<li><code>Tools</code>   get_weather</li>
-</ul>
-</li>
-<li>
-<p><strong>Agent Name</strong>:  Provide a suitable agent name. </p>
-<ul>
-<li><code>Agent Name</code>  Weather Agent1</li>
-</ul>
-</li>
-<li>
-<p><strong>Agent Goal</strong>:  Provide goal of the agent - objective of the agent.</p>
-<ul>
-<li><code>Agent Goal</code> This agent provides personalized suggestions based on real-time weather data.</li>
-</ul>
-</li>
-<li>
-<p><strong>Workflow description</strong>: Provide detailed instructions to the LLM - Guidelines to the agent. </p>
-<ul>
-<li>
-<p><code>Sample Workflow description</code>:</p>
-<blockquote>
+<p>To onboard a Multi Agent, users begin by selecting the MULTI AGENT template and choosing their desired tools such as get_weather. Must provide an agent name like "Weather Agent" and define the agent goal, for example "This agent provides personalized suggestions based on real-time weather data." </p>
+<p>A detailed workflow description with guidelines for the LLM is essential, outlining the step-by-step process the agent should follow. Users then select the model name from the dropdown menu, which generates system prompts based on the provided agent goal and workflow description.</p>
+<div class="admonition info">
+<p class="admonition-title">Sample Workflow description</p>
 <p>Understand the user intent and perform following steps:</p>
 <ol>
 <li>Retrieve Weather Data - Make an API call to fetch real-time weather data.</li>
 <li>Analyze Weather Conditions - Evaluate the weather data to determine current conditions.</li>
-<li>Generate Recommendations - Based on the analysis, provide personalized suggestions to the user. </li>
+<li>Generate Recommendations - Based on the analysis, provide personalized suggestions to the user.</li>
 </ol>
-<p>For example:
- If the weather is pleasant, suggest outdoor activities.
- If the weather is rainy or stormy, advise the user to carry an umbrella or avoid traveling.
- If extreme weather conditions are detected, recommend staying indoors and taking necessary precautions.</p>
-</blockquote>
-</li>
-</ul>
-</li>
-<li>
-<p><strong>Model Name</strong>: Select the model name from the dropdown - which is used to create <strong>system prompt</strong> based on provided Agent goal and Workflow description. 
-<img alt="Multi Agent Creation" src="../../images/Multi_agent.png" /></p>
-</li>
-</ol>
+<p>For example:</p>
+<p>If the weather is pleasant, suggest outdoor activities.
+If the weather is rainy or stormy, advise the user to carry an umbrella or avoid traveling.
+If extreme weather conditions are detected, recommend staying indoors and taking necessary precautions.</p>
+</div>
+<p>Select the model name from the dropdown - which is used to create <code>system prompt</code> based on provided Agent goal and Workflow description. </p>
 <p><strong>System Prompt</strong>:</p>
 <p>Using the provided agent goal and workflow description, LLM generates system prompts for the planner, executor, and critic agents within a multi-agent template.</p>
-<p><img alt="Multi Agent System Prompt" src="../../images/Multi_agent_system_prompts.png" /></p>
 <hr />
 <h3 id="agent-updation"><strong>Agent Updation</strong></h3>
 <p>Agent Updation is similar to <a href="../reactAgent/#agent-updation">React Agent Updation</a></p>
 <h3 id="agent-deletion"><strong>Agent Deletion</strong></h3>
 <p>Agent Deletion is similar to <a href="../reactAgent/#agent-deletion">React Agent Deletion</a></p>
+<div class="admonition warning">
+<p class="admonition-title">Important</p>
+<p>Only the original creator of the agent has permission to update or delete it. Other users do not have access to modify or remove these resources.</p>
+</div>
 
 
 
@@ -1405,10 +1372,10 @@
     
     
       
-      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="../../assets/javascripts/bundle.13a4f30d.min.js"></script>
       
     
   </body>
