@@ -16,7 +16,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
     
     
       
@@ -24,7 +24,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.342714a4.min.css">
       
       
 
@@ -1301,16 +1301,28 @@
 <p>Agent configuration involves using a reusable, template-driven setup that allows creation of agents with specific <strong>roles</strong>, <strong>goals</strong>, and <strong>personas</strong>.</p>
 <hr />
 <h2 id="templates-overview">Templates Overview</h2>
-<p>The system supports three types of agent templates and each template offers different capabilities, suited for specific use cases:</p>
+<p>The system supports multiple types of agent templates, each offering different capabilities suited for specific use cases:</p>
 <ol>
 <li>
 <p><a href="../reactAgent/">React Agent</a>: The ReAct (Reasoning and Acting) agent combines reasoning traces with action execution.</p>
 </li>
 <li>
-<p><a href="../multiAgent/">Multi Agent</a>: The multi agent follows the Plan and Execute paradigm.</p>
+<p><a href="../reactCritic/">React Critic Agent</a>: An enhanced React Agent with dual system prompts for self-critique and improved output quality.</p>
 </li>
 <li>
-<p><a href="../metaAgent/">Meta Agent</a>: An agent supervisor is responsible for routing to individual agents.</p>
+<p><a href="../multiAgent/">Multi Agent</a>: The multi agent follows the Plan and Execute paradigm, enabling collaboration between specialized agents.</p>
+</li>
+<li>
+<p><a href="../PlannerExecutor/">Planner Executor Agent</a>: Implements the Planner-Executor-Critic workflow with a more granular system prompt structure.</p>
+</li>
+<li>
+<p><a href="../metaAgent/">Meta Agent</a>: An agent supervisor responsible for routing to individual agents and managing high-level orchestration.</p>
+</li>
+<li>
+<p><a href="../PlannerMeta/">Meta Planner Agent</a>: An advanced orchestrator using multiple system prompts for robust and adaptive agent-based workflows.</p>
+</li>
+<li>
+<p><a href="../HybridAgent/">Hybrid Agent</a>: Combines features from multiple agent types, enabling flexible workflows that leverage both reasoning and execution capabilities for complex tasks.</p>
 </li>
 </ol>
 <hr />
@@ -1362,10 +1374,10 @@
     
     
       
-      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="../../assets/javascripts/bundle.13a4f30d.min.js"></script>
       
     
   </body>
