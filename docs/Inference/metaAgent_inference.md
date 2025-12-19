@@ -1,28 +1,45 @@
 # Meta Agent Inference
 
-The Meta Agent inference setup provides a simple chat interface where you can interact with the onboarded agent and observe the steps it takes to answer your queries.
+The Meta Agent inference setup provides a comprehensive chat interface where you can interact with onboarded agents and observe their decision-making processes in real-time. This system allows you to test and evaluate agent performance while gaining insights into their reasoning steps.
 
-**Meta Agent Inference Window**: 
+## Getting Started
 
-Select the Meta Agent template, model, and agent name to begin interacting with the agent.  
-![Meta Chat Interface](../images/meta_chat.png) 
+To begin using the Meta Agent inference system:
 
-## Examples of Chat Screens for a Movie_and_scholar_Agent
-<h2 style="color:black;">Inference Results</h2>
+1. **Select Configuration**: Choose your Meta Agent template from the available options
+2. **Choose Model**: Select the appropriate AI model for your use case
+3. **Pick Agent**: Select the specific agent you want to interact with from your onboarded agents
+4. **Start Chatting**: Begin your conversation with the selected agent
 
-Below is the sample chat interaction showcasing the inference process:
+The interface provides a clean, intuitive chat experience similar to popular messaging applications, making it easy to communicate with your AI agents.
 
-![meta agent inference](../images/meta_inference.png)  
- 
+## Understanding Agent Responses
 
-## Steps Taken by the Agent
-- You can view the steps taken by the agent to answer your query by clicking the "Steps" dropdown.  
-- These steps reveal the agents the meta agent calls based on the user query, providing transparency into the decision-making process.
+When you submit a query to the Meta Agent, it processes your request through multiple layers:
 
-![Chat Result 4](../images/meta_steps.png)
+- **Query Analysis**: The agent first analyzes your question to understand the context and requirements
+- **Agent Selection**: Based on the query type, the Meta Agent determines which specialized sub-agents to invoke
+- **Collaborative Processing**: Multiple agents may work together to provide comprehensive answers
+- **Response Synthesis**: The Meta Agent combines insights from various sources to deliver a coherent response
 
-## Retrieving Old Chats
-- Retrieve your old chats by selecting them from the "Old Chats" dropdown.
-- This feature allows you to revisit previous conversations with the agent for reference or analysis.
+## Viewing Agent Steps
 
-![Chat Result 5](../images/meta_old_chat.png)
+The system provides complete transparency into the agent's decision-making process:
+
+- **Step-by-Step Breakdown**: Access detailed information about each step the agent takes
+- **Agent Routing**: See which specific sub-agents were called and why
+- **Decision Logic**: Understand the reasoning behind agent selections
+- **Processing Timeline**: View the sequence of operations performed
+
+This transparency feature is crucial for debugging, optimization, and building trust in the agent's capabilities.
+
+## Chat History Management
+
+The platform includes robust chat history functionality:
+
+- **Session Persistence**: All conversations are automatically saved
+- **Easy Retrieval**: Access previous conversations through the "Old Chats" dropdown
+- **Search Capability**: Quickly find specific conversations or topics
+- **Reference Material**: Use past chats for analysis, training, or documentation purposes
+
+This feature enables continuous learning and improvement of your interaction patterns with the agents.

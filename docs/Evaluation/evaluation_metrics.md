@@ -6,19 +6,48 @@ Evaluation metrics are essential for assessing the performance and efficiency of
 
 The **LLM as Judge** approach involves using a large language model (LLM) to evaluate the performance of AI agents. The LLM acts as an impartial evaluator, analyzing the agent's actions, reasoning, and responses based on predefined metrics. This approach ensures a consistent and objective evaluation process.
 
+**LLM as Judge**
+
+The Metrics tab provides tools for evaluating and comparing the performance of different models, supporting data-driven decisions to optimize system effectiveness. For evaluating agents specifically, we utilize a unique approach known as the `LLM-as-a-judge` methodology.
+
+Within the Metrics tab, users select two models for comparison:
+
+`Model 1`: This is the model currently invoked during the agent's inference process. It represents the active model deployed in your system, whose performance you want to assess.
+
+`Model 2`: This second model, selected within the Evaluate Agents tab, serves as a baseline or alternative model against which Model 1’s performance is compared.
+
+Once both models are selected, the system automatically compares them, allowing admins to view the performance metrics, which provide insights into the effectiveness and differences between the models.
+
 ---
 
 ## Evaluation metrics workflow
 
-- while inferencing, we are storing the data required for the evaluation in a postgres evaluation_data table with initial status as unprocessed.
-- we have an endpoint - /evaluate, when get hit, it fetches one by one unprocessed records from the evaluation_data table.
-for each record,
-    - agent evaluation metrics are calculated. 
-    - if there are any tool calls, tool evaluation metrics are calculated.
-    - scores will be stored in agent_evaluation_metrics and tool_evaluation_metrics tables referencing the evaluation_data table respectively.
-    - if scores are calculated successfully, the status will be updated as success, otherwise error.
-- this process is repeated until all the unprocessed records are processed.
-- now, we connect grafana with our tables to display these scores on dashboard.
+This section describes the end-to-end workflow for collecting, processing, and visualizing evaluation metrics during inference.
+
+**1. Data Collection During Inference**
+
+During inference, all relevant data required for subsequent evaluation is recorded. Each new record is initially marked with a status of unprocessed.
+
+**2. Evaluation Processing Endpoint**
+
+An API endpoint `evaluation metric`, is responsible for processing the evaluation data. Upon invocation, it sequentially fetches the records marked as unprocessed.
+
+**3. Metrics Calculation**
+
+For each unprocessed record, the following steps are performed:
+
+- Agent related evaluation metrics are calculated.
+- Tool related evaluation metrics are also computed if there are any tool calls.
+- Results are saved with references to the original data record.
+- The status of the record is updated to indicate success or failure.
+
+**4. Processing Loop**
+
+The evaluation continues iteratively until all unprocessed records have been processed and their statuses updated accordingly.
+
+**5. Visualization**
+
+Grafana is connected to the evaluation metrics tables to provide real-time dashboards that visualize the evaluation scores, enabling monitoring and analysis.
 
 ---
 
@@ -69,20 +98,3 @@ The evaluation metrics system allows you to apply a variety of filters to analyz
 These filters facilitate the creation of both **Agent-Level** and **Tool-Level** evaluation graphs, helping to visualize the metrics based on the selected criteria.
 
 Additionally, the evaluation system includes a **Threshold Score** parameter, which allows you to set the minimum score required to include data in the visualization. By default, the **threshold_score** is set to 1, but you can adjust it to 0, 0.5 for different visualization perspectives. The threshold score modification will impact the data displayed in the graphs and can be used to fine-tune the results for better insights.
-
-Below are example images showcasing **Agent-Level Evaluation** and **Tool-Level Evaluation** with the above-mentioned filters applied. These visualizations offer an intuitive representation of performance based on the selected criteria.
-
-
-
-## Agent-Level Evaluation
-
-1. Agent Type Filter Visualization: ![Agent Type Filter](../images/filter by agent type.png)
-2. Model Used by Agent Filter Visualization: ![Model Used by Agent Filter](../images/filter by model.png)
-3. Evaluating Model Filter Visualization: ![Evaluating Model Filter](../images/filter by evaluating model.png)
-4. Agent Name Filter Visualization: ![Agent Name Filter](../images/filter by agent name.png)
-
-## **Tool-Level Evaluation**
-1. Agent Type Filter Visualization: ![Tool Type Filter](../images/filter by agent type2.png)
-2. Model Used by Tool Filter Visualization: ![Model Used by Tool Filter](../images/filter by model2.png)
-3. Evaluating Model Filter for Tools Visualization: ![Evaluating Model Filter for Tools](../images/filter by evaluating model2.png)
-4. Agent Name Filter Visualization: ![Tool Name Filter](../images/filter by agent name2.png)
