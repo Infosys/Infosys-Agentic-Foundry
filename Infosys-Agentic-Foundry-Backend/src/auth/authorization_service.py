@@ -112,6 +112,11 @@ class AuthorizationService:
                 ('delete', 'agents'): Permission.DELETE_AGENTS,
                 ('read', 'agents'):   Permission.READ_AGENTS,
                 ('execute', 'agents'): Permission.EXECUTE_AGENTS,
+                ('create', 'pipelines'): Permission.CREATE_PIPELINES,
+                ('update', 'pipelines'): Permission.UPDATE_PIPELINES,
+                ('delete', 'pipelines'): Permission.DELETE_PIPELINES,
+                ('read', 'pipelines'):   Permission.READ_PIPELINES,
+                ('execute', 'pipelines'): Permission.EXECUTE_PIPELINES,
             }
             
             required_permission = permission_map.get((operation.lower(), resource_type.lower()))

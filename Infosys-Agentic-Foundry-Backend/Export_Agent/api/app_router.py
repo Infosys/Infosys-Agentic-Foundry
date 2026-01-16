@@ -1,16 +1,17 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import time
+import json
+from datetime import datetime, timezone
 import asyncio
 from typing import Literal, Union, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from fastapi.encoders import jsonable_encoder
-# from sentence_transformers import SentenceTransformer, util
-# from sentence_transformers import CrossEncoder
 from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
 from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
-import time 
-import json
+from src.utils.remote_model_client import RemoteSentenceTransformersUtil
+util = RemoteSentenceTransformersUtil()
 
 # Import the Redis-PostgreSQL manager
 from src.auth.authorization_service import AuthorizationService
@@ -18,9 +19,10 @@ from src.database.redis_postgres_manager import RedisPostgresManager, TimedRedis
 
 from src.schemas import AgentInferenceRequest, ChatSessionRequest, OldChatSessionsRequest, StoreExampleRequest, StoreExampleResponse, SDLCAgentInferenceRequest
 
-from src.database.services import ChatService, FeedbackLearningService, AgentService
+from src.database.services import ChatService, FeedbackLearningService, AgentService, PipelineService
 from src.inference.inference_utils import EpisodicMemoryManager
 from src.inference.centralized_agent_inference import CentralizedAgentInference
+from src.inference.pipeline_inference import PipelineInference
 from src.api.dependencies import ServiceProvider # The dependency provider
 from src.auth.dependencies import get_current_user, get_user_info_from_request
 
@@ -56,13 +58,13 @@ async def get_global_manager():
     return _global_manager
 
 async def save_feedback_and_logs(
-    inference_request, 
-    final_response, 
-    feedback_learning_service, 
-    chat_service, 
-    session_id, 
-    time_taken, 
-    is_streaming=False
+    inference_request: AgentInferenceRequest,
+    final_response: dict,
+    feedback_learning_service: FeedbackLearningService,
+    chat_service: ChatService,
+    session_id: str,
+    time_taken: float,
+    is_streaming: bool = False
 ):
     """
     Helper function to handle post-inference logic:
@@ -109,6 +111,7 @@ async def run_agent_inference_endpoint(
     request: Request,
     inference_request: AgentInferenceRequest,
     inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
+    pipeline_inference: PipelineInference = Depends(ServiceProvider.get_pipeline_inference),
     feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service),
     chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
@@ -118,21 +121,24 @@ async def run_agent_inference_endpoint(
     
     API endpoint to run agent inference.
 
-    This is a unified endpoint that handles various agent types and HITL scenarios.
+    This is a unified endpoint that handles various agent types, HITL scenarios, and pipeline execution.
+    When is_pipeline_call is True, it executes a pipeline instead of a single agent.
 
     Parameters:
     
     - request: The FastAPI Request object.
     - inference_request: Pydantic model containing all inference parameters.
     - inference_service: Dependency-injected CentralizedAgentInference instance.
+    - pipeline_inference: Dependency-injected PipelineInference instance.
     - feedback_learning_service: Dependency-injected FeedbackLearningService instance.
 
     Returns:
-    - Dict[str, Any]: A dictionary with the agent's response.
+    - Dict[str, Any]: A dictionary with the agent's response or pipeline execution result.
     """
     role = user_data.role
     
     start_time = time.monotonic()
+    start_time_stamp = datetime.now(timezone.utc).replace(tzinfo=None)
     
     # 1. User & Session Setup
     role = user_data.role
@@ -142,7 +148,6 @@ async def run_agent_inference_endpoint(
     
     # Update context
     update_session_context(user_session=user_session, user_id=user_id)
-    sse_manager = request.app.state.sse_manager
 
     log.info(f"[{session_id}] Received inference request. Streaming: {inference_request.enable_streaming_flag}")
 
@@ -174,7 +179,297 @@ async def run_agent_inference_endpoint(
             inference_request.evaluation_flag = False
 
     # ---------------------------------------------------------
-    # Scenario A: Streaming Response
+    # Check if this is a Pipeline Resume Request
+    # ---------------------------------------------------------
+    # if inference_request.is_pipeline_resume:
+    #     # Validate required fields for resume
+    #     pipeline_id = inference_request.pipeline_id or inference_request.agentic_application_id
+    #     if not pipeline_id:
+    #         raise HTTPException(
+    #             status_code=400,
+    #             detail="pipeline_id is required when is_pipeline_resume is True"
+    #         )
+    #     if not inference_request.execution_id:
+    #         raise HTTPException(
+    #             status_code=400,
+    #             detail="execution_id is required when is_pipeline_resume is True"
+    #         )
+    #     if not inference_request.paused_node_id:
+    #         raise HTTPException(
+    #             status_code=400,
+    #             detail="paused_node_id is required when is_pipeline_resume is True"
+    #         )
+        
+    #     # Check if abort action
+    #     if inference_request.pipeline_action == "abort":
+    #         log.info(f"[{session_id}] Pipeline execution aborted by user for execution_id: {inference_request.execution_id}")
+    #         return {
+    #             "status": "aborted",
+    #             "message": "Pipeline execution was aborted by user",
+    #             "execution_id": inference_request.execution_id
+    #         }
+        
+    #     log.info(f"[{session_id}] Resuming pipeline execution for execution_id: {inference_request.execution_id}")
+        
+    #     # ---------------------------------------------------------
+    #     # Pipeline Resume Streaming Response
+    #     # ---------------------------------------------------------
+    #     if inference_request.enable_streaming_flag:
+    #         async def pipeline_resume_stream_generator():
+    #             """Generate SSE events from resumed pipeline execution."""
+    #             try:
+    #                 task_tracker[session_id] = asyncio.current_task()
+                    
+    #                 async for event in pipeline_inference.resume_pipeline(
+    #                     pipeline_id=pipeline_id,
+    #                     session_id=session_id,
+    #                     model_name=inference_request.model_name,
+    #                     execution_id=inference_request.execution_id,
+    #                     node_states=inference_request.node_states or {},
+    #                     input_dict=inference_request.input_dict or {},
+    #                     paused_node_id=inference_request.paused_node_id,
+    #                     is_plan_approved=inference_request.is_plan_approved,
+    #                     plan_feedback=inference_request.plan_feedback,
+    #                     tool_feedback=inference_request.tool_feedback,
+    #                     context_flag=inference_request.context_flag,
+    #                     temperature=inference_request.temperature or 0.0,
+    #                     role=str(role)
+    #                 ):
+    #                     yield json.dumps(jsonable_encoder(event)) + "\n"
+
+    #             except HTTPException as e:
+    #                 error_event = {
+    #                     'event_type': 'error',
+    #                     'message': e.detail
+    #                 }
+    #                 yield json.dumps(error_event) + "\n"
+
+    #             except Exception as e:
+    #                 log.error(f"[{session_id}] Pipeline resume error: {e}")
+    #                 error_event = {
+    #                     'event_type': 'error',
+    #                     'message': str(e)
+    #                 }
+    #                 yield json.dumps(error_event) + "\n"
+                    
+    #             finally:
+    #                 end_time = time.monotonic()
+    #                 time_taken = end_time - start_time
+                    
+    #                 # Cleanup Task Tracker
+    #                 if session_id in task_tracker:
+    #                     del task_tracker[session_id]
+                    
+    #                 update_session_context(
+    #                     agent_id='Unassigned', session_id='Unassigned', 
+    #                     model_used='Unassigned', user_query='Unassigned', response='Unassigned'
+    #                 )
+    #                 log.info(f"[{session_id}] Pipeline resume streaming completed in {time_taken:.2f}s")
+
+    #         return StreamingResponse(pipeline_resume_stream_generator(), media_type="application/json")
+
+    #     # ---------------------------------------------------------
+    #     # Pipeline Resume Non-Streaming Response (Synchronous)
+    #     # ---------------------------------------------------------
+    #     else:
+    #         async def do_pipeline_resume():
+    #             try:
+    #                 events = []
+    #                 final_event = None
+
+    #                 async for event in pipeline_inference.resume_pipeline(
+    #                     pipeline_id=pipeline_id,
+    #                     session_id=session_id,
+    #                     model_name=inference_request.model_name,
+    #                     execution_id=inference_request.execution_id,
+    #                     node_states=inference_request.node_states or {},
+    #                     input_dict=inference_request.input_dict or {},
+    #                     paused_node_id=inference_request.paused_node_id,
+    #                     is_plan_approved=inference_request.is_plan_approved,
+    #                     plan_feedback=inference_request.plan_feedback,
+    #                     tool_feedback=inference_request.tool_feedback,
+    #                     context_flag=inference_request.context_flag,
+    #                     temperature=inference_request.temperature or 0.0,
+    #                     role=str(role)
+    #                 ):
+    #                     events.append(event)
+    #                     final_event = event
+
+    #                 return {
+    #                     "status": "success",
+    #                     "events": events,
+    #                     "final_event": final_event
+    #                 }
+    #             except asyncio.CancelledError:
+    #                 log.warning(f"[{session_id}] Pipeline resume task cancelled.")
+    #                 raise
+    #             except StopAsyncIteration:
+    #                 return {"status": "success", "events": [], "final_event": None}
+
+    #         # Create Task
+    #         new_task = asyncio.create_task(do_pipeline_resume())
+    #         task_tracker[session_id] = new_task
+
+    #         try:
+    #             response = await new_task
+    #             end_time = time.monotonic()
+    #             time_taken = end_time - start_time
+                
+    #             log.info(f"[{session_id}] Pipeline resume completed in {time_taken:.2f}s")
+    #             return response
+
+    #         except asyncio.CancelledError:
+    #             raise HTTPException(status_code=499, detail="Request was cancelled")
+    #         except Exception as e:
+    #             log.error(f"[{session_id}] Pipeline resume failed: {e}")
+    #             raise HTTPException(status_code=500, detail=f"Pipeline resume failed: {str(e)}")
+    #         finally:
+    #             # Cleanup
+    #             update_session_context(
+    #                 agent_id='Unassigned', session_id='Unassigned', 
+    #                 model_used='Unassigned', user_query='Unassigned', response='Unassigned'
+    #             )
+    #             if session_id in task_tracker and task_tracker[session_id].done():
+    #                 del task_tracker[session_id]
+
+    # ---------------------------------------------------------
+    # Check if this is a Pipeline Call
+    # ---------------------------------------------------------
+    if inference_request.agentic_application_id.startswith("ppl_"):
+        # Validate pipeline_id is provided
+        pipeline_id = inference_request.agentic_application_id
+        if not pipeline_id:
+            raise HTTPException(
+                status_code=400,
+                detail="pipeline_id is required when is_pipeline_call is True"
+            )
+        
+        log.info(f"[{session_id}] Routing to pipeline execution for pipeline_id: {pipeline_id}")
+        
+        # ---------------------------------------------------------
+        # Pipeline Streaming Response
+        # ---------------------------------------------------------
+        if inference_request.enable_streaming_flag:
+            async def pipeline_stream_generator():
+                """Generate SSE events from pipeline execution."""
+                try:
+                    task_tracker[session_id] = asyncio.current_task()
+                    
+                    async for event in pipeline_inference.run_pipeline(
+                        pipeline_id=pipeline_id,
+                        session_id=session_id,
+                        model_name=inference_request.model_name,
+                        input_query=inference_request.query,
+                        project_name=f"pipeline_{pipeline_id}",
+                        reset_conversation=inference_request.reset_conversation,
+                        plan_verifier_flag=inference_request.plan_verifier_flag,
+                        is_plan_approved=inference_request.is_plan_approved,
+                        plan_feedback=inference_request.plan_feedback,
+                        tool_interrupt_flag=inference_request.tool_verifier_flag,
+                        tool_feedback=inference_request.tool_feedback,
+                        context_flag=inference_request.context_flag,
+                        evaluation_flag=inference_request.evaluation_flag,
+                        validator_flag=inference_request.validator_flag,
+                        temperature=inference_request.temperature or 0.0,
+                        role=str(role)
+                    ):
+                        yield json.dumps(jsonable_encoder(event)) + "\n"
+
+                except HTTPException as e:
+                    error_event = {
+                        'event_type': 'error',
+                        'message': e.detail
+                    }
+                    yield json.dumps(error_event) + "\n"
+
+                except Exception as e:
+                    log.error(f"[{session_id}] Pipeline execution error: {e}")
+                    error_event = {
+                        'event_type': 'error',
+                        'message': str(e)
+                    }
+                    yield json.dumps(error_event) + "\n"
+                    
+                finally:
+                    end_time = time.monotonic()
+                    time_taken = end_time - start_time
+                    
+                    # Cleanup Task Tracker
+                    if session_id in task_tracker:
+                        del task_tracker[session_id]
+                    
+                    update_session_context(
+                        agent_id='Unassigned', session_id='Unassigned', 
+                        model_used='Unassigned', user_query='Unassigned', response='Unassigned'
+                    )
+                    log.info(f"[{session_id}] Pipeline streaming completed in {time_taken:.2f}s")
+
+            return StreamingResponse(pipeline_stream_generator(), media_type="application/json")
+
+        # ---------------------------------------------------------
+        # Pipeline Non-Streaming Response (Synchronous)
+        # ---------------------------------------------------------
+        else:
+            async def do_pipeline_inference():
+                try:
+                    events = []
+                    final_event = None
+
+                    async for event in pipeline_inference.run_pipeline(
+                        pipeline_id=pipeline_id,
+                        session_id=session_id,
+                        model_name=inference_request.model_name,
+                        input_query=inference_request.query,
+                        project_name=f"pipeline_{pipeline_id}",
+                        reset_conversation=inference_request.reset_conversation,
+                        plan_verifier_flag=inference_request.plan_verifier_flag,
+                        is_plan_approved=inference_request.is_plan_approved,
+                        plan_feedback=inference_request.plan_feedback,
+                        tool_interrupt_flag=inference_request.tool_verifier_flag,
+                        tool_feedback=inference_request.tool_feedback,
+                        context_flag=inference_request.context_flag,
+                        evaluation_flag=inference_request.evaluation_flag,
+                        validator_flag=inference_request.validator_flag,
+                        temperature=inference_request.temperature or 0.0,
+                        role=str(role)
+                    ):
+                        response = event
+
+                    return response
+                except asyncio.CancelledError:
+                    log.warning(f"[{session_id}] Pipeline task cancelled.")
+                    raise
+                except StopAsyncIteration:
+                    return {"status": "success", "events": [], "final_event": None}
+
+            # Create Task
+            new_task = asyncio.create_task(do_pipeline_inference())
+            task_tracker[session_id] = new_task
+
+            try:
+                response = await new_task
+                end_time = time.monotonic()
+                time_taken = end_time - start_time
+                
+                log.info(f"[{session_id}] Pipeline execution completed in {time_taken:.2f}s")
+                return response
+
+            except asyncio.CancelledError:
+                raise HTTPException(status_code=499, detail="Request was cancelled")
+            except Exception as e:
+                log.error(f"[{session_id}] Pipeline execution failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+            finally:
+                # Cleanup
+                update_session_context(
+                    agent_id='Unassigned', session_id='Unassigned', 
+                    model_used='Unassigned', user_query='Unassigned', response='Unassigned'
+                )
+                if session_id in task_tracker and task_tracker[session_id].done():
+                    del task_tracker[session_id]
+
+    # ---------------------------------------------------------
+    # Scenario A: Streaming Response (Regular Agent)
     # ---------------------------------------------------------
     if inference_request.enable_streaming_flag:
         
@@ -186,15 +481,15 @@ async def run_agent_inference_endpoint(
                 # so we rely on the tracker logic wrapping the endpoint or simple key existence)
                 task_tracker[session_id] = asyncio.current_task()
                 
-                async for chunk in inference_service.run(inference_request, sse_manager=sse_manager, role=role):
-                    # 1. Yield the intermediate chunk to the client
-                    yield json.dumps(jsonable_encoder(chunk)) + "\n"
-                    
+                async for chunk in inference_service.run(inference_request, role=role):
+                    # 1. Yield the intermediate chunk to the client                    
                     # 2. Accumulate chunk data if needed for post-processing (e.g., feedback saving)
                     # This logic depends on your chunk structure. 
                     # If the last chunk contains the full result, verify that.
-                    if isinstance(chunk, dict):
+                    if isinstance(chunk, dict) and "query" in chunk:
                         full_accumulated_response.update(chunk) 
+                    else:
+                        yield json.dumps(jsonable_encoder(chunk)) + "\n"
 
             except Exception as e:
                 log.error(f"[{session_id}] Streaming error: {e}")
@@ -214,7 +509,9 @@ async def run_agent_inference_endpoint(
                 )
 
                 log.info(f"[{session_id}] Streaming completed in {time_taken:.2f}s")
-                
+                if "executor_messages" in full_accumulated_response and isinstance(full_accumulated_response["executor_messages"], list) and full_accumulated_response["executor_messages"]:
+                    last_message = full_accumulated_response["executor_messages"][-1]
+                    last_message["start_timestamp"] = start_time_stamp.isoformat()
                 # Run background logic (Feedback, DB updates)
                 # We await here to ensure it completes before the connection fully closes
                 await save_feedback_and_logs(
@@ -226,17 +523,30 @@ async def run_agent_inference_endpoint(
                     time_taken=time_taken,
                     is_streaming=True
                 )
-
+                if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
+                    response_time = await inference_service.update_response_time(agent_id=inference_request.agentic_application_id, session_id=session_id, start_time=start_time, time_stamp=start_time_stamp)
+                else:
+                    response_time = time.monotonic() - start_time
+                    response_time_details = {
+                        "response_time_details":{
+                            "response_time": response_time,
+                            "start_timestamp": start_time_stamp.isoformat()
+                        }
+                    }
+                    thread_id = await chat_service._get_thread_id(inference_request.agentic_application_id, session_id)
+                    await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
+                last_message["response_time"] = response_time
+                yield json.dumps(jsonable_encoder(full_accumulated_response))
         return StreamingResponse(stream_generator(), media_type="application/json")
 
     # ---------------------------------------------------------
-    # Scenario B: Non-Streaming Response (Blocking)
+    # Scenario B: Non-Streaming Response (Regular Agent - Blocking)
     # ---------------------------------------------------------
     else:
         async def do_inference():
             try:
                 # Assuming non-streaming returns a single result via anext or a list
-                result = await anext(inference_service.run(inference_request, sse_manager=sse_manager, role=role))
+                result = await anext(inference_service.run(inference_request, role=role))
                 return result
             except asyncio.CancelledError:
                 log.warning(f"[{session_id}] Task cancelled.")
@@ -254,11 +564,11 @@ async def run_agent_inference_endpoint(
             end_time = time.monotonic()
             time_taken = end_time - start_time
 
-            # Inject Response Time into the message payload
+            # Inject Response Time into the last message payload only if not already set
+            # (Historical messages should already have response_time from the base class)
             if "executor_messages" in response and isinstance(response["executor_messages"], list) and response["executor_messages"]:
-                response["executor_messages"][-1]["response_time"] = time_taken
-                if "end_timestamp" in response:
-                    response["executor_messages"][-1]["time_stamp"] = response.get("end_timestamp")
+                last_message = response["executor_messages"][-1]
+                last_message["start_timestamp"] = start_time_stamp.isoformat()
 
             # Run Post-Processing
             await save_feedback_and_logs(
@@ -270,7 +580,17 @@ async def run_agent_inference_endpoint(
                 time_taken=time_taken,
                 is_streaming=False
             )
-            
+            if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
+                response_time = await inference_service.update_response_time(agent_id=inference_request.agentic_application_id, session_id=session_id, start_time=start_time, time_stamp=start_time_stamp)
+            else:
+                response_time = time.monotonic() - start_time
+                response_time_details = {
+                    "response_time": response_time,
+                    "start_timestamp": start_time_stamp.isoformat()
+                }
+                thread_id = await chat_service._get_thread_id(inference_request.agentic_application_id, session_id)
+                await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
+            last_message["response_time"] = response_time
             return response
 
         except asyncio.CancelledError:
@@ -349,7 +669,8 @@ async def send_feedback_endpoint(
         # Call ChatService to handle like/unlike
         result = await chat_service.handle_like_feedback_message(
             agentic_application_id=inference_request.agentic_application_id,
-            session_id=inference_request.session_id
+            session_id=inference_request.session_id,
+            framework_type=inference_request.framework_type
         )
         update_session_context(user_session="Unassigned", user_id="Unassigned")
         return result
@@ -365,6 +686,7 @@ async def send_feedback_endpoint(
     inference_request.plan_feedback = None
     inference_request.tool_feedback = None
     inference_request.enable_streaming_flag = False
+    inference_request.context_flag = True
     if feedback_type == "regenerate":
         # Modify inference_request for regeneration
         inference_request.query = "[regenerate:][:regenerate]" # Special query for regeneration
@@ -470,14 +792,21 @@ async def run_sdlc_agent_inference_endpoint(
 
 
 @router.post("/chat/get/history")
-async def get_chat_history_endpoint(request: Request, chat_session_request: ChatSessionRequest, chat_service: ChatService = Depends(ServiceProvider.get_chat_service)):
+async def get_chat_history_endpoint(
+    request: Request, 
+    chat_session_request: ChatSessionRequest, 
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service)
+):
     """
     API endpoint to retrieve the chat history of a previous session.
+    Supports both regular agent chats and pipeline conversations.
 
     Parameters:
     - request: The FastAPI Request object.
     - chat_session_request: Pydantic model containing agent_id and session_id.
     - chat_service: Dependency-injected ChatService instance.
+    - pipeline_service: Dependency-injected PipelineService instance.
 
     Returns:
     - Dict[str, Any]: A dictionary containing the previous conversation history.
@@ -486,23 +815,46 @@ async def get_chat_history_endpoint(request: Request, chat_session_request: Chat
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id, session_id=chat_session_request.session_id, agent_id=chat_session_request.agent_id)
 
+    # Try to get pipeline history first
+    try:
+        pipeline_history = await pipeline_service.get_pipeline_conversation_history(
+            pipeline_id=chat_session_request.agent_id,
+            session_id=chat_session_request.session_id,
+            role="developer"
+        )
+        if pipeline_history:
+            update_session_context(user_session="Unassigned", user_id="Unassigned", session_id="Unassigned", agent_id="Unassigned")
+            # Wrap in executor_messages format to match regular chat history structure
+            return {"executor_messages": pipeline_history}
+    except Exception as e:
+        log.warning(f"Error fetching pipeline history, falling back to agent history: {e}")
+
+    # Fall back to regular chat history
     history = await chat_service.get_chat_history_from_short_term_memory(
         agentic_application_id=chat_session_request.agent_id,
         session_id=chat_session_request.session_id,
+        framework_type=chat_session_request.framework_type
     )
     update_session_context(user_session="Unassigned", user_id="Unassigned", session_id="Unassigned", agent_id="Unassigned")
     return history
 
 
 @router.delete("/chat/clear-history")
-async def clear_chat_history_endpoint(request: Request, chat_session_request: ChatSessionRequest, chat_service: ChatService = Depends(ServiceProvider.get_chat_service)):
+async def clear_chat_history_endpoint(
+    request: Request, 
+    chat_session_request: ChatSessionRequest, 
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service)
+):
     """
     API endpoint to clear the chat history for a session.
+    Supports both regular agent chats and pipeline conversations.
 
     Parameters:
     - request: The FastAPI Request object.
     - chat_session_request: Pydantic model containing agent_id and session_id.
     - chat_service: Dependency-injected ChatService instance.
+    - pipeline_service: Dependency-injected PipelineService instance.
 
     Returns:
     - Dict[str, Any]: A status dictionary indicating the result of the operation.
@@ -511,9 +863,22 @@ async def clear_chat_history_endpoint(request: Request, chat_session_request: Ch
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
     
+    # Try to delete pipeline history
+    try:
+        pipeline_result = await pipeline_service.delete_pipeline_session(
+            pipeline_id=chat_session_request.agent_id,
+            session_id=chat_session_request.session_id
+        )
+        if pipeline_result.get("status") == "success":
+            log.info(f"Pipeline history cleared for session '{chat_session_request.session_id}'")
+    except Exception as e:
+        log.debug(f"No pipeline history to clear: {e}")
+    
+    # Also delete regular chat history
     result = await chat_service.delete_session(
         agentic_application_id=chat_session_request.agent_id,
-        session_id=chat_session_request.session_id
+        session_id=chat_session_request.session_id,
+        framework_type=chat_session_request.framework_type
     )
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=result.get("message"))
@@ -521,14 +886,21 @@ async def clear_chat_history_endpoint(request: Request, chat_session_request: Ch
 
 
 @router.post("/chat/get/old-conversations")
-async def get_old_conversations_endpoint(request: Request, chat_session_request: OldChatSessionsRequest, chat_service: ChatService = Depends(ServiceProvider.get_chat_service)):
+async def get_old_conversations_endpoint(
+    request: Request, 
+    chat_session_request: OldChatSessionsRequest, 
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service)
+):
     """
     API endpoint to retrieve old chat sessions for a specific user and agent.
+    Supports both regular agent chats and pipeline conversations.
 
     Parameters:
     - request: The FastAPI Request object.
     - chat_session_request: Pydantic model containing user_email and agent_id.
     - chat_service: Dependency-injected ChatService instance.
+    - pipeline_service: Dependency-injected PipelineService instance.
 
     Returns:
     - JSONResponse: A dictionary containing old chat sessions grouped by session ID.
@@ -537,9 +909,22 @@ async def get_old_conversations_endpoint(request: Request, chat_session_request:
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
+    # Try to get pipeline old conversations first
+    try:
+        pipeline_result = await pipeline_service.get_old_pipeline_conversations(
+            user_email=chat_session_request.user_email,
+            pipeline_id=chat_session_request.agent_id
+        )
+        if pipeline_result:
+            return JSONResponse(content=jsonable_encoder(pipeline_result))
+    except Exception as e:
+        log.debug(f"No pipeline conversations found, checking agent conversations: {e}")
+
+    # Fall back to regular chat history
     result = await chat_service.get_old_chats_by_user_and_agent(
         user_email=chat_session_request.user_email,
-        agent_id=chat_session_request.agent_id
+        agent_id=chat_session_request.agent_id,
+        framework_type=chat_session_request.framework_type
     )
 
     if not result:
@@ -898,7 +1283,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query, UploadFil
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import List, Dict, Optional, Callable,Awaitable, Union
 from datetime import datetime
-from pytz import timezone
+from pytz import timezone as pytz_timezone
 
 from src.schemas import GroundTruthEvaluationRequest
 from src.database.services import EvaluationService
@@ -914,8 +1299,8 @@ from phoenix.otel import register
 from telemetry_wrapper import logger as log, update_session_context
 from src.utils.phoenix_manager import ensure_project_registered, traced_project_context
 from src.auth.dependencies import get_user_info_from_request
-
-ist = timezone("Asia/Kolkata")
+# Alias name for timezone to prevent 'utc' issue
+ist = pytz_timezone("Asia/Kolkata")
 
 
 # Base directory for uploads
@@ -1022,17 +1407,31 @@ async def _evaluate_agent_performance(
     # Generate a unique session ID for this evaluation run
     session_id = str(uuid.uuid4())
 
-    avg_scores, summary, excel_path = await evaluate_ground_truth_file(
-        model_name=evaluation_request.model_name,
-        agent_type=evaluation_request.agent_type,
-        file_path=file_path,
-        agentic_application_id=evaluation_request.agentic_application_id,
-        session_id=session_id,
-        inference_service=inference_service,
-        llm=llm,
-        use_llm_grading=evaluation_request.use_llm_grading,
-        progress_callback=progress_callback  # ✅ Pass callback here
-    )
+    try:
+        avg_scores, summary, excel_path = await evaluate_ground_truth_file(
+            model_name=evaluation_request.model_name,
+            agent_type=evaluation_request.agent_type,
+            file_path=file_path,
+            agentic_application_id=evaluation_request.agentic_application_id,
+            session_id=session_id,
+            inference_service=inference_service,
+            llm=llm,
+            use_llm_grading=evaluation_request.use_llm_grading,
+            progress_callback=progress_callback  # ✅ Pass callback here
+        )
+    except Exception as e:
+        log.error(f"Error in evaluate_ground_truth_file: {str(e)}", exc_info=True)
+        raise
+
+    # Validate return values
+    if avg_scores is None:
+        log.warning("evaluate_ground_truth_file returned None for avg_scores")
+    if summary is None:
+        log.warning("evaluate_ground_truth_file returned None for summary")
+        summary = "No summary available"
+    if excel_path is None:
+        log.error("evaluate_ground_truth_file returned None for excel_path")
+        raise ValueError("Excel path is None - evaluation may have failed")
 
     if progress_callback:
         await progress_callback("Evaluation completed successfully.")
@@ -1310,6 +1709,15 @@ async def upload_and_evaluate_json(
                     progress_callback=progress_callback
                 )
 
+                # Defensive check: ensure summary is not None
+                if summary is None:
+                    log.warning("Evaluation returned None for summary")
+                    summary = "No summary available"
+                
+                if excel_path is None:
+                    log.error("Evaluation returned None for excel_path")
+                    raise ValueError("Excel file path is None - evaluation may have failed")
+
                 summary_safe = summary.encode("ascii", "ignore").decode().replace("\n", " ")
                 file_name = os.path.basename(excel_path)
                 download_url = f"{fastapi_request.base_url}evaluation/download-result?file_name={file_name}"
@@ -1323,6 +1731,7 @@ async def upload_and_evaluate_json(
 
                 await queue.put(json.dumps({"result": result_payload}) + "\n")
             except Exception as e:
+                log.error(f"Evaluation error: {str(e)}", exc_info=True)
                 await queue.put(json.dumps({"error": f"Evaluation failed: {str(e)}"}) + "\n")
 
         asyncio.create_task(run_evaluation())
@@ -2208,7 +2617,7 @@ async def create_public_secret_endpoint(fastapi_request: Request, request: Publi
             "message": f"Public key '{request.key_name}' created/updated successfully"
         }
     except ValueError as e:
-        log.error(f"Error creating secret_data for user {request.key_name}: {str(e)}")
+        log.error(f"Error creating secret for user {request.key_name}: {str(e)}")
         raise HTTPException(
             status_code=400,
             detail=f"{str(e)}"
@@ -2733,6 +3142,7 @@ from langchain_pymupdf4llm import PyMuPDF4LLMLoader
 
 from src.database.services import ModelService
 from src.utils.file_manager import FileManager
+from src.utils.tool_file_manager import ToolFileManager
 from src.api.dependencies import ServiceProvider # The dependency provider
 from telemetry_wrapper import logger as log, update_session_context
 
@@ -3138,6 +3548,43 @@ async def list_docs_files_in_directory_endpoint(request: Request, dir_name: str)
     except Exception as e:
         log.error(f"Error listing documentation files in directory '{dir_name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+## ==========================================================
+
+
+@router.post("/utility/sync-tool-files")
+async def sync_tool_files(
+    request: Request,
+    service_provider: ServiceProvider = Depends()
+):
+    """
+    Sync existing database tools to .py files (one-time operation).
+    Skips tools that already have files - only creates missing ones.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    try:
+        # Use the injected tool_file_manager from service provider
+        tool_file_manager = service_provider.get_tool_file_manager()
+        result = await tool_file_manager.sync_existing_tools_from_db()
+        
+        if result.get("success"):
+            return {
+                "success": True,
+                "message": f"Sync complete: {result['created']} files created, {result['skipped']} skipped",
+                "total_tools": result['total'],
+                "files_created": result['created'],
+                "files_skipped": result['skipped']
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Unknown error"))
+            
+    except Exception as e:
+        log.error(f"Error syncing tool files: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 ## ==========================================================
 @router.get("/agents/get/details-for-chat-interface")
 async def get_agents_details_for_chat_interface_endpoint(
@@ -3155,7 +3602,42 @@ async def get_agents_details_for_chat_interface_endpoint(
     if not agent_details:
         raise HTTPException(status_code=404, detail="No agents found for chat interface.")
     return agent_details
+@router.get("/agents/tools-mapped/{agent_id}")
+async def get_tools_or_agents_mapped_to_agent_endpoint(
+    request: Request,
+    agent_id: str,
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves tools mapped to a specific agent by its ID.
 
+    Parameters:
+    ----------
+    request : Request
+        The FastAPI Request object.
+    agent_id : str
+        The ID of the agent whose tools are to be retrieved.
+    agent_service : AgentService
+        Dependency-injected AgentService instance.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the list of tools mapped to the agent.
+        If no tools are found, raises an HTTPException with status code 404.
+    """
+    # Check permissions first
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "agents"):
+        raise HTTPException(status_code=403, detail="You don't have permission to view agents. Only admins and developers can perform this action")
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
+    tools_mapped = await agent_service.get_tools_or_agents_mapped_to_agent(agentic_application_id=agent_id)
+    if not tools_mapped:
+        raise HTTPException(status_code=404, detail="No tools found for the specified agent.")
+    return tools_mapped
 #-------------------------------------------------------------------------------------------
 import os
 import uuid
@@ -3289,7 +3771,8 @@ async def connect_to_database_endpoint(
         host: Optional[str] = Form(None),
         port: Optional[int] = Form(0),
         username: Optional[str] = Form(None),
-        password: Optional[str] = Form(None),
+        password: Optional[str] = Form(None, description="Password can be passed either in 'password' or 'user_pwd' field"),
+        user_pwd: Optional[str] = Form(None, description="Password can be passed either in 'password' or 'user_pwd' field"),
         database: Optional[str] = Form(None),
         flag_for_insert_into_db_connections_table: str = Form(None),
         # created_by: str = Form(...),  # <--- make sure to include this
@@ -3323,6 +3806,7 @@ async def connect_to_database_endpoint(
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
+    password = password or user_pwd
 
     # Get restricted database name from environment variable
     RESTRICTED_DATABASE = os.getenv("DATABASE", "agentic_workflow_as_service_database")

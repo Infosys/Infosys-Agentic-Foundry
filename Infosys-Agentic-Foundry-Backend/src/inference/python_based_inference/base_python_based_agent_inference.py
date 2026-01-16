@@ -1,9 +1,10 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import re
 import json
+import asyncio
 from abc import abstractmethod
 
-from typing import Any, Dict, List, Optional, Union, Callable, Literal, Tuple
+from typing import Any, Dict, List, Optional, Union, Callable, Literal, Tuple, AsyncGenerator
 from fastapi import HTTPException
 
 from src.schemas import AgentInferenceRequest
@@ -71,14 +72,8 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
         This function supports loading both Python code-based tools and MCP tools.
         """
         tool_list: List[Union[Callable, MCPToolAdapter]] = await self._get_tools_instances(tool_ids=tool_ids)
-
-        manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
-        tool_list.append(manage_memory_tool)
-
-        search_memory_tool = await self.inference_utils.create_search_memory_tool(
-            embedding_model=self.inference_utils.embedding_model
-        )
-        tool_list.append(search_memory_tool)
+        memory_management_tools = await self._get_memory_management_tools_instances()
+        tool_list.extend(memory_management_tools)
 
         if not tool_list:
             tool_list = None
@@ -210,6 +205,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                 "evaluation_details": evaluation_response,
                 "error": str(e)
             }
+    
 
     @staticmethod
     async def _get_epoch_value(agent_steps: List[Dict[str, Any]], key: str = "epoch") -> int:
@@ -310,11 +306,39 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             finally:
                 log_trace_context(f"after_python_agent_invocation_session_{session_id}")
 
+    async def _generate_response_stream(
+                                self,
+                                query: Optional[str],
+                                agentic_application_id: str,
+                                session_id: str,
+                                model_name: str,
+                                agent_config: dict,
+                                project_name: str,
+                                reset_conversation: bool = False,
+                                *,
+                                plan_verifier_flag: bool = False,
+                                is_plan_approved: Optional[Literal["yes", "no", None]] = None,
+                                plan_feedback: Optional[str] = None,
+                                response_formatting_flag: bool = True,
+                                tool_interrupt_flag: bool = False,
+                                tool_feedback: str = None,
+                                context_flag: bool = True,
+                                temperature: float = 0,
+                                evaluation_flag: bool = False,
+                                enable_streaming_flag: bool = False
+                            ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Generates a streaming response from the Hybrid agent, handling history, tool calls,
+        and plan/tool interruption. Yields status updates for node progress, tool calls, etc.
+        """
+        raise NotImplementedError("Streaming response generation is not implemented for this agent type.")
+
     async def run(self,
                   inference_request: AgentInferenceRequest,
                   *,
                   agent_config: Optional[Union[dict, None]] = None,
                   insert_into_eval_flag: bool = True,
+                  role: str = None,
                   **kwargs
                 ) -> Any:
         """
@@ -322,6 +346,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
 
         Args:
             request (AgentInferenceRequest): The request object containing all necessary parameters.
+            role: Optional user role for response filtering.
         """
         agentic_application_id = inference_request.agentic_application_id
         if not agent_config:
@@ -361,6 +386,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
 
             context_flag = inference_request.context_flag
             temperature = inference_request.temperature
+            enable_streaming_flag = inference_request.enable_streaming_flag
 
 
             match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
@@ -380,25 +406,63 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
 
             start_timestamp = get_timestamp()
 
-            # Generate response using the agent's _generate_response method
-            response = await self._generate_response(
-                query=query,
-                agentic_application_id=agentic_application_id,
-                session_id=session_id,
-                model_name=model_name,
-                agent_config=agent_config,
-                project_name=project_name,
-                reset_conversation=reset_conversation,
-                plan_verifier_flag=plan_verifier_flag,
-                is_plan_approved=is_plan_approved,
-                plan_feedback=plan_feedback,
-                response_formatting_flag=response_formatting_flag,
-                tool_interrupt_flag=tool_interrupt_flag,
-                tool_feedback=tool_feedback,
-                context_flag=context_flag,
-                evaluation_flag=evaluation_flag,
-                temperature=temperature
-            )
+            # Check if streaming is enabled and _generate_response_stream method exists
+            if enable_streaming_flag and hasattr(self, '_generate_response_stream'):
+                # Use streaming response generation
+                response = None
+                async for stream_chunk in self._generate_response_stream(
+                    query=query,
+                    agentic_application_id=agentic_application_id,
+                    session_id=session_id,
+                    model_name=model_name,
+                    agent_config=agent_config,
+                    project_name=project_name,
+                    reset_conversation=reset_conversation,
+                    plan_verifier_flag=plan_verifier_flag,
+                    is_plan_approved=is_plan_approved,
+                    plan_feedback=plan_feedback,
+                    response_formatting_flag=response_formatting_flag,
+                    tool_interrupt_flag=tool_interrupt_flag,
+                    tool_feedback=tool_feedback,
+                    context_flag=context_flag,
+                    evaluation_flag=evaluation_flag,
+                    temperature=temperature,
+                    enable_streaming_flag=enable_streaming_flag
+                ):
+                    # Forward streaming status updates (but not the final history list)
+                    if isinstance(stream_chunk, dict) and "executor_messages" not in stream_chunk:
+                        yield stream_chunk
+                    # Capture final response - it's the list from get_recent_history at the end
+                    if isinstance(stream_chunk, list):
+                        response = stream_chunk
+                    elif isinstance(stream_chunk, dict) and ("final_response" in stream_chunk and "agent_steps" in stream_chunk):
+                        # This is an intermediate response from astream, not the final history
+                        pass
+            else:
+                # Use non-streaming response generation
+                response = await self._generate_response(
+                    query=query,
+                    agentic_application_id=agentic_application_id,
+                    session_id=session_id,
+                    model_name=model_name,
+                    agent_config=agent_config,
+                    project_name=project_name,
+                    reset_conversation=reset_conversation,
+                    plan_verifier_flag=plan_verifier_flag,
+                    is_plan_approved=is_plan_approved,
+                    plan_feedback=plan_feedback,
+                    response_formatting_flag=response_formatting_flag,
+                    tool_interrupt_flag=tool_interrupt_flag,
+                    tool_feedback=tool_feedback,
+                    context_flag=context_flag,
+                    evaluation_flag=evaluation_flag,
+                    temperature=temperature
+                )
+
+            if not response:
+                log.error("No response received from agent.")
+                yield {"error": "No response received from agent."}
+                return
 
 
             formatted_response: dict = await self.chat_service._format_python_based_agent_history(response)
@@ -413,76 +477,11 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             formatted_response["context_flag"] = context_flag
             formatted_response["is_tool_interrupted"] = tool_interrupt_flag
             formatted_response["workflow_description"] = agent_config.get("WORKFLOW_DESCRIPTION", "")
+            formatted_response["evaluation_flag"] = evaluation_flag
             formatted_response["start_timestamp"] = start_timestamp
             end_timestamp = get_timestamp()
             formatted_response["end_timestamp"] = end_timestamp
 
-            # Add response_time and timestamps to executor_messages from long-term memory
-            executor_messages = formatted_response.get("executor_messages", [])
-            if executor_messages:
-                try:
-                    db_records = await self.chat_service.get_chat_history_from_long_term_memory(
-                        agentic_application_id=agentic_application_id,
-                        session_id=session_id,
-                        limit=len(executor_messages) + 5  # Get a few extra to ensure we have all matches
-                    )
-                    log.info(f"Retrieved {len(db_records)} database records for response_time restoration")
-                    
-                    # Log the db_records for debugging
-                    for i, record in enumerate(db_records):
-                        log.debug(f"DB Record {i}: human_message='{record.get('human_message', '')[:50]}...', response_time={record.get('response_time')}")
-                    
-                    # Create a lookup dict for faster matching
-                    db_lookup = {record.get('human_message', ''): record for record in db_records}
-                    
-                    # Log executor messages for debugging
-                    for i, msg in enumerate(executor_messages):
-                        log.debug(f"Executor Message {i}: user_query='{msg.get('user_query', '')[:50]}...'")
-                    
-                    # Restore response_time and timestamp values by matching user queries
-                    for message in executor_messages:
-                        user_query = message.get('user_query', '')
-                        if user_query in db_lookup:
-                            record = db_lookup[user_query]
-                            db_response_time = record.get('response_time')
-                            db_start_ts = record.get('start_timestamp')
-                            db_end_ts = record.get('end_timestamp')
-                            
-                            # Set timestamps from DB
-                            message['time_stamp'] = db_start_ts
-                            message['start_timestamp'] = db_start_ts
-                            message['end_timestamp'] = db_end_ts
-                            
-                            # Calculate response_time from timestamps if not stored in DB
-                            if db_response_time is not None:
-                                message['response_time'] = db_response_time
-                            elif db_start_ts and db_end_ts:
-                                # Calculate from timestamps (they are datetime objects)
-                                try:
-                                    calculated_time = (db_end_ts - db_start_ts).total_seconds()
-                                    message['response_time'] = calculated_time
-                                    log.debug(f"Calculated response_time={calculated_time}s from timestamps for '{user_query[:30]}...'")
-                                except Exception as calc_error:
-                                    log.debug(f"Could not calculate response_time from timestamps: {calc_error}")
-                            
-                            log.debug(f"Matched query '{user_query[:30]}...' with response_time={message.get('response_time')}")
-                        else:
-                            log.debug(f"No match found for query '{user_query[:30]}...'")
-                except Exception as e:
-                    log.warning(f"Could not restore response times from long-term memory: {e}")
-                
-                # For the most recent message, set timestamps from current execution context
-                # This handles the case where save_chat_message (async task) hasn't completed yet
-                if executor_messages:
-                    last_message = executor_messages[-1]
-                    if last_message.get('response_time') is None and last_message.get('final_response'):
-                        # Calculate response time in seconds
-                        response_time = (end_timestamp - start_timestamp).total_seconds()
-                        last_message['response_time'] = response_time
-                        last_message['time_stamp'] = start_timestamp
-                        last_message['start_timestamp'] = start_timestamp
-                        last_message['end_timestamp'] = end_timestamp
-                        log.info(f"Set timestamps for current query: response_time={response_time}s")
 
             if insert_into_eval_flag:
                 eval_executor_messages = []
@@ -502,7 +501,7 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
 
                 try:
                     log.info("Inserting evaluation data into the database.")
-                    await self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name)
+                    asyncio.create_task(self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name))
                 except Exception as e:
                     log.error(f"Error Occurred while inserting into evaluation data: {e}")
 
@@ -512,5 +511,4 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             # Catch any unhandled exceptions and raise a 500 internal server error
             log.error(f"Error Occurred in agent inference: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
-
 

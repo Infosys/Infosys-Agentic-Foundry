@@ -1,54 +1,55 @@
-name: Build and Deploy to AKS 
-
+name: Build and Deploy New Version to AKS ##
+ 
 on:
   push:
     branches: [ "main" ]
     paths:
       - .github/workflows/Test4selfH.yml
+ 
   workflow_dispatch:
-
+    inputs:
+      image_version:
+        description: 'Manual version input (Ignored in this simplified script)'
+        required: false
+        default: 'latest'
+ 
 env:
   AZURE_CONTAINER_REGISTRY: acr10052.azurecr.io
   CONTAINER_NAME: iafbackend
   RESOURCE_GROUP: RG-PCS-AZ-CR-10052
   CLUSTER_NAME: aks-REQ0848275
-  DEPLOYMENT_MANIFEST_PATH: iafbackend-deployment2.yaml
-
+  DEPLOYMENT_MANIFEST_PATH: ./iafbackend-deployment-1.5.3.yaml
+ 
 jobs:
+  # Job 1: Build and Push
   buildImage:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, Linux, X64,iafbe]
     permissions:
-      contents: read
       id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-
+      - name: Checkout code
+        uses: actions/checkout@v4
+ 
       - name: Build and push Docker image to JFrog Artifactory
         env:
           JFROG_USERNAME: ${{ secrets.JFROG_USERNAME }}
           JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
         run: |
           echo "Logging in to JFrog Docker registry..."
-          docker login infyartifactory.jfrog.io -u "$JFROG_USERNAME" -p "$JFROG_TOKEN"
+          sudo docker login infyartifactory.jfrog.io -u "$JFROG_USERNAME" -p "$JFROG_TOKEN"
           echo "Building Docker image..."
-          docker build -t infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }} .
+          sudo docker build -t infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }} .
           echo "Pushing Docker image to JFrog..."
-          docker push infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}
-
-      # - name: Install Zscaler Root CA ok
-      #   run: |
-      #     sudo update-ca-trust
-
-      # - name: Upgrade oauthlib (if needed)
-      #   run: pip install --upgrade oauthlib
-
+          sudo docker push infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}
+ 
       - name: Azure login with Bash
         shell: bash
         env:
           REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
           SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+          CURL_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+          PYTHONHTTPSVERIFY: 0
         run: |
           clientId="${{ secrets.AZURE_CLIENT_ID }}"
           tenantId="${{ secrets.AZURE_TENANT_ID }}"
@@ -59,47 +60,67 @@ jobs:
             --password "$clientSecret" \
             --tenant "$tenantId"
           az account set --subscription "$subscriptionId"
-
-      - name: Pull image from JFrog and retag for ACR
+ 
+      - name: Pull image from JFrog, retag, and push to ACR
+        env:
+          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+          SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
         run: |
+          TAG="${{ github.sha }}-${{ github.run_number }}"
+          echo "Pulling image from JFrog..."
           docker pull infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}
-          docker tag infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }} ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
-          az acr login --name acr10052
+          echo "Retagging image for ACR..."
+          docker tag infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
+          echo "Logging into ACR and pushing image..."
+          az acr login --name ${AZURE_CONTAINER_REGISTRY%%.*}
           docker push ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
-
+ 
+  # Job 2: Deploy
   deploy:
     needs: buildImage
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, Linux, X64,iafbe]
     permissions:
       actions: read
       contents: read
+    env:
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-bundle.crt
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+      CURL_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
+      PYTHONHTTPSVERIFY: 0
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
         with:
           ref: main
-
+ 
+      - name: Install Zscaler Root CA
+        run: |
+          sudo update-ca-trust
+          echo "Certificate bundle location:"
+          ls -la /etc/ssl/certs/ca-bundle.crt
+ 
       - name: Azure login with Bash
         shell: bash
-        env:
-          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
-          SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
         run: |
           clientId="${{ secrets.AZURE_CLIENT_ID }}"
           tenantId="${{ secrets.AZURE_TENANT_ID }}"
           subscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}"
           clientSecret="${{ secrets.AZURE_CLIENT_SECRET }}"
+         
+          echo "Attempting Azure login..."
           az login --service-principal \
             --username "$clientId" \
             --password "$clientSecret" \
             --tenant "$tenantId"
+         
           az account set --subscription "$subscriptionId"
-
+ 
       - name: Set up kubelogin for non-interactive login
         uses: azure/use-kubelogin@v1
         with:
           kubelogin-version: 'v0.0.25'
-
+ 
       - name: Get K8s context
         uses: azure/aks-set-context@v3
         with:
@@ -107,12 +128,125 @@ jobs:
           cluster-name: ${{ env.CLUSTER_NAME }}
           admin: 'false'
           use-kubelogin: 'true'
-
+ 
+      - name: Create/Update Kubernetes Secret
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.APP_ENV_FILE }}
+        run: |
+          echo "=== Processing environment file ==="
+         
+          # Write content to temp file
+          printf "%s" "$ENV_FILE_CONTENT" > .env.temp
+         
+          # Clean up the file:
+          # 1. Remove leading/trailing whitespace
+          # 2. Remove spaces around = signs
+          # 3. Remove quotes from values (both single and double)
+          # 4. Remove empty lines and comments
+          sed 's/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/="\(.*\)"$/=\1/; s/='\''\(.*\)'\''$/=\1/; /^$/d; /^#/d' .env.temp > .env.k8s
+         
+          # Debug: Show first few processed lines (mask sensitive data)
+          echo "=== Sample processed variables (values masked) ==="
+          head -n 5 .env.k8s | sed 's/=.*/=***MASKED***/'
+         
+          echo -e "\n=== All variable names in secret ==="
+          cut -d'=' -f1 .env.k8s | sort
+         
+          echo -e "\n=== Total variables: $(wc -l < .env.k8s) ==="
+         
+          # Create namespace if missing
+          kubectl create namespace iafv5 --dry-run=client -o yaml | kubectl apply -f -
+         
+          # Delete old secret
+          kubectl delete secret iafbackend-secrets -n iafv5 --ignore-not-found
+         
+          # Create new secret
+          kubectl create secret generic iafbackend-secrets -n iafv5 --from-env-file=.env.k8s
+         
+          echo -e "\n=== Secret created successfully ==="
+         
+          # Verify critical variables are present
+          echo -e "\n=== Verifying critical database variables ==="
+          for VAR in POSTGRESQL_DB_URL_PREFIX POSTGRESQL_DATABASE_URL DATABASE; do
+            if kubectl get secret iafbackend-secrets -n iafv5 -o jsonpath="{.data.$VAR}" &>/dev/null; then
+              echo "✓ $VAR is present"
+            else
+              echo "✗ $VAR is MISSING!"
+            fi
+          done
+         
+          # Cleanup
+          rm .env.k8s .env.temp
+ 
       - name: Deploy application to AKS
         uses: Azure/k8s-deploy@v4
         with:
-          action: deploy
+          action: 'deploy'
           manifests: ${{ env.DEPLOYMENT_MANIFEST_PATH }}
           images: |
-            ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}
-          arguments: --validate=false
+            ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.CONTAINER_NAME }}:${{ github.sha }}-${{ github.run_number }}
+          namespace: iafv5
+ 
+      - name: Force Restart Deployment to Pick Up New Secret
+        run: |
+          echo "Restarting deployment to ensure pods pick up the updated secret..."
+          kubectl rollout restart deployment/iafbackend-new -n iafv5
+         
+          echo "Waiting for rollout to complete..."
+          kubectl rollout status deployment/iafbackend-new -n iafv5 --timeout=5m
+ 
+      - name: Check Pod Status and Logs
+        if: always()
+        run: |
+          echo "=== Waiting for pods to stabilize ==="
+          sleep 30
+         
+          echo "=== All Pods Status ==="
+          kubectl get pods -n iafv5 -l app=iafbackend-new -o wide
+         
+          echo -e "\n=== Deployment Status ==="
+          kubectl get deployment iafbackend-new -n iafv5
+         
+          # Get the latest pod
+          POD_NAME=$(kubectl get pods -n iafv5 -l app=iafbackend-new --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
+         
+          if [ -z "$POD_NAME" ]; then
+            echo "ERROR: No pods found with label app=iafbackend-new"
+            echo -e "\n=== All Pods in namespace ==="
+            kubectl get pods -n iafv5
+            exit 1
+          fi
+         
+          echo -e "\n=== Processing latest pod: $POD_NAME ==="
+         
+          # Get pod status
+          POD_STATUS=$(kubectl get pod $POD_NAME -n iafv5 -o jsonpath='{.status.phase}')
+          echo "Pod Status: $POD_STATUS"
+         
+          # Get container statuses
+          echo -e "\n=== Container Statuses ==="
+          kubectl get pod $POD_NAME -n iafv5 -o jsonpath='{range .status.containerStatuses[*]}{.name}{"\t"}{.state}{"\n"}{end}'
+         
+          # Check if environment variables are loaded
+          echo -e "\n=== Checking Environment Variables in Pod ==="
+          kubectl exec $POD_NAME -n iafv5 -- printenv | grep -E "POSTGRESQL|DATABASE|REDIS" | sed 's/=.*/=***MASKED***/' || echo "Could not check environment variables"
+         
+          echo -e "\n=== Current Pod Logs ==="
+          kubectl logs $POD_NAME -n iafv5 --tail=100 --all-containers=true || echo "Could not fetch current logs"
+         
+          echo -e "\n=== Previous Pod Logs (if crashed) ==="
+          kubectl logs $POD_NAME -n iafv5 --previous --tail=100 --all-containers=true 2>/dev/null || echo "No previous logs available"
+         
+          echo -e "\n=== Pod Description ==="
+          kubectl describe pod $POD_NAME -n iafv5
+         
+          echo -e "\n=== Recent Events ==="
+          kubectl get events -n iafv5 --sort-by='.lastTimestamp' --field-selector involvedObject.name=$POD_NAME | tail -20
+         
+          # Final check
+          if [ "$POD_STATUS" != "Running" ]; then
+            echo -e "\n❌ ERROR: Pod is not running (Status: $POD_STATUS)"
+            exit 1
+          else
+            echo -e "\n✅ Pod is running successfully"
+          fi

@@ -11,6 +11,7 @@ from openai.types.chat import ChatCompletionMessageToolCall
 
 from src.database.repositories import ChatStateHistoryManagerRepository
 from src.tools.mcp_tool_adapter import MCPToolAdapter
+from src.utils.helper_functions import convert_value_type_of_candidate_as_given_in_reference
 from telemetry_wrapper import logger as log
 
 
@@ -103,14 +104,7 @@ class BaseAIModelService(ABC):
         Returns:
             dict: A new dictionary with converted value types.
         """
-        result = dict(candidate)
-        for key, cand_value in candidate.items():
-            if key in reference:
-                ref_value = reference[key]
-                try:
-                    result[key] = type(ref_value)(cand_value)
-                except Exception:
-                    result[key] = cand_value  # fallback if conversion fails
+        result = convert_value_type_of_candidate_as_given_in_reference(reference, candidate)
         log.info(f"Converted candidate: {candidate} to {result} based on reference: {reference}")
         return result
 

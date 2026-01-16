@@ -8,8 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-REQUIRED_DATABASES = [os.getenv("DATABASE", ""), "feedback_learning", "evaluation_logs", "recycle", "login", "arize_traces"]
-
+REQUIRED_DATABASES = [
+            os.getenv("DATABASE", "agentic_workflow_as_service_database"),
+            os.getenv("FEEDBACK_LEARNING_DB_NAME", "feedback_learning"),
+            os.getenv("EVALUATION_LOGS_DB_NAME", "evaluation_logs"),
+            os.getenv("RECYCLE_DB_NAME", "recycle"),
+            os.getenv("LOGIN_DB_NAME", "login"),
+            os.getenv("ARIZE_TRACES_DB_NAME", "arize_traces")
+        ]
 
 class DatabaseManager:
     """
@@ -42,6 +48,7 @@ class DatabaseManager:
         self.db_main: str = os.getenv("DATABASE", "") # Actual name of the main database
         self.db_url_prefix: str = os.getenv("POSTGRESQL_DB_URL_PREFIX", "")
         self.alias: str = alias_to_main_db # The alias key for the main database pool
+        self.REQUIRED_DATABASES = REQUIRED_DATABASES
 
 
     async def check_and_create_databases(self, required_db_names: List[str]):

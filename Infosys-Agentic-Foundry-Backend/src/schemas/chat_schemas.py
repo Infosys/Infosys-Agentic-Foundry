@@ -25,7 +25,7 @@ class AgentInferenceRequest(BaseModel):
     is_plan_approved: Optional[Literal[None, "yes", "no"]] = Field(None, description="User's approval status for a generated plan: 'yes' to proceed, 'no' to provide feedback.")
     plan_feedback: Optional[str] = Field(None, description="Text feedback from the user regarding a disapproved plan, used for replanning.")
 
-    framework_type: Literal["langgraph", "google_adk"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph', 'google_adk').")
+    framework_type: Literal["langgraph"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph').")
 
     # --- Evaluation Flag ---
     evaluation_flag: bool = Field(False, description="If true, enables post-response evaluation of the agent's output.")
@@ -42,12 +42,16 @@ class AgentInferenceRequest(BaseModel):
 
     # --- Enable and Disable Formatting ---
     response_formatting_flag: Optional[bool] = True
-    enable_streaming_flag: Optional[bool] = True
+    enable_streaming_flag: Optional[bool] = False
     context_flag: Optional[bool] = True
     
     # --- Model Parameters ---
     temperature: Optional[float] = Field(0, description="Temperature parameter for LLM model (0.0-1.0) - controls randomness in responses")
     mentioned_agentic_application_id: Optional[str] = None
+    
+    # --- Interrupt Items ---
+    interrupt_items: Optional[List[str]] = Field(None, description="List of tool names or node names to interrupt at during agent execution. When specified, the agent will pause execution at these points for human review.")
+    
     @field_validator('temperature')
     @classmethod
     def validate_temperature(cls, v):
@@ -59,13 +63,13 @@ class ChatSessionRequest(BaseModel):
     """Schema for retrieving previous chat conversations."""
     agent_id: str = Field(..., description="The ID of the agent the user is interacting with.")
     session_id: str = Field(..., description="The unique session ID for the conversation.")
-    framework_type: Literal["langgraph", "google_adk"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph', 'google_adk').")
+    framework_type: Literal["langgraph"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph').")
 
 class OldChatSessionsRequest(BaseModel): # This is the new class for get_old_chats
     """Schema for requesting a list of old chat sessions for a user and agent."""
     user_email: str = Field(..., description="The email ID of the user whose old chat sessions are requested.")
     agent_id: str = Field(..., description="The ID of the agent for which old chat sessions are requested.")
-    framework_type: Literal["langgraph", "google_adk"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph', 'google_adk').")
+    framework_type: Literal["langgraph"] = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph').")
 
 class StoreExampleRequest(BaseModel):
     agent_id: str
@@ -122,3 +126,5 @@ class SDLCAgentInferenceRequest(BaseModel):
             raise ValueError('Temperature must be between 0.0 and 1.0')
         return v
 
+class VMConnectionRequest(BaseModel):
+    modules: List[str]

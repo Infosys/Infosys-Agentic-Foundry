@@ -674,7 +674,7 @@ async def export_agents_endpoint(
                 key, value = pair.split("=", 1)
                 config_dict[unquote(key)] = unquote(value)
     db_manager=ServiceProvider.get_database_manager()
-    login_pool= await db_manager.get_pool('login')
+    login_pool= await db_manager.get_pool(db_manager.REQUIRED_DATABASES[4])  # login database pool
     exporter = AgentExporter(
         agent_ids=agent_ids,
         user_email=user_email,
@@ -799,3 +799,40 @@ async def get_unused_agents_endpoint(
     except Exception as e:
         log.error(f"Error retrieving unused agents: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving unused agents: {str(e)}")
+
+@router.get("/tools-mapped/{agent_id}")
+async def get_tools_or_agents_mapped_to_agent_endpoint(
+    request: Request,
+    agent_id: str,
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves tools mapped to a specific agent by its ID.
+
+    Parameters:
+    ----------
+    request : Request
+        The FastAPI Request object.
+    agent_id : str
+        The ID of the agent whose tools are to be retrieved.
+    agent_service : AgentService
+        Dependency-injected AgentService instance.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the list of tools mapped to the agent.
+        If no tools are found, raises an HTTPException with status code 404.
+    """
+    # Check permissions first
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "agents"):
+        raise HTTPException(status_code=403, detail="You don't have permission to view agents. Only admins and developers can perform this action")
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
+    tools_mapped = await agent_service.get_tools_or_agents_mapped_to_agent(agentic_application_id=agent_id)
+    if not tools_mapped:
+        raise HTTPException(status_code=404, detail="No tools found for the specified agent.")
+    return tools_mapped

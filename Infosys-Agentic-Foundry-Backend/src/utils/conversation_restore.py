@@ -185,16 +185,15 @@ class ConversationRestore:
                 table_exists = main_cursor.fetchone()[0]
                 
                 if not table_exists:
-                    # Create the table if it doesn't exist
+                    # Create the table to match the actual structure (without PRIMARY KEY)
                     main_cursor.execute(f"""
-                        CREATE TABLE {table_name} (
+                        CREATE TABLE IF NOT EXISTS {table_name} (
                             session_id TEXT,
-                            start_timestamp TIMESTAMP,
-                            end_timestamp TIMESTAMP,
+                            start_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            end_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             human_message TEXT,
                             ai_message TEXT,
-                            response_time FLOAT,
-                            PRIMARY KEY (session_id, end_timestamp)
+                            response_time DOUBLE PRECISION
                         )
                     """)
                     logger.info(f"Created table {table_name} in main database")
@@ -208,14 +207,20 @@ class ConversationRestore:
                 existing_count = main_cursor.fetchone()[0]
                 
                 if existing_count == 0:
-                    # Insert records into main database
+                    # Insert records into main database without ON CONFLICT (since no constraints)
                     for record in records:
+                        # Check for duplicates manually by session_id and end_timestamp
                         main_cursor.execute(f"""
-                            INSERT INTO {table_name}
-                            (session_id, start_timestamp, end_timestamp, human_message, ai_message, response_time)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                            ON CONFLICT (session_id, end_timestamp) DO NOTHING
-                        """, record)
+                            SELECT COUNT(*) FROM {table_name}
+                            WHERE session_id = %s AND end_timestamp = %s
+                        """, (record[0], record[2]))
+                        
+                        if main_cursor.fetchone()[0] == 0:
+                            main_cursor.execute(f"""
+                                INSERT INTO {table_name}
+                                (session_id, start_timestamp, end_timestamp, human_message, ai_message, response_time)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                            """, record)
                     
                     logger.info(f"Restored {len(records)} long-term memory records to {table_name}")
                     return len(records)
@@ -520,7 +525,7 @@ def main():
     db_port = os.getenv("POSTGRESQL_PORT", "5432")
     db_user = os.getenv("POSTGRESQL_USER", "postgres")
     db_password = os.getenv("POSTGRESQL_PASSWORD", "postgres")
-    main_db_name = os.getenv("DATABASE", "iaf_database")
+    main_db_name = os.getenv("DATABASE", "agentic_workflow_as_service_database")
     
     # Database configurations
     main_db_config = {

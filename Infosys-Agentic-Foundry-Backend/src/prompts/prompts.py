@@ -1679,3 +1679,85 @@ Return your evaluation strictly in the following JSON format:
   "justification": "Agents reused context effectively but included a redundant uppercase step. Overall communication was clear and aligned with the goal."
 }}
 """
+
+
+
+# Feedback Learning Lesson Generation Prompt
+feedback_lesson_generation_prompt = """
+Based on the following automated feedback, create a concise learning rule for the agent:
+
+User Query: {user_query}
+Agent Response: {agent_response}
+Feedback Type: {feedback_type}
+Feedback Score: {feedback_score}/1.0
+Feedback Details: {feedback_details}
+
+Generate a specific, actionable lesson that the agent should follow to improve similar responses in the future.
+Format it as: "When handling [type of query], ensure [specific instruction] to improve [specific aspect]."
+
+The lesson should be:
+- Specific and actionable
+- Focused on the main issue identified in the feedback
+- Applicable to similar future scenarios
+- Concise but comprehensive
+
+Return only the lesson text without any additional formatting or explanation.
+"""
+# Below prompts are used for agentic pipelines
+CONDITION_EVALUATION_PROMPT = """You are a routing decision engine for an agent pipeline system.
+
+Given an agent's response and a routing condition with multiple possible target nodes, determine which target node to route to.
+
+## Agent Response:
+{agent_response}
+
+## Current Query:
+{current_query}
+
+## Routing Condition:
+{routing_condition}
+
+## Available Target Nodes:
+{target_nodes}
+
+## Instructions:
+1. Analyze the agent's response and current query carefully
+2. Evaluate the routing condition against the available target nodes
+3. The condition describes how to choose between target nodes
+4. If condition contains "END" or similar termination keywords, check if the response indicates completion
+5. Return the ID of the single best target node to proceed to, or "END" if pipeline should terminate
+
+## Output Format:
+Return a JSON object with the following structure:
+{{
+    "selected_target": "node_id",
+    "reasoning": "Brief explanation of why this target was selected"
+}}
+
+Return ONLY the JSON object, no additional text."""
+
+
+
+OUTPUT_FORMATTING_PROMPT = """You are an output formatting assistant for an agent pipeline system.
+
+Given the accumulated outputs from a pipeline execution, format the final response.
+
+## Pipeline Outputs:
+{pipeline_outputs}
+
+## Output Schema (if provided):
+{output_schema}
+
+## Instructions:
+1. Analyze all the outputs from the pipeline nodes
+2. If an output schema is provided, format the response according to that schema
+3. If no schema is provided, return a well-structured string summary
+4. Ensure the response is clear, concise, and includes key information from all nodes
+
+## Output Format:
+If output_schema is provided, return JSON matching that schema.
+If no schema, return a plain text summary.
+
+IMPORTANT: Only return a valid JSON object as described above. Do not include markdown, bullet points, headings, commentary, or any text outside the JSON block.
+"""
+

@@ -1,4 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+from typing import Literal
 from fastapi import HTTPException
 
 # Import the global app_container instance
@@ -8,11 +9,13 @@ from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentService, ChatService, ModelService,
-    FeedbackLearningService, EvaluationService, ConsistencyService
+    FeedbackLearningService, EvaluationService, ConsistencyService, PipelineService
 )
 from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.inference.base_agent_inference import BaseAgentInference, BaseMetaTypeAgentInference
 from src.inference.python_based_inference.base_python_based_agent_inference import BasePythonBasedAgentInference
+# from src.inference.google_adk_inference.base_agent_gadk_inference import BaseAgentGADKInference
+from src.inference.pipeline_inference import PipelineInference
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.utils.file_manager import FileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
@@ -115,25 +118,17 @@ class ServiceProvider:
             raise HTTPException(status_code=500, detail="MultiDBConnectionRepository not initialized.")
         return app_container.multi_db_connection_repo
 
+
     @staticmethod
-    def get_specialized_inference_service(agent_type: str) -> BaseAgentInference | BaseMetaTypeAgentInference:
+    def get_specialized_inference_service(agent_type: str, framework_type: Literal["langgraph", "pure_python"] = "langgraph") -> BaseAgentInference | BaseMetaTypeAgentInference | BasePythonBasedAgentInference:
         """
         Returns the specialized inference service for the given agent type.
         This is used to handle inference requests for specific agent types.
         """
-        if agent_type == "react_agent":
-            return app_container.react_agent_inference
-        elif agent_type == "multi_agent":
-            return app_container.multi_agent_inference
-        elif agent_type == "planner_executor_agent":
-            return app_container.planner_executor_agent_inference
-        elif agent_type == "react_critic_agent":
-            return app_container.react_critic_agent_inference
-        elif agent_type == "meta_agent":
-            return app_container.meta_agent_inference
-        elif agent_type == "planner_meta_agent":
-            return app_container.planner_meta_agent_inference
-        raise HTTPException(status_code=400, detail=f"Unsupported inference service for agent type: {agent_type}")
+        try:
+            return app_container.centralized_agent_inference.get_specialized_agent_inference(agent_type=agent_type, framework_type=framework_type)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error getting specialized inference service: {str(e)}")
 
     @staticmethod
     def get_file_manager() -> FileManager:
@@ -183,4 +178,32 @@ class ServiceProvider:
         if app_container.cross_encoder is None:
             raise HTTPException(status_code=500, detail="Cross-encoder not initialized.")
         return app_container.cross_encoder
-
+    
+    @staticmethod
+    def get_tool_file_manager():
+        """
+        Returns the ToolFileManager instance.
+        This is used for managing tool .py files (create, update, delete, restore, sync).
+        """
+        if app_container.tool_file_manager is None:
+            raise HTTPException(status_code=500, detail="ToolFileManager not initialized.")
+        return app_container.tool_file_manager
+    @staticmethod
+    def get_pipeline_service() -> PipelineService:
+        """
+        Returns the PipelineService instance for pipeline management operations.
+        This is used to handle pipeline CRUD and execution management.
+        """
+        if app_container.pipeline_service is None:
+            raise HTTPException(status_code=500, detail="PipelineService not initialized.")
+        return app_container.pipeline_service
+    
+    @staticmethod
+    def get_pipeline_inference() -> PipelineInference:
+        """
+        Returns the PipelineInference instance for executing pipelines.
+        This is used to orchestrate agent pipeline execution with HITL support.
+        """
+        if app_container.pipeline_inference is None:
+            raise HTTPException(status_code=500, detail="PipelineInference not initialized.")
+        return app_container.pipeline_inference

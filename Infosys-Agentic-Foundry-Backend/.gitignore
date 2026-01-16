@@ -1,4 +1,6 @@
 .venv/
+venv/
+node_modules/
 env/
 new/
 *__pycache__/
@@ -14,6 +16,7 @@ new/
 
 .vscode/
 
+onboarded_tools/
 user_uploads/
 evaluation_uploads/
 uploaded_sqlite_dbs/
@@ -22,6 +25,8 @@ responses_temp/
 outputs/
 sdlc/
 Hugging_face/
+all-MiniLM-L6-v2 (3)/
+bge-reranker-large/
 
 all-MiniLM-L6-v2 (3)/
 bge-reranker-large/
@@ -34,3 +39,5 @@ bge-reranker-large/
 new_env
 my_env
 !Export_Agent/Agentcode/Agent_Frontend/.env
+test_mcp_ttl_and_unused.py
+test_mcp_recycle_bin.py

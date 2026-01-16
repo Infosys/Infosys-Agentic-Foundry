@@ -139,17 +139,31 @@ async def _evaluate_agent_performance(
     # Generate a unique session ID for this evaluation run
     session_id = str(uuid.uuid4())
 
-    avg_scores, summary, excel_path = await evaluate_ground_truth_file(
-        model_name=evaluation_request.model_name,
-        agent_type=evaluation_request.agent_type,
-        file_path=file_path,
-        agentic_application_id=evaluation_request.agentic_application_id,
-        session_id=session_id,
-        inference_service=inference_service,
-        llm=llm,
-        use_llm_grading=evaluation_request.use_llm_grading,
-        progress_callback=progress_callback  # ✅ Pass callback here
-    )
+    try:
+        avg_scores, summary, excel_path = await evaluate_ground_truth_file(
+            model_name=evaluation_request.model_name,
+            agent_type=evaluation_request.agent_type,
+            file_path=file_path,
+            agentic_application_id=evaluation_request.agentic_application_id,
+            session_id=session_id,
+            inference_service=inference_service,
+            llm=llm,
+            use_llm_grading=evaluation_request.use_llm_grading,
+            progress_callback=progress_callback  # ✅ Pass callback here
+        )
+    except Exception as e:
+        log.error(f"Error in evaluate_ground_truth_file: {str(e)}", exc_info=True)
+        raise
+
+    # Validate return values
+    if avg_scores is None:
+        log.warning("evaluate_ground_truth_file returned None for avg_scores")
+    if summary is None:
+        log.warning("evaluate_ground_truth_file returned None for summary")
+        summary = "No summary available"
+    if excel_path is None:
+        log.error("evaluate_ground_truth_file returned None for excel_path")
+        raise ValueError("Excel path is None - evaluation may have failed")
 
     if progress_callback:
         await progress_callback("Evaluation completed successfully.")
@@ -427,6 +441,15 @@ async def upload_and_evaluate_json(
                     progress_callback=progress_callback
                 )
 
+                # Defensive check: ensure summary is not None
+                if summary is None:
+                    log.warning("Evaluation returned None for summary")
+                    summary = "No summary available"
+                
+                if excel_path is None:
+                    log.error("Evaluation returned None for excel_path")
+                    raise ValueError("Excel file path is None - evaluation may have failed")
+
                 summary_safe = summary.encode("ascii", "ignore").decode().replace("\n", " ")
                 file_name = os.path.basename(excel_path)
                 download_url = f"{fastapi_request.base_url}evaluation/download-result?file_name={file_name}"
@@ -440,6 +463,7 @@ async def upload_and_evaluate_json(
 
                 await queue.put(json.dumps({"result": result_payload}) + "\n")
             except Exception as e:
+                log.error(f"Evaluation error: {str(e)}", exc_info=True)
                 await queue.put(json.dumps({"error": f"Evaluation failed: {str(e)}"}) + "\n")
 
         asyncio.create_task(run_evaluation())

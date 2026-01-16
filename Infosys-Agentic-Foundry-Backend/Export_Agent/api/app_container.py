@@ -5,21 +5,22 @@ import bcrypt
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
 from src.auth.repositories import ApprovalPermissionRepository, AuditLogRepository, UserRepository, RefreshTokenRepository
-# from sentence_transformers import CrossEncoder
-from db_load import ExportedAgentRepository,ExportedToolRepository,ExportedMcpToolRepository,ExportedTagAgentMappingRepository,ExportedTagToolMappingRepository
+from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
+
 from src.database.database_manager import DatabaseManager, REQUIRED_DATABASES
 from src.database.repositories import (
     TagRepository, TagToolMappingRepository, TagAgentMappingRepository,
-    ToolRepository, McpToolRepository, ToolAgentMappingRepository, RecycleToolRepository,
+    ToolRepository, McpToolRepository, ToolAgentMappingRepository, RecycleToolRepository, RecycleMcpToolRepository,
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
     FeedbackLearningRepository, EvaluationDataRepository,
     ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
-    ExportAgentRepository, AgentMetadataRepository, AgentDataTableRepository, ChatStateHistoryManagerRepository
+    ExportAgentRepository, AgentMetadataRepository, AgentDataTableRepository, ChatStateHistoryManagerRepository,
+    PipelineRepository, PipelineRunRepository, PipelineStepsRepository
 )
 from src.tools.tool_code_processor import ToolCodeProcessor
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentServiceUtils, AgentService, ChatService,
-    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService
+    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService, PipelineService
 )
 from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.models.model_service import ModelService
@@ -27,19 +28,27 @@ from src.inference import (
     InferenceUtils, ReactAgentInference, MultiAgentInference, PlannerExecutorAgentInference,
     ReactCriticAgentInference, MetaAgentInference, PlannerMetaAgentInference, CentralizedAgentInference
 )
+from src.inference.pipeline_inference import PipelineInference
 from src.inference.python_based_inference.simple_ai_agent_inference import SimpleAIAgentInference
 from src.inference.python_based_inference.hybrid_agent_inference import HybridAgentInference
+# Google ADK based Inference Imports
+# from src.inference.google_adk_inference.react_agent_gadk_inference import ReactAgentGADKInference
+# from src.inference.google_adk_inference.planner_executor_critic_agent_gadk_inference import PlannerExecutorCriticAgentGADKInference
+# from src.inference.google_adk_inference.planner_executor_agent_gadk_inference import PlannerExecutorAgentGADKInference
+# from src.inference.google_adk_inference.react_critic_agent_gadk_inference import ReactCriticAgentGADKInference
+# from src.inference.google_adk_inference.meta_agent_gadk_inference import MetaAgentGADKInference
+# from src.inference.google_adk_inference.planner_meta_agent_gadk_inference import PlannerMetaAgentGADKInference
+
 from src.utils.file_manager import FileManager
+from src.utils.tool_file_manager import ToolFileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
 
 from telemetry_wrapper import logger as log
 
 from src.inference.inference_utils import EpisodicMemoryManager
-# from sentence_transformers import SentenceTransformer
 from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
-from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
-from src.utils.remote_model_client import get_remote_models, ModelServerClient
-
+from src.utils.remote_model_client import get_remote_models_and_utils, ModelServerClient
+from db_load import ExportedAgentRepository,ExportedToolRepository,ExportedMcpToolRepository,ExportedTagAgentMappingRepository,ExportedTagToolMappingRepository
 
 load_dotenv()
 
@@ -64,6 +73,7 @@ class AppContainer:
         self.tag_agent_mapping_repo: TagAgentMappingRepository = None
         self.tool_repo: ToolRepository = None
         self.mcp_tool_repo: McpToolRepository = None
+        self.recycle_mcp_tool_repo: RecycleMcpToolRepository = None
         self.tool_agent_mapping_repo: ToolAgentMappingRepository = None
         self.recycle_tool_repo: RecycleToolRepository = None
         self.agent_repo: AgentRepository = None
@@ -93,16 +103,36 @@ class AppContainer:
         self.evaluation_service: EvaluationService = None
         self.core_evaluation_service: CoreEvaluationService = None
         # Inference Services (these are typically exposed via Depends for endpoints)
+
+        # Langgraph based Template Inferences
         self.react_agent_inference: ReactAgentInference = None
         self.multi_agent_inference: MultiAgentInference = None
         self.planner_executor_agent_inference: PlannerExecutorAgentInference = None
         self.react_critic_agent_inference: ReactCriticAgentInference = None
         self.meta_agent_inference: MetaAgentInference = None
         self.planner_meta_agent_inference: PlannerMetaAgentInference = None
+
+        # Python based Template Inferences
         self.simple_ai_agent_inference: SimpleAIAgentInference = None
         self.hybrid_agent_inference: HybridAgentInference = None
-        self.centralized_agent_inference: CentralizedAgentInference = None
 
+        # Google ADK based Template Inferences
+        # self.gadk_react_agent_inference: ReactAgentGADKInference = None
+        # self.gadk_planner_executor_critic_agent_inference: PlannerExecutorCriticAgentGADKInference = None
+        # self.gadk_planner_executor_agent_inference : PlannerExecutorAgentGADKInference = None
+        # self.gadk_react_critic_agent_inference : ReactCriticAgentGADKInference = None
+        # self.gadk_meta_agent_inference : MetaAgentGADKInference = None
+        # self.gadk_planner_meta_agent_inference : PlannerMetaAgentGADKInference = None
+
+        self.centralized_agent_inference: CentralizedAgentInference = None
+        
+        # Pipeline repositories and services
+        self.pipeline_repo: PipelineRepository = None
+        self.pipeline_run_repo: PipelineRunRepository = None
+        self.pipeline_steps_repo: PipelineStepsRepository = None
+        self.pipeline_service: PipelineService = None
+        self.pipeline_inference: PipelineInference = None
+        
         # Authentication repositories
         self.user_repo: UserRepository = None
         self.approval_permission_repo: ApprovalPermissionRepository = None
@@ -112,6 +142,7 @@ class AppContainer:
 
         # Initialize the file manager with default base directory
         self.file_manager: FileManager = None
+        self.tool_file_manager: ToolFileManager = None
 
         self.embedding_model: SentenceTransformer = None
         self.cross_encoder: CrossEncoder = None
@@ -121,8 +152,7 @@ class AppContainer:
         self.export_mcp_repo: ExportedMcpToolRepository = None
         self.export_tag_agent_mapping_repo: ExportedTagAgentMappingRepository = None
         self.export_tag_tool_mapping_repo: ExportedTagToolMappingRepository = None
-        self.chat_state_history_manager_repo: ChatStateHistoryManagerRepository = None
-
+        
     async def initialize_services(self):
         """
         Initializes all database connections, repositories, and services.
@@ -165,18 +195,19 @@ class AppContainer:
 
         # Migrating the data from different database to current
         # 4. Initialize Repositories
-        self.tag_repo = TagRepository(pool=main_pool,login_pool=login_pool)
-        self.tag_tool_mapping_repo = TagToolMappingRepository(pool=main_pool,login_pool=login_pool)
-        self.tag_agent_mapping_repo = TagAgentMappingRepository(pool=main_pool,login_pool=login_pool)
-        self.tool_repo = ToolRepository(pool=main_pool,login_pool=login_pool)
-        self.mcp_tool_repo = McpToolRepository(pool=main_pool,login_pool=login_pool)
-        self.tool_agent_mapping_repo = ToolAgentMappingRepository(pool=main_pool,login_pool=login_pool)
-        self.recycle_tool_repo = RecycleToolRepository(pool=main_pool,login_pool=login_pool)
-        self.agent_repo = AgentRepository(pool=main_pool,login_pool=login_pool)
-        self.recycle_agent_repo = RecycleAgentRepository(pool=main_pool,login_pool=login_pool)
-        self.chat_history_repo = ChatHistoryRepository(pool=main_pool,login_pool=login_pool)
-        self.feedback_learning_repo = FeedbackLearningRepository(pool=main_pool,login_pool=login_pool)
-        self.evaluation_data_repo = EvaluationDataRepository(pool=main_pool,agent_repo=self.agent_repo,login_pool=login_pool)
+        self.tag_repo = TagRepository(pool=main_pool, login_pool=login_pool)
+        self.tag_tool_mapping_repo = TagToolMappingRepository(pool=main_pool, login_pool=login_pool)
+        self.tag_agent_mapping_repo = TagAgentMappingRepository(pool=main_pool, login_pool=login_pool)
+        self.tool_repo = ToolRepository(pool=main_pool, login_pool=login_pool)
+        self.mcp_tool_repo = McpToolRepository(pool=main_pool, login_pool=login_pool)
+        self.recycle_mcp_tool_repo = RecycleMcpToolRepository(pool=main_pool, login_pool=login_pool)
+        self.tool_agent_mapping_repo = ToolAgentMappingRepository(pool=main_pool, login_pool=login_pool)
+        self.recycle_tool_repo = RecycleToolRepository(pool=main_pool, login_pool=login_pool)
+        self.agent_repo = AgentRepository(pool=main_pool, login_pool=login_pool)
+        self.recycle_agent_repo = RecycleAgentRepository(pool=main_pool, login_pool=login_pool)
+        self.chat_history_repo = ChatHistoryRepository(pool=main_pool, login_pool=login_pool)
+        self.feedback_learning_repo = FeedbackLearningRepository(pool=main_pool, login_pool=login_pool)
+        self.evaluation_data_repo = EvaluationDataRepository(pool=main_pool, login_pool=login_pool, agent_repo=self.agent_repo)
         self.tool_evaluation_metrics_repo = ToolEvaluationMetricsRepository(pool=main_pool,agent_repo=self.agent_repo,login_pool=login_pool)
         self.agent_evaluation_metrics_repo = AgentEvaluationMetricsRepository(pool=main_pool,agent_repo=self.agent_repo,login_pool=login_pool)
         self.export_agent_repo= ExportedAgentRepository(pool=main_pool)
@@ -184,17 +215,23 @@ class AppContainer:
         self.export_mcp_repo= ExportedMcpToolRepository(pool=main_pool)
         self.export_tag_agent_mapping_repo= ExportedTagAgentMappingRepository(pool=main_pool)
         self.export_tag_tool_mapping_repo= ExportedTagToolMappingRepository(pool=main_pool)
-        self.chat_state_history_manager_repo = ChatStateHistoryManagerRepository(pool=main_pool,login_pool=login_pool)
+        self.chat_state_history_manager_repo = ChatStateHistoryManagerRepository(pool=main_pool, login_pool=login_pool)
         self.agent_metadata_repo = AgentMetadataRepository(pool=logs_pool,login_pool=login_pool)
         self.agent_data_repo = AgentDataTableRepository(pool=logs_pool,login_pool=login_pool)
-        self.chat_state_history_manager_repo = ChatStateHistoryManagerRepository(pool=main_pool,login_pool=login_pool)
-
+        self.chat_state_history_manager_repo = ChatStateHistoryManagerRepository(pool=main_pool, login_pool=login_pool)
+        
+        # Initialize pipeline repositories
+        self.pipeline_repo = PipelineRepository(pool=main_pool, login_pool=login_pool)
+        self.pipeline_run_repo = PipelineRunRepository(pool=main_pool, login_pool=login_pool)
+        self.pipeline_steps_repo = PipelineStepsRepository(pool=main_pool, login_pool=login_pool)
+        
         # Initialize authentication repositories
         
         self.user_repo = UserRepository(pool=login_pool)
         self.approval_permission_repo = ApprovalPermissionRepository(pool=login_pool)
         self.audit_log_repo = AuditLogRepository(pool=login_pool)
         self.refresh_token_repo = RefreshTokenRepository(pool=login_pool)
+        self.tool_file_manager = ToolFileManager(pool=main_pool)
         log.info("AppContainer: All repositories initialized.")
 
         # 5. Initialize Utility Processors
@@ -212,6 +249,7 @@ class AppContainer:
         )
         self.mcp_tool_service = McpToolService( # Initialize McpToolService
             mcp_tool_repo=self.mcp_tool_repo,
+            recycle_mcp_tool_repo=self.recycle_mcp_tool_repo,
             tag_service=self.tag_service,
             tool_agent_mapping_repo=self.tool_agent_mapping_repo,
             agent_repo=self.agent_repo
@@ -224,7 +262,8 @@ class AppContainer:
             tool_code_processor=self.tool_code_processor,
             agent_repo=self.agent_repo,
             model_service=self.model_service,
-            mcp_tool_service=self.mcp_tool_service
+            mcp_tool_service=self.mcp_tool_service,
+            tool_file_manager=self.tool_file_manager
         )
         self.agent_service_utils = AgentServiceUtils(
             agent_repo=self.agent_repo,
@@ -272,32 +311,40 @@ class AppContainer:
             approval_repo=self.approval_permission_repo,
             audit_repo=self.audit_log_repo
         )
+                
+        # Initialize pipeline service
+        self.pipeline_service = PipelineService(
+            pipeline_repo=self.pipeline_repo,
+            pipeline_run_repo=self.pipeline_run_repo,
+            pipeline_steps_repo=self.pipeline_steps_repo,
+            agent_service=self.agent_service
+        )
 
         log.info("AppContainer: Services initialized.")
 
         # Initialize Embeddings and Encoders using remote model server
-        model_server_url = os.getenv("MODEL_SERVER_URL")
+        model_server_url = os.getenv("MODEL_SERVER_URL", "").strip()
         self.embedding_model = None
         self.cross_encoder = None
-        if not model_server_url:
-            log.error("MODEL_SERVER_URL environment variable is not set. Cannot initialize remote models.")
-            return 
-        try:
-            client = ModelServerClient(model_server_url)
-            health_url = f"{client.base_url}/health"
+        
+        # Handle empty or None model server URL
+        if not model_server_url or model_server_url.lower() == "none":
+            log.info("MODEL_SERVER_URL not configured. Remote model features (embeddings, cross-encoder) will be unavailable.")
+        else:
             try:
-                health_resp = client.session.get(health_url, timeout=5)
-                health_resp.raise_for_status()
-                self.embedding_model, self.cross_encoder = get_remote_models(model_server_url)
-                log.info("Remote Embeddings and Encoders initialized successfully.")
-            except Exception as health_exc:
-                log.error(f"Model server health check failed: {health_exc}")
-        except Exception as e:
-            log.error(f"Failed to connect to remote model server at {model_server_url}: {e}")
+                client = ModelServerClient(model_server_url)
+                if client.server_available:
+                    remote_components = get_remote_models_and_utils(model_server_url)
+                    self.embedding_model = remote_components["embedding_model"]
+                    self.cross_encoder = remote_components["cross_encoder"]
+                    log.info("Remote embeddings and cross-encoder initialized successfully.")
+                else:
+                    log.warning("Model server is not available. Remote embeddings and cross-encoder features will be unavailable.")
+            except Exception as e:
+                log.error(f"Failed to initialize remote models: {e}")
 
-
-        self.chat_service.embedding_model = self.embedding_model
-        self.chat_service.cross_encoder = self.cross_encoder
+            self.chat_service.embedding_model = self.embedding_model
+            self.chat_service.cross_encoder = self.cross_encoder
 
         # 7. Initialize Inference Services
         self.inference_utils = InferenceUtils(
@@ -311,15 +358,26 @@ class AppContainer:
             cross_encoder=self.cross_encoder,
             consistency_service=None
         )
+
+        # Langgraph based Template Inferences
         self.react_agent_inference = ReactAgentInference(inference_utils=self.inference_utils)
         self.multi_agent_inference = MultiAgentInference(inference_utils=self.inference_utils)
         self.planner_executor_agent_inference = PlannerExecutorAgentInference(inference_utils=self.inference_utils)
         self.react_critic_agent_inference = ReactCriticAgentInference(inference_utils=self.inference_utils)
         self.meta_agent_inference = MetaAgentInference(inference_utils=self.inference_utils)
         self.planner_meta_agent_inference = PlannerMetaAgentInference(inference_utils=self.inference_utils)
+
+        # Python based Template Inferences
         self.simple_ai_agent_inference = SimpleAIAgentInference(inference_utils=self.inference_utils)
         self.hybrid_agent_inference = HybridAgentInference(inference_utils=self.inference_utils)
+
         # Google ADK based Template Inferences
+        # self.gadk_react_agent_inference = ReactAgentGADKInference(inference_utils=self.inference_utils)
+        # self.gadk_planner_executor_critic_agent_inference = PlannerExecutorCriticAgentGADKInference(inference_utils=self.inference_utils)
+        # self.gadk_planner_executor_agent_inference = PlannerExecutorAgentGADKInference(inference_utils=self.inference_utils)
+        # self.gadk_react_critic_agent_inference = ReactCriticAgentGADKInference(inference_utils=self.inference_utils)
+        # self.gadk_meta_agent_inference = MetaAgentGADKInference(inference_utils=self.inference_utils)
+        # self.gadk_planner_meta_agent_inference = PlannerMetaAgentGADKInference(inference_utils=self.inference_utils)
 
         self.centralized_agent_inference = CentralizedAgentInference(
             # Langgraph
@@ -334,9 +392,25 @@ class AppContainer:
             simple_ai_agent_inference=self.simple_ai_agent_inference,
             hybrid_agent_inference=self.hybrid_agent_inference,
 
+            # Google ADK
+            # gadk_react_agent_inference=self.gadk_react_agent_inference,
+            # gadk_planner_executor_critic_agent_inference=self.gadk_planner_executor_critic_agent_inference,
+            # gadk_planner_executor_agent_inference=self.gadk_planner_executor_agent_inference,
+            # gadk_react_critic_agent_inference=self.gadk_react_critic_agent_inference,
+            # gadk_meta_agent_inference=self.gadk_meta_agent_inference,
+            # gadk_planner_meta_agent_inference=self.gadk_planner_meta_agent_inference,
+
             inference_utils=self.inference_utils
         )
         log.info("AppContainer: Inference services initialized.")
+        
+        # Initialize Pipeline Inference
+        self.pipeline_inference = PipelineInference(
+            inference_utils=self.inference_utils,
+            pipeline_service=self.pipeline_service,
+            centralized_agent_inference=self.centralized_agent_inference
+        )
+        log.info("AppContainer: Pipeline inference initialized.")
 
         self.core_evaluation_service = CoreEvaluationService(
             evaluation_service=self.evaluation_service,
@@ -392,11 +466,17 @@ class AppContainer:
         await self.consistency_service.create_evaluation_table_if_not_exists()
         await self.multi_db_connection_repo.create_db_connections_table_if_not_exists() # Create multi-DB connections table
         await self.chat_state_history_manager_repo.create_table_if_not_exists()
+        
+        # Pipeline tables
+        await self.pipeline_repo.create_table_if_not_exists()
+
         # Recycle tables (depend on nothing but their pool)
         await self.recycle_tool_repo.create_table_if_not_exists()
+        await self.recycle_mcp_tool_repo.create_table_if_not_exists()
         await self.recycle_agent_repo.create_table_if_not_exists()
 
         # 9. Load all models into cache (optional, for pre-warming)
+
         await self.model_service.load_all_models_into_cache()
         log.info("AppContainer: All models loaded into cache.")
 

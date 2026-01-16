@@ -74,6 +74,18 @@ class AbstractBaseInference(ABC):
 
         return mcp_server_records
 
+    async def _get_memory_management_tools_instances(self, *, allow_union_annotation: bool = True) -> list:
+        """
+        Retrieves memory tool instances.
+        """
+        manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
+        if not allow_union_annotation:
+            manage_memory_tool.__annotations__["memory_data"] = str
+        search_memory_tool = await self.inference_utils.create_search_memory_tool(
+            embedding_model=self.inference_utils.embedding_model
+        )
+        return [manage_memory_tool, search_memory_tool]
+
     async def _get_tools_instances(self, tool_ids: List[str] = []) -> list:
         """
         Retrieves tool instances based on the provided tool IDs.

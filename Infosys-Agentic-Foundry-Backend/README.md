@@ -234,8 +234,7 @@
         CACHE_EXPIRY_TIME=600
         ENABLE_CACHING=false  # Set to 'true' to enable Redis caching, 'false' to disable
         ```
-
-    - Replace the placeholder values with your actual credentials and endpoints.
+        
     - **Note:** Never commit your `.env` file or sensitive credentials to version control.
 
 

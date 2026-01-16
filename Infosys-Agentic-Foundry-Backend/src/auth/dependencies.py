@@ -31,7 +31,6 @@ async def get_current_user(request: Request) -> User:
             detail="Authentication required"
         )
     token = auth_header.split(" ", 1)[1]
-    log.info(f"JWT token: {token}")
     user = await auth_svc.validate_jwt(token)
     if not user:
         raise HTTPException(

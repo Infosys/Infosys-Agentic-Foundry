@@ -1,6 +1,7 @@
 from enum import Enum
+import re
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 
 
@@ -32,6 +33,13 @@ class Permission(str, Enum):
     DELETE_AGENTS = "delete_agents"
     EXECUTE_AGENTS = "execute_agents"
     
+    # Pipeline permissions
+    READ_PIPELINES = "read_pipelines"
+    CREATE_PIPELINES = "create_pipelines"
+    UPDATE_PIPELINES = "update_pipelines"
+    DELETE_PIPELINES = "delete_pipelines"
+    EXECUTE_PIPELINES = "execute_pipelines"
+    
     # User management permissions
     MANAGE_USERS = "manage_users"
     VIEW_ALL_USERS = "view_all_users"
@@ -49,7 +57,11 @@ class Permission(str, Enum):
 # Role-based permission mapping
 ROLE_PERMISSIONS = {
     UserRole.USER: [
-        # Users have no tool/agent permissions - they are completely restricted
+        # Users can read and execute pipelines for testing
+        Permission.READ_PIPELINES,
+        Permission.EXECUTE_PIPELINES,
+        Permission.READ_AGENTS,
+        Permission.EXECUTE_AGENTS,
     ],
     UserRole.DEVELOPER: [
         Permission.READ_TOOLS,
@@ -61,7 +73,12 @@ ROLE_PERMISSIONS = {
         Permission.CREATE_AGENTS,
         Permission.UPDATE_AGENTS,
         Permission.EXECUTE_AGENTS,
-        Permission.DELETE_AGENTS
+        Permission.DELETE_AGENTS,
+        Permission.READ_PIPELINES,
+        Permission.CREATE_PIPELINES,
+        Permission.UPDATE_PIPELINES,
+        Permission.DELETE_PIPELINES,
+        Permission.EXECUTE_PIPELINES
     ],
     UserRole.ADMIN: [
         Permission.READ_TOOLS,
@@ -74,6 +91,11 @@ ROLE_PERMISSIONS = {
         Permission.UPDATE_AGENTS,
         Permission.DELETE_AGENTS,
         Permission.EXECUTE_AGENTS,
+        Permission.READ_PIPELINES,
+        Permission.CREATE_PIPELINES,
+        Permission.UPDATE_PIPELINES,
+        Permission.DELETE_PIPELINES,
+        Permission.EXECUTE_PIPELINES,
         Permission.MANAGE_USERS,
         Permission.VIEW_ALL_USERS,
         Permission.VIEW_AUDIT_LOGS,
@@ -90,6 +112,11 @@ ROLE_PERMISSIONS = {
         Permission.UPDATE_AGENTS,
         Permission.DELETE_AGENTS,
         Permission.EXECUTE_AGENTS,
+        Permission.READ_PIPELINES,
+        Permission.CREATE_PIPELINES,
+        Permission.UPDATE_PIPELINES,
+        Permission.DELETE_PIPELINES,
+        Permission.EXECUTE_PIPELINES,
         Permission.MANAGE_USERS,
         Permission.VIEW_ALL_USERS,
         Permission.APPROVE_AGENTS,
@@ -177,6 +204,13 @@ class RegisterRequest(BaseModel):
     password: str
     role: str
     user_name: str
+
+    @field_validator('user_name')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        if not re.match(r'^[a-zA-Z0-9 ]+$', v):
+            raise ValueError('Username must contain only alphanumeric characters and spaces')
+        return v.strip()
 
 
 class RegisterResponse(BaseModel):

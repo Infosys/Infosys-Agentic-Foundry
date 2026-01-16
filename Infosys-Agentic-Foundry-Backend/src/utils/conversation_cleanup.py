@@ -142,14 +142,80 @@ class ConversationCleanup:
             # Create recycle_longterm_memory
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS recycle_longterm_memory (
-                    table_name TEXT,
-                    session_id TEXT,
+                    table_name TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
                     start_timestamp TIMESTAMP,
-                    end_timestamp TIMESTAMP,
+                    end_timestamp TIMESTAMP NOT NULL,
                     human_message TEXT,
                     ai_message TEXT,
-                    response_time FLOAT,
-                    deleted_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    response_time DOUBLE PRECISION,
+                    deleted_date TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT recycle_longterm_memory_pkey PRIMARY KEY (table_name, session_id, end_timestamp)
+                );
+            """)
+            
+            # Create recycle_agent
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS recycle_agent (
+                    agentic_application_id TEXT NOT NULL,
+                    agentic_application_name TEXT,
+                    agentic_application_description TEXT,
+                    agentic_application_workflow_description TEXT,
+                    agentic_application_type TEXT,
+                    model_name TEXT,
+                    system_prompt JSONB,
+                    tools_id JSONB,
+                    created_by TEXT,
+                    created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    department_name TEXT,
+                    CONSTRAINT recycle_agent_pkey PRIMARY KEY (agentic_application_id),
+                    CONSTRAINT recycle_agent_agentic_application_name_key UNIQUE (agentic_application_name)
+                );
+            """)
+            
+            # Create recycle_tool
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS recycle_tool (
+                    tool_id TEXT NOT NULL,
+                    tool_name TEXT,
+                    tool_description TEXT,
+                    code_snippet TEXT,
+                    model_name TEXT,
+                    created_by TEXT,
+                    created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    is_public BOOLEAN DEFAULT FALSE,
+                    status TEXT DEFAULT 'pending',
+                    comments TEXT,
+                    approved_at TIMESTAMPTZ,
+                    approved_by TEXT,
+                    last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    department_name TEXT,
+                    CONSTRAINT recycle_tool_pkey PRIMARY KEY (tool_id),
+                    CONSTRAINT recycle_tool_tool_name_key UNIQUE (tool_name),
+                    CONSTRAINT recycle_tool_status_check CHECK (status = ANY (ARRAY['pending', 'approved', 'rejected']))
+                );
+            """)
+            
+            # Create recycle_mcp_tool
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS recycle_mcp_tool (
+                    tool_id TEXT PRIMARY KEY,
+                    tool_name TEXT UNIQUE NOT NULL,
+                    tool_description TEXT,
+                    mcp_config JSONB NOT NULL,
+                    is_public BOOLEAN DEFAULT FALSE,
+                    status TEXT DEFAULT 'pending',
+                    comments TEXT,
+                    approved_at TIMESTAMPTZ,
+                    approved_by TEXT,
+                    created_by TEXT,
+                    created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT recycle_mcp_tool_status_check CHECK (status IN ('pending', 'approved', 'rejected'))
                 );
             """)
             
@@ -487,24 +553,63 @@ class ConversationCleanup:
                 self.connect_databases()
                 
             with self.main_conn.cursor() as cursor:
-                    # Check for records with thread_id starting with "insidetable"
+                    # Check if checkpoint tables exist first
                     cursor.execute("""
-                        SELECT COUNT(*) FROM checkpoints 
-                        WHERE thread_id LIKE 'insidetable%'
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = 'checkpoints'
+                        )
                     """)
-                    checkpoint_count = cursor.fetchone()[0]
+                    checkpoints_exists = cursor.fetchone()[0]
                     
                     cursor.execute("""
-                        SELECT COUNT(*) FROM checkpoint_writes 
-                        WHERE thread_id LIKE 'insidetable%'
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = 'checkpoint_writes'
+                        )
                     """)
-                    checkpoint_writes_count = cursor.fetchone()[0]
+                    checkpoint_writes_exists = cursor.fetchone()[0]
                     
                     cursor.execute("""
-                        SELECT COUNT(*) FROM checkpoint_blobs 
-                        WHERE thread_id LIKE 'insidetable%'
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = 'checkpoint_blobs'
+                        )
                     """)
-                    checkpoint_blobs_count = cursor.fetchone()[0]
+                    checkpoint_blobs_exists = cursor.fetchone()[0]
+                    
+                    # Initialize counts
+                    checkpoint_count = 0
+                    checkpoint_writes_count = 0 
+                    checkpoint_blobs_count = 0
+                    
+                    # Check for records with thread_id starting with "insidetable" only if tables exist
+                    if checkpoints_exists:
+                        cursor.execute("""
+                            SELECT COUNT(*) FROM checkpoints 
+                            WHERE thread_id LIKE 'insidetable%'
+                        """)
+                        checkpoint_count = cursor.fetchone()[0]
+                    else:
+                        logger.info("checkpoints table does not exist")
+                    
+                    if checkpoint_writes_exists:
+                        cursor.execute("""
+                            SELECT COUNT(*) FROM checkpoint_writes 
+                            WHERE thread_id LIKE 'insidetable%'
+                        """)
+                        checkpoint_writes_count = cursor.fetchone()[0]
+                    else:
+                        logger.info("checkpoint_writes table does not exist")
+                    
+                    if checkpoint_blobs_exists:
+                        cursor.execute("""
+                            SELECT COUNT(*) FROM checkpoint_blobs 
+                            WHERE thread_id LIKE 'insidetable%'
+                        """)
+                        checkpoint_blobs_count = cursor.fetchone()[0]
+                    else:
+                        logger.info("checkpoint_blobs table does not exist")
                     
                     total_count = checkpoint_count + checkpoint_writes_count + checkpoint_blobs_count
                     
@@ -557,9 +662,8 @@ class ConversationCleanup:
         try:
             self.connect_databases()
             
-            # Create recycle tables if they don't exist
-            if not dry_run:
-                self.create_recycle_tables()
+            # Create recycle tables if they don't exist (always create, even in dry-run)
+            self.create_recycle_tables()
             
             recycle_cursor = self.recycle_conn.cursor()
             
@@ -585,7 +689,8 @@ class ConversationCleanup:
                 "checkpoint_writes": 0,
                 "checkpoint_blobs": 0,
                 "agents": 0,
-                "tools": 0
+                "tools": 0,
+                "mcp_tools": 0
             }
             
             # Process conversation records
@@ -700,6 +805,32 @@ class ConversationCleanup:
                 else:
                     logger.info(f"[DRY RUN] Would permanently delete tool: {tool_id} (updated on: {updated_on})")
             
+            # Delete old MCP tools
+            recycle_cursor.execute("""
+                SELECT tool_id, deleted_at
+                FROM recycle_mcp_tool
+                WHERE deleted_at < %s
+                ORDER BY deleted_at
+            """, (cutoff_date,))
+            
+            mcp_tool_records_to_delete = recycle_cursor.fetchall()
+            logger.info(f"Found {len(mcp_tool_records_to_delete)} MCP tools for permanent deletion")
+            
+            for tool_id, deleted_at in mcp_tool_records_to_delete:
+                if not dry_run:
+                    try:
+                        recycle_cursor.execute("""
+                            DELETE FROM recycle_mcp_tool
+                            WHERE tool_id = %s AND deleted_at = %s
+                        """, (tool_id, deleted_at))
+                        deleted_counts["mcp_tools"] += recycle_cursor.rowcount
+                        logger.info(f"Permanently deleted MCP tool: {tool_id} (deleted at: {deleted_at})")
+                    except Exception as e:
+                        logger.error(f"Error permanently deleting MCP tool {tool_id}: {e}")
+                        continue
+                else:
+                    logger.info(f"[DRY RUN] Would permanently delete MCP tool: {tool_id} (deleted at: {deleted_at})")
+            
             if not dry_run:
                 self.recycle_conn.commit()
                 logger.info(f"Permanent deletion completed - Summaries: {deleted_counts['summaries']}, "
@@ -708,12 +839,13 @@ class ConversationCleanup:
                           f"Writes: {deleted_counts['checkpoint_writes']}, "
                           f"Blobs: {deleted_counts['checkpoint_blobs']}, "
                           f"Agents: {deleted_counts['agents']}, "
-                          f"Tools: {deleted_counts['tools']}")
+                          f"Tools: {deleted_counts['tools']}, "
+                          f"MCP Tools: {deleted_counts['mcp_tools']}")
             else:
-                total_records = len(records_to_delete) + len(agent_records_to_delete) + len(tool_records_to_delete)
+                total_records = len(records_to_delete) + len(agent_records_to_delete) + len(tool_records_to_delete) + len(mcp_tool_records_to_delete)
                 logger.info(f"[DRY RUN] Would permanently delete {len(records_to_delete)} conversations, "
-                          f"{len(agent_records_to_delete)} agents, {len(tool_records_to_delete)} tools "
-                          f"(Total: {total_records} records)")
+                          f"{len(agent_records_to_delete)} agents, {len(tool_records_to_delete)} tools, "
+                          f"{len(mcp_tool_records_to_delete)} MCP tools (Total: {total_records} records)")
                 
         except Exception as e:
             logger.error(f"Error in permanent deletion: {e}")

@@ -3,7 +3,6 @@ import json
 import asyncio
 from typing import Dict, List, Optional, Literal
 from fastapi import HTTPException
-import asyncio
 from langgraph.types import interrupt
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AIMessage, ChatMessage
@@ -12,9 +11,8 @@ from src.utils.helper_functions import get_timestamp, build_effective_query_with
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
 from telemetry_wrapper import logger as log
-from src.prompts.prompts import online_agent_evaluation_prompt
+from src.prompts.prompts import online_agent_evaluation_prompt, feedback_lesson_generation_prompt
 from langgraph.types import StreamWriter
-from src.inference.inference_utils import EpisodicMemoryManager
 
 
 class PlannerExecutorWorkflowState(BaseWorkflowState):
@@ -889,26 +887,64 @@ Final Response from Executor Agent:
                     )
                 }
 
-        # NEW EVALUATOR DECISION FUNCTION
+       
         async def evaluator_decision(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState):
             """
-            Decides whether to return the final response or continue with improvement cycle
-            based on evaluation score and threshold.
+            Decides whether to return the final response or continue with improvement cycle.
+            SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
             evaluation_threshold = 0.7  # Configurable threshold
             max_evaluation_epochs = 3   # Maximum number of evaluation improvement cycles
             
-            # Get current evaluation epoch (using existing epoch field or create new one)
             current_epoch = state.get("evaluation_attempts", 0)
             evaluation_score = state.get("evaluation_score", 0.0)
-            
-            # Decision logic
-            if evaluation_score >= evaluation_threshold or current_epoch >= max_evaluation_epochs:
-                log.info(f"Evaluation passed for session {state['session_id']} - Score: {evaluation_score}, Epoch: {current_epoch}")
+            evaluation_feedback = state.get("evaluation_feedback", "No evaluation feedback available")
+
+            # Check if this is the final attempt (either passed or out of retries)
+            is_final_attempt = (evaluation_score >= evaluation_threshold or current_epoch >= max_evaluation_epochs)
+
+            if is_final_attempt:
+                # 🔄 ONLY Save to DB if it FAILED the threshold
+                if evaluation_score < evaluation_threshold:
+                    try:
+                        log.info(f"📉 Evaluation failed (Score: {evaluation_score}). Generating lesson and saving failure.")
+                        
+                        evaluator_lesson_prompt = feedback_lesson_generation_prompt.format(
+                            user_query=state["query"],
+                            agent_response=state["response"],
+                            feedback_type="EVALUATOR",
+                            feedback_score=evaluation_score,
+                            feedback_details=evaluation_feedback
+                        )
+                        
+                        lesson_response = await llm.ainvoke(evaluator_lesson_prompt)
+                        lesson = lesson_response.content
+                        
+                        status = f"[FAILED_AFTER_{current_epoch}_RETRIES]"
+
+                        # Save failure feedback
+                        await self.feedback_learning_service.save_feedback(
+                            agent_id=state["agentic_application_id"],
+                            query=state["query"],
+                            old_final_response=state["response"],
+                            old_steps=str(state.get("plan", [])),
+                            new_final_response=status,
+                            feedback=f"[EVALUATOR] Score: {evaluation_score:.2f} - {evaluation_feedback}", 
+                            new_steps=status,
+                            lesson=lesson
+                        )
+                        log.info(f"💾 Planner-Executor Evaluator failure stored for session {state['session_id']}")
+                            
+                    except Exception as e:
+                        log.error(f"❌ Failed to save evaluator feedback: {e}")
+                else:
+                    log.info(f"✅ Evaluation passed (Score: {evaluation_score}). Skipping DB feedback save.")
+
                 return "final_response"
-            else:
-                log.info(f"Evaluation failed for session {state['session_id']} - Score: {evaluation_score}, Epoch: {current_epoch}. Routing for improvement.")
-                return "planner_agent"
+
+            # If not final, route back for improvement
+            log.info(f"Evaluation failed ({evaluation_score}). Routing for improvement.")
+            return "planner_agent"
 
 
 
@@ -948,13 +984,29 @@ Final Response from Executor Agent:
 
         async def interrupt_node_for_tool(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState, writer:StreamWriter):
             """Asks the human if the plan is ok or not"""
-            if tool_interrupt_flag:
-                
+            thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
+            internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
+
+            agent_state = await executor_agent.aget_state(internal_thread)
+
+            # Extract tool name from agent_state to check against interrupt_items
+            tool_name_in_task = None
+            last_message = agent_state.values.get("messages", [])[-1] if agent_state.values.get("messages") else None
+            if last_message and hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+                tool_name_in_task = last_message.tool_calls[0].get('name')
+
+            # Check if we should interrupt: tool_interrupt_flag AND (no interrupt_items OR tool_name is in interrupt_items)
+            interrupt_items = state.get("interrupt_items") or []
+            should_interrupt = tool_interrupt_flag and (not interrupt_items or (tool_name_in_task and tool_name_in_task in interrupt_items))
+
+            if should_interrupt:
+                log.info(f"[{state['session_id']}] Interrupting for tool: {tool_name_in_task}")
                 is_plan_approved = interrupt("approved?(yes/feedback)") 
                 writer({"raw": {"tool_verifier": "Please confirm to execute the tool"}, "content": "Tool execution requires confirmation. Please approve to proceed."})
-                if is_plan_approved =="yes":
+                if is_plan_approved == "yes":
                     writer({"raw": {"tool_verifier": "User approved the tool execution by clicking the thumbs up button"}, "content": "User approved the tool execution by clicking the thumbs up button"})              
             else:
+                log.info(f"[{state['session_id']}] Tool '{tool_name_in_task}' not in interrupt_items {interrupt_items}, auto-approving.")
                 is_plan_approved = "yes"
             return {"tool_feedback": is_plan_approved, "is_tool_interrupted": True}
 
@@ -1073,96 +1125,136 @@ Final Response from Executor Agent:
                 "user_update_events": existing_events
             }
 
-        # VALIDATOR AGENT NODE
+        
         async def validator_agent_node(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState, writer: StreamWriter):
             """
             Validates the agent response using validator tools or LLM-based validation.
+            Returns `executor_messages` similar to evaluator_agent for downstream consumers.
             """
-          
-            
+
             if not validator_flag:
-                
+                # Skipped: validator disabled
+                exec_msg = ChatMessage(
+                    content=str([{
+                        "validation_score": 1.0,
+                        "validation_details": {"status": "skipped", "reason": "validator_flag disabled"},
+                        "feedback": "Validation skipped (validator disabled)"
+                    }]),
+                    role="validator-response"
+                )
                 return {
                     "validation_score": 1.0,
-                    "validation_feedback": "Validation skipped (validator disabled)"
+                    "validation_feedback": "Validation skipped (validator disabled)",
+                    "validation_attempts": state.get("validation_attempts", 0),  # do not increment when skipped
+                    "is_tool_interrupted": False,
+                    "executor_messages": exec_msg
                 }
-            
-            log.info(f"[INFO] VALIDATOR AGENT CALLED for session {state['session_id']}")
-            validation_attempts = state.get("validation_attempts", 0) + 1
+
             writer({"Node Name": "Validating Response", "Status": "Started"})
+            log.info(f"[INFO] VALIDATOR AGENT CALLED for session {state['session_id']}")
+            log.info(f"VALIDATOR AGENT CALLED for session {state['session_id']}")
+
+            # Increment validation attempts counter
+            validation_attempts = state.get("validation_attempts", 0) + 1
+
             try:
                 # Get agent configuration for validation criteria
-                # Use mentioned_agent_id if present, otherwise use agentic_application_id
+                # Use mentioned_agent_id if present, otherwise agentic_application_id
                 agent_id_for_validation = state.get("mentioned_agent_id") if state.get("mentioned_agent_id") else state["agentic_application_id"]
                 agent_config = await self.agent_service.agent_repo.get_agent_record(agent_id_for_validation)
+
                 if not agent_config:
-                    log.warning(f"[WARNING] No agent config found for {agent_id_for_validation}, falling back to general relevancy validation")
-                    # Consider user tool updates even in fallback
-                    effective_query_for_validation = build_effective_query_with_user_updates(
-                        state["query"], 
-                        state.get("user_update_events", []), 
-                        state.get("query")
-                    )
-                    
-                    result = await self.inference_utils.validate_general_relevancy(effective_query_for_validation, state["response"], llm)
-                    writer({"raw": {"validator_agent_response": result}, "content": f"Validator agent completed with score {result.get('validation_score', 0.0):.2f}"})
+                    log.warning(f"No agent config found for {agent_id_for_validation}, falling back to general relevancy validation")
+                    result = await self.inference_utils.validate_general_relevancy(state["query"], state["response"], llm)
+                    writer({"raw": {"Validation Score": result.get("validation_score", 0.0)}, "content": f"Validation score: {result.get('validation_score', 0.0)}"})
                     writer({"Node Name": "Validating Response", "Status": "Completed"})
+
+                    exec_msg = ChatMessage(
+                        content=str([{
+                            "validation_score": result.get("validation_score", 0.0),
+                            "validation_details": result,
+                            "feedback": result.get("feedback", "No agent config found")
+                        }]),
+                        role="validator-response"
+                    )
                     return {
                         "validation_score": result.get("validation_score", 0.0),
                         "validation_feedback": result.get("feedback", "No agent config found"),
-                        "validation_attempts": validation_attempts
+                        "is_tool_interrupted": False,
+                        "validation_attempts": validation_attempts,
+                        "executor_messages": exec_msg
                     }
-                
-                # Consider any recorded user tool argument changes in validation
-                # Only include updates associated with the current query to avoid cross-query leakage
+
+                # Consider any recorded user tool argument changes in validation (only for current query)
                 effective_query_for_validation = build_effective_query_with_user_updates(
-                    state["query"], 
-                    state.get("user_update_events", []), 
+                    state["query"],
+                    state.get("user_update_events", []),
                     state.get("query")
                 )
-                
+
                 agent_data = agent_config[0]
                 validation_criteria = agent_data.get("validation_criteria", [])
-                
+
                 # Handle case where validation_criteria might be a string
                 if isinstance(validation_criteria, str):
                     try:
-                        validation_criteria = json.loads(validation_criteria)
-                    except json.JSONDecodeError:
+                        import json as _json
+                        validation_criteria = _json.loads(validation_criteria)
+                    except _json.JSONDecodeError:
                         log.warning(f"Failed to parse validation_criteria string: {validation_criteria}")
                         validation_criteria = []
-                
+
                 if not validation_criteria:
-                    log.info("[INFO] No validation criteria found, falling back to general relevancy validation")
+                    log.info("No validation criteria found, falling back to general relevancy validation")
                     result = await self.inference_utils.validate_general_relevancy(effective_query_for_validation, state["response"], llm)
                     log.info(f"General relevancy result: {result}")
-                    
-                    writer({"raw": {"validator_agent_response": result}, "content": f"No validation criteria found, falling back to general relevancy validation. Validator agent score: {result.get('validation_score', 0.0):.2f}"})
+                    writer({"raw": {"Validation Score": result.get("validation_score", 0.0)}, "content": f"Validation score: {result.get('validation_score', 0.0)}"})
                     writer({"Node Name": "Validating Response", "Status": "Completed"})
+
+                    exec_msg = ChatMessage(
+                        content=str([{
+                            "validation_score": result.get("validation_score", 0.0),
+                            "validation_details": result,
+                            "feedback": result.get("feedback", "No validation criteria found")
+                        }]),
+                        role="validator-response"
+                    )
                     return {
                         "validation_score": result.get("validation_score", 0.0),
                         "validation_feedback": result.get("feedback", "No validation criteria found"),
-                        "validation_attempts": validation_attempts
+                        "is_tool_interrupted": False,
+                        "validation_attempts": validation_attempts,
+                        "executor_messages": exec_msg
                     }
-                
-                # Find all matching validation patterns using InferenceUtils
+
+                # Find all matching validation patterns
                 matching_patterns = await self.inference_utils.find_all_matching_validation_patterns(
                     effective_query_for_validation, validation_criteria, llm
                 )
-                
+
                 if not matching_patterns:
-                    log.info("[INFO] No matching validation patterns found, falling back to general relevancy validation")
+                    log.info("No matching validation patterns found, falling back to general relevancy validation")
                     result = await self.inference_utils.validate_general_relevancy(effective_query_for_validation, state["response"], llm)
                     log.info(f"General relevancy fallback result: {result}")
-                   
-                    writer({"raw": {"validator_agent_response": result}, "content": f"No matching validation patterns found, falling back to general relevancy validation. Validator agent score: {result.get('validation_score', 0.0):.2f}"})
+                    writer({"raw": {"Validation Score": result.get("validation_score", 0.0)}, "content": f"Validation score: {result.get('validation_score', 0.0)}"})
                     writer({"Node Name": "Validating Response", "Status": "Completed"})
+
+                    exec_msg = ChatMessage(
+                        content=str([{
+                            "validation_score": result.get("validation_score", 0.0),
+                            "validation_details": result,
+                            "feedback": result.get("feedback", "No matching validation patterns found")
+                        }]),
+                        role="validator-response"
+                    )
                     return {
                         "validation_score": result.get("validation_score", 0.0),
                         "validation_feedback": result.get("feedback", "No matching validation patterns found"),
-                        "validation_attempts": validation_attempts
+                        "is_tool_interrupted": False,
+                        "validation_attempts": validation_attempts,
+                        "executor_messages": exec_msg
                     }
-                
+
                 # Process each matching pattern
                 validation_results = []
                 for pattern in matching_patterns:
@@ -1170,60 +1262,130 @@ Final Response from Executor Agent:
                         pattern, state, llm, effective_query_for_validation
                     )
                     validation_results.append(pattern_result)
-                
+
                 # Aggregate all validation results
                 final_result = self.inference_utils.aggregate_validation_results(validation_results)
-                
                 log.info(f"Validator completed for session {state['session_id']} with status: {final_result['validation_status']}")
-                writer({"raw": {"validator_agent_response": final_result}, "content": f"Validator agent completed with score {final_result['validation_score']:.2f}"})
+
+                writer({
+                    "raw": {"Validation Score": final_result["validation_score"]},
+                    "content": f"Validation score: {final_result['validation_score']}"
+                })
                 writer({"Node Name": "Validating Response", "Status": "Completed"})
 
-                
+                exec_msg = ChatMessage(
+                    content=str([{
+                        "validation_score": final_result["validation_score"],
+                        "validation_details": final_result,
+                        "feedback": final_result["feedback"]
+                    }]),
+                    role="validator-response"
+                )
                 return {
                     "validation_score": final_result["validation_score"],
                     "validation_feedback": final_result["feedback"],
-                    "validation_attempts": validation_attempts
+                    "validation_attempts": validation_attempts,
+                    "is_tool_interrupted": False,
+                    "executor_messages": exec_msg
                 }
-                
+
             except Exception as e:
                 log.error(f"Validator agent failed for session {state['session_id']}: {e}")
-                writer({"raw": {"validator_agent_response": f"Validation failed due to error: {str(e)}"}})
+                writer({"raw": {"Validation Error": str(e)}, "content": f"Validation failed due to error: {str(e)}"})
                 writer({"Node Name": "Validating Response", "Status": "Failed"})
+
+                exec_msg = ChatMessage(
+                    content=f"Validation failed: {str(e)}",
+                    role="validator-error"
+                )
                 return {
                     "validation_score": 0.3,
                     "validation_feedback": f"Validation failed due to error: {str(e)}",
-                    "validation_attempts": validation_attempts
+                    "validation_attempts": validation_attempts,
+                    "is_tool_interrupted": False,
+                    "executor_messages": exec_msg
                 }
+
+
 
         async def validator_decision_node(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState):
             """
-            Decides the next step based on validation results and current epoch.
+            Decides the next step based on validation results and current attempts.
+            SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
             validation_threshold = 0.7
-            max_validation_epochs = 2
+            max_validation_epochs = 3
             
             current_epoch = state.get("validation_attempts", 0)
             validation_score = state.get("validation_score", 0.0)
+            validation_feedback = state.get("validation_feedback", "No validation feedback available")
+
+            # Check if we are finishing the validation phase
+            is_exiting = (validation_score >= validation_threshold or current_epoch >= max_validation_epochs)
+
+            if is_exiting:
+                # 🔄 ONLY Save to DB if it FAILED the threshold
+                if validation_score < validation_threshold:
+                    try:
+                        log.info(f"📉 Validation failed (Score: {validation_score}). Generating lesson and saving failure.")
+                        
+                        validator_lesson_prompt = feedback_lesson_generation_prompt.format(
+                            user_query=state["query"],
+                            agent_response=state["response"],
+                            feedback_type="VALIDATOR",
+                            feedback_score=validation_score,
+                            feedback_details=validation_feedback
+                        )
+                        
+                        lesson_response = await llm.ainvoke(validator_lesson_prompt)
+                        lesson = lesson_response.content
+                        
+                        status = f"[FAILED_AFTER_{current_epoch}_RETRIES]"
+
+                        # Save failure feedback
+                        await self.feedback_learning_service.save_feedback(
+                            agent_id=state["agentic_application_id"],
+                            query=state["query"],
+                            old_final_response=state["response"],
+                            old_steps=str(state.get("plan", [])),
+                            new_final_response=status,
+                            feedback=f"[VALIDATOR] Score: {validation_score:.2f} - {validation_feedback}", 
+                            new_steps=status,
+                            lesson=lesson
+                        )
+                        log.info(f"💾 Planner-Executor Validator failure stored for session {state['session_id']}")
+                            
+                    except Exception as e:
+                        log.error(f"❌ Failed to save validator feedback: {e}")
+                else:
+                    log.info(f"✅ Validation passed (Score: {validation_score}). Skipping DB feedback save.")
+
+                # Proceed to next node based on flags
+                if evaluation_flag:
+                    return "evaluator_agent"
+                return "final_response"
+
+            # If not exiting, loop back for re-planning
+            log.info(f"Validation failed ({validation_score}). Routing back to planner for improvement.")
+            return "planner_agent"
+
+        async def post_response_router(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState):
+            """
+            Routes from response_generator_agent to validator, evaluator, or final_response
+            based on flags and evaluation history. Prevents re-running validator after evaluator has completed.
+            """
+            # Skip validator if evaluator has already run (evaluation_attempts > 0)
+            evaluation_attempts = state.get("evaluation_attempts", 0)
             
-            if validation_score >= validation_threshold:
-                log.info(f"[SUCCESS] Validation passed for session {state['session_id']} - Score: {validation_score}, Epoch: {current_epoch}")
-                if evaluation_flag:
-                    log.info(f"[ROUTE] Routing to evaluator_agent (both validation and evaluation enabled)")
-                    return "evaluator_agent"
-                else:
-                    log.info(f"[ROUTE] Routing to final_response (only validation enabled)")
-                    return "final_response"
-            elif current_epoch >= max_validation_epochs:
-                log.info(f"[WARNING] Max validation epochs reached for session {state['session_id']} - Score: {validation_score}, Epoch: {current_epoch}")
-                if evaluation_flag:
-                    log.info(f"[ROUTE] Routing to evaluator_agent despite validation failure (max epochs reached)")
-                    return "evaluator_agent"
-                else:
-                    log.info(f"[ROUTE] Routing to final_response despite validation failure (max epochs reached)")
-                    return "final_response"
+            if validator_flag and evaluation_attempts == 0:
+                log.info(f"[ROUTE] Routing to validator_agent_node (validation enabled and evaluator hasn't run yet)")
+                return "validator_agent_node"
+            elif evaluation_flag:
+                log.info(f"[ROUTE] Routing to evaluator_agent (evaluation enabled, skipping validator)")
+                return "evaluator_agent"
             else:
-                log.info(f"[FAILURE] Validation failed for session {state['session_id']} - Score: {validation_score}, Epoch: {current_epoch}. Routing for improvement.")
-                return "planner_agent"
+                log.info(f"[ROUTE] Routing to final_response (no validation or evaluation)")
+                return "final_response"
 
         ### Build Graph
         workflow = StateGraph(PlannerExecutorWorkflowState if not plan_verifier_flag else PlannerExecutorHITLWorkflowState)
@@ -1252,38 +1414,37 @@ Final Response from Executor Agent:
         if evaluation_flag:
             workflow.add_node("evaluator_agent", evaluator_agent)
         
-        # Updated routing logic based on flags
-        if validator_flag and evaluation_flag:
-            # Both validation and evaluation enabled - go validation first, then evaluation
-            workflow.add_edge("response_generator_agent", "validator_agent_node")
+        # Dynamic routing from response_generator based on validation/evaluation flags
+        # This replaces the static routing to prevent validator re-execution after evaluator completes
+        response_router_targets = []
+        if validator_flag:
+            response_router_targets.append("validator_agent_node")
+        if evaluation_flag:
+            response_router_targets.append("evaluator_agent")
+        response_router_targets.append("final_response")
+        
+        workflow.add_conditional_edges(
+            "response_generator_agent",
+            post_response_router,
+            response_router_targets
+        )
+        
+        # Validator routing (when validator is enabled)
+        if validator_flag:
+            validator_targets = {}
+            if evaluation_flag:
+                validator_targets["evaluator_agent"] = "evaluator_agent"
+            validator_targets["final_response"] = "final_response"
+            validator_targets["planner_agent"] = "planner_agent"
+            
             workflow.add_conditional_edges(
                 "validator_agent_node",
                 validator_decision_node,
-                {
-                    "evaluator_agent": "evaluator_agent",
-                    "final_response": "final_response",
-                    "planner_agent": "planner_agent"
-                }
+                validator_targets
             )
-            workflow.add_conditional_edges(
-                "evaluator_agent",
-                evaluator_decision,
-                {"final_response": "final_response", "planner_agent": "planner_agent"}
-            )
-        elif validator_flag and not evaluation_flag:
-            # Only validation enabled
-            workflow.add_edge("response_generator_agent", "validator_agent_node")
-            workflow.add_conditional_edges(
-                "validator_agent_node",
-                validator_decision_node,
-                {
-                    "final_response": "final_response",
-                    "planner_agent": "planner_agent"
-                }
-            )
-        elif not validator_flag and evaluation_flag:
-            # Only evaluation enabled
-            workflow.add_edge("response_generator_agent", "evaluator_agent")
+        
+        # Evaluator routing (when evaluator is enabled)
+        if evaluation_flag:
             workflow.add_conditional_edges(
                 "evaluator_agent",
                 evaluator_decision,

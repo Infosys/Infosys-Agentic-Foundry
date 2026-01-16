@@ -1505,12 +1505,15 @@ async def delete_mcp_tool_endpoint(
         user_data: User = Depends(get_current_user)
     ):
     """
-    Deletes an MCP tool (server definition) record from the database.
+    Deletes an MCP tool (server definition) by moving it to the recycle bin.
     
     Access Control:
     - Admins can delete any MCP tool
     - Tool creators can delete their own MCP tools
     - Other users cannot delete MCP tools
+    
+    Note: All deletions move tools to the recycle bin (soft delete).
+    Use the permanent delete endpoint to remove from recycle bin permanently.
     """
     # user_id = request.cookies.get("user_id")
     user_id = user_data.email
@@ -1527,28 +1530,24 @@ async def delete_mcp_tool_endpoint(
     except Exception as e:
         log.error(f"Error retrieving MCP tool for authorization check: {str(e)}")
         raise HTTPException(status_code=500, detail="Error checking tool permissions")
+    
+    previous_value = existing_tool[0]
     is_admin = False
     if delete_request_data.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN)
-    is_creator = (existing_tool[0].get("created_by") == user_data.username)
+    is_creator = (previous_value.get("created_by") == user_data.username)
     if not (is_admin or is_creator):
         log.warning(f"User {user_id} attempted to delete MCP tool without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Admin privileges or tool creator access required to delete this MCP tool")
     
-    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id)
-
-    try:
-        status = await mcp_tool_service.delete_mcp_tool(
-            tool_id=tool_id,
-            user_id=user_data.username,
-            is_admin=is_admin
-        )
-        status["status_message"] = status.get("message", "")
-    except Exception as e:
-        log.error(f"Error deleting MCP tool '{tool_id}': {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting MCP tool '{tool_id}': {str(e)}")
-    finally:
-        update_session_context(tool_id='Unassigned')
+    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id, action_on='mcp_tool', action_type='delete', previous_value=previous_value)
+    status = await mcp_tool_service.delete_mcp_tool(
+        tool_id=tool_id,
+        user_id=user_data.username,
+        is_admin=is_admin
+    )
+    status["status_message"] = status.get("message", "")
+    update_session_context(tool_id='Unassigned', action_on='Unassigned', action_type='Unassigned', previous_value='Unassigned')  # Telemetry context clear
 
     if not status.get("is_delete"):
         agents = []
@@ -1920,6 +1919,96 @@ async def delete_tool_from_recycle_bin_endpoint(
     return result
 
 
+# --- MCP Recycle Bin Endpoints ---
+
+@router.get("/mcp/recycle-bin/get")
+async def get_all_mcp_tools_from_recycle_bin_endpoint(
+    request: Request,
+    user_email_id: str = Query(...),
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """Retrieves all MCP tools from the recycle bin."""
+    # Check permissions first
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools. Only admins and developers can perform this action")
+    
+    user_id = user_data.email
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN):
+        log.warning(f"User {user_email_id} attempted to access MCP recycle bin without admin privileges")
+        raise HTTPException(status_code=403, detail="Admin privileges required to access recycle bin")
+
+    tools = await mcp_tool_service.get_all_mcp_tools_from_recycle_bin()
+    if not tools:
+        raise HTTPException(status_code=404, detail="No MCP tools found in recycle bin")
+    return tools
+
+
+@router.post("/mcp/recycle-bin/restore/{tool_id}")
+async def restore_mcp_tool_endpoint(
+    request: Request,
+    tool_id: str,
+    user_email_id: str = Query(...),
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """Restores an MCP tool from the recycle bin."""
+    # Check permissions first
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "update", "tools"):
+        raise HTTPException(status_code=403, detail="You don't have permission to restore tools. Only admins and developers can perform this action")
+    
+    user_id = user_data.email
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN):
+        log.warning(f"User {user_email_id} attempted to restore MCP tool without admin privileges")
+        raise HTTPException(status_code=403, detail="Admin privileges required to restore MCP tools")
+
+    result = await mcp_tool_service.restore_mcp_tool_from_recycle_bin(tool_id=tool_id)
+    result["status_message"] = result.get("message", "")
+    if not result.get("is_restored"):
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.delete("/mcp/recycle-bin/permanent-delete/{tool_id}")
+async def delete_mcp_tool_from_recycle_bin_endpoint(
+    request: Request,
+    tool_id: str,
+    user_email_id: str = Query(...),
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """Permanently deletes an MCP tool from the recycle bin."""
+    # Check permissions first
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "delete", "tools"):
+        raise HTTPException(status_code=403, detail="You don't have permission to delete tools. Only admins and developers can perform this action")
+    
+    user_id = user_data.email
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id, action_on='mcp_tool', action_type='permanent_delete')
+    
+    if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN):
+        log.warning(f"User {user_email_id} attempted to permanently delete MCP tool without admin privileges")
+        update_session_context(tool_id='Unassigned', action_on='Unassigned', action_type='Unassigned')
+        raise HTTPException(status_code=403, detail="Admin privileges required to permanently delete MCP tools from recycle bin")
+
+    status = await mcp_tool_service.permanent_delete_mcp_tool_from_recycle_bin(tool_id=tool_id)
+    update_session_context(tool_id='Unassigned', action_on='Unassigned', action_type='Unassigned')
+    
+    if not status.get("is_deleted"):
+        log.error(f"MCP tool permanent delete failed: {status.get('message')}")
+        raise HTTPException(status_code=400, detail=status.get("message"))
+    return status
+
+
 @router.get("/unused/get")
 async def get_unused_tools_endpoint(
     request: Request,
@@ -2000,6 +2089,106 @@ async def get_unused_tools_endpoint(
         raise HTTPException(status_code=500, detail=f"Error retrieving unused tools: {str(e)}")
 
 
+@router.get("/mcp/unused/get")
+async def get_unused_mcp_tools_endpoint(
+    request: Request,
+    user_data: User = Depends(get_current_user),
+    threshold_days: int = Query(default=15, description="Number of days to consider an MCP tool as unused"),
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    Retrieves MCP tools that haven't been updated for the specified number of days.
+    Note: MCP tools don't have a last_used field, so this uses updated_on timestamp.
+    
+    Args:
+        request: The FastAPI Request object
+        threshold_days: Number of days to consider an MCP tool as unused (default: 15)
+        mcp_tool_service: Injected McpToolService dependency
+        authorization_server: Injected AuthorizationService dependency
+    
+    Returns:
+        Dict containing list of unused MCP tools with IST timezone formatting
+    """
+    # Check permissions first
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools. Only admins and developers can perform this action")
+    
+    user_id = user_data.email
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    if not await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN):
+        raise HTTPException(status_code=403, detail="Admin privileges required to get unused MCP tools")
+    
+    try:
+        unused_mcp_tools = await mcp_tool_service.get_unused_mcp_tools(threshold_days=threshold_days)
+
+        def format_datetime_to_days_ago(obj):
+            if obj is None:
+                return "Never updated"
+            ist_timezone = pytz.timezone("Asia/Kolkata")
+
+            if hasattr(obj, 'tzinfo') and obj.tzinfo is not None:
+                utc_time = obj
+            else:
+                utc_time = obj.replace(tzinfo=timezone.utc)
+            
+            ist_time = utc_time.astimezone(ist_timezone)
+            current_time_ist = datetime.now(ist_timezone)
+            time_diff = current_time_ist - ist_time
+            days_ago = time_diff.days
+            
+            if days_ago == 0:
+                return "Today"
+            elif days_ago == 1:
+                return "1 day ago"
+            else:
+                return f"{days_ago} days ago"
+        
+        def format_datetime_to_ist(dt_obj):
+            """Format datetime to IST timezone string"""
+            if dt_obj is None:
+                return None
+            ist_timezone = pytz.timezone("Asia/Kolkata")
+            
+            if hasattr(dt_obj, 'tzinfo') and dt_obj.tzinfo is not None:
+                utc_time = dt_obj
+            else:
+                utc_time = dt_obj.replace(tzinfo=timezone.utc)
+            
+            ist_time = utc_time.astimezone(ist_timezone)
+            return ist_time.isoformat()
+        
+        formatted_tools = []
+        for tool in unused_mcp_tools:
+            formatted_tool = dict(tool)
+            
+            # Format datetime fields to IST
+            if formatted_tool.get('created_on'):
+                formatted_tool['created_on'] = format_datetime_to_ist(formatted_tool.get('created_on'))
+            if formatted_tool.get('updated_on'):
+                formatted_tool['updated_on'] = format_datetime_to_ist(formatted_tool.get('updated_on'))
+            if formatted_tool.get('approved_at'):
+                formatted_tool['approved_at'] = format_datetime_to_ist(formatted_tool.get('approved_at'))
+            
+            formatted_tools.append(formatted_tool)
+        
+        response_data = {
+            "threshold_days": threshold_days,
+            "unused_mcp_tools": {
+                "count": len(formatted_tools),
+                "details": formatted_tools
+            }
+        }
+        
+        log.info(f"Retrieved {len(unused_mcp_tools)} unused MCP tools with threshold of {threshold_days} days")
+        return response_data
+        
+    except Exception as e:
+        log.error(f"Error retrieving unused MCP tools: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving unused MCP tools: {str(e)}")
+
 
 # --- Validator Tool Endpoints ---
 
@@ -2068,4 +2257,51 @@ async def search_paginated_validators_endpoint(
         raise HTTPException(status_code=404, detail="No validator tools found matching criteria.")
     return result
 
+@router.get("/pending-modules")
+async def get_pending_modules_endpoint(
+    request: Request,
+    user_data: User = Depends(get_current_user),
+    services: ServiceProvider = Depends()
+):
+    """
+    API endpoint to retrieve pending modules with details.
 
+    Returns:
+    - Dict containing success status and detailed pending modules data.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    try:
+        from src.database.repositories import get_all_pending_modules
+        
+        db_manager = services.get_database_manager()
+        pool = db_manager.pools.get('db_main')
+        if not pool:
+            raise HTTPException(status_code=500, detail="Database connection not available")
+        
+        pending_modules = await get_all_pending_modules(pool)
+        detailed_modules = []
+        for module in pending_modules:
+            detailed_modules.append({
+                "module_name": module.get('module_name'),
+                "created_by": module.get('created_by'),
+                "tool_name": module.get('tool_name'),
+                "code_snippet": module.get('tool_code'),
+                "created_on": module.get('created_on')
+            })
+        module_names = [module['module_name'] for module in pending_modules]
+        log.info(f"Retrieved {len(module_names)} pending modules")
+        return {
+            "success": True,
+            "count": len(module_names),
+            "modules": module_names,
+            "details": detailed_modules 
+        }
+    except Exception as e:
+        log.error(f"Error getting pending modules: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get pending modules: {str(e)}"
+        )

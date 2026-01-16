@@ -3,6 +3,7 @@ import os
 import json
 import shutil
 import asyncpg
+import psycopg2
 import requests
 from typing import List, Dict
 from pathlib import Path
@@ -18,11 +19,14 @@ from langchain_community.document_loaders import TextLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_pymupdf4llm import PyMuPDF4LLMLoader
 
-from src.database.services import ModelService
+from src.database.services import ModelService, VMManagementService
 from src.utils.file_manager import FileManager
+from src.utils.tool_file_manager import ToolFileManager
 from src.api.dependencies import ServiceProvider # The dependency provider
 from telemetry_wrapper import logger as log, update_session_context
 
+from src.schemas import VMConnectionRequest
+from src.utils.tool_code_dependency_analyzer import ToolCodeDependencyExtractor
 
 router = APIRouter(prefix="/utility", tags=["Utility - (Upload / Download Files | Knowledge Base | Speech-To-Text | Markdown Documentation)"])
 
@@ -432,3 +436,166 @@ async def list_docs_files_in_directory_endpoint(request: Request, dir_name: str)
 ## ==========================================================
 
 
+@router.get("/sync-tool-files")
+async def sync_tool_files(
+    request: Request,
+    service_provider: ServiceProvider = Depends()
+):
+    """
+    Sync existing database tools to .py files (one-time operation).
+    Skips tools that already have files - only creates missing ones.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    try:
+        # Use the injected tool_file_manager from service provider
+        tool_file_manager = service_provider.get_tool_file_manager()
+        result = await tool_file_manager.sync_existing_tools_from_db()
+        
+        if result.get("success"):
+            return {
+                "success": True,
+                "message": f"Sync complete: {result['created']} files created, {result['skipped']} skipped",
+                "total_tools": result['total'],
+                "files_created": result['created'],
+                "files_skipped": result['skipped']
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Unknown error"))
+            
+    except Exception as e:
+        log.error(f"Error syncing tool files: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+## ==========================================================
+
+
+
+## ============ VM Management Endpoints ============
+
+@router.get("/get-missing-dependencies")
+async def get_missing_dependencies(request: Request):
+    """
+    Analyze tool code dependencies and identify missing packages.
+    
+    This endpoint analyzes all tool code snippets in the database, extracts their
+    dependencies, validates them against the local/remote environment and requirements.txt,
+    and returns only the packages that need to be installed and those installed but not in requirements.txt.
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        Dict containing:
+            - modules_to_install: List of PyPI package names that need installation
+            - modules_installed_not_in_requirements: List of packages installed but not in requirements.txt
+            - count_to_install: Number of packages needing installation
+            - count_installed_not_in_requirements: Number of packages installed but not in requirements.txt
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    try:
+        db_config = {
+            'host': os.getenv('POSTGRESQL_HOST'),
+            'database': os.getenv('DATABASE'),
+            'user': os.getenv('POSTGRESQL_USER'),
+            'password': os.getenv('POSTGRESQL_PASSWORD'),
+            'port': os.getenv('POSTGRESQL_PORT')
+        }
+        
+        requirements_file = Path(__file__).parent.parent.parent / "requirements.txt"
+        
+        extractor = ToolCodeDependencyExtractor(
+            db_config=db_config,
+            requirements_file=str(requirements_file)
+        )
+        
+        modules_to_install = await extractor.run()
+        modules_installed_not_in_requirements = extractor.stats.get('installed_not_in_requirements', [])
+        
+        return {
+            "modules_to_install": modules_to_install,
+            "modules_installed_not_in_requirements": modules_installed_not_in_requirements,
+            "count_to_install": len(modules_to_install),
+            "count_installed_not_in_requirements": len(modules_installed_not_in_requirements)
+        }
+        
+    except Exception as e:
+        log.error(f"Dependency analysis error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# @router.post("/vm/install-dependencies")
+# async def install_dependencies_on_vm_endpoint(
+#         request: Request,
+#         vm_request: VMConnectionRequest,
+#         vm_service: "VMManagementService" = Depends(ServiceProvider.get_vm_management_service)
+#     ):
+#     """Install Python modules on a remote VM"""
+
+#     user_id = request.cookies.get("user_id")
+#     user_session = request.cookies.get("user_session")
+#     update_session_context(user_session=user_session, user_id=user_id)
+#     try:
+#         result = await vm_service.install_dependencies(modules=vm_request.modules)
+#         if result["success"]:
+#             return JSONResponse(content=result, status_code=200)
+#         else:
+#             return JSONResponse(content=result, status_code=400)
+#     except Exception as e:
+#         log.error(f"VM management endpoint error: {str(e)}", exc_info=True)
+#         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/get/installed-packages")
+async def get_installed_packages_endpoint(
+    request: Request,
+    vm_service: VMManagementService = Depends(ServiceProvider.get_vm_management_service)
+):
+    """
+    API endpoint to get all installed packages with their versions from the specified environment.
+    
+    Parameters:
+    - request: The FastAPI Request object
+    - environment_path: Optional path to virtual environment. If not provided, uses VM_VENV_DIR from .env
+    
+    Returns:
+    - Dict containing success status, message, and list of packages with their versions
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    try:
+        log.info("Getting installed packages from environment")
+        result = await vm_service.get_installed_packages()
+        
+        if result["success"]:
+            packages = result["packages"]
+            log.info(f"Successfully retrieved {len(packages)} installed packages")
+            return {
+                "success": True,
+                "message": result["message"],
+                "count": len(packages),
+                "packages": packages
+            }
+        else:
+            log.warning(f"Failed to get packages: {result['message']}")
+            return {
+                "success": False,
+                "message": result["message"],
+                "count": 0,
+                "packages": []
+            }
+            
+    except Exception as e:
+        log.error(f"Error getting installed packages: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to get installed packages: {str(e)}"
+        )
+
+## ==========================================================
