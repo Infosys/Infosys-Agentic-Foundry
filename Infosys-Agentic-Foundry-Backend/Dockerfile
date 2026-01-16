@@ -39,4 +39,3 @@ EXPOSE 8000
 # --reload is removed as it's for development, not production containers.
 # --host 0.0.0.0 is CRITICAL to allow the container to accept connections from outside.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
- 

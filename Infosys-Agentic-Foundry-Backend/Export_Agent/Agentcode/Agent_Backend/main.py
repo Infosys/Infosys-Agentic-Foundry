@@ -22,7 +22,7 @@ from src.api import cleanup_old_files
 from src.auth.middleware import AuditMiddleware, AuthenticationMiddleware
 from src.auth.routes import router as auth_router
 
-from src.utils.stream_sse import SSEManager
+# from src.utils.stream_sse import SSEManager
 from src.utils.gzip_middleware import CustomGZipMiddleware
 
 from telemetry_wrapper import logger as log
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
 
     try:
         await app_container.initialize_services()
-        app.state.sse_manager = SSEManager()
+        # app.state.sse_manager = SSEManager()
         
         # Create background tasks
         asyncio.create_task(cleanup_old_files())
@@ -209,7 +209,7 @@ async def health_check():
             if hasattr(app_container, 'db_manager') and app_container.db_manager:
                 # Attempt a simple database query to verify connectivity
                 # Use the main database pool (first in the REQUIRED_DATABASES list)
-                pool = await app_container.db_manager.get_pool('agentic_workflow_as_service_database')
+                pool = await app_container.db_manager.get_pool(app_container.db_manager.REQUIRED_DATABASES[0])
                 if pool:
                     async with pool.acquire() as connection:
                         await connection.fetchval("SELECT 1")

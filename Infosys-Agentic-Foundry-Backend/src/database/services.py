@@ -20,6 +20,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, ChatMe
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from google.adk.events.event import Event
 from google.adk.sessions.session import Session
+from google.genai import types
+# from google.adk.sessions import DatabaseSessionService
 from google.adk.sessions import InMemorySessionService
 
 from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
@@ -33,12 +35,15 @@ from src.database.repositories import (
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
     FeedbackLearningRepository, EvaluationDataRepository,
     ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
-    ExportAgentRepository, McpToolRepository, AgentDataTableRepository, AgentMetadataRepository, ChatStateHistoryManagerRepository
+    ExportAgentRepository, McpToolRepository, RecycleMcpToolRepository, AgentDataTableRepository, 
+    AgentMetadataRepository, ChatStateHistoryManagerRepository, PipelineRepository, PipelineRunRepository,
+    PipelineStepsRepository, save_pending_module, get_all_pending_modules
 )
 from src.models.model_service import ModelService
 from src.prompts.prompts import CONVERSATION_SUMMARY_PROMPT
 from src.tools.tool_code_processor import ToolCodeProcessor
-from src.utils.secrets_handler import get_user_secrets
+from src.utils.secrets_handler import get_user_secrets, current_user_email
+from src.utils.tool_file_manager import ToolFileManager
 from telemetry_wrapper import logger as log, update_session_context
 from src.tools.tool_validation import graph
 
@@ -906,11 +911,13 @@ class McpToolService:
     def __init__(
         self,
         mcp_tool_repo: McpToolRepository,
+        recycle_mcp_tool_repo: 'RecycleMcpToolRepository',
         tag_service: TagService, # Needed for tag mapping
         tool_agent_mapping_repo: ToolAgentMappingRepository, # Needed for dependency checks
         agent_repo: AgentRepository # Needed for dependency checks
     ):
         self.mcp_tool_repo = mcp_tool_repo
+        self.recycle_mcp_tool_repo = recycle_mcp_tool_repo
         self.tag_service = tag_service
         self.tool_agent_mapping_repo = tool_agent_mapping_repo
         self.agent_repo = agent_repo
@@ -1564,20 +1571,233 @@ class McpToolService:
                     "message": f"The MCP tool you are trying to delete is being referenced by {len(agent_details)} agentic application(s).",
                     "details": agent_details,
                     "is_delete": False
-                }
-
-        # Delete from database
+                }       # All deletions (admin and creator) move to recycle bin (soft delete)
+        insert_success = await self.recycle_mcp_tool_repo.insert_recycle_mcp_tool_record(tool_data)
+        if not insert_success:
+            log.error(f"Failed to move MCP tool '{tool_id}' to recycle bin.")
+            return {"message": "Failed to move MCP tool to recycle bin.", "is_delete": False}
+        
+        # Delete from main table
         delete_success = await self.mcp_tool_repo.delete_mcp_tool_record(tool_id)
-
         if delete_success:
-            # Clean up tags
             await self.tag_service.clear_tags(tool_id=tool_id)
-
-            log.info(f"Successfully deleted MCP tool: {tool_data['tool_name']}.")
-            return {"message": f"Successfully deleted MCP tool: {tool_data['tool_name']}.", "is_delete": True}
+            log.info(f"Successfully moved MCP tool '{tool_data['tool_name']}' to recycle bin.")
+            return {"message": f"Successfully moved MCP tool '{tool_data['tool_name']}' to recycle bin.", "is_delete": True}
         else:
-            log.error(f"Failed to delete MCP tool: {tool_data['tool_name']}.")
+            log.error(f"Failed to delete MCP tool '{tool_data['tool_name']}' from main table after moving to recycle bin.")
             return {"message": f"Failed to delete MCP tool: {tool_data['tool_name']}.", "is_delete": False}
+
+    # --- MCP Tool Recycle Bin Operations ---
+
+    async def get_all_mcp_tools_from_recycle_bin(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all MCP tools from the recycle bin with tags and mcp_type.
+
+        Returns:
+            list: A list of dictionaries representing the MCP tools in the recycle bin.
+        """
+        tool_records = await self.recycle_mcp_tool_repo.get_all_recycle_mcp_tool_records()
+        tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+
+        for tool in tool_records:
+            # Parse mcp_config from JSON string to dict (if not already parsed)
+            if isinstance(tool.get("mcp_config"), str):
+                tool["mcp_config"] = json.loads(tool["mcp_config"])
+            
+            # Add mcp_type (file/url/module) derived from tool_id prefix
+            tool["mcp_type"] = await self._get_mcp_type_by_id(tool['tool_id'])
+            
+            # Add tags
+            tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+        
+        log.info(f"Retrieved {len(tool_records)} MCP tools from recycle bin.")
+        return tool_records
+
+    async def restore_mcp_tool_from_recycle_bin(self, tool_id: str) -> Dict[str, Any]:
+        """
+        Restores an MCP tool from the recycle bin to the main mcp_tool_table.
+
+        Args:
+            tool_id (str): The ID of the MCP tool to restore.
+
+        Returns:
+            dict: Status of the operation.
+        """
+        if not tool_id:
+            log.warning("No tool ID provided for MCP tool restoration.")
+            return {
+                "message": "Error: Must provide 'tool_id' to restore an MCP tool.",
+                "details": [],
+                "is_restored": False
+            }
+
+        tool_data = await self.recycle_mcp_tool_repo.get_recycle_mcp_tool_record(tool_id=tool_id)
+        if not tool_data:
+            log.warning(f"No MCP tool available in recycle bin with ID: {tool_id}")
+            return {
+                "message": f"No MCP tool available in recycle bin with ID: {tool_id}",
+                "details": [],
+                "is_restored": False
+            }
+
+        # Attempt to save to main table
+        success = await self.mcp_tool_repo.save_mcp_tool_record(tool_data)
+        
+        # Assign General tag
+        general_tag = await self.tag_service.get_tag(tag_name="General")
+        if general_tag:
+            await self.tag_service.assign_tags_to_tool(
+                tag_ids=general_tag["tag_id"],
+                tool_id=tool_data['tool_id']
+            )
+        
+        if not success:
+            log.error(f"Failed to restore MCP tool {tool_data['tool_name']} to main table (might already exist).")
+            return {
+                "message": f"Failed to restore MCP tool {tool_data['tool_name']} to main table (might already exist).",
+                "details": [],
+                "is_restored": False
+            }
+
+        # Assign tags if any
+        general_tag = await self.tag_service.get_tag(tag_name="General")
+        if general_tag:
+            await self.tag_service.assign_tags_to_tool(
+                tag_ids=general_tag["tag_id"],
+                tool_id=tool_data['tool_id']
+            )
+
+        # Delete from recycle bin
+        delete_success = await self.recycle_mcp_tool_repo.delete_recycle_mcp_tool_record(tool_data['tool_id'])
+        if delete_success:
+            log.info(f"Successfully restored MCP tool {tool_data['tool_id']} from recycle bin.")
+            return {
+                "message": f"Successfully restored MCP tool with ID: {tool_data['tool_id']}",
+                "details": [],
+                "is_restored": True
+            }
+        else:
+            log.error(f"Failed to delete MCP tool {tool_data['tool_id']} from recycle bin after restoration.")
+            return {
+                "message": f"MCP tool {tool_data['tool_id']} restored to main table, but failed to delete from recycle bin.",
+                "details": [],
+                "is_restored": False
+            }
+
+
+
+    async def permanent_delete_mcp_tool_from_recycle_bin(self, tool_id: str) -> Dict[str, Any]:
+        """
+        Deletes an MCP tool permanently from the recycle bin.
+
+        Args:
+            tool_id (str): The ID of the MCP tool to delete.
+
+        Returns:
+            dict: Status of the operation.
+        """
+        if not tool_id:
+            log.warning("No tool ID provided for permanent MCP tool deletion.")
+            return {
+                "message": "Error: Must provide 'tool_id' to permanently delete an MCP tool.",
+                "details": [],
+                "is_deleted": False
+            }
+
+        tool_data = await self.recycle_mcp_tool_repo.get_recycle_mcp_tool_record(tool_id=tool_id)
+        if not tool_data:
+            log.warning(f"No MCP tool available in recycle bin with ID: {tool_id}")
+            return {
+                "message": f"No MCP tool available in recycle bin with ID: {tool_id}",
+                "details": [],
+                "is_deleted": False
+            }
+
+        success = await self.recycle_mcp_tool_repo.delete_recycle_mcp_tool_record(tool_data['tool_id'])
+        if success:
+            log.info(f"Successfully permanently deleted MCP tool from recycle bin with ID: {tool_data['tool_id']}")
+            return {
+                "message": f"Successfully permanently deleted MCP tool from recycle bin with ID: {tool_data['tool_id']}",
+                "details": [],
+                "is_deleted": True
+            }
+        else:
+            log.error(f"Failed to permanently delete MCP tool {tool_data['tool_id']} from recycle bin.")
+            return {
+                "message": f"Failed to permanently delete MCP tool {tool_data['tool_id']} from recycle bin.",
+                "details": [],
+                "is_deleted": False
+            }
+
+    async def get_unused_mcp_tools(self, threshold_days: int = 15) -> List[Dict[str, Any]]:
+        """
+        Retrieves all MCP tools that haven't been used (based on updated_on timestamp).
+        Since MCP tools don't have a last_used field, we use updated_on as a proxy.
+        
+        Args:
+            threshold_days (int): Number of days to consider an MCP tool as unused. Default is 15.
+            
+        Returns:
+            List[Dict[str, Any]]: A list of unused MCP tools with their details, including mcp_type, tags, and mcp_config.
+        """
+        try:
+            # Get MCP tools where updated_on is older than threshold
+            # Using updated_on since MCP tools don't have a last_used column
+            query = """
+                SELECT *
+                FROM mcp_tool_table 
+                WHERE updated_on < (NOW() - INTERVAL '1 day' * $1)
+                ORDER BY updated_on ASC
+            """
+            
+            result = await self.mcp_tool_repo.pool.fetch(query, threshold_days)
+            
+            tools = []
+            # Collect all unique created_by email addresses
+            email_set = set(row.get('created_by') for row in result if row.get('created_by'))
+
+            # Batch fetch usernames for all emails
+            if email_set:
+                email_list = list(email_set)
+                async with self.mcp_tool_repo.login_pool.acquire() as conn:
+                    user_rows = await conn.fetch(
+                        "SELECT mail_id, user_name FROM login_credential WHERE mail_id = ANY($1)", email_list
+                    )
+                email_to_username = {row['mail_id']: row['user_name'] for row in user_rows}
+            else:
+                email_to_username = {}
+
+            # Fetch tags mapping once for all tools
+            tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+
+            for row in result:
+                tool_dict = dict(row)
+                
+                # Parse mcp_config from JSON string to dict if needed
+                if isinstance(tool_dict.get("mcp_config"), str):
+                    tool_dict["mcp_config"] = json.loads(tool_dict["mcp_config"])
+                
+                # Add mcp_type (file/url/module)
+                tool_dict["mcp_type"] = await self._get_mcp_type_by_id(tool_dict['tool_id'])
+                
+                # Add tags
+                tool_dict['tags'] = tool_id_to_tags.get(tool_dict['tool_id'], [])
+                
+                # Replace email with username if available
+                email = tool_dict.get('created_by')
+                if email:
+                    username = email_to_username.get(email)
+                    if username:
+                        tool_dict['created_by'] = username
+                
+                tools.append(tool_dict)
+                
+            log.info(f"Found {len(tools)} unused MCP tools (threshold: {threshold_days} days)")
+            return tools
+            
+        except Exception as e:
+            log.error(f"Error retrieving unused MCP tools: {e}")
+            return []
 
     # --- MCP Tool Approval Operations ---
 
@@ -2051,7 +2271,8 @@ class ToolService:
         tool_code_processor: ToolCodeProcessor,
         agent_repo: AgentRepository, # Need agent_repo for dependency checks
         model_service: ModelService,
-        mcp_tool_service: McpToolService # Inject the new MCP Tool Service
+        mcp_tool_service: McpToolService, # Inject the new MCP Tool Service
+        tool_file_manager: ToolFileManager # Inject the ToolFileManager
     ):
         self.tool_repo = tool_repo
         self.recycle_tool_repo = recycle_tool_repo
@@ -2061,6 +2282,25 @@ class ToolService:
         self.agent_repo = agent_repo # Store agent_repo for direct use in dependency checks
         self.model_service = model_service
         self.mcp_tool_service = mcp_tool_service # Store MCP Tool Service
+        self.tool_file_manager = tool_file_manager # Store ToolFileManager
+
+    def _extract_module_name_from_error(self, error_message: str) -> Optional[str]:
+        """Extract module name from 'No module named' error messages."""
+        if not error_message or "No module named" not in error_message:
+            return None
+        
+        match = re.search(r"No module named ['\"]([^'\"]+)['\"]", error_message)
+        if match:
+            return match.group(1)
+        return None
+
+    async def get_pending_modules(self) -> List[Dict[str, Any]]:
+        """Get all pending modules from the database."""
+        try:
+            return await get_all_pending_modules(self.tool_repo.pool)
+        except Exception as e:
+            log.error(f"Error retrieving pending modules: {e}")
+            return []
 
     # --- Tool Creation Operations ---
 
@@ -2131,6 +2371,22 @@ class ToolService:
                     feedback_key = j.replace("validation_", "feedback_")
                     errors[j] = workflow_result.get(feedback_key)
             if errors:
+                if 'validation_case1' in errors:
+                    feedback_case1 = workflow_result.get('feedback_case1', '')
+                    module_name = self._extract_module_name_from_error(feedback_case1)
+                    if module_name:
+                        try:
+                            await save_pending_module(
+                                pool=self.tool_repo.pool,
+                                module_name=module_name,
+                                tool_name=tool_data['tool_name'],
+                                created_by=current_user_email.get(),
+                                tool_code=tool_data.get('code_snippet')
+                            )
+                            log.info(f"Saved pending module '{module_name}' for tool '{tool_data['tool_name']}'")
+                        except Exception as e:
+                            log.error(f"Error saving pending module: {e}")
+                
                 verify=list(errors.values())
                 return {
                         "message": verify[0],
@@ -2208,6 +2464,14 @@ class ToolService:
             tags_status = await self.tag_service.assign_tags_to_tool(
                 tag_ids=tool_data['tag_ids'], tool_id=tool_data['tool_id']
             )
+            
+            # Create .py file for the tool using tool_name
+            file_creation_result = await self.tool_file_manager.create_tool_file(tool_data)
+            if file_creation_result.get("success"):
+                log.info(f"Tool file created at: {file_creation_result.get('file_path')}")
+            else:
+                log.warning(f"Failed to create tool file: {file_creation_result.get('message')}")
+            
             log.info(f"Successfully onboarded tool with tool_id: {tool_data['tool_id']}")
             return {
                 "message": f"Successfully onboarded tool: {tool_data['tool_name']}",
@@ -2216,7 +2480,9 @@ class ToolService:
                 "model_name": tool_data.get('model_name', ''),
                 "tags_status": tags_status,
                 "created_by": tool_data.get('created_by', ''),
-                "is_created": True
+                "is_created": True,
+                "file_created": file_creation_result.get("success", False),
+                "file_path": file_creation_result.get("file_path", "")
             }
         else:
             log.info(f"Tool Insertion Status: Integrity error inserting data: Tool name {tool_data['tool_name']} already exists.")
@@ -2683,6 +2949,22 @@ class ToolService:
                         feedback_key = j.replace("validation_", "feedback_")
                         errors[j] = workflow_result.get(feedback_key)
                 if errors:
+                    if 'validation_case1' in errors:
+                        feedback_case1 = workflow_result.get('feedback_case1', '')
+                        module_name = self._extract_module_name_from_error(feedback_case1)
+                        if module_name:
+                            try:
+                                await save_pending_module(
+                                    pool=self.tool_repo.pool,
+                                    module_name=module_name,
+                                    tool_name=tool_data['tool_name'],
+                                    created_by=current_user_email.get(),
+                                    tool_code=code_snippet  
+                                )
+                                log.info(f"Saved pending module '{module_name}' during tool update for '{tool_data['tool_name']}'")
+                            except Exception as e:
+                                log.error(f"Error saving pending module during update: {e}")
+                    
                     verify=list(errors.values())
                     return {
                             "message": verify[0],
@@ -2790,10 +3072,19 @@ class ToolService:
         success = await self.tool_repo.update_tool_record(tool_data, update_tool_id)
 
         if success:
+            # Update the .py file for the tool using tool_name
+            file_update_result = await self.tool_file_manager.update_tool_file(tool_data)
+            if file_update_result.get("success"):
+                log.info(f"Tool file updated at: {file_update_result.get('file_path')}")
+            else:
+                log.warning(f"Failed to update tool file: {file_update_result.get('message')}")
+            
             status = {
                 "message": f"Successfully updated the tool: {tool_data['tool_name']}",
                 "details": [],
-                "is_update": True
+                "is_update": True,
+                "file_updated": file_update_result.get("success", False),
+                "file_path": file_update_result.get("file_path", "")
             }
         else:
             status = {
@@ -2915,11 +3206,19 @@ class ToolService:
         delete_success = await self.tool_repo.delete_tool_record(tool_data['tool_id'])
 
         if delete_success:
+            # Delete the .py file for the tool using tool_name
+            file_delete_result = await self.tool_file_manager.delete_tool_file(tool_data['tool_name'])
+            if file_delete_result.get("success"):
+                log.info(f"Tool file deleted: {file_delete_result.get('file_path')}")
+            else:
+                log.warning(f"Failed to delete tool file (may not exist): {file_delete_result.get('message')}")
+            
             log.info(f"Successfully deleted tool with ID: {tool_data['tool_id']}")
             return {
                 "message": f"Successfully deleted tool: {tool_data['tool_name']}",
                 "details": [],
-                "is_delete": True
+                "is_delete": True,
+                "file_deleted": file_delete_result.get("success", False)
             }
         else:
             log.error(f"Failed to delete tool {tool_data['tool_id']} from main table.")
@@ -3309,13 +3608,14 @@ Tool Code Snippet:
     async def restore_tool(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Restores a tool from the recycle bin to the main tool table.
+        Also recreates the .py file using data fetched from the database.
 
         Args:
             tool_id (str, optional): The ID of the tool to restore.
             tool_name (str, optional): The name of the tool to restore.
 
         Returns:
-            dict: Status of the operation.
+            dict: Status of the operation including file restoration status.
         """
         if not tool_id and not tool_name:
             log.warning("No tool ID or name provided for restoration.")
@@ -3325,6 +3625,7 @@ Tool Code Snippet:
                 "is_restored": False
             }
 
+        # Fetch tool data from recycle bin
         tool_data = await self.recycle_tool_repo.get_recycle_tool_record(tool_id=tool_id, tool_name=tool_name)
         if not tool_data:
             log.warning(f"No Tool available in recycle bin with ID: {tool_id or tool_name}")
@@ -3349,6 +3650,13 @@ Tool Code Snippet:
                 "is_restored": False
             }
 
+        # Recreate the .py file using database data
+        file_restore_result = await self.tool_file_manager.restore_tool_file(tool_data)
+        if file_restore_result.get("success"):
+            log.info(f"Tool file restored at: {file_restore_result.get('file_path')}")
+        else:
+            log.warning(f"Failed to restore tool file: {file_restore_result.get('message')}")
+
         # Delete from recycle bin
         delete_success = await self.recycle_tool_repo.delete_recycle_tool_record(tool_data['tool_id'])
         if delete_success:
@@ -3356,14 +3664,18 @@ Tool Code Snippet:
             return {
                 "message": f"Successfully restored tool with ID: {tool_data['tool_id']}",
                 "details": [],
-                "is_restored": True
+                "is_restored": True,
+                "file_restored": file_restore_result.get("success", False),
+                "file_path": file_restore_result.get("file_path", "")
             }
         else:
             log.error(f"Failed to delete tool {tool_data['tool_id']} from recycle bin after restoration.")
             return {
                 "message": f"Tool {tool_data['tool_id']} restored to main table, but failed to delete from recycle bin.",
                 "details": [],
-                "is_restored": False
+                "is_restored": False,
+                "file_restored": file_restore_result.get("success", False),
+                "file_path": file_restore_result.get("file_path", "")
             }
 
     async def delete_tool_from_recycle_bin(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> Dict[str, Any]:
@@ -3453,7 +3765,10 @@ class AgentServiceUtils:
         """
         Normalizes the agent name by removing invalid characters and formatting it.
         """
-        return re.sub(r'[^a-z0-9_]', '', agent_name.strip().lower().replace(" ", "_"))
+        normalized_agent_name: str = re.sub(r'[^a-z0-9_]', '', agent_name.strip().lower().replace(" ", "_"))
+        if not normalized_agent_name or normalized_agent_name[0].isdigit():
+            normalized_agent_name = f"agent_{normalized_agent_name}"
+        return normalized_agent_name
 
     @staticmethod
     def get_code_for_agent_type(agent_type: str) -> str:
@@ -4254,7 +4569,21 @@ class AgentService:
         """
         Generates worker agents prompt for the meta type agent describing the available agents.
         """
-        worker_agents_prompt = ""
+        memory_tool_data = """
+        tool_name : manage_tool
+        tool_description : Stores personal or contextual information for the user in long-term memory.
+                Useful when the user says something you'd want to remember later — like their name,
+                preferences, relationships, or other personal facts.
+        
+        tool_namespace : infyagent_framework/{user_id}/conversation_collection
+        
+        tool_name : search_tool
+        tool_description : Searches the user's memory for previously stored facts or information.
+                Useful when the user asks a question that may refer to something they told earlier.
+                The tool searches the user's memory for previously stored facts or information.
+        tool_namespace : infyagent_framework/{user_id}/conversation_collection
+        """
+        worker_agents_prompt = f"{memory_tool_data}\n\n\n\n"
         success_count = 0
         for agent_id in agents_id:
             agent_info = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
@@ -4921,6 +5250,40 @@ class AgentService:
 
         log.info("Agent ID migration process completed.")
         return {"status": "completed", "summary": migration_summary}
+    
+    async def get_tools_or_agents_mapped_to_agent(self, agentic_application_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all tools or worker agents mapped to a specific agent.
+        For meta/planner-meta agents, returns worker agent names.
+        For other agents, returns tool names.
+
+        Args:
+            agentic_application_id (str): The ID of the agent.
+
+        Returns:
+            list: A list of tool names or worker agent names mapped to the agent.
+        """
+        # First, get the agent type
+        agent_records = await self.get_agent_details_studio(agentic_application_id=agentic_application_id)
+        names = []
+        mcp_tool_ids = []
+        if agent_records["agentic_application_type"] in self.meta_type_templates:
+            # It's a meta agent, return worker agent names
+            for worker_agent in agent_records["tools_id"]:
+                names.append(await AgentServiceUtils._normalize_agent_name(worker_agent["agentic_application_name"]))
+            return names
+
+        for tools in agent_records["tools_id"]:
+            if tools["tool_id"].startswith('mcp_'):
+                mcp_tool_ids.append(tools["tool_id"])
+            else:
+                names.append(tools["tool_name"])
+        # Fetch MCP tool names
+        mcp_tools = await self.mcp_tool_service.get_live_mcp_tools_from_servers(mcp_tool_ids)
+        for mcp_tool in mcp_tools["all_live_tools"]:
+            names.append(mcp_tool.name)
+        return names           
+
 
 
 # --- Chat History Service ---
@@ -4939,7 +5302,7 @@ class ChatService:
             cross_encoder: CrossEncoder,
             tool_repo: ToolRepository = None,
             agent_repo: AgentRepository = None,
-            gadk_session_service: InMemorySessionService = None
+            # gadk_session_service: DatabaseSessionService = None
         ):
         """
         Initializes the ChatService.
@@ -4959,6 +5322,9 @@ class ChatService:
         self.agent_repo = agent_repo
         self.conversation_summary_prompt_template = PromptTemplate.from_template(CONVERSATION_SUMMARY_PROMPT)
         self.python_based_agent_types = ["simple_ai_agent", "hybrid_agent"] # List of agent types using the Python-based agent
+        # db_url = "sqlite:///./google_adk_db1.db"
+        # db_url = chat_history_repo.DB_URL
+        # self.gadk_session_service = gadk_session_service or DatabaseSessionService(db_url=db_url)
         self.gadk_session_service = InMemorySessionService()
 
 
@@ -5089,7 +5455,7 @@ class ChatService:
         self,
         agentic_application_id: str,
         session_id: str,
-        framework_type: Literal["langgraph", "google_adk"] = "langgraph"
+        framework_type: Literal["langgraph", "google_adk", "pure_python"] = "langgraph"
     ) -> Dict[str, Any]:
         """
         Retrieves the conversation history for a session, supporting multiple agent frameworks.
@@ -5102,7 +5468,34 @@ class ChatService:
         Returns:
             A dictionary containing the conversation history or an error message.
         """
-        if framework_type == "google_adk":
+        # --- This block contains all the original logic for LangGraph agents ---
+        thread_id = await self._get_thread_id(agentic_application_id, session_id)
+
+        if await self.is_python_based_agent(agentic_application_id):
+            try:
+                # ... (original logic for Python-based agents)
+                history_entries = await self.chat_state_history_manager.get_recent_history(thread_id)
+                if not history_entries:
+                    log.warning(f"No previous conversation found for Python-based agent session ID: {session_id}.")
+                    return {"executor_messages": []}
+
+                # Format the history entries into the desired structure
+                formatted_history = await self._format_python_based_agent_history(history_entries)
+                formatted_history["agentic_application_id"] = agentic_application_id
+                formatted_history["session_id"] = session_id
+
+                
+                log.info(f"Previous conversation retrieved and formatted for Python-based agent session ID: {session_id}.")
+                return formatted_history
+
+            except Exception as e:
+                log.error(f"Error retrieving Python-based agent history for session {session_id}: {e}", exc_info=True)
+                return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
+
+            finally:
+                update_session_context(session_id='Unassigned', agent_id='Unassigned')
+
+        elif framework_type == "google_adk":
             user_id = self._extract_user_email_from_session_id(session_id)
             
             log.info(f"Retrieving Google ADK history for session '{session_id}' and user '{user_id}'.")
@@ -5132,97 +5525,31 @@ class ChatService:
                 update_session_context(session_id='Unassigned', agent_id='Unassigned')
 
         elif framework_type == "langgraph":
-            # --- This block contains all the original logic for LangGraph agents ---
-            thread_id = await self._get_thread_id(agentic_application_id, session_id)
+            try:
+                # ... (original logic for standard LangGraph agents)
+                async with await self.get_checkpointer_context_manager() as checkpointer:
+                # checkpointer.setup() is often called implicitly or handled by LangGraph's app.compile()
+                # but explicitly calling it here ensures the table exists if it's the first time.
+                # However, for just retrieving, it might not be strictly necessary if tables are pre-created.
+                    await checkpointer.setup() # Ensure table exists
+                    config = await self._get_thread_config(thread_id)
+                    data = await checkpointer.aget(config) # Retrieve the state
+                    data = data.get("channel_values", {}) if data else {}
+                if not data:
+                    log.warning(f"No previous conversation found for LangGraph agent session ID: {session_id} and agent ID: {agentic_application_id}.")
+                    return {"executor_messages": []} # Return empty list if no data
 
-            if await self.is_python_based_agent(agentic_application_id):
-                try:
-                    # ... (original logic for Python-based agents)
-                    history_entries = await self.chat_state_history_manager.get_recent_history(thread_id)
-                    if not history_entries:
-                        log.warning(f"No previous conversation found for Python-based agent session ID: {session_id}.")
-                        return {"executor_messages": []}
+                # Segregate messages using the static method
+                data["executor_messages"] = await self.segregate_conversation_from_raw_chat_history_with_pretty_steps(data, agentic_application_id=agentic_application_id, session_id=session_id)
 
-                    # Format the history entries into the desired structure
-                    formatted_history = await self._format_python_based_agent_history(history_entries)
-                    formatted_history["agentic_application_id"] = agentic_application_id
-                    formatted_history["session_id"] = session_id
+                log.info(f"Previous conversation retrieved successfully for session ID: {session_id} and agent ID: {agentic_application_id}.")
+                return data
+            except Exception as e:
+                log.error(f"Error occurred while retrieving previous conversation for LangGraph agent session {session_id}: {e}", exc_info=True)
+                return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
+            finally:
+                update_session_context(session_id='Unassigned', agent_id='Unassigned')
 
-                    # Restore response_time from long-term memory for executor_messages
-                    executor_messages = formatted_history.get("executor_messages", [])
-                    if executor_messages:
-                        try:
-                            db_records = await self.get_chat_history_from_long_term_memory(
-                                agentic_application_id=agentic_application_id,
-                                session_id=session_id,
-                                limit=len(executor_messages) + 5
-                            )
-                            log.info(f"Retrieved {len(db_records)} database records for response_time restoration in get_chat_history")
-                            
-                            # Create a lookup dict for faster matching
-                            db_lookup = {record.get('human_message', ''): record for record in db_records}
-                            
-                            # Restore response_time and timestamp values by matching user queries
-                            for message in executor_messages:
-                                user_query = message.get('user_query', '')
-                                if user_query in db_lookup:
-                                    record = db_lookup[user_query]
-                                    db_response_time = record.get('response_time')
-                                    db_start_ts = record.get('start_timestamp')
-                                    db_end_ts = record.get('end_timestamp')
-                                    
-                                    # Set timestamps from DB
-                                    message['time_stamp'] = db_end_ts
-                                    message['start_timestamp'] = db_start_ts
-                                    message['end_timestamp'] = db_end_ts
-                                    
-                                    # Calculate response_time from timestamps if not stored in DB
-                                    if db_response_time is not None:
-                                        message['response_time'] = db_response_time
-                                    elif db_start_ts and db_end_ts:
-                                        try:
-                                            calculated_time = (db_end_ts - db_start_ts).total_seconds()
-                                            message['response_time'] = calculated_time
-                                        except Exception:
-                                            pass
-                        except Exception as e:
-                            log.warning(f"Could not restore response times in get_chat_history: {e}")
-
-                    log.info(f"Previous conversation retrieved and formatted for Python-based agent session ID: {session_id}.")
-                    return formatted_history
-
-                except Exception as e:
-                    log.error(f"Error retrieving Python-based agent history for session {session_id}: {e}", exc_info=True)
-                    return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
-
-                finally:
-                    update_session_context(session_id='Unassigned', agent_id='Unassigned')
-
-            else:
-                try:
-                    # ... (original logic for standard LangGraph agents)
-                    async with await self.get_checkpointer_context_manager() as checkpointer:
-                    # checkpointer.setup() is often called implicitly or handled by LangGraph's app.compile()
-                    # but explicitly calling it here ensures the table exists if it's the first time.
-                    # However, for just retrieving, it might not be strictly necessary if tables are pre-created.
-                        await checkpointer.setup() # Ensure table exists
-                        config = await self._get_thread_config(thread_id)
-                        data = await checkpointer.aget(config) # Retrieve the state
-                        data = data.get("channel_values", {}) if data else {}
-                    if not data:
-                        log.warning(f"No previous conversation found for LangGraph agent session ID: {session_id} and agent ID: {agentic_application_id}.")
-                        return {"executor_messages": []} # Return empty list if no data
-
-                    # Segregate messages using the static method
-                    data["executor_messages"] = await self.segregate_conversation_from_raw_chat_history_with_pretty_steps(data, agentic_application_id=agentic_application_id, session_id=session_id)
-
-                    log.info(f"Previous conversation retrieved successfully for session ID: {session_id} and agent ID: {agentic_application_id}.")
-                    return data
-                except Exception as e:
-                    log.error(f"Error occurred while retrieving previous conversation for LangGraph agent session {session_id}: {e}", exc_info=True)
-                    return {"error": f"An unknown error occurred while retrieving conversation: {e}"}
-                finally:
-                    update_session_context(session_id='Unassigned', agent_id='Unassigned')
         else:
             log.warning(f"Attempted to get history for session '{session_id}' with an unknown framework_type: '{framework_type}'.")
             return {"error": f"Retrieval failed: Unknown framework_type '{framework_type}'. Supported types are 'google_adk' and 'langgraph'."}
@@ -5379,7 +5706,7 @@ class ChatService:
             log.error(f"An error occurred while retrieving detailed chats for user '{user_id}': {e}")
             return {}
 
-    async def get_old_chats_by_user_and_agent(self, user_email: str, agent_id: str, framework_type: Literal["langgraph", "google_adk"] = "langgraph") -> Dict[str, Any]:
+    async def get_old_chats_by_user_and_agent(self, user_email: str, agent_id: str, framework_type: Literal["langgraph", "google_adk", "pure_python"] = "langgraph") -> Dict[str, Any]:
         """
         Retrieves old chat sessions for a specific user and agent.
         Handles both LangGraph-based and Python-based agents.
@@ -5392,9 +5719,6 @@ class ChatService:
         Returns:
             Dict[str, Any]: A dictionary where keys are session IDs and values are lists of chat records.
         """
-        if framework_type == "google_adk":
-            return await self.get_detailed_chats_by_user_and_app_for_gadk(user_id=user_email, app_name=agent_id)
-
         table_name = await self._get_chat_history_table_name(agent_id)
         result = {}
 
@@ -5440,6 +5764,9 @@ class ChatService:
                     "agent_response": ai_message_content
                 })
 
+        elif framework_type == "google_adk":
+            return await self.get_detailed_chats_by_user_and_app_for_gadk(user_id=user_email, app_name=agent_id)
+
         else:
             try:
                 raw_records = await self.repo.get_chat_records_by_session_prefix(
@@ -5470,7 +5797,7 @@ class ChatService:
         log.info(f"Retrieved old chats for user '{user_email}' and agent '{agent_id}'.")
         return result
 
-    async def delete_session(self, agentic_application_id: str, session_id: str, framework_type: Literal["langgraph", "google_adk"] = "langgraph") -> Dict[str, Any]:
+    async def delete_session(self, agentic_application_id: str, session_id: str, framework_type: Literal["langgraph", "google_adk", "pure_python"] = "langgraph") -> Dict[str, Any]:
         """
         Deletes the entire conversation history for a specific session based on the agent's framework.
 
@@ -5482,7 +5809,27 @@ class ChatService:
         Returns:
             A dictionary indicating the status of the deletion operation.
         """
-        if framework_type == "google_adk":
+        # --- Handle LangGraph Session Deletion (maintaining original logic) ---
+        thread_id = await self._get_thread_id(agentic_application_id, session_id)
+
+        if await self.is_python_based_agent(agentic_application_id):
+            # Handle "Python-based" LangGraph agents
+            log.info(f"Attempting to delete Python-based LangGraph session '{session_id}'.")
+            try:
+                success = await self.chat_state_history_manager.clear_chat_history(thread_id)
+                if success:
+                    return {
+                        "status": "success",
+                        "message": f"Memory history deleted successfully for Python-based agent session {session_id}.",
+                        "chat_rows_deleted": "N/A"
+                    }
+                else:
+                    return {"status": "error", "message": f"Failed to clear history for Python-based agent session {session_id}."}
+            except Exception as e:
+                log.error(f"Service-level error during delete for Python-based agent session '{session_id}': {e}")
+                return {"status": "error", "message": f"An error occurred during deletion: {e}"}
+
+        elif framework_type == "google_adk":
             # --- Handle Google ADK Session Deletion ---
             user_id = self._extract_user_email_from_session_id(session_id)
             log.info(f"Attempting to delete Google ADK session '{session_id}' for user '{user_id}'.")
@@ -5503,51 +5850,32 @@ class ChatService:
                 return {"status": "error", "message": f"An error occurred during Google ADK session deletion: {e}"}
 
         elif framework_type == "langgraph":
-            # --- Handle LangGraph Session Deletion (maintaining original logic) ---
-            thread_id = await self._get_thread_id(agentic_application_id, session_id)
+            # Handle standard LangGraph agents
+            log.info(f"Attempting to delete standard LangGraph session '{session_id}'.")
+            chat_table_name = await self._get_chat_history_table_name(agentic_application_id)
 
-            if await self.is_python_based_agent(agentic_application_id):
-                # Handle "Python-based" LangGraph agents
-                log.info(f"Attempting to delete Python-based LangGraph session '{session_id}'.")
-                try:
-                    success = await self.chat_state_history_manager.clear_chat_history(thread_id)
-                    if success:
-                        return {
-                            "status": "success",
-                            "message": f"Memory history deleted successfully for Python-based agent session {session_id}.",
-                            "chat_rows_deleted": "N/A"
-                        }
-                    else:
-                        return {"status": "error", "message": f"Failed to clear history for Python-based agent session {session_id}."}
-                except Exception as e:
-                    log.error(f"Service-level error during delete for Python-based agent session '{session_id}': {e}")
-                    return {"status": "error", "message": f"An error occurred during deletion: {e}"}
-            else:
-                # Handle standard LangGraph agents
-                log.info(f"Attempting to delete standard LangGraph session '{session_id}'.")
-                chat_table_name = await self._get_chat_history_table_name(agentic_application_id)
+            try:
+                chat_rows_deleted = await self.repo.delete_session_transactional(
+                    chat_table_name=chat_table_name,
+                    thread_id=thread_id,
+                    session_id=session_id
+                )
+                conversation_summary_and_preference_deleted = await self.repo.delete_agent_conversation_summary(
+                    agentic_application_id=agentic_application_id,
+                    session_id=session_id
+                )
+                if conversation_summary_and_preference_deleted:
+                    log.info(f"Deleted conversation summary and preference for session '{session_id}'.")
 
-                try:
-                    chat_rows_deleted = await self.repo.delete_session_transactional(
-                        chat_table_name=chat_table_name,
-                        thread_id=thread_id,
-                        session_id=session_id
-                    )
-                    conversation_summary_and_preference_deleted = await self.repo.delete_agent_conversation_summary(
-                        agentic_application_id=agentic_application_id,
-                        session_id=session_id
-                    )
-                    if conversation_summary_and_preference_deleted:
-                        log.info(f"Deleted conversation summary and preference for session '{session_id}'.")
+                return {
+                    "status": "success",
+                    "message": f"Memory history deleted successfully for LangGraph agent session {session_id}.",
+                    "chat_rows_deleted": chat_rows_deleted
+                }
+            except Exception as e:
+                log.error(f"Service-level error during transactional delete for LangGraph agent session '{session_id}': {e}")
+                return {"status": "error", "message": f"An error occurred during deletion: {e}"}
 
-                    return {
-                        "status": "success",
-                        "message": f"Memory history deleted successfully for LangGraph agent session {session_id}.",
-                        "chat_rows_deleted": chat_rows_deleted
-                    }
-                except Exception as e:
-                    log.error(f"Service-level error during transactional delete for LangGraph agent session '{session_id}': {e}")
-                    return {"status": "error", "message": f"An error occurred during deletion: {e}"}
         else:
             # --- Handle Unknown Framework Type ---
             log.warning(f"Attempted to delete session '{session_id}' with an unknown framework_type: '{framework_type}'.")
@@ -5716,16 +6044,6 @@ class ChatService:
                 # Log the error but don't fail the conversation processing
                 log.warning(f"Warning: Failed to update last_used for agent {agentic_application_id}: {e}")
 
-        # Extract existing response_time values
-        existing_response_times = {}
-        if (executor_messages and isinstance(executor_messages, list) and len(executor_messages) > 0 and
-            isinstance(executor_messages[0], dict) and "user_query" in executor_messages[0]):
-            for msg in executor_messages:
-                if isinstance(msg, dict) and "user_query" in msg:
-                    user_query = msg["user_query"]
-                    response_time = msg.get("response_time")
-                    if response_time is not None:
-                        existing_response_times[user_query] = response_time
                         
         # return executor_messages
         if not executor_messages[0] or not hasattr(executor_messages[0], 'role') or executor_messages[0].role != "user_query":
@@ -5741,8 +6059,13 @@ class ChatService:
                 del response["parts_storage"]
         except KeyError:
             pass
-
+        response_time = None
+        start_timestamp = None
         for message in reversed(executor_messages):
+            if message.type == "chat" and message.role == "response_time":
+                response_time = message.content[0].get("response_time")
+                start_timestamp = message.content[0].get("start_timestamp")
+                continue
             agent_steps.append(message)
             if message.type == "human" and hasattr(message, 'role') and message.role=="user_query":
                 data = ""
@@ -5771,7 +6094,6 @@ class ChatService:
                             tools_used[msg.tool_call_id] = {}
                         tools_used[msg.tool_call_id]["status"] = msg.status
                         tools_used[msg.tool_call_id]["output"] = msg.content
-                    data += "\n"+ msg.pretty_repr()
 
 
                 # Create conversation object based on user role
@@ -5780,6 +6102,8 @@ class ChatService:
                     new_conversation = {
                         "user_query": message.content,
                         "final_response": agent_steps[0].content if (agent_steps[0].type == "ai") and ("tool_calls" not in agent_steps[0].additional_kwargs) and ("function_call" not in agent_steps[0].additional_kwargs) else "",
+                        "response_time": response_time,
+                        "start_timestamp": start_timestamp,
                         "parts": parts_dict.get(agent_steps[0].id, [
                             {
                                 "type": "text",
@@ -5802,8 +6126,9 @@ class ChatService:
                     new_conversation = {
                         "user_query": message.content,
                         "final_response": agent_steps[0].content if (agent_steps[0].type == "ai") and ("tool_calls" not in agent_steps[0].additional_kwargs) and ("function_call" not in agent_steps[0].additional_kwargs) else "",
+                        "response_time": response_time,
+                        "start_timestamp": start_timestamp,
                         "tools_used": tools_used,
-                        "agent_steps": data,
                         "additional_details": agent_steps,
                         "parts": parts_dict.get(agent_steps[0].id, [
                             {
@@ -5822,10 +6147,6 @@ class ChatService:
                     else:
                         new_conversation.update({"show_canvas": False})
                     
-                    # Initialize response_time field for non-USER roles
-                    preserved_response_time = existing_response_times.get(message.content)
-                    new_conversation["response_time"] = preserved_response_time
-                    new_conversation["time_stamp"] = response.get("end_timestamp")
                     
                     # Apply tool call logic only for non-USER roles
                     if (agent_steps[0].type == "ai") and (("tool_calls" in agent_steps[0].additional_kwargs) or ("function_call" in agent_steps[0].additional_kwargs)):
@@ -5843,33 +6164,6 @@ class ChatService:
                     part.update({"is_last": True})
         
         final_conversation_list = list(reversed(conversation_list))
-
-        # restore response_time values from database if chat_service is provided
-        if agentic_application_id and session_id:
-            try:
-                db_records = await self.get_chat_history_from_long_term_memory(
-                    agentic_application_id=agentic_application_id,
-                    session_id=session_id,
-                    limit=len(final_conversation_list)
-                )
-
-                log.info(f"Auto-retrieved {len(db_records)} database records for response_time restoration")
-
-                # Restore response_time values by matching user queries
-                for message in final_conversation_list:
-                    user_query = message.get('user_query', '')
-                    if message.get('response_time') is None:
-                        for record in db_records:
-                            if record.get('human_message') == user_query and record.get('response_time') is not None:
-                                message['response_time'] = record['response_time']
-                                message['time_stamp'] = record.get('start_timestamp')
-                                message['start_timestamp'] = record.get('start_timestamp')
-                                message['end_timestamp'] = record.get('end_timestamp')
-                                break
-                                
-            except Exception as e:
-                log.warning(f"Could not auto-restore response times: {e}")
-        
         return final_conversation_list
 
     @staticmethod
@@ -5908,7 +6202,8 @@ class ChatService:
         session_id: str,
         message_type: str = "ai",
         start_tag: str = "[liked_by_user:]",
-        end_tag: str = "[:liked_by_user]"
+        end_tag: str = "[:liked_by_user]",
+        framework_type: Literal["langgraph", "google_adk", "pure_python"] = "langgraph"
     ) -> Dict[str, str]:
         """
         Handles the like/unlike feedback for the latest message and returns a user-friendly message.
@@ -5923,7 +6218,7 @@ class ChatService:
         Returns:
             Dict[str, str]: A dictionary containing a 'message' key with the status.
         """
-        if await self.is_python_based_agent(agentic_application_id):
+        if await self.is_python_based_agent(agentic_application_id) or framework_type == "google_adk":
             update_status = True
         else:
             update_status = await self.update_latest_query_response_with_tag(
@@ -6558,7 +6853,8 @@ class ChatService:
             additional_details = [] # To store messages with 'type' key
             last_conversation_plan = None
             is_replan = False
-
+            response_time = 0
+            start_timestamp = None
             # Iterate through agent_steps_raw in chronological order for pretty printing
             for msg in agent_steps_raw:
                 role = msg.get("role")
@@ -6566,6 +6862,11 @@ class ChatService:
                 
                 # Add to additional_details with 'type' key
                 detail_msg = msg.copy()
+                response_time_details = detail_msg.pop("response_time_details", {})
+                if response_time_details:
+                    response_time += response_time_details.get("response_time", 0)
+                    if not start_timestamp:
+                        start_timestamp = response_time_details.get("start_timestamp", start_timestamp)
                 online_evaluation_results: dict = None
                 if role == "user":
                     detail_msg["type"] = "human"
@@ -6660,18 +6961,14 @@ class ChatService:
             if final_response:
                 ongoing_conversation.append(additional_details[0])
             final_formatted_conversation["parts"] = parts
-            if "response_time" in entry:
-                final_formatted_conversation["response_time"] = entry["response_time"]
-            if "start_timestamp" in entry:
-                final_formatted_conversation["start_timestamp"] = entry["start_timestamp"]
-            if "end_timestamp" in entry:
-                final_formatted_conversation["end_timestamp"] = entry["end_timestamp"]
-
+            
             formatted_conversation_list.append({
                 "user_query": user_query,
                 "final_response": final_response,
                 "tools_used": tools_used,
                 "agent_steps": pretty_printed_steps.strip(),
+                "response_time": response_time,
+                "start_timestamp": start_timestamp,
                 "additional_details": additional_details,
                 "parts": parts,
                 "show_canvas": show_canvas
@@ -6698,6 +6995,8 @@ class ChatService:
             Dict[str, Any]: A dictionary representing the formatted conversation history.
         """
 
+        FEEDBACK_KEYWORD = "FEEDBACK:"
+
         def get_message_pretty_string(message: Any, msg_type: Literal["human", "ai", "tool", "chat"]) -> str:
             if hasattr(message, "model_dump"):
                 message = message.model_dump()
@@ -6719,6 +7018,13 @@ class ChatService:
             if isinstance(val, dict) and len(val) == 1 and key in val:
                 return val[key]
             return val
+
+        def is_parts_for_feedback(parts: List[types.Part]) -> bool:
+            if len(parts) != 2:
+                return False
+            if parts[0].text == FEEDBACK_KEYWORD and parts[1].text:
+                return True
+            return False
 
         plan_feedback_collector_tool = "get_user_approval_or_feedback"
         ignore_tool_call_names = [plan_feedback_collector_tool, "set_model_response", "exit_replanner_loop"]
@@ -6765,7 +7071,9 @@ class ChatService:
         for event in events:
             if event.invocation_id != current_invocation_id:
                 current_invocation_id = event.invocation_id
-                segmented_events.append([])
+                parts = event.content.parts
+                if not is_parts_for_feedback(parts):
+                    segmented_events.append([])
             segmented_events[-1].append(event)
 
 
@@ -6850,7 +7158,7 @@ class ChatService:
                             "status": "unknown",
                             "output": None
                         })
-                        new_invocation["agent_steps"] += get_message_pretty_string(func_call, "ai")
+                        new_invocation["agent_steps"] += get_message_pretty_string(func_call, current_msg["type"])
 
                     elif part.function_response:
                         func_resp = part.function_response
@@ -6862,7 +7170,7 @@ class ChatService:
                             current_msg["content"] = feedback
                             current_msg["type"] = "chat"
                             current_msg["role"] = "re-plan-feedback"
-                            new_invocation["agent_steps"] += get_message_pretty_string(feedback, "chat")
+                            new_invocation["agent_steps"] += get_message_pretty_string(feedback, current_msg["type"])
                         elif func_resp.name in ignore_tool_call_names:
                             continue
                         else:
@@ -6873,7 +7181,7 @@ class ChatService:
                             current_msg["status"] = "success"
                             tools_used[func_resp.id]["status"] = "success"
                             tools_used[func_resp.id]["output"] = func_resp.response.get("result", None)
-                            new_invocation["agent_steps"] += get_message_pretty_string(func_resp, "tool")
+                            new_invocation["agent_steps"] += get_message_pretty_string(func_resp, current_msg["type"])
 
                     elif "plan" in state_delta:
                         final_response_msg = None
@@ -6886,17 +7194,17 @@ class ChatService:
                         current_msg["content"] = plan
                         current_msg["type"] = "chat"
                         current_msg["role"] = "plan"
-                        new_invocation["agent_steps"] += get_message_pretty_string(plan, "chat")
+                        new_invocation["agent_steps"] += get_message_pretty_string(plan, current_msg["type"])
 
-                    elif "response" in state_delta:
+                    elif "response" in state_delta and state_delta.get("response", None):
                         response_content = str(resolve_duplicate_nested_key(state_delta, "response"))
                         current_msg["content"] = response_content
                         current_msg["type"] = "ai"
                         current_msg["tool_calls"] = []
                         final_response_msg = current_msg
                         new_invocation["final_response"] = response_content
-                        new_invocation["agent_steps"] += get_message_pretty_string(response_content, "ai")
-                        canvas_parts = [{"type": "text", "data": {"content": str(response_content)}, "metadata": {}}]
+                        new_invocation["agent_steps"] += get_message_pretty_string(response_content, current_msg["type"])
+                        canvas_parts = [{"type": "text", "data": {"content": response_content}, "metadata": {}}]
                         new_invocation["parts"] = canvas_parts
                         new_invocation["show_canvas"] = False
 
@@ -6905,7 +7213,7 @@ class ChatService:
                         current_msg["content"] = [critic_response]
                         current_msg["type"] = "chat"
                         current_msg["role"] = "critic-response"
-                        new_invocation["agent_steps"] += get_message_pretty_string(critic_response, "chat")
+                        new_invocation["agent_steps"] += get_message_pretty_string(critic_response, current_msg["type"])
 
                     elif "canvas_parts" in state_delta:
                         canvas_parts = state_delta.get("canvas_parts", {}).get("parts", [])
@@ -6921,12 +7229,21 @@ class ChatService:
                         current_msg["content"] = part.text
                         current_msg["type"] = "ai"
                         current_msg["tool_calls"] = []
-                        new_invocation["agent_steps"] += get_message_pretty_string(part.text, "ai")
+                        new_invocation["agent_steps"] += get_message_pretty_string(part.text, current_msg["type"])
+
+                    elif is_parts_for_feedback(content.parts):
+                        if part.text == FEEDBACK_KEYWORD:
+                            continue
+                        current_msg["content"] = part.text
+                        current_msg["type"] = "chat"
+                        current_msg["role"] = "feedback"
+                        new_invocation["agent_steps"] += get_message_pretty_string(part.text, current_msg["type"])
+                        new_invocation["response_time"] = end_timestamp - event.timestamp
 
                     else:
                         current_msg["content"] = part.text
                         current_msg["type"] = "human"
-                        new_invocation["agent_steps"] += get_message_pretty_string(part.text, "human")
+                        new_invocation["agent_steps"] += get_message_pretty_string(part.text, current_msg["type"])
 
                     additional_details.append(current_msg)
 
@@ -7557,3 +7874,1055 @@ class ConsistencyService:
             final_result.append(merged)
 
         return final_result
+
+
+class VMManagementService:
+    """Manages package installation and server operations for VMs and localhost environments."""
+    
+    def __init__(self):
+        pass
+    
+    def validate_module_name(self, module: str) -> Dict[str, Any]:
+        """
+        Validates if a module name is safe to install.
+        Returns dict with 'valid' boolean and 'error' message if invalid.
+        """
+        if not module or not module.strip():
+            return {"valid": False, "error": "Empty module name"}
+        pkg_name = module.split('==')[0].split('>=')[0].split('<=')[0].split('!=')[0].split('[')[0].strip().lower()
+        import re
+        if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-_\.]*[a-zA-Z0-9])?$', pkg_name):
+            return {"valid": False, "error": f"Invalid package name format: '{pkg_name}'"}
+        
+        return {"valid": True, "error": None}
+    
+    def parse_module_version(self, module: str) -> tuple:
+        """
+        Parses module string into (package_name, version_specifier, version).
+        Returns (pkg_name, operator, version) or (pkg_name, None, None) if no version specified.
+        """
+        import re
+        module = module.split('[')[0].strip()
+        match = re.match(r'^([a-zA-Z0-9\-_\.]+)\s*(==|>=|<=|!=|~=|>|<)?\s*(.*)$', module)
+        if match:
+            pkg_name = match.group(1).strip()
+            operator = match.group(2)
+            version = match.group(3).strip() if match.group(3) else None
+            return (pkg_name, operator, version)
+        
+        return (module.strip(), None, None)
+    
+    def remove_duplicates(self, modules: List[str]) -> tuple:
+        """
+        Removes exact duplicate modules from the list.
+        """
+        seen = set()
+        unique_modules = []
+        duplicates = []
+        
+        for module in modules:
+            if module in seen:
+                original_module = module 
+                duplicates.append({
+                    "package": self.parse_module_version(module)[0],
+                    "original": original_module,
+                    "duplicate": module
+                })
+            else:
+                seen.add(module)
+                unique_modules.append(module)
+        
+        return (unique_modules, duplicates)
+    
+    # async def install_dependencies(self, modules: List[str]) -> Dict[str, Any]:
+    #     """Install Python modules using current Python environment."""
+    #     try:
+    #         import subprocess
+    #         import sys
+    #     except ImportError as e:
+    #         return {
+    #             "success": False,
+    #             "message": "Required libraries not available",
+    #             "error": str(e)
+    #         }
+
+    #     try:
+    #         if not modules:
+    #             return {
+    #                 "success": False,
+    #                 "message": "No modules provided",
+    #                 "error": "Please provide at least one module to install"
+    #             }
+
+    #         processed_modules = []
+    #         for module in modules:
+    #             if isinstance(module, str) and ',' in module:
+    #                 split_modules = [m.strip() for m in module.split(',') if m.strip()]
+    #                 processed_modules.extend(split_modules)
+    #             else:
+    #                 processed_modules.append(module.strip() if isinstance(module, str) else module)
+
+    #         processed_modules = [m for m in processed_modules if m]
+            
+    #         if not processed_modules:
+    #             return {
+    #                 "success": False,
+    #                 "message": "No valid modules provided after processing",
+    #                 "error": "Please provide at least one valid module to install"
+    #             }
+
+    #         validation_errors = []
+    #         for module in processed_modules:
+    #             validation_result = self.validate_module_name(module)
+    #             if not validation_result["valid"]:
+    #                 validation_errors.append(validation_result["error"])
+            
+    #         if validation_errors:
+    #             return {
+    #                 "success": False,
+    #                 "message": "Module validation failed",
+    #                 "error": "; ".join(validation_errors),
+    #                 "validation_errors": validation_errors
+    #             }
+    #         unique_modules, duplicates = self.remove_duplicates(processed_modules)
+    #         modules_to_install = []
+    #         already_installed = []
+    #         version_conflicts = []
+            
+    #         for module in unique_modules:
+    #             pkg_name, operator, requested_version = self.parse_module_version(module)
+                
+    #             try:
+    #                 check_result = subprocess.run(
+    #                     [sys.executable, "-m", "pip", "show", pkg_name],
+    #                     capture_output=True,
+    #                     text=True,
+    #                     timeout=30
+    #                 )
+                    
+    #                 if check_result.returncode == 0:
+    #                     installed_version = None
+    #                     for line in check_result.stdout.split('\n'):
+    #                         if line.startswith("Version:"):
+    #                             installed_version = line.split("Version:")[1].strip()
+    #                             break
+                        
+    #                     if installed_version:
+    #                         if requested_version and operator == '==' and installed_version != requested_version:
+    #                             version_conflicts.append({
+    #                                 "package": pkg_name,
+    #                                 "installed_version": installed_version,
+    #                                 "requested_version": requested_version
+    #                             })
+    #                         else:
+    #                             already_installed.append(f"{pkg_name}=={installed_version}")
+    #                     else:
+    #                         already_installed.append(pkg_name)
+    #                 else:
+    #                     modules_to_install.append(module)
+                        
+    #             except Exception as e:
+    #                 modules_to_install.append(module)
+    #         if version_conflicts:
+    #             if len(version_conflicts) == 1:
+    #                 conflict = version_conflicts[0]
+    #                 if len(already_installed) > 0:
+    #                     already_list = ', '.join([f"'{mod.split('==')[0]}'" for mod in already_installed])
+    #                     error_msg = f"Module '{conflict['package']}' already installed with version {conflict['installed_version']} but requested {conflict['requested_version']}. Already correctly installed: {already_list}"
+    #                 else:
+    #                     error_msg = f"Module '{conflict['package']}' already installed with version {conflict['installed_version']} but requested {conflict['requested_version']}"
+    #             else:
+    #                 if len(already_installed) > 0:
+    #                     already_list = ', '.join([f"'{mod.split('==')[0]}'" for mod in already_installed])
+    #                     error_msg = f"Version conflicts detected for {len(version_conflicts)} module(s). Already correctly installed: {already_list}"
+    #                 else:
+    #                     error_msg = f"Version conflicts detected for {len(version_conflicts)} module(s)"
+                
+    #             return {
+    #                 "success": False,
+    #                 "message": "Version conflict detected",
+    #                 "error": error_msg,
+    #                 "version_conflicts": version_conflicts,
+    #                 "already_installed": already_installed,
+    #                 "duplicates_removed": duplicates if duplicates else []
+    #             }
+    #         if not modules_to_install:
+    #             if len(already_installed) == 1:
+    #                 pkg_name = already_installed[0].split('==')[0]
+    #                 message = f"Module '{pkg_name}' is already installed"
+    #             else:
+    #                 module_names = [pkg.split('==')[0] for pkg in already_installed]
+    #                 message = f"Modules {', '.join(module_names)} are already installed"
+                
+    #             if duplicates:
+    #                 message += f". Removed {len(duplicates)} duplicate(s) from request"
+                
+    #             return {
+    #                 "success": False,
+    #                 "message": message,
+    #                 "already_installed": already_installed,
+    #                 "modules_installed": [],
+    #                 "duplicates_removed": duplicates if duplicates else [],
+    #                 "skipped": True
+    #             }
+
+    #         install_result = subprocess.run(
+    #             [sys.executable, "-m", "pip", "install"] + modules_to_install,
+    #             capture_output=True,
+    #             text=True,
+    #             timeout=300
+    #         )
+            
+    #         if install_result.returncode != 0:
+    #             return {
+    #                 "success": False,
+    #                 "message": "Failed to install modules",
+    #                 "error": install_result.stderr,
+    #                 "stdout": install_result.stdout,
+    #                 "already_installed": already_installed
+    #             }
+            
+    #         if len(modules_to_install) == 1:
+    #             message = f"Successfully installed '{modules_to_install[0]}'"
+    #         else:
+    #             installed_names = [m.split('==')[0] for m in modules_to_install]
+    #             message = f"Successfully installed {', '.join(installed_names)}"
+            
+    #         if already_installed:
+    #             if len(already_installed) == 1:
+    #                 already_name = already_installed[0].split('==')[0]
+    #                 message += f". '{already_name}' was already installed"
+    #             else:
+    #                 already_names = [pkg.split('==')[0] for pkg in already_installed]
+    #                 message += f". {', '.join(already_names)} were already installed"
+            
+    #         return {
+    #             "success": True,
+    #             "message": message,
+    #             "python_executable": sys.executable,
+    #             "modules_installed": modules_to_install,
+    #             "already_installed": already_installed,
+    #             "duplicates_removed": duplicates if duplicates else [],
+    #             "output": install_result.stdout
+    #         }
+            
+    #     except subprocess.TimeoutExpired:
+    #         return {
+    #             "success": False,
+    #             "message": "Installation timed out",
+    #             "error": "The installation command took too long to complete"
+    #         }
+    #     except Exception as e:
+    #         return {
+    #             "success": False,
+    #             "message": "Localhost installation failed",
+    #             "error": str(e)
+    #         }
+
+    async def get_installed_packages(self) -> Dict[str, Any]:
+        """Get installed Python packages from current Python environment."""
+        try:
+            import subprocess
+            import sys
+        except ImportError as e:
+            return {
+                "success": False,
+                "message": "Required libraries not available",
+                "error": str(e),
+                "packages": []
+            }
+        try:
+            list_result = subprocess.run(
+                [sys.executable, "-m", "pip", "list", "--format=freeze"],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if list_result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": "Failed to list packages on localhost",
+                    "error": list_result.stderr,
+                    "packages": []
+                }
+
+            packages = []
+            output_lines = list_result.stdout.strip().split('\n')
+            for line in output_lines:
+                if line and '==' in line:
+                    packages.append(line.strip())
+
+            return {
+                "success": True,
+                "message": f"Found {len(packages)} packages in current Python environment",
+                "python_executable": sys.executable,
+                "packages": packages
+            }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "message": "Package listing timed out",
+                "error": "Command took too long to complete",
+                "packages": []
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": "Failed to list packages",
+                "error": str(e),
+                "packages": []
+            }
+
+
+# --- Pipeline Service ---
+
+class PipelineService:
+    """
+    Service layer for managing agent pipelines and their executions.
+    Applies business rules and orchestrates repository calls.
+    """
+
+    def __init__(
+        self,
+        pipeline_repo: PipelineRepository,
+        pipeline_run_repo: PipelineRunRepository,
+        pipeline_steps_repo: PipelineStepsRepository,
+        agent_service: AgentService
+    ):
+        self.pipeline_repo = pipeline_repo
+        self.pipeline_run_repo = pipeline_run_repo
+        self.pipeline_steps_repo = pipeline_steps_repo
+        self.agent_service = agent_service
+
+    # --- Pipeline Run & Step Tracking (Business Logic) ---
+
+    async def create_pipeline_run(self, run_id: str, user_query: str, pipeline_id: str = None, session_id: str = None, status: str = "pending") -> bool:
+        """
+        Creates a new pipeline run record.
+
+        Args:
+            run_id: Unique identifier for this run
+            user_query: The user's input query
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID for conversation tracking
+            status: Initial status (default: pending)
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return await self.pipeline_run_repo.create_run(run_id, user_query, pipeline_id, session_id, status)
+
+    async def add_pipeline_step(self, run_id: str, step_order: int, agent_id: str, step_data: dict) -> bool:
+        """
+        Adds a step record for a pipeline run.
+
+        Args:
+            run_id: The pipeline run ID
+            step_order: The order/sequence of this step
+            agent_id: The agent ID that executed this step
+            step_data: JSON data containing step execution details
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return await self.pipeline_steps_repo.add_step(run_id, step_order, agent_id, step_data)
+
+    async def update_pipeline_run_status(self, run_id: str, status: str, final_response: Optional[str] = None, response_time: Optional[float] = None) -> bool:
+        """
+        Updates run status and optionally final response.
+
+        Args:
+            run_id: The run ID to update
+            status: New status value
+            final_response: Optional final response text
+            response_time: Optional response time in seconds
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return await self.pipeline_run_repo.update_status(run_id, status, final_response, response_time)
+
+    async def get_pipeline_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Gets a pipeline run by ID.
+
+        Args:
+            run_id: The run ID to retrieve
+
+        Returns:
+            Dict with run details or None if not found
+        """
+        return await self.pipeline_run_repo.get_run(run_id)
+
+    async def get_pipeline_steps(self, run_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all steps for a pipeline run.
+
+        Args:
+            run_id: The pipeline run ID
+
+        Returns:
+            List of step dictionaries ordered by step_order
+        """
+        return await self.pipeline_steps_repo.get_steps_by_run(run_id)
+
+    async def get_latest_step_order(self, run_id: str) -> int:
+        """
+        Gets the latest step order for a pipeline run.
+
+        Args:
+            run_id: The pipeline run ID
+
+        Returns:
+            int: The latest step order, or 0 if no steps exist
+        """
+        return await self.pipeline_steps_repo.get_latest_step_order(run_id)
+
+    # --- Pipeline CRUD Operations ---
+
+    async def create_pipeline(
+        self,
+        pipeline_name: str,
+        pipeline_description: str,
+        pipeline_definition: dict,
+        created_by: str
+    ) -> Dict[str, Any]:
+        """
+        Creates a new pipeline after validating the definition.
+
+        Args:
+            pipeline_name: Name of the pipeline
+            pipeline_description: Description of the pipeline
+            pipeline_definition: Graph definition with nodes and edges
+            created_by: Email of the creator
+
+        Returns:
+            dict: Status of the creation operation
+        """
+        # Validate the pipeline definition
+        validation_result = await self._validate_pipeline_definition(pipeline_definition)
+        if not validation_result['is_valid']:
+            return {
+                "message": validation_result['message'],
+                "is_created": False
+            }
+
+        pipeline_id = "ppl_" + str(uuid.uuid4())
+        success = await self.pipeline_repo.insert_pipeline(
+            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
+            pipeline_description=pipeline_description,
+            pipeline_definition=pipeline_definition,
+            created_by=created_by
+        )
+
+        if success:
+            return {
+                "message": f"Pipeline '{pipeline_name}' created successfully.",
+                "pipeline_id": pipeline_id,
+                "is_created": True
+            }
+        else:
+            return {
+                "message": f"Failed to create pipeline '{pipeline_name}'.",
+                "is_created": False
+            }
+
+    async def get_all_pipelines(
+        self,
+        created_by: Optional[str] = None,
+        is_active: Optional[bool] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves all pipelines with optional filtering.
+
+        Args:
+            created_by: Filter by creator email
+            is_active: Filter by active status
+
+        Returns:
+            List of pipeline dictionaries
+        """
+        return await self.pipeline_repo.get_all_pipelines(created_by=created_by, is_active=is_active)
+
+    async def get_pipelines_by_search_or_page(
+        self,
+        search_value: str = '',
+        limit: int = 20,
+        page: int = 1,
+        created_by: Optional[str] = None,
+        is_active: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        """
+        Retrieves pipelines with pagination and search filtering.
+
+        Args:
+            search_value: Search string to match against pipeline name
+            limit: Number of results per page
+            page: Page number (1-indexed)
+            created_by: Filter by creator email
+            is_active: Filter by active status
+
+        Returns:
+            dict: A dictionary containing total_count and list of pipeline details
+        """
+        total_count = await self.pipeline_repo.get_total_pipeline_count(
+            search_value=search_value,
+            created_by=created_by,
+            is_active=is_active
+        )
+        
+        pipeline_records = await self.pipeline_repo.get_pipelines_by_search_or_page(
+            search_value=search_value,
+            limit=limit,
+            page=page,
+            created_by=created_by,
+            is_active=is_active
+        )
+        
+        log.info(f"Retrieved {len(pipeline_records)} pipelines with search '{search_value}' on page {page}.")
+        return {
+            "total_count": total_count,
+            "details": pipeline_records
+        }
+
+    async def get_pipeline(self, pipeline_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a single pipeline by ID.
+
+        Args:
+            pipeline_id: The pipeline ID
+
+        Returns:
+            Pipeline dictionary or None
+        """
+        return await self.pipeline_repo.get_pipeline(pipeline_id)
+
+    async def update_pipeline(
+        self,
+        pipeline_id: str,
+        pipeline_name: Optional[str] = None,
+        pipeline_description: Optional[str] = None,
+        pipeline_definition: Optional[dict] = None,
+        is_active: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        """
+        Updates a pipeline.
+
+        Args:
+            pipeline_id: The pipeline ID to update
+            pipeline_name: New name (optional)
+            pipeline_description: New description (optional)
+            pipeline_definition: New definition (optional)
+            is_active: New active status (optional)
+
+        Returns:
+            dict: Status of the update operation
+        """
+        # Check if pipeline exists
+        existing = await self.pipeline_repo.get_pipeline(pipeline_id)
+        if not existing:
+            return {
+                "message": f"Pipeline '{pipeline_id}' not found.",
+                "is_updated": False
+            }
+
+        # Validate definition if provided
+        if pipeline_definition:
+            validation_result = await self._validate_pipeline_definition(pipeline_definition)
+            if not validation_result['is_valid']:
+                return {
+                    "message": validation_result['message'],
+                    "is_updated": False
+                }
+
+        success = await self.pipeline_repo.update_pipeline(
+            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
+            pipeline_description=pipeline_description,
+            pipeline_definition=pipeline_definition,
+            is_active=is_active
+        )
+
+        if success:
+            return {
+                "message": f"Pipeline '{pipeline_id}' updated successfully.",
+                "is_updated": True
+            }
+        else:
+            return {
+                "message": f"Failed to update pipeline '{pipeline_id}'.",
+                "is_updated": False
+            }
+
+    async def delete_pipeline(self, pipeline_id: str) -> Dict[str, Any]:
+        """
+        Deletes a pipeline.
+
+        Args:
+            pipeline_id: The pipeline ID to delete
+
+        Returns:
+            dict: Status of the deletion operation
+        """
+        success = await self.pipeline_repo.delete_pipeline(pipeline_id)
+
+        if success:
+            return {
+                "message": f"Pipeline '{pipeline_id}' deleted successfully.",
+                "is_deleted": True
+            }
+        else:
+            return {
+                "message": f"Pipeline '{pipeline_id}' not found or deletion failed.",
+                "is_deleted": False
+            }
+
+    # --- Pipeline Validation ---
+
+    async def _validate_pipeline_definition(self, pipeline_definition: dict) -> Dict[str, Any]:
+        """
+        Validates a pipeline definition based on the updated schema.
+
+        Args:
+            pipeline_definition: The definition to validate
+
+        Returns:
+            dict: Validation result with 'is_valid' and 'message'
+        """
+        nodes = pipeline_definition.get('nodes', [])
+        edges = pipeline_definition.get('edges', [])
+
+        if not nodes:
+            return {"is_valid": False, "message": "Pipeline must have at least one node."}
+
+        # Check for input node
+        input_nodes = [n for n in nodes if n.get('node_type') == 'input']
+        if len(input_nodes) != 1:
+            return {"is_valid": False, "message": "Pipeline must have exactly one input node."}
+
+        # Check all agent nodes have valid agent_ids in their config
+        agent_nodes = [n for n in nodes if n.get('node_type') == 'agent']
+        for node in agent_nodes:
+            config = node.get('config', {})
+            agent_id = config.get('agent_id') if isinstance(config, dict) else None
+            if not agent_id:
+                return {
+                    "is_valid": False,
+                    "message": f"Agent node '{node.get('node_id')}' must have an agent_id in its config."
+                }
+            # Verify agent exists
+            agent = await self.agent_service.agent_repo.get_agent_record(agentic_application_id=agent_id)
+            if not agent:
+                return {
+                    "is_valid": False,
+                    "message": f"Agent '{agent_id}' not found for node '{node.get('node_id')}'."
+                }
+
+        # Check edges reference valid nodes
+        node_ids = {n['node_id'] for n in nodes}
+        for edge in edges:
+            if edge.get('source_node_id') not in node_ids:
+                return {
+                    "is_valid": False,
+                    "message": f"Edge source '{edge.get('source_node_id')}' does not exist."
+                }
+            # target_node_ids is now a list of target node IDs
+            target_node_id = edge.get('target_node_id', [])
+            # Ensure it's a list
+            if isinstance(target_node_id, str):
+                if target_node_id and target_node_id not in node_ids:
+                    return {
+                        "is_valid": False,
+                        "message": f"Edge target '{target_node_id}' does not exist."
+                    }
+
+        # Check input node has at least one outgoing edge
+        input_node_id = input_nodes[0]['node_id']
+        input_edges = [e for e in edges if e.get('source_node_id') == input_node_id]
+        if not input_edges:
+            return {"is_valid": False, "message": "Input node must connect to at least one agent."}
+
+        return {"is_valid": True, "message": "Pipeline definition is valid."}
+
+    # --- Pipeline Conversation History ---
+
+    async def get_pipeline_conversation_history(
+        self,
+        pipeline_id: str,
+        session_id: str,
+        limit: int = 50,
+        role: str = "user"
+    ) -> List[Dict[str, Any]]:
+        """
+        Gets the formatted conversation history for a pipeline session.
+
+        Args:
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID
+            limit: Maximum number of conversations to return
+            role: User role for determining response detail level
+
+        Returns:
+            List of formatted conversation dictionaries
+        """
+        # Get previous runs for this session
+        runs = await self.pipeline_run_repo.get_runs_by_session(pipeline_id, session_id, limit)
+        
+        conversations = []
+        for run in runs:
+            # Get steps for this run
+            steps = await self.pipeline_steps_repo.get_steps_by_run(run['id'])
+            
+            # Format conversation entry
+            conversation = await self._format_pipeline_conversation(
+                run=run,
+                steps=steps,
+                role=role
+            )
+            conversations.append(conversation)
+        
+        # Return in chronological order (oldest first)
+        return list(reversed(conversations))
+
+    async def _format_pipeline_conversation(
+        self,
+        run: Dict[str, Any],
+        steps: List[Dict[str, Any]],
+        role: str = "user"
+    ) -> Dict[str, Any]:
+        """
+        Formats a single pipeline run into a conversation entry similar to agent response format.
+
+        Args:
+            run: The pipeline run record
+            steps: The pipeline steps for this run
+            role: User role for determining response detail level
+
+        Returns:
+            Formatted conversation dictionary
+        """
+        user_query = run.get('user_query', '')
+        final_response = run.get('final_response', '')
+        response_time = run.get('response_time')
+        created_at = run.get('created_at')
+        completed_at = run.get('completed_at')
+        
+        # Extract tools used and agent steps from the step data
+        tools_used = {}
+        agent_steps_data = []
+        
+        for step in reversed(steps):
+            step_data = step.get('step_data', {})
+            node_type = step_data.get('node_type', '')
+            
+            if node_type == 'agent':
+                # Extract executor_messages if available
+                executor_messages = step_data.get('executor_messages', [])
+                
+                # Extract tools from executor messages
+                for msg in executor_messages:
+                    if isinstance(msg, dict):
+                        tool_calls = msg.get('tool_calls', [])
+                        for tool_call in tool_calls:
+                            tool_id = tool_call.get('id')
+                            if tool_id and tool_id not in tools_used:
+                                tools_used[tool_id] = {
+                                    'name': tool_call.get('name'),
+                                    'args': tool_call.get('args', {})
+                                }
+                
+                agent_steps_data.append({
+                    'node_id': step_data.get('node_id'),
+                    'agent_id': step_data.get('agent_id'),
+                    'input_query': step_data.get('input_query'),
+                    'content': step_data.get('response'),
+                    'role': "Agent",
+                    'status': step_data.get('status')
+                })
+            elif node_type == 'input':
+                agent_steps_data.append({
+                    'node_id': step_data.get('node_id'),
+                    'content': step_data.get('input_query'),
+                    'role': "Input",
+                    'status': step_data.get('status')
+                })
+            elif node_type == 'output':
+                agent_steps_data.append({
+                    'node_id': step_data.get('node_id'),
+                    'content': step_data.get('response'),
+                    'role': "Output",
+                    'status': step_data.get('status')
+                })
+        
+        # Build parts array
+        parts = []
+        if final_response:
+            if isinstance(final_response, str):
+                parts.append({
+                    "type": "text",
+                    "data": {"content": final_response},
+                    "metadata": {}
+                })
+            else:
+                parts.append({
+                    "type": "json",
+                    "data": final_response,
+                    "metadata": {}
+                })
+        
+        # Determine show_canvas based on parts content
+        show_canvas = False
+        for part in parts:
+            if part.get("type") not in ("text", "image"):
+                show_canvas = True
+                break
+        
+        # Build conversation entry based on role
+        if role.lower() == "user":
+            # For USER role, include only essential fields
+            conversation = {
+                "user_query": user_query,
+                "final_response": final_response,
+                "parts": parts,
+                "show_canvas": show_canvas
+            }
+        else:
+            # For other roles (DEVELOPER, ADMIN), include all fields
+            conversation = {
+                "user_query": user_query,
+                "final_response": final_response,
+                "tools_used": tools_used,
+                "additional_details": agent_steps_data,
+                "pipeline_steps": steps,
+                "parts": parts,
+                "show_canvas": show_canvas,
+                "response_time": response_time,
+                "time_stamp": str(completed_at) if completed_at else None,
+                "start_timestamp": str(created_at) if created_at else None,
+                "end_timestamp": str(completed_at) if completed_at else None
+            }
+        
+        return conversation
+
+    async def format_pipeline_response_with_history(
+        self,
+        current_response: Dict[str, Any],
+        pipeline_id: str,
+        session_id: str,
+        role: str = "user",
+        response_time: float = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Formats the current pipeline response and includes previous conversation history.
+
+        Args:
+            current_response: The current pipeline execution response
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID
+            role: User role for determining response detail level
+            response_time: Response time for current execution
+
+        Returns:
+            List of formatted conversations including history and current response
+        """
+        # Get previous conversation history
+        history = await self.get_pipeline_conversation_history(
+            pipeline_id=pipeline_id,
+            session_id=session_id,
+            limit=49,  # Leave room for current response
+            role=role
+        )
+        
+        # Format current response
+        user_query = current_response.get('query', '')
+        final_response = current_response.get('response', '')
+        parts = current_response.get('parts', [])
+        executor_messages = current_response.get('executor_messages', [])
+        
+        # Determine show_canvas
+        # show_canvas = False
+        # for part in parts:
+        #     if part.get("type") not in ("text", "image"):
+        #         show_canvas = True
+        #         break
+        
+        # # Build current conversation entry based on role
+        # if role.lower() == "user":
+        #     current_conversation = {
+        #         "user_query": user_query,
+        #         "final_response": final_response,
+        #         "parts": parts,
+        #         "show_canvas": show_canvas
+        #     }
+        # else:
+        #     current_conversation = {
+        #         "user_query": user_query,
+        #         "final_response": final_response,
+        #         "tools_used": {},
+        #         "pipeline_steps": executor_messages,
+        #         "additional_details": [],
+        #         "parts": parts,
+        #         "show_canvas": show_canvas,
+        #         "response_time": response_time,
+        #         "time_stamp": None,
+        #         "start_timestamp": None,
+        #         "end_timestamp": None
+        #     }
+        
+        # # Mark current parts with is_last flag for non-USER roles
+        # if role.lower() != "user" and parts:
+        #     for part in current_conversation["parts"]:
+        #         if part.get("type") not in ("text", "image"):
+        #             part["is_last"] = True
+        
+        # Append current response to history
+        # history.append(current_conversation)
+        if history:
+            history[-1]["parts"] = current_response.get("parts", [])
+        else:
+            # No history, create a new entry for current response
+            show_canvas = False
+            for part in parts:
+                if part.get("type") not in ("text", "image"):
+                    show_canvas = True
+                    break
+            
+            if role.lower() == "user":
+                current_conversation = {
+                    "user_query": user_query,
+                    "final_response": final_response,
+                    "parts": parts,
+                    "show_canvas": show_canvas
+                }
+            else:
+                current_conversation = {
+                    "user_query": user_query,
+                    "final_response": final_response,
+                    "tools_used": {},
+                    "pipeline_steps": [],
+                    "additional_details": [],
+                    "parts": parts,
+                    "show_canvas": show_canvas,
+                    "response_time": response_time,
+                    "time_stamp": None,
+                    "start_timestamp": None,
+                    "end_timestamp": None
+                }
+            history.append(current_conversation)
+        
+        return history
+
+    async def delete_pipeline_session(
+        self,
+        pipeline_id: str,
+        session_id: str
+    ) -> Dict[str, Any]:
+        """
+        Deletes all pipeline run history for a given pipeline and session.
+
+        Args:
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID
+
+        Returns:
+            Dict with status of the deletion operation
+        """
+        try:
+            # First get all run IDs to delete their steps
+            run_ids = await self.pipeline_run_repo.get_run_ids_by_session(pipeline_id, session_id)
+            
+            # Delete steps for each run
+            for run_id in run_ids:
+                await self.pipeline_steps_repo.delete_steps_by_run(run_id)
+            
+            # Delete all runs for this session
+            success = await self.pipeline_run_repo.delete_runs_by_session(pipeline_id, session_id)
+            
+            if success:
+                return {
+                    "status": "success",
+                    "message": f"Pipeline history cleared for session '{session_id}'."
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Failed to clear pipeline history for session '{session_id}'."
+                }
+        except Exception as e:
+            log.error(f"Error deleting pipeline session '{session_id}': {e}")
+            return {
+                "status": "error",
+                "message": f"Error clearing pipeline history: {str(e)}"
+            }
+
+    async def get_old_pipeline_conversations(
+        self,
+        user_email: str,
+        pipeline_id: str
+    ) -> Dict[str, Any]:
+        """
+        Gets old pipeline conversations for a user, grouped by session ID.
+        Similar to ChatService.get_old_chats_by_user_and_agent but for pipelines.
+        Returns simplified format with timestamp_start, timestamp_end, user_input, agent_response.
+
+        Args:
+            user_email: The user's email address
+            pipeline_id: The pipeline definition ID
+
+        Returns:
+            Dict with session IDs as keys and conversation lists as values
+        """
+        try:
+            # Get all sessions for this user and pipeline
+            sessions = await self.pipeline_run_repo.get_sessions_by_user_and_pipeline(
+                user_email=user_email,
+                pipeline_id=pipeline_id
+            )
+            
+            if not sessions:
+                return {}
+            
+            result = {}
+            for session_info in sessions:
+                session_id = session_info.get('session_id')
+                if not session_id:
+                    continue
+                
+                # Get runs for this session
+                runs = await self.pipeline_run_repo.get_runs_by_session(
+                    pipeline_id=pipeline_id,
+                    session_id=session_id,
+                    limit=100
+                )
+                
+                if runs:
+                    # Format runs into simplified format (same as agent old conversations)
+                    conversations = []
+                    for run in reversed(runs):  # Oldest first
+                        user_query = run.get('user_query', '')
+                        final_response = run.get('final_response', '')
+                        created_at = run.get('created_at')
+                        completed_at = run.get('completed_at')
+                        
+                        # Format timestamps
+                        timestamp_start = str(created_at) if created_at else None
+                        timestamp_end = str(completed_at) if completed_at else timestamp_start
+                        
+                        conversations.append({
+                            "timestamp_start": timestamp_start,
+                            "timestamp_end": timestamp_end,
+                            "user_input": user_query,
+                            "agent_response": final_response
+                        })
+                    
+                    # Use full session_id as key (format: user_email_session_id)
+                    result[session_id] = conversations
+            
+            return result
+            
+        except Exception as e:
+            log.error(f"Error getting old pipeline conversations for user '{user_email}': {e}")
+            return {}

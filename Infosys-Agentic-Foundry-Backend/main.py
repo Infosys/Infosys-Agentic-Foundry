@@ -17,16 +17,17 @@ os.environ["NO_PROXY"] = resolve_and_get_additional_no_proxys()
 from src.config.settings import IS_PRODUCTION
 from src.api.app_container import app_container
 from src.api import (
-    tool_router, agent_router, chat_router, sse_router, evaluation_router, feedback_learning_router,
-    secrets_router, tag_router, utility_router, data_connector_router, deprecated_router, chat_router_v2
+    tool_router, agent_router, chat_router, evaluation_router, feedback_learning_router,
+    secrets_router, tag_router, utility_router, data_connector_router, deprecated_router,
+    pipeline_router
 )
 from src.api.evaluation_endpoints import cleanup_old_files
 
 from src.auth.middleware import AuditMiddleware, AuthenticationMiddleware
 from src.auth.routes import router as auth_router
 
-from src.utils.stream_sse import SSEManager
 from src.utils.gzip_middleware import CustomGZipMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from telemetry_wrapper import logger as log
 
@@ -52,7 +53,6 @@ async def lifespan(app: FastAPI):
 
     try:
         await app_container.initialize_services()
-        app.state.sse_manager = SSEManager()
         
         # Create background tasks
         asyncio.create_task(cleanup_old_files())
@@ -162,8 +162,6 @@ app.include_router(auth_router)
 app.include_router(tool_router)
 app.include_router(agent_router)
 app.include_router(chat_router)
-app.include_router(chat_router_v2)
-app.include_router(sse_router, prefix="/sse")
 app.include_router(evaluation_router)
 app.include_router(feedback_learning_router)
 app.include_router(secrets_router)
@@ -171,6 +169,7 @@ app.include_router(tag_router)
 app.include_router(utility_router)
 app.include_router(data_connector_router)
 app.include_router(deprecated_router)
+app.include_router(pipeline_router)
 
 
 # Configure CORS
@@ -193,6 +192,10 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+# Add ProxyHeadersMiddleware to trust X-Forwarded-Proto and X-Forwarded-For headers
+# This ensures FastAPI uses HTTPS in redirect URLs when behind a reverse proxy
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=origins)
 
 
 # Health check endpoint
@@ -224,7 +227,7 @@ async def health_check():
             if hasattr(app_container, 'db_manager') and app_container.db_manager:
                 # Attempt a simple database query to verify connectivity
                 # Use the main database pool (first in the REQUIRED_DATABASES list)
-                pool = await app_container.db_manager.get_pool('agentic_workflow_as_service_database')
+                pool = await app_container.db_manager.get_pool(app_container.db_manager.REQUIRED_DATABASES[0])
                 if pool:
                     async with pool.acquire() as connection:
                         await connection.fetchval("SELECT 1")

@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional
 from src.database.services import ToolService, AgentService,McpToolService
 from src.auth.repositories import UserRepository
 from telemetry_wrapper import logger as log
+from Export_Agent.export_dependency_analyzer import generate_export_requirements
 if sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -53,6 +54,35 @@ class AgentExporter:
         self.login_pool = login_pool
 
     #------------------------------------------------------------------------
+        
+    
+    def clean_nested_nulls_iterative(self,data, default_null=""):
+        """
+        Clean None values in nested lists/dicts without recursion.
+        Works for structures like validation_criteria.
+        """
+        stack = [data]
+
+        while stack:
+            item = stack.pop()
+
+            if isinstance(item, dict):
+                for k, v in item.items():
+                    if v is None:
+                        item[k] = default_null
+                    elif isinstance(v, (dict, list)):
+                        stack.append(v)
+
+            elif isinstance(item, list):
+                for idx, v in enumerate(item):
+                    if v is None:
+                        item[idx] = default_null
+                    elif isinstance(v, (dict, list)):
+                        stack.append(v)
+
+        return data
+
+
     async def gather_agent_configs(self) -> Dict[str, Any]:
         configs = {}
         for agent_id in self.agent_ids:
@@ -80,9 +110,20 @@ class AgentExporter:
         if not tools:
             tools_id_str = agent_data.get("tools_id")
             tool_ids = tools_id_str
+            
+            # validator  = agent_data["validation_criteria"][0]["validator"]
+            # if validator and validator not in tool_ids:
+            #     tool_ids.append(validator)
+            validators  = agent_data["validation_criteria"]
+            for criterion in validators:
+                validator = criterion.get("validator")
+                if validator and validator not in tool_ids:
+                    tool_ids.append(validator)
+
         else:
             tool_ids = tools 
         tools_data = {}
+        tool_codes = []  # Collect all tool codes for dependency analysis
         prefixes = ('mcp_file_', 'mcp_url_', 'mcp_module_')
         mcp_items = [item for item in tool_ids if item.startswith(prefixes)]
         tool_ids = [item for item in tool_ids if not item.startswith(prefixes)]
@@ -92,12 +133,13 @@ class AgentExporter:
                 if mcp_data:
                     mcp_dict = mcp_data[0]
                     processed_mcp_dict = {}
+                    default_null=""
                     for key, value in mcp_dict.items():
-                        if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
+                        if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","department_name"]:
                             if isinstance(value, datetime):
                                 processed_mcp_dict[key] = value.isoformat()
                             else:
-                                processed_mcp_dict[key] = value
+                                processed_mcp_dict[key] = value if value is not None else default_null
                     tools_data[mcp_id] = processed_mcp_dict
                 else:
                     tools_data[mcp_id] = None
@@ -106,15 +148,17 @@ class AgentExporter:
             if tool_data:
                 tool_dict= tool_data[0]
                 processed_tool_dict = {}
+                default_null=""
                 for key, value in tool_dict.items():
-                    if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
+                    if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","department_name"]:
                         if isinstance(value, datetime):
                             processed_tool_dict[key] = value.isoformat()
                         else:
-                            processed_tool_dict[key] = value
+                            processed_tool_dict[key] = value if value is not None else default_null
                 name=tool_dict["tool_name"]
                 raw_code=tool_dict["code_snippet"]
                 final_code=self.format_python_code_string(raw_code)
+                tool_codes.append(final_code)  # Store tool code for dependency analysis
                 file_path=os.path.join(export_path,f'Agent_Backend/tools_codes/{name}.py')         
                 try:
                     path_obj = Path(file_path)
@@ -134,15 +178,22 @@ class AgentExporter:
         with open(tool_data_file_path, 'w') as f:
                 f.write('tools_data = ')
                 f.write(tools_data_json_str)
+        return tool_codes
     #------------------------------------------------------------------------
     async def serialize_agent(self, agent_dict):
         agent_for_json_dump = {}#agent_dict.copy()
+        default_null=""
         for key, value in agent_dict.items():
-            if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
+            if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","department_name"]:
                 if isinstance(value, datetime):
                     agent_for_json_dump[key] = value.isoformat()
+                
+                elif key == "validation_criteria" and isinstance(value, list):
+                    # Clean nested dict with NO recursion
+                    agent_for_json_dump[key] = self.clean_nested_nulls_iterative(value, default_null)
+
                 else:
-                    agent_for_json_dump[key] = value
+                    agent_for_json_dump[key] = value if value is not None else default_null
         return agent_for_json_dump
     #------------------------------------------------------------------------    
     async def get_user_from_email(self,user_email: str) -> Optional[tuple]:
@@ -165,7 +216,7 @@ class AgentExporter:
             export_time=ts
         ) 
     #------------------------------------------------------------------------
-    async def write_env_and_configs(self, target_path: str, agent_dict: dict):
+    async def write_env_and_configs(self, target_path: str, agent_dict: dict, tool_codes: List[str] = None):
         remove_quotes=["DATABASE_URL","POSTGRESQL_HOST","POSTGRESQL_PORT","POSTGRESQL_USER","POSTGRESQL_PASSWORD","DATABASE","CONNECTION_POOL_SIZE","REDIS_HOST","REDIS_PORT","REDIS_DB","REDIS_PASSWORD","CACHE_EXPIRY_TIME","IAF_PASSWORD","ENABLE_CACHING","GITHUB_USERNAME","GITHUB_PAT","GITHUB_EMAIL","TARGET_REPO_NAME","TARGET_REPO_OWNER","TARGET_BRANCH"]
         user = role = None
         if self.user_email:
@@ -188,11 +239,21 @@ class AgentExporter:
         with open(config_py_path, 'w') as f:
             f.write('agent_data = ')
             json.dump({agent_dict['agentic_application_id']: agent_dict}, f, indent=4)
-        req_path =os.path.join(target_path, 'Agent_Backend/requirements.txt')
-        shutil.copy('requirements.txt', req_path)
+        
+        # Generate requirements based on Export Agent dependencies and tool codes
+        req_path = os.path.join(target_path, 'Agent_Backend/requirements.txt')
+        try:
+            export_requirements = generate_export_requirements(tool_code_strings=tool_codes or [])
+            with open(req_path, 'w', encoding='utf-8') as f:
+                for req in export_requirements:
+                    f.write(f"{req}\n")
+        except Exception as e:
+            log.warning(f"Failed to generate requirements, falling back to requirements.txt: {e}")
+            shutil.copy('requirements.txt', req_path)
+        
         await self.store_logs(agent_dict['agentic_application_id'],agent_dict['agentic_application_name'],self.user_email,user)
     #------------------------------------------------------------------------
-    async def write_env_and_agentconfigs(self, target_path: str, configs: dict):
+    async def write_env_and_agentconfigs(self, target_path: str, configs: dict, tool_codes: List[str] = None):
         remove_quotes=["DATABASE_URL","POSTGRESQL_HOST","POSTGRESQL_PORT","POSTGRESQL_USER","POSTGRESQL_PASSWORD","DATABASE","CONNECTION_POOL_SIZE","REDIS_HOST","REDIS_PORT","REDIS_DB","REDIS_PASSWORD","CACHE_EXPIRY_TIME","IAF_PASSWORD","ENABLE_CACHING"]
         user = role = None
         if self.user_email:
@@ -217,8 +278,18 @@ class AgentExporter:
         with open(config_py_path, 'w') as f:
             f.write('agent_data = ')
             json.dump(adict, f, indent=4)
-        req_path =os.path.join(target_path, 'Agent_Backend/requirements.txt')
-        shutil.copy('requirements.txt', req_path)
+        
+        # Generate requirements based on Export Agent dependencies and tool codes
+        req_path = os.path.join(target_path, 'Agent_Backend/requirements.txt')
+        try:
+            export_requirements = generate_export_requirements(tool_code_strings=tool_codes or [])
+            with open(req_path, 'w', encoding='utf-8') as f:
+                for req in export_requirements:
+                    f.write(f"{req}\n")
+        except Exception as e:
+            log.warning(f"Failed to generate requirements, falling back to requirements.txt: {e}")
+            shutil.copy('requirements.txt', req_path)
+        
         for agent_id, agent_dict in configs.items():
             await self.store_logs(agent_dict['agentic_application_id'],agent_dict['agentic_application_name'],self.user_email,user)
     #------------------------------------------------------------------------
@@ -288,7 +359,9 @@ class AgentExporter:
             foldername='Hybrid Agent'
         target_folder = os.path.join(self.work_dir, f"{foldername}")
         self.copy_static_template_base(target_folder)     # final export folder (Agent_code)
-        await self.write_env_and_configs(target_folder, agent_dict)
+        
+        tool_codes = []  # Collect tool codes for dependency analysis
+        
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
         self.copy_user_uploads(target_folder)
@@ -314,12 +387,13 @@ class AgentExporter:
                 if worker_data:
                     worker_dict = worker_data[0]
                     processed_dict={}
+                    default_null=""
                     for k, v in worker_dict.items():
-                        if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
+                        if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","department_name"]:
                             if isinstance(v, datetime):
                                 processed_dict[k] = v.isoformat()
                             else:
-                                processed_dict[k] = v
+                                processed_dict[k] = v if v is not None else default_null
                     worker_agents[wid] = processed_dict
                 else:
                     worker_agents[wid] = None
@@ -331,19 +405,33 @@ class AgentExporter:
             for wid in worker_agents:
                 tool_list = worker_agents[wid]["tools_id"]
                 for tid in tool_list:
-                    tools_ids.add(tid)
+                    tools_ids.add(tid)                
+            # validator = worker_agents[wid]["validation_criteria"][0]["validator"]
+            validators = worker_agents[wid]["validation_criteria"]
+            for criterion in validators:
+                validator = criterion.get("validator")
+                if validator:
+                    tools_ids.add(validator)
+            # if validator:
+            #     tools_ids.add(validator)
             await self.get_tool_data(agent_dict, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
         else:
             worker_agents_path = os.path.join(agent_backend, "worker_agents_config.py")
             with open(worker_agents_path, 'w') as f:
                 f.write('worker_agents = {}\n')
-            await self.get_tool_data(agent_dict, export_path=target_folder,tool_service=self.tool_service)
+            tool_codes = await self.get_tool_data(agent_dict, export_path=target_folder,tool_service=self.tool_service)
+        
+        # Pass tool codes to write_env_and_configs for dependency analysis
+        await self.write_env_and_configs(target_folder, agent_dict, tool_codes=tool_codes)
+        
         return target_folder
     #------------------------------------------------------------------------
     async def build_multi_agent_folder(self, configs: Dict[str, Any]) -> str:
         target_folder = os.path.join(self.work_dir, "Multiple_Agents")
         self.copy_static_template_base(target_folder)
-        await self.write_env_and_agentconfigs(target_folder, configs)
+        
+        tool_codes = []  # Collect tool codes for dependency analysis
+        
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
         self.copy_user_uploads(target_folder)
@@ -369,21 +457,36 @@ class AgentExporter:
             if atype in {"meta_agent", "planner_meta_agent"}:
                 worker_agent_ids = agent.get("tools_id")
                 worker_ids.update(worker_agent_ids)
+                # validator = agent["validation_criteria"][0]["validator"]
+                # if validator:
+                #     tools_ids.add(validator)
+                validators  = agent["validation_criteria"]
+                for criterion in validators:
+                    validator = criterion.get("validator")
+                    if validator and validator not in tools_ids:
+                        tools_ids.add(validator)
             else:
                 tool_ids_list = agent.get('tools_id')
                 tools_ids.update(tool_ids_list)
+                validators  = agent["validation_criteria"]
+                for criterion in validators:
+                    validator = criterion.get("validator")
+                    if validator and validator not in tools_ids:
+                        tools_ids.add(validator)
         worker_agents = {}
         for wid in worker_ids:
             worker_data =await self.agent_service.get_agent(agentic_application_id=wid)
             if worker_data:
                 worker_dict = worker_data[0]
+                default_null=""
                 processed_dict={}
                 for k, v in worker_dict.items():
-                    if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","validation_criteria"]:
+                    if k not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","department_name"]:
                         if isinstance(v, datetime):
                             processed_dict[k] = v.isoformat()
                         else:
-                            processed_dict[k] = v
+                            # processed_dict[k] = v
+                            processed_dict[k] = v if v is not None else default_null
                 worker_agents[wid] = processed_dict
             else:
                 worker_agents[wid] = None
@@ -395,7 +498,17 @@ class AgentExporter:
             tool_list = worker_agents[wid]["tools_id"]
             for tid in tool_list:
                 tools_ids.add(tid)
-        await self.get_tool_data(configs, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
+            validators = worker_agents[wid]["validation_criteria"]
+            for criterion in validators:
+                validator = criterion.get("validator")
+                if validator:
+                    tools_ids.add(validator)     
+        # await self.get_tool_data(configs, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
+        tool_codes = await self.get_tool_data(configs, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
+        
+        # Pass tool codes to write_env_and_agentconfigs for dependency analysis
+        await self.write_env_and_agentconfigs(target_folder, configs, tool_codes=tool_codes)
+        
         return target_folder
     #------------------------------------------------------------------------
     async def export(self):

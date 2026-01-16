@@ -9,16 +9,17 @@ from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
 from src.database.database_manager import DatabaseManager, REQUIRED_DATABASES
 from src.database.repositories import (
     TagRepository, TagToolMappingRepository, TagAgentMappingRepository,
-    ToolRepository, McpToolRepository, ToolAgentMappingRepository, RecycleToolRepository,
+    ToolRepository, McpToolRepository, ToolAgentMappingRepository, RecycleToolRepository, RecycleMcpToolRepository,
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
     FeedbackLearningRepository, EvaluationDataRepository,
     ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
-    ExportAgentRepository, AgentMetadataRepository, AgentDataTableRepository, ChatStateHistoryManagerRepository
+    ExportAgentRepository, AgentMetadataRepository, AgentDataTableRepository, ChatStateHistoryManagerRepository,
+    PipelineRepository, PipelineRunRepository, PipelineStepsRepository
 )
 from src.tools.tool_code_processor import ToolCodeProcessor
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentServiceUtils, AgentService, ChatService,
-    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService
+    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService, PipelineService, VMManagementService
 )
 from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.models.model_service import ModelService
@@ -28,14 +29,16 @@ from src.agent_templates import (
 )
 from src.agent_templates.simple_ai_agent_onboard import SimpleAIAgentOnboard
 from src.agent_templates.hybrid_agent_onboard import HybridAgentOnboard
+# Langgraph based Inference Imports
 from src.inference import (
     InferenceUtils, ReactAgentInference, MultiAgentInference, PlannerExecutorAgentInference,
     ReactCriticAgentInference, MetaAgentInference, PlannerMetaAgentInference, CentralizedAgentInference
 )
+from src.inference.pipeline_inference import PipelineInference
 from src.inference.python_based_inference.simple_ai_agent_inference import SimpleAIAgentInference
 from src.inference.python_based_inference.hybrid_agent_inference import HybridAgentInference
-
 from src.utils.file_manager import FileManager
+from src.utils.tool_file_manager import ToolFileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
 
 from telemetry_wrapper import logger as log
@@ -68,6 +71,7 @@ class AppContainer:
         self.tag_agent_mapping_repo: TagAgentMappingRepository = None
         self.tool_repo: ToolRepository = None
         self.mcp_tool_repo: McpToolRepository = None
+        self.recycle_mcp_tool_repo: RecycleMcpToolRepository = None
         self.tool_agent_mapping_repo: ToolAgentMappingRepository = None
         self.recycle_tool_repo: RecycleToolRepository = None
         self.agent_repo: AgentRepository = None
@@ -120,9 +124,15 @@ class AppContainer:
         self.simple_ai_agent_inference: SimpleAIAgentInference = None
         self.hybrid_agent_inference: HybridAgentInference = None
 
-        # Google ADK based Template Inferences
-
         self.centralized_agent_inference: CentralizedAgentInference = None
+        
+        # Pipeline repositories and services
+        self.pipeline_repo: PipelineRepository = None
+        self.pipeline_run_repo: PipelineRunRepository = None
+        self.pipeline_steps_repo: PipelineStepsRepository = None
+        self.pipeline_service: PipelineService = None
+        self.pipeline_inference: PipelineInference = None
+        
         # Authentication repositories
         self.user_repo: UserRepository = None
         self.approval_permission_repo: ApprovalPermissionRepository = None
@@ -132,10 +142,12 @@ class AppContainer:
 
         # Initialize the file manager with default base directory
         self.file_manager: FileManager = None
+        self.tool_file_manager: ToolFileManager = None
 
         self.embedding_model: SentenceTransformer = None
         self.cross_encoder: CrossEncoder = None
         self.episodic_memory_manager: EpisodicMemoryManager = None
+        self.vm_management_service: VMManagementService = None
 
 
     async def initialize_services(self):
@@ -185,6 +197,7 @@ class AppContainer:
         self.tag_agent_mapping_repo = TagAgentMappingRepository(pool=main_pool, login_pool=login_pool)
         self.tool_repo = ToolRepository(pool=main_pool, login_pool=login_pool)
         self.mcp_tool_repo = McpToolRepository(pool=main_pool, login_pool=login_pool)
+        self.recycle_mcp_tool_repo = RecycleMcpToolRepository(pool=recycle_pool, login_pool=login_pool)
         self.tool_agent_mapping_repo = ToolAgentMappingRepository(pool=main_pool, login_pool=login_pool)
         self.recycle_tool_repo = RecycleToolRepository(pool=recycle_pool, login_pool=login_pool)
         self.agent_repo = AgentRepository(pool=main_pool, login_pool=login_pool)
@@ -199,6 +212,11 @@ class AppContainer:
         self.export_repo = ExportAgentRepository(pool=main_pool, login_pool=login_pool)
         self.chat_state_history_manager_repo = ChatStateHistoryManagerRepository(pool=main_pool, login_pool=login_pool)
         
+        # Initialize pipeline repositories
+        self.pipeline_repo = PipelineRepository(pool=main_pool, login_pool=login_pool)
+        self.pipeline_run_repo = PipelineRunRepository(pool=main_pool, login_pool=login_pool)
+        self.pipeline_steps_repo = PipelineStepsRepository(pool=main_pool, login_pool=login_pool)
+        
         # Initialize authentication repositories
         self.user_repo = UserRepository(pool=login_pool)
         self.approval_permission_repo = ApprovalPermissionRepository(pool=login_pool)
@@ -208,6 +226,7 @@ class AppContainer:
 
         # 5. Initialize Utility Processors
         self.tool_code_processor = ToolCodeProcessor()
+        self.tool_file_manager = ToolFileManager(pool=main_pool) 
         log.info("AppContainer: Utility processors initialized.")
 
         # 6. Initialize Services (Order matters for dependencies)
@@ -221,6 +240,7 @@ class AppContainer:
         )
         self.mcp_tool_service = McpToolService( # Initialize McpToolService
             mcp_tool_repo=self.mcp_tool_repo,
+            recycle_mcp_tool_repo=self.recycle_mcp_tool_repo,
             tag_service=self.tag_service,
             tool_agent_mapping_repo=self.tool_agent_mapping_repo,
             agent_repo=self.agent_repo
@@ -233,7 +253,8 @@ class AppContainer:
             tool_code_processor=self.tool_code_processor,
             agent_repo=self.agent_repo,
             model_service=self.model_service,
-            mcp_tool_service=self.mcp_tool_service
+            mcp_tool_service=self.mcp_tool_service,
+            tool_file_manager=self.tool_file_manager
         )
         self.agent_service_utils = AgentServiceUtils(
             agent_repo=self.agent_repo,
@@ -290,6 +311,14 @@ class AppContainer:
             approval_repo=self.approval_permission_repo,
             audit_repo=self.audit_log_repo
         )
+                
+        # Initialize pipeline service
+        self.pipeline_service = PipelineService(
+            pipeline_repo=self.pipeline_repo,
+            pipeline_run_repo=self.pipeline_run_repo,
+            pipeline_steps_repo=self.pipeline_steps_repo,
+            agent_service=self.agent_service
+        )
 
         log.info("AppContainer: Services initialized.")
 
@@ -342,8 +371,6 @@ class AppContainer:
         self.simple_ai_agent_inference = SimpleAIAgentInference(inference_utils=self.inference_utils)
         self.hybrid_agent_inference = HybridAgentInference(inference_utils=self.inference_utils)
 
-        # Google ADK based Template Inferences
-
         self.centralized_agent_inference = CentralizedAgentInference(
             # Langgraph
             react_agent_inference=self.react_agent_inference,
@@ -357,11 +384,17 @@ class AppContainer:
             simple_ai_agent_inference=self.simple_ai_agent_inference,
             hybrid_agent_inference=self.hybrid_agent_inference,
 
-            # Google ADK
-
             inference_utils=self.inference_utils
         )
         log.info("AppContainer: Inference services initialized.")
+        
+        # Initialize Pipeline Inference
+        self.pipeline_inference = PipelineInference(
+            inference_utils=self.inference_utils,
+            pipeline_service=self.pipeline_service,
+            centralized_agent_inference=self.centralized_agent_inference
+        )
+        log.info("AppContainer: Pipeline inference initialized.")
 
         self.core_evaluation_service = CoreEvaluationService(
             evaluation_service=self.evaluation_service,
@@ -384,6 +417,8 @@ class AppContainer:
         self.multi_db_connection_repo = MultiDBConnectionRepository(pool=main_pool)
 
         self.file_manager = FileManager()
+        
+        self.vm_management_service = VMManagementService()
 
         # 8. Create Tables (if they don't exist)
         # Call create_tables_if_not_exists for each service/repository that manages tables.
@@ -411,6 +446,9 @@ class AppContainer:
         await self.multi_db_connection_repo.create_db_connections_table_if_not_exists() # Create multi-DB connections table
         await self.export_repo.create_table_if_not_exists()
         await self.chat_state_history_manager_repo.create_table_if_not_exists()
+        
+        # Pipeline tables
+        await self.pipeline_repo.create_table_if_not_exists()
 
         # Mapping tables (depend on main tables)
         await self.tag_tool_mapping_repo.create_table_if_not_exists()
@@ -419,6 +457,7 @@ class AppContainer:
 
         # Recycle tables (depend on nothing but their pool)
         await self.recycle_tool_repo.create_table_if_not_exists()
+        await self.recycle_mcp_tool_repo.create_table_if_not_exists()
         await self.recycle_agent_repo.create_table_if_not_exists()
 
         # 9. Load all models into cache (optional, for pre-warming)
@@ -436,9 +475,6 @@ class AppContainer:
 
         await self.tag_tool_mapping_repo.drop_tool_id_fk_constraint()
         await self.tool_service.fix_tool_agent_mapping_for_meta_agents()
-        await self.feedback_learning_repo.migrate_agent_ids_to_hyphens()
-        await self.mcp_tool_repo.migrate_file_mcp_tools_config()
-        await self.agent_service.migrate_agent_ids_and_references()
         log.info("AppContainer: Database data migrations/fixes completed.")
 
     async def shutdown_services(self):

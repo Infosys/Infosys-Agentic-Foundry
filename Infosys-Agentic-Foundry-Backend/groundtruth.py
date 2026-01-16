@@ -239,9 +239,18 @@ async def evaluate_ground_truth_file(
         rouge1_scores.append(rouge_scores["rouge1"].fmeasure)
         rougeL_scores.append(rouge_scores["rougeL"].fmeasure)
 
-        emb1 = sbert_model.encode(expected, convert_to_tensor=True)
-        emb2 = sbert_model.encode(actual, convert_to_tensor=True)
-        sbert_scores.append(util.cos_sim(emb1, emb2))
+        # Try to compute SBERT score, fall back if model is unavailable
+        try:
+            if sbert_model is None:
+                log.warning(f"SBERT model unavailable for row {i+1}, using 0.0 score")
+                sbert_scores.append(0.0)
+            else:
+                emb1 = sbert_model.encode(expected, convert_to_tensor=True)
+                emb2 = sbert_model.encode(actual, convert_to_tensor=True)
+                sbert_scores.append(util.cos_sim(emb1, emb2))
+        except Exception as e:
+            log.error(f"Error computing SBERT score for row {i+1}: {str(e)}")
+            sbert_scores.append(0.0)
 
         exact_match_scores.append(1.0 if expected.strip() == actual.strip() else 0.0)
         fuzzy_match_scores.append(fuzz.ratio(expected, actual) / 100.0)
@@ -305,12 +314,18 @@ async def evaluate_ground_truth_file(
     df = pd.concat([df, pd.DataFrame([avg_row])], ignore_index=True)
 
     # Diagnostic summary
-    summary = ""
+    summary = "No LLM model provided for diagnostic summary."
     if llm:
-        scores_text = "\n".join(f"{k}: {v:.3f}" for k, v in avg_scores.items())
-        summary_chain = diagnostic_prompt | llm
-        result = await summary_chain.ainvoke({"scores_dict": scores_text})
-        summary = result.content.strip()
+        try:
+            scores_text = "\n".join(f"{k}: {v:.3f}" for k, v in avg_scores.items())
+            summary_chain = diagnostic_prompt | llm
+            result = await summary_chain.ainvoke({"scores_dict": scores_text})
+            summary = result.content.strip() if result and hasattr(result, 'content') else "Failed to generate summary"
+            if not summary:
+                summary = "Summary generation returned empty content"
+        except Exception as e:
+            log.error(f"Error generating diagnostic summary: {str(e)}", exc_info=True)
+            summary = f"Error generating summary: {str(e)}"
     else:
         log.warning("No LLM model provided for diagnostic summary generation.")
         summary = "No LLM diagnostic summary generated. Please provide an LLM model for detailed analysis."

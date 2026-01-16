@@ -707,7 +707,6 @@ def get_user_secrets(look_up_key, default_value=None):
     
     # Retrieve the secret_data
     key_value = secrets_manager.get_user_secret(user_email, look_up_key)
-    log.error(f"Retrieved secret_data for {look_up_key}: {key_value}")
     return key_value if key_value else default_value
 
 def set_user_secret(look_up_key, value):

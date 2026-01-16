@@ -1177,29 +1177,53 @@ class McpToolRepository(BaseRepository):
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         """
         try:
+            # Ensure mcp_config is properly formatted for JSONB
+            mcp_config_value = tool_data.get("mcp_config")
+            if isinstance(mcp_config_value, str):
+                # Already a JSON string, use as-is
+                mcp_config_json = mcp_config_value
+            else:
+                # Dict or other type, convert to JSON string
+                mcp_config_json = json.dumps(mcp_config_value)
+            
+            # Handle datetime fields - strip timezone if present (recycle bin uses TIMESTAMPTZ, main table uses TIMESTAMP)
+            created_on = tool_data.get("created_on")
+            updated_on = tool_data.get("updated_on")
+            approved_at = tool_data.get("approved_at")
+            
+            # Convert timezone-aware datetimes to naive (remove timezone info)
+            if created_on and hasattr(created_on, 'tzinfo') and created_on.tzinfo is not None:
+                created_on = created_on.replace(tzinfo=None)
+            
+            if updated_on and hasattr(updated_on, 'tzinfo') and updated_on.tzinfo is not None:
+                updated_on = updated_on.replace(tzinfo=None)
+            
+            if approved_at and hasattr(approved_at, 'tzinfo') and approved_at.tzinfo is not None:
+                approved_at = approved_at.replace(tzinfo=None)
+            
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     insert_statement,
                     tool_data.get("tool_id"),
                     tool_data.get("tool_name"),
                     tool_data.get("tool_description"),
-                    json.dumps(tool_data.get("mcp_config")), # Ensure JSONB is dumped
+                    mcp_config_json,
                     tool_data.get("is_public", False),
                     tool_data.get("status", "pending"),
                     tool_data.get("comments"),
-                    tool_data.get("approved_at"),
+                    approved_at,
                     tool_data.get("approved_by"),
                     tool_data.get("created_by"),
-                    tool_data["created_on"],
-                    tool_data["updated_on"]
+                    created_on,
+                    updated_on
                 )
             log.info(f"MCP tool record '{tool_data.get('tool_name')}' inserted successfully.")
             return True
-        except asyncpg.UniqueViolationError:
-            log.warning(f"MCP tool record '{tool_data.get('tool_name')}' already exists (unique violation).")
+        except asyncpg.UniqueViolationError as ue:
+            log.warning(f"MCP tool record '{tool_data.get('tool_name')}' already exists (unique violation). Error: {ue}")
             return False
         except Exception as e:
-            log.error(f"Error saving MCP tool record '{tool_data.get('tool_name')}': {e}")
+            log.error(f"Error saving MCP tool record '{tool_data.get('tool_name')}': {e}. Tool data: {tool_data}")
             return False
 
     async def get_mcp_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1871,6 +1895,212 @@ class RecycleToolRepository(BaseRepository):
 
 
 
+# --- RecycleMcpToolRepository ---
+# --- CACHE NOT IMPLEMENTED FOR THIS CLASS ---
+class RecycleMcpToolRepository(BaseRepository):
+    """
+    Repository for the 'recycle_mcp_tool' table. Handles direct database interactions for recycled MCP tools.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "recycle_mcp_tool"):
+        """
+        Initializes the RecycleMcpToolRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the recycle MCP tools table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'recycle_mcp_tool' table if it doesn't already exist.
+        """
+        try:
+            create_table_sql = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                tool_id TEXT PRIMARY KEY,
+                tool_name TEXT UNIQUE NOT NULL,
+                tool_description TEXT,
+                mcp_config JSONB NOT NULL,
+                is_public BOOLEAN DEFAULT FALSE,
+                status TEXT DEFAULT 'pending',
+                comments TEXT,
+                approved_at TIMESTAMPTZ,
+                approved_by TEXT,
+                created_by TEXT,
+                created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected'))
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_sql)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def is_mcp_tool_in_recycle_bin_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> bool:
+        """
+        Checks if an MCP tool exists in the recycle bin table by ID or name.
+
+        Args:
+            tool_id (Optional[str]): The ID of the MCP tool.
+            tool_name (Optional[str]): The name of the MCP tool.
+
+        Returns:
+            bool: True if the MCP tool exists, False otherwise.
+        """
+        query = f"SELECT EXISTS(SELECT 1 FROM {self.table_name} WHERE tool_id = $1 OR tool_name = $2)"
+        try:
+            async with self.pool.acquire() as conn:
+                exists = await conn.fetchval(query, tool_id, tool_name)
+            log.info(f"Checked if MCP tool '{tool_id or tool_name}' exists in recycle bin: {exists}.")
+            return exists
+        except Exception as e:
+            log.error(f"Error checking MCP tool '{tool_id or tool_name}' in recycle bin: {e}")
+            return False
+
+    async def insert_recycle_mcp_tool_record(self, tool_data: Dict[str, Any]) -> bool:
+        """
+        Inserts an MCP tool record into the recycle bin.
+
+        Args:
+            tool_data (Dict[str, Any]): A dictionary containing the MCP tool data to insert.
+
+        Returns:
+            bool: True if the record was inserted successfully, False otherwise.
+        """
+        insert_query = f"""
+        INSERT INTO {self.table_name} (
+            tool_id, tool_name, tool_description, mcp_config,
+            is_public, status, comments, approved_at, approved_by,
+            created_by, created_on, updated_on, deleted_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+        ON CONFLICT (tool_id) DO NOTHING;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    insert_query,
+                    tool_data.get("tool_id"),
+                    tool_data.get("tool_name"),
+                    tool_data.get("tool_description"),
+                    json.dumps(tool_data.get("mcp_config")),
+                    tool_data.get("is_public", False),
+                    tool_data.get("status", "pending"),
+                    tool_data.get("comments"),
+                    tool_data.get("approved_at"),
+                    tool_data.get("approved_by"),
+                    tool_data.get("created_by"),
+                    tool_data.get("created_on"),
+                    tool_data.get("updated_on")
+                )
+            log.info(f"MCP tool record {tool_data.get('tool_name')} inserted into recycle bin successfully.")
+            return True
+        except Exception as e:
+            log.error(f"Error inserting recycle MCP tool record {tool_data.get('tool_name')}: {e}")
+            return False
+
+    async def delete_recycle_mcp_tool_record(self, tool_id: str) -> bool:
+        """
+        Deletes an MCP tool record from the recycle bin by its ID.
+
+        Args:
+            tool_id (str): The ID of the MCP tool record to delete.
+
+        Returns:
+            bool: True if the record was deleted successfully, False otherwise.
+        """
+        delete_query = f"DELETE FROM {self.table_name} WHERE tool_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_query, tool_id)
+            if result != "DELETE 0":
+                log.info(f"MCP tool record '{tool_id}' deleted successfully from recycle bin.")
+                return True
+            else:
+                log.warning(f"MCP tool record '{tool_id}' not found in recycle bin, no deletion performed.")
+                return False
+        except Exception as e:
+            log.error(f"Error deleting recycle MCP tool record '{tool_id}': {e}")
+            return False
+
+    async def get_all_recycle_mcp_tool_records(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all MCP tool records from the recycle bin.
+
+        Returns:
+            List[Dict[str, Any]]: A list of dictionaries, each representing a recycled MCP tool record.
+        """
+        query = f"SELECT * FROM {self.table_name} ORDER BY deleted_at DESC"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query)
+            log.info(f"Retrieved {len(rows)} recycle MCP tool records from '{self.table_name}'.")
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            # Parse mcp_config from JSON
+            for row in updated_rows:
+                if row.get("mcp_config"):
+                    try:
+                        row["mcp_config"] = json.loads(row["mcp_config"]) if isinstance(row["mcp_config"], str) else row["mcp_config"]
+                    except json.JSONDecodeError:
+                        log.warning(f"Failed to parse mcp_config for tool_id {row.get('tool_id')}")
+            return updated_rows
+        except Exception as e:
+            log.error(f"Error retrieving all recycle MCP tool records: {e}")
+            return []
+
+    async def get_recycle_mcp_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> Dict[str, Any] | None:
+        """
+        Retrieves a single MCP tool record from the recycle bin by ID or name.
+
+        Args:
+            tool_id (Optional[str]): The ID of the MCP tool.
+            tool_name (Optional[str]): The name of the MCP tool.
+
+        Returns:
+            Dict[str, Any] | None: A dictionary representing the recycled MCP tool record, or None if not found.
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE "
+        params = []
+        if tool_id:
+            query += "tool_id = $1"
+            params.append(tool_id)
+        elif tool_name:
+            query += "tool_name = $1"
+            params.append(tool_name)
+        else:
+            log.warning("No tool_id or tool_name provided to get_recycle_mcp_tool_record.")
+            return None
+
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *params)
+            if row:
+                log.info(f"Recycle MCP tool record '{tool_id or tool_name}' retrieved successfully.")
+                row = dict(row)
+                await self._transform_emails_to_usernames([row], ['created_by', 'approved_by'])
+                # Parse mcp_config from JSON
+                if row.get("mcp_config"):
+                    try:
+                        row["mcp_config"] = json.loads(row["mcp_config"]) if isinstance(row["mcp_config"], str) else row["mcp_config"]
+                    except json.JSONDecodeError:
+                        log.warning(f"Failed to parse mcp_config for tool_id {row.get('tool_id')}")
+                return row
+            else:
+                log.info(f"Recycle MCP tool record '{tool_id or tool_name}' not found.")
+                return None
+        except Exception as e:
+            log.error(f"Error retrieving recycle MCP tool record '{tool_id or tool_name}': {e}")
+            return None
+
+
+
 # --- Agent Repository ---
 
 class AgentRepository(BaseRepository, CacheableRepository):
@@ -2476,7 +2706,7 @@ class AgentRepository(BaseRepository, CacheableRepository):
         except Exception as e:
             log.error(f"Error finding agents using validator '{validator_tool_id}': {e}")
             return []
-
+        
 
 
 # --- RecycleAgentRepository ---
@@ -4622,3 +4852,817 @@ class AgentDataTableRepository(BaseRepository):
         async with self.pool.acquire() as conn:
             records = await conn.fetch(query)
             return [dict(r) for r in records]
+
+
+# --- Pending Modules Functions ---
+async def create_pending_modules_table(pool: asyncpg.Pool):
+    """Create the pending modules table if it doesn't exist."""
+    create_table_query = """
+        CREATE TABLE IF NOT EXISTS pending_modules_table (
+            id SERIAL PRIMARY KEY,
+            module_name TEXT NOT NULL UNIQUE,
+            tool_name TEXT,
+            created_by TEXT,
+            tool_code TEXT,
+            created_on TIMESTAMP DEFAULT NOW()
+        );
+    """
+    async with pool.acquire() as conn:
+        await conn.execute(create_table_query)
+
+async def save_pending_module(pool: asyncpg.Pool, module_name: str, tool_name: str, created_by: str = None, tool_code: str = None):
+    """Save a pending module to the database."""
+    await create_pending_modules_table(pool)
+    insert_query = """
+        INSERT INTO pending_modules_table (module_name, tool_name, created_by, tool_code)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (module_name) DO NOTHING
+    """
+    async with pool.acquire() as conn:
+        await conn.execute(insert_query, module_name, tool_name, created_by, tool_code)
+
+async def get_all_pending_modules(pool: asyncpg.Pool) -> List[Dict[str, Any]]:
+    """Get all pending modules from the database."""
+    await create_pending_modules_table(pool)
+    select_query = """
+        SELECT id, module_name, tool_name, created_by, tool_code, created_on
+        FROM pending_modules_table
+        ORDER BY created_on DESC
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(select_query)
+        return [dict(row) for row in rows]
+
+
+# --- Pipeline Repository ---
+
+class PipelineRepository(BaseRepository, CacheableRepository):
+    """
+    Repository for the 'pipelines_table'. Handles direct database interactions for agent pipelines.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "pipelines_table"):
+        """
+        Initializes the PipelineRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the pipelines table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'pipelines_table' in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                pipeline_id TEXT PRIMARY KEY,
+                pipeline_name TEXT NOT NULL,
+                pipeline_description TEXT,
+                pipeline_definition JSONB NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+            CREATE INDEX IF NOT EXISTS idx_pipelines_created_by ON {self.table_name}(created_by);
+            CREATE INDEX IF NOT EXISTS idx_pipelines_is_active ON {self.table_name}(is_active);
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def insert_pipeline(
+        self,
+        pipeline_id: str,
+        pipeline_name: str,
+        pipeline_description: str,
+        pipeline_definition: dict,
+        created_by: str
+    ) -> bool:
+        """
+        Inserts a new pipeline record.
+
+        Args:
+            pipeline_id: Unique identifier for the pipeline
+            pipeline_name: Name of the pipeline
+            pipeline_description: Description of the pipeline
+            pipeline_definition: JSON definition of nodes and edges
+            created_by: Email of the creator
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        insert_statement = f"""
+        INSERT INTO {self.table_name} 
+        (pipeline_id, pipeline_name, pipeline_description, pipeline_definition, created_by)
+        VALUES ($1, $2, $3, $4, $5)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    insert_statement,
+                    pipeline_id,
+                    pipeline_name.strip(),
+                    pipeline_description,
+                    json.dumps(pipeline_definition),
+                    created_by
+                )
+            await self.invalidate_entity("get_pipeline", pipeline_id)
+            await self.invalidate_entity("get_all_pipelines")
+            log.info(f"Pipeline '{pipeline_name}' inserted successfully with ID: {pipeline_id}")
+            return True
+        except asyncpg.UniqueViolationError:
+            log.warning(f"Pipeline with ID '{pipeline_id}' already exists.")
+            return False
+        except Exception as e:
+            log.error(f"Error inserting pipeline '{pipeline_name}': {e}")
+            return False
+
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="PipelineRepository")
+    async def get_all_pipelines(self, created_by: Optional[str] = None, is_active: Optional[bool] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all pipeline records with optional filtering.
+
+        Args:
+            created_by: Filter by creator email
+            is_active: Filter by active status
+
+        Returns:
+            List of pipeline dictionaries
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE 1=1"
+        params = []
+        param_idx = 1
+        
+        if created_by:
+            query += f" AND created_by = ${param_idx}"
+            params.append(created_by)
+            param_idx += 1
+        
+        if is_active is not None:
+            query += f" AND is_active = ${param_idx}"
+            params.append(is_active)
+            param_idx += 1
+        
+        query += " ORDER BY updated_at DESC"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            log.info(f"Retrieved {len(rows)} pipeline records.")
+            result = []
+            for row in rows:
+                row_dict = dict(row)
+                if isinstance(row_dict.get('pipeline_definition'), str):
+                    row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+                result.append(row_dict)
+            await self._transform_emails_to_usernames(result, ['created_by'])
+            return result
+        except Exception as e:
+            log.error(f"Error retrieving pipelines: {e}")
+            return []
+
+    async def get_total_pipeline_count(
+        self,
+        search_value: str = '',
+        created_by: Optional[str] = None,
+        is_active: Optional[bool] = None
+    ) -> int:
+        """
+        Gets the total count of pipelines matching the search criteria.
+
+        Args:
+            search_value: Search string to match against pipeline name
+            created_by: Filter by creator email
+            is_active: Filter by active status
+
+        Returns:
+            int: Total count of matching pipelines
+        """
+        query = f"SELECT COUNT(*) FROM {self.table_name} WHERE 1=1"
+        params = []
+        param_idx = 1
+        
+        if search_value:
+            query += f" AND pipeline_name ILIKE ${param_idx}"
+            params.append(f"%{search_value}%")
+            param_idx += 1
+        
+        if created_by:
+            query += f" AND created_by = ${param_idx}"
+            params.append(created_by)
+            param_idx += 1
+        
+        if is_active is not None:
+            query += f" AND is_active = ${param_idx}"
+            params.append(is_active)
+            param_idx += 1
+        
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval(query, *params)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error getting pipeline count: {e}")
+            return 0
+
+    async def get_pipelines_by_search_or_page(
+        self,
+        search_value: str = '',
+        limit: int = 20,
+        page: int = 1,
+        created_by: Optional[str] = None,
+        is_active: Optional[bool] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves pipelines with pagination and search filtering.
+
+        Args:
+            search_value: Search string to match against pipeline name
+            limit: Number of results per page
+            page: Page number (1-indexed)
+            created_by: Filter by creator email
+            is_active: Filter by active status
+
+        Returns:
+            List of pipeline dictionaries
+        """
+        offset = limit * max(0, page - 1)
+        query = f"SELECT * FROM {self.table_name} WHERE 1=1"
+        params = []
+        param_idx = 1
+        
+        if search_value:
+            query += f" AND pipeline_name ILIKE ${param_idx}"
+            params.append(f"%{search_value}%")
+            param_idx += 1
+        
+        if created_by:
+            query += f" AND created_by = ${param_idx}"
+            params.append(created_by)
+            param_idx += 1
+        
+        if is_active is not None:
+            query += f" AND is_active = ${param_idx}"
+            params.append(is_active)
+            param_idx += 1
+        
+        query += f" ORDER BY updated_at DESC LIMIT ${param_idx} OFFSET ${param_idx + 1}"
+        params.extend([limit, offset])
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            log.info(f"Retrieved {len(rows)} pipelines for search '{search_value}' page {page}.")
+            result = []
+            for row in rows:
+                row_dict = dict(row)
+                if isinstance(row_dict.get('pipeline_definition'), str):
+                    row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+                result.append(row_dict)
+            await self._transform_emails_to_usernames(result, ['created_by'])
+            return result
+        except Exception as e:
+            log.error(f"Error retrieving pipelines by search/page: {e}")
+            return []
+
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="PipelineRepository")
+    async def get_pipeline(self, pipeline_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a single pipeline by ID.
+
+        Args:
+            pipeline_id: The pipeline ID
+
+        Returns:
+            Pipeline dictionary or None if not found
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE pipeline_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, pipeline_id)
+            if row:
+                row_dict = dict(row)
+                if isinstance(row_dict.get('pipeline_definition'), str):
+                    row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+                await self._transform_emails_to_usernames([row_dict], ['created_by'])
+                log.info(f"Pipeline '{pipeline_id}' retrieved successfully.")
+                return row_dict
+            else:
+                log.info(f"Pipeline '{pipeline_id}' not found.")
+                return None
+        except Exception as e:
+            log.error(f"Error retrieving pipeline '{pipeline_id}': {e}")
+            return None
+
+    async def update_pipeline(
+        self,
+        pipeline_id: str,
+        pipeline_name: Optional[str] = None,
+        pipeline_description: Optional[str] = None,
+        pipeline_definition: Optional[dict] = None,
+        is_active: Optional[bool] = None
+    ) -> bool:
+        """
+        Updates a pipeline record.
+
+        Args:
+            pipeline_id: The pipeline ID to update
+            pipeline_name: New name (optional)
+            pipeline_description: New description (optional)
+            pipeline_definition: New definition (optional)
+            is_active: New active status (optional)
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        updates = []
+        params = []
+        param_idx = 1
+        
+        if pipeline_name is not None:
+            updates.append(f"pipeline_name = ${param_idx}")
+            params.append(pipeline_name.strip())
+            param_idx += 1
+        
+        if pipeline_description is not None:
+            updates.append(f"pipeline_description = ${param_idx}")
+            params.append(pipeline_description)
+            param_idx += 1
+        
+        if pipeline_definition is not None:
+            updates.append(f"pipeline_definition = ${param_idx}")
+            params.append(json.dumps(pipeline_definition))
+            param_idx += 1
+        
+        if is_active is not None:
+            updates.append(f"is_active = ${param_idx}")
+            params.append(is_active)
+            param_idx += 1
+        
+        if not updates:
+            log.warning("No fields to update for pipeline.")
+            return False
+        
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(pipeline_id)
+        
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET {', '.join(updates)}
+        WHERE pipeline_id = ${param_idx}
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_statement, *params)
+            await self.invalidate_entity("get_pipeline", pipeline_id)
+            await self.invalidate_entity("get_all_pipelines")
+            if result != "UPDATE 0":
+                log.info(f"Pipeline '{pipeline_id}' updated successfully.")
+                return True
+            else:
+                log.warning(f"Pipeline '{pipeline_id}' not found, no update performed.")
+                return False
+        except Exception as e:
+            log.error(f"Error updating pipeline '{pipeline_id}': {e}")
+            return False
+
+    async def delete_pipeline(self, pipeline_id: str) -> bool:
+        """
+        Deletes a pipeline record.
+
+        Args:
+            pipeline_id: The pipeline ID to delete
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        delete_statement = f"DELETE FROM {self.table_name} WHERE pipeline_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, pipeline_id)
+            await self.invalidate_entity("get_pipeline", pipeline_id)
+            await self.invalidate_entity("get_all_pipelines")
+            if result != "DELETE 0":
+                log.info(f"Pipeline '{pipeline_id}' deleted successfully.")
+                return True
+            else:
+                log.warning(f"Pipeline '{pipeline_id}' not found, no deletion performed.")
+                return False
+        except Exception as e:
+            log.error(f"Error deleting pipeline '{pipeline_id}': {e}")
+            return False
+
+
+# --- Pipeline Run Repository ---
+
+class PipelineRunRepository(BaseRepository):
+    """
+    Repository for the 'pipelines' run table.
+    Handles direct database interactions for pipeline run tracking.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "pipelines_run"):
+        """
+        Initializes the PipelineRunRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the pipelines run table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self) -> None:
+        """
+        Creates the 'pipelines' run table in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id TEXT PRIMARY KEY,
+                pipeline_id TEXT,
+                session_id TEXT,
+                user_query TEXT NOT NULL,
+                final_response TEXT,
+                status TEXT NOT NULL,
+                response_time FLOAT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP WITH TIME ZONE
+            );
+            CREATE INDEX IF NOT EXISTS idx_pipelines_status ON {self.table_name}(status);
+            CREATE INDEX IF NOT EXISTS idx_pipelines_session ON {self.table_name}(session_id);
+            CREATE INDEX IF NOT EXISTS idx_pipelines_pipeline_session ON {self.table_name}(pipeline_id, session_id);
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def create_run(self, run_id: str, user_query: str, pipeline_id: str = None, session_id: str = None, status: str = "pending") -> bool:
+        """
+        Insert a run record into pipelines table.
+
+        Args:
+            run_id: Unique identifier for this run
+            user_query: The user's input query
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID for conversation tracking
+            status: Initial status (default: pending)
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        await self.create_table_if_not_exists()
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    f"INSERT INTO {self.table_name}(id, pipeline_id, session_id, user_query, status, created_at) VALUES($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) ON CONFLICT(id) DO NOTHING",
+                    run_id,
+                    pipeline_id,
+                    session_id,
+                    user_query,
+                    status,
+                )
+            log.info(f"Pipeline run '{run_id}' created successfully with status '{status}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error creating pipeline run '{run_id}': {e}")
+            return False
+
+    async def update_status(self, run_id: str, status: str, final_response: Optional[str] = None, response_time: Optional[float] = None) -> bool:
+        """
+        Update run status and optionally final response.
+
+        Args:
+            run_id: The run ID to update
+            status: New status value
+            final_response: Optional final response text
+            response_time: Optional response time in seconds
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        await self.create_table_if_not_exists()
+        try:
+            async with self.pool.acquire() as conn:
+                if final_response is not None:
+                    await conn.execute(
+                        f"UPDATE {self.table_name} SET status = $2, final_response = $3, response_time = $4, completed_at = CURRENT_TIMESTAMP WHERE id = $1",
+                        run_id,
+                        status,
+                        final_response,
+                        response_time,
+                    )
+                else:
+                    await conn.execute(
+                        f"UPDATE {self.table_name} SET status = $2 WHERE id = $1",
+                        run_id,
+                        status,
+                    )
+            log.info(f"Pipeline run '{run_id}' status updated to '{status}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error updating pipeline run status for '{run_id}': {e}")
+            return False
+
+    async def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a pipeline run by ID.
+
+        Args:
+            run_id: The run ID to retrieve
+
+        Returns:
+            Dict with run details or None if not found
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, run_id)
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving pipeline run '{run_id}': {e}")
+            return None
+
+    async def get_runs_by_session(self, pipeline_id: str, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get pipeline runs by pipeline_id and session_id for conversation history.
+
+        Args:
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID
+            limit: Maximum number of records to return
+
+        Returns:
+            List of run dictionaries ordered by created_at descending
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE pipeline_id = $1 AND session_id = $2 AND status = 'completed' ORDER BY created_at DESC LIMIT $3"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, pipeline_id, session_id, limit)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error retrieving pipeline runs by session '{session_id}': {e}")
+            return []
+
+    async def get_runs_by_status(self, status: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get pipeline runs by status.
+
+        Args:
+            status: The status to filter by
+            limit: Maximum number of records to return
+
+        Returns:
+            List of run dictionaries
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE status = $1 LIMIT $2"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, status, limit)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error retrieving pipeline runs by status '{status}': {e}")
+            return []
+
+    async def delete_runs_by_session(self, pipeline_id: str, session_id: str) -> bool:
+        """
+        Delete all pipeline runs for a given pipeline_id and session_id.
+
+        Args:
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        query = f"DELETE FROM {self.table_name} WHERE pipeline_id = $1 AND session_id = $2"
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, pipeline_id, session_id)
+            log.info(f"Pipeline runs deleted for pipeline '{pipeline_id}' and session '{session_id}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting pipeline runs for session '{session_id}': {e}")
+            return False
+
+    async def get_run_ids_by_session(self, pipeline_id: str, session_id: str) -> List[str]:
+        """
+        Get all run IDs for a given pipeline_id and session_id.
+
+        Args:
+            pipeline_id: The pipeline definition ID
+            session_id: The user session ID
+
+        Returns:
+            List of run IDs
+        """
+        query = f"SELECT id FROM {self.table_name} WHERE pipeline_id = $1 AND session_id = $2"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, pipeline_id, session_id)
+            return [row['id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting run IDs for session '{session_id}': {e}")
+            return []
+
+    async def get_sessions_by_user_and_pipeline(self, user_email: str, pipeline_id: str) -> List[Dict[str, Any]]:
+        """
+        Get distinct sessions for a user and pipeline.
+        Session IDs typically contain the user email (e.g., "user@example.com_sessionname").
+
+        Args:
+            user_email: The user's email address
+            pipeline_id: The pipeline definition ID
+
+        Returns:
+            List of dicts with session_id and latest timestamp
+        """
+        query = f"""
+            SELECT DISTINCT session_id, MAX(created_at) as latest_timestamp
+            FROM {self.table_name}
+            WHERE pipeline_id = $1 AND session_id LIKE $2 AND status = 'completed'
+            GROUP BY session_id
+            ORDER BY latest_timestamp DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, pipeline_id, f"{user_email}%")
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting sessions for user '{user_email}' and pipeline '{pipeline_id}': {e}")
+            return []
+
+
+# --- Pipeline Steps Repository ---
+
+class PipelineStepsRepository(BaseRepository):
+    """
+    Repository for the 'pipeline_steps' table.
+    Handles direct database interactions for pipeline step tracking.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "pipeline_steps"):
+        """
+        Initializes the PipelineStepsRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the pipeline steps table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self) -> None:
+        """
+        Creates the 'pipeline_steps' table in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id TEXT PRIMARY KEY,
+                pipeline_id TEXT NOT NULL,
+                step_order INT NOT NULL,
+                agent_id TEXT,
+                step_data JSONB,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_pipeline_steps_pipeline ON {self.table_name}(pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_pipeline_steps_order ON {self.table_name}(step_order);
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def add_step(self, run_id: str, step_order: int, agent_id: str, step_data: dict) -> bool:
+        """
+        Insert a step record for a pipeline run.
+
+        Args:
+            run_id: The pipeline run ID (foreign key to pipelines table)
+            step_order: The order/sequence of this step in the pipeline
+            agent_id: The agent ID that executed this step
+            step_data: JSON data containing step execution details
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        await self.create_table_if_not_exists()
+        try:
+            step_id = str(uuid.uuid4())
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    f"INSERT INTO {self.table_name}(id, pipeline_id, step_order, agent_id, step_data) VALUES($1, $2, $3, $4, $5)",
+                    step_id,
+                    run_id,
+                    step_order,
+                    agent_id,
+                    json.dumps(step_data) if step_data is not None else json.dumps({}),
+                )
+            log.info(f"Pipeline step added for run '{run_id}' with order {step_order}.")
+            return True
+        except Exception as e:
+            log.error(f"Error adding pipeline step for run '{run_id}': {e}")
+            return False
+
+    async def get_steps_by_run(self, run_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all steps for a pipeline run.
+
+        Args:
+            run_id: The pipeline run ID
+
+        Returns:
+            List of step dictionaries ordered by step_order
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE pipeline_id = $1 ORDER BY step_order ASC"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, run_id)
+            result = []
+            for row in rows:
+                row_dict = dict(row)
+                if row_dict.get('step_data') and isinstance(row_dict['step_data'], str):
+                    row_dict['step_data'] = json.loads(row_dict['step_data'])
+                result.append(row_dict)
+            return result
+        except Exception as e:
+            log.error(f"Error retrieving pipeline steps for run '{run_id}': {e}")
+            return []
+
+    async def get_step(self, step_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific step by ID.
+
+        Args:
+            step_id: The step ID to retrieve
+
+        Returns:
+            Dict with step details or None if not found
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, step_id)
+            if row:
+                row_dict = dict(row)
+                if row_dict.get('step_data') and isinstance(row_dict['step_data'], str):
+                    row_dict['step_data'] = json.loads(row_dict['step_data'])
+                return row_dict
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving pipeline step '{step_id}': {e}")
+            return None
+
+    async def get_latest_step_order(self, run_id: str) -> int:
+        """
+        Get the latest step order for a pipeline run.
+
+        Args:
+            run_id: The pipeline run ID
+
+        Returns:
+            int: The latest step order, or 0 if no steps exist
+        """
+        query = f"SELECT MAX(step_order) FROM {self.table_name} WHERE pipeline_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(query, run_id)
+            return result or 0
+        except Exception as e:
+            log.error(f"Error getting latest step order for run '{run_id}': {e}")
+            return 0
+
+    async def delete_steps_by_run(self, run_id: str) -> bool:
+        """
+        Delete all steps for a pipeline run.
+
+        Args:
+            run_id: The pipeline run ID
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        query = f"DELETE FROM {self.table_name} WHERE pipeline_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, run_id)
+            log.info(f"Pipeline steps deleted for run '{run_id}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting pipeline steps for run '{run_id}': {e}")
+            return False
+

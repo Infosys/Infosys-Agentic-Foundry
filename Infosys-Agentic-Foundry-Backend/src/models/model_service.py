@@ -3,7 +3,6 @@ import os
 from typing import Any, Dict, List, Union, Tuple
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-from google.adk.models.lite_llm import LiteLlm
 
 from src.models.azure_ai_model_service import AzureAIModelService
 from src.database.repositories import ChatStateHistoryManagerRepository
@@ -193,42 +192,6 @@ class ModelService:
         log.error(f"Invalid model name: {model_name}")
         raise ValueError(f"Invalid model name: {model_name}")
 
-    async def get_llm_model_using_google_adk(self, model_name: str, temperature: float = 0) -> LiteLlm:
-        """
-        Creates and returns an LiteLLM model instance using Google ADK.
-        """
-        if model_name in self.azure_openai_models:
-            api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-            if not api_key:
-                log.error("AZURE_OPENAI_API_KEY environment variable is not set.")
-                raise ValueError("AZURE_OPENAI_API_KEY is not set in environment variables.")
-
-            log.info(f"Loading OpenAI model using Google ADK: {model_name}")
-            return LiteLlm(
-                model=f"azure/{model_name}",
-                api_key=api_key,
-                api_base=os.getenv("AZURE_ENDPOINT", ""),
-                api_version=os.getenv("OPENAI_API_VERSION", ""),
-                temperature=temperature,
-            )
-
-        if model_name in self.azure_openai_gpt_5_models:
-            api_key = os.getenv("AZURE_OPENAI_API_KEY_GPT_5", "")
-            if not api_key:
-                log.error("AZURE_OPENAI_API_KEY_GPT_5 environment variable is not set.")
-                raise ValueError("AZURE_OPENAI_API_KEY_GPT_5 is not set in environment variables.")
-
-            log.info(f"Loading OpenAI model using Google ADK: {model_name}")
-            return LiteLlm(
-                model=f"azure/{model_name}",
-                api_key=api_key,
-                api_base=os.getenv("AZURE_ENDPOINT_GPT_5", ""),
-                api_version=os.getenv("OPENAI_API_VERSION_GPT_5", ""),
-                temperature=temperature,
-            )
-
-        log.error(f"Invalid model name: {model_name}")
-        raise ValueError("Invalid model name specified")
 
     async def get_all_available_model_names(self) -> List[str]:
         """

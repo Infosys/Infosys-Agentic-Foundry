@@ -221,9 +221,8 @@ class ExportedToolRepository(BaseRepository, CacheableRepository):
                 code_snippet TEXT,
                 model_name TEXT,
                 created_by TEXT,
-                created_on TIMESTAMPTZ DEFAULT NOW()
-                
-                
+                last_used TIMESTAMPTZ DEFAULT NOW(),
+                created_on TIMESTAMPTZ DEFAULT NOW()   
             );
             """
             async with self.pool.acquire() as conn:
@@ -245,8 +244,8 @@ class ExportedToolRepository(BaseRepository, CacheableRepository):
         """
         from tools_config import tools_data
         insert_statement = f"""
-        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name,created_by)
-        VALUES ($1, $2, $3, $4, $5,$6) ON CONFLICT (tool_id) DO UPDATE SET
+        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (tool_id) DO UPDATE SET
                     tool_name = EXCLUDED.tool_name,
                     tool_description = EXCLUDED.tool_description,
                     code_snippet = EXCLUDED.code_snippet,
@@ -314,11 +313,17 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                 system_prompt JSONB,
                 tools_id JSONB,
                 created_by TEXT,
+                last_used TIMESTAMPTZ DEFAULT NOW(),
                 created_on TIMESTAMPTZ DEFAULT NOW()
             );
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                alter_statements = [
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS validation_criteria JSONB DEFAULT '[]'"
+                ]
+                for alter_statement in alter_statements:
+                    await conn.execute(alter_statement)
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -340,6 +345,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                 tools_id=json.dumps(tools_id)
                 # created_by=agent.get("created_by","")
                 created_by=user_id
+                validation_criteria=agent.get("validation_criteria", "[]")
+                validation_criteria=json.dumps(validation_criteria)
 
                 insert_statement = f"""
                 INSERT INTO {self.table_name} (
@@ -351,8 +358,9 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                     model_name,
                     system_prompt,
                     tools_id,
-                    created_by
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9)
+                    created_by,
+                    validation_criteria
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9,$10)
                 ON CONFLICT (agentic_application_id) DO UPDATE SET
                     agentic_application_name = EXCLUDED.agentic_application_name,
                     agentic_application_description = EXCLUDED.agentic_application_description,
@@ -361,7 +369,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                     model_name = EXCLUDED.model_name,
                     system_prompt = EXCLUDED.system_prompt,
                     tools_id = EXCLUDED.tools_id,
-                    created_by = EXCLUDED.created_by;
+                    created_by = EXCLUDED.created_by,
+                    validation_criteria = EXCLUDED.validation_criteria;
                 """
                 
                 async with self.pool.acquire() as conn:
@@ -374,7 +383,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                                        model_name, 
                                        system_prompt, 
                                        tools_id,
-                                       created_by)
+                                       created_by,
+                                       validation_criteria)
             if worker_agents:
                 for agent in worker_agents.values():
                     agent_id = agent.get("agentic_application_id", str(uuid.uuid4()))
@@ -390,6 +400,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                     # tools_id = agent.get("tools_id", [])
                     # created_by=agent.get("created_by","")
                     created_by=user_id
+                    validation_criteria=agent.get("validation_criteria", "[]")
+                    validation_criteria=json.dumps(validation_criteria)
 
                     insert_statement = f"""
                     INSERT INTO {self.table_name} (
@@ -401,8 +413,9 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                         model_name,
                         system_prompt,
                         tools_id,
-                        created_by
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9)
+                        created_by,
+                        validation_criteria
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9,$10)
                     ON CONFLICT (agentic_application_id) DO UPDATE SET
                         agentic_application_name = EXCLUDED.agentic_application_name,
                         agentic_application_description = EXCLUDED.agentic_application_description,
@@ -411,7 +424,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                         model_name = EXCLUDED.model_name,
                         system_prompt = EXCLUDED.system_prompt,
                         tools_id = EXCLUDED.tools_id,
-                        created_by = EXCLUDED.created_by;
+                        created_by = EXCLUDED.created_by,
+                        validation_criteria = EXCLUDED.validation_criteria;
                     """
                     
                     async with self.pool.acquire() as conn:
@@ -424,7 +438,8 @@ class ExportedAgentRepository(BaseRepository, CacheableRepository):
                                         model_name, 
                                         system_prompt, 
                                         tools_id,
-                                        created_by)
+                                        created_by,
+                                        validation_criteria)
             else:
                 log.info("Worker Agents data is empty")
             

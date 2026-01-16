@@ -1,5 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import os
+import ast
+import json
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 
@@ -13,6 +15,42 @@ def get_timestamp() -> datetime:
     This strips the timezone info after retrieving the UTC time.
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def convert_value_type_of_candidate_as_given_in_reference(reference: dict, candidate: dict) -> dict:
+    """
+    Convert the values of `candidate` dict to the types of the corresponding values in `reference` dict.
+    Only keys present in both dicts are converted.
+
+    Args:
+        reference (dict): The dictionary with desired value types.
+        candidate (dict): The dictionary whose values will be converted.
+
+    Returns:
+        dict: A new dictionary with converted value types.
+    """
+    def check_match_and_get(ref_value, cand_value):
+        if type(ref_value) == type(cand_value):
+            return cand_value
+        raise TypeError("Type mismatch after eval")
+
+    result = dict(candidate)
+    for key, cand_value in candidate.items():
+        if key in reference:
+            ref_value = reference[key]
+            try:
+                updated_cand_value = json.loads(cand_value)
+                result[key] = check_match_and_get(ref_value, updated_cand_value)
+            except Exception:
+                try:
+                    updated_cand_value = ast.literal_eval(cand_value)
+                    result[key] = check_match_and_get(ref_value, updated_cand_value)
+                except Exception:
+                    try:
+                        result[key] = type(ref_value)(cand_value)
+                    except Exception:
+                        result[key] = cand_value  # fallback if conversion fails
+    return result
 
 
 def resolve_and_get_additional_no_proxys():
