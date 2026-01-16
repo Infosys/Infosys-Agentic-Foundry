@@ -1,4 +1,43 @@
 # Release Notes
+## Version 1.6.0 - December 18, 2025
+Everyone Release Notes – 1.6.0
+ 
+### Features
+* Live Steps with Streaming (SSE)
+Added Server-Sent Events (SSE) for real-time step-by-step execution displayed in chat when a query is sent (LangChain-based agent templates).
+Users can click on each step for a detailed view.
+* Validators Framework
+Users can now create validators similar to tools and map them to agents during onboarding or updates. Agent responses are validated internally when a validator is linked. Added Validator toggle in the chat screen to apply validators for that agent.
+* Context Agent (@) in Chat
+Introduced a new “@” button to add a context agent alongside the main agent. Context agent learns from main agent’s queries and responses for improved contextual understanding.
+* Agent Verifier Toggle
+Added agent verifier toggle for Meta and Meta Planner templates in chat, similar to tool verifier for other templates.
+* Grafana Dashboard Integration
+New header button to open Grafana dashboard in a separate tab.
+
+### Enhancements
+* File Upload Enhancements
+Revamped file uploads section with a collapsible folder structure for better readability.
+* Evaluation Enhancements
+Added support for running online evaluations for Meta and Planner Meta agents, enabling real-time quality assessment of agent responses.
+* Agent Enhancements
+Updated React Critic Agent to include tool metadata for better context awareness.
+* Data Connector Enhancements
+MongoDB insert operation restricted to single mode.
+* Performance & Reliability
+    * Enhanced TTL cleanup logic with configurable RECYCLE_BIN_RETENTION_DAYS.
+    * Implemented permanent deletion for old checkpoint records.
+    * Evaluation records now saved to the database in the background for smoother and faster user experience.
+    * Decoupled model dependencies from tool validation (removed hardcoded gpt-4o).
+    * Enabled passing updated tool context to response generator for improved response quality during tool interrupt.
+
+### Fixes
+* Added confirmation popup on Delete of chat.
+* Canvas hidden for older queries.
+* Applied DAST & SAST related fixes across UI and backend.
+* Corrected “created by” key to return username instead of email.
+ 
+ 
 ## Version 1.5.3 – November 17, 2025
 * Introduced a new screen which provides a comprehensive methodology for measuring the reliability and resilience of AI agents through systematic evaluation of response consistency and robustness against challenging inputs.
 * Enhanced functionality with security fixes, updated configurations, and GitHub push support (requires environment variable configurations in UI).

@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 
 // Enhanced Auth Context with single-session & cross-tab coordination
 
+let tabIdCounter = 0;
+
 // Helper utilities (internal)
 const getCookie = (name) => {
   try {
@@ -109,7 +111,7 @@ export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
 
   // Tab identity
-  const tabIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const tabIdRef = useRef(`tab-${++tabIdCounter}-${Date.now()}`);
   const channelRef = useRef(null);
   const mountedRef = useRef(false);
 
@@ -124,7 +126,7 @@ export const AuthProvider = ({ children }) => {
   const syncFromCookies = useCallback(() => {
     const name = getActiveUser();
     const r = getCookie("role") || null;
-    let sid = getCookie("user_session") || lsGet("user_session");
+    const sid = getCookie("user_session") || lsGet("user_session");
     if (name && r && hasAuthArtifacts()) {
       setUserState({ name, role: r });
     } else if (!hasAuthArtifacts()) {
@@ -174,7 +176,6 @@ export const AuthProvider = ({ children }) => {
 
   const internalLogout = useCallback(
     (reason = "internal") => {
-      console.log("🔴 LOGOUT TRIGGERED: AuthContext.internalLogout -", reason);
 
       clearAuthArtifacts();
       performLogoutStateClear();
@@ -207,17 +208,6 @@ export const AuthProvider = ({ children }) => {
       // Update state after artifacts to align with validator
       setUserState({ name: userName, role: newRole });
       broadcast("LOGIN");
-
-      // DIAGNOSTIC: Verify cookies were set with proper expiration
-      // setTimeout(() => {
-      //   console.log("🔍 Cookie verification after login:", {
-      //     userName: Cookies.get("userName"),
-      //     session: Cookies.get("user_session"),
-      //     jwt: Cookies.get("jwt-token"),
-      //     role: Cookies.get("role"),
-      //     allCookies: document.cookie,
-      //   });
-      // }, 100);
     },
     [broadcast]
   );
@@ -234,7 +224,6 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(
     (reason = "manual", redirectPath = "/login") => {
-      console.log("🔴 LOGOUT TRIGGERED: AuthContext.logout -", reason, "redirecting to:", redirectPath);
 
       clearAuthArtifacts();
       performLogoutStateClear();
@@ -305,20 +294,6 @@ export const AuthProvider = ({ children }) => {
 
     // Monitor cookie changes every 5 seconds when authenticated
     const cookieMonitor = setInterval(() => {
-      const userName = getCookie("userName");
-      const session = getCookie("user_session");
-      const jwt = getCookie("jwt-token");
-
-      if (!userName || !session) {
-        console.error("⚠️ COOKIE DISAPPEARED!", {
-          userName: userName || "❌ MISSING",
-          session: session || "❌ MISSING",
-          jwt: jwt || "❌ MISSING",
-          userStateName: userState.name,
-          timestamp: new Date().toISOString(),
-          allCookies: document.cookie,
-        });
-      }
     }, 5000); // Check every 5 seconds
 
     return () => clearInterval(cookieMonitor);
@@ -396,17 +371,6 @@ export const AuthProvider = ({ children }) => {
           if (key) currentCookieObj[key] = value;
         });
 
-        // Find deleted cookies
-        const deletedCookies = Object.keys(lastCookieObj).filter((key) => !currentCookieObj[key]);
-
-        if (deletedCookies.length > 0) {
-          console.error("🚨 DIRECT DOCUMENT.COOKIE MODIFICATION DETECTED!", {
-            deletedCookies,
-            before: lastCookieSnapshot,
-            after: currentCookies,
-            timestamp: new Date().toISOString(),
-          });
-        }
 
         lastCookieSnapshot = currentCookies;
       }
@@ -430,7 +394,6 @@ export const AuthProvider = ({ children }) => {
       // Immediate failure if core artifacts missing (user/session)
       if (!coreArtifactsPresent) {
         if (userState) {
-          console.log("🔴 LOGOUT TRIGGERED: AuthContext validator - missing core artifacts (userName/session)");
           internalLogout("missing-core-artifacts");
         }
         return;
@@ -441,7 +404,6 @@ export const AuthProvider = ({ children }) => {
         const now = Date.now();
         const graceMs = 10000; // 10 seconds tolerance
         if (now - lastGoodArtifactsRef.current > graceMs) {
-          console.log("🔴 LOGOUT TRIGGERED: AuthContext validator - missing JWT token (grace period expired)");
           internalLogout("missing-jwt-token");
         }
         return; // wait for next cycle
@@ -456,7 +418,6 @@ export const AuthProvider = ({ children }) => {
           syncFromCookies();
           return;
         }
-        console.log("🔴 LOGOUT TRIGGERED: AuthContext validator - user mismatch", { userStateName: userState.name, activeUser });
         internalLogout("mismatch-active-user");
         return;
       }

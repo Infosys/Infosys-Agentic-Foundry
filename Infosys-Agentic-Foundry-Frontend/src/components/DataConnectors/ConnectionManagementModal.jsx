@@ -19,7 +19,7 @@ const ConnectionManagementModal = ({
   const [selectedConnectionData, setSelectedConnectionData] = useState(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isActivating, setIsActivating] = useState(false);
-  const { handleConnectOrActivate, handleDisconnect, handleDeactivate } = useDatabaseConnections();
+  const { handleConnectOrActivate, handleDisconnect, handleDeactivate, handleActivate: handleActivateConnection } = useDatabaseConnections();
   const { addMessage, setShowPopup } = useMessage();
   const { 
     getActivePostgresConnections, 
@@ -172,7 +172,11 @@ const ConnectionManagementModal = ({
     if (selectedConnection && selectedConnectionData) {
       setIsActivating(true);
       try {
-        await handleConnectOrActivate(selectedConnectionData, "0");
+        const connectionName = selectedConnectionData.connection_name || 
+                              selectedConnectionData.name || 
+                              selectedConnectionData.id || 
+                              selectedConnectionData.connectionName;
+        await handleActivateConnection(connectionName);
         setSelectedConnection("");
         setSelectedConnectionData(null);
         onClose();

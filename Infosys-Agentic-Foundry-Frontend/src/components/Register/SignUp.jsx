@@ -17,7 +17,7 @@ const SignUp = ({ isAdminScreen = false }) => {
   const passwordRef = useRef("");
   const confirmPasswordRef = useRef("");
 
-  // Add refs for the password input fields
+  // Add refs for the input fields
   const passwordInputRef = useRef(null);
   const confirmPasswordInputRef = useRef(null);
 
@@ -39,7 +39,7 @@ const SignUp = ({ isAdminScreen = false }) => {
   const togglePasswordVisibility = () => {
     setShowPassword((prev) => !prev);
   };
-  const toggleConfirmPasswordVisibility = () => {
+  const toggleConfirmPwdVisibility = () => {
     setShowConfirmPassword((prev) => !prev);
   };
   // Create a ref for the dropdown
@@ -241,8 +241,9 @@ const SignUp = ({ isAdminScreen = false }) => {
       setMsgSubmitApproval(false);
     }, 3000);
   };
-  return (
-    <div className="loginContainer">
+  
+  const formContent = (
+    <div className="loginContainer" style={isAdminScreen ? { maxWidth: "450px" } : {}}>
       {!isAdminScreen && <h3 className="title">Register</h3>}
       <form onSubmit={onSubmit}>
         {/* Email */}
@@ -287,6 +288,7 @@ const SignUp = ({ isAdminScreen = false }) => {
               autoComplete="new-password"
               tabIndex={3}
               onFocus={() => setHasPasswordInput(true)}
+              maxLength={18}
             />
             {hasPasswordInput && (
               <span className="eye-icon" onClick={togglePasswordVisibility}>
@@ -310,9 +312,10 @@ const SignUp = ({ isAdminScreen = false }) => {
               autoComplete="new-password"
               tabIndex={4}
               onFocus={() => setHasConfirmPasswordInput(true)}
+              maxLength={18}
             />
             {hasPasswordInput && hasConfirmPasswordInput && (
-              <span className="eye-icon" onClick={toggleConfirmPasswordVisibility}>
+              <span className="eye-icon" onClick={toggleConfirmPwdVisibility}>
                 <SVGIcons icon={showConfirmPassword ? "eye-slash" : "eye"} fill="#d9d9d9" />
               </span>
             )}
@@ -375,15 +378,9 @@ const SignUp = ({ isAdminScreen = false }) => {
         </div>
         <div className="space-devider"></div>
         <div>{msgSubmit && <span className={msgSubmitApproval === true ? "success-style" : "error-style"}>{msgSubmit}</span>}</div>
-        <div className="submit-style">
-          <div className="remember-style">
-            <input type="checkbox" name="Remember me" className="checkbox" tabIndex={6} />
-            <span style={{ fontSize: 12, marginLeft: 8, bottom: 5 }}>Remember me </span>
-          </div>
+        {isAdminScreen ? (
+          // Admin screen layout - just the button
           <div className="div-hyperstyle">
-            <a href="/login" className="hyperlink" tabIndex={7}>
-              Login
-            </a>{" "}
             <button
               type="submit"
               className="button-style"
@@ -400,10 +397,41 @@ const SignUp = ({ isAdminScreen = false }) => {
               </div>{" "}
             </button>
           </div>
-        </div>
+        ) : (
+          // Regular page layout - with remember me and login link
+          <div className="submit-style">
+            <div className="remember-style">
+              <input type="checkbox" name="Remember me" className="checkbox" tabIndex={6} />
+              <span style={{ fontSize: 12, marginLeft: 8, bottom: 5 }}>Remember me </span>
+            </div>
+            <div className="div-hyperstyle">
+              <a href="/login" className="hyperlink" tabIndex={7}>
+                Login
+              </a>{" "}
+              <button
+                type="submit"
+                className="button-style"
+                tabIndex={8}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSubmit(e);
+                  }
+                }}>
+                <h2 className="signIntext"> Sign Up </h2>
+                <div className="signarrow">
+                  <SVGIcons icon="rightarrow" width={20} height={18} fill="#fff" />
+                </div>{" "}
+              </button>
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );
+  
+  // Wrap in a flex container when in admin screen to match UpdatePassword layout
+  return isAdminScreen ? <div style={{ display: "flex" }}>{formContent}</div> : formContent;
 };
 
 export default SignUp;

@@ -132,21 +132,43 @@ npm -v
 ```
 - If Node.js is installed, running the version command will display the installed version.
 - If Node.js is not installed, you will see an error in the terminal such as `"node" is not recognized as an internal or external command`.
-- To install Node.js:
-    1. Go to [https://nodejs.org/en/download](https://nodejs.org/en/download).
-    2. Choose version **22.16.0** or any higher stable version.
-    3. Download and install Node.js (NPM comes bundled with Node.js).
-- After installation, open your command prompt or terminal.
-- Run `node -v` to confirm that it shows version 22 or higher.
 
+**Installation Guidance**
 
-- **JFrog Access for Node Dependencies:**
-    - You need JFrog access to download node dependencies for the React UI application.
-    - If you already have JFrog access, you can proceed.
-    - If not, follow these steps:
-        1. Ensure you are connected to the Infosys network or that Zscaler is enabled.
-        2. Follow the instructions in the guide: **NPM – Install and Publish with JFrog Artifactory SAAS and ZS**.
-        3. (Note: You may skip the 7th step mentioned in that guide.)
+- **For Local Linux Setup:**  
+   You can use your system's Software Center or Company Portal to install Node.js (version 22 or higher). Npm comes bundled with Node.js. JFrog access is required for downloading Node dependencies—see below for details.
+
+- **For Akaash VM or Production VM:**  
+   Software Center, Company Portal, and public internet access may not be available. In such cases, you must request all required software installation files (including Node.js and npm) from CCD.
+
+- **Linux Node.js Exception:**  
+   On Linux VMs (including Akaash/Production), you can install Node.js and npm using the following commands:
+
+   ```bash
+   sudo dnf module enable nodejs:22
+   sudo dnf install nodejs npm
+   node --version
+   ```
+
+   If you are behind a proxy, configure npm as follows:
+
+   ```bash
+   npm config set proxy http://blrproxy.ad.infosys.com:443
+   npm config set https-proxy http://blrproxy.ad.infosys.com:443
+   ```
+
+---
+
+## JFrog Access for Node Dependencies
+
+To download Node dependencies for the React UI, you need JFrog access.
+
+- If you already have JFrog access, you can proceed with `npm install`.
+- If not, follow these steps:
+    1. Ensure you are connected to the Infosys network or that Zscaler is enabled.
+    2. Refer to the guide: **NPM – Install and Publish with JFrog Artifactory SAAS and ZS**.
+
+Contact your administrator if you need help with JFrog access.
 
 
 
@@ -219,7 +241,7 @@ scp -r /path/to/your/local/project your-username@your-vm-ip-address:/home/your-u
 1. **Navigate to Backend Directory:**
 
 ```bash
-cd backend
+cd Infyagentframework
 ```
 
 2. **Create a Virtual Environment:**
@@ -253,7 +275,7 @@ pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pyt
 1. **Navigate to Frontend Directory:**
 
 ```bash
-cd frontend
+cd Agentic-Pro-UI
 ```
 
 2. **Remove Existing Lock File (if present):**
@@ -321,27 +343,37 @@ sudo firewall-cmd --list-ports
 **Frontend-Backend Connection Configuration**:
 Configure Frontend to Connect to Backend
 
-1. **Edit Constants File:**
+**1. Edit Constants File:**
 
 ```bash
 nano frontend/src/constants.js
 ```
 
-2. **Update BASE_URL:**
+**2. Update Base URL for the API server:**
 
 ```javascript
 // Replace with your actual backend server IP address and port
-export const BASE_URL = "http://your-backend-server-ip:your-backend-port";
+REACT_APP_BASE_URL = "http://your-backend-server-ip:your-backend-port";
 
 // Examples:
-// export const BASE_URL = "http://192.168.1.100:8000";
-// export const BASE_URL = "http://10.0.0.50:8000";
-// export const BASE_URL = "http://localhost:8000";  // If frontend and backend are on same machine
+// REACT_APP_BASE_URL = "http://192.168.1.100:8000";
+// REACT_APP_BASE_URL = "http://10.0.0.50:8000";
+// REACT_APP_BASE_URL = "http://localhost:8000";  // If frontend and backend are on same machine
 ```
 
 **Configure Backend CORS Settings**
 
-Update the backend server file (typically `agentic_workflow_as_service_endpoints.py`):
+In the backend `.env` file (`Infyagentframework/.env`), set the allowed frontend origins:
+
+```env
+# Add your frontend IP address
+UI_CORS_IP="<your-frontend-server-ip>"
+
+# Add your frontend IP with port number
+UI_CORS_IP_WITH_PORT="<your-frontend-server-ip:your-frontend-port>"
+```
+
+Update the backend server file (typically `run_server.py`):
 
 ```python
 origins = [
@@ -368,7 +400,7 @@ origins = [
 Create `.env` file in backend directory:
 
 ```bash
-nano backend/.env
+nano Infyagentframework/.env
 ```
 
 Add the following content (replace with your actual values):
@@ -391,7 +423,7 @@ SECRET_KEY=your_secret_key_here
 Create `.env` file in frontend directory:
 
 ```bash
-nano frontend/.env
+nano Agentic-Pro-UI/.env
 ```
 
 Add the following content:
@@ -414,7 +446,7 @@ REACT_APP_API_TIMEOUT=30000
 With the virtual environment activated:
 
 ```bash
-cd backend
+cd Infyagentframework
 # Replace port number if using a different backend port
 uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port your-backend-port --workers 4
 
@@ -425,7 +457,7 @@ uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port your-bac
 **Start the Frontend**
 
 ```bash
-cd frontend
+cd Agentic-Pro-UI
 npm start
 ```
 
@@ -454,79 +486,68 @@ The React UI will be accessible at:
 
 **Backend Service**
 
-Create systemd service file:
+Create a systemd service file:
 
 ```bash
 sudo nano /etc/systemd/system/infyagent-backend.service
 ```
 
-Add content (replace placeholders with your actual values):
+Add the following content (replace placeholders with your actual values):
 
 ```ini
 [Unit]
-Description=FastAPI Application with Gunicorn
+Description=FastAPI Application
 After=network.target
- 
+
 [Service]
-# Replace with your actual project path
-WorkingDirectory=/home/your-username/your-project-directory/backend
-# Replace with your actual paths, username, and port
-ExecStart=/home/your-username/your-project-directory/backend/.venv/bin/python -m gunicorn agentic_workflow_as_service_endpoints:app \
-  --workers 1 \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:your-backend-port
+WorkingDirectory=/home/your-username/your-project-directory/
+Environment="NO_PROXY=localhost,127.0.0.1,::1,model_server_ip,ip_of_this_VM"
+Environment="HTTP_PROXY=http://blrproxy.ad.infosys.com:443"
+Environment="HTTPS_PROXY=http://blrproxy.ad.infosys.com:443"
+Environment=VIRTUAL_ENV=/home/your-username/your-project-directory/venv
+Environment=PATH=/home/your-username/your-project-directory/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin
+ExecStart=/home/your-username/your-project-directory/venv/bin/python main.py --host 0.0.0.0 --port your-backend-port
 Restart=always
-# Replace with your actual username
 User=your-username
-# Replace with your actual proxy settings (remove if not using proxy)
-Environment="http_proxy=http://your-proxy-server:your-proxy-port"
-Environment="https_proxy=http://your-proxy-server:your-proxy-port"
 StandardOutput=journal
 StandardError=journal
- 
+
 [Install]
 WantedBy=multi-user.target
 ```
 
-**Example configuration:**
+**Example backend configuration:**
+
 ```ini
 [Unit]
-Description=FastAPI Application with Gunicorn
+Description=FastAPI Application
 After=network.target
- 
+
 [Service]
-WorkingDirectory=/home/projadmin/Infyagentframework/backend
-ExecStart=/home/projadmin/Infyagentframework/backend/.venv/bin/python -m gunicorn agentic_workflow_as_service_endpoints:app \
-  --workers 1 \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000
+WorkingDirectory=/home/projadmin/Infyagentframework
+Environment="NO_PROXY=localhost,127.0.0.1,::1,10.212.121.151,10.208.85.72"
+Environment="HTTP_PROXY=http://blrproxy.ad.infosys.com:443"
+Environment="HTTPS_PROXY=http://blrproxy.ad.infosys.com:443"
+Environment=VIRTUAL_ENV=/home/projadmin/Infyagentframework/venv
+Environment=PATH=/home/projadmin/Infyagentframework/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin
+ExecStart=/home/projadmin/Infyagentframework/venv/bin/python main.py --host 0.0.0.0 --port 5001
 Restart=always
 User=projadmin
-Environment="http_proxy=http://blrproxy.ad.infosys.com:443"
-Environment="https_proxy=http://blrproxy.ad.infosys.com:443"
 StandardOutput=journal
 StandardError=journal
- 
+
 [Install]
 WantedBy=multi-user.target
 ```
 
 **Things You Need to Customize:**
 
-1. **Project Path**  
-   Replace `/home/your-username/your-project-directory/` with your actual project path
-
-2. **Username**  
-   Replace `your-username` with your actual Linux username
-
-3. **Backend Port**  
-   Replace `your-backend-port` with your chosen backend port (e.g., 8000)
-
-4. **Proxy Settings**  
-   Replace `your-proxy-server:your-proxy-port` with actual proxy details, or remove if not using proxy
-
-5. **App Module Name**  
-   Change `agentic_workflow_as_service_endpoints:app` if your FastAPI app module has a different name
+1. **Project Path:** Replace `/home/your-username/your-project-directory/` with your actual project path.
+2. **Username:** Replace `your-username` with your actual Linux username.
+3. **Backend Port:** Replace `your-backend-port` with your chosen backend port (e.g., 8000).
+4. **NO_PROXY:** Update with your model server IP and VM IP as needed.
+5. **ExecStart:** Ensure the Python path and script name (`main.py`) match your project.
+6. **Proxy Settings:** Adjust or remove proxy environment variables if not required.
 
 Enable and start the service:
 
@@ -538,60 +559,62 @@ sudo systemctl status infyagent-backend.service
 
 **Frontend Service (Optional)**
 
-Create systemd service file for frontend:
+Create a systemd service file for the frontend:
 
 ```bash
 sudo nano /etc/systemd/system/infyagent-frontend.service
 ```
 
-Add content:
+Add the following content:
 
 ```ini
 [Unit]
-Description=React Frontend Application
+Description=My Node.js Application
 After=network.target
- 
+
 [Service]
-# Replace with your actual project path
-WorkingDirectory=/home/your-username/your-project-directory/frontend
-# Replace with your actual paths and port
+WorkingDirectory=/home/your-username/your-project-directory/
 ExecStart=/usr/bin/npm start
 Restart=always
-# Replace with your actual username
 User=your-username
-# Set environment variables
 Environment=NODE_ENV=production
-Environment=PORT=your-frontend-port
-Environment=HOST=0.0.0.0
-# Replace with your actual proxy settings (if needed)
-Environment="http_proxy=http://your-proxy-server:your-proxy-port"
-Environment="https_proxy=http://your-proxy-server:your-proxy-port"
-StandardOutput=journal
-StandardError=journal
- 
+Environment=PORT=3003
+
 [Install]
 WantedBy=multi-user.target
 ```
 
-## Network Configuration
+**Example frontend configuration:**
 
-**Port Configuration Summary**
+```ini
+[Unit]
+Description=My Node.js Application
+After=network.target
 
-**Default Ports (customize as needed):**
+[Service]
+WorkingDirectory=/home/projadmin/Agentic-Pro-UI1
+ExecStart=/usr/bin/npm start
+Restart=always
+User=projadmin
+Environment=NODE_ENV=production
+Environment=PORT=3003
 
-- Frontend: `6002` (replace with `your-frontend-port`)
-- Backend: `8000` (replace with `your-backend-port`)
+[Install]
+WantedBy=multi-user.target
+```
 
-**Security Group / Firewall Rules**
+**Customize the following:**
 
-Ensure the following ports are open in your VM's security group or firewall:
+- **WorkingDirectory:** Set to your actual frontend project path.
+- **User:** Set to your Linux username.
+- **PORT:** Set to your desired frontend port.
+
+Enable and start the frontend service:
 
 ```bash
-# Replace with your actual port numbers
-sudo firewall-cmd --permanent --add-port=your-frontend-port/tcp
-sudo firewall-cmd --permanent --add-port=your-backend-port/tcp
-sudo firewall-cmd --permanent --add-port=22/tcp  # SSH access
-sudo firewall-cmd --reload
+sudo systemctl enable infyagent-frontend.service
+sudo systemctl start infyagent-frontend.service
+sudo systemctl status infyagent-frontend.service
 ```
 
 ## Network Testing
@@ -636,6 +659,7 @@ curl http://your-frontend-server-ip:your-frontend-port
 **Proxy Issues**
 
 **4. Cannot install packages or clone repositories:**
+
    - Verify proxy settings: `echo $http_proxy`
    - Check proxy configuration with your administrator
    - Test proxy: `curl -I http://google.com`
@@ -655,12 +679,12 @@ Keep your deployment updated:
 git pull origin main
 
 # Update backend dependencies
-cd backend
+cd Infyagentframework
 source ./.venv/bin/activate
 pip install -r requirements.txt
 
 # Update frontend dependencies
-cd frontend
+cd Agentic-Pro-UI
 npm install
 
 # Restart services after updates
@@ -672,27 +696,56 @@ sudo systemctl restart infyagent-frontend.service
 
 The structure shown below is a sample. The full project includes additional files and directories not listed here.
 
+Backend project structure:
+
 ```
 Infyagentframework/
-├── backend/                  # Backend FastAPI application
-│   ├── .venv/                # Python virtual environment (generated)
-│   ├── requirements.txt      # Python dependencies
-│   ├── .env                  # Environment variables (create this)
-│   └── agentic_workflow_as_service_endpoints.py  # Main API file
-├── frontend/                 # React frontend application
-│   ├── node_modules/         # Node.js dependencies (generated)
-│   ├── public/               # Static assets
-│   ├── src/                  # React source code
-│   │   ├── components/       # React components
-│   │   ├── pages/            # Page components
-│   │   ├── services/         # API service functions
-│   │   ├── constants.js      # Configuration constants (update BASE_URL here)
-│   │   ├── App.js            # Main App component
-│   │   └── index.js          # Entry point
-│   ├── package.json          # Node.js dependencies and scripts (update PORT here)
-│   ├── package-lock.json     # Lock file for dependencies
-│   └── .env                  # Environment variables (create this)
-└── README.md                 # Project documentation
+├── src/                  # Source code
+│   ├── agent_templates/  # Agent onboarding templates and configurations   
+│   ├── api/              # REST API endpoints and route handlers
+│   ├── auth/             # Authentication and authorization services
+│   ├── config/           # Database connectivity and cache configurations
+│   ├── database/         # Database models, repositories, and services
+│   ├── file_templates/   # Template files for various operations
+│   ├── inference/        # AI model inference and agent execution logic
+│   ├── models/           # Data models and business logic
+│   ├── prompts/          # Prompt templates for AI interactions
+│   ├── schemas/          # Pydantic schemas for data validation
+│   ├── tools/            # Utility tools and helper functions
+│   └── utils/            # Common utilities and shared functions
+├── .venv/                # Python virtual environment (auto-generated)
+├── requirements.txt      # Python dependencies specification
+├── main.py               # Application entry point
+├── run_server.py         # Development server runner with additional options
+├── .env                  # Environment variables (create from .env.example)
+├── .env.example          # Template for environment configuration
+└── README.md             # Project documentation
+```
+
+Frontend project structure:
+
+```
+Agentic-Pro-UI/                    # React frontend application
+├── .github/                       # GitHub configuration
+├── node_modules/                  # Node.js dependencies (generated)
+├── public/                        # Static assets
+├── src/                           # React source code
+│   ├── Assets/                    # Image and media assets
+│   ├── components/                # React components
+│   ├── context/                   # React context providers
+│   ├── css_modules/               # CSS module files
+│   ├── Hooks/                     # Custom React hooks
+│   ├── Icons/                     # SVG icons and graphics
+│   ├── services/                  # API service functions
+│   ├── App.js                     # Main App component with routing
+│   ├── constant.js                # Configuration constants (BASE_URL, APIs)
+│   ├── index.js                   # Entry point
+│   ├── index.css                  # Global styles
+│   └── ProtectedRoute.js          # Route protection component
+├── package.json                   # Node.js dependencies and scripts
+├── package-lock.json             # Lock file for dependencies
+├── README.md                      # Project documentation
+└── .env.example                          # Environment variables (not shown but referenced)
 ```
 
 

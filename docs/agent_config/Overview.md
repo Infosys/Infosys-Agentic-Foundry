@@ -26,12 +26,21 @@ Agent configuration involves using a reusable, template-driven setup that allows
 
 ## Templates Overview
 
-The system supports three types of agent templates and each template offers different capabilities, suited for specific use cases:
+
+The system supports multiple types of agent templates, each offering different capabilities suited for specific use cases:
 
 1. [React Agent](reactAgent.md): The ReAct (Reasoning and Acting) agent combines reasoning traces with action execution.
 
-2. [Multi Agent](multiAgent.md): The multi agent follows the Plan and Execute paradigm.
+2. [React Critic Agent](reactCritic.md): An enhanced React Agent with dual system prompts for self-critique and improved output quality.
 
-3. [Meta Agent](metaAgent.md): An agent supervisor is responsible for routing to individual agents.
+3. [Multi Agent](multiAgent.md): The multi agent follows the Plan and Execute paradigm, enabling collaboration between specialized agents.
+
+4. [Planner Executor Agent](PlannerExecutor.md): Implements the Planner-Executor-Critic workflow with a more granular system prompt structure.
+
+5. [Meta Agent](metaAgent.md): An agent supervisor responsible for routing to individual agents and managing high-level orchestration.
+
+6. [Meta Planner Agent](PlannerMeta.md): An advanced orchestrator using multiple system prompts for robust and adaptive agent-based workflows.
+
+7. [Hybrid Agent](HybridAgent.md): Combines features from multiple agent types, enabling flexible workflows that leverage both reasoning and execution capabilities for complex tasks.
 
 ---

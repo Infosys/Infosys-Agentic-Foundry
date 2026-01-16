@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import styles from "./RecycleBin.module.css";
 import Cookies from "js-cookie";
 import AgentCard from "../ListOfAgents/AgentCard";
-import AgentOnboard from "../AgentOnboard";
 import style from "../../css_modules/ListOfAgents.module.css";
 import { APIs, REACT_AGENT } from "../../constant";
 import style2 from "../../css_modules/AvailableTools.module.css";
@@ -13,14 +12,12 @@ import useFetch from "../../Hooks/useAxios.js";
 import Loader from "../commonComponents/Loader.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
 
-const RecycleBin = ({ loggedInUserEmail }) => {
-  const [selectedType, setSelectedType] = useState("agents"); // for data fetching
-  const [activeTab, setActiveTab] = useState("agents"); // for tab highlight
-  const [lastTab, setLastTab] = useState("agents"); // to restore tab highlight after modal
+const RecycleBin = ({ initialType = "agents" }) => {
+  const [selectedType, setSelectedType] = useState(initialType); // for data fetching
+  const [activeTab, setActiveTab] = useState(initialType); // for tab highlight
+  const [lastTab, setLastTab] = useState(initialType); // to restore tab highlight after modal
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [tags, setTags] = useState([]);
   const { fetchData, postData, deleteData } = useFetch();
   const [editAgentData, setEditAgentData] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -76,7 +73,7 @@ const RecycleBin = ({ loggedInUserEmail }) => {
   useEffect(() => {
     if (!selectedType) return;
     const fetchRecycleData = async () => {
-      setLoading(true);
+      setLoader(true);
       setError(null);
       try {
         let url = "";
@@ -88,10 +85,10 @@ const RecycleBin = ({ loggedInUserEmail }) => {
         const json = await fetchData(url);
         setData(json);
       } catch (err) {
-        setError(err.message);
+        setError(err.response.data.detail);
         setData([]);
       } finally {
-        setLoading(false);
+        setLoader(false);
       }
     };
     fetchRecycleData();
@@ -110,38 +107,40 @@ const RecycleBin = ({ loggedInUserEmail }) => {
           setIsAddTool={setIsAddTool}
           tags={""}
           fetchPaginatedTools={""}
-          recycle={"recycle"}
+          recycle={true}
           selectedType={selectedType}
           setRestoreData={setRestoreData}
         />
       )}
       <div className={style.containerCss}>
         {/* <div className={styles.recycleBinContainer}> */}
-        <div className={styles.toggleWrapper}>
-          <button
-            type="button"
-            className={`iafTabsBtn ${activeTab === "agents" ? " active" : ""}`}
-            onClick={() => {
-              setActiveTab("agents");
-              setSelectedType("agents");
-            }}>
-            Agents
-          </button>
-          <button
-            type="button"
-            className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}
-            onClick={() => {
-              setActiveTab("tools");
-              setSelectedType("tools");
-            }}>
-            Tools
-          </button>
-        </div>
+        {!initialType && (
+          <div className={styles.toggleWrapper}>
+            <button
+              type="button"
+              className={`iafTabsBtn ${activeTab === "agents" ? " active" : ""}`}
+              onClick={() => {
+                setActiveTab("agents");
+                setSelectedType("agents");
+              }}>
+              Agents
+            </button>
+            <button
+              type="button"
+              className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}
+              onClick={() => {
+                setActiveTab("tools");
+                setSelectedType("tools");
+              }}>
+              Tools
+            </button>
+          </div>
+        )}
 
         <div className={styles.listArea}>
-          {loading && <Loader />}
+          {loader && <Loader />}
           {error && <p className={styles.error}>{error}</p>}
-          {!loading && !error && selectedType === "agents" && (
+          {!loader && !error && selectedType === "agents" && (
             <>
               <div className={styles.visibleAgentsContainer}>
                 {!data.length > 0 ? (
@@ -159,7 +158,7 @@ const RecycleBin = ({ loggedInUserEmail }) => {
                         data?.map((data1) => (
                           <AgentCard
                             recycle={"recycle"}
-                            key={`agent-${Math.random()}`}
+                            key={`agent-${data1.agentic_application_id}`}
                             styles={style}
                             data={data1}
                             onAgentEdit={(agent) => {
@@ -177,7 +176,7 @@ const RecycleBin = ({ loggedInUserEmail }) => {
               </div>
             </>
           )}
-          {!loading && !error && selectedType === "tools" && (
+          {!loader && !error && selectedType === "tools" && (
             <>
               {!data.length > 0 ? (
                 <>
@@ -201,10 +200,10 @@ const RecycleBin = ({ loggedInUserEmail }) => {
                           }}
                           isAddTool={isAddTool}
                           setIsAddTool={setIsAddTool}
-                          key={`tools-card-${index}`}
+                          key={`tool-card-${item.tool_id}`}
                           style={style2}
                           setEditTool={setEditTool}
-                          loading={loading}
+                          loading={loader}
                           fetchPaginatedTools={""}
                           recycle={true}
                         />
@@ -238,7 +237,6 @@ const RecycleBin = ({ loggedInUserEmail }) => {
             />
           </div>
         )}
-        {/* </div> */}
       </div>
     </>
   );

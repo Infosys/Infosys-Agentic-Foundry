@@ -22,7 +22,6 @@ class GlobalErrorService {
     window.addEventListener("unhandledrejection", this.handlePromiseRejection);
 
     this.isInitialized = true;
-    console.log("✅ Global Error Service initialized");
   }
 
   handleWindowError = (event) => {
@@ -133,14 +132,12 @@ class GlobalErrorService {
 
   clearLog() {
     this.errorLog = [];
-    console.log("✅ Error log cleared");
   }
 
   cleanup() {
     window.removeEventListener("error", this.handleWindowError);
     window.removeEventListener("unhandledrejection", this.handlePromiseRejection);
     this.isInitialized = false;
-    console.log("✅ Global Error Service cleaned up");
   }
 }
 

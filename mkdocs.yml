@@ -7,6 +7,8 @@ theme:
     - navigation.path
 markdown_extensions:
 - admonition
+- pymdownx.details
+- pymdownx.superfences
 extra_css:
     - css/hide-footer.css
 
@@ -14,45 +16,70 @@ extra_css:
 #     - search
 #     - mermaid2
 
+
 nav:
   - Introduction: index.md
   - Definitions:
-     - Vocabulary - Definitions: Definitions/Vocabulary - Definitions.md
+     - Vocabulary - Definitions: Definitions/Vocabulary_Definitions.md
      - Human in the loop: Definitions/hitl.md
   - Features: Features.md
+  - Core Building Blocks: core_building_blocks.md
   - Architecture: Architecture.md
   - Installation: 
      - Windows: Installation/windows.md
      - Linux: Installation/linux.md
      - Azure : Installation/Azure.md
-  - PostgreSQL setup: Database setup/Database Setup.md
+     - PostgreSQL setup: Installation/Database_Setup.md
   - Agents Design: 
-     - Overview: Agents Design/overview.md
-     - React Agent Design: Agents Design/React Agent Design.md
-     - Multi Agent Design: Agents Design/Multi Agent Design.md
-     - Orchestration Meta Agent Design: Agents Design/Orchestration Meta Agent Design.md
+     - Overview: Agents_Design/overview.md
+     - React Agent Design: Agents_Design/React Agent Design.md
+     - React Critic Agent Design: Agents_Design/ReactCriticAgent_Design.md
+     - Multi Agent Design: Agents_Design/Multi Agent Design.md
+     - Planner Executor Agent Design: Agents_Design/Planner_executor_agent_design.md
+     - Orchestration Meta Agent Design: Agents_Design/Orchestration_Meta_Agent_Design.md
+     - Planner Meta Agent Design: Agents_Design/Planner_meta_agent_design.md
+     - Hybrid Agent Design: Agents_Design/Hybrid_Agent_Design.md
+  - Admin Screen: Admin_Screen.md
   - Tools Configuration : tools_config/tools.md
   - Tool Validation: Tool_Validation.md
-  - Tool Interrupt: Tool Interrupt.md
+  - Tool Interrupt: Tool_Interrupt.md
+  - Memory Management: memory_management.md
   - Agent Configuration:
       - Overview: agent_config/Overview.md
       - React Agent Configuration: agent_config/reactAgent.md
+      - React Critic Agent Configuration: agent_config/reactCritic.md
       - Multi Agent Configuration: agent_config/multiAgent.md
+      - Planner Executor Agent Configuration: agent_config/PlannerExecutor.md
       - Meta Agent Configuration: agent_config/metaAgent.md
+      - Planner Meta Agent Configuration: agent_config/PlannerMeta.md
+      - Hybrid Agent Configuration: agent_config/HybridAgent.md
   - Inference:
       - Overview: Inference/inference.md
       - React Agent Inference: Inference/reactAgent_inference.md
+      - React Critic Agent Inference: Inference/ReactCriticAgent_inference.md
       - Multi Agent Inference: Inference/multiAgent_inference.md
+      - Planner Executor Agent Inference: Inference/PlannerExecutorAgent_inference.md
       - Meta Agent Inference: Inference/metaAgent_inference.md
+      - Hybrid Agent Inference: Inference/HybridAgent_inference.md
+      - Canvas Screen: Inference/Canvas_Screen.md
   - Files: files_upload/files.md
   - Telemetry:
       - Open Telemetry: Telemetry/telemetry.md
-      - Configurations: Telemetry/configurations.md
-      - Connecting to Grafana: Telemetry/Connecting to Grafana.md
+      - Connecting to Grafana: Telemetry/Connecting_to_Grafana.md
       - Arize Phoenix: Telemetry/Arize_Phoenix.md
-  - Evaluation Metrics: Evaluation/evaluation_metrics.md
-
-
-
-
-  
+  - Evaluation: 
+      - Evaluation Metrics: Evaluation/evaluation_metrics.md
+      - Groundtruth Evaluation: Evaluation/Groundtruth_Evaluation.md
+      - Consistency Evaluation: Evaluation/Consistency.md
+  - Vault: Vault.md
+  - API Authentication: JWT.md
+  - GZIP Compression: GZIP_Compression.md
+  - Knowledge Base: Knowledge_Base.md
+  - DataConnectors: DataConnectors.md
+  - Export Agent: ExportAgent.md
+  - Prompt Optimization: prompt_optimization.md
+  - MCP Registry: MCP_Registry.md
+  - Time-To-Live: Time-To-Live.md
+  - Model Server Integration: Model_server.md
+  - Role Base Access Control: RBAC.md
+  - Serever Sent Events: SSE.md

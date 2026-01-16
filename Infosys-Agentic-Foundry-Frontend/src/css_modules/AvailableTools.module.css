@@ -486,3 +486,15 @@
   font-size: 13px;
   margin: 0 0 5px 0;
 }
+
+/* Pill indicating whether the item is a normal TOOL or a VALIDATOR */
+.typePill {
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #6b7280; /* unified neutral tone */
+  color: #ffffff;
+  letter-spacing: 0.5px;
+  user-select: none;
+}

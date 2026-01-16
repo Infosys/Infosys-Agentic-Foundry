@@ -3,6 +3,7 @@ import SVGIcons from "../../Icons/SVGIcons";
 import Cookies from "js-cookie";
 import DeleteModal from "../commonComponents/DeleteModal";
 import { useAuth } from "../../context/AuthContext";
+import { usePermissions } from "../../context/PermissionsContext";
 
 // Helper function to get agent type abbreviation
 const getAgentTypeAbbreviation = (agentType, typeOrDescription = "type") => {
@@ -44,12 +45,8 @@ const AgentCard = (props) => {
   const [isDeleteClicked, setIsDeleteClicked] = useState(false);
   const [email, setEmail] = useState("");
   const [deleteModal, setDeleteModal] = useState(false);
-  
-  const cardClassName = isUnusedSection 
-    ? styles["card-unused"] 
-    : props?.recycle 
-      ? styles.listContainerCss 
-      : styles.listContainer;
+
+  const cardClassName = isUnusedSection ? styles["card-unused"] : props?.recycle ? styles.listContainerCss : styles.listContainer;
 
   const userName = Cookies.get("userName");
   const loggedInUserEmail = Cookies.get("email");
@@ -59,9 +56,18 @@ const AgentCard = (props) => {
     userName === "Guest" ? setEmail(data.created_by) : setEmail(loggedInUserEmail);
   }, []);
 
+  const { hasPermission, permissions } = usePermissions();
+
   const handleDelete = async (e) => {
     e.preventDefault();
     if (userName === "Guest") {
+      setDeleteModal(true);
+      return;
+    }
+    // Check delete permission for agents
+    const canDelete =
+      typeof hasPermission === "function" ? hasPermission("delete_access.agents") : !(permissions && permissions.delete_access && permissions.delete_access.agents === false);
+    if (!canDelete) {
       setDeleteModal(true);
       return;
     }
@@ -169,14 +175,21 @@ const AgentCard = (props) => {
           )}
           {!props?.recycle && (
             <div className={styles["btn-grp"]}>
-              <button className={styles.deleteBtn} onClick={() => setIsDeleteClicked(true)} title="Delete">
-                <SVGIcons icon="fa-solid fa-user-xmark" width={20} height={20} />
-              </button>
-              {!isUnusedSection && (
-                <button className={styles.editBtn} onClick={() => onAgentEdit(data)} title="Edit">
-                  <SVGIcons icon="fa-solid fa-pen" width={20} height={20} />
+              {(typeof hasPermission === "function"
+                ? hasPermission("delete_access.agents")
+                : !(permissions && permissions.delete_access && permissions.delete_access.agents === false)) && (
+                <button className={styles.deleteBtn} onClick={() => setIsDeleteClicked(true)} title="Delete">
+                  <SVGIcons icon="recycle-bin" width={20} height={20} />
                 </button>
               )}
+              {!isUnusedSection &&
+                (typeof hasPermission === "function"
+                  ? hasPermission("update_access.agents")
+                  : !(permissions && permissions.update_access && permissions.update_access.agents === false)) && (
+                  <button className={styles.editBtn} onClick={() => onAgentEdit(data)} title="Edit">
+                    <SVGIcons icon="fa-solid fa-pen" width={20} height={20} />
+                  </button>
+                )}
             </div>
           )}
         </div>
@@ -195,7 +208,7 @@ const AgentCard = (props) => {
 
           <button type="submit" className={styles.deleteBtnFull} onClick={handleDelete} title="Delete">
             DELETE
-            <SVGIcons icon="fa-solid fa-user-xmark" width={15} height={12} />
+            <SVGIcons icon="recycle-bin" width={20} height={16} />
           </button>
         </form>
       )}

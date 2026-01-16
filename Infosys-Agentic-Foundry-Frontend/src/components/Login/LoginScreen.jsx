@@ -107,13 +107,13 @@ function LoginScreen() {
     // Check for autofilled values first
     checkForAutofill();
 
-    // Get current password value from ref
+    // Get current input value from ref
     const passwordValue = passwordRef.current;
     // Get actual email value to handle autofill
     const emailInput = document.querySelector('input[name="Email"]');
     const actualEmailValue = emailInput ? emailInput.value : email;
 
-    // Check if email and password are empty
+    // Check if values are empty
     if (!actualEmailValue && !passwordValue) {
       setValidationError("Please fill all required details or login as guest");
       setSelectedOption(option);
@@ -207,6 +207,7 @@ function LoginScreen() {
           email_id: actualEmailValue,
           password: passwordRef.current,
           role: selectedOption,
+           department_name: "General",
         });
 
         // Setting JWT & refresh tokens
@@ -218,14 +219,6 @@ function LoginScreen() {
           const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
           const sessionIdResponse = (await fetchData(apiUrl)) || null;
 
-          // DEBUG: Verify all cookies are being set
-          console.log("🔐 Setting login cookies:", {
-            userName: users.user_name || users.username,
-            session: sessionIdResponse,
-            role: users.role,
-            email: users.email,
-          });
-
           login({
             userName: users.user_name || users.username,
             user_session: sessionIdResponse,
@@ -234,17 +227,6 @@ function LoginScreen() {
           });
           Cookies.set("email", users.email);
           setSessionStart();
-
-          // VERIFY cookies were actually set after a brief delay
-          // setTimeout(() => {
-          //   console.log("🔍 Verifying cookies after login:", {
-          //     userName: Cookies.get("userName"),
-          //     session: Cookies.get("user_session"),
-          //     jwt: Cookies.get("jwt-token"),
-          //     role: Cookies.get("role"),
-          //     email: Cookies.get("email"),
-          //   });
-          // }, 100);
 
           navigate("/");
           setMsgSubmit("Success");
@@ -276,8 +258,8 @@ function LoginScreen() {
       const users = await fetchData(APIs.GUEST_LOGIN);
 
       if (users.approval) {
-        const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
-        let sessionIdResponse = (await fetchData(apiUrl)) || null;
+  const apiUrl = `${APIs.GET_NEW_SESSION_ID}`;
+  const sessionIdResponse = (await fetchData(apiUrl)) || null;
         login({
           userName: users.user_name || users.username,
           user_session: sessionIdResponse,
@@ -337,7 +319,7 @@ function LoginScreen() {
     const active = getActiveUser();
     // If there is an active user different from attempted OR role differs while active session exists
     if (active && active !== attemptedUserName) {
-      setPendingCredentials({ email: attemptedUserName, password: passwordRef.current, role: attemptedRole });
+      setPendingCredentials({ email: attemptedUserName, password: passwordRef.current, role: attemptedRole,department_name: "General"});
       setShowConflictModal(true);
       return;
     }
@@ -464,6 +446,7 @@ function LoginScreen() {
             className="loginPage-input"
             placeholder="Password"
             autoComplete="current-password"
+            maxLength={18}
             onChange={(e) => passwordChange(e.target.value)}
             tabIndex={2}
             onFocus={() => setHasPasswordInput(true)}

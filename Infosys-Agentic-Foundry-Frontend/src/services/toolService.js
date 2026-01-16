@@ -30,6 +30,54 @@ export const useToolsAgentsService = () => {
     }
   };
 
+  // Fetch all validator tools (no pagination yet). Backend: APIs.GET_VALIDATOR_TOOLS
+  const getValidatorTools = async () => {
+    try {
+      const apiUrl = APIs.GET_VALIDATOR_TOOLS;
+      const response = await fetchData(apiUrl);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Get tool details by tool_id
+  const getToolById = async (toolId) => {
+    try {
+      if (!toolId) throw new Error("toolId is required");
+      const apiUrl = APIs.GET_TOOLS_BY_ID.replace("{tool_id}", toolId);
+      const response = await fetchData(apiUrl);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  const getToolsAndValidatorsPaginated = async ({ search, page, limit, tags, created_by }) => {
+    try {
+      const params = [];
+      if (search && search.trim() && search.trim().length > 0) {
+        params.push(`search_value=${encodeURIComponent(search)}`);
+      }
+      params.push(`page_number=${page}`);
+      params.push(`page_size=${limit}`);
+      if (tags && Array.isArray(tags) && tags.length > 0) {
+        tags.forEach((tag) => {
+          if (tag && tag.trim()) {
+            params.push(`tag_names=${encodeURIComponent(tag)}`);
+          }
+        });
+      }
+      const apiUrl = `${APIs.GET_TOOLS_AND_VALIDATORS_SEARCH_PAGINATED}?${params.join("&")}`;
+      const response = await fetchData(apiUrl);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Deprecated: getValidatorTools. Use getToolsAndValidatorsPaginated instead.
+
   const getAgentsSearchByPageLimit = async (paramsObj) => {
     try {
       const params = [];
@@ -72,9 +120,15 @@ export const useToolsAgentsService = () => {
     }
   };
 
-  const addTool = async (toolData, force_add) => {
+  // Modified: add isValidator flag as query param (backend expects Query not Form field)
+  const addTool = async (toolData, force_add, isValidator = false) => {
     try {
-      const apiUrl = force_add ? `${APIs.ADD_TOOLS}?force_add=true` : APIs.ADD_TOOLS;
+      // Expect toolData is FormData prepared by caller without is_validator appended
+      const base = APIs.ADD_TOOLS;
+      const params = [];
+      if (force_add) params.push("force_add=true");
+      if (isValidator) params.push("is_validator=true");
+      const apiUrl = params.length ? `${base}?${params.join("&")}` : base;
       const response = await postData(apiUrl, toolData);
       return response;
     } catch (error) {
@@ -186,13 +240,12 @@ export const useToolsAgentsService = () => {
   };
 
   const checkToolEditable = async (tool, setShowForm, addMessage, setLoading) => {
-    let response;
     const userEmailId = Cookies.get("email") || "Guest";
     const role = Cookies.get("role");
     const isAdmin = role && role?.toUpperCase() === "ADMIN";
-    const updatedTool = { ...tool, user_email_id: userEmailId, is_admin:isAdmin };
+    const updatedTool = { ...tool, user_email_id: userEmailId, is_admin: isAdmin };
     if (setLoading) setLoading(true);
-    response = await updateTools(updatedTool, tool.tool_id, true);
+    const response = await updateTools(updatedTool, tool.tool_id, true);
     if (setLoading) setLoading(false);
     if (response?.is_update) {
       setShowForm(true);
@@ -232,12 +285,13 @@ export const useToolsAgentsService = () => {
     return totalDivs;
   };
 
-  const addServer = async (serverData) => {
+  const addServer = async (serverData, isValidator = true) => {
     try {
       console.debug("[addServer] Step 1: Received serverData:", serverData);
       // Extra: Log header value directly
       console.debug("[addServer] Step 1.1: serverData.headers:", serverData.headers);
-      const apiUrl = `${APIs.MCP_ADD_TOOLS}`;
+      // Backend expects is_validator as query param (mirror /tools/add pattern)
+      const apiUrl = isValidator ? `${APIs.MCP_ADD_TOOLS}?is_validator=true` : `${APIs.MCP_ADD_TOOLS}`;
 
       const normalizedTagIds = Array.isArray(serverData.tag_ids) ? serverData.tag_ids.map((id) => String(id)) : [];
       const dataToSend = new FormData();
@@ -342,6 +396,8 @@ export const useToolsAgentsService = () => {
 
   return {
     getToolsSearchByPageLimit,
+    getToolsAndValidatorsPaginated,
+    getValidatorTools,
     getAgentsSearchByPageLimit,
     addTool,
     updateTools,
@@ -350,6 +406,7 @@ export const useToolsAgentsService = () => {
     checkToolEditable,
     calculateDivs,
     addServer,
-    testServerTool, // <-- add new function to export
+    testServerTool,
+    getToolById,
   };
 };

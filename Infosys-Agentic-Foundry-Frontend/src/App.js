@@ -6,23 +6,19 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import AvailableTools from "./components/AvailableTools/AvailableTools";
 import Login from "./components/Login";
-import { MessageProvider, useMessage } from "./Hooks/MessageContext";
+import { useMessage } from "./Hooks/MessageContext";
 import MessagePopup from "./components/MessagePopup/MessagePopup";
-import { GlobalComponentProvider } from "./Hooks/GlobalComponentContext";
 import GlobalComponent from "./Hooks/GlobalComponent";
 import Register from "./components/Register/Index";
 import { useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./ProtectedRoute";
-import AdminScreen from "./components/AdminScreen/AdminScreen";
-import { ApiUrlProvider } from "./context/ApiUrlContext";
-import { VersionProvider } from "./context/VersionContext";
-import CompileIssuesOverlay from "./components/errorhandling/CompileIssuesOverlay";
-import ErrorBoundaryWrapper from "./components/errorhandling/ErrorBoundary";
+// import AdminScreen from "./components/AdminScreen/AdminScreen";
+import AdminScreenNew from "./components/AdminScreen/AdminScreenNew";
 import VaultScreen from "./components/Vault/Vault";
 import GroundTruth from "./components/GroundTruth/GroundTruth";
 import DataConnectors from "./components/DataConnectors/DataConnectors";
-import EvaluationPage from "./components/EvaluationPage/EvaluationPage";
 import EvaluationPlanScreen from "./components/EvaluationPage/EvaluationPlanScreen";
+import EvaluationPageNew from "./components/EvaluationPage/EvaluationPageNew";
 import useAutoLogout from "./Hooks/useAutoLogout";
 import useErrorHandler from "./Hooks/useErrorHandler";
 import { globalErrorService } from "./services/globalErrorService";
@@ -75,117 +71,109 @@ function App() {
 
   return (
     <>
-      <GlobalComponentProvider>
-        <GlobalComponent />
-        <MessageProvider>
-          <MessagePopup />
-          <RuntimeErrorListener />
-          <VersionProvider>
-            <ApiUrlProvider>
-              <Routes>
-                <Route
-                  path="/login"
-                  element={
-                    <PublicRoute>
-                      <Login />
-                    </PublicRoute>
-                  }
-                />
-                <Route
-                  path="/infy-agent/service-register"
-                  element={
-                    <PublicRoute>
-                      <Register />
-                    </PublicRoute>
-                  }
-                />
-                <Route
-                  path="/"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <AvailableTools />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/agent"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <ListOfAgents />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/chat"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <AskAssistant />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/secret"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <VaultScreen />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/groundtruth"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <GroundTruth />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/dataconnector"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <DataConnectors />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                {/* default Route */}
-                <Route path="*" element={<Navigate to="/login" />} />
-                <Route
-                  path="/admin"
-                  element={
-                    <ProtectedRoute requiredRole="ADMIN">
-                      <Layout>
-                        <AdminScreen />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/evaluation"
-                  element={
-                    <ProtectedRoute>
-                      <Layout>
-                        <EvaluationPlanScreen />
-                      </Layout>
-                    </ProtectedRoute>
-                  }
-                />
-              </Routes>
-            </ApiUrlProvider>
-          </VersionProvider>
-        </MessageProvider>
-      </GlobalComponentProvider>
+      <GlobalComponent />
+      <MessagePopup />
+      <RuntimeErrorListener />
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/infy-agent/service-register"
+          element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <AvailableTools />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/agent"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <ListOfAgents />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <AskAssistant />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/secret"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <VaultScreen />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/groundtruth"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <GroundTruth />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dataconnector"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <DataConnectors />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        {/* default Route */}
+        <Route path="*" element={<Navigate to="/login" />} />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requiredRole="ADMIN">
+              <Layout>
+                <AdminScreenNew />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/evaluation"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <EvaluationPageNew />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
     </>
   );
 }

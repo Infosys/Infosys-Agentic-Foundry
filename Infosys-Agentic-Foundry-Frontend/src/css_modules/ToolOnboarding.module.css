@@ -1,3 +1,47 @@
+/* Tool Type Dropdown Styles */
+/* Tool Type Dropdown Styles - Match Server Type Dropdown */
+.toolTypeDropdownContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0px;
+}
+
+.toolTypeDropdownLabel {
+  text-align: left;
+  font: normal normal 400 12px/16px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  opacity: 1;
+  line-height: 22px;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.toolTypeDropdownSelect {
+  width: 260px;
+  height: 40px;
+  background: #fff;
+  border: 1.5px solid #bfc8d0;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #343741;
+  padding: 0 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+  appearance: none;
+}
+.toolTypeDropdownSelect:focus {
+  border-color: #007cc3;
+  box-shadow: 0 0 0 2px rgba(0, 123, 195, 0.15);
+}
+.toolTypeDropdownSelect option {
+  background: #fff;
+  color: #343741;
+  font-size: 16px;
+}
 .container {
   background: #ffffff 0% 0% no-repeat padding-box;
   word-wrap: break-word;
@@ -1483,8 +1527,7 @@ label {
   line-height: 1.4;
   text-align: left;
   margin-top: 0;
-   min-width: 100%;
-    white-space: pre-line;
+  text-wrap: auto;
 }
 
 .success_error_content.success {

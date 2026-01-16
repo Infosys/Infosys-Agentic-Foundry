@@ -290,7 +290,7 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
             >
               <option value="">Select mode</option>
               <option value="one">One</option>
-              <option value="many">Many</option>
+              {crudData.operation !== "insert" && <option value="many">Many</option>}
             </select>
           </div>
 

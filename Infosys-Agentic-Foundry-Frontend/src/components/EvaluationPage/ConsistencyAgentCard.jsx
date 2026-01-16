@@ -84,7 +84,7 @@ const ConsistencyAgentCard = ({ agent, onDelete, onEdit, onScore, isLoading, isL
               <SVGIcons icon="eye" width={20} height={16} fill="#fff" />
             </button>
             <button className={`${styles.deleteBtn} ${styles.consistencyCardBtn}`} onClick={handleShowDeleteConfirm} title="Delete" disabled={isLoading || loading}>
-              <SVGIcons icon="fa-solid fa-user-xmark" width={20} height={16} />
+              <SVGIcons icon="recycle-bin" width={20} height={16} />
             </button>
             <button className={`${styles.editBtn} ${styles.consistencyCardBtn}`} onClick={() => onEdit(agent)} title="Edit" disabled={isLoading || loading}>
               <SVGIcons icon="fa-solid fa-pen" width={16} height={16} />
@@ -106,7 +106,7 @@ const ConsistencyAgentCard = ({ agent, onDelete, onEdit, onScore, isLoading, isL
             disabled={isLoading || loading || !(agent?.agentic_application_id || agent?.agent_id)}
             style={{ marginTop: "10px" }}>
             DELETE
-            <SVGIcons icon="fa-solid fa-user-xmark" width={15} height={12} />
+            <SVGIcons icon="recycle-bin" width={20} height={16} />
           </button>
           {!(agent?.agentic_application_id || agent?.agent_id) && (
             <div style={{ color: "red", fontWeight: "bold", marginBottom: "8px" }}>Agent ID missing! Cannot delete this agent.</div>

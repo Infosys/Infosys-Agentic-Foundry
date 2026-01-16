@@ -1,0 +1,2343 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../Features/">
+      
+      
+        <link rel="next" href="../Architecture/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
+    
+    
+      
+        <title>Core Building Blocks - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.342714a4.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#enterprise-ai-agent-building-blocks" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Core Building Blocks
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Definitions
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Definitions
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/Vocabulary_Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Vocabulary - Definitions
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Human in the loop
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Core Building Blocks
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Core Building Blocks
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#enterprise-ai-agent-building-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Enterprise AI Agent Building Blocks
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-agent-orchestration-mcp-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Agent Orchestration &amp; MCP Registry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-planner-tool-verifier" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Planner &amp; Tool Verifier
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-knowledge-memory-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Knowledge &amp; Memory Management
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-agent-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Agent Evaluation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-agent-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Agent Telemetry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-rai-guardrails" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. RAI Guardrails
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-optimization-scalability" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. Optimization &amp; Scalability
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Architecture
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Installation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Windows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Linux
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Azure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Database_Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    PostgreSQL setup
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agents Design
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Agents Design
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/ReactCriticAgent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Critic Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Planner_executor_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Executor Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Orchestration_Meta_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Orchestration Meta Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Planner_meta_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Meta Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Hybrid_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Hybrid Agent Design
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Admin_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Admin Screen
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tools Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Validation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Tool Interrupt
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Memory Management
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_13" id="__nav_13_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Agent Configuration
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            Agent Configuration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/reactCritic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Critic Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/PlannerExecutor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Executor Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/PlannerMeta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Meta Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/HybridAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Hybrid Agent Configuration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Inference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            Inference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/ReactCriticAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    React Critic Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Multi Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/PlannerExecutorAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Executor Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/HybridAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Hybrid Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/Canvas_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Canvas Screen
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Files
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        
+          
+          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Telemetry
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16">
+            <span class="md-nav__icon md-icon"></span>
+            Telemetry
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Open Telemetry
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Connecting_to_Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Connecting to Grafana
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Arize Phoenix
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        
+          
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    Evaluation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
+            <span class="md-nav__icon md-icon"></span>
+            Evaluation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Evaluation Metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/Groundtruth_Evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Groundtruth Evaluation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/Consistency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Consistency Evaluation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Vault
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../JWT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    API Authentication
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../GZIP_Compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    GZIP Compression
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Knowledge_Base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Knowledge Base
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DataConnectors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    DataConnectors
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ExportAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Export Agent
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompt_optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Prompt Optimization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../MCP_Registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    MCP Registry
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Time-To-Live/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Time-To-Live
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Model_server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Model Server Integration
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../RBAC/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Role Base Access Control
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serever Sent Events
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#enterprise-ai-agent-building-blocks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Enterprise AI Agent Building Blocks
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-agent-orchestration-mcp-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Agent Orchestration &amp; MCP Registry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-planner-tool-verifier" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Planner &amp; Tool Verifier
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-knowledge-memory-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Knowledge &amp; Memory Management
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-agent-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Agent Evaluation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-agent-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Agent Telemetry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-rai-guardrails" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. RAI Guardrails
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-optimization-scalability" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. Optimization &amp; Scalability
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+  <h1>Core Building Blocks</h1>
+
+<h2 id="enterprise-ai-agent-building-blocks">Enterprise AI Agent Building Blocks</h2>
+<p>These foundational components are critical for the creation and operation of autonomous agents. Each block encapsulates a key function, from task orchestration and memory management to evaluation, safety measures, and scalability. Together, they form a robust system that ensures agents function reliably, securely, and efficiently in dynamic environments.</p>
+<h2 id="1-agent-orchestration-mcp-registry">1. Agent Orchestration &amp; MCP Registry</h2>
+<p>The Agent Orchestration &amp; MCP Registry is the foundational layer that manages how agents collaborate, execute tasks, and communicate across platforms. It establishes a centralized system for coordinating multiple agents, ensuring they work together harmoniously, share responsibilities, and follow pre-defined workflows in a flexible and adaptive manner.</p>
+<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; 
+background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
+
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+  <strong style="color: #0d47a1; font-size: 13px;">Multi-Agent Coordination</strong>
+  <p style="margin: 5px 0;">Delegation, collaboration, and planning with team-based RBAC</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+  <strong style="color: #0d47a1; font-size: 13px;">Dynamic Orchestration</strong>
+  <p style="margin: 5px 0;">Intelligent planners (ReAct, CoT, task graphs) for adaptive workflows</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+  <strong style="color: #0d47a1; font-size: 13px;">Platform Integration</strong>
+  <p style="margin: 5px 0;">Runtime coordination through LangGraph, MCP, and workflow engines</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+  <strong style="color: #0d47a1; font-size: 13px;">Natural Language MCP</strong>
+  <p style="margin: 5px 0;">Convert agent functions into servers through conversation</p>
+</div>
+</div>
+</div>
+
+<p><strong>Multi-Agent Coordination:</strong> </p>
+<p>This involves intelligent delegation and management of tasks between multiple agents using Role-Based Access Control (RBAC). By defining roles and responsibilities, this module ensures that agents work in collaboration, respecting boundaries and optimizing their individual contributions to larger projects. It allows for complex, coordinated actions like joint problem-solving and information sharing across different agents or groups.</p>
+<p><strong>Dynamic Orchestration:</strong> </p>
+<p>This block uses advanced planners such as ReAct, Chain-of-Thought (CoT) reasoning, and task graphs to adapt workflows based on real-time needs. These tools help the system dynamically adjust task priorities, reassign tasks based on resource availability, and optimize time-sensitive operations.</p>
+<p><strong>Platform Integration:</strong> </p>
+<p>Integration with LangGraph, MCP, and other workflow engines ensures smooth communication across systems, allowing agents to connect with diverse platforms for task execution, information retrieval, or service integration. This ensures that agents can leverage external systems and resources while staying within the defined workflow.</p>
+<p><strong>Natural Language MCP:</strong> </p>
+<p>This component allows agents to interact with each other and users using natural language interfaces (NLIs). This feature transforms complex tasks and commands into a more intuitive, human-readable form, simplifying agent control and improving accessibility for non-technical users. Users can converse with agents to control them, get insights, or configure operations without needing deep technical expertise.</p>
+<hr />
+<h2 id="2-planner-tool-verifier">2. Planner &amp; Tool Verifier</h2>
+<p>The Planner &amp; Tool Verifier module focuses on evaluating and verifying the feasibility, logic, and execution of agent-generated plans. It ensures that agent decisions are grounded in reality, avoiding contradictions or inefficient actions. It also helps ensure that the tools agents call are used appropriately and effectively.</p>
+<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Feasibility Analysis</strong>
+<p style="margin: 5px 0;">Instant evaluation of every plan step for practical viability</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Logic Chain Validation</strong>
+<p style="margin: 5px 0;">Ensures logical connections with no gaps or contradictions</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Tool Call Verification</strong>
+<p style="margin: 5px 0;">User verification and argument editing before execution</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Learning System</strong>
+<p style="margin: 5px 0;">Learns from human corrections and preferences</p>
+</div>
+
+</div>
+</div>
+
+<p><strong>Feasibility Analysis:</strong> </p>
+<p>Before execution, each plan step is evaluated for feasibility, considering real-world constraints and data availability. The system checks whether the task is achievable within the given resources, time, and environment.</p>
+<p><strong>Logic Chain Validation:</strong> </p>
+<p>This ensures that plans are logically sound by confirming that each step follows from the last. It helps prevent logical gaps and contradictions, ensuring that no assumptions are made without proper validation. This guarantees that agents execute tasks in a structured and coherent manner.</p>
+<p><strong>Tool Call Verification:</strong> </p>
+<p>This feature enables agents to verify the tools they intend to use before executing them. This includes user validation of parameters and inputs to ensure that the right tool is being invoked with the correct arguments. If discrepancies are found, agents can prompt the user to modify or confirm the inputs before proceeding.</p>
+<p><strong>Learning System:</strong> </p>
+<p>Over time, the system learns from human interactions and feedback, adapting its decision-making processes. By learning from corrections and preferences, the planner can refine its judgment, becoming more efficient and accurate in future interactions. This feature ensures continuous improvement in how the agent handles new tasks and situations.</p>
+<hr />
+<h2 id="3-knowledge-memory-management">3. Knowledge &amp; Memory Management</h2>
+<p>Knowledge &amp; Memory Management ensures agents retain contextual information and use it to make informed decisions. This module is critical for ensuring that agents don’t operate in isolation from previous interactions, creating a coherent and continuous understanding of tasks over time.</p>
+<div style="width: 450px; height: 105px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Enterprise Database</strong>
+<p style="margin: 5px 0;">Reliable, scalable memory persistence with high performance</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Context-Aware Actions</strong>
+<p style="margin: 5px 0;">Every decision considers full historical context</p>
+</div>
+
+</div>
+</div>
+
+<p><strong>Enterprise Database:</strong> </p>
+<p>The memory system uses a reliable, high-performance enterprise-grade database to store knowledge, including past actions, decisions, interactions, and outcomes. This provides scalability, allowing agents to manage vast amounts of data while maintaining quick access to relevant information.</p>
+<p><strong>Context-Aware Actions:</strong> </p>
+<p>Every decision made by the agent is informed by historical context. This ensures that agents take into account past events, preferences, or mistakes when making decisions. For example, if a task was performed incorrectly in the past, the agent can take corrective actions or suggest different approaches based on previous failures or successes.</p>
+<hr />
+<h2 id="4-agent-evaluation">4. Agent Evaluation</h2>
+<p>The Agent Evaluation module helps monitor and assess the performance of agents in real-time, ensuring they are working optimally. This system evaluates not only the results of tasks but also the efficiency of the processes used to achieve them.</p>
+<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">LLM-as-a-Judge</strong>
+<p style="margin: 5px 0;">Comprehensive performance assessment across agents and models</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Tool Utilization Metrics</strong>
+<p style="margin: 5px 0;">Selection accuracy, usage efficiency, precision, success rate</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Agent Efficiency Score</strong>
+<p style="margin: 5px 0;">Task decomposition, reasoning quality, robustness metrics</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Interactive Dashboard</strong>
+<p style="margin: 5px 0;">Real-time visualization with advanced filtering capabilities</p>
+</div>
+
+</div>
+</div>
+
+<p><strong>LLM-as-a-Judge:</strong> </p>
+<p>Leveraging advanced Large Language Models (LLMs), this module evaluates agent performance comprehensively. It provides detailed assessments of how well agents perform their tasks, examining reasoning quality, the accuracy of output, and alignment with objectives.</p>
+<p><strong>Tool Utilization Metrics:</strong> </p>
+<p>By analyzing key performance indicators (KPIs) such as tool selection accuracy, usage efficiency, and overall success rates, this block helps identify the most effective tools for specific tasks and pinpoints areas of inefficiency. It ensures that agents are always using the right tools for the job.</p>
+<p><strong>Agent Efficiency Score:</strong> </p>
+<p>This score assesses the overall efficiency of an agent. It considers factors like task decomposition (how well the agent breaks down complex tasks), reasoning quality (how logically sound and coherent its thought processes are), and robustness (how effectively the agent can handle disruptions or unexpected conditions).</p>
+<p><strong>Interactive Dashboard:</strong> </p>
+<p>A real-time, interactive dashboard provides insights into agent performance. With advanced filtering and visualization capabilities, users can track agent performance, identify trends, and act upon real-time data to optimize system operations.</p>
+<hr />
+<h2 id="5-agent-telemetry">5. Agent Telemetry</h2>
+<p>Enables real-time observability into agent behavior and actions. It integrates telemetry frameworks for logging, monitoring, tracing, and generating governance-ready logs.</p>
+<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">OpenTelemetry Integration</strong>
+<p style="margin: 5px 0;">Framework-level logging with Elasticsearch & Grafana</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Arize-Phoenix Tracing</strong>
+<p style="margin: 5px 0;">Detailed agent-level behavior insights and analysis</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Real-time Monitoring</strong>
+<p style="margin: 5px 0;">Live tracking of agent actions and performance</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Audit-Ready Logs</strong>
+<p style="margin: 5px 0;">Compliance-ready logging for governance requirements</p>
+</div>
+
+</div>
+</div>
+
+<p><strong>OpenTelemetry Integration:</strong> </p>
+<p>Leveraging frameworks like OpenTelemetry, this system integrates seamlessly with logging tools such as Elasticsearch and Grafana. It enables detailed logging and monitoring of agent behavior, actions, and system performance, ensuring that every step is recorded and traceable.</p>
+<p><strong>Arize-Phoenix Tracing:</strong> </p>
+<p>This enables deep visibility into agent-level behavior and decision-making processes. By tracing how agents arrive at conclusions or take actions, users can analyze decision pathways and improve process transparency.</p>
+<p><strong>Real-time Monitoring:</strong> </p>
+<p>Provides live tracking of agent actions and performance, allowing for proactive intervention when necessary. Users can monitor agent behavior in real-time, ensuring that any issues or inefficiencies are quickly addressed.</p>
+<p><strong>Audit-Ready Logs:</strong> </p>
+<p>To comply with regulatory requirements, this module generates logs that are formatted for easy auditing. It ensures the system is fully compliant with governance and legal standards, providing an accurate record of all agent activities.</p>
+<hr />
+<h2 id="6-rai-guardrails">6. RAI Guardrails</h2>
+<p>Protects agent systems from unsafe, biased, or inaccurate behaviors using automated red teaming, PII protection, hallucination detection, and fairness strategies.</p>
+<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Automated Red Teaming</strong>
+<p style="margin: 5px 0;">Continuous vulnerability scanning and security assessment</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Hallucination Detection</strong>
+<p style="margin: 5px 0;">Detect and mitigate LLM drift and inaccuracies</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">PII Protection</strong>
+<p style="margin: 5px 0;">Analyze, anonymize, and hash personal data in interactions</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Bias Mitigation</strong>
+<p style="margin: 5px 0;">Detect and reduce bias in LLMs and ML models</p>
+</div>
+
+</div>
+</div>
+
+<p><strong>Automated Red Teaming:</strong> </p>
+<p>This continuously assesses vulnerabilities in the system by simulating potential attacks or misuse. Automated red-teaming helps identify weaknesses in the agent system’s defenses, improving overall system security.</p>
+<p><strong>Hallucination Detection:</strong> </p>
+<p>Agents that rely on LLMs are prone to generating “hallucinations” (incorrect or fabricated information). This system detects and mitigates hallucinations, ensuring that agents only provide valid, fact-based output.</p>
+<p><strong>PII Protection:</strong> </p>
+<p>This block helps safeguard personal data by anonymizing and hashing sensitive information before it’s used by agents. It ensures compliance with data privacy regulations (e.g., GDPR) and protects against accidental data breaches.</p>
+<p><strong>Bias Mitigation:</strong> </p>
+<p>This module detects and reduces biases in machine learning models and LLMs. By ensuring that agents do not exhibit bias in decision-making, it promotes fairness and inclusivity, which is especially important in sensitive applications like hiring or legal decisions.</p>
+<hr />
+<h2 id="7-optimization-scalability">7. Optimization &amp; Scalability</h2>
+<p>Ensures your system scales with efficiency. Supports advanced prompt optimization, role-based personas, message-driven workflows, and scalable service orchestration.</p>
+<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Prompt Optimizer</strong>
+<p style="margin: 5px 0;">Real-time refinement with self-improving AI capabilities</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Role-Based Prompting</strong>
+<p style="margin: 5px 0;">Automatic persona assumption for optimal task execution</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">Azure Service Bus</strong>
+<p style="margin: 5px 0;">Reliable message passing with event-driven workflows</p>
+</div>
+
+<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
+<strong style="color: #0d47a1; font-size: 13px;">KEDA + Dapr</strong>
+<p style="margin: 5px 0;">Auto-scaling and seamless service communication</p>
+</div>
+
+</div>
+</div>
+
+<p><strong>Prompt Optimizer:</strong> </p>
+<p>This tool continuously refines prompts based on agent performance and user feedback. It helps enhance task accuracy and efficiency by making iterative adjustments to the prompts used in tasks, ensuring that agents perform at their highest capability.</p>
+<p><strong>Role-Based Prompting:</strong> </p>
+<p>This system automatically adjusts the agent’s persona based on the task at hand. By tailoring the agent’s behavior and communication style, it ensures that tasks are executed in the most efficient manner possible, considering the specific context.</p>
+<p><strong>Azure Service Bus:</strong> </p>
+<p>A cloud-based message-passing infrastructure that ensures reliable communication between services. It facilitates event-driven workflows, ensuring that messages and data are passed efficiently and without bottlenecks.</p>
+<p><strong>KEDA + Dapr:</strong> </p>
+<p>These technologies provide auto-scaling capabilities to dynamically adjust resources based on real-time load and demand. This ensures that the system can handle sudden spikes in traffic without degradation of performance.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["content.code.copy", "navigation.path"], "search": "../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.13a4f30d.min.js"></script>
+      
+    
+  </body>
+</html>

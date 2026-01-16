@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { usePermissions } from "../../context/PermissionsContext";
 import styles from "./DataConnectors.module.css";
 import ConnectionModal from "./ConnectionModal";
 import QueryModal from "./QueryModal";
@@ -11,6 +12,8 @@ import { useDatabases } from "./service/databaseService.js";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
 
 const DataConnectorsContent = () => {
+  // Always call hooks first
+  const { permissions, loading: permissionsLoading, hasPermission } = usePermissions();
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [showQueryModal, setShowQueryModal] = useState(false);
   const [showCrudModal, setShowCrudModal] = useState(false);
@@ -20,11 +23,8 @@ const DataConnectorsContent = () => {
   const [isExecuting, setIsExecuting] = useState(false);
   const [isCrudExecuting, setIsCrudExecuting] = useState(false);
   const [sqlConnections, setSqlConnections] = useState([]);
-  const activeConnectionsFetched = useRef(false);
-  const sqlConnectionsFetched = useRef(false);
+  const initialFetchDone = useRef(false);
   const { fetchSqlConnections, executeMongodbOperation } = useDatabases();
-
-  // Use the database connections hook
   const {
     handleConnectionSubmit,
     isConnecting,
@@ -38,6 +38,42 @@ const DataConnectorsContent = () => {
     loadAvailableConnections,
   } = useDatabaseConnections();
   const { getActiveMySQLConnections, getActivePostgresConnections, getActiveSQLiteConnections, getActiveMongoConnections, fetchActiveConnections } = useDatabase();
+
+  // Single useEffect for all initial data fetching - runs only once on mount
+  useEffect(() => {
+    if (initialFetchDone.current) {
+      return;
+    }
+    initialFetchDone.current = true;
+
+    // Fetch active connections
+    if (typeof fetchActiveConnections === "function") {
+      fetchActiveConnections();
+    }
+
+    // Fetch SQL connections
+    fetchSqlConnections().then((result) => {
+      if (result && result.success) {
+        setSqlConnections(result.data.connections || result.data || []);
+      } else {
+        setSqlConnections([]);
+      }
+    });
+
+    // Fetch available connections
+    if (typeof loadAvailableConnections === "function") {
+      loadAvailableConnections();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Permission check (generalized) - after all hooks
+  if (permissionsLoading) {
+    return <div>Loading...</div>;
+  }
+  const dataConnectorAllowed = typeof hasPermission === "function" ? hasPermission("data_connector_access") : !(permissions && permissions.data_connector_access === false);
+  if (!dataConnectorAllowed) {
+    return <div style={{ padding: 24, color: "#b91c1c", fontWeight: 600 }}>You do not have permission to access Data Connectors.</div>;
+  }
 
   // Database types with their configurations
   const databaseTypes = [
@@ -163,7 +199,7 @@ const DataConnectorsContent = () => {
         data: crudData.dataJson ? JSON.parse(crudData.dataJson) : {},
         update_data: crudData.updateJson ? JSON.parse(crudData.updateJson) : {},
       };
-      Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
+      Object.keys(payload).forEach((key) => typeof payload[key] === "undefined" && delete payload[key]);
       const result = await executeMongodbOperation(payload);
       return result;
     } catch (error) {
@@ -174,25 +210,7 @@ const DataConnectorsContent = () => {
     }
   };
 
-  // Fetch active connections from backend when component mounts
-  useEffect(() => {
-    if (!activeConnectionsFetched.current && typeof fetchActiveConnections === "function") {
-      fetchActiveConnections();
-      activeConnectionsFetched.current = true;
-    }
-    if (!sqlConnectionsFetched.current) {
-      fetchSqlConnections().then((result) => {
-        if (result.success) {
-          setSqlConnections(result.data.connections || result.data || []);
-        } else {
-          setSqlConnections([]);
-        }
-      });
-      sqlConnectionsFetched.current = true;
-    }
-    // Fetch available connections immediately on mount
-    loadAvailableConnections && loadAvailableConnections();
-  }, [fetchActiveConnections, loadAvailableConnections]);
+  // (duplicate useEffect removed) all fetch logic is handled above to keep hooks in stable order
 
   return (
     <div className={styles.container}>
@@ -346,26 +364,30 @@ def fetch_all_from_xyz(connection_name: str):
         return f'Error fetching data from database {connection_name}: {str(e)}'
 
 # [MONGODB]
-def fetch_all_from_xyz(connection_name: str):
+async def fetch_all_for_mongo(connection_name: str):
     """
-    Fetches all records from the 'xyz' collection in the specified MongoDB database using the provided connection name.
+    Fetches all documents from the 'users' collection in a specified MongoDB database asynchronously.
     Args:
-        connection_name (str): The key used to identify and connect to the specific MongoDB database.
+        connection_name (str): The key used to identify and connect to the desired MongoDB database.
     Returns:
-        list: A list of dictionaries, where each dictionary represents a document from the 'xyz' collection.
+        list: A list of documents retrieved from the 'users' collection.
     """
     from MultiDBConnection_Manager import get_connection_manager
     try:
         manager = get_connection_manager()
-        mongo_db = manager.get_mongodb_client(connection_name)
-        collection = mongo_db['xyz']
-        cursor = collection.find({})
-        documents = []
-        async for document in cursor:
-            documents.append(document)
+        mongo_db = manager.get_mongo_database(connection_name)
+        collection = mongo_db['users']
+        #  Use to_list() - more efficient and reliable
+        documents = await collection.find({}).to_list(length=None)
+        #  Convert ObjectId to string without importing bson
+        for doc in documents:
+            if '_id' in doc:
+                doc['_id'] = str(doc['_id'])
         return documents
     except Exception as e:
-        return f'Error fetching data from MongoDB {connection_name}: {str(e)}'
+        error_msg = f"Error fetching data from MongoDB {connection_name}: {str(e)}"
+        print(error_msg)
+        return []
 
 # Note:
 # - make sure your connection is active.

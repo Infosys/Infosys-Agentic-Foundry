@@ -57,8 +57,10 @@ const loadAceModules = async () => {
   }
 };
 
+let editorIdCounter = 0;
+
 const CodeEditor = ({
-  value = "",
+  codeToDisplay = "",
   onChange,
   readOnly = false,
   theme = "github",
@@ -79,7 +81,7 @@ const CodeEditor = ({
   const editorRef = useRef(null);
   const retryTimeoutRef = useRef(null);
   // Stable editor id prevents Ace from remounting each render (avoids scroll reset/jump)
-  const editorIdRef = useRef("ace-editor-" + Math.random().toString(36).slice(2));
+  const editorIdRef = useRef(`ace-editor-${++editorIdCounter}`);
   const debounceTimerRef = useRef(null);
 
   // Debounced onChange wrapper
@@ -97,13 +99,11 @@ const CodeEditor = ({
   useEffect(() => {
     // Since modules are pre-loaded via static imports, we can load immediately
     // Just add a tiny delay to ensure DOM is ready
-    console.log("CodeEditor initializing...");
 
     const timer = setTimeout(() => {
       try {
         // Verify ace is properly loaded
         if (typeof ace !== "undefined" && ace.edit) {
-          console.log("Ace editor is ready");
           setIsLoaded(true);
           setLoadError(false);
         } else {
@@ -194,7 +194,7 @@ const CodeEditor = ({
       console.warn("CodeEditor failed to load, showing fallback textarea");
       return (
         <textarea
-          value={value}
+          value={codeToDisplay}
           onChange={(e) => !readOnly && onChange && onChange(e.target.value)}
           readOnly={readOnly}
           placeholder={placeholder}
@@ -260,7 +260,7 @@ const CodeEditor = ({
             theme={isDarkTheme ? "monokai" : theme}
             name={editorIdRef.current}
             onChange={readOnly ? undefined : handleChange}
-            value={value}
+            value={codeToDisplay}
             width={width}
             height={height}
             fontSize={fontSize}
@@ -317,7 +317,7 @@ const CodeEditor = ({
     // Fallback to textarea if AceEditor fails
     return (
       <textarea
-        value={value}
+        value={codeToDisplay}
         onChange={(e) => !readOnly && onChange && onChange(e.target.value)}
         readOnly={readOnly}
         placeholder={placeholder}

@@ -24,6 +24,7 @@ let sessionInvalidatedDuringRefresh = false;
 // Global API call tracking to prevent loops
 let isApiBlocked = false;
 const apiCallHistory = new Map();
+const blockedEndpointsLogged = new Set(); // Track which endpoints we've already logged
 const MAX_CALLS_PER_ENDPOINT = 5;
 const TIME_WINDOW = 10000; // 10 seconds
 
@@ -71,7 +72,11 @@ const shouldBlockApiCall = (endpoint) => {
   const now = Date.now();
 
   if (isApiBlocked) {
-    console.warn(`🚫 API call to ${endpoint} blocked due to error loop protection`);
+    // Only log once per endpoint while blocked
+    if (!blockedEndpointsLogged.has(`global_${endpoint}`)) {
+      blockedEndpointsLogged.add(`global_${endpoint}`);
+      console.warn(`🚫 API call to ${endpoint} blocked due to error loop protection`);
+    }
     return true;
   }
 
@@ -80,7 +85,11 @@ const shouldBlockApiCall = (endpoint) => {
   const recentCalls = endpointHistory.filter((timestamp) => now - timestamp < TIME_WINDOW);
 
   if (recentCalls.length >= MAX_CALLS_PER_ENDPOINT) {
-    console.warn(`🚫 API call to ${endpoint} blocked - too many calls (${recentCalls.length}) in time window`);
+    // Only log once per endpoint when rate limited
+    if (!blockedEndpointsLogged.has(`rate_${endpoint}`)) {
+      blockedEndpointsLogged.add(`rate_${endpoint}`);
+      console.warn(`🚫 API call to ${endpoint} blocked - too many calls (${recentCalls.length}) in time window. Check for useEffect dependency issues.`);
+    }
     return true;
   }
 
@@ -101,6 +110,7 @@ const blockApiCalls = (duration = 5000) => {
   setTimeout(() => {
     isApiBlocked = false;
     apiCallHistory.clear();
+    blockedEndpointsLogged.clear(); // Reset logged endpoints so future blocks will log again
     console.info("✅ API calls unblocked");
   }, duration);
 };
@@ -207,6 +217,13 @@ const performTokenRefresh = async () => {
   return refreshPromise;
 };
 
+// URL encoding helper - defined at module level for use in streaming functions
+const serializeToUrlEncoded = (data) => {
+  return Object.entries(data)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join("&");
+};
+
 // Queue to hold requests while refreshing
 const subscriberQueue = [];
 const addSubscriber = (callback) => subscriberQueue.push(callback);
@@ -219,13 +236,94 @@ const notifySubscribers = (newToken) => {
   }
 };
 
+// Helper to check if an error/response indicates authentication failure
+// This handles various 401 response formats from backend including {"detail":"Authentication required"}
+const isAuthenticationError = (error) => {
+  const status = error?.response?.status || error?.status;
+  if (status === 401) return true;
+
+  // Check for common authentication failure patterns in response body
+  const errorData = error?.response?.data || error?.data;
+  if (errorData) {
+    const detail = typeof errorData === "string" ? errorData : errorData?.detail || errorData?.message || errorData?.error;
+    if (typeof detail === "string") {
+      const lowerDetail = detail.toLowerCase();
+      if (
+        lowerDetail.includes("authentication required") ||
+        lowerDetail.includes("token expired") ||
+        lowerDetail.includes("invalid token") ||
+        lowerDetail.includes("jwt expired") ||
+        lowerDetail.includes("unauthorized") ||
+        lowerDetail.includes("not authenticated")
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+// Wrapper to handle 401 in fetch-based streaming calls
+// Returns the new token if refresh was needed and succeeded, null otherwise
+const handleFetch401 = async (response, url) => {
+  if (response.status !== 401) return null;
+
+  // Check if we have session credentials to attempt refresh
+  const email = Cookies.get("email");
+  const user_session = Cookies.get("user_session");
+
+  if (!email || !user_session) {
+    // No session - emit logout event
+    try {
+      window.dispatchEvent(
+        new CustomEvent("globalAuth401", {
+          detail: { error: { status: 401 }, url, method: "STREAM", source: "fetch" },
+        })
+      );
+    } catch (_) {}
+    return null;
+  }
+
+  try {
+    // Attempt token refresh
+    if (isRefreshing && refreshPromise) {
+      // Wait for ongoing refresh
+      return await refreshPromise;
+    }
+    const newToken = await performTokenRefresh();
+    if (process.env.NODE_ENV === "development") {
+      // eslint-disable-next-line no-console
+      console.debug("✅ Token refresh succeeded for streaming request", url);
+    }
+    return newToken;
+  } catch (refreshErr) {
+    if (process.env.NODE_ENV === "development") {
+      // eslint-disable-next-line no-console
+      console.debug("❌ Token refresh failed for streaming request", refreshErr);
+    }
+    // Emit global 401 to trigger logout
+    try {
+      window.dispatchEvent(
+        new CustomEvent("globalAuth401", {
+          detail: { error: refreshErr, url, method: "STREAM", source: "fetch" },
+        })
+      );
+    } catch (_) {}
+    return null;
+  }
+};
+
 axiosInstance.interceptors.response.use(
   (resp) => resp,
   async (error) => {
     const status = error?.response?.status;
     const originalConfig = error?.config || {};
 
-    if (status === 401 && !originalConfig._retry) {
+    // Use enhanced authentication check that also looks at response body
+    const isAuthError = status === 401 || isAuthenticationError(error);
+
+    if (isAuthError && !originalConfig._retry) {
       // Attempt silent refresh first; do NOT logout yet.
       if (Cookies.get("email") && Cookies.get("user_session")) {
         originalConfig._retry = true;
@@ -299,6 +397,179 @@ axiosInstance.interceptors.response.use(
 );
 
 const useFetch = () => {
+  const fetchDataStream = async (url, configOrCallback = {}, maybeCallback, _isRetry = false) => {
+    const isFn = typeof configOrCallback === "function";
+    const onChunk = isFn ? configOrCallback : typeof maybeCallback === "function" ? maybeCallback : configOrCallback.onChunk;
+    const cfg = isFn ? {} : configOrCallback || {};
+    const fullUrl = url.startsWith("http") ? url : `${BASE_URL}${url}`;
+    const headers = addConfigHeaders({
+      ...defaultConfig.headers,
+      Accept: cfg.accept || "text/event-stream, application/json",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...cfg.headers,
+    });
+    const response = await fetch(fullUrl, { method: getMethod, headers, signal: cfg.signal });
+
+    // Handle 401 with token refresh retry
+    if (response.status === 401 && !_isRetry) {
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("🔄 401 received in fetchDataStream, attempting token refresh", url);
+      }
+      const newToken = await handleFetch401(response, url);
+      if (newToken) {
+        // Retry with new token
+        return fetchDataStream(url, configOrCallback, maybeCallback, true);
+      }
+      throw new Error(`Streaming request failed (${response.status}) - Authentication failed`);
+    }
+
+    if (!response.ok) throw new Error(`Streaming request failed (${response.status})`);
+    if (!response.body) throw new Error("No response body for streaming");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const results = [];
+
+    const processLine = (rawLine) => {
+      let line = rawLine.trim();
+      if (!line) return;
+      // SSE prefix handling
+      if (line.startsWith("event:")) return; // ignore named events for now
+      if (line.startsWith("id:")) return; // ignore id lines
+      if (line.startsWith("retry:")) return; // ignore retry hints
+      if (line.startsWith("data:")) line = line.slice(5).trim();
+      if (!line) return;
+      try {
+        const obj = JSON.parse(line);
+        results.push(obj);
+        if (onChunk) {
+          try {
+            onChunk(obj);
+          } catch (_) {}
+        }
+      } catch (e) {
+        if (cfg.emitRaw && onChunk) {
+          try {
+            onChunk({ __raw: line });
+          } catch (_) {}
+        }
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop(); // retain incomplete tail
+      for (const l of lines) processLine(l);
+    }
+    if (buffer.trim()) processLine(buffer);
+    return results;
+  };
+
+  // Enhanced streaming POST: supports callback overload like GET
+  // Usage:
+  //   postDataStream(url, body, { onChunk })
+  //   postDataStream(url, body, {}, onChunkFn)
+  //   postDataStream(url, body, onChunkFn)
+  const postDataStream = async (url, postData, configOrCallback = {}, maybeCallback, _isRetry = false) => {
+    const isFn = typeof configOrCallback === "function";
+    const onChunk = isFn ? configOrCallback : typeof maybeCallback === "function" ? maybeCallback : configOrCallback.onChunk;
+    const cfg = isFn ? {} : configOrCallback || {};
+    const fullUrl = url.startsWith("http") ? url : `${BASE_URL}${url}`;
+    let contentType = "application/json";
+    let dataToSend = postData;
+    if (postData instanceof FormData) {
+      contentType = undefined; // let browser set boundary
+    } else if (cfg.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
+      contentType = "application/x-www-form-urlencoded";
+      dataToSend = serializeToUrlEncoded(postData);
+    } else {
+      dataToSend = JSON.stringify(postData);
+    }
+    const headers = addConfigHeaders({
+      ...defaultConfig.headers,
+      Accept: cfg.accept || "text/event-stream, application/json",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      ...cfg.headers,
+      ...(contentType ? { "Content-Type": contentType } : {}),
+    });
+    const response = await fetch(fullUrl, {
+      method: postMethod,
+      headers,
+      body: dataToSend,
+      signal: cfg.signal,
+    });
+
+    // Handle 401 with token refresh retry
+    if (response.status === 401 && !_isRetry) {
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("🔄 401 received in postDataStream, attempting token refresh", url);
+      }
+      const newToken = await handleFetch401(response, url);
+      if (newToken) {
+        // Retry with new token
+        return postDataStream(url, postData, configOrCallback, maybeCallback, true);
+      }
+      throw new Error(`Streaming POST failed (${response.status}) - Authentication failed`);
+    }
+
+    if (!response.ok) throw new Error(`Streaming POST failed (${response.status})`);
+    if (!response.body) throw new Error("No response body for streaming");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const results = [];
+
+    const processLine = (rawLine) => {
+      let line = rawLine.trim();
+      if (!line) return;
+      if (line.startsWith("event:")) return;
+      if (line.startsWith("id:")) return;
+      if (line.startsWith("retry:")) return;
+      if (line.startsWith("data:")) line = line.slice(5).trim();
+      if (!line) return;
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("[stream][POST] raw line", line);
+      }
+      try {
+        const obj = JSON.parse(line);
+        results.push(obj);
+        if (process.env.NODE_ENV === "development") {
+          // eslint-disable-next-line no-console
+          console.debug("[stream][POST] parsed object", obj);
+        }
+        if (onChunk) {
+          try {
+            onChunk(obj);
+          } catch (_) {}
+        }
+      } catch (e) {
+        if (cfg.emitRaw && onChunk) {
+          try {
+            onChunk({ __raw: line });
+          } catch (_) {}
+        }
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop();
+      for (const l of lines) processLine(l);
+    }
+    if (buffer.trim()) processLine(buffer);
+    return results;
+  };
   const [loading, setLoading] = useState({});
   const [error, setError] = useState({});
   const { handleApiError } = useErrorHandler();
@@ -372,12 +643,6 @@ const useFetch = () => {
     },
     [handleApiError]
   );
-
-  const serializeToUrlEncoded = (data) => {
-    return Object.entries(data)
-      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-      .join("&");
-  };
 
   const postData = useCallback(
     async (url, postData, config = {}) => {
@@ -572,6 +837,8 @@ const useFetch = () => {
     setRefreshToken,
     getRefreshToken,
     clearRefreshToken,
+    fetchDataStream,
+    postDataStream,
   };
 };
 

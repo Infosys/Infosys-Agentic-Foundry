@@ -240,6 +240,42 @@
   margin-right: 16px;
   margin-top: 16px;
 }
+/* Select Group Message - Matching Project Style */
+.selectGroupMessage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 60px 20px;
+  margin: 50px 20px;
+  background-color: #f9f9f9;
+  border: 1px solid #ccc;
+  border-radius: 14px;
+  text-align: center;
+}
+
+.selectGroupContent {
+  color: #343741;
+}
+
+.selectGroupTitle {
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: #343741;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0px;
+}
+
+.selectGroupSubtitle {
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  color: #6c757d;
+  line-height: 1.4;
+  font-weight: 400;
+}
+
 .noSecretsMessage {
   margin-left: 20px !important;
   margin-top: 100px !important;
@@ -259,4 +295,239 @@
   flex-direction: row;
   gap: 10px;
   overflow: auto;
+}
+
+.groupDropdownContainer {
+  position: relative;
+  min-width: 200px;
+  margin-right: 10px;
+}
+
+.groupDropdownContent {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 9999;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+/* New Group Tab Styles */
+.groupTabContainer {
+  display: flex;
+  height: calc(100vh - 300px);
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.domainListSection {
+  flex: 0 0 300px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.domainListSection h3 {
+  background: #f8f9fa;
+  margin: 0;
+  padding: 15px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #343741;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.domainList {
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+}
+
+.domainItem {
+  padding: 15px 20px;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.domainItem:hover {
+  background: #f8f9fa;
+}
+
+.domainItem.selectedDomain {
+  background: #e3f2fd;
+  border-left: 3px solid #2196f3;
+}
+
+.domainName {
+  display: block;
+  font-weight: 500;
+  color: #343741;
+  margin-bottom: 4px;
+}
+
+.domainDescription {
+  display: block;
+  font-size: 12px;
+  color: #666;
+}
+
+.noDomains {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.secretsSection {
+  flex: 1;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.secretsHeader {
+  background: #f8f9fa;
+  padding: 15px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.secretsHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #343741;
+}
+
+.addButton {
+  background: #2196f3;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+.addButton:hover {
+  background: #1976d2;
+}
+
+.addButton:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.secretsList {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.secretRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  background: white;
+}
+
+.secretInputs {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+}
+
+.domainInput {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.valueInputContainer {
+  position: relative;
+  flex: 1;
+}
+
+.toggleButton {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.secretActions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.saveButton {
+  background: #4caf50;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.saveButton:hover {
+  background: #45a049;
+}
+
+.saveButton:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.updateButton {
+  background: #ff9800;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.updateButton:hover {
+  background: #f57c00;
+}
+
+.deleteButton {
+  background: #f44336;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.deleteButton:hover {
+  background: #d32f2f;
+}
+
+.noSecrets {
+  text-align: center;
+  color: #666;
+  font-style: italic;
+  padding: 40px 20px;
 }

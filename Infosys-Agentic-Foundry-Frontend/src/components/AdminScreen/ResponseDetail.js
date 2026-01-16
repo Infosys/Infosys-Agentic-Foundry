@@ -75,10 +75,10 @@ const ResponseDetail = ({ form, onChange, onSubmit, onBack }) => {
       <div className={styles.responseDetailContent}>
         <div className={styles.responseDetailHeader}>
           <p>
-            <strong> Agent Name:</strong> <span style={{ fontWeight: "normal" }}>{form.agent_name || "--"}</span>
+            <strong> Agent Name:</strong> <span className={styles.infoLabel} >{form.agent_name || "--"}</span>
           </p>
           <p>
-            <strong> Response Name:</strong> <span style={{ fontWeight: "normal" }}>{form.feedback || "--"}</span>
+            <strong> Response Name:</strong> <span className={styles.infoLabel} >{form.feedback || "--"}</span>
           </p>
         </div>
         <form onSubmit={handleSubmit} className={styles.form}>

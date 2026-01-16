@@ -39,6 +39,8 @@
     "name name name name select select select userId userId userId userId ."
     "tagsFilter tagsFilter tagsFilter tagsFilter . . . . . . . ."
     "goal goal goal goal description description description description systemPrompt systemPrompt systemPrompt systemPrompt"
+    /* NEW: dedicated row for validation patterns so it appears AFTER goal/description/systemPrompt */
+    "validation validation validation validation validation validation validation validation validation validation validation validation"
     "addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool addTool "
     "tagDropdown tagDropdown tagDropdown tagDropdown . . . . . . btns btns";
   column-gap: 35px;
@@ -513,4 +515,12 @@
   display: flex;
   height: 40px;
   align-self: end;
+}
+
+.validationPatternsRow {
+  grid-area: validation;
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
 }

@@ -447,27 +447,10 @@ export default function AvailableServers(props) {
   };
 
   const handleDeleteConfirm = async (id, server) => {
-    const userName = Cookies.get("userName");
-    const role = Cookies.get("role");
-    if (userName === "Guest") {
-      setDeleteModal(true);
-      return;
-    }
+    // Always attempt the delete API call and let the server enforce permissions.
+    const role = Cookies.get("role") || "";
     const loggedInUserEmail = (Cookies.get("email") || emailId || "").trim();
-    const creatorEmail = (server?.created_by || "").trim();
-    const isAdmin = role?.toLowerCase() === "admin" || role?.toUpperCase() === "ADMIN";
-
-    // Admin can delete any server, non-admin can only delete their own servers
-    if (!isAdmin && (!loggedInUserEmail || !creatorEmail || loggedInUserEmail.toLowerCase() !== creatorEmail.toLowerCase())) {
-      // Route through global error handler for consistency (toast + logging)
-      handleError(new Error("Only creator/admin can delete this server"), {
-        userMessage: "Only creator/admin can delete this server",
-        context: "AvailableServers.handleDeleteConfirm.permission",
-        severity: "warn",
-      });
-      return;
-    }
-
+    const isAdmin = (role || "").toLowerCase() === "admin";
     const data = { user_email_id: loggedInUserEmail, is_admin: isAdmin };
 
     try {
@@ -827,7 +810,7 @@ export default function AvailableServers(props) {
                   title="Delete"
                   aria-label={`Delete ${s.name}`}
                   onClick={() => handleDeleteClick(s)}>
-                  <SVGIcons icon="fa-solid fa-user-xmark" width={20} height={16} fill="#fff" />
+                  <SVGIcons icon="recycle-bin" width={20} height={16} fill="#fff" />
                 </button>
                 <button
                   type="button"
@@ -1138,40 +1121,6 @@ export default function AvailableServers(props) {
         {/* AddServer modal for add/edit - OUTSIDE main container for full overlay */}
         {showAddServerModal &&
           (editServerData ? (
-            // <div
-            //   className={styles.modalOverlay}
-            //   onClick={() => {
-            //     setShowAddServerModal(false);
-            //     setEditServerData(null);
-            //   }}>
-            //   <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            //     <button
-            //       className={styles.closeBtn}
-            //       onClick={() => {
-            //         setShowAddServerModal(false);
-            //         setEditServerData(null);
-            //       }}>
-            //       ×
-            //     </button>{" "}
-            //     <AddServer
-            //       editMode={true}
-            //       serverData={editServerData}
-            //       setRefreshPaginated={() => {
-            //         const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-            //         getServersData(1, divsCount);
-            //       }}
-            //       onClose={() => {
-            //         try {
-            //           const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-            //           getServersData(1, divsCount);
-            //         } catch (e) {}
-            //         setShowAddServerModal(false);
-            //         setEditServerData(null);
-            //       }}
-            //       drawerFormClass={styles.availableServersDrawerForm}
-            //     />
-            //   </div>
-            // </div>
             <AddServer
               editMode={true}
               serverData={editServerData}
@@ -1182,43 +1131,8 @@ export default function AvailableServers(props) {
                 setShowAddServerModal(false);
                 setEditServerData(null);
               }}
-              drawerFormClass={styles.availableServersDrawerForm}
             />
           ) : (
-            // <div
-            //   className={styles.modalOverlay}
-            //   onClick={() => {
-            //     setShowAddServerModal(false);
-            //     setEditServerData(null);
-            //   }}>
-            //   <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            //     <button
-            //       className={styles.closeBtn}
-            //       onClick={() => {
-            //         setShowAddServerModal(false);
-            //         setEditServerData(null);
-            //       }}>
-            //       ×
-            //     </button>{" "}
-            //     <AddServer
-            //       editMode={false}
-            //       serverData={null}
-            //       setRefreshPaginated={() => {
-            //         const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-            //         getServersData(1, divsCount);
-            //       }}
-            //       onClose={() => {
-            //         try {
-            //           const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-            //           getServersData(1, divsCount);
-            //         } catch (e) {}
-            //         setShowAddServerModal(false);
-            //         setEditServerData(null);
-            //       }}
-            //       drawerFormClass={styles.availableServersDrawerForm}
-            //     />
-            //   </div>
-            // </div>
             <AddServer
               editMode={false}
               serverData={null}
@@ -1229,7 +1143,6 @@ export default function AvailableServers(props) {
                 setShowAddServerModal(false);
                 setEditServerData(null);
               }}
-              drawerFormClass={styles.availableServersDrawerForm}
             />
           ))}
       </div>

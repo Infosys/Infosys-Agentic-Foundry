@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import DropDown from "../commonComponents/DropDowns/DropDown";
-import { APIs, META_AGENT, PLANNER_META_AGENT } from "../../constant";
+import { APIs,META_AGENT,PLANNER_META_AGENT,HYBRID_AGENT} from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import Tag from "../../components/Tag/Tag";
 import useFetch from "../../Hooks/useAxios";
@@ -8,9 +8,12 @@ import Cookies from "js-cookie";
 import InfoTag from "../commonComponents/InfoTag";
 import SVGIcons from "../../Icons/SVGIcons";
 import ZoomPopup from "../commonComponents/ZoomPopup";
+import ValidatorPatternsGroup from "../validators/ValidatorPatternsGroup";
+import { sanitizeFormField, isValidEvent } from "../../utils/sanitization";
+import DOMPurify from "dompurify";
 
 const AgentForm = (props) => {
-  const { styles, selectedTool = [], handleClose, submitForm, selectedAgents = [], selectedAgent, loading, tags, setSelectedAgents, setSelectedTool, selectedServers = [] } = props;
+  const { styles, handleClose, submitForm, selectedAgent, loading, tags, setSelectedAgents, setSelectedTool } = props;
 
   const loggedInUserEmail = Cookies.get("email");
 
@@ -41,6 +44,7 @@ const AgentForm = (props) => {
   const [popupType, setPopupType] = useState("text");
 
   const [copiedStates, setCopiedStates] = useState({});
+  const [validationPatterns, setValidationPatterns] = useState([]);
 
   const { fetchData } = useFetch();
 
@@ -54,43 +58,80 @@ const AgentForm = (props) => {
     }
   }, [loading, setShowPopup]);
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setFormData({
-      ...formData,
-      [name]: value,
+  // const handleChange = (event) => {
+  //   // Validate event structure before destructuring
+  //   if (!isValidEvent(event)) {
+  //     return;
+  //   }
+
+  //   const { name, value } = event.target;
+
+  //   // Sanitize value using centralized utility
+  //   const sanitizedValue = sanitizeFormField(name, value);
+
+  //   setFormData({
+  //     ...formData,
+  //     [name]: sanitizedValue,
+  //   });
+  // };
+
+  
+ const isValidatorPatternHidden = ()=>{
+  if (!selectedAgent) return false;
+  return (
+    selectedAgent === META_AGENT  ||
+    selectedAgent === PLANNER_META_AGENT||
+    selectedAgent === HYBRID_AGENT
+  );
+  }
+
+  const handleChange = (fieldName, fieldValue) => {
+    // Sanitize using centralized utility
+    const sanitizedValue = sanitizeFormField(fieldName, fieldValue);
+
+    // Additional DOMPurify sanitization for DOM manipulation
+    const purifiedValue = DOMPurify.sanitize(sanitizedValue, {
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
+      KEEP_CONTENT: true,
     });
+
+    setFormData((prevFormData) => ({
+      ...prevFormData,
+      [fieldName]: purifiedValue,
+    }));
   };
 
   const onSubmit = (e) => {
     e.preventDefault();
 
+    const filteredPatterns = isValidatorPatternHidden() ? [] : validationPatterns
+      .filter((p) => p.query && p.expected_answer)
+      .map((p) => ({
+        query: p.query,
+        expected_answer: p.expected_answer,
+        validator: p.validator || null,
+      }));
+
+    const payload = {
+      ...formData,
+      tag_ids: initialTags.filter((e) => e.selected).map((e) => e.tagId),
+    };
+    if (filteredPatterns.length > 0) {
+      payload.validation_criteria = filteredPatterns;
+    }
     safeSubmitForm(
-      {
-        ...formData,
-        tag_ids: initialTags.filter((e) => e.selected).map((e) => e.tagId),
-      },
+      payload,
       () => {
         setSuccessMsg(true);
         setFormData(initialState);
         resetSelectedCards();
         if (safeSetSelectedAgents) safeSetSelectedAgents([]);
         if (safeSetSelectedTool) safeSetSelectedTool([]);
+        setValidationPatterns([]);
       }
     );
   };
-
-  // useEffect(() => {
-  //   // META agents still require selected agents
-  //   if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
-  //     setIsFormDisabled(!(Array.isArray(selectedAgents) && selectedAgents.length > 0));
-  //     return;
-  //   }
-
-  //   // For non-META agents allow creating an agent even if no tools or servers are selected.
-  //   // Keep the form enabled so users can create standalone agents (they must still fill required fields).
-  //   setIsFormDisabled(false);
-  // }, [selectedAgent, selectedAgents, selectedTool, selectedServers]);
 
   useEffect(() => {
     if (!successMsg) return;
@@ -233,10 +274,11 @@ const AgentForm = (props) => {
             disabled={isFormDisabled}
             value={formData.agent_name}
             onChange={(e) => {
-              const value = e.target.value.replace(/[^a-zA-Z0-9_\s()-{}[\]]/g, "");
-              handleChange({
-                target: { name: "agent_name", value },
-              });
+              // Validate event structure before accessing properties
+              if (!isValidEvent(e)) {
+                return;
+              }
+              handleChange("agent_name", e.target.value);
             }}
             required
           />
@@ -247,7 +289,20 @@ const AgentForm = (props) => {
             <InfoTag message="Provide goal for the agent." />
           </label>
           <div className={styles.textAreaContainer}>
-            <textarea id="agent_goal" name="agent_goal" disabled={isFormDisabled} value={formData.agent_goal} onChange={handleChange} required className={styles.agentTextArea} />
+            <textarea
+              id="agent_goal"
+              name="agent_goal"
+              disabled={isFormDisabled}
+              value={formData.agent_goal}
+              onChange={(e) => {
+                if (!isValidEvent(e)) {
+                  return;
+                }
+                handleChange("agent_goal", e.target.value);
+              }}
+              required
+              className={styles.agentTextArea}
+            />
             <button
               type="button"
               className={styles.copyIcon}
@@ -292,7 +347,12 @@ const AgentForm = (props) => {
               name="workflow_description"
               disabled={isFormDisabled}
               value={formData.workflow_description}
-              onChange={handleChange}
+              onChange={(e) => {
+                if (!isValidEvent(e)) {
+                  return;
+                }
+                handleChange("workflow_description", e.target.value);
+              }}
               required
               className={styles.agentTextArea}
             />
@@ -329,6 +389,11 @@ const AgentForm = (props) => {
             <span className={`${styles.copiedText} ${copiedStates["workflow_description"] ? styles.visible : styles.hidden}`}>Text Copied!</span>
           </div>
         </div>
+        {!(isValidatorPatternHidden()) && (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <ValidatorPatternsGroup value={validationPatterns} onChange={setValidationPatterns} />
+          </div>
+        )}
         <div className={styles.selectContainer}>
           <label htmlFor="model_name">
             MODEL
@@ -341,7 +406,12 @@ const AgentForm = (props) => {
             id="model_name"
             name="model_name"
             value={formData.model_name}
-            onChange={handleChange}
+            onChange={(e) => {
+              if (!isValidEvent(e)) {
+                return;
+              }
+              handleChange("model_name", e.target.value);
+            }}
             placeholder={"Select Model"}
             className={styles["select-class"]}
             required

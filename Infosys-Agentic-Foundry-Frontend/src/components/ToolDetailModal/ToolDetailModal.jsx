@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import styles from "./ToolDetailModal.module.css";
 import ReactMarkdown from "react-markdown";
 import { META_AGENT, PLANNER_META_AGENT } from "../../constant";
@@ -36,12 +36,12 @@ const ToolDetailModal = ({
   const handleModify = async (e) => {
     e.preventDefault();
     if (tool.tool_id?.includes("mcp_file")) {
-      let tagsArray = [];
-      let mapItem = tool.raw ? tool.raw : tool;
+      const tagsArray = [];
+      const mapItem = tool.raw ? tool.raw : tool;
       mapItem.tags.forEach((tagItem) => {
         tagsArray.push(tagItem.tag_id);
       });
-      let mcpModifyPayload = {
+      const mcpModifyPayload = {
         code_content: mapItem.mcp_config.args[1],
         created_by: mapItem.created_by,
         is_admin: true,
@@ -214,7 +214,6 @@ const ToolDetailModal = ({
                 onClose(); // Also close the parent modal when AddServer closes
               }}
               setRefreshPaginated={() => {}}
-              drawerFormClass={styles.serverDrawerForm}
             />
           </div>
         </div>

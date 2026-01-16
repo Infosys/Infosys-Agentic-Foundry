@@ -71,8 +71,6 @@ const EvaluationPage = () => {
         {activeTab === "evaluation" && <AgentsEvaluator />}
         {activeTab === "metrics" && <EvaluationScore activeMetricsSubTab={activeMetricsSubTab} />}
         {activeTab === "unified" && <UnifiedEvaluationTab activeSubTab={activeSubTab} />}
-        {/* Ground Truth tab - show for admin OR developer users
-        {(isAdmin || isDeveloper) && activeTab === "groundtruth" && <GroundTruth isInAdminScreen={isAdmin} isInDeveloperScreen={isDeveloper} />} */}
       </div>
     </div>
   );

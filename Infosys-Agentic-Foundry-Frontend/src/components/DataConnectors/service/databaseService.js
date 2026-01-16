@@ -1,5 +1,6 @@
 import { APIs } from '../../../constant.js';
 import useFetch from '../../../Hooks/useAxios';
+import Cookies from 'js-cookie';
 
 export const useDatabases = () => {
     const {fetchData,postData} = useFetch();
@@ -27,7 +28,8 @@ const executeQuery = async (connectionName, query) => {
   try {
     const requestBody = {
       name: connectionName,
-      query: query
+      data: btoa(query),  // Encoded query with key name changed to 'data'
+      created_by: Cookies.get("email"),
     };
     const response = await postData(APIs.RUN_QUERY, requestBody);
     return {
@@ -151,5 +153,28 @@ const executeMongodbOperation = async (operationData) => {
   }
 };
 
-return { generateQuery, executeQuery, fetchConnections, fetchSqlConnections, fetchMongodbConnections, executeMongodbOperation };
+const activateConnection = async (connectionName) => {
+  try {
+    const requestBody = {
+      connection_name: connectionName
+    };
+    const config = {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      }
+    };
+    const response = await postData(APIs.ACTIVATE_CONNECTION, requestBody, config);
+    return {
+      success: true,
+      data: response
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.message || error.message || 'Failed to activate connection'
+    };
+  }
+};
+
+return { generateQuery, executeQuery, fetchConnections, fetchSqlConnections, fetchMongodbConnections, executeMongodbOperation, activateConnection };
 };

@@ -3,13 +3,14 @@ import style from "../../css_modules/ToolOnboarding.module.css";
 import { useToolsAgentsService } from "../../services/toolService.js";
 import Loader from "../commonComponents/Loader.jsx";
 import DropDown from "../commonComponents/DropDowns/DropDown";
-import { APIs, BASE_URL } from "../../constant";
+import { APIs } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import Tag from "../Tag/Tag";
 import useFetch from "../../Hooks/useAxios.js";
 import Cookies from "js-cookie";
 import DeleteModal from "../commonComponents/DeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext";
+import { usePermissions } from "../../context/PermissionsContext";
 import InfoTag from "../commonComponents/InfoTag.jsx";
 import MessageUpdateform from "../AskAssistant/MsgUpdateform.jsx";
 import SVGIcons from "../../Icons/SVGIcons.js";
@@ -19,12 +20,17 @@ import groundTruthStyles from "../GroundTruth/GroundTruth.module.css";
 import AddServer from "../AgentOnboard/AddServer";
 import ExecutorPanel from "../commonComponents/ExecutorPanel";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
+import { sanitizeFormField, isValidEvent } from "../../utils/sanitization";
+import NewCommonDropdown from "../commonComponents/NewCommonDropdown.jsx";
 
 function ToolOnBoarding(props) {
+  const { permissions, loading: permissionsLoading, hasPermission } = usePermissions();
+  const HTTP_OK = 200;
+  const COPY_FEEDBACK_MS = 2000;
   const loggedInUserEmail = Cookies.get("email");
   const userName = Cookies.get("userName");
   const role = Cookies.get("role");
-  const { updateTools, addTool, recycleTools } = useToolsAgentsService();
+  const { updateTools, addTool, recycleTools, getValidatorTools, getToolById } = useToolsAgentsService();
 
   const formObject = {
     description: "",
@@ -35,7 +41,7 @@ function ToolOnBoarding(props) {
   };
   const { isAddTool, setShowForm, editTool, tags, refreshData = true, fetchPaginatedTools, hideServerTab = false, contextType = "tools" } = props;
 
-  const [formData, setFormData] = useState({});
+  const [formData, setFormData] = useState(formObject);
   const [showKnowledge, setShowKnowledge] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorModalVisible, setErrorModalVisible] = useState(false);
@@ -50,7 +56,7 @@ function ToolOnBoarding(props) {
 
   const [models, setModels] = useState([]);
   const [updateModal, setUpdateModal] = useState(false);
-  const [responseData, setresponseData] = useState({});
+  // responseData not used by this component; keep fetchAgents for side-effects only
 
   const [hideCloseIcon, setHideCloseIcon] = useState(false);
 
@@ -62,6 +68,8 @@ function ToolOnBoarding(props) {
   const [forceAdd, setForceAdd] = useState(false);
   // Theme for the whole form (if needed elsewhere)
   const [isDarkTheme, setIsDarkTheme] = useState(true);
+  // Distinguish validator vs normal tool
+  const [isValidatorTool, setIsValidatorTool] = useState(false);
 
   const activeTab = contextType === "servers" ? "addServer" : "toolOnboarding"; // 'toolOnboarding' | 'addServer'
 
@@ -77,20 +85,20 @@ function ToolOnBoarding(props) {
 
   const fetchAgents = async (e) => {
     try {
-      const data = await fetchData(APIs.GET_ALLUPLOADFILELIST);
-      setresponseData(data?.user_uploads || {});
+      await fetchData(APIs.GET_ALLUPLOADFILELIST);
     } catch {
       console.error("Tool onboarding failed fetching agent");
-      setresponseData({});
     }
   };
 
+  // control global popup visibility on loading change
   useEffect(() => {
     if (!loading) {
       setShowPopup(true);
     } else {
       setShowPopup(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
   useEffect(() => {
@@ -98,36 +106,95 @@ function ToolOnBoarding(props) {
   }, [files, setFiles]);
 
   useEffect(() => {
-    if (!isAddTool) {
-      setFormData((values) => ({
-        ...values,
-        id: editTool.tool_id,
-        description: editTool.tool_description,
-        code: editTool.code_snippet,
-        model: editTool.model_name,
-        userEmail: loggedInUserEmail,
-        name: editTool.tool_name,
-        createdBy: userName === "Guest" ? null : editTool.created_by,
-      }));
-    } else if (props?.recycle) {
-      setFormData((values) => ({
-        ...values,
-        item_id: editTool.tool_id,
-        description: editTool.tool_description,
-        code: editTool.code_snippet,
-        model: editTool.model_name,
-        userEmail: loggedInUserEmail,
-        name: editTool.tool_name,
-        createdBy: userName === "Guest" ? null : editTool.created_by,
-      }));
-    } else {
-      setFormData(formObject);
-    }
-  }, []);
+    const fetchToolDetails = async () => {
+      if (!isAddTool || props?.recycle) {
+        // In recycle mode, use editTool directly since the tool is not in the main database
+        if (props?.recycle) {
+          const fallbackFormData = {
+            ...formObject,
+            id: editTool.tool_id || "",
+            description: editTool.tool_description || "",
+            code: editTool.code_snippet || "",
+            model: editTool.model_name || "",
+            userEmail: loggedInUserEmail || "",
+            name: editTool.tool_name || "",
+            createdBy: userName === "Guest" ? null : editTool.created_by || "",
+          };
+          setFormData(fallbackFormData);
+          // Autoselect VALIDATOR if tool_id starts with _validator
+          if (editTool.tool_id && String(editTool.tool_id).startsWith("_validator")) {
+            setIsValidatorTool(true);
+          } else {
+            setIsValidatorTool(Boolean(editTool.is_validator));
+          }
+        } else {
+          // Normal edit mode - fetch from API
+          try {
+            const toolId = editTool.tool_id;
+            if (toolId) {
+              const toolDetailsArr = await getToolById(toolId);
+              const toolDetails = Array.isArray(toolDetailsArr) ? toolDetailsArr[0] : toolDetailsArr;
+              const newFormData = {
+                ...formObject,
+                id: toolDetails?.tool_id || "",
+                description: toolDetails?.tool_description || "",
+                code: toolDetails?.code_snippet || "",
+                model: toolDetails?.model_name || "",
+                userEmail: loggedInUserEmail || "",
+                name: toolDetails?.tool_name || "",
+                createdBy: userName === "Guest" ? null : toolDetails?.created_by || "",
+              };
+              setFormData(newFormData);
+              // Autoselect VALIDATOR if tool_id starts with _validator
+              if (toolDetails?.tool_id && String(toolDetails.tool_id).startsWith("_validator")) {
+                setIsValidatorTool(true);
+              } else {
+                setIsValidatorTool(toolDetails?.is_validator === true || toolDetails?.is_validator === "true");
+              }
+            }
+          } catch {
+            const fallbackFormData = {
+              ...formObject,
+              id: editTool.tool_id || "",
+              description: editTool.tool_description || "",
+              code: editTool.code_snippet || "",
+              model: editTool.model_name || "",
+              userEmail: loggedInUserEmail || "",
+              name: editTool.tool_name || "",
+              createdBy: userName === "Guest" ? null : editTool.created_by || "",
+            };
+            setFormData(fallbackFormData);
+            // Autoselect VALIDATOR if tool_id starts with _validator
+            if (editTool.tool_id && String(editTool.tool_id).startsWith("_validator")) {
+              setIsValidatorTool(true);
+            } else {
+              setIsValidatorTool(Boolean(editTool.is_validator));
+            }
+          }
+        }
+      } else {
+        setFormData(formObject);
+        if (activeTab === "addServer") {
+          setIsValidatorTool(true);
+        }
+      }
+    };
+    fetchToolDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTool, isAddTool, props?.recycle]);
 
   const handleChange = (event) => {
+    // Validate event structure before destructuring
+    if (!isValidEvent(event)) {
+      return;
+    }
+
     const { name, value } = event.target;
-    setFormData((values) => ({ ...values, [name]: value }));
+
+    // Sanitize value using centralized utility
+    const sanitizedValue = sanitizeFormField(name, value);
+
+    setFormData((values) => ({ ...values, [name]: sanitizedValue }));
   };
 
   const validateFile = (file, type) => {
@@ -192,16 +259,7 @@ function ToolOnBoarding(props) {
   const deleteTool = async () => {
     let response;
     if (props?.recycle) {
-      const isAdmin = role && role?.toUpperCase() === "ADMIN";
-      const toolsdata = {
-        model_name: formData.model,
-        is_admin: isAdmin,
-        tool_description: formData.description,
-        code_snippet: formData.code,
-        created_by: editTool.created_by, // Use creator email from editTool
-        user_email_id: formData.userEmail,
-        updated_tag_id_list: initialUpdateTags.filter((e) => e.selected).map((e) => e.tagId),
-      };
+      // delete in recycle branch does not require toolsdata here
       let url = "";
       if (props?.selectedType === "tools") {
         url = `${APIs.DELETE_TOOLS_PERMANENTLY}${editTool?.tool_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
@@ -222,6 +280,20 @@ function ToolOnBoarding(props) {
   };
 
   const handleSubmit = async (event, force = false) => {
+    // Check add/update permissions before proceeding
+    const canAdd = typeof hasPermission === "function" ? hasPermission("add_access.tools") : !(permissions && permissions.add_access && permissions.add_access.tools === false);
+    const canUpdate =
+      typeof hasPermission === "function" ? hasPermission("update_access.tools") : !(permissions && permissions.update_access && permissions.update_access.tools === false);
+    if (isAddTool && !canAdd) {
+      addMessage("You do not have permission to add a tool", "error");
+      setLoading(false);
+      return;
+    }
+    if (!isAddTool && !canUpdate) {
+      addMessage("You do not have permission to update tools", "error");
+      setLoading(false);
+      return;
+    }
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -246,6 +318,7 @@ function ToolOnBoarding(props) {
           .map((e) => e.tagId)
           .join(",")
       );
+      formDataToSend.append("is_validator", isValidatorTool ? "true" : "false");
 
       // If file is uploaded, use file for tool_file and empty code_snippet
       // If no file, use textarea content for code_snippet and empty tool_file
@@ -257,7 +330,7 @@ function ToolOnBoarding(props) {
         formDataToSend.append("tool_file", "");
       }
 
-      response = await addTool(formDataToSend, force);
+      response = await addTool(formDataToSend, force, isValidatorTool);
     } else if (!isAddTool && !props?.recycle) {
       const isAdmin = role && role?.toUpperCase() === "ADMIN";
       const toolsdata = {
@@ -265,23 +338,16 @@ function ToolOnBoarding(props) {
         is_admin: isAdmin,
         tool_description: formData.description,
         code_snippet: formData.code,
-        created_by: editTool.created_by, // Use creator email from editTool
+        created_by: editTool.created_by,
         user_email_id: formData.userEmail,
         updated_tag_id_list: initialUpdateTags.filter((e) => e.selected).map((e) => e.tagId),
+        // IMPORTANT: send as string because addTool uses FormData strings and backend may expect 'true'/'false'
+        is_validator: isValidatorTool ? "true" : "false",
       };
       response = await updateTools(toolsdata, editTool.tool_id, force);
     } else {
       if (props?.recycle) {
-        const isAdmin = role && role?.toUpperCase() === "ADMIN";
-        const toolsdata = {
-          model_name: formData.model,
-          is_admin: isAdmin,
-          tool_description: formData.description,
-          code_snippet: formData.code,
-          created_by: editTool.created_by, // Use creator email from editTool
-          user_email_id: formData.userEmail,
-          updated_tag_id_list: initialUpdateTags.filter((e) => e.selected).map((e) => e.tagId),
-        };
+        // restore payload not required here
 
         let url = "";
         if (props?.selectedType === "tools") {
@@ -327,7 +393,7 @@ function ToolOnBoarding(props) {
           try {
             warnings = JSON.parse(`[${raw}]`);
           } catch {
-            warnings = raw.split(/(?<!\\)',\s*|(?<!\\)"\,\s*/).map((s) => s.replace(/^['"]|['"]$/g, ""));
+            warnings = raw.split(/(?<!\\)'\s*,\s*|(?<!\\)"\s*,\s*/).map((s) => s.replace(/^['"]|['"]$/g, ""));
           }
           setErrorMessages(warnings);
           setErrorModalVisible(true);
@@ -335,7 +401,7 @@ function ToolOnBoarding(props) {
           return;
         }
       }
-      if (response?.status && response?.response?.status !== 200) {
+      if (response?.status && response?.response?.status !== HTTP_OK) {
         addMessage(response?.response?.data?.detail, "error");
       } else {
         addMessage(response?.message ? response?.message : "No response received. Please try again.", "error");
@@ -344,7 +410,7 @@ function ToolOnBoarding(props) {
       if (props?.recycle) {
         if (response?.is_restored) {
           props?.setRestoreData(response);
-          addMessage(response?.status_message, "success");
+          addMessage(response?.message, "success");
           setLoading(false);
           setShowForm(false);
         } else {
@@ -424,6 +490,8 @@ function ToolOnBoarding(props) {
       hasLoadedAgentsOnce.current = true;
       fetchAgents();
     }
+    // intentionally run only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const { logout } = useAuth();
@@ -479,8 +547,8 @@ function ToolOnBoarding(props) {
         .then(() => {
           setCopiedStates((prev) => ({ ...prev, [key]: true })); // Set copied state
           setTimeout(() => {
-            setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
-          }, 2000);
+            setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after delay
+          }, COPY_FEEDBACK_MS);
         })
         .catch(() => {
           console.error("Failed to copy text, tool on board");
@@ -499,14 +567,28 @@ function ToolOnBoarding(props) {
         document.execCommand("copy");
         setCopiedStates((prev) => ({ ...prev, [key]: true })); // Set copied state
         setTimeout(() => {
-          setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after 2 seconds
-        }, 2000);
+          setCopiedStates((prev) => ({ ...prev, [key]: false })); // Reset after delay
+        }, COPY_FEEDBACK_MS);
       } catch {
         console.error("Fallback: Failed to copy text, on boarding tools");
       } finally {
         document.body.removeChild(textarea); // Clean up
       }
     }
+  };
+
+  const dropdownCommonStyle = {
+    width: "260px",
+    zIndex: 1000,
+    borderRadius: "8px",
+    border: "2px solid #1976d2",
+    background: "#fafbfc",
+    color: "#222",
+    fontWeight: 500,
+    fontSize: "15px",
+    boxShadow: "0 2px 8px rgba(25,118,210,0.08)",
+    padding: "8px 12px",
+    marginTop: "6px",
   };
 
   return (
@@ -566,7 +648,9 @@ function ToolOnBoarding(props) {
                 <div className={style["header"]} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
                   <div>
                     {(isAddTool ? activeTab === "toolOnboarding" : true) && (
-                      <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: 0 }}>{props?.recycle ? "RESTORE TOOL" : isAddTool ? "ADD TOOL" : "UPDATE TOOL"}</h2>
+                      <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                        {props?.recycle ? "RESTORE TOOL" : isAddTool ? (isValidatorTool ? "ADD VALIDATOR" : "ADD TOOL") : isValidatorTool ? "UPDATE VALIDATOR" : "UPDATE TOOL"}
+                      </h2>
                     )}
                     {isAddTool && activeTab === "addServer" && !hideServerTab && <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: 0 }}>ADD SERVER</h2>}
                   </div>
@@ -606,6 +690,32 @@ function ToolOnBoarding(props) {
                   <form onSubmit={handleSubmit} className={style["form-section"]}>
                     <div className={style["form-content"]}>
                       <div className={style["form-fields"]}>
+                        <div className={style.toolTypeDropdownContainer}>
+                          <label htmlFor="toolTypeDropdown" className={style.toolTypeDropdownLabel}>
+                            Type
+                          </label>
+                          <NewCommonDropdown
+                            options={["TOOL", "VALIDATOR"]}
+                            selected={isValidatorTool ? "VALIDATOR" : "TOOL"}
+                            onSelect={(selected) => {
+                              setIsValidatorTool(selected === "VALIDATOR");
+                              // Only reset formData if adding a new tool, not updating
+                              if (isAddTool) {
+                                setFormData(formObject);
+                              }
+                            }}
+                            placeholder="tools"
+                            width={260}
+                            disabled={!isAddTool}
+                            style={{
+                              ...dropdownCommonStyle,
+                              background: !isAddTool ? "#f8f9fa" : "#fafbfc",
+                              borderColor: "#1976d2",
+                              color: !isAddTool ? "#6c757d" : "#222",
+                              cursor: !isAddTool ? "not-allowed" : "pointer",
+                            }}
+                          />
+                        </div>
                         <div className={style["description-container"]}>
                           <label className={style["label-desc"]}>
                             DESCRIPTION
@@ -620,7 +730,7 @@ function ToolOnBoarding(props) {
                               onChange={handleChange}
                               value={formData.description}
                               required
-                              readOnly={!!props?.recycle}
+                              readOnly={Boolean(props?.recycle)}
                               style={props?.recycle ? { background: "#f8f9fa", color: "#6c757d", cursor: "not-allowed" } : {}}
                             />
                             <button type="button" className={style.copyIcon} onClick={() => handleCopy("desc", formData.description)} title="Copy">
@@ -643,8 +753,8 @@ function ToolOnBoarding(props) {
                           <div className={style.codeEditorContainer}>
                             <CodeEditor
                               value={formData.code || ""}
-                              onChange={props?.recycle || codeFile ? undefined : (value) => setFormData((prev) => ({ ...prev, code: value }))}
-                              readOnly={!!props?.recycle || !!codeFile}
+                              onChange={Boolean(props?.recycle) || Boolean(codeFile) ? () => {} : (value) => setFormData((prev) => ({ ...prev, code: value }))}
+                              readOnly={Boolean(props?.recycle) || Boolean(codeFile)}
                               isDarkTheme={isDarkTheme}
                             />
                             <button type="button" className={style.copyIcon} onClick={() => handleCopy("code-snippet", formData.code)} title="Copy">
@@ -764,14 +874,16 @@ function ToolOnBoarding(props) {
                                 className={style["select-class"]}
                                 placeholder={"Select Model"}
                                 required
-                                disabled={!!props?.recycle}
+                                disabled={Boolean(props?.recycle)}
                               />
                             </div>
                           </div>
                           <div className={style["left"]}>
                             <label className={style["label-desc"]}>{isAddTool ? null : "CREATED BY"}</label>
                             <div>
-                              {isAddTool ? null : <input id="created-by" className={style["created-input"]} type="text" name="createdBy" value={editTool.created_by} disabled />}
+                              {isAddTool ? null : (
+                                <input id="created-by" className={style["created-input"]} type="text" name="createdBy" value={formData.createdBy || ""} disabled />
+                              )}
                             </div>
                           </div>
                         </div>
@@ -821,7 +933,17 @@ function ToolOnBoarding(props) {
                         <div className={style["modal-footer"]}>
                           <div className={style["button-class"]}>
                             <button type="submit" className="iafButton iafButtonPrimary">
-                              {isAddTool ? (contextType === "servers" ? "Add Server" : "Add Tool") : contextType === "servers" ? "Update Server" : "Update Tool"}
+                              {isAddTool
+                                ? contextType === "servers"
+                                  ? "Add Server"
+                                  : isValidatorTool
+                                  ? "Add Validator"
+                                  : "Add Tool"
+                                : contextType === "servers"
+                                ? "Update Server"
+                                : isValidatorTool
+                                ? "Update Validator"
+                                : "Update Tool"}
                             </button>
                             <button
                               onClick={() => {
@@ -863,7 +985,7 @@ function ToolOnBoarding(props) {
         content={popupContent}
         onSave={handleZoomSave}
         type={popupTitle === "Code Snippet" ? "code" : "text"}
-        readOnly={popupTitle === "Code Snippet" && !!codeFile}
+        readOnly={popupTitle === "Code Snippet" && Boolean(codeFile)}
       />
       <WarningModal
         show={errorModalVisible}

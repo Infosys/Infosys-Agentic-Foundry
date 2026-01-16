@@ -20,7 +20,7 @@ import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import DeleteModal from "../commonComponents/DeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext";
 
-export default function AddServer({ editMode = false, serverData = null, onClose, drawerFormClass, setRefreshPaginated = () => {} }) {
+export default function AddServer({ editMode = false, serverData = null, onClose, setRefreshPaginated = () => {} }) {
   const { addServer } = useToolsAgentsService();
   const { fetchData, postData } = useFetch();
   const { getAllServers, updateServer } = useMcpServerService();
@@ -112,13 +112,13 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         let options = [];
         if (Array.isArray(data)) {
           options = data.map((item) => ({
-            label: item.name || item.secret_name || item.id,
-            value: item.id || item.secret_id || item.name,
+            label: item["name"] || item["key_name"] || item["id"],
+            value: item["id"] || item["key_id"] || item["name"],
           }));
-        } else if (data?.secret_names && Array.isArray(data.secret_names)) {
-          options = data.secret_names.map((item) => ({
-            label: item.name || item.secret_name || item.id || item,
-            value: item.id || item.secret_id || item.name || item,
+        } else if (data?.key_names && Array.isArray(data["key_names"])) {
+          options = data["key_names"].map((item) => ({
+            label: item["name"] || item["key_name"] || item["id"] || item,
+            value: item["id"] || item["key_id"] || item["name"] || item,
           }));
         }
 

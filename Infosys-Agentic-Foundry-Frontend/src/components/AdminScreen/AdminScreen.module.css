@@ -106,4 +106,15 @@
 
 .updatePassword {
   display: block;
+  max-width: 455px;
+}
+
+.adminScreenContainer{
+   font-family: Arial, sans-serif;
+   margin-left: 20px;
+   margin-top: 10px;
+  overflow-y: hidden;
+}
+.tabSubHeader{
+  margin-bottom: 16px;
 }

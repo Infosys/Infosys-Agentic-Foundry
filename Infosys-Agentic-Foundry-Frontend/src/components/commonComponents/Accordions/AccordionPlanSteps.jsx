@@ -45,11 +45,29 @@ const AccordionPlanSteps = (props) => {
     }
   };
 
+  // Check if there's any content to display before rendering the entire component
+  const textContent = props.parts
+    ?.filter((part) => part.type === "text" && part.data?.content)
+    .map((part) => part.data.content)
+    .join("\n\n");
+
+  const canvasParts = props.parts?.filter((part) => part.type !== "text") || [];
+
+  // If there's no text content and no canvas parts, don't render anything
+  if ((!textContent || textContent.trim() === "") && canvasParts.length === 0) {
+    return null;
+  }
+
   return (
     <div className={styles.accordion}>
       <div className={styles["accordion-header"]}>
         {(() => {
           if (!props?.show_canvas) {
+            // Only render if there's actually content to display
+            if (!textContent || textContent.trim() === "") {
+              return null;
+            }
+
             // Show all text parts as text-only bubble
             return (
               <div className={`${styles.messageBubble} textOnlyBubble`}>
@@ -69,46 +87,49 @@ const AccordionPlanSteps = (props) => {
                       );
                     },
                   }}>
-                  {props.parts
-                    ?.filter((part) => part.type === "text" && part.data?.content)
-                    .map((part) => part.data.content)
-                    .join("\n\n")}
+                  {textContent}
                 </ReactMarkdown>
               </div>
             );
           } else {
+            // Only render if there's text content or canvas parts
+            if ((!textContent || textContent.trim() === "") && canvasParts.length === 0) {
+              return null;
+            }
+
             // Multiple parts, show all text parts and canvas button
             return (
               <div className={`${styles.messageBubble} showCanvasBtn`}>
-                <ReactMarkdown
-                  rehypePlugins={[remarkGfm]}
-                  components={{
-                    code({ node, inline, className, children, ...props }) {
-                      const match = /language-(\w+)/.exec(className || "");
-                      return !inline && match ? (
-                        <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                          {String(children).replace(/\n$/, "")}
-                        </SyntaxHighlighter>
-                      ) : (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}>
-                  {props.parts
-                    .filter((part) => part.type === "text" && part.data?.content)
-                    .map((part) => part.data.content)
-                    .join("\n\n")}
-                </ReactMarkdown>
-                <div className={styles.viewDetailsBubble} tabIndex={0} role="button" aria-label="View details" onClick={handleCanvasOpen}>
-                  <span className={styles.viewDetailsText}>View details</span>
-                  <span className={styles.viewDetailsArrow} aria-hidden="true">
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                      <path d="M6 4L12 9L6 14" stroke="#007acc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                </div>
+                {textContent && textContent.trim() !== "" && (
+                  <ReactMarkdown
+                    rehypePlugins={[remarkGfm]}
+                    components={{
+                      code({ node, inline, className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || "");
+                        return !inline && match ? (
+                          <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                            {String(children).replace(/\n$/, "")}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}>
+                    {textContent}
+                  </ReactMarkdown>
+                )}
+                {canvasParts.length > 0 && (
+                  <div className={styles.viewDetailsBubble} tabIndex={0} role="button" aria-label="View details" onClick={handleCanvasOpen}>
+                    <span className={styles.viewDetailsText}>View details</span>
+                    <span className={styles.viewDetailsArrow} aria-hidden="true">
+                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                        <path d="M6 4L12 9L6 14" stroke="#007acc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  </div>
+                )}
               </div>
             );
           }
@@ -116,9 +137,9 @@ const AccordionPlanSteps = (props) => {
         {/* Hide Execution Steps accordion for USER role */}
         {userRole !== "user" && (
           <div className={styles.accordionButton} onClick={toggleAccordion}>
-            <span>Execution Steps</span>
+            <span style={{ fontSize: "10px" }}>Execution Steps</span>
             <span className={isOpen ? styles.arrow + " " + styles["open"] : styles.arrow}>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M5 7 L10 13 L15 7 Z" fill="white" />
               </svg>
             </span>

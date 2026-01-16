@@ -166,7 +166,7 @@ const ToolCard = (props) => {
           isSelected ? (
             <SVGIcons icon="fa-user-check" width={20} height={16} />
           ) : (
-            <SVGIcons icon="fa-solid fa-user-xmark" width={20} height={16} />
+            <SVGIcons icon="recycle-bin" width={20} height={16} />
           )
         ) : isSelected ? (
           <SVGIcons icon="fa-user-check" width={20} height={16} />

@@ -4,12 +4,34 @@ This document provides comprehensive step-by-step instructions to set up and run
 
 ## Prerequisites
 
-Before proceeding, ensure you have the following installed on your system:
+Before setting up the project, ensure you have the following requirements and access permissions:
 
-1. **Python** (version 3.8 or higher)
-2. **pip** (Python package manager)
-3. **Virtual Environment Support** (comes pre-installed with Python 3.3+)
-4. **Streamlit and Uvicorn dependencies** (will be installed during setup)
+### System Requirements
+
+- **Azure Linux VM** - Virtual machine for deployment
+- **Azure Kubernetes Cluster (AKS)** - Container orchestration service
+- **Azure Container Registry (ACR)** - Container image registry
+- **Python 3.12+** - Required Python version
+- **React** - Frontend framework
+- **Azure Postgres DB** - Database service
+
+### Access Requirements
+
+1. **JFrog Repository Access**
+    - Ensure you have access to: `https://infyartifactory.jfrog.io/artifactory/infyagenticrepo`
+    - This is the IAF JFrog Repository for container images
+
+2. **Azure Resource Access**
+    - **Azure Container Registry (ACR)** - [Raise IHD ticket if access needed]
+    - **Azure Kubernetes Service (AKS)** - [Raise IHD ticket if access needed]
+    - **Azure Postgres Service** - [Try enabling yourself; raise IHD if access issues occur]
+
+3. **Image Availability**
+    - Ensure the latest frontend and backend images are present in JFrog Artifactory
+    - Verify images contain the desired functionality
+
+!!! warning "Important"
+     Make sure you have push and pull permissions for all Azure resources before proceeding with deployment.
 
 ## Local Development Setup
 
@@ -91,37 +113,90 @@ streamlit run user_interface.py --server.port 8501 --server.address 0.0.0.0
     - `http://0.0.0.0:8501` (local access)
     - `http://<your-local-ip>:8501` (network access)
 
-## Azure VM Deployment
 
-**Prerequisites for Azure Deployment**
+## Azure Deployment
 
-1. **Valid Azure Subscription**
-2. **CCD Request** for Azure Windows VM resource
-3. **Required Software(to be installed on Azure VM)**:
-    - Python 3.12 or above (avoid latest unstable versions)
-    - VS Code
-    - GitBash (if required)
-    - NSSM (for service management)
+### BACKEND
 
-**Deployment Steps**
+1. Login in to Azure VM
+2. Login in to Infosys Jfrog artifactory:
+    ```bash
+    docker login infyartifactory.jfrog.io
+    ```
+3. Pull the docker image pushed from Akaash VM:
+    ```bash
+    docker pull infyartifactory.jfrog.io/infyagenticrepo/iafbackend:08jul
+    ```
+4. Retag the pulled image to ACR name:
+    ```bash
+    docker tag infyartifactory.jfrog.io/infyagenticrepo/iafbackend:08jul <acr login server>/<imagename>:<tag>
+    ```
+5. Login to az and then login to acr:
+    ```bash
+    docker login <acr login servername>
+    ```
+6. Push the retagged image to ACR:
+    ```bash
+    docker push <acr login servername>/<imagename>:<tag>
+    ```
+7. Create backend deployment file:
+    ```bash
+    nano <deployment filename.yaml>
+    ```
+8. Login to Azure Kubernetes
+9. Execute the deployment file:
+    ```bash
+    kubectl apply -f <deployment filename.yaml>
+    ```
+10. Check if the pods is deployed successfully:
+     ```bash
+     kubectl get pods
+     ```
+11. Check if the service is up & running successfully:
+     ```bash
+     kubectl get svc
+     ```
 
-**Step 1: Azure VM Setup**
+### FRONTEND
 
-1. Request a valid Azure Subscription
-2. Raise a CCD request to add an Azure Windows VM resource
-3. Wait for CCD team to create the VM resource and share credentials
-4. Install required software on Azure VM:
-   - Use CCD team assistance, or
-   - Install locally and transfer via "infydrive"
-
-**Step 2: Application Deployment**
-
-1. Move your application folder to Azure VM
-2. Follow Steps 1-5 from the [Local Development Setup](#local-development-setup) section
-3. Verify application accessibility from outside the VM by sharing network URL with external users
-
-!!! warning
-    At this stage, the application will only remain active while the Azure VM is running. VM shutdown will cause application downtime.
+1. Login in to Azure VM
+2. Login into Infosys Jfrog Artifactory:
+    ```bash
+    docker login infyartifactory.jfrog.io
+    ```
+3. Pull the docker image pushed from Akaash VM:
+    ```bash
+    docker pull infyartifactory.jfrog.io/infyagenticrepo/iaffrontend:08jul
+    ```
+4. Retag the pulled image to ACR name:
+    ```bash
+    docker tag infyartifactory.jfrog.io/infyagenticrepo/iaffrontend:08jul <acr login server>/<imagename>:<tag>
+    ```
+5. Login to az and then login to acr:
+    ```bash
+    docker login <acr login servername>
+    ```
+6. Push the retagged image to ACR:
+    ```bash
+    docker push <acr login servername>/<imagename>:<tag>
+    ```
+7. Create frontend deployment file:
+    ```bash
+    nano <deployment filename.yaml>
+    ```
+8. Login to Azure Kubernetes
+9. Execute the deployment file:
+    ```bash
+    kubectl apply -f <deployment filename.yaml>
+    ```
+10. Check if the pods is deployed successfully:
+     ```bash
+     kubectl get pods
+     ```
+11. Check if the service is up & running successfully:
+     ```bash
+     kubectl get svc
+     ```
 
 ## How to Make the Server Run 24/7 on Windows Using NSSM
 

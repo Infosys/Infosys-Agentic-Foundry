@@ -35,22 +35,32 @@ To maintain consistency and reliability, each tool should follow a standard form
 
 
 
-
 ## Onboarding Tool
 
-Let's proceed by using the example of onboarding a **Weather Information Retrieval Tool**.
+Let's proceed by using the example of onboarding a `Weather Information Retrieval Tool`.
 
-**Step 1:** Provide a short description of the tool. 
-![Onboarding Tool - Description](../images/Descrption_onboarding.png)
+**Step 1:** Provide a short description of the tool.
 
-**Step 2** Add the python tool code into code snippet.
-![Onboarding Tool - Code Snippet](../images/Code_snippet_onboarding.png)
+- Write a clear, concise description explaining what the tool does
+- For example: "This tool retrieves current weather information for a specified location"
+
+**Step 2:** Add the python tool code into code snippet.
+
+- Write the complete Python function with proper syntax
+- Include all necessary imports and dependencies
+You can either paste the complete Python function directly into the code block or upload a `.py` file containing the tool code. The system will support both manual code entry and `.py` file uploads for onboarding tool logic.
 
 **Step 3:** Specify the required model and enter your email.
-![Onboarding Tool - Model and Email](../images/model_created.png)
 
-**Step 4:** Select the appropriate domain and click **Add Tool** .
-![Onboarding Tool - Domain and Add Tool](../images/domain_addtool.png)
+- Select the appropriate AI model from the dropdown menu
+- Enter your email address as the tool creator
+- This email will be used for authorization when updating or deleting the tool
+
+**Step 4:** Select the appropriate domain and click `Add Tool`.
+
+- Choose relevant domain tags (e.g., Logistics, utilities, General)
+- Review all entered information for accuracy
+- Click the "Add Tool" button to complete the onboarding process
 
 
 ## Updating Tool
@@ -59,10 +69,16 @@ If we want to modify a tool that has already been onboarded, we must first ensur
 
 If it is, remove the dependency before starting the update process. Once the tool has been updated, you can re-establish the dependency.
 
-To update a tool, you must also provide the **creator email address**
+To update a tool, you must also provide the `creator email address`
 
-Select the **Edit** option to start editing, and finally click on **Update**.  
-![updating tool](../images/updateTool.png)
+**Step 1:** Select the Edit option from the tool management interface
+
+**Step 2:** Make your desired changes to the tool configuration
+
+**Step 3:** Enter the authorized creator's email ID 
+
+**Step 4:** Click on `Update` to save your changes
+
 
 
 ## Deleting a Tool
@@ -71,10 +87,14 @@ If you want to delete an existing tool, make sure to first remove any dependenci
 
 Once all dependencies are cleared, you can proceed with deleting the tool.
 
-To delete a tool, you must also provide the **creator email address**
+To delete a tool, you must also provide the `creator email address`
 
- **Step 1:**  Select the Delete option  
-![Deleting Tool](../images/delete1_tool.png)
+**Step 1:** Select the Delete option from the tool management interface
 
- **Step 2:** Enter the authorized creator’s email ID and click on **Delete**  
-![Deleting Tool](../images/delete2_tool.png)
+**Step 2:** Enter the authorized creator's email ID 
+
+**Step 3:** Click on `Delete` to permanently remove the tool
+
+
+!!! warning "Important"
+    Only the original creator of the tool has permission to update or delete it. Other users do not have access to modify or remove these resources.

@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import { usePermissions } from "../../context/PermissionsContext";
 import styles from "../../css_modules/ListOfAgents.module.css";
 import AgentCard from "./AgentCard";
 import { APIs, REACT_AGENT, agentTypesDropdown } from "../../constant";
@@ -17,6 +18,7 @@ import { useActiveNavClick } from "../../events/navigationEvents";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 
 const ListOfAgents = () => {
+  const { permissions, loading: permissionsLoading, hasPermission } = usePermissions();
   const [plusBtnClicked, setPlusBtnClicked] = useState(false);
   const [editAgentData, setEditAgentData] = useState("");
   const [agentsListData, setAgentsListData] = useState([]);
@@ -309,6 +311,9 @@ const ListOfAgents = () => {
   };
 
   const onPlusClick = () => {
+    // only allow opening onboard when user has add permission for agents
+    const canAddAgents = typeof hasPermission === "function" ? hasPermission("add_access.agents") : !(permissions && permissions.add_access && permissions.add_access.agents === false);
+    if (!canAddAgents) return;
     setPlusBtnClicked(true);
   };
 
@@ -444,6 +449,13 @@ const ListOfAgents = () => {
     setPlusBtnClicked((open) => (open ? false : open));
     setEditAgentData(null);
   });
+
+  if (permissionsLoading) {
+    return <Loader />;
+  }
+  if (permissions && permissions.read_access && permissions.read_access.agents === false) {
+    return <div style={{ padding: 24, color: '#b91c1c', fontWeight: 600 }}>You do not have permission to view agents.</div>;
+  }
 
   return (
     <div className={styles.container}>

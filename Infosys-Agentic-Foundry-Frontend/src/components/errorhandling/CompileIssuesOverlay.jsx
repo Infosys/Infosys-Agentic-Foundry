@@ -143,7 +143,7 @@ export const CompileIssuesOverlay = () => {
 
     setEntries((prev) => {
       if (prev.some((e) => e.text === text && e.type === type)) return prev; // dedupe
-      const next = [{ id: Date.now() + Math.random(), type, text, time }, ...prev];
+      const next = [{ id: `${Date.now()}_${crypto.randomUUID()}`, type, text, time }, ...prev];
       return next.slice(0, MAX_ENTRIES);
     });
   }, []); // Empty dependency array since it doesn't depend on any props/state

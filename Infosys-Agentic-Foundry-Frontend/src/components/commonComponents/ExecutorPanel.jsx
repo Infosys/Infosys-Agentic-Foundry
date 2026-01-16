@@ -8,7 +8,10 @@ import { APIs } from "../../constant";
 import Loader from "./Loader.jsx";
 
 const JSON_INDENT = 2;
-const getInputValue = (val, def) => (val != null ? val : def != null ? def : "");
+
+/**
+ * Converts a string to Title Case (e.g., "user_name" -> "User Name")
+ */
 const toTitleCase = (str) =>
   str
     ? str
@@ -16,6 +19,51 @@ const toTitleCase = (str) =>
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(" ")
     : "Provide Value";
+
+/**
+ * Determines if a parameter should be treated as mandatory
+ * - If `mandatory` is explicitly set (true/false), use that value
+ * - Fallback: treat as mandatory if no default value exists
+ * Works consistently for both tools and servers
+ */
+const isMandatoryParam = (param) => {
+  if (typeof param.mandatory === "boolean") {
+    return param.mandatory;
+  }
+  // Fallback: mandatory if no default exists
+  return param.default == null;
+};
+
+/**
+ * Gets the initial value for an input field based on mandatory status
+ * - Mandatory params with default: pre-fill with default value
+ * - Mandatory params without default: empty (user must fill)
+ * - Optional params: always empty (default shown as placeholder)
+ */
+const getInitialValue = (param) => {
+  const isMandatory = isMandatoryParam(param);
+  if (isMandatory && param.default != null) {
+    return String(param.default);
+  }
+  return "";
+};
+
+/**
+ * Gets placeholder text for an input field
+ * - Mandatory params: no placeholder (value is pre-filled or user must enter)
+ * - Optional params with default: show default as hint
+ * - Optional params without default: show "Optional"
+ */
+const getPlaceholder = (param) => {
+  const isMandatory = isMandatoryParam(param);
+  if (!isMandatory && param.default != null) {
+    return `Optional - Default: "${param.default}"`;
+  }
+  if (!isMandatory) {
+    return "Optional";
+  }
+  return "";
+};
 
 const ExecutorPanel = ({
   code = "",
@@ -64,40 +112,61 @@ const ExecutorPanel = ({
 
   // -------- Param helpers --------
   const setActiveParams = (paramsArray) => {
-    setInputsMeta(paramsArray || []);
-    // Seed defaults
-    const init = {};
-    (paramsArray || []).forEach((p) => {
-      init[p.name] = getInputValue(undefined, p.default);
+    const params = paramsArray || [];
+    setInputsMeta(params);
+
+    // Initialize values based on mandatory status
+    // - Mandatory with default: pre-fill
+    // - Optional: leave empty (default shown as placeholder)
+    const initialValues = {};
+    params.forEach((p) => {
+      initialValues[p.name] = getInitialValue(p);
     });
-    setInputValues(init);
+    setInputValues(initialValues);
     setParamErrors({});
   };
 
   const validateParams = () => {
     if (!inputsMeta.length) return true;
+
     const errs = {};
     inputsMeta.forEach((p) => {
-      const val = getInputValue(inputValues[p.name], p.default);
-      const empty =
-        val === "" ||
-        val === null ||
-        val === undefined ||
-        (Array.isArray(val) && val.length === 0) ||
-        (typeof val === "object" && !Array.isArray(val) && Object.keys(val).length === 0);
-      if (empty) errs[p.name] = `${toTitleCase(p.name)} is required`;
+      const isMandatory = isMandatoryParam(p);
+
+      if (isMandatory) {
+        const val = inputValues[p.name];
+        const isEmpty =
+          val === "" ||
+          val === null ||
+          val === undefined ||
+          (Array.isArray(val) && val.length === 0) ||
+          (typeof val === "object" && !Array.isArray(val) && Object.keys(val).length === 0);
+
+        if (isEmpty) {
+          errs[p.name] = `${toTitleCase(p.name)} is required`;
+        }
+      }
     });
+
     setParamErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const buildArguments = () => {
-    const out = {};
+    const args = {};
     inputsMeta.forEach((p) => {
-      const val = getInputValue(inputValues[p.name], p.default);
-      if (val !== "" && val != null) out[p.name] = val;
+      const userValue = inputValues[p.name];
+
+      // Include value if user provided one
+      if (userValue !== "" && userValue != null) {
+        args[p.name] = userValue;
+      }
+      // For optional params with no user input, include default if exists
+      else if (!isMandatoryParam(p) && p.default != null) {
+        args[p.name] = p.default;
+      }
     });
-    return out;
+    return args;
   };
 
   const handleParamChange = (name, value) => {
@@ -296,18 +365,25 @@ const ExecutorPanel = ({
             {inputsMeta.map((p) => {
               const errorId = `${p.name}-error`;
               const hasError = !!paramErrors[p.name];
+              const isRequired = isMandatoryParam(p);
+              const placeholder = getPlaceholder(p);
+
               return (
                 <label key={p.name} className={style.inputFieldLabel}>
-                  {mode === "server" ? p.name : toTitleCase(p.name)}:
+                  <span>
+                    {mode === "server" ? p.name : toTitleCase(p.name)}
+                    {isRequired && <span style={{ color: "#dc3545" }}>*</span>}:
+                  </span>
                   <input
                     type="text"
                     name={p.name}
-                    value={getInputValue(inputValues[p.name], p.default)}
+                    value={inputValues[p.name] || ""}
                     onChange={(e) => handleParamChange(p.name, e.target.value)}
                     className={`${style.validationInput} ${hasError ? style.inputError : ""}`}
                     aria-label={p.name}
+                    placeholder={placeholder}
                     {...(hasError ? { "aria-describedby": errorId } : {})}
-                    placeholder={p.default != null ? `Default: "${p.default}"` : ""}
+                    {...(isRequired ? { "aria-required": "true" } : {})}
                   />
                   {hasError && (
                     <span id={errorId} className={style.subtleErrorMessage} role="alert">

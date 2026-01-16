@@ -25,24 +25,35 @@ To verify your Node.js and npm installations, open Terminal and run:
 node -v
 npm -v
 ```
+
 - If Node.js is installed, running the version command will display the installed version.
 - If Node.js is not installed, you will see an error in the terminal such as `"node" is not recognized as an internal or external command`.
+
+**For Local Windows Setup**
+
 - To install Node.js:
-    1. Go to [https://nodejs.org/en/download](https://nodejs.org/en/download).
-    2. Choose version **22.16.0** or any higher stable version.
-    3. Download and install Node.js (NPM comes bundled with Node.js).
+    - Go to Software Center / Company Portal on your laptop  
+    - Search for NodeJs  
+    - Choose version **22** or any higher stable version.
+    - Install Node.js (NPM comes bundled with Node.js).
 - After installation, open your command prompt or terminal.
 - Run `node -v` to confirm that it shows version 22 or higher.
 
+**JFrog Access for Node Dependencies:**
 
-- **JFrog Access for Node Dependencies:**
-    - You need JFrog access to download node dependencies for the React UI application.
-    - If you already have JFrog access, you can proceed.
-    - If not, follow these steps:
-        1. Ensure you are connected to the Infosys network or that Zscaler is enabled.
-        2. Follow the instructions in the guide: **NPM – Install and Publish with JFrog Artifactory SAAS and ZS**.
-        3. (Note: You may skip the 7th step mentioned in that guide.)
+- You need JFrog access to download node dependencies for the React UI application.
+- If you already have JFrog access, you can proceed.
+- If not, follow these steps:
+    - Ensure you are connected to the Infosys network or that Zscaler is enabled.
+    - Follow the instructions in the guide: **NPM – Install and Publish with JFrog Artifactory SAAS and ZS**.
 
+**For Akaash VM or Production VM Setup**
+
+- **Important:** In Akaash VMs or Production VMs, public internet access and access to Software Center or Company Portal may not be available.
+- In such cases, you must request all required software installation files (such as Node.js, Python, Git, etc.) from your CCD (Cloud/Compute/Desktop support) team.
+- CCD will provide the necessary installers and instructions for offline installation.
+- Ensure you have JFrog access configured, as node dependencies will still be downloaded from internal repositories.
+- If you face any issues with installations or access, contact your CCD or VM administrator for support.
 
 ##  Setting Up Proxy in System Environment Variables (If Required)
 
@@ -116,6 +127,7 @@ The project uses a two-branch workflow to manage code stability and development:
     - After completing their task and unit testing, developers merge their feature/fix branch back into `development` to keep it up to date.
 
 **Release Process:**
+
 - Once QA verifies that the application is working as expected in the `development` branch, the code is merged into `main`.
 - The updated `main` branch is then deployed to production for demos and further testing.
 
@@ -161,11 +173,11 @@ Follow these steps in Terminal (opened in the project directory):
 **1. Create a Virtual Environment for the Backend:**
 
 ```bash
-cd backend
+cd Infyagentframework
 python -m venv .venv
 ```
 
-This creates a virtual environment named `.venv` in the backend directory.
+This creates a virtual environment named `.venv` in the Infyagentframework directory.
 
 **2. Activate the Virtual Environment:**
 
@@ -198,58 +210,82 @@ pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pyt
 In a new Terminal window, navigate to the project's frontend directory:
 
 ```bash
-cd frontend
+cd Agentic-Pro-UI
 ```
 
 **Install Frontend Dependencies**
 
-- Open a terminal in the `frontend` directory.
+After cloning or pulling the UI code from GitHub, delete the `package-lock.json` file (if present) before installing dependencies. This helps avoid potential conflicts.
+
+- Open a terminal in the `Agentic-Pro-UI` directory.
+- Delete the `package-lock.json` file if it exists:
+    ```bash
+    del package-lock.json
+    ```
 - Run the following command to install all required packages:
-```bash
-npm install
-```
-- You can also use the shorthand
-```bash
-npm i
-```
-- This will start installing all the dependencies.
+    ```bash
+    npm install
+    ```
+- You can also use the shorthand:
+    ```bash
+    npm i
+    ```
+- To see detailed progress during installation, use:
+    ```bash
+    npm install --verbose
+    ```
 - Wait for the installation to complete. This may take a few minutes.
-!!!Note
-    - If you see only a blinking cursor or a loader for more than 3 minutes and no progress, check your Zscaler or JFrog access settings. This usually indicates a network or authentication issue.
+
+!!! note
+    If you see only a blinking cursor or a loader for more than 3 minutes and no progress, check your Zscaler or JFrog access settings. This usually indicates a network or authentication issue.
 
 
 ## Configuration Setup
 
-**Frontend Configuration**
+**Frontend Configuration (.env file)**
 
-Open `src/constants.js` and update it according to your VM configuration:
+Open the `.env` file in your frontend project (`Agentic-Pro-UI/.env`) and set the base URL for the API server:
 
-```bash
-export const BASE_URL = "http://10.779.18.602:8000"; // Windows
+```env
+# Base URL for the API server
+REACT_APP_BASE_URL="http://10.77.18.62:8000"
 ```
 
-- 10.779.18.602 is the IP address of the VM.
-- 8000 is the port where the FastAPI backend is running.
+- Replace `10.77.18.62` with your VM's IP address.
+- `8000` is the port where the FastAPI backend runs.
 
-**Backend Configuration (CORS)**
+**Backend Configuration (.env file)**
 
-Make sure your backend allows requests from the frontend. You will find these lines in `agentic_workflow_as_service_endpoints.py`:
+Open the `.env` file in your backend project (`Infyagentframework/.env`) and set the allowed frontend origins:
+
+```env
+# Add your frontend IP address
+UI_CORS_IP="http://10.77.18.62"
+
+# Add your frontend IP with port number
+UI_CORS_IP_WITH_PORT="http://10.77.18.62:3000"
+```
+
+- Replace `10.77.18.62` and `3000` with your frontend's actual IP and port.
+
+**CORS Origins List**
+
+In `run_server.py` (or `agentic_workflow_as_service_endpoints.py`), you will find an `origins` list:
 
 ```python
 origins = [
-    "http://localhost",              # Allow localhost
-    "http://localhost:3000",        # Frontend running on port 3000
-    "http://10.779.18.602",           # Local network IP
-    "http://10.779.18.602:3000",      # Local network IP with port
-    "null",                         # For file:// or sandboxed environments
+    "http://localhost",
+    "http://localhost:3000",
+    "http://10.77.18.62",
+    "http://10.77.18.62:3000",
+    "null",
     # Add other origins as needed, such as your deployed frontend URL
 ]
 ```
 
-- Instead of 10.779.18.602 you can have your own VM IP address.
-- Instead of 3000 mention the port number where the frontend is running.
+- If you want to allow connections to the backend from other hosts, add their IP and port numbers to this `origins` list.
 
-Make sure to update the .env file with your API keys.
+Make sure to update the `.env` files with your API keys and other required configuration values.
 
 ## Running the Project
 
@@ -261,29 +297,27 @@ Set the environment variables to enable telemetry:
 set HTTP_PROXY=
 set NO_PROXY=localhost,127.0.0.1
 ```
-
 In the Terminal with the active virtual environment:
 
 ```bash
-cd backend  # If not already in the backend directory
-uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4
+cd Infyagentframework  # If not already in the backend directory
+python run_server.py --host 0.0.0.0 --port 5001
 ```
 
 !!! info "Backend Server Details"
-    - **Server**: Uvicorn (ASGI server)
-    - **Module**: `agentic_workflow_as_service_endpoints:app`
+    - **Server**: FastAPI (run via Python)
+    - **Module**: `run_server.py`
     - **Host**: 0.0.0.0 (accessible from any network interface)
-    - **Port**: 8000
-    - **Workers**: 4 processes to handle requests
+    - **Port**: 5001
 
-Once running, you can access the backend API at [http://localhost:8000](http://localhost:8000)
+Once running, you can access the backend API at [http://localhost:5001](http://localhost:5001)
 
 **2. Start the React Frontend**
 
 In a new Terminal window:
 
 ```bash
-cd frontend  # If not already in the frontend directory
+cd Agentic-Pro-UI  # If not already in the frontend directory
 npm start
 ```
 
@@ -316,15 +350,21 @@ REM Activate Python virtual environment
 cd /d "C:\Code\Infyagentframework-main\Infyagentframework-main\.venv\Scripts"
 call activate.bat
 
-REM Change to project directory
+REM Change to backend project directory
 cd /d "C:\Code\Infyagentframework-main\Infyagentframework-main\backend"
 
-REM Start FastAPI backend
-start cmd /k "uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4"
+REM Ensure logs directory exists
+if not exist logs mkdir logs
 
-REM Start Node.js frontend
-cd /d "C:\Code\Agentic-Pro-UI\frontend"
-start cmd /k "npm start"
+REM Get today's date in YYYY-MM-DD format
+for /f %%i in ('powershell -Command "Get-Date -Format yyyy-MM-dd"') do set datetime=%%i
+
+REM Start FastAPI backend and log to logs\server_YYYY-MM-DD.log
+start cmd /k "python run_server.py --host 0.0.0.0 --port 5001 >> logs\server_%datetime%.log 2>&1"
+
+REM Start Node.js frontend on port 3003
+cd /d "C:\Code\Agentic-Pro-UI"
+start cmd /k "set PORT=3003 && npm start"
 
 pause
 ```
@@ -381,31 +421,57 @@ You can also go to **Windows Services** (press `Win + R`, type `services.msc`) t
 
 The structure shown below is a sample. The full project includes additional files and directories not listed here.
 
+Backend project structure:
+
 ```
 Infyagentframework/
-├── backend/                  # Backend FastAPI application
-│   ├── .venv/                # Python virtual environment (generated)
-│   ├── requirements.txt      # Python dependencies
-│   └── agentic_workflow_as_service_endpoints.py  # Main API file
-├── frontend/                 # React frontend application
-│   ├── node_modules/         # Node.js dependencies (generated)
-│   ├── public/               # Static assets
-│   ├── src/                  # React source code
-│   │   ├── components/       # React components
-│   │   ├── pages/            # Page components
-│   │   ├── services/         # API service functions
-│   │   ├── constants.js      # Configuration constants (BASE_URL)
-│   │   ├── App.js            # Main App component
-│   │   └── index.js          # Entry point
-│   ├── package.json          # Node.js dependencies and scripts
-│   └── package-lock.json     # Lock file for dependencies
-└── README.md                 # Project documentation
+├── src/                  # Source code
+│   ├── agent_templates/  # Agent onboarding templates and configurations   
+│   ├── api/              # REST API endpoints and route handlers
+│   ├── auth/             # Authentication and authorization services
+│   ├── config/           # Database connectivity and cache configurations
+│   ├── database/         # Database models, repositories, and services
+│   ├── file_templates/   # Template files for various operations
+│   ├── inference/        # AI model inference and agent execution logic
+│   ├── models/           # Data models and business logic
+│   ├── prompts/          # Prompt templates for AI interactions
+│   ├── schemas/          # Pydantic schemas for data validation
+│   ├── tools/            # Utility tools and helper functions
+│   └── utils/            # Common utilities and shared functions
+├── .venv/                # Python virtual environment (auto-generated)
+├── requirements.txt      # Python dependencies specification
+├── main.py               # Application entry point
+├── run_server.py         # Development server runner with additional options
+├── .env                  # Environment variables (create from .env.example)
+├── .env.example          # Template for environment configuration
+└── README.md             # Project documentation
 ```
 
-- `src/components/`: Contains reusable React components.
-- `src/constants.js`: Stores configuration constants.
-- `src/App.js`: Main application component.
-- `public/`: Static assets and the HTML template.
+Frontend project structure:
+
+```
+Agentic-Pro-UI/                    # React frontend application
+├── .github/                       # GitHub configuration
+├── node_modules/                  # Node.js dependencies (generated)
+├── public/                        # Static assets
+├── src/                           # React source code
+│   ├── Assets/                    # Image and media assets
+│   ├── components/                # React components
+│   ├── context/                   # React context providers
+│   ├── css_modules/               # CSS module files
+│   ├── Hooks/                     # Custom React hooks
+│   ├── Icons/                     # SVG icons and graphics
+│   ├── services/                  # API service functions
+│   ├── App.js                     # Main App component with routing
+│   ├── constant.js                # Configuration constants (BASE_URL, APIs)
+│   ├── index.js                   # Entry point
+│   ├── index.css                  # Global styles
+│   └── ProtectedRoute.js          # Route protection component
+├── package.json                   # Node.js dependencies and scripts
+├── package-lock.json              # Lock file for dependencies
+├── README.md                      # Project documentation
+└── .env.example                   # Environment variables (not shown but referenced)
+```
 
 ## Troubleshooting
 

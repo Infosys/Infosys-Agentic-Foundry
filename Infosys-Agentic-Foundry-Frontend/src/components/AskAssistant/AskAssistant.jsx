@@ -17,12 +17,14 @@ import {
   liveTrackingUrl,
   REACT_CRITIC_AGENT,
   PLANNER_EXECUTOR_AGENT,
-  HYBRID_AGENT
+  HYBRID_AGENT,
 } from "../../constant";
+
 import { useChatServices } from "../../services/chatService";
 import useFetch from "../../Hooks/useAxios";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext.js";
 import SVGIcons from "../../Icons/SVGIcons";
+import { usePermissions } from "../../context/PermissionsContext";
 
 // Components
 import MsgBox from "./MsgBox";
@@ -31,6 +33,7 @@ import PromptSuggestions from "./PromptSuggestions";
 import SuggestionPopover from "./SuggestionPopover";
 import Canvas from "../Canvas/Canvas";
 import TemperatureSliderPopup from "./TemperatureSliderPopup.jsx";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 
 // Styles
 import stylesNew from "./AskAssistant.module.css";
@@ -68,6 +71,7 @@ const AskAssistant = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [isDeletingChat, setIsDeletingChat] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [planData, setPlanData] = useState(null);
   const [showInput, setShowInput] = useState(false);
   const [oldChats, setOldChats] = useState([]);
@@ -76,10 +80,23 @@ const AskAssistant = () => {
   const [selectedModels, setSelectedModels] = useState([]);
   const [toolInterrupt, setToolInterrupt] = useState(false);
   const [isEditable, setIsEditable] = useState(false);
+  // Persist last seen plan verifier prompt from streaming chunks (backend only sends it transiently)
+  const [planVerifierPrompt, setPlanVerifierPrompt] = useState("");
   const bullseyeRef = useRef(null);
-  const { resetChat, getChatQueryResponse, getChatHistory, fetchOldChats, fetchNewChats, getQuerySuggestions, setSseMessageCallback } = useChatServices();
+  const prevCanvasRef = useRef(null);
+  const { resetChat, getChatQueryResponse, getChatHistory, fetchOldChats, fetchNewChats, getQuerySuggestions } = useChatServices();
+
+  const { permissions, hasPermission } = usePermissions();
+
+  // Determine chat-related permission booleans with fallbacks to legacy shape
+  const canExecutionSteps = typeof hasPermission === "function" ? hasPermission("execution_steps_access") : !(permissions && permissions.execution_steps_access === false);
+  const canToolVerifier = typeof hasPermission === "function" ? hasPermission("tool_verifier_flag_access") : !(permissions && permissions.tool_verifier_flag_access === false);
+  const canPlanVerifier = typeof hasPermission === "function" ? hasPermission("plan_verifier_flag_access") : !(permissions && permissions.plan_verifier_flag_access === false);
+  const canEvaluation = typeof hasPermission === "function" ? hasPermission("evaluation_flag_access") : !(permissions && permissions.evaluation_flag_access === false);
 
   const chatbotContainerRef = useRef(null);
+
+  // (permission-enforced flags are applied inline where needed)
   const [likeIcon, setLikeIcon] = useState(false);
   const [showInputSendIcon, setShowInputSendIcon] = useState(false);
   const [isOldChatOpen, setIsOldChatOpen] = useState(false);
@@ -93,12 +110,19 @@ const AskAssistant = () => {
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(-1);
   const [selectedAgent, setSelectedAgent] = useState("");
+
+  // Mention (@) functionality states
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionSearchTerm, setMentionSearchTerm] = useState("");
+  const [highlightedMentionIndex, setHighlightedMentionIndex] = useState(-1);
+  const [mentionedAgent, setMentionedAgent] = useState("");
+  const [mentionAgentTypeFilter, setMentionAgentTypeFilter] = useState("all");
   const [isHumanVerifierEnabled, setIsHumanVerifierEnabled] = useState(false);
   const [isToolVerifierEnabled, setIsToolVerifierEnabled] = useState(false);
   const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
   const [isContextEnabled, setIsContextEnabled] = useState(true);
+  const [useValidator, setUseValidator] = useState(false); // validator toggle
   const [showChatHistory, setShowChatHistory] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcription, setTranscription] = useState("");
   const mediaRecorder = useRef(null);
@@ -127,7 +151,6 @@ const AskAssistant = () => {
   const knowledgePopoverRef = useRef(null);
   const knowledgeSearchInputRef = useRef(null);
   const knowledgeListRef = useRef(null);
-  const suggestionPopoverRef = useRef(null);
 
   const [cachedSuggestions, setCachedSuggestions] = useState({
     user_history: [],
@@ -138,7 +161,16 @@ const AskAssistant = () => {
   const [showTemperaturePopup, setShowTemperaturePopup] = useState(false);
   const temperaturePopupRef = useRef(null);
   const temperatureSliderRef = useRef(null);
+  const mentionDropdownRef = useRef(null);
+  const mentionListRef = useRef(null);
+
   // Close temperature popup on outside click
+  const [nodes, setNodes] = useState([]); // State to store nodes dynamically
+  const [isStreaming, setIsStreaming] = useState(false); // State to track streaming status
+  const [currentNodeIndex, setCurrentNodeIndex] = useState(-1); // State to track current node index for progressive display
+
+  const [streamParsedContents, setStreamParsedContents] = useState([]);
+
   useEffect(() => {
     function handleClickOutside(event) {
       if (temperaturePopupRef.current && !temperaturePopupRef.current.contains(event.target)) {
@@ -153,7 +185,132 @@ const AskAssistant = () => {
     };
   }, [showTemperaturePopup]);
 
-  const messageDisable = messageData.some((msg) => typeof msg?.message === "string" && msg.message.trim() === "");
+  // Close mention dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (mentionDropdownRef.current && !mentionDropdownRef.current.contains(event.target)) {
+        setShowMentionDropdown(false);
+        setMentionSearchTerm("");
+        setHighlightedMentionIndex(-1);
+      }
+    }
+    if (showMentionDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showMentionDropdown]);
+
+  // Check if verifier is awaiting user action (tool_verifier or plan_verifier active with pending input)
+  // This tracks when we're waiting for user to approve/reject in tool/plan verifier flow
+  const isAwaitingVerifierAction = (() => {
+    if (!messageData || messageData.length === 0) return false;
+
+    // Check if the last BOT message has tool_verifier or plan_verifier awaiting action
+    const lastBotMessage = [...messageData].reverse().find((msg) => msg?.type === BOT);
+    if (!lastBotMessage) return false;
+
+    // Check if we have tool call details in the message
+    const hasToolCallDetails =
+      Array.isArray(lastBotMessage?.toolcallData?.additional_details) &&
+      lastBotMessage.toolcallData.additional_details.length > 0 &&
+      Object.keys(lastBotMessage.toolcallData.additional_details[0]?.additional_kwargs || {}).length > 0;
+
+    const isEmptyMessage = !lastBotMessage?.message || lastBotMessage.message.trim() === "";
+
+    // If the message has actual content (final response received), don't disable - enable input
+    // This is the key check: if we have a non-empty message, the verifier flow is complete
+    if (!isEmptyMessage) {
+      return false;
+    }
+
+    // Check if there are parts with content (another indicator of completed response)
+    const hasParts = Array.isArray(lastBotMessage?.parts) && lastBotMessage.parts.length > 0 && lastBotMessage.parts.some((p) => p?.data?.content || p?.text || p?.content);
+    if (hasParts) {
+      return false;
+    }
+
+    // Tool Verifier checks - only when message is empty (awaiting approval)
+    // For tool interrupt: if message is empty AND we have tool call details, we're awaiting verification
+    // This handles both first-time and subsequent tool interrupts (e.g., after user updates values)
+    const toolVerifierAwaitingWithDetails = toolInterrupt && hasToolCallDetails && isEmptyMessage;
+    const toolVerifierAwaitingStreaming = toolInterrupt && lastBotMessage?.tool_verifier && isEmptyMessage;
+
+    // Plan Verifier checks - only when message is empty (awaiting approval)
+    // Similar logic: if plan verifier is on and we have plan_verifier flag or prompt, we're awaiting approval
+    const planVerifierAwaitingFlag = isHuman && lastBotMessage?.plan_verifier && isEmptyMessage;
+    const planVerifierAwaitingPrompt = isHuman && planVerifierPrompt && isEmptyMessage;
+    // Also check if we have a plan array (plan needs verification)
+    const planVerifierAwaitingPlan = isHuman && Array.isArray(lastBotMessage?.plan) && lastBotMessage.plan.length > 0 && isEmptyMessage;
+
+    // When BOTH verifiers are enabled, check if either verifier is awaiting action
+    if (toolInterrupt && isHuman) {
+      return toolVerifierAwaitingWithDetails || toolVerifierAwaitingStreaming || planVerifierAwaitingFlag || planVerifierAwaitingPrompt || planVerifierAwaitingPlan;
+    }
+
+    // When only Tool Verifier is enabled
+    if (toolInterrupt) {
+      return toolVerifierAwaitingWithDetails || toolVerifierAwaitingStreaming;
+    }
+
+    // When only Plan Verifier is enabled
+    if (isHuman) {
+      return planVerifierAwaitingFlag || planVerifierAwaitingPrompt || planVerifierAwaitingPlan;
+    }
+
+    // If tool verifier is on and we have an empty message with tool call details awaiting approval
+    // This is the main case - tool verifier editor is shown and waiting for user action
+    if (toolInterrupt && hasToolCallDetails && (!lastBotMessage?.message || lastBotMessage.message.trim() === "")) {
+      return true;
+    }
+
+    // If tool verifier is on and we have a tool_verifier message (streaming state)
+    if (toolInterrupt && lastBotMessage?.tool_verifier) {
+      return true;
+    }
+
+    // If plan verifier (isHuman) is on and we have a plan_verifier message awaiting approval
+    if (isHuman && lastBotMessage?.plan_verifier) {
+      return true;
+    }
+
+    return false;
+  })();
+
+  // Disable input only for empty BOT bubbles that are not legitimate editor or
+  // verifier placeholders. Restricting to BOT avoids blocking user bubbles.
+  const messageDisable = (() => {
+    // First check if verifier is awaiting action - this takes priority
+    if (isAwaitingVerifierAction) return true;
+
+    for (const msg of messageData || []) {
+      try {
+        if (!msg || msg.type !== "BOT") continue; // only consider bot bubbles
+        if (typeof msg.message !== "string") continue;
+        if (msg.message.trim() !== "") continue; // not empty -> ok
+
+        const hasToolDetails =
+          Array.isArray(msg?.toolcallData?.additional_details) &&
+          msg.toolcallData.additional_details.length > 0 &&
+          Object.keys(msg.toolcallData.additional_details[0]?.additional_kwargs || {}).length > 0;
+        if (hasToolDetails) continue; // editor placeholder -> do not disable
+
+        if (msg?.plan_verifier || msg?.tool_verifier) continue; // verifier -> do not disable
+
+        // Found a stray empty BOT bubble — this should disable input
+        // Log for diagnostics so developers can reproduce why input is disabled.
+        // eslint-disable-next-line no-console
+        console.warn("messageDisable: disabling due to stray empty BOT message:", msg);
+        return true;
+      } catch (e) {
+        // ignore malformed entries
+        // eslint-disable-next-line no-console
+        console.warn("messageDisable: error while evaluating messageData", e);
+      }
+    }
+    return false;
+  })();
   const startRecording = async () => {
     try {
       // Reset audio chunks for new recording
@@ -244,9 +401,12 @@ const AskAssistant = () => {
     calculateHeight();
   };
 
+  // If an agent is mentioned via @, use its type for verifier settings
+  const effectiveAgentType = mentionedAgent && mentionedAgent.agentic_application_type ? mentionedAgent.agentic_application_type : agentType;
+
   const shouldShowHumanVerifier = () => {
-    if (userRole === "user") return false;
-    return agentType === MULTI_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "multi_agent" || agentType === HYBRID_AGENT;
+    if (!canPlanVerifier) return false;
+    return effectiveAgentType === MULTI_AGENT || effectiveAgentType === PLANNER_EXECUTOR_AGENT || effectiveAgentType === "multi_agent" || effectiveAgentType === HYBRID_AGENT;
   };
 
   const handleLiveTracking = () => {
@@ -256,12 +416,27 @@ const AskAssistant = () => {
   const selectAgent = (agent) => {
     closeCanvas(); // Close canvas on agent change
     setSelectedAgent(agent);
+    // Reset mentioned agent when main agent changes
+    setMentionedAgent("");
+    // Reset mention agent type filter
+    setMentionAgentTypeFilter("all");
+    // Reset mention search term
+    setMentionSearchTerm("");
     closeAgentDropdown();
   };
 
   const shouldShowToolVerifier = () => {
     if (userRole === "user") return false;
-    return agentType === REACT_AGENT || agentType === MULTI_AGENT || agentType === REACT_CRITIC_AGENT || agentType === PLANNER_EXECUTOR_AGENT || agentType === "react_agent" || agentType === HYBRID_AGENT;
+    return (
+      effectiveAgentType === REACT_AGENT ||
+      effectiveAgentType === MULTI_AGENT ||
+      effectiveAgentType === REACT_CRITIC_AGENT ||
+      effectiveAgentType === PLANNER_EXECUTOR_AGENT ||
+      effectiveAgentType === "react_agent" ||
+      effectiveAgentType === HYBRID_AGENT ||
+      effectiveAgentType === META_AGENT ||
+      effectiveAgentType === PLANNER_META_AGENT
+    );
   };
 
   const handleToggle2 = async (e) => {
@@ -313,6 +488,10 @@ const AskAssistant = () => {
     setIsTool(isEnabled);
   };
 
+  // Agent types eligible for validator execution assistance
+  const validatorEligibleTypes = [MULTI_AGENT, REACT_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT];
+  const showValidatorToggle = () => validatorEligibleTypes.includes(effectiveAgentType);
+
   const handleIconClick = () => {
     setShowVerifierSettings((prev) => !prev);
   };
@@ -352,12 +531,12 @@ const AskAssistant = () => {
   }, []);
   const { showComponent } = useGlobalComponent();
 
-  const { fetchData, postData } = useFetch();
+  const { fetchData, postData, postDataStream } = useFetch();
 
   const msgContainerRef = useRef(null);
   const hasInitialized = useRef(false);
 
-  const allOptionsSelected = agentType !== CUSTOM_TEMPLATE ? agentType === "" || model === "" || agentSelectValue === "" : agentType === "" || model === "";
+  const isMissingRequiredOptions = agentType !== CUSTOM_TEMPLATE ? agentType === "" || model === "" || agentSelectValue === "" : agentType === "" || model === "";
 
   useEffect(() => {
     if (hasInitialized.current) return;
@@ -421,6 +600,9 @@ const AskAssistant = () => {
     // Reset previously selected agent value any time agentType changes
     setAgentSelectValue("");
     setSelectedAgent("");
+    setMentionedAgent(""); // reset mentionedAgent when the agent type changes.
+    setMentionAgentTypeFilter("all"); // reset mention agent type filter
+    setMentionSearchTerm(""); // reset mention search term
     const cookieSessionId = Cookies.get("user_session");
     if (cookieSessionId) {
       setSessionId(cookieSessionId);
@@ -437,13 +619,13 @@ const AskAssistant = () => {
 
   useEffect(() => {
     // Only fetch history when agent changes or options are selected, not on model change
-    if (!allOptionsSelected && agentSelectValue) {
+    if (!isMissingRequiredOptions && agentSelectValue) {
       fetchChatHistory();
       fetchOldChatsData();
-    } else if (allOptionsSelected) {
+    } else if (isMissingRequiredOptions) {
       setMessageData([]);
     }
-  }, [agentSelectValue, allOptionsSelected]); // Removed model from dependencies
+  }, [agentSelectValue, isMissingRequiredOptions]); // Removed model from dependencies
   useEffect(() => {
     if (msgContainerRef.current) {
       const container = msgContainerRef.current;
@@ -454,7 +636,7 @@ const AskAssistant = () => {
         });
       }, 0);
     }
-  }, [messageData, generating]);
+  }, [messageData, generating, fetching, isStreaming]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -493,6 +675,13 @@ const AskAssistant = () => {
       temperatureSliderRef.current.style.setProperty("--value-percent", `${temperature * TEMPERATURE_MAX_PERCENT}%`);
     }
   }, [temperature]);
+
+  // Re-fetch prompt suggestions when mentioned agent changes
+  useEffect(() => {
+    if (agentSelectValue || (mentionedAgent && mentionedAgent.agentic_application_id)) {
+      fetchPromptSuggestions();
+    }
+  }, [mentionedAgent]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (event) => {
@@ -582,6 +771,38 @@ const AskAssistant = () => {
     }
   };
 
+  /**
+   * Safely converts a value to a trimmed string.
+   * Handles arrays, objects, null, undefined, and primitive types.
+   * @param {*} value - The value to convert
+   * @returns {string} - A trimmed string representation
+   */
+  const safeStringify = (value) => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    if (typeof value === "string") {
+      return value.trim();
+    }
+    if (Array.isArray(value)) {
+      // Join array elements, filtering out non-string/empty values
+      return value
+        .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+    }
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return "";
+      }
+    }
+    // For numbers, booleans, etc.
+    return String(value).trim();
+  };
+
   const converToChatFormat = (chatHistory) => {
     const chats = [];
     setPlanData(null);
@@ -590,23 +811,96 @@ const AskAssistant = () => {
       setShowInput(true);
     }
 
-    chatHistory?.executor_messages?.map((item, index) => {
-      chats?.push({ type: USER, message: item?.user_query });
-      chats?.push({
+    chatHistory?.executor_messages?.forEach((item, index) => {
+      // USER bubble
+      chats.push({ type: USER, message: item?.user_query });
+
+      // Determine bot message (prefer canonical fields) - using safeStringify for robustness
+      let botMessage = safeStringify(item?.final_response) || safeStringify(item?.response) || safeStringify(item?.message) || safeStringify(item?.content) || "";
+
+      // If server returned tools_used (alternate shape), synthesize a canonical additional_details
+      // so downstream UI (ToolCallFinalResponse) can always find tool call arguments.
+      let synthesizedAdditionalDetails = null;
+      if (item?.tools_used && (!Array.isArray(item?.additional_details) || item.additional_details.length === 0)) {
+        try {
+          const toolCalls = Object.entries(item.tools_used).map(([callId, tu]) => {
+            const argsObj = tu?.arguments ?? tu?.args ?? {};
+            const serializedArgs = typeof argsObj === "string" ? argsObj : JSON.stringify(argsObj || {});
+            return {
+              id: callId,
+              function: {
+                name: tu?.name || tu?.tool_name || callId,
+                arguments: serializedArgs,
+              },
+              output: tu?.output ?? tu?.tool_output ?? null,
+            };
+          });
+          synthesizedAdditionalDetails = [
+            {
+              additional_kwargs: {
+                tool_calls: toolCalls,
+              },
+            },
+          ];
+        } catch (e) {
+          synthesizedAdditionalDetails = null;
+        }
+      }
+
+      // If we synthesized additional_details, attach it to a copy of the item so downstream code sees it
+      const toolcallData = {
+        ...item,
+        ...(synthesizedAdditionalDetails ? { additional_details: synthesizedAdditionalDetails } : {}),
+      };
+
+      // If tool-verifier is enabled globally and we have tool-call metadata, blank the bot message
+      // so the UI will show the ToolCallFinalResponse editor (MsgBox expects empty message for the editor gate).
+      if (toolInterrupt && Array.isArray(toolcallData.additional_details) && toolcallData.additional_details.length > 0) {
+        botMessage = "";
+      }
+
+      // Additional fallbacks for META_AGENT / PLANNER_META_AGENT when no message found yet
+      // Try extracting from parts array
+      if (!botMessage && Array.isArray(item?.parts) && item.parts.length > 0) {
+        const partsText = item.parts.map((p) => safeStringify(p?.data?.content) || safeStringify(p?.text) || safeStringify(p?.content)).filter((t) => t.length > 0);
+        if (partsText.length > 0) {
+          botMessage = partsText.join("\n\n");
+        }
+      }
+
+      // HIDDEN TEMP
+      // // Try extracting from tools_used output (first tool)
+      // if (!botMessage && item?.tools_used) {
+      //   const firstTool = Object.values(item.tools_used)[0];
+      //   if (firstTool?.output) {
+      //     botMessage = safeStringify(firstTool.output);
+      //   }
+      // }
+
+      // Try extracting from agent_response field (some meta agent responses use this)
+      if (!botMessage && item?.agent_response) {
+        botMessage = safeStringify(item.agent_response);
+      }
+
+      chats.push({
         type: BOT,
-        message: item?.final_response,
-        toolcallData: item,
-        userText: item?.user_query,
+        message: botMessage,
+        toolcallData: toolcallData,
+        userText: item?.user_query || chatHistory?.query || "",
         steps: JSON.stringify(item?.agent_steps, null, "\t"),
         debugExecutor: item?.additional_details,
-        ...(index === chatHistory?.executor_messages?.length - 1 && {
-          plan: chatHistory?.plan,
-        }),
+        // ...(index === chatHistory?.executor_messages?.length - 1 &&
+        //   !botMessage &&
+        //   !(toolInterrupt && Array.isArray(toolcallData?.additional_details) && toolcallData.additional_details.length > 0) && { plan: chatHistory?.plan }),
+        // Always attach plan if present in response
+        ...(index === chatHistory?.executor_messages?.length - 1 && chatHistory?.plan ? { plan: chatHistory.plan } : {}),
         parts: item?.parts || [],
+        plan: chatHistory?.plan || null,
         show_canvas: item?.show_canvas || false,
         response_time: item?.response_time || null,
       });
     });
+
     setPlanData(chatHistory?.plan);
     setToolData(chats?.toolcallData);
     return chats;
@@ -619,9 +913,13 @@ const AskAssistant = () => {
         agent_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
       };
       const chatHistory = await getChatHistory(data);
-      
+
       if (chatHistory) {
         setLastResponse(chatHistory);
+        setNodes([]);
+        setIsStreaming(false);
+        setCurrentNodeIndex(-1);
+        setStreamParsedContents([]);
         const chatData = converToChatFormat(chatHistory) || [];
         setMessageData(chatData);
         // Update model if it's available in the chat history
@@ -639,8 +937,11 @@ const AskAssistant = () => {
 
   const fetchPromptSuggestions = async () => {
     // Fetch and cache suggestions only once per chat history fetch
+    // Prioritize mentioned agent, fallback to selected agent
+    const targetAgentId = mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : agentSelectValue;
+
     const payload = {
-      agentic_application_id: agentSelectValue,
+      agentic_application_id: targetAgentId,
       user_email: loggedInUserEmail,
     };
     const response = await getQuerySuggestions(payload);
@@ -662,6 +963,11 @@ const AskAssistant = () => {
   };
 
   const sendHumanInLoop = async (isApprove = "", feedBack = "", userText) => {
+    // Enable streaming for human verifier scenarios to capture transient plan_verifier prompt
+    setIsStreaming(true);
+    //setNodes([]);
+    setCurrentNodeIndex(-1);
+    setPlanVerifierPrompt("");
     const payload = {
       agentic_application_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
       query: userText,
@@ -671,54 +977,161 @@ const AskAssistant = () => {
       reset_conversation: false,
       is_plan_approved: isApprove !== "" ? isApprove : null,
       plan_feedback: feedBack !== "" ? feedBack : null,
-      tool_verifier_flag: Boolean(toolInterrupt),
-      plan_verifier_flag: Boolean(isHuman),
+      tool_verifier_flag: canToolVerifier ? Boolean(toolInterrupt) : false,
+      plan_verifier_flag: canPlanVerifier ? Boolean(isHuman) : false,
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
       evaluation_flag: Boolean(onlineEvaluatorFlag),
+      mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
+      validator_flag: useValidator,
     };
-
     if (selectedValues && selectedValues.length > 0) {
       const selectedString = selectedValues.join(",");
       payload.knowledgebase_name = JSON.stringify(selectedString);
     }
     try {
-      const response = await postData(APIs.CHAT_INFERENCE, payload);
-      if (response) {
-        setLastResponse(response);
-        setPlanData(response?.plan);
+      // let nodeIndex = -1;
+      let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
+      const onStreamChunk = async (obj) => {
+        if (!obj || typeof obj !== "object") return;
+        const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
+        const statusVal = obj.Status || obj.status || obj.state || null;
+        const toolName = obj["Tool Name"] || obj.tool_name || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || null;
+        let contentVal = obj.content || (obj.raw && obj.raw.content) || null;
 
-        const chatData = converToChatFormat(response) || [];
-        setMessageData(chatData);
+        if (!contentVal && obj.raw && obj.raw.content && obj.content) {
+          const candidate = obj.raw.content || obj.content;
+          contentVal = typeof candidate === "string" ? candidate : JSON.stringify(candidate);
+        }
 
-        // First check for parts format in the root response
-        if (response.parts) {
-          const textParts = response.parts.filter((part) => part.type === "text");
-          if (textParts.length > 0) {
-            // Handle text parts if needed
+        if (nodeName && statusVal) {
+          nodeIndex++;
+          const newNode = { "Node Name": nodeName, Status: statusVal, "Tool Name": toolName, ...(contentVal && { content: contentVal }) };
+          setNodes((prev) => [...prev, newNode]);
+          setCurrentNodeIndex(nodeIndex);
+        } else if (contentVal) {
+          // Orphan content chunk - add as content-only entry
+          setNodes((prev) => [...prev, { content: contentVal }]);
+        }
+
+        if (contentVal) {
+          const source = nodeName || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || "raw" || obj.content;
+          setStreamParsedContents((prev) => [...prev, { source, content: contentVal }]);
+        }
+
+        // if (isHuman && obj?.raw?.plan_verifier) {
+        //   setPlanVerifierPrompt(obj.raw.plan_verifier);
+        //   // Capture plan from the streaming object if available (for plan verifier display)
+        //   const streamPlan = obj?.plan || obj?.raw?.plan || null;
+        //   if (streamPlan) {
+        //     setPlanData(streamPlan);
+        //   }
+        //   // Capture query from the object for feedback handling
+        //   const queryText = obj?.query || userText || "";
+        //   setMessageData((prev) => {
+        //     if (prev.some((m) => m.plan_verifier)) return prev;
+        //     return [
+        //       ...prev,
+        //       {
+        //         type: BOT,
+        //         message: obj.raw.plan_verifier,
+        //         plan_verifier: true,
+        //         plan: streamPlan || null,
+        //         userText: queryText,
+        //       },
+        //     ];
+        //   });
+        // }
+
+        // // Tool verifier prompt (in case both enabled)
+        // if (toolInterrupt && obj?.raw?.tool_verifier) {
+        //   setMessageData((prev) => {
+        //     if (prev.some((m) => m.tool_verifier)) return prev;
+        //     return [...prev, { type: BOT, message: obj.raw.tool_verifier, tool_verifier: true }];
+        //   });
+        // }
+        await new Promise((r) => setTimeout(r, 450));
+      };
+      const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, {}, onStreamChunk);
+      // Find response with executor_messages, or fallback to response with plan (for plan verifier)
+      const chatObj = Array.isArray(responseObjects) ? responseObjects.find((obj) => obj && obj.executor_messages) : responseObjects;
+      setLastResponse(chatObj);
+      setPlanData(chatObj?.plan || null);
+      setCurrentNodeIndex(nodeIndex);
+
+      // If plan verifier is active and we have a plan but no executor_messages, preserve the plan verifier message
+      if (isHuman && chatObj?.plan && (!chatObj?.executor_messages || chatObj.executor_messages.length === 0)) {
+        // Don't overwrite - the plan verifier message was already set during streaming
+        // Just update the plan data and ensure the message has the plan
+        setMessageData((prev) => {
+          const updated = [...prev];
+          const planVerifierIdx = updated.findIndex((m) => m.plan_verifier);
+          if (planVerifierIdx !== -1 && !updated[planVerifierIdx].plan) {
+            updated[planVerifierIdx] = { ...updated[planVerifierIdx], plan: chatObj.plan };
           }
-        }
+          return updated;
+        });
+      } else {
+        const chatData = chatObj ? converToChatFormat(chatObj) || [] : [];
+        setMessageData(chatData);
+      }
 
-      const canvasContent = detectCanvasContent(response);
-      if (response.executor_messages[response.executor_messages.length - 1].show_canvas) {
-        // Only open canvas if response_formatting_flag is true
-        if (payload.response_formatting_flag === true) {
-          openCanvas(canvasContent.content,canvasContent.title,canvasContent.type,null,false);
-        }
+      // Canvas handling: prefer latest executor message to avoid showing stale canvas
+      if (payload.response_formatting_flag === true && chatObj) {
+        const latestExecutor =
+          Array.isArray(chatObj?.executor_messages) && chatObj.executor_messages.length > 0 ? chatObj.executor_messages[chatObj.executor_messages.length - 1] : null;
+        const detectedFromLatest = latestExecutor ? detectCanvasContent(latestExecutor) : null;
+        // When tool verifier or human plan verifier are active, avoid using chat-level fallback
+        const detectedFallback = !toolInterrupt && !isHuman ? detectCanvasContent(chatObj) : null;
+        const detected = detectedFromLatest || detectedFallback;
+        if (detected && detected.content) {
+          try {
+            const existingStr = prevCanvasRef.current || null;
+            const newStr = JSON.stringify(detected.content);
+            if (existingStr !== newStr) {
+              openCanvas(detected.content, detected.title, detected.type, null, false);
+              prevCanvasRef.current = newStr;
+            }
+          } catch (e) {
+            openCanvas(detected.content, detected.title, detected.type, null, false);
+            try {
+              prevCanvasRef.current = JSON.stringify(detected.content);
+            } catch {}
+          }
         }
       }
     } catch (error) {
-      console.error("Error handling chat response:", error);
-      setGenerating(false);
-      setFetching(false);
+      console.error("Error handling human-in-loop streaming response:", error);
+    } finally {
+      setIsStreaming(false);
+      setCurrentNodeIndex(-1);
     }
   };
 
+  const extractContent = (responseArray = []) => {
+    return responseArray.reduce(
+      (acc, item) => {
+        if (!item || typeof item !== "object") return acc;
+
+        // Content objects: either explicit 'content' or raw.Tool Output
+        if (item.content) {
+          acc.contents.push({
+            source: item["Node Name"] || (item.raw && item.raw["Tool Name"]) || "unknown",
+            content: item.content,
+          });
+        }
+        return acc;
+      },
+      { contents: [] }
+    );
+  };
+
+  // Reconstructed (async) sendUserMessage after accidental brace corruption
   const sendUserMessage = async (overrideText) => {
     let messageToSend = "";
     let contextFlag = false;
     let responseFormattingFlag = false;
-    // If overrideText is an object (from EmailViewer), extract flags and query
+
     if (overrideText && typeof overrideText === "object") {
       messageToSend = overrideText.query ? String(overrideText.query).trim() : "";
       contextFlag = overrideText.context_flag === true;
@@ -730,9 +1143,12 @@ const AskAssistant = () => {
 
     setFetching(true);
     resetHeight();
-
-    // Clear previous debug steps
-    clearDebugSteps();
+    // Always enable streaming to capture plan/tool verifier prompts and node progress
+    setIsStreaming(true);
+    setNodes([]);
+    setCurrentNodeIndex(-1);
+    setStreamParsedContents([]); // Clear stream contents after completion
+    setPlanVerifierPrompt("");
     addMessageData(USER, messageToSend);
     setUserChat("");
     setGenerating(true);
@@ -746,11 +1162,13 @@ const AskAssistant = () => {
       model_name: model,
       temperature: temperature,
       reset_conversation: false,
-      tool_verifier_flag: Boolean(toolInterrupt),
-      plan_verifier_flag: Boolean(isHuman),
+      tool_verifier_flag: canToolVerifier ? Boolean(toolInterrupt) : false,
+      plan_verifier_flag: canPlanVerifier ? Boolean(isHuman) : false,
       response_formatting_flag: typeof overrideText === "object" ? Boolean(responseFormattingFlag) : Boolean(isCanvasEnabled),
       context_flag: typeof overrideText === "object" ? Boolean(contextFlag) : Boolean(isContextEnabled),
-      evaluation_flag: Boolean(onlineEvaluatorFlag),
+      evaluation_flag: canEvaluation ? Boolean(onlineEvaluatorFlag) : false,
+      mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
+      validator_flag: useValidator,
     };
 
     if (selectedValues && selectedValues.length > 0) {
@@ -758,44 +1176,161 @@ const AskAssistant = () => {
       payload.knowledgebase_name = JSON.stringify(selectedString);
     }
 
-    // To hide the open canvas when user sends the next query
+    // Remember previously displayed canvas snapshot so we can avoid re-opening identical content
+    prevCanvasRef.current = canvasContent ? JSON.stringify(canvasContent) : null;
+    // Close and clear existing canvas state immediately so old content won't re-open
     setIsCanvasOpen(false);
+    setCanvasContent(null);
+    setCanvasTitle("");
+    setCanvasContentType("");
+    setCanvasMessageId(null);
 
     if (isHuman) {
       await sendHumanInLoop("", "", messageToSend);
     } else {
-      const response = await getChatQueryResponse(payload, APIs.CHAT_INFERENCE);
-      setLastResponse(response);
-      if (response === null) {
-        setShowToast(true);
-        setTimeout(() => {
-          setShowToast(false);
-        }, AUTO_HIDE_TIMEOUT);
-      }
+      try {
+        let nodeIndex = -1;
+        const onStreamChunk = async (obj) => {
+          if (!obj || typeof obj !== "object") return;
+          if (nodeIndex < 5) {
+            console.debug("[stream-chunk]", obj);
+          }
 
-      // Call prompt suggestion API to fetch latest suggestions based on new chat history
-      fetchPromptSuggestions();
+          const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
+          const statusVal = obj.Status || obj.status || obj.state || null;
+          const toolName = obj["Tool Name"] || obj.tool_name || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || null;
+          let contentVal = obj.content || (obj.raw && obj.raw.content) || null;
 
-      const chatData = converToChatFormat(response) || [];
-      setMessageData(chatData);
+          if (!contentVal && obj.raw && obj.raw.content && obj.content) {
+            const candidate = obj.raw.content || obj.content;
+            contentVal = typeof candidate === "string" ? candidate : JSON.stringify(candidate);
+          }
 
-      const canvasContent = detectCanvasContent(response);
-      if (canvasContent) {
-         if (payload.response_formatting_flag === true) {
-          openCanvas(canvasContent.content,canvasContent.title,canvasContent.type,null,false);
+          if (nodeName && statusVal) {
+            nodeIndex++;
+            const newNode = { "Node Name": nodeName, Status: statusVal, "Tool Name": toolName, ...(contentVal && { content: contentVal }) };
+            setNodes((prev) => [...prev, newNode]);
+            setCurrentNodeIndex(nodeIndex);
+          } else if (contentVal) {
+            // Orphan content chunk - add as content-only entry
+            setNodes((prev) => [...prev, { content: contentVal }]);
+          }
+          
+          if (contentVal) {
+            const source = nodeName || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || "raw" || obj.content;
+            setStreamParsedContents((prev) => [...prev, { source, content: contentVal }]);
+          }
+          // // Tool verifier prompt streaming early (before final executor_messages) -> inject a provisional BOT bubble
+          // if (toolInterrupt && obj?.raw?.tool_verifier) {
+          //   setMessageData((prev) => {
+          //     if (prev.some((m) => m.tool_verifier)) return prev;
+          //     return [...prev, { type: BOT, message: obj.raw.tool_verifier, tool_verifier: true }];
+          //   });
+          // }
+          // Plan verifier prompt (human verifier) arrives before final response; capture & surface it immediately
+          // if (isHuman && obj?.raw?.plan_verifier) {
+          //   setPlanVerifierPrompt(obj.raw.plan_verifier);
+          //   // Capture plan from the streaming object if available (for plan verifier display)
+          //   const streamPlan = obj?.plan || obj?.raw?.plan || null;
+          //   if (streamPlan) {
+          //     setPlanData(streamPlan);
+          //   }
+          //   // Capture query from the object for feedback handling
+          //   const queryText = obj?.query || messageToSend || "";
+          //   setMessageData((prev) => {
+          //     // Avoid duplicate insertion
+          //     if (prev.some((m) => m.plan_verifier)) return prev;
+          //     return [
+          //       ...prev,
+          //       {
+          //         type: BOT,
+          //         message: obj.raw.plan_verifier,
+          //         plan_verifier: true,
+          //         plan: streamPlan || null,
+          //         userText: queryText,
+          //       },
+          //     ];
+          //   });
+          // }
+          // slight delay to avoid UI thrash
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        };
+
+        // Call postDataStream with the callback
+        const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, {}, onStreamChunk);
+
+        // Parse content from mixed response array
+        if (Array.isArray(responseObjects)) {
+          const { contents: parsedContents } = extractContent(responseObjects);
+          setStreamParsedContents(parsedContents);
         }
-      }
-      // Fallback: Auto-detect and open Canvas for individual message content
-      else if (chatData.length > 0) {
-        const lastMessage = chatData[chatData.length - 1];
-        if (lastMessage.type === BOT && lastMessage.message) {
-          const canvasContent = detectCanvasContent(lastMessage.message);
-          if (canvasContent) {
-             if (payload.response_formatting_flag === true) {
-          openCanvas(canvasContent.content,canvasContent.title,canvasContent.type,null,false);
+
+        // Find response with executor_messages, or fallback to response with plan (for plan verifier)
+        const chatObj = Array.isArray(responseObjects) ? responseObjects.find((obj) => obj && (obj.executor_messages || obj.plan)) : responseObjects;
+
+        setLastResponse(chatObj);
+
+        if (chatObj === null) {
+          setShowToast(true);
+          setTimeout(() => {
+            setShowToast(false);
+          }, AUTO_HIDE_TIMEOUT);
         }
+
+        // Call prompt suggestion API to fetch latest suggestions based on new chat history
+        fetchPromptSuggestions();
+
+        // If plan verifier is active and we have a plan but no executor_messages, preserve the plan verifier message
+        if (isHuman && chatObj?.plan && (!chatObj?.executor_messages || chatObj.executor_messages.length === 0)) {
+          // Don't overwrite - the plan verifier message was already set during streaming
+          // Just update the plan data and ensure the message has the plan
+          setPlanData(chatObj.plan);
+          setMessageData((prev) => {
+            const updated = [...prev];
+            const planVerifierIdx = updated.findIndex((m) => m.plan_verifier);
+            if (planVerifierIdx !== -1 && !updated[planVerifierIdx].plan) {
+              updated[planVerifierIdx] = { ...updated[planVerifierIdx], plan: chatObj.plan };
+            }
+            return updated;
+          });
+        } else {
+          const chatData = chatObj ? converToChatFormat(chatObj) || [] : [];
+          setMessageData(chatData);
+        }
+
+        // Stop streaming; retain final nodes & contents for display until next user query
+        setIsStreaming(false);
+        // Keep focus on the last streamed node so MsgBox shows its final status instead of the generic 'Generating'
+        setCurrentNodeIndex(-1);
+        // Clear streamed contents after they have been displayed
+        setStreamParsedContents([]);
+
+        // Canvas handling: prefer latest executor message to avoid showing stale canvas
+        if (payload.response_formatting_flag === true && chatObj) {
+          const latestExecutor =
+            Array.isArray(chatObj?.executor_messages) && chatObj.executor_messages.length > 0 ? chatObj.executor_messages[chatObj.executor_messages.length - 1] : null;
+          const detectedFromLatest = latestExecutor ? detectCanvasContent(latestExecutor) : null;
+          const detectedFallback = !toolInterrupt && !isHuman ? detectCanvasContent(chatObj) : null;
+          const detected = detectedFromLatest || detectedFallback;
+          if (detected && detected.content) {
+            try {
+              const existingStr = prevCanvasRef.current || null;
+              const newStr = JSON.stringify(detected.content);
+              if (existingStr !== newStr) {
+                openCanvas(detected.content, detected.title, detected.type, null, false);
+                prevCanvasRef.current = newStr;
+              }
+            } catch (e) {
+              openCanvas(detected.content, detected.title, detected.type, null, false);
+              try {
+                prevCanvasRef.current = JSON.stringify(detected.content);
+              } catch {}
+            }
           }
         }
+      } catch (error) {
+        console.error("Error handling chat response:", error);
+        setIsStreaming(false);
       }
     }
     setGenerating(false);
@@ -832,7 +1367,8 @@ const AskAssistant = () => {
         selectedOption === REACT_AGENT ||
         selectedOption === REACT_CRITIC_AGENT ||
         selectedOption === PLANNER_EXECUTOR_AGENT ||
-      selectedOption === "react_agent"|| selectedOption === HYBRID_AGENT
+        selectedOption === "react_agent" ||
+        selectedOption === HYBRID_AGENT
     );
     if (selectedOption === CUSTOM_TEMPLATE) {
       setIsHuman(true);
@@ -842,23 +1378,22 @@ const AskAssistant = () => {
   };
 
   const handleResetChat = async () => {
-    if (window.confirm("Are you sure you want to delete this chat?")) {
-      clearDebugSteps();
-      closeCanvas(); // Close canvas on chat delete
-      const data = {
-        session_id: oldSessionId !== "" ? oldSessionId : session,
-        agent_id: agentType !== CUSTOM_TEMPLATE ? agentSelectValue : customTemplatId,
-      };
-      try {
-        const response = await resetChat(data);
-        if (response?.status === "success") {
-          setMessageData([]);
-          fetchOldChatsData();
-          setOldSessionId("");
-        }
-      } catch (error) {
-        console.error("Error deleting chat:", error);
+    closeCanvas(); // Close canvas on chat delete
+    const data = {
+      session_id: oldSessionId !== "" ? oldSessionId : session,
+      agent_id: agentType !== CUSTOM_TEMPLATE ? agentSelectValue : customTemplatId,
+    };
+    try {
+      const response = await resetChat(data);
+      if (response?.status === "success") {
+        setMessageData([]);
+        fetchOldChatsData();
+        setOldSessionId("");
       }
+    } catch (error) {
+      console.error("Error deleting chat:", error);
+    } finally {
+      setShowDeleteConfirmation(false);
     }
   };
 
@@ -932,16 +1467,15 @@ const AskAssistant = () => {
   };
 
   const handleChatSelected = async (sessionId) => {
-    clearDebugSteps();
     closeCanvas(); // Close canvas on chat select from history
-    
+
     // First update both session IDs and wait for them to be set
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       setOldSessionId(sessionId);
       setSessionId(sessionId); // Set current session ID as well
       setTimeout(resolve, DEBOUNCE_DELAY); // Give React time to update state
     });
-    
+
     try {
       // Then fetch chat history with the new session ID
       await fetchChatHistory(sessionId);
@@ -950,7 +1484,7 @@ const AskAssistant = () => {
       // Reset oldSessionId if fetching fails
       setOldSessionId("");
     }
-    
+
     setShowChatHistory(false);
   };
   const [knowledgeResponse, serKnowledgeResponse] = useState([]);
@@ -965,7 +1499,6 @@ const AskAssistant = () => {
   };
 
   const handleNewChat = async () => {
-    clearDebugSteps();
     setShowChatSettings(false);
     closeCanvas(); // Close canvas on new chat
     const sessionId = await fetchNewChats(loggedInUserEmail);
@@ -1086,6 +1619,74 @@ const AskAssistant = () => {
         setShowKnowledgePopover(false);
         setSearchTerm("");
         setHighlightedKbIndex(-1);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const scrollToHighlightedMentionItem = (index) => {
+    if (mentionListRef.current && index >= 0) {
+      const items = mentionListRef.current.children;
+      if (items[index]) {
+        items[index].scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }
+    }
+  };
+
+  const handleMentionDropdownKeyDown = (e) => {
+    if (!showMentionDropdown) return;
+
+    const filteredAgents = Array.isArray(agentsListData)
+      ? agentsListData.filter((agent) => {
+          const matchesSearch = agent.agentic_application_name.toLowerCase().includes(mentionSearchTerm.toLowerCase());
+          const matchesAgentType = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
+          const notCurrentlySelected = agent.agentic_application_id !== agentSelectValue;
+          const notMentioned = !mentionedAgent || agent.agentic_application_id !== mentionedAgent.agentic_application_id;
+          return matchesSearch && matchesAgentType && notCurrentlySelected && notMentioned;
+        })
+      : [];
+
+    if (filteredAgents.length === 0) return;
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        e.stopPropagation();
+        setHighlightedMentionIndex((prev) => {
+          const newIndex = prev < filteredAgents.length - 1 ? prev + 1 : 0;
+          setTimeout(() => scrollToHighlightedMentionItem(newIndex), 0);
+          return newIndex;
+        });
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        e.stopPropagation();
+        setHighlightedMentionIndex((prev) => {
+          const newIndex = prev > 0 ? prev - 1 : filteredAgents.length - 1;
+          setTimeout(() => scrollToHighlightedMentionItem(newIndex), 0);
+          return newIndex;
+        });
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (highlightedMentionIndex >= 0 && filteredAgents[highlightedMentionIndex]) {
+          const selectedAgent = filteredAgents[highlightedMentionIndex];
+          setMentionedAgent(selectedAgent);
+          setShowMentionDropdown(false);
+          setMentionSearchTerm("");
+          setHighlightedMentionIndex(-1);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setShowMentionDropdown(false);
+        setMentionSearchTerm("");
+        setHighlightedMentionIndex(-1);
         break;
       default:
         break;
@@ -1236,11 +1837,14 @@ const AskAssistant = () => {
     try {
       // Detect email content
       if (
-        typeof input === "object" && input !== null && (
-          input.type === "email" ||
+        typeof input === "object" &&
+        input !== null &&
+        (input.type === "email" ||
           input.contentType === "email" ||
-          input?.to || input?.subject || input?.body || (input.data && (input.data.to || input.data.subject || input.data.body))
-        )
+          input?.to ||
+          input?.subject ||
+          input?.body ||
+          (input.data && (input.data.to || input.data.subject || input.data.body)))
       ) {
         // Normalize email data
         let emailContent = input;
@@ -1266,61 +1870,6 @@ const AskAssistant = () => {
           };
         }
       }
-
-      // FALLBACK: If no parts format, try markdown parsing for chart content
-      // let text = "";
-      // if (typeof input === "string") {
-      //   text = input;
-      // } else if (input && input.message) {
-      //   text = input.message;
-      // } else {
-      //   return null;
-      // }
-
-      // Check for chart patterns in the text
-      // if (text.includes("Day") && text.includes("Income") && (text.includes("Expenses") || text.includes("Expense")) && text.includes("████")) {
-      //   // Parse chart lines
-      //   const chartLines = text.split("\n").filter((line) => line.includes("Day") && line.includes("Income") && (line.includes("Expenses") || line.includes("Expense")));
-
-      //   if (chartLines.length > 0) {
-      //     const chartData = chartLines
-      //       .map((line) => {
-      //         const dayMatch = line.match(/Day\s+(\d+)/);
-      //         const incomeMatch = line.match(/Income.*?\(([\d,]+)\)/);
-      //         const expensesMatch = line.match(/Expenses?.*?\(([\d,]+)\)/);
-
-      //         if (dayMatch && incomeMatch && expensesMatch) {
-      //           return {
-      //             day: `Day ${dayMatch[1]}`,
-      //             income: parseInt(incomeMatch[1].replace(/,/g, "")),
-      //             expenses: parseInt(expensesMatch[1].replace(/,/g, "")),
-      //           };
-      //         }
-      //         return null;
-      //       })
-      //       .filter(Boolean);
-
-      //     if (chartData.length > 0) {
-      //       // Return chart data in parts format
-      //       return {
-      //         type: "parts",
-      //         content: [
-      //           {
-      //             type: "chart",
-      //             data: {
-      //               chart_type: "bar",
-      //               title: "Income vs Expenses",
-      //               chart_data: chartData,
-      //             },
-      //             metadata: {},
-      //           },
-      //         ],
-      //         title: "Chart View",
-      //         isParts: true,
-      //       };
-      //     }
-      //   }
-      // }
       // No parts format found - return null (no canvas)
       return null;
     } catch (error) {
@@ -1329,52 +1878,7 @@ const AskAssistant = () => {
     }
   };
 
-  const [debugSteps, setDebugSteps] = useState([]);
-  const [showLiveSteps, setShowLiveSteps] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
-  // Augment existing SSE callback logic to also accept plain debug step objects
-  useEffect(() => {
-    const genericHandler = (data) => {
-      // Accept either structured control events (open/close) or direct debug steps
-      if (data && (data.type === "open" || data.event === "open")) {
-        setDebugSteps([]);
-        setShowLiveSteps(true);
-        return;
-      }
-      if (data && (data.type === "close" || data.event === "close")) {
-        setShowLiveSteps(false);
-        return;
-      }
-      // Normalize possible string payload
-      let payload = data;
-      if (typeof data === "string") {
-        try {
-          payload = JSON.parse(data);
-        } catch (_) {
-          payload = { debug_value: data };
-        }
-      }
-      if (!payload) return;
-      const hasDebug = payload.debug_value || payload.debug_key;
-      if (hasDebug) {
-        setShowLiveSteps(true);
-        const MAX_DEBUG_STEPS = 200;
-        setDebugSteps((prev) => [...prev, { step: prev.length + 1, ...payload }].slice(-MAX_DEBUG_STEPS));
-      }
-    };
-    setSseMessageCallback(genericHandler);
-    return () => setSseMessageCallback(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Clear debug steps when starting new operations
-  const clearDebugSteps = () => {
-    setDebugSteps([]);
-    setShowLiveSteps(false);
-  };
-
-  const ONLINE_EVAL_AGENT_TYPES = [REACT_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT, MULTI_AGENT,HYBRID_AGENT];
+  const ONLINE_EVAL_AGENT_TYPES = [REACT_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT, MULTI_AGENT, HYBRID_AGENT, META_AGENT, PLANNER_META_AGENT];
 
   const shouldShowOnlineEvaluator = () => {
     if (!agentType) return false;
@@ -1392,8 +1896,8 @@ const AskAssistant = () => {
         <div className={`${stylesNew.chatWrapper} ${isCanvasOpen ? stylesNew.withCanvas : ""}`}>
           <div className={stylesNew.bubbleAndInput}>
             <div className={stylesNew.chatBubblesWrapper}>
-              <div className={stylesNew.messagesWrapper}>
-                {/* message container */} {/* <div className={stylesNew.messagesContainer} ref={msgContainerRef}> */}
+              <div className={stylesNew.messagesWrapper} ref={msgContainerRef}>
+                {/* message container */}
                 {/* {showToast && !showChatHistory && !isDeletingChat && lastResponse && (
                   <ToastMessage message={lastResponse === null ? "Internal Server error" : likeMessage} onClose={() => setShowToast(false)} />
                 )} */}
@@ -1402,6 +1906,7 @@ const AskAssistant = () => {
                   messageData={messageData}
                   generating={generating}
                   agentType={agentType}
+                  isStreaming={isStreaming}
                   feedBack={feedBack}
                   setFeedback={setFeedback}
                   setMessageData={setMessageData}
@@ -1423,7 +1928,7 @@ const AskAssistant = () => {
                   setIsTool={setIsTool}
                   isTool={isTool}
                   selectedOption={agentType}
-                  toolInterrupt={toolInterrupt}
+                  toolInterrupt={canToolVerifier ? toolInterrupt : false}
                   handleToolInterrupt={handleToolInterrupt}
                   handleCanvasToggle={handleCanvasToggle}
                   handleHumanInLoop={handleHumanInLoop}
@@ -1439,20 +1944,24 @@ const AskAssistant = () => {
                   messageDisable={messageDisable}
                   isEditable={isEditable}
                   setIsEditable={setIsEditable}
-                  allOptionsSelected={allOptionsSelected}
+                  isMissingRequiredOptions={isMissingRequiredOptions}
                   oldChats={oldChats}
                   isDeletingChat={isDeletingChat}
                   openCanvas={openCanvas}
                   detectCanvasContent={detectCanvasContent}
-                  debugSteps={debugSteps}
-                  showLiveSteps={showLiveSteps}
-                  setShowLiveSteps={setShowLiveSteps}
-                  expanded={expanded}
-                  setExpanded={setExpanded}
                   isCanvasEnabled={isCanvasEnabled}
                   isContextEnabled={isContextEnabled}
                   onlineEvaluatorFlag={onlineEvaluatorFlag}
-                   plan_verifier_flag={isHuman}
+                  plan_verifier_flag={isHuman}
+                  planVerifierText={planVerifierPrompt}
+                  nodes={nodes}
+                  currentNodeIndex={currentNodeIndex}
+                  streamContents={streamParsedContents}
+                  setNodes={setNodes}
+                  setIsStreaming={setIsStreaming}
+                  setCurrentNodeIndex={setCurrentNodeIndex}
+                  mentionedAgent={mentionedAgent}
+                  useValidator={useValidator}
                 />
               </div>
             </div>
@@ -1460,7 +1969,11 @@ const AskAssistant = () => {
               <div className={chatInputModule.container}>
                 <div className={chatInputModule.topControls}>
                   <div className={chatInputModule.controlGroup}>
-                    <select className={chatInputModule.select} value={agentType} onChange={(e) => handleTypeChange(e.target.value)} disabled={generating || fetching || isEditable}>
+                    <select
+                      className={chatInputModule.select}
+                      value={agentType}
+                      onChange={(e) => handleTypeChange(e.target.value)}
+                      disabled={generating || fetching || isEditable || messageDisable}>
                       <option value="">Select Agent Type</option>
                       {agentTypesDropdown.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -1480,8 +1993,8 @@ const AskAssistant = () => {
                         setModel(newModel);
                         setLikeIcon(false);
                       }}
-                      disabled={!agentType || generating || fetching || isEditable}
-                      aria-disabled={!agentType || generating || fetching || isEditable}>
+                      disabled={!agentType || generating || fetching || isEditable || messageDisable}
+                      aria-disabled={!agentType || generating || fetching || isEditable || messageDisable}>
                       <option value="">Select Model</option>
                       {selectedModels.map((modelOption) => (
                         <option key={modelOption.value} value={modelOption.value}>
@@ -1599,7 +2112,7 @@ const AskAssistant = () => {
                     </div>
                   </div>
                 </div>
-                {!allOptionsSelected && (
+                {!isMissingRequiredOptions && (
                   <div className={chatInputModule.inputsWrapperRow2}>
                     <div className={chatInputModule.inputForm}>
                       <div className={chatInputModule.inputContainer}>
@@ -1607,7 +2120,7 @@ const AskAssistant = () => {
                           type="button"
                           className={chatInputModule.inputButton + " " + chatInputModule.actionButton}
                           onClick={handleFileClick}
-                          disabled={messageDisable || fetching || generating || isEditable || allOptionsSelected}
+                          disabled={messageDisable || fetching || generating || isEditable || isMissingRequiredOptions}
                           title="Upload Files"
                           tabIndex={0}>
                           <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1617,13 +2130,138 @@ const AskAssistant = () => {
                           </svg>
                         </button>
 
+                        <div className={chatInputModule.relativeWrapper}>
+                          <button
+                            type="button"
+                            className={`${chatInputModule.inputButton} ${chatInputModule.actionButton} ${chatInputModule.mentionButton} ${
+                              mentionedAgent ? chatInputModule.active : ""
+                            }`}
+                            onClick={() => setShowMentionDropdown(!showMentionDropdown)}
+                            disabled={messageDisable || fetching || generating || isEditable || isMissingRequiredOptions}
+                            title={mentionedAgent ? ` ${mentionedAgent.agentic_application_name}` : "Mention Agent"}
+                            tabIndex={0}>
+                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <text x="10" y="15" fontSize="14" textAnchor="middle" stroke="currentColor">
+                                @
+                              </text>
+                            </svg>
+                          </button>
+
+                          {/* Mention Agent Dropdown */}
+                          {showMentionDropdown && (
+                            <div className={chatInputModule.mentionDropdown} ref={mentionDropdownRef}>
+                              {/* Agent Type Filter */}
+                              <div style={{ padding: "7px", backgroundColor: "#f9fafb" }}>
+                                <select
+                                  value={mentionAgentTypeFilter}
+                                  onChange={(e) => {
+                                    const newAgentType = e.target.value;
+                                    setMentionAgentTypeFilter(newAgentType);
+                                    setHighlightedMentionIndex(-1);
+
+                                    // Reset mentioned agent if it doesn't match the new filter
+                                    if (mentionedAgent && newAgentType !== "all" && mentionedAgent.agentic_application_type !== newAgentType) {
+                                      setMentionedAgent("");
+                                    }
+                                  }}
+                                  style={{
+                                    width: "100%",
+                                    padding: "4px 8px",
+                                    border: "1px solid #ddd",
+                                    borderRadius: "4px",
+                                    fontSize: "13px",
+                                    background: "white",
+                                  }}>
+                                  <option value="all">All Agent Types</option>
+                                  {agentTypesDropdown.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className={chatInputModule.mentionHeader}>
+                                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
+                                  <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                  <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                </svg>
+                                <input
+                                  type="text"
+                                  placeholder="Search agents..."
+                                  value={mentionSearchTerm}
+                                  onChange={(e) => setMentionSearchTerm(e.target.value)}
+                                  onKeyDown={handleMentionDropdownKeyDown}
+                                  className={chatInputModule.mentionSearchInput}
+                                  autoFocus
+                                />
+                              </div>
+                              <div className={chatInputModule.mentionList} ref={mentionListRef}>
+                                {/* Show mentioned agent at top with remove option */}
+                                {mentionedAgent && (
+                                  <div className={`${chatInputModule.mentionItem} ${chatInputModule.mentionedAgentItem}`}>
+                                    <span className={chatInputModule.mentionAgentName}>{mentionedAgent.agentic_application_name}</span>
+                                    <button
+                                      type="button"
+                                      className={chatInputModule.removeMentionButton}
+                                      onClick={() => {
+                                        setMentionedAgent("");
+                                        setMentionSearchTerm("");
+                                        setHighlightedMentionIndex(-1);
+                                      }}
+                                      title={`Remove ${mentionedAgent.agentic_application_name}`}>
+                                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M6 6L14 14M14 6L6 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {Array.isArray(agentsListData) && agentsListData.length > 0 ? (
+                                  (() => {
+                                    // Filter agents based on search term, agent type filter, and exclude current/mentioned agents
+                                    const filteredAgents = agentsListData.filter((agent) => {
+                                      const matchesSearch = agent.agentic_application_name.toLowerCase().includes(mentionSearchTerm.toLowerCase());
+                                      const matchesAgentType = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
+                                      const notCurrentlySelected = agent.agentic_application_id !== agentSelectValue;
+                                      const notMentioned = !mentionedAgent || agent.agentic_application_id !== mentionedAgent.agentic_application_id;
+                                      return matchesSearch && matchesAgentType && notCurrentlySelected && notMentioned;
+                                    });
+
+                                    return filteredAgents.length > 0 ? (
+                                      filteredAgents.map((agent, idx) => (
+                                        <div
+                                          key={agent.agentic_application_id}
+                                          className={`${chatInputModule.mentionItem} ${idx === highlightedMentionIndex ? chatInputModule.highlighted : ""}`}
+                                          onMouseEnter={() => setHighlightedMentionIndex(idx)}
+                                          onMouseLeave={() => setHighlightedMentionIndex(-1)}
+                                          onClick={() => {
+                                            setMentionedAgent(agent);
+                                            setShowMentionDropdown(false);
+                                            setMentionSearchTerm("");
+                                            setHighlightedMentionIndex(-1);
+                                          }}>
+                                          <div className={chatInputModule.mentionAgentName}>{agent.agentic_application_name}</div>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className={chatInputModule.noAgents}>No available agents to mention</div>
+                                    );
+                                  })()
+                                ) : (
+                                  <div className={chatInputModule.noAgents}>No agents found</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
                         <div className={chatInputModule.promptLibraryAndTextArea}>
                           {promptSuggestions && promptSuggestions.length > 0 && (
                             <button
                               type="button"
                               className={chatInputModule.promptSuggestionBtn}
                               onClick={handlePromptSuggestionsToggle}
-                              disabled={messageDisable || fetching || generating || isEditable || allOptionsSelected}
+                              disabled={messageDisable || fetching || generating || isEditable || isMissingRequiredOptions}
                               title="Prompt Library"
                               tabIndex={0}>
                               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1665,8 +2303,8 @@ const AskAssistant = () => {
                                 value={userChat}
                                 onChange={handleInputChangeForSuggestion}
                                 onKeyDown={handleKeyDown}
-                                placeholder={!allOptionsSelected ? "Type your message..." : "Please select Agent Type, Model, and Agent to start chatting"}
-                                disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
+                                placeholder={!isMissingRequiredOptions ? "Type your message..." : "Please select Agent Type, Model, and Agent to start chatting"}
+                                disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
                                 className={chatInputModule.textInput}
                                 rows={1}
                                 maxLength={2000}
@@ -1683,7 +2321,7 @@ const AskAssistant = () => {
                             type="submit"
                             onClick={() => sendUserMessage(userChat)}
                             className={`${chatInputModule.inputButton} ${chatInputModule.sendButton}`}
-                            disabled={allOptionsSelected || generating || !userChat.trim()}
+                            disabled={isMissingRequiredOptions || generating || fetching || messageDisable || !userChat.trim()}
                             title="Send Message"
                             tabIndex={0}>
                             {/* SVG icon for send */}
@@ -1700,7 +2338,7 @@ const AskAssistant = () => {
                           type="submit"
                           onClick={sendUserMessage}
                           className={`${chatInputModule.inputButton} ${chatInputModule.sendButton}`}
-                          disabled={allOptionsSelected || generating || !userChat.trim()}
+                          disabled={isMissingRequiredOptions || generating || !userChat.trim()}
                           title="Send Message"
                           tabIndex={0}
                         >
@@ -1713,7 +2351,7 @@ const AskAssistant = () => {
                           type="button"
                           className={`${chatInputModule.inputButton} ${!recording ? chatInputModule.micHighlight : ''} ${recording ? chatInputModule.selected : ''}`}
                           onClick={recording ? stopRecording : startRecording}
-                          disabled={allOptionsSelected || generating}
+                          disabled={isMissingRequiredOptions || generating}
                           title={recording ? "Stop Recording" : "Voice Input"}
                           tabIndex={0}
                         >
@@ -1750,7 +2388,7 @@ const AskAssistant = () => {
                           }}
                           title="Settings"
                           tabIndex={generating ? -1 : 0}
-                          disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
+                          disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
                           aria-expanded={showVerifierSettings}
                           aria-haspopup="menu"
                           aria-label="Verifier Settings menu"
@@ -1793,7 +2431,7 @@ const AskAssistant = () => {
                               <div className={chatInputModule.toggleGroup + " tool-verifier"} role="menuitem">
                                 <label className={chatInputModule.toggleLabel}>
                                   <span className={chatInputModule.toggleText} id="toolVerifierLabel">
-                                    Tool Verifier
+                                    {effectiveAgentType === META_AGENT || effectiveAgentType === PLANNER_META_AGENT ? "Agent Verifier" : "Tool Verifier"}
                                   </span>
                                   <input
                                     type="checkbox"
@@ -1810,6 +2448,31 @@ const AskAssistant = () => {
                                     aria-checked={toolInterrupt}
                                     aria-labelledby="toolVerifierLabel"
                                     onKeyDown={(e) => handleToggleKeyDown(e, handleToolInterrupt, toolInterrupt)}></span>
+                                </label>
+                              </div>
+                            )}
+
+                            {showValidatorToggle() && (
+                              <div className={chatInputModule.toggleGroup + " validator-toggle"} role="menuitem">
+                                <label className={chatInputModule.toggleLabel}>
+                                  <span className={chatInputModule.toggleText} id="validatorToggleLabel">
+                                    Validator
+                                  </span>
+                                  <input
+                                    type="checkbox"
+                                    checked={useValidator}
+                                    onChange={(e) => setUseValidator(e.target.checked)}
+                                    className={chatInputModule.toggleInput}
+                                    id="validatorToggle"
+                                    disabled={messageDisable || generating || fetching || isEditable}
+                                  />
+                                  <span
+                                    className={chatInputModule.toggleSlider}
+                                    tabIndex={0}
+                                    role="switch"
+                                    aria-checked={useValidator}
+                                    aria-labelledby="validatorToggleLabel"
+                                    onKeyDown={(e) => handleToggleKeyDown(e, setUseValidator, useValidator)}></span>
                                 </label>
                               </div>
                             )}
@@ -1894,11 +2557,11 @@ const AskAssistant = () => {
                           onClick={() => setShowTemperaturePopup((v) => !v)}
                           title="Set Temperature"
                           tabIndex={0}
-                          disabled={allOptionsSelected || generating || fetching || isEditable}
+                          disabled={isMissingRequiredOptions || generating || fetching || isEditable || messageDisable}
                           aria-expanded={showTemperaturePopup}
                           aria-haspopup="menu"
                           aria-label="Temperature Settings menu">
-                          <SVGIcons icon="thermometerIcon" width={18} height={18} fill="currentColor" color="none"/>
+                          <SVGIcons icon="thermometerIcon" width={18} height={18} fill="currentColor" color="none" />
                         </button>
                         {showTemperaturePopup && (
                           <div
@@ -1911,7 +2574,7 @@ const AskAssistant = () => {
                           </div>
                         )}
                       </div>
-                      {agentType === REACT_AGENT && (
+                      {effectiveAgentType === REACT_AGENT && (
                         <div className={chatInputModule.relativeWrapper} ref={knowledgePopoverRef}>
                           <button
                             className={chatInputModule.actionButton}
@@ -1926,7 +2589,7 @@ const AskAssistant = () => {
                             tabIndex={0}
                             aria-haspopup="listbox"
                             aria-expanded={showKnowledgePopover}
-                            disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}>
+                            disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}>
                             <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
                               <circle cx="32" cy="18" r="5.5" fill="currentColor" />
                               <path
@@ -2054,7 +2717,7 @@ const AskAssistant = () => {
                           }}
                           title="ChatSettings"
                           tabIndex={generating ? -1 : 0}
-                          // disabled={generating || allOptionsSelected || fetching || feedBack === dislike || isEditable || messageDisable}
+                          // disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
                           aria-expanded={showChatSettings}
                           aria-haspopup="menu"
                           aria-label="Chat Settings menu"
@@ -2091,12 +2754,7 @@ const AskAssistant = () => {
 
                             <div className={`${chatInputModule.toggleGroup} ${chatInputModule.chatOptions}`} role="menuitem">
                               <div className={chatInputModule.chatOptionsItems}>
-                                <button
-                                  className={chatInputModule.actionButton}
-                                  onClick={handleNewChat}
-                                  title="New Chat"
-                                  tabIndex={0}
-                                  disabled={allOptionsSelected || generating || fetching || isEditable}>
+                                <button className={chatInputModule.actionButton} onClick={handleNewChat} title="New Chat" tabIndex={0} disabled={isMissingRequiredOptions}>
                                   {" "}
                                   {/* Removed the condition check 'messageData.length === 0' */}
                                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2125,7 +2783,7 @@ const AskAssistant = () => {
                                   }}
                                   title="Chat History"
                                   tabIndex={0}
-                                  disabled={allOptionsSelected || generating || fetching || isEditable}>
+                                  disabled={isMissingRequiredOptions || generating || fetching || isEditable}>
                                   <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <rect x="3" y="3" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" />
                                     <path d="M6 7H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -2145,16 +2803,16 @@ const AskAssistant = () => {
                                 <button
                                   className={chatInputModule.actionButton}
                                   onClick={(e) => {
-                                    if (allOptionsSelected || fetching || messageData.length === 0) {
+                                    if (isMissingRequiredOptions || messageData.length === 0) {
                                       e.preventDefault();
                                       return;
                                     }
-                                    handleResetChat();
+                                    setShowDeleteConfirmation(true);
                                     setShowChatSettings(false);
                                   }}
                                   title="Delete Chat"
                                   tabIndex={0}
-                                  disabled={allOptionsSelected || generating || fetching || isEditable || messageData.length === 0}>
+                                  disabled={isMissingRequiredOptions || messageData.length === 0}>
                                   <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <path d="M7 4V3C7 2.44772 7.44772 2 8 2H12C12.5523 2 13 2.44772 13 3V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                                     <path d="M5 4H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -2174,7 +2832,8 @@ const AskAssistant = () => {
                         onClick={handleLiveTracking}
                         title="Live Tracking"
                         tabIndex={0}
-                        disabled={allOptionsSelected || generating || fetching || isEditable}>
+                        // disabled={isMissingRequiredOptions || generating || fetching || isEditable}
+                      >
                         <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <circle cx="10" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
                           <circle cx="10" cy="6" r="1" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" />
@@ -2237,8 +2896,15 @@ const AskAssistant = () => {
           )}
         </div>
       </div>
+      {showDeleteConfirmation && (
+        <ConfirmationModal
+          message="Are you sure you want to delete this chat? This action cannot be undone."
+          onConfirm={handleResetChat}
+          setShowConfirmation={setShowDeleteConfirmation}
+        />
+      )}
     </>
   );
 };
-      
+
 export default AskAssistant;
