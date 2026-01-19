@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import styles from "./GroundTruth.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
-import { APIs, agentTypesDropdown } from "../../constant";
+import { APIs, agentTypesDropdown, PIPELINE_AGENT } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 import { storageService } from "../../core/storage/storageService";
@@ -10,6 +10,9 @@ const GroundTruth = () => {
   const [progressMessages, setProgressMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const hideStreamingTimeoutRef = useRef(null);
+  
+// Filter out pipeline from agent types dropdown
+const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value !== PIPELINE_AGENT);
 
   useEffect(() => {
     return () => {
@@ -33,7 +36,7 @@ const GroundTruth = () => {
   const { addMessage, setShowPopup } = useMessage();
   const { fetchData } = useFetch();
   const [agentsListData, setAgentsListData] = useState([]);
-  const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
+  const [agentType, setAgentType] = useState(filteredAgentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
   const [agentSearchTerm, setAgentSearchTerm] = useState("");
   const [filteredAgents, setFilteredAgents] = useState([]);
@@ -126,7 +129,7 @@ const GroundTruth = () => {
 
   // Initialize filtered agent types
   useEffect(() => {
-    setFilteredAgentTypes(agentTypesDropdown);
+    setFilteredAgentTypes(filteredAgentTypesDropdown);
   }, []);
 
   // Initialize filtered models
@@ -162,9 +165,9 @@ const GroundTruth = () => {
   // Filter agent types based on search term
   useEffect(() => {
     if (!agentTypeSearchTerm) {
-      setFilteredAgentTypes(agentTypesDropdown);
+      setFilteredAgentTypes(filteredAgentTypesDropdown);
     } else {
-      const filtered = agentTypesDropdown.filter((type) => type.label.toLowerCase().includes(agentTypeSearchTerm.toLowerCase()));
+      const filtered = filteredAgentTypesDropdown.filter((type) => type.label.toLowerCase().includes(agentTypeSearchTerm.toLowerCase()));
       setFilteredAgentTypes(filtered);
     }
     setSelectedAgentTypeIndex(-1); // Reset selection when filter changes
@@ -212,7 +215,7 @@ const GroundTruth = () => {
           use_llm_grading: false,
           uploaded_file: null,
         });
-        setAgentType(agentTypesDropdown[0].value);
+        setAgentType(filteredAgentTypesDropdown[0].value);
         setAgentSearchTerm("");
         setIsAgentDropdownOpen(false);
         setSelectedAgentIndex(-1);
@@ -335,6 +338,30 @@ const GroundTruth = () => {
             if (!line.trim()) continue;
             try {
               const obj = JSON.parse(line);
+              if (obj.error) {
+                addMessage(obj.error, "error");
+                setIsStreaming(false);
+                // Reset form and evaluation state so user can re-evaluate
+                setFormData({
+                  model_name: "",
+                  agent_name: "",
+                  agent_type: "",
+                  use_llm_grading: false,
+                  uploaded_file: null,
+                });
+                setAgentType(filteredAgentTypesDropdown[0].value);
+                setAgentSearchTerm("");
+                setAgentTypeSearchTerm("");
+                setModelSearchTerm("");
+                setSelectedAgentIndex(-1);
+                setSelectedAgentTypeIndex(-1);
+                setSelectedModelIndex(-1);
+                setIsAgentDropdownOpen(false);
+                setIsAgentTypeDropdownOpen(false);
+                setIsModelDropdownOpen(false);
+                setProgressMessages([]);
+                return; // Stop streaming on error
+              }
               if (obj.progress) {
                 setProgressMessages((prev) => [...prev, obj.progress]);
                 if (obj.progress === "Evaluation completed successfully.") {

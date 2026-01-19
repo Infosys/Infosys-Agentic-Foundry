@@ -37,6 +37,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
       case "username":
         return value.replace(/[^a-zA-Z]/g, "");
       case "password":
+      case "user_pwd":
         return value.replace(/[^a-zA-Z0-9]/g, "");
       case "databaseName":
         return value.replace(/[^a-zA-Z0-9_]/g, "");
@@ -188,8 +189,8 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
         connectionData.port = formData.port;
         connectionData.username = formData.username;
         // Only include pwd if it's provided by the user
-        if (formData["password"] && formData["password"].trim() !== "") {
-          connectionData["password"] = formData["password"];
+        if (formData["user_pwd"] && formData["user_pwd"].trim() !== "") {
+          connectionData["user_pwd"] = formData["user_pwd"];
         }
         connectionData.databaseName = formData.databaseName;
       }

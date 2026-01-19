@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.7.0]
+
+- 1. As part of SAST fixes "password" is modified to "user_pwd" in DataConnectors Screen.
+- 2. Include plan verifier toggle for meta planner agent.
+- 2. For meta and planner meta agents, when agent verifier is on, the label has to show as Agent calls and for other agent types it has to be Tool calls.
+- 2. For meta and planner meta agents, show the feedback buttons for the final response.
+- 2. In groundtruth page for the error streaming response no toast message is rendering and screen is in idle state without any information.
+- 3. While updating the meta agent and the meta planner agent in the Add section, for the list of agents include the react critic agents and planner executor agents.
+- 3. While onboarding the meta agent and the meta planner agent in the list of agents include the react critic agents and planner executor agents.
+- 4. Include Validator toggle for meta and planner meta agents.
+- 4. For the success and error toast messages rendering on the screen, the key (status_message) from the backend is changed to message.
+- 5. Added `start_timestamp` display for all user queries. Handles null timestamps gracefully when not provided by the backend.
+- 6. For planner agents, displaying plan in plan irrespective of plan verifier toggle on or off
+- 6. Added validation for username during user registering
+- 7. after slecting all the dropdowns in chat page need to hit endpoint based on ressponse when we enable tool verifier need to show popup and display list based on selected value and need to send the selected value in the payload
+- 8. I have selected agent type ,modal and agent and enabled tool verifer on and again i changed agent type tool verifier is defaultly enabled is fixed.
+- 9. Sequence of agent changes with four nodes.
+- 10. Include Validator toggle for hybrid agent.
+- 11. For admin role, Enable the installation of modules.
+- 12. Recycle bin and TTL for servers.
+  13. Removed Validator toggle for hybrid agent.
+- 12. Removed the pipeline agent type from the list in agent onboard, consistency tab, groundtruth .
+
 ## [1.6.0]
 
 ### Feature

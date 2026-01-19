@@ -177,6 +177,101 @@ export function formatResponseTimeSeconds(value) {
   return formatDurationSeconds(value, { decimals: 2, trimTrailingZeros: true, suffix: "s", omitSuffixIfGE60: true });
 }
 
+/**
+ * Normalize a UTC timestamp string to ensure it ends with 'Z' for proper parsing.
+ * @param {string} timestamp - The timestamp string to normalize
+ * @returns {string|null} - The normalized timestamp or null if invalid input
+ */
+export function normalizeUTCTimestamp(timestamp) {
+  if (!timestamp || typeof timestamp !== "string") return null;
+
+  const trimmed = timestamp.trim();
+  if (!trimmed) return null;
+
+  // If the timestamp doesn't end with 'Z' and does not have an explicit timezone offset,
+  // append 'Z' so that it is treated as UTC.
+  const hasZulu = trimmed.endsWith("Z");
+  // Detect timezone offsets like +05:00, -05:00, +0500, or -0500 at the end of the string.
+  const hasOffset =
+    /[+-]\d{2}:\d{2}$/.test(trimmed) ||
+    /[+-]\d{2}$/.test(trimmed);
+
+  if (!hasZulu && !hasOffset) {
+    return trimmed + "Z";
+  }
+
+  return trimmed;
+}
+
+/**
+ * Format a message timestamp with relative date display (Today, Yesterday, weekday, or date).
+ * Returns both display text and full formatted time for tooltip.
+ * 
+ * @param {string} timestamp - UTC timestamp string
+ * @returns {{displayText: string, fullTime: string}|null} - Formatted timestamps or null if invalid
+ * 
+ * @example
+ * formatMessageTimestamp("2025-12-22T10:30:00Z");
+ * // Returns: { displayText: "10:30 AM", fullTime: "Dec 22, 2025, 10:30:00 AM" }
+ * 
+ * formatMessageTimestamp("2025-12-21T14:45:00Z");
+ * // Returns: { displayText: "Yesterday 2:45 PM", fullTime: "Dec 21, 2025, 2:45:00 PM" }
+ */
+export function formatMessageTimestamp(timestamp) {
+  if (!timestamp) return null;
+
+  // Normalize UTC timestamp
+  const normalizedTimestamp = normalizeUTCTimestamp(timestamp);
+  if (!normalizedTimestamp) return null;
+
+  // Convert to Date object
+  const utcDate = new Date(normalizedTimestamp);
+
+  // Check if date is valid
+  if (isNaN(utcDate.getTime())) return null;
+
+  // Calculate relative date
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDate = new Date(utcDate.getFullYear(), utcDate.getMonth(), utcDate.getDate());
+  const diffDays = Math.floor((today - msgDate) / (1000 * 60 * 60 * 24));
+
+  // Determine date prefix based on how old the message is
+  let datePrefix = "";
+  if (diffDays === 0) {
+    datePrefix = ""; // Don't show "Today" for today's messages
+  } else if (diffDays === 1) {
+    datePrefix = "Yesterday";
+  } else if (diffDays < 7) {
+    datePrefix = utcDate.toLocaleDateString([], { weekday: "long" });
+  } else {
+    datePrefix = utcDate.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  // Format time in 12-hour format with AM/PM
+  const timeStr = utcDate.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  // Build display text
+  const displayText = datePrefix ? `${datePrefix} ${timeStr}` : timeStr;
+
+  // Full timestamp for tooltip
+  const fullTime = utcDate.toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
+  return { displayText, fullTime };
+}
+
 export default {
   parseToDate,
   formatDate,
@@ -184,4 +279,6 @@ export default {
   formatDurationSeconds,
   formatTime,
   formatResponseTimeSeconds,
+  normalizeUTCTimestamp,
+  formatMessageTimestamp,
 };

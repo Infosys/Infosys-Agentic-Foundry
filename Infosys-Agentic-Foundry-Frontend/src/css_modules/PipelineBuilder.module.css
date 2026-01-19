@@ -1,0 +1,1523 @@
+/**
+ * Pipeline Builder CSS Module
+ *
+ * Color variables follow project conventions.
+ * All colors are defined as CSS custom properties for consistency.
+ */
+
+/* ===== Color Variables ===== */
+:root {
+  /* Primary Colors */
+  --pipeline-primary: #007cc3;
+  --pipeline-primary-hover: #005a8c;
+  --pipeline-primary-light: #e6f4fc;
+
+  /* Node Type Colors */
+  --node-input: #28a745;
+  --node-input-light: #d4edda;
+  --node-agent: #4a90d9;
+  --node-agent-light: #d6e9f8;
+  --node-condition: #e74c3c;
+  --node-condition-light: #fadbd8;
+  --node-output: #6f42c1;
+  --node-output-light: #e2d9f3;
+
+  /* Canvas Colors */
+  --canvas-bg: #ffffff;
+  --canvas-grid: rgba(0, 0, 0, 0.08);
+  --canvas-border: #e5e7eb;
+
+  /* Connection Colors */
+  --connection-normal: #4a90d9;
+  --connection-conditional: #e74c3c;
+  --connection-temp: #888888;
+
+  /* UI Colors */
+  --text-primary: #343741;
+  --text-secondary: #6b7280;
+  --text-light: #ffffff;
+  --bg-light: #f8fafc;
+  --bg-card: #ffffff;
+  --border-color: #e5e7eb;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+/* ===== Pipeline Container ===== */
+.pipelineContainer {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 45px);
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ===== Pipeline Header ===== */
+.pipelineHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pipelineHeader h2 {
+  font: normal normal 600 18px/24px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ===== Pipeline List View ===== */
+.pipelineListContainer {
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  padding: 10px 30px;
+  padding-bottom: 0px;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.pipelineListHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.pipelineListHeader > div {
+  width: 100%;
+}
+
+.searchContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pipelineGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 40px;
+  overflow-y: auto;
+  height: Calc(100vh - 135px);
+  width: 98%;
+  padding-bottom: 8px;
+}
+
+/* ===== Pipeline Card ===== */
+.pipelineCard {
+  background: #3d4359 0% 0% no-repeat padding-box;
+  box-shadow: 5px 15px 6px #00000029;
+  border-radius: 4px;
+  width: 200px;
+  min-height: 140px;
+  height: 140px;
+  max-height: 160px;
+  padding: 11px;
+  color: white;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  transform: translateY(0px);
+}
+
+.pipelineCard:hover {
+  transform: translateY(-3px);
+  box-shadow: 5px 18px 10px #00000029;
+}
+
+.pipelineCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+
+.pipelineCardTitle {
+  font-size: 16px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  word-wrap: break-word;
+  text-transform: uppercase;
+  margin: 0;
+  max-height: 35px;
+  overflow: hidden;
+  color: #ffffff;
+}
+
+.pipelineCardDash {
+  width: 28px;
+  height: 0px;
+  border: 2px solid #0071b3;
+  margin-bottom: 8px;
+}
+
+.pipelineCardStatus {
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.statusActive {
+  background-color: #28a745;
+  color: #ffffff;
+}
+
+.statusInactive {
+  background-color: #6b7280;
+  color: #ffffff;
+}
+
+.pipelineCardDescription {
+  font: normal normal 400 12px/16px "Segoe UI", sans-serif;
+  letter-spacing: -0.24px;
+  color: #ffffff;
+  max-height: 32px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.pipelineCardMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  position: absolute;
+  bottom: 10px;
+  left: 11px;
+  right: 11px;
+}
+.pipelineCardMetaItem{
+  font: normal normal 600 12px/16px "Segoe UI";
+}
+
+.pipelineCardActions {
+  display: flex;
+  justify-content: end;
+  position: absolute;
+  bottom: 20px;
+  right: 5px;
+}
+
+.cardActionBtn {
+  height: 24px;
+  position: absolute;
+  transform: translateY(50%);
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.cardActionBtn:hover {
+  transform: translateY(11px);
+  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.15);
+}
+
+.cardActionBtn.editBtn {
+  width: 24px;
+  background-color: #007ac0;
+  right: 10px;
+  bottom: 0;
+}
+
+.cardActionBtn.deleteBtn {
+  width: 30px;
+  background-color: #6a2020;
+  right: 44px;
+  bottom: 0;
+}
+
+.typePill {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: #6b7280;
+  color: #fff;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ===== Delete Modal Button Styles ===== */
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.deleteBtns {
+  padding: 8px 16px;
+  background-color: #007cc3;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.cancelBtn {
+ padding: 8px 16px;
+  background-color: #343741;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+/* ===== Canvas Area ===== */
+.canvasWrapper {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+
+.canvasContainer {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--canvas-bg);
+  background-image: 
+    linear-gradient(var(--canvas-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.canvasContent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  width: 100%;
+  height: 100%;
+}
+
+.connectionsSvg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10000px;
+  height: 10000px;
+  pointer-events: all;
+  z-index: 1;
+  overflow: visible;
+}
+
+.nodesContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ===== Canvas Controls ===== */
+.canvasControls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10;
+}
+
+.controlBtn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px var(--shadow-color);
+  transition: all 0.2s ease;
+}
+
+.controlBtn:hover {
+  background-color: var(--pipeline-primary);
+  color: var(--text-light);
+}
+
+.controlBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.controlBtnActive {
+  background-color: var(--pipeline-primary);
+  color: var(--text-light);
+  box-shadow: 0 0 0 2px var(--pipeline-primary-light);
+}
+
+.panModeActive {
+  cursor: grab;
+}
+
+.panModeActive:active {
+  cursor: grabbing;
+}
+
+/* ===== Node Palette (Sidebar) ===== */
+.nodePalette {
+  width: 200px;
+  background-color: var(--bg-card);
+  border-right: 1px solid var(--border-color);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.paletteTitle {
+  font: normal normal 600 14px/18px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paletteNode {
+  padding: 14px 16px;
+  border-radius: 8px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: normal normal 600 13px/16px "Segoe UI", sans-serif;
+  transition: all 0.2s ease;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.paletteNode::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 8px 0 0 8px;
+}
+
+.paletteNode:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.paletteNode:active {
+  cursor: grabbing;
+  transform: translateY(0);
+}
+
+.paletteNodeInput {
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  color: #155724;
+}
+
+.paletteNodeInput::before {
+  background-color: var(--node-input);
+}
+
+.paletteNodeAgent {
+  background: linear-gradient(135deg, #d6e9f8 0%, #b8daff 100%);
+  color: #004085;
+}
+
+.paletteNodeAgent::before {
+  background-color: var(--node-agent);
+}
+
+.paletteNodeCondition {
+  background: linear-gradient(135deg, #fadbd8 0%, #f5c6cb 100%);
+  color: #721c24;
+}
+
+.paletteNodeCondition::before {
+  background-color: var(--node-condition);
+}
+
+.paletteNodeOutput {
+  background: linear-gradient(135deg, #e2d9f3 0%, #d4c4e8 100%);
+  color: #432874;
+}
+
+.paletteNodeOutput::before {
+  background-color: var(--node-output);
+}
+
+.nodeIcon {
+  font-size: 18px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== Canvas Node ===== */
+.canvasNode {
+  position: absolute;
+  min-width: 200px;
+  max-width: 280px;
+  background-color: var(--bg-card);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px var(--shadow-color);
+  cursor: move;
+  user-select: none;
+  pointer-events: all;
+}
+
+.canvasNode.selected {
+  box-shadow: 0 0 0 2px var(--pipeline-primary), 0 4px 12px var(--shadow-color);
+}
+
+.nodeHeader {
+  padding: 10px 12px;
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--text-light);
+  font: normal normal 600 12px/14px "Segoe UI", sans-serif;
+  text-transform: uppercase;
+}
+
+.nodeHeaderInput {
+  background-color: var(--node-input);
+}
+
+.nodeHeaderAgent {
+  background-color: var(--node-agent);
+}
+
+.nodeHeaderCondition {
+  background-color: var(--node-condition);
+}
+
+.nodeHeaderOutput {
+  background-color: var(--node-output);
+}
+
+.nodeCloseBtn {
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-light);
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nodeCloseBtn:hover {
+  opacity: 1;
+}
+
+.nodeBody {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nodeName {
+  font: normal normal 600 14px/18px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nodeConfig {
+  font: normal normal 400 12px/16px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+}
+
+/* ===== Connection Points ===== */
+.connectionPointsWrapper {
+  position: relative;
+}
+
+.connectionPoint {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--pipeline-primary);
+  border: 2px solid var(--bg-card);
+  cursor: crosshair;
+  z-index: 5;
+  transition: transform 0.2s ease;
+}
+
+.connectionPoint:hover {
+  transform: scale(1.3);
+}
+
+.connectionPointInput {
+  left: -7px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.connectionPointInput:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+.connectionPointOutput {
+  right: -7px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.connectionPointOutput:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+/* ===== Properties Panel ===== */
+.propertiesPanel {
+  width: 300px;
+  min-width: 300px;
+  background-color: var(--bg-card);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.propertiesPanelHeader {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.propertiesPanelTitle {
+  font: normal normal 600 14px/18px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.propertiesPanelCloseBtn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #333;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.2s ease;
+}
+
+.propertiesPanelCloseBtn:hover {
+  color: #000;
+}
+
+.propertiesPanelContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  padding-bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.propertiesEmptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 24px;
+}
+
+.propertiesEmptyIcon {
+  font-size: 48px;
+  color: var(--border-color);
+  margin-bottom: 16px;
+}
+
+.propertiesEmptyState p {
+  font: normal normal 400 13px/18px "Segoe UI", sans-serif;
+  margin: 0;
+}
+
+.propertyGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.propertyLabel {
+  font: normal normal 500 12px/14px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.propertyLabelWithAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.addKeyIconBtn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background-color: var(--pipeline-primary);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.addKeyIconBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  background-color: var(--border-color, #ccc);
+}
+
+.propertyInput {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font: normal normal 400 13px/16px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  transition: border-color 0.2s ease;
+}
+
+.propertyInput:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  background-color: var(--bg-darker, #f0f0f0);
+}
+
+.propertyInput:focus {
+  outline: none;
+  border-color: var(--pipeline-primary);
+}
+
+.propertySelect {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font: normal normal 400 13px/16px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  cursor: pointer;
+}
+
+.propertySelect:focus {
+  outline: none;
+  border-color: var(--pipeline-primary);
+}
+
+/* ===== Searchable Dropdown ===== */
+.searchableDropdown {
+  position: relative;
+  width: 100%;
+}
+
+.searchableDropdownTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font: normal normal 400 13px/16px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.searchableDropdownTrigger:hover {
+  border-color: var(--pipeline-primary);
+}
+
+.selectedValue {
+  color: var(--text-primary);
+}
+
+.placeholderValue {
+  color: var(--text-secondary);
+}
+
+.dropdownArrow {
+  transition: transform 0.2s ease;
+  color: var(--text-secondary);
+}
+
+.dropdownArrow.open {
+  transform: rotate(180deg);
+}
+
+.searchableDropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  max-height: 280px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.searchInputWrapper {
+  position: relative;
+  padding: 7px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.searchInputWrapper::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Ccircle cx='9' cy='9' r='6' stroke='%2394a3b8' stroke-width='1.5'/%3E%3Cpath d='m15 15 4 4' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.searchInput {
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px 8px 32px;
+  font-size: 13px;
+  color: #334155;
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: var(--pipeline-primary);
+  background: #ffffff;
+}
+
+.dropdownOptionsList {
+  max-height: 200px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 4px 8px;
+}
+
+.dropdownOptionsList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dropdownOptionsList::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.dropdownOptionsList::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.dropdownOptionsList::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dropdownOption {
+  padding: 10px 12px;
+  font: normal normal 400 13px/16px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dropdownOption:hover {
+  background-color: #f1f5f9;
+}
+
+.dropdownOption.selected {
+  background-color: var(--pipeline-primary-light, #e3f2fd);
+  color: var(--pipeline-primary);
+  font-weight: 500;
+}
+
+.dropdownOption.highlighted {
+  background-color: #f1f5f9;
+  outline: 1px solid var(--pipeline-primary);
+  outline-offset: -2px;
+}
+
+/* Agent option name and abbreviation */
+.agentOptionName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentOptionAbbr {
+  font-size: 11px;
+  font-weight: 600;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.noResults {
+  padding: 12px;
+  text-align: center;
+  font: normal normal 400 13px/16px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+}
+
+.propertyTextarea {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font: normal normal 400 13px/16px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-light);
+  resize: vertical;
+  min-height: 80px;
+  font-family: monospace;
+}
+
+.propertyTextarea:focus {
+  outline: none;
+  border-color: var(--pipeline-primary);
+}
+
+.invalidInput {
+  border-color: var(--node-condition) !important;
+}
+
+.inputError {
+  font: normal normal 400 11px/14px "Segoe UI", sans-serif;
+  color: var(--node-condition);
+  margin-top: 4px;
+}
+
+.required {
+  color: #e74c3c;
+  font-weight: bold;
+}
+
+.propertyCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: normal normal 400 13px/16px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.propertyCheckbox input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.propertyInfo {
+  font: normal normal 400 11px/14px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.typeInfoContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background-color: var(--bg-light);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.typeInfoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font: normal normal 600 12px/14px "Segoe UI", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.typeBadgeInput {
+  background-color: var(--node-input-light);
+  color: var(--node-input);
+  border: 1px solid var(--node-input);
+}
+
+.typeBadgeAgent {
+  background-color: var(--node-agent-light);
+  color: var(--node-agent);
+  border: 1px solid var(--node-agent);
+}
+
+.typeBadgeCondition {
+  background-color: var(--node-condition-light);
+  color: var(--node-condition);
+  border: 1px solid var(--node-condition);
+}
+
+.typeBadgeOutput {
+  background-color: var(--node-output-light);
+  color: var(--node-output);
+  border: 1px solid var(--node-output);
+}
+
+.nodeIdLabel {
+  font: normal normal 400 11px/14px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+}
+
+.nodeIdValue {
+  font: normal normal 500 11px/14px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  font-family: monospace;
+  background-color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.nodeDescription {
+  font: normal normal 400 12px/16px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ===== Input Keys List ===== */
+.inputKeysList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inputKeyItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background-color: var(--bg-light);
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.inputKeyLabel {
+  font: normal normal 500 12px/14px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+}
+
+.inputKeyType {
+  font: normal normal 400 11px/12px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+  background-color: var(--border-color);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.inputKeyRemove {
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--node-condition);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.inputKeyRemove:hover {
+  opacity: 1;
+}
+
+/* ===== Accessible Inputs ===== */
+.accessibleInputsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 12px;
+  background-color: var(--bg-light);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.accessibleInputItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.accessibleInputItem:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.accessibleInputItem input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.accessibleInputItem label {
+  font: normal normal 400 12px/14px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  cursor: pointer;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inputLabel {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.inputSource {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.accessibleInputType {
+  font: normal normal 500 9px/11px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+  background-color: var(--border-color);
+  padding: 3px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.agentInputItem {
+  background-color: rgba(52, 152, 219, 0.05);
+  border-left: 2px solid var(--node-agent);
+}
+
+.agentType {
+  background-color: var(--node-agent);
+  color: white;
+}
+
+.allInputsToggle {
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  background-color: transparent !important;
+}
+
+.allInputsToggle label {
+  font-weight: 600;
+  flex-direction: row;
+}
+
+.noInputsMessage {
+  font: normal normal 400 11px/16px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 12px 8px;
+  font-style: italic;
+}
+
+.noKeysMessage {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+  padding: 16px 12px;
+  background: var(--bg-light);
+  border-radius: 6px;
+  border: 1px dashed var(--border-color);
+}
+
+/* ===== Buttons ===== */
+.plus {
+  background: #f5f5f5;
+  box-shadow: 0px 4px 4px #00000029;
+  border: 1px solid #c7c7c745;
+  border-radius: 3px;
+  padding: 7px;
+  display: flex;
+}
+
+.secondaryBtn {
+  padding: 10px 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  font: normal normal 500 13px/16px "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secondaryBtn:hover {
+  border-color: var(--pipeline-primary);
+  color: var(--pipeline-primary);
+}
+
+.primaryBtn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background-color: #007cc3;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.primaryBtn:hover {
+  background-color: #005f99;
+}
+
+.primaryBtn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background-color: #343741;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.cancelBtn:hover {
+  background-color: #4a4f5e;
+}
+
+.closeBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 0;
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(2, 6, 23, 0.08);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.closeBtn:hover {
+  background: #f1f5f9;
+  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.12);
+}
+
+.pipelineFooter {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 24px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.closeIcon {
+  background: #ef4444;
+  border: none;
+  border-radius: 6px;
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.closeIcon:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.closeIcon:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dangerBtn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--node-condition);
+  color: var(--text-light);
+  font: normal normal 600 13px/16px "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.dangerBtn:hover {
+  background-color: #c0392b;
+}
+
+.addKeyBtn {
+  padding: 8px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  background-color: transparent;
+  color: var(--pipeline-primary);
+  font: normal normal 500 12px/14px "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.addKeyBtn:hover {
+  border-color: var(--pipeline-primary);
+  background-color: var(--pipeline-primary-light);
+}
+
+/* ===== Modal ===== */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modalContent {
+  background-color: var(--bg-card);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modalTitle {
+  font: normal normal 600 18px/24px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modalCloseBtn {
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.modalCloseBtn:hover {
+  color: var(--text-primary);
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.validationError {
+  font: normal normal 400 12px/16px "Segoe UI", sans-serif;
+  color: var(--node-condition);
+  background-color: rgba(231, 76, 60, 0.1);
+  padding: 10px 12px;
+  border-radius: 6px;
+  border-left: 3px solid var(--node-condition);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* ===== Empty State ===== */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.emptyStateIcon {
+  font-size: 48px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.emptyStateTitle {
+  font: normal normal 600 18px/24px "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.emptyStateText {
+  font: normal normal 400 14px/20px "Segoe UI", sans-serif;
+  color: var(--text-secondary);
+  margin: 0 0 20px 0;
+}
+
+/* ===== Connection Lines ===== */
+.connectionLine {
+  stroke: var(--connection-normal);
+  stroke-width: 2;
+  fill: none;
+  transition: stroke-width 0.2s ease, stroke 0.2s ease;
+}
+
+.connectionLine:hover {
+  stroke-width: 3;
+}
+
+.connectionLineSelected {
+  stroke: #e74c3c;
+  stroke-width: 3;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    stroke-width: 3;
+  }
+  50% {
+    stroke-width: 4;
+  }
+}
+
+.connectionLineConditional {
+  stroke: var(--connection-conditional);
+  stroke-width: 2;
+  stroke-dasharray: 5, 5;
+  fill: none;
+}
+
+.connectionLineTemp {
+  stroke: var(--connection-temp);
+  stroke-width: 2;
+  stroke-dasharray: 5, 5;
+  fill: none;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 1200px) {
+  .propertiesPanel {
+    width: 260px;
+  }
+  
+  .nodePalette {
+    width: 180px;
+  }
+}
+
+@media (max-width: 992px) {
+  .pipelineGrid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+}

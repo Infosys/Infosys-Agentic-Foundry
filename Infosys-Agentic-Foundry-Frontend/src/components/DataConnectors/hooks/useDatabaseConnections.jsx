@@ -23,7 +23,7 @@ export const useDatabaseConnections = () => {
     host: "",
     port: "",
     username: "",
-    password: "",
+    user_pwd: "",
     databaseName: "",
   });
 
@@ -155,12 +155,12 @@ export const useDatabaseConnections = () => {
     if (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "sqlite") {
       requiredFields = ["connectionName", "databaseType"];
     } else {
-      requiredFields = ["connectionName", "databaseType", "host", "port", "username", "password", "databaseName"];
+      requiredFields = ["connectionName", "databaseType", "host", "port", "username", "user_pwd", "databaseName"];
     }
     const missingFields = requiredFields.filter((field) => {
       const value = currentConnectionData[field];
       // For pwd value, check if  exists and is not empty
-      if (field === "password") {
+      if (field === "user_pwd") {
         return !value || value.trim() === "";
       }
       // Check if value exists and are not empty
@@ -180,7 +180,7 @@ export const useDatabaseConnections = () => {
         payload.append("host", "");
         payload.append("port", 0);
         payload.append("username", "");
-        payload.append("password", "");
+        payload.append("user_pwd", "");
         payload.append("flag_for_insert_into_db_connections_table", "1");
         if (currentConnectionData.uploaded_file) {
           payload.append("sql_file", currentConnectionData.uploaded_file);
@@ -202,7 +202,7 @@ export const useDatabaseConnections = () => {
         payload.append("port", currentConnectionData.port);
         payload.append("username", currentConnectionData.username);
         // Only append if pwd it's provided and not empty
-        payload.append("password", currentConnectionData["password"]);
+        payload.append("user_pwd", currentConnectionData["user_pwd"]);
         payload.append("database", currentConnectionData.databaseName);
         payload.append("flag_for_insert_into_db_connections_table", "1");
         payload.append("sql_file", "");
@@ -303,7 +303,7 @@ export const useDatabaseConnections = () => {
         payload.append("host", "");
         payload.append("port", 0);
         payload.append("username", "");
-        payload.append("password", "");
+        payload.append("user_pwd", "");
         payload.append("flag_for_insert_into_db_connections_table", flag);
         if (connectionData.uploaded_file) {
           payload.append("sql_file", connectionData.uploaded_file);
@@ -320,7 +320,7 @@ export const useDatabaseConnections = () => {
         payload.append("host", connectionData.host || connectionData.connection_host || "");
         payload.append("port", connectionData.port || connectionData.connection_port || "");
         payload.append("username", connectionData.username || connectionData.connection_username || "");
-        payload.append("password", connectionData["password"] || connectionData.connection_password || "");
+        payload.append("user_pwd", connectionData["user_pwd"] || connectionData.connection_password || "");
         payload.append("database", connectionData.databaseName || connectionData.database || connectionData.connection_database_name || "");
         payload.append("flag_for_insert_into_db_connections_table", flag);
         payload.append("sql_file", "");
@@ -355,7 +355,7 @@ export const useDatabaseConnections = () => {
         payload.append("host", "");
         payload.append("port", 0);
         payload.append("username", "");
-        payload.append("password", "");
+        payload.append("user_pwd", "");
         payload.append("flag_for_insert_into_db_connections_table", "0");
         payload.append("created_by", Cookies.get("email"));
         if (connection.uploaded_file) {
@@ -377,7 +377,7 @@ export const useDatabaseConnections = () => {
         payload.append("port", connection.connection_port);
         payload.append("username", connection.connection_username);
         // Only append if pwd it's provided and not empty
-        payload.append("password", connection.connection_password || "");
+        payload.append("user_pwd", connection.connection_password || "");
         payload.append("database", connection.connection_database_name);
         payload.append("flag_for_insert_into_db_connections_table", "0");
         payload.append("sql_file", "");

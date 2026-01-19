@@ -23,9 +23,9 @@ const Vault = () => {
   const privateVaultCache = useRef({});
   const publicVaultCache = useRef({});
   const groupVaultCache = useRef({});
-  // Single timer for auto-masking (only one secret visible at a time)
+  // Single timer for auto-masking (only one item visible at a time)
   const autoMaskTimer = useRef(null);
-  // Track which secret is currently visible (index and tab)
+  // Track which item is currently visible (index and tab)
   const currentVisibleIndex = useRef(null);
   const currentVisibleTab = useRef(null);
 
@@ -64,7 +64,7 @@ const Vault = () => {
     currentVisibleTab.current = null;
   };
 
-  // Clear specific secret from cache
+  // Clear specific item from cache
   const clearSecretFromCache = (index, tab) => {
     const cache = getVaultCache(tab);
     delete cache.current[index];
@@ -78,8 +78,8 @@ const Vault = () => {
     }
   };
 
-  // Hide the currently visible secret (used when showing a new one or changing tabs)
-  const hideCurrentlyVisibleSecret = (newRows = null) => {
+  // Hide the currently visible item (used when showing a new one or changing tabs)
+  const hideCurrentlyVisibleItem = (newRows = null) => {
     if (currentVisibleIndex.current !== null && currentVisibleTab.current !== null) {
       const prevIndex = currentVisibleIndex.current;
       const prevTab = currentVisibleTab.current;
@@ -94,7 +94,7 @@ const Vault = () => {
         autoMaskTimer.current = null;
       }
 
-      // Update rows to mask the previously visible secret
+      // Update rows to mask the previously visible item
       // Only if the previous tab matches current activeTab
       setRows((prevRows) => {
         const updatedRows = [...prevRows];
@@ -114,14 +114,14 @@ const Vault = () => {
     }
   };
 
-  // Auto-mask after 30 seconds - only one secret visible at a time
+  // Auto-mask after 30 seconds - only one item visible at a time
   const scheduleAutoMask = (index, tab) => {
     // Clear any existing timer
     if (autoMaskTimer.current) {
       clearTimeout(autoMaskTimer.current);
     }
 
-    // Track the currently visible secret
+    // Track the currently visible item
     currentVisibleIndex.current = index;
     currentVisibleTab.current = tab;
 
@@ -694,8 +694,8 @@ print(fetch_weather("New York"))`;
   const getEyeVaultItems = async (name, index, copy) => {
     setLoading(true);
     try {
-      // Hide any previously visible secret first
-      hideCurrentlyVisibleSecret();
+      // Hide any previously visible item first
+      hideCurrentlyVisibleItem();
 
       const apiUrl = APIs.SECRETS_GET;
       const payload = {
@@ -748,8 +748,8 @@ print(fetch_weather("New York"))`;
   const getPublicVaultList = async (name, index, copy) => {
     setLoading(true);
     try {
-      // Hide any previously visible secret first
-      hideCurrentlyVisibleSecret();
+      // Hide any previously visible item first
+      hideCurrentlyVisibleItem();
 
       const apiUrl = APIs.PUBLIC_SECRETS_GET;
       const payload = { key_name: name };
@@ -864,8 +864,8 @@ print(fetch_weather("New York"))`;
 
     setLoading(true);
     try {
-      // Hide any previously visible secret first
-      hideCurrentlyVisibleSecret();
+      // Hide any previously visible item first
+      hideCurrentlyVisibleItem();
 
       // Use the specific endpoint to get the  value
       const apiUrl = `/domains/${encodeURIComponent(selectedGroup)}/secrets/${encodeURIComponent(keyName)}`;

@@ -1,0 +1,185 @@
+.pageWrapper {
+  padding: 24px;
+  background: #fff;
+  min-height: calc(100vh - 45px);
+  position: relative;
+}
+
+.pageHeading {
+  font: normal normal 400 20px / 27px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  margin: 0 0 20px 0;
+}
+
+.loaderOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.7);
+  z-index: 10;
+  border-radius: 0;
+}
+
+.container {
+  width: 100%;
+  margin-top: 24px;
+  margin-bottom: 20px;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  position: relative;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.emptyState {
+  padding: 32px 20px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modulesList {
+  padding: 12px 20px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.moduleItem {
+  margin-bottom: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.moduleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  background: #ffffff;
+}
+
+.moduleNameWrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.moduleName {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1f2937;
+  font-family: "Segoe UI", "Consolas", monospace;
+}
+
+.moduleDetails {
+  padding: 16px 20px;
+  background: #ffffff;
+  border-top: 1px solid #e5e7eb;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.detailItem {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.detailLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detailValue {
+  font-size: 14px;
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.codeSection {
+  margin-top: 16px;
+}
+
+.codeSectionHeader {
+  margin-bottom: 8px;
+}
+
+.codeEditorWrapper {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Scrollbar styling for modules list */
+.modulesList::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modulesList::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.modulesList::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.modulesList::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .detailsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .moduleHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}

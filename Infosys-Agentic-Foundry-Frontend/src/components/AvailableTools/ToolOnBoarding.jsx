@@ -268,11 +268,11 @@ function ToolOnBoarding(props) {
       response = await deleteData(url);
       if (response?.is_delete) {
         props?.setRestoreData(response);
-        addMessage(response?.status_message, "success");
+        addMessage(response?.message, "success");
         setLoading(false);
         setShowForm(false);
       } else {
-        addMessage(response?.status_message, "error");
+        addMessage(response?.message, "error");
         setLoading(false);
         //  setShowForm(false)
       }
@@ -357,11 +357,11 @@ function ToolOnBoarding(props) {
         response = await postData(url); // Check if tools data is needed here **
         if (response?.is_restored) {
           props?.setRestoreData(response);
-          addMessage(response?.status_message, "success");
+          addMessage(response?.message, "success");
           setLoading(false);
           setShowForm(false);
         } else {
-          addMessage(response?.status_message, "error");
+          addMessage(response?.message, "error");
           setLoading(false);
           //  setShowForm(false)
         }
@@ -414,7 +414,7 @@ function ToolOnBoarding(props) {
           setLoading(false);
           setShowForm(false);
         } else {
-          addMessage(response?.status_message, "error");
+          addMessage(response?.message, "error");
           setLoading(false);
           //  setShowForm(false)
         }

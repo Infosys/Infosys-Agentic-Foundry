@@ -90,7 +90,7 @@ const DataConnectorsContent = () => {
         { name: "port", label: "Port", type: "number", required: true },
         { name: "databaseName", label: "Database", type: "text", required: true },
         { name: "username", label: "Username", type: "text", required: true },
-        { name: "password", label: "Password", type: "password", required: true },
+        { name: "user_pwd", label: "Password", type: "password", required: true },
       ],
     },
     {
@@ -106,7 +106,7 @@ const DataConnectorsContent = () => {
         { name: "port", label: "Port", type: "number", required: true },
         { name: "databaseName", label: "Database", type: "text", required: true },
         { name: "username", label: "Username", type: "text", required: true },
-        { name: "password", label: "Password", type: "password", required: true },
+        { name: "user_pwd", label: "Password", type: "password", required: true },
       ],
     },
     {
@@ -122,7 +122,7 @@ const DataConnectorsContent = () => {
         { name: "port", label: "Port", type: "number", required: true },
         { name: "databaseName", label: "Database", type: "text", required: true },
         { name: "username", label: "Username", type: "text", required: false },
-        { name: "password", label: "Password", type: "password", required: false },
+        { name: "user_pwd", label: "Password", type: "password", required: false },
       ],
     },
     {

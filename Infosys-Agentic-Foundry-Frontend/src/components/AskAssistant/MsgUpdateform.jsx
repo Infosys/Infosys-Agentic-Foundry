@@ -503,7 +503,7 @@ function MessageUpdateform(props) {
                             id="browse"
                             onChange={handleFileChange}
                             accept={showKnowledge ? ".pdf,.txt" : ".pdf, .docx, .pptx, .txt, .xlsx, .msg, .json, .img, .db, .jpg, .png, .jpeg, .csv, .pkl, .zip, .tar, .eml"}
-                            multiple={showKnowledge ? true : false}
+                            multiple={true}
                             className={style["hiddenInput"]}
                           />
                           <label htmlFor="browse" className={style["hiddenInputLabel"]}></label>

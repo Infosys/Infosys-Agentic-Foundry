@@ -11,6 +11,7 @@ import UpdatePwd from "./UpdatePassword.jsx";
 import RecycleBin from "./RecycleBin.jsx";
 import Unused from "./Unused.jsx";
 import AgentAssignment from "./AgentAssignment.jsx";
+import Installation from "./Installation.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 
 const AdminScreen = () => {
@@ -137,7 +138,6 @@ const AdminScreen = () => {
 
   return (
     <div className={styles.adminScreenContainer}>
-      {loadingAgents && <Loader />}
       {/* Tabs Header */}{" "}
       <div className={styles.tabHeader}>
         <button
@@ -173,6 +173,15 @@ const AdminScreen = () => {
           Unused
         </button>
         <button
+          className={`iafTabsBtn ${activeTab === "installation" ? " active" : ""}`}
+          onClick={() => {
+            setActiveTab("installation");
+            setResponseDetail(null);
+            setSelectedAgentId(null);
+          }}>
+          Installation
+        </button>
+        <button
           className={`iafTabsBtn ${activeTab === "agentAssignment" ? " active" : ""}`}
           onClick={() => {
             setActiveTab("agentAssignment");
@@ -184,6 +193,7 @@ const AdminScreen = () => {
       </div>
       {/* Tab Content */}
       <div className={styles.tabContent}>
+        {loadingAgents && <Loader contained />}
         {/* User Tab with Sub-tabs */}
         {activeTab === "user" && (
           <div>
@@ -261,6 +271,11 @@ const AdminScreen = () => {
         {activeTab === "agentAssignment" && (
           <div className={styles.agentAssignment}>
             <AgentAssignment />
+          </div>
+        )}
+        {activeTab === "installation" && (
+          <div className={styles.adminInstallation}>
+            <Installation />
           </div>
         )}
       </div>

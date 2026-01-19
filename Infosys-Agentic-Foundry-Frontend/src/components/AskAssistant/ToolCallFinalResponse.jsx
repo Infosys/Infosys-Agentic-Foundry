@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import toolCallCSS from "./ToolCallFinalResponse.module.css";
+import {META_AGENT,PLANNER_META_AGENT} from "../../constant";
 
 const ToolCallFinalResponse = (props) => {
   // Handler to reset values and exit edit mode
@@ -50,11 +51,14 @@ const ToolCallFinalResponse = (props) => {
         {hasToolCallData && (
           <div className={toolCallCSS.toolcallBox}>
             <div className={toolCallCSS.toolcallHeader}>
-              <span className={toolCallCSS.toolcallHeaderTitle}>Tool Calls</span>
+              <span className={toolCallCSS.toolcallHeaderTitle}>
+                {(props.agentType === PLANNER_META_AGENT || props.agentType === META_AGENT) ? "Agent Calls" : "Tool calls" }</span>
             </div>
             <div className={toolCallCSS.toolcallContent}>
               <div className={toolCallCSS.toolcallRow}>
-                <span className={toolCallCSS.toolcallLabel}>Tool Name:</span>
+                <span className={toolCallCSS.toolcallLabel}>
+                   {(props.agentType === PLANNER_META_AGENT || props.agentType === META_AGENT) ? "Agent Name:" : "Tool Name:" }
+                </span>
                 <span className={toolCallCSS.toolcallValue}>
                   <ReactMarkdown rehypePlugins={[remarkGfm]}>
                     {toolName}

@@ -23,6 +23,7 @@ const SubHeader = (props) => {
     agentTypes = [],
     selectedAgentType = "",
     handleAgentTypeChange = () => {},
+    showFilter = true,
   } = props;
 
   // Determine placeholder based on the heading prop and activeTab
@@ -107,10 +108,12 @@ const SubHeader = (props) => {
             </div>
           )}
           <SearchInputToolsAgents inputProps={{ placeholder: getSearchPlaceholder() }} handleSearch={handleSearch} heading={heading} clearSearch={clearSearch} searchValue={props.searchValue} />
-          <button type="button" onClick={handleSettingClick} className={styles.setting}>
-            {selectedTags?.length > 0 && <span className={styles.badge}>{selectedTags?.length}</span>}
-            <SVGIcons icon="slider-rect" width={20} height={18} fill="#C3C1CF" />
-          </button>
+          {showFilter && (
+            <button type="button" onClick={handleSettingClick} className={styles.setting}>
+              {selectedTags?.length > 0 && <span className={styles.badge}>{selectedTags?.length}</span>}
+              <SVGIcons icon="slider-rect" width={20} height={18} fill="#C3C1CF" />
+            </button>
+          )}
           {/* Add button: only enabled when role has add permission for the current activeTab or heading */}
           <AddButton activeTab={activeTab} heading={heading} onPlusClick={handlePlusClick} />
         </div>

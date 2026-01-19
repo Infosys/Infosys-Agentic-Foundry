@@ -39,6 +39,8 @@
   padding: 10px;
   padding-left: 0;
   height: Calc(100vh - 95px);
+  position: relative;
+  overflow: hidden;
 }
 
 /* Customize scrollbar for tabHeader */
@@ -117,4 +119,8 @@
 }
 .tabSubHeader{
   margin-bottom: 16px;
+}
+
+.adminInstallation {
+  height: 100%;
 }

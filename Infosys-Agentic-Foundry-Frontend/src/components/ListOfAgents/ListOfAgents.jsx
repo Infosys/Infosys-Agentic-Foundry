@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { usePermissions } from "../../context/PermissionsContext";
 import styles from "../../css_modules/ListOfAgents.module.css";
 import AgentCard from "./AgentCard";
-import { APIs, REACT_AGENT, agentTypesDropdown } from "../../constant";
+import { APIs, REACT_AGENT, agentTypesDropdown, PIPELINE_AGENT } from "../../constant";
 import SubHeader from "../commonComponents/SubHeader";
 import AgentOnboard from "../AgentOnboard";
 import UpdateAgent from "./UpdateAgent.jsx";
@@ -143,11 +143,11 @@ const ListOfAgents = () => {
 
   const deleteAgent = async (id, email, isAdmin = false) => {
     try {
-      await deleteData(APIs.DELETE_AGENTS + id, {
+      const response = await deleteData(APIs.DELETE_AGENTS + id, {
         user_email_id: email,
         is_admin: isAdmin,
       });
-      handleAddMessage("AGENT HAS BEEN DELETED SUCCESSFULLY !", "success");
+      handleAddMessage(response.message, "success");
       return true;
     } catch (error) {
       handleError(error);
@@ -479,7 +479,7 @@ const ListOfAgents = () => {
           searchValue={searchTerm}
           clearSearch={clearSearch}
           showAgentTypeDropdown={true}
-          agentTypes={agentTypesDropdown}
+          agentTypes={agentTypesDropdown.filter(type => type.value !== PIPELINE_AGENT)}
           selectedAgentType={selectedAgentType}
           handleAgentTypeChange={handleAgentTypeChange}
         />

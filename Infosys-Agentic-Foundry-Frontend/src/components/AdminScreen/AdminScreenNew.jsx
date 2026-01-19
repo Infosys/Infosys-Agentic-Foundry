@@ -14,9 +14,19 @@ import Loader from "../commonComponents/Loader";
 import IndividualAgentAssignment from "./IndividualAgentAssignment.jsx";
 import GroupAgentAssignment from "./GroupAgentAssignment.jsx";
 import RoleAgentAssignment from "./RoleAgentAssignment.jsx";
+import MissingModules from "./MissingModules.jsx";
+import InstalledModules from "./InstalledModules.jsx";
+import PendingModules from "../AvailableTools/PendingModules.jsx";
 
 // Wrapper for Register with header
 import PageWithHeader from "./PageWithHeader";
+
+// Wrapper components for Installation sub-tabs
+const MissingModulesPage = () => <MissingModules />;
+
+const InstalledModulesPage = () => <InstalledModules />;
+
+const PendingModulesPage = () => <PendingModules />;
 
 /**
  * AdminScreenNew - Redesigned Admin screen using ThreeColumnLayout component
@@ -133,8 +143,8 @@ const LearningContent = () => {
   };
 
   return (
-    <div style={{ padding: "24px", background: "#fff", minHeight: "calc(100vh - 45px)" }}>
-      {loadingAgents && <Loader />}
+    <div style={{ padding: "24px", background: "#fff", minHeight: "calc(100vh - 45px)", position: "relative" }}>
+      {loadingAgents && <Loader contained />}
       {!selectedAgentId ? (
         <AgentList agents={agents} onSelect={loadResponses} />
       ) : responseDetail ? (
@@ -175,6 +185,12 @@ const RecycleBinTools = () => (
   </PageWithHeader>
 );
 
+const RecycleBinServers = () => (
+  <PageWithHeader heading="Servers">
+    <RecycleBin initialType="servers" />
+  </PageWithHeader>
+);
+
 const UnusedAgents = () => (
   <PageWithHeader heading="Agents">
     <Unused initialType="agents" />
@@ -184,6 +200,12 @@ const UnusedAgents = () => (
 const UnusedTools = () => (
   <PageWithHeader heading="Tools">
     <Unused initialType="tools" />
+  </PageWithHeader>
+);
+
+const UnusedServers = () => (
+  <PageWithHeader heading="Servers">
+    <Unused initialType="servers" />
   </PageWithHeader>
 );
 
@@ -244,6 +266,12 @@ const AdminScreenNew = () => {
           label: "Tools",
           component: RecycleBinTools,
         },
+        {
+          type: "item",
+          key: "recycleBinServers",
+          label: "Servers",
+          component: RecycleBinServers,
+        },
       ],
     },
     {
@@ -262,6 +290,37 @@ const AdminScreenNew = () => {
           key: "unusedTools",
           label: "Tools",
           component: UnusedTools,
+        },
+        {
+          type: "item",
+          key: "unusedServers",
+          label: "Servers",
+          component: UnusedServers,
+        },
+      ],
+    },
+    {
+      type: "section",
+      key: "installation",
+      label: "Installation",
+      children: [
+        {
+          type: "item",
+          key: "missingModules",
+          label: "Missing Modules",
+          component: MissingModulesPage,
+        },
+        {
+          type: "item",
+          key: "installedModules",
+          label: "Installed Modules",
+          component: InstalledModulesPage,
+        },
+        {
+          type: "item",
+          key: "pendingModules",
+          label: "Pending Modules",
+          component: PendingModulesPage,
         },
       ],
     },

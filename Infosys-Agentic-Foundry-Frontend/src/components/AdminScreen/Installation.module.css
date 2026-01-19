@@ -1,0 +1,793 @@
+/* Installation Component Styles */
+
+/* Page Wrapper for standalone pages */
+.pageWrapper {
+  padding: 24px;
+  background: #fff;
+  min-height: calc(100vh - 45px);
+  position: relative;
+}
+
+.pageHeading {
+  font: normal normal 400 20px / 27px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  margin: 0 0 20px 0;
+}
+
+.loaderOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.7);
+  z-index: 10;
+}
+
+.installationContainer {
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
+  background-color: transparent;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  position: relative;
+}
+
+/* Tabs Container */
+.tabsContainer {
+  display: flex;
+  gap: 0;
+  padding: 0 0 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 20px;
+}
+
+/* Tab Content Area */
+.tabContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Tab Header with description and actions */
+.tabHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tabDescription {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
+}
+
+.tabActions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Empty State */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: #64748b;
+}
+
+.emptyIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+/* Add Module Header with + Button */
+.addModuleHeader {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 12px 0;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.addButton {
+  background: #f5f5f5;
+  box-shadow: 0px 4px 4px #00000029;
+  border: 1px solid #c7c7c745;
+  border-radius: 3px;
+  padding: 7px;
+  display: flex;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.addButton:hover {
+  background: #e8e8e8;
+}
+
+.addButton svg {
+  width: 16px;
+  height: 16px;
+  color: #007cc3;
+}
+
+/* Modules Header with Select All and Install */
+.modulesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0 16px 0;
+}
+
+.selectAllLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  user-select: none;
+}
+
+.selectAllLabel:hover {
+  color: #007cc3;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #007cc3;
+}
+
+/* Card Checkbox */
+.cardCheckbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #007cc3;
+  flex-shrink: 0;
+}
+
+/* Card Header - clickable area with checkbox and name */
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+}
+
+/* Version Input */
+.versionInput {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  outline: none;
+  box-sizing: border-box;
+  margin-top: 8px;
+  transition: border-color 0.2s;
+}
+
+.versionInput:focus {
+  border-color: #007cc3;
+}
+
+.versionInput::placeholder {
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+/* Package Card Selected State */
+.packageCardSelected {
+  border-color: #007cc3 !important;
+  background-color: #f0f9ff !important;
+  box-shadow: 0 0 0 2px rgba(0, 124, 195, 0.2) !important;
+}
+
+/* Restart Server Section */
+.restartSection {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 0;
+}
+
+.restartCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  text-align: center;
+  max-width: 500px;
+}
+
+.restartIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.restartTitle {
+  font-size: 20px;
+  font-weight: 600;
+  color: #9a3412;
+  margin: 0 0 12px 0;
+}
+
+.restartDescription {
+  font-size: 14px;
+  color: #c2410c;
+  margin: 0 0 24px 0;
+  line-height: 1.5;
+}
+
+/* Restart Result */
+.restartResult {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 8px;
+  max-width: 500px;
+}
+
+.restartSuccess {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid #a7f3d0;
+}
+
+.restartError {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border: 1px solid #fecaca;
+}
+
+.restartResultIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.restartSuccess .restartResultIcon {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.restartError .restartResultIcon {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.restartResultMessage {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.restartSuccess .restartResultMessage {
+  color: #065f46;
+}
+
+.restartError .restartResultMessage {
+  color: #991b1b;
+}
+
+/* Package Version */
+.packageVersion {
+  font-size: 11px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+/* Actions Section */
+.actionsSection {
+  background: transparent;
+  padding: 0 0 20px 0;
+  margin-bottom: 0;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 6px 0;
+}
+
+.sectionDescription {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 16px 0;
+}
+
+/* Button Group */
+.buttonGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Spinner Animation */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Result Section */
+.resultSection {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Success Message */
+.successMessage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+}
+
+.successIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #10b981;
+  color: #ffffff;
+  border-radius: 50%;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.successMessage p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #065f46;
+}
+
+/* Empty State Message */
+.emptyMessage {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Error Result */
+.errorResult {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+}
+
+.errorIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #ef4444;
+  color: #ffffff;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.errorResult p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #991b1b;
+}
+
+/* Dependencies Result - Clean white container */
+.dependenciesContainer {
+  background: transparent;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dependenciesHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  margin-bottom: 8px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.headerIcon {
+  font-size: 20px;
+}
+
+.headerText h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.headerText p {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.countBadge {
+  background: #007cc3;
+  color: #ffffff;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.searchWrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 12px 0;
+}
+
+.searchContainer {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #e1e5e9;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #fff;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.searchContainer:focus-within {
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
+}
+
+.searchInput {
+  width: 180px;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: none;
+  outline: none;
+  background-color: transparent;
+  box-sizing: border-box;
+}
+
+.searchInput::placeholder {
+  color: #94a3b8;
+}
+
+.searchButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  background-color: #007cc3;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  transition: background-color 0.2s ease;
+}
+
+.searchButton:hover {
+  background-color: #006bb3;
+}
+
+.searchButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Card-based grid layout similar to Learning/AgentsList */
+.packagesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  padding: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: transparent;
+}
+
+/* Package Card - Matches Learning page card style */
+.packageCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  background-color: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  min-height: 60px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow-wrap: anywhere;
+}
+
+.packageCard:hover {
+  border-color: #007cc3;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+
+
+/* Package name - centered text */
+.packageName {
+  font-family: "Segoe UI", "Consolas", monospace;
+  font-size: 14px;
+  color: #333;
+  text-align: center;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+/* Modal Content Styles - Used with Modal component */
+.modalBody {
+  padding: 0;
+}
+
+.formGroup {
+  margin-bottom: 0;
+}
+
+.inputLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.inputField {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.inputField:focus {
+  border-color: #007cc3;
+  box-shadow: 0 0 0 3px rgba(0, 124, 195, 0.1);
+}
+
+.inputField::placeholder {
+  color: #9ca3af;
+}
+
+.inputHint {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 6px;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 0 0 0;
+  margin-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .buttonGroup {
+    flex-direction: column;
+  }
+  
+  .actionBtn {
+    width: 100%;
+  }
+
+  .modal {
+    width: 90vw;
+    max-width: 90vw;
+  }
+}
+
+/* Modal Overlay - Right Side Drawer Style */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  z-index: 1200;
+}
+
+/* Modal - Right Side Drawer */
+.modal {
+  background: #fff;
+  padding: 18px;
+  position: relative;
+  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border-left: 1px solid #e0e0e0;
+  top: 42px;
+  padding-bottom: 18px;
+  height: calc(100vh - 44px);
+  padding-right: 0;
+  width: 450px;
+  max-width: 90vw;
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 18px 16px 0;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.modalHeader h4 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.closeBtn {
+  position: absolute;
+  right: 12px;
+  top: 2px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 0;
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(2, 6, 23, 0.08);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  z-index: 10;
+  color: #6b7280;
+  transition: all 0.2s ease;
+}
+
+.closeBtn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.modalContent {
+  padding: 0 18px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.formGroup {
+  margin-bottom: 20px;
+}
+
+.formLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.required {
+  color: #ef4444;
+}
+
+.optional {
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.formInput {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+}
+
+.formInput:focus {
+  border-color: #007cc3;
+  box-shadow: 0 0 0 3px rgba(0, 124, 195, 0.1);
+}
+
+.formInput::placeholder {
+  color: #9ca3af;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}

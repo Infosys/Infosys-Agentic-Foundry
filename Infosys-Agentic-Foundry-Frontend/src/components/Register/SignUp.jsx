@@ -91,9 +91,14 @@ const SignUp = ({ isAdminScreen = false }) => {
 
   const usernameChange = (value) => {
     setUsername(value);
+    // Allow only letters, numbers and spaces (no special characters)
+    const UsernameRegex = /^[A-Za-z0-9 ]+$/;
+
     if (value) {
-      if (value?.length < 3) {
-        setErrUser("Username must be atleast 3 characters long");
+     if (!UsernameRegex.test(value)) {
+        setErrUser("Username can only contain letters, numbers and spaces");
+     } else if (value?.length < 3) {
+        setErrUser("Username must be at least 3 characters long");
       } else {
         setErrUser("");
       }
