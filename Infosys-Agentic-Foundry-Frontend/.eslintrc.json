@@ -2,7 +2,7 @@
   "extends": ["react-app", "react-app/jest"],
   "rules": {
     "no-unsafe-optional-chaining": "error",
-    "no-undef": "warn",
+    "no-undef": "error",
     "no-undefined": "warn",
     "react-hooks/exhaustive-deps": "warn",
     "react/prop-types": "off",

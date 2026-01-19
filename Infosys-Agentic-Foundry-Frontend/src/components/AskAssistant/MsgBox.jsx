@@ -20,6 +20,7 @@ import {
   feedBackMessage,
   APIs,
   PLANNER_META_AGENT,
+  PIPELINE_AGENT,
 } from "../../constant";
 import LoadingChat from "./LoadingChat";
 import AccordionPlanSteps from "../commonComponents/Accordions/AccordionPlanSteps";
@@ -29,12 +30,41 @@ import { useChatServices } from "../../services/chatService";
 import chatBubbleCss from "./ChatBubble.module.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUser, faRobot, faThumbsUp, faThumbsDown, faRotateRight, faChevronDown } from "@fortawesome/free-solid-svg-icons";
-import { formatResponseTimeSeconds } from "../../utils/timeFormatter";
+import { formatResponseTimeSeconds, formatMessageTimestamp } from "../../utils/timeFormatter";
 import ExecutionStepsList from "./ExecutionStepsList";
 
 const JSON_INDENT = 2;
 const FEEDBACK_TIMEOUT_MS = 5000;
 const SLICE_LAST_TWO = -2;
+
+export const extractPlanFromDetails = (details) => {
+  if (!Array.isArray(details)) return null;
+  const entry = details.find(
+    (d) =>
+      d &&
+      (
+        d.role === "plan" ||
+        d.type === "plan" ||
+        d.role === "re-plan" ||
+        d.type === "re-plan"
+      )
+  );
+  if (!entry) return null;
+  if (Array.isArray(entry.content) && entry.content.length > 0) return entry.content;
+  if (typeof entry.content === "string" && entry.content.trim().length > 0)
+    return entry.content.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  return null;
+};
+
+
+export const getPlanForMessage = (item) => {
+  if (!item) return null;
+  const fromDetails = extractPlanFromDetails(item?.additional_details) || extractPlanFromDetails(item?.toolcallData?.additional_details);
+  if (Array.isArray(fromDetails) && fromDetails.length > 0) return fromDetails;
+  if (Array.isArray(item?.plan) && item.plan.length > 0) return item.plan;
+  if (typeof item?.plan === "string" && item.plan.trim().length > 0) return item.plan.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  return null;
+};
 
 const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
   const baseId = useId();
@@ -88,6 +118,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     mentionedAgent,
     planVerifierText,
     useValidator,
+    temperature,
+    selectedInterruptTools,
+    mappedTools,
   } = props;
   const [parsedValues, setParsedValues] = useState({});
   const { getChatQueryResponse, fetchFeedback, storeMemoryExample } = useChatServices();
@@ -104,6 +137,10 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
   // Track the index of the message whose plan was approved via "Good response" from feedbackWrapper-1
   // null = no plan approved, number = index of the approved message (to hide only that message's feedbackWrapper-3)
   const [planApprovedIndex, setPlanApprovedIndex] = useState(null);
+
+  // Persist plans per-message so plans remain attached to the response
+  // key: message index, value: plan array
+  // persistedPlans removed: plans are derived from `messageData` at render time
 
   const [sendIconShow, setSendIconShow] = useState(false);
 
@@ -157,6 +194,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         plan_verifier_flag: Boolean(isHuman),
         mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
         validator_flag: useValidator,
+        temperature: temperature,
+        ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
       };
 
       const resp = await storeMemoryExample(payload);
@@ -198,6 +237,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         plan_verifier_flag: Boolean(isHuman),
         mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
         validator_flag: useValidator,
+        temperature: temperature,
+        ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
       };
 
       const resp = await storeMemoryExample(payload);
@@ -232,18 +273,19 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     setIsEditable(true);
     setSendIconShow(true);
   };
-  const handlePlanFeedBack = async (feedBack, userText) => {
+  const handlePlanFeedBack = async (feedBack, userText, messageIndex = null) => {
     setClose(feedBack === "no" ? true : false);
     setFeedback(feedBack);
     setgenerateFeedBackButton(true);
     setLoadingText(feedBack === "no" ? "Loading..." : "Generating");
     setFetching(true);
 
-    // Set the index of the last bot message when user approves plan to hide only that message's feedbackWrapper-3
+    // Plans are derived from messageData; no local persistence needed here
+
+    // Set the index of the approved plan so only that message's feedback wrapper is affected
     if (feedBack === "yes") {
-      // The plan is always on the last bot message
-      const lastBotIndex = messageData.length - 1;
-      setPlanApprovedIndex(lastBotIndex);
+      const idx = typeof messageIndex === "number" ? messageIndex : messageData.length - 1;
+      setPlanApprovedIndex(idx);
     }
 
     try {
@@ -258,8 +300,10 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     } finally {
       setFetching(false);
       setgenerateFeedBackButton(false);
-      // Reset the plan approved index when done
-      setPlanApprovedIndex(null);
+      // don't immediately clear planApprovedIndex here so UI can show any toast
+       if (feedBack === "yes") {
+	          setPlanApprovedIndex(null);	      
+	      }
     }
   };
 
@@ -296,11 +340,23 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       chatHistory?.raw?.plan_verifier || chatHistory?.plan_verifier || (typeof chatHistory?.plan_verifier === "string" ? chatHistory.plan_verifier : "") || planVerifierText || "";
 
     chatHistory?.executor_messages?.forEach((item, index) => {
-      // USER bubble
+      // Find existing USER message with matching query to preserve its timestamp
+      const existingUserMsg = messageData.find(
+        (msg) => msg.type === USER && msg.message === item?.user_query && msg.start_timestamp
+      );
+      
+      // USER bubble - use existing timestamp if available, otherwise try backend fields
       chats.push({
         type: USER,
         message: item?.user_query,
         debugExecutor: item?.additional_details,
+        start_timestamp:
+          existingUserMsg?.start_timestamp ||
+          item?.start_timestamp ||
+          item?.time_stamp ||
+          (index === 0 ? chatHistory?.start_timestamp || chatHistory?.time_stamp || null : null) ||
+          null,
+        end_timestamp: item?.end_timestamp || null,
       });
 
       // Build bot message using existing fallbacks
@@ -325,6 +381,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       }
 
       const toolcallData = { ...(item || {}), ...(synthesized ? { additional_details: synthesized } : {}) };
+
+
+      const _planArr = getPlanForMessage(item) || null;
 
       // Tool interrupt case: suppress bot message if tool calls exist
       if (toolInterrupt && Array.isArray(toolcallData.additional_details) && toolcallData.additional_details.length > 0) {
@@ -355,15 +414,14 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         userText: item?.user_query || chatHistory?.query || "",
         steps: JSON.stringify(item?.agent_steps, null, JSON_INDENT),
         debugExecutor: item?.additional_details,
-        // ...(index === chatHistory?.executor_messages?.length - 1 &&
-        //   (!botMessage || botMessage.trim() === "") &&
-        //   !(toolInterrupt && Array.isArray(toolcallData?.additional_details) && toolcallData.additional_details.length > 0) && { plan: chatHistory?.plan }),
-        // Always attach plan if present in response
-        ...(index === chatHistory?.executor_messages?.length - 1 && chatHistory?.plan ? { plan: chatHistory.plan } : {}),
+        // Attach plan (if any) extracted from details or top-level
+        ...(Array.isArray(_planArr) && _planArr.length > 0 ? { plan: _planArr } : {}),
         parts: item?.parts || [],
         show_canvas: item?.show_canvas || false,
         plan_verifier: Boolean(localPlanVerifierText),
         response_time: item?.response_time || chatHistory?.response_time || null,
+        start_timestamp: item?.start_timestamp || null,
+        end_timestamp: item?.end_timestamp || null,
       });
     });
 
@@ -399,6 +457,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       evaluation_flag: Boolean(onlineEvaluatorFlag),
       plan_verifier_flag: Boolean(isHuman),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
+      temperature: temperature,
+      ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
     };
     // Reset feedback state to close the feedback section
     if (feedBack === dislike) {
@@ -467,7 +527,6 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         // Don't update previousMessage when empty - keep tracking
         return;
       }
-
       setPreviousMessage(currentMsg);
     }
   }, [messageData]);
@@ -496,16 +555,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         }
         return Boolean(partContent);
       });
-    const hasEmptyMessage = data.message === "" || !data.message;
-    const hasNoFinalResponse = data.message === "" && !hasPartsWithContent;
-
-    // Show plan if we have a plan, human verifier is on, message is empty, and we're waiting for approval
-    // The plan should stay visible even when nodes/steps are loading (props.isStreaming)
     return (
       data?.plan?.length > 0 &&
       isLastPlanInMessages &&
-      hasEmptyMessage &&
-      hasNoFinalResponse &&
       ((isHuman && toolInterrupt) || isHuman) &&
       (!data?.toolcallData?.additional_details ||
         (Array.isArray(data.toolcallData.additional_details) &&
@@ -539,6 +591,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       plan_verifier_flag: Boolean(isHuman),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
+      enable_streaming_flag: true,
+      temperature: temperature,
+      ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
     };
 
     let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
@@ -606,6 +661,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       plan_verifier_flag: Boolean(isHuman),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
+      enable_streaming_flag: true,
+      temperature: temperature,
+      ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
     };
     let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
     const onStreamChunk = (obj) => {
@@ -768,8 +826,10 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                 return Boolean(partContent);
               })
             : false;
-          const hasPlanContent = Array.isArray(data?.plan)
-            ? data.plan.some((step) => {
+          // Derive plan from message data (handles array or string plans)
+          const effectivePlan = getPlanForMessage(data) || data?.plan || [];
+          const hasPlanContent = Array.isArray(effectivePlan)
+            ? effectivePlan.some((step) => {
                 if (typeof step === "string") {
                   return step.trim().length > 0;
                 }
@@ -803,9 +863,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
           const willRenderInner = shouldRenderBotMessage || hasPlanContent;
           const hasVisibleBubbleContent = willRenderInner;
 
-          // Use currentArray (the actual displayed messages) for plan position calculation
-          const hasLaterPlan = Array.isArray(currentArray) ? currentArray.slice(index + 1).some((m) => Array.isArray(m?.plan) && m.plan.length > 0) : false;
-          const isLastPlanInMessages = !hasLaterPlan;
+          const shouldShowPlan = Array.isArray(effectivePlan) && effectivePlan.length > 0;
 
           const hasPlanOnly = data.type === BOT && hasPlanContent && !hasMessageText && !hasMessageObject && !hasPartsContent && !hasToolDetails && !hasToolInterruptFallback;
 
@@ -855,47 +913,6 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                         />
                       </div>
                     )}
-                    {shouldRenderAccordion && agentType !== CUSTOM_TEMPLATE && agentType !== PLANNER_META_AGENT && (
-                      <>
-                        <AccordionPlanSteps
-                          response={
-                            typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
-                              ? JSON.stringify(data.message, null, 2)
-                              : typeof data.message === "string"
-                              ? data.message
-                              : ""
-                          }
-                          content={
-                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
-                              ? JSON.stringify(data.steps, null, 2)
-                              : typeof data.steps === "string"
-                              ? data.steps
-                              : ""
-                          }
-                          debugExecutor={
-                            Array.isArray(data.debugExecutor)
-                              ? data.debugExecutor.map((item) =>
-                                  typeof item === "object" && item !== null && !Array.isArray(item)
-                                    ? {
-                                        ...item,
-                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
-                                      }
-                                    : item
-                                )
-                              : []
-                          }
-                          messageData={messageData}
-                          isEditable={isEditable}
-                          value={value}
-                          text={text}
-                          argunentKey={argunentKey}
-                          openCanvas={props.openCanvas}
-                          parts={data?.parts || []}
-                          show_canvas={data?.show_canvas || false}
-                          detectCanvasContent={props.detectCanvasContent}
-                        />
-                      </>
-                    )}
                     {/* {shouldRenderAccordion && agentType !== CUSTOM_TEMPLATE && agentType === PLANNER_META_AGENT && data?.plan?.length === 0 && (
                       <AccordionPlanSteps
                         response={
@@ -936,28 +953,34 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                       />
                     )} */}
                     <div className={styles.accordionContainer}>
-                      {checktoShowPlan(data, isLastPlanInMessages, isHuman, toolInterrupt, hasToolDetails) && (
+                      {shouldShowPlan && (
                         <>
                           <div className={styles.planContainer}>
                             <h3>Plan</h3>
-                            {data?.plan?.map((planItem, planIndex) => (
+                            {effectivePlan.map((planItem, planIndex) => (
                               <p className={styles.stepsContent} key={`plan-step-${planIndex}`}>
                                 {planItem}
                               </p>
                             ))}
                           </div>
 
-                          {!fetching && feedBack !== "no" && (
-                            <div className={`${chatBubbleCss.feedbackWrapper} feedbackWrapper-1`}>
+                          {!fetching &&
+                            feedBack !== "no" &&
+                            !hasMessageText &&
+                            !hasMessageObject &&
+                            !hasPartsContent &&
+                            !(toolInterrupt && hasToolDetails) &&
+                            (
+                              <div className={`${chatBubbleCss.feedbackWrapper} feedbackWrapper-1`}>
                               <button
                                 className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("yes", data?.userText)}
+                                onClick={() => handlePlanFeedBack("yes", data?.userText, index)}
                                 title="Good response">
                                 <FontAwesomeIcon icon={faThumbsUp} />
                               </button>{" "}
                               <button
                                 className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("no", data?.userText)}
+                                onClick={() => handlePlanFeedBack("no", data?.userText, index)}
                                 title="Poor response">
                                 <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
                               </button>
@@ -971,7 +994,13 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                             </div>
                           )}
 
-                          {!fetching && showInput && feedBack === "no" && (
+                          {!fetching &&
+                            showInput &&
+                            feedBack === "no" &&
+                            !hasMessageText &&
+                            !hasMessageObject &&
+                            !hasPartsContent &&
+                            !(toolInterrupt && hasToolDetails) && (
                             <div className={styles.feedBackSection}>
                               <p className={styles.warning}>{feedBackMessage}</p>
                               <div className={styles.feedBackInput}>
@@ -994,6 +1023,46 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                             </div>
                           )}
                         </>
+                      )}
+
+                      {shouldRenderAccordion && agentType !== CUSTOM_TEMPLATE && agentType !== PLANNER_META_AGENT && (
+                        <AccordionPlanSteps
+                          response={
+                            typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                              ? JSON.stringify(data.message, null, 2)
+                              : typeof data.message === "string"
+                              ? data.message
+                              : ""
+                          }
+                          content={
+                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                              ? JSON.stringify(data.steps, null, 2)
+                              : typeof data.steps === "string"
+                              ? data.steps
+                              : ""
+                          }
+                          debugExecutor={
+                            Array.isArray(data.debugExecutor)
+                              ? data.debugExecutor.map((item) =>
+                                  typeof item === "object" && item !== null && !Array.isArray(item)
+                                    ? {
+                                        ...item,
+                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                      }
+                                    : item
+                                )
+                              : []
+                          }
+                          messageData={messageData}
+                          isEditable={isEditable}
+                          value={value}
+                          text={text}
+                          argunentKey={argunentKey}
+                          openCanvas={props.openCanvas}
+                          parts={data?.parts || []}
+                          show_canvas={agentType === PIPELINE_AGENT ? false : (data?.show_canvas || false)}
+                          detectCanvasContent={props.detectCanvasContent}
+                        />
                       )}
 
                       {agentType !== CUSTOM_TEMPLATE && agentType === PLANNER_META_AGENT && (
@@ -1031,7 +1100,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                           argunentKey={argunentKey}
                           openCanvas={props.openCanvas}
                           parts={data?.parts || []}
-                          show_canvas={data?.show_canvas || false}
+                          show_canvas={agentType === PIPELINE_AGENT ? false : (data?.show_canvas || false)}
                           detectCanvasContent={props.detectCanvasContent}
                         />
                       )}
@@ -1071,20 +1140,20 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                             argunentKey={argunentKey}
                             openCanvas={props.openCanvas}
                             parts={data?.parts || []}
-                            show_canvas={data?.show_canvas || false}
+                            show_canvas={agentType === PIPELINE_AGENT ? false : (data?.show_canvas || false)}
                             detectCanvasContent={props.detectCanvasContent}
                           />
                           {!fetching && index === lastIndex && agentType === CUSTOM_TEMPLATE && (
                             <div className={`${chatBubbleCss.feedbackWrapper}  feedbackWrapper-2`}>
                               <button
                                 className={`${chatBubbleCss.feedbackButton} `} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("yes", data?.userText)}
+                                onClick={() => handlePlanFeedBack("yes", data?.userText, index)}
                                 title="Good response">
                                 <FontAwesomeIcon icon={faThumbsUp} />
                               </button>
                               <button
                                 className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("no", data?.userText)}
+                                onClick={() => handlePlanFeedBack("no", data?.userText, index)}
                                 title="Poor response">
                                 <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
                               </button>
@@ -1166,6 +1235,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                               fetching={fetching}
                               sendIconShow={sendIconShow}
                               generating={generating}
+                              agentType={agentType}
                             />
                           </>
                         )}
@@ -1218,26 +1288,30 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                         </div>
                       ) : (
                         <div className={`${chatBubbleCss.feedbackWrapper}  feedbackWrapper-3`} style={{ marginTop: 8 }}>
-                          <button
-                            type="button"
-                            className={chatBubbleCss.feedbackButton}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMessageLike(data, index);
-                            }}
-                            title="Good response">
-                            <FontAwesomeIcon icon={faThumbsUp} />
-                          </button>
-                          <button
-                            type="button"
-                            className={chatBubbleCss.feedbackButton}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMessageDislike(data, index);
-                            }}
-                            title="Poor response">
-                            <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
-                          </button>
+                          {agentType !== PIPELINE_AGENT && (
+                            <>
+                              <button
+                                type="button"
+                                className={chatBubbleCss.feedbackButton}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMessageLike(data, index);
+                                }}
+                                title="Good response">
+                                <FontAwesomeIcon icon={faThumbsUp} />
+                              </button>
+                              <button
+                                type="button"
+                                className={chatBubbleCss.feedbackButton}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMessageDislike(data, index);
+                                }}
+                                title="Poor response">
+                                <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
+                              </button>
+                            </>
+                          )}
                           {data?.response_time && (
                             <span className={chatBubbleCss.responseTime}>
                               <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
@@ -1255,7 +1329,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                         agentType === PLANNER_EXECUTOR_AGENT ||
                         agentType === REACT_CRITIC_AGENT ||
                         agentType === "multi_agent" ||
-                        agentType === PLANNER_META_AGENT ||
+                      agentType === PLANNER_META_AGENT ||
+                      agentType === META_AGENT ||
                         agentType === HYBRID_AGENT) && (
                         <div className={styles.feedBackSection}>
                           {!fetching &&
@@ -1265,7 +1340,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                             agentType === REACT_CRITIC_AGENT ||
                             agentType === HYBRID_AGENT) &&
                             close) ||
-                            (agentType === PLANNER_META_AGENT && feedBack === dislike && close)) ? (
+                            ((agentType === PLANNER_META_AGENT || agentType === META_AGENT) && feedBack === dislike && close)) ? (
                             <div className={styles["cancel-btn"]}>
                               <button
                                 onClick={() => {
@@ -1312,7 +1387,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                         agentType === REACT_CRITIC_AGENT ||
                         agentType === HYBRID_AGENT ||
                         agentType === PLANNER_META_AGENT ||
-                        agentType === META_AGENT) &&
+                        agentType === META_AGENT ||
+                        agentType === PIPELINE_AGENT) &&
                       feedBack !== dislike && (
                         <div className={styles["feedback-section"]}>
                           {!fetching && !generateFeedBackButton && (
@@ -1336,39 +1412,43 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                               Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs).length > 0 ? (
                                 <>
                                   <div className={`${chatBubbleCss.feedbackWrapper}  feedbackWrapper-4`}>
-                                    <button
-                                      className={`${chatBubbleCss.feedbackButton}`} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                      onClick={() => submitFeedbackYes(data)}
-                                      title="Good response">
-                                      <FontAwesomeIcon icon={faThumbsUp} />
-                                    </button>
+                                    {agentType !== PIPELINE_AGENT && (
+                                      <>
+                                        <button
+                                          className={`${chatBubbleCss.feedbackButton}`} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
+                                          onClick={() => submitFeedbackYes(data)}
+                                          title="Good response">
+                                          <FontAwesomeIcon icon={faThumbsUp} />
+                                        </button>
 
-                                    {Array.isArray(props?.messageData?.toolcallData?.additional_details) &&
-                                    props.messageData.toolcallData.additional_details.length > 0 &&
-                                    Array.isArray(props.messageData.toolcallData.additional_details[0]?.additional_kwargs?.tool_calls) &&
-                                    props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls.length > 0 &&
-                                    props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls[0]?.function?.arguments === "{}" ? (
-                                      <></>
-                                    ) : (
-                                      <></>
+                                        {Array.isArray(props?.messageData?.toolcallData?.additional_details) &&
+                                        props.messageData.toolcallData.additional_details.length > 0 &&
+                                        Array.isArray(props.messageData.toolcallData.additional_details[0]?.additional_kwargs?.tool_calls) &&
+                                        props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls.length > 0 &&
+                                        props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls[0]?.function?.arguments === "{}" ? (
+                                          <></>
+                                        ) : (
+                                          <></>
+                                        )}
+
+                                        <button className={chatBubbleCss.editBtn} onClick={() => onMsgEdit(data)} title="Edit">
+                                          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                                            <g>
+                                              <path
+                                                d="M15.2 3.8c.5-.5 1.3-.5 1.8 0l.2.2c.5.5.5 1.3 0 1.8l-9.7 9.7-2.7.3.3-2.7 9.7-9.7z"
+                                                fill="currentColor"
+                                                stroke="currentColor"
+                                                strokeWidth="1.5"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              />
+                                              <rect x="2.5" y="14.5" width="5" height="2" rx="0.8" fill="currentColor" opacity="0.18" />
+                                              <path d="M13.7 5.7l1.6 1.6" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </g>
+                                          </svg>
+                                        </button>
+                                      </>
                                     )}
-
-                                    <button className={chatBubbleCss.editBtn} onClick={() => onMsgEdit(data)} title="Edit">
-                                      <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                                        <g>
-                                          <path
-                                            d="M15.2 3.8c.5-.5 1.3-.5 1.8 0l.2.2c.5.5.5 1.3 0 1.8l-9.7 9.7-2.7.3.3-2.7 9.7-9.7z"
-                                            fill="currentColor"
-                                            stroke="currentColor"
-                                            strokeWidth="1.5"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                          />
-                                          <rect x="2.5" y="14.5" width="5" height="2" rx="0.8" fill="currentColor" opacity="0.18" />
-                                          <path d="M13.7 5.7l1.6 1.6" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </g>
-                                      </svg>
-                                    </button>
                                     {data?.response_time && (
                                       <span className={chatBubbleCss.responseTime}>
                                         <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
@@ -1386,25 +1466,29 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                   {/* Also skip for plan-only responses when Plan Verifier (isHuman) is enabled */}
                                   {/* Also skip when feedBack === "no" (user clicked thumbs down on plan, showing feedback input) */}
                                   {/* Hide feedback buttons when generating (like/regenerate in progress) */}
-                                  {/* For PLANNER_META_AGENT/META_AGENT: Hide feedback buttons when there's a final response (non-empty message) */}
+                                  {/* For PLANNER_META_AGENT/META_AGENT: Show feedback buttons when there's a final response (non-empty message) */}
                                   {hasVisibleBubbleContent &&
-                                    agentType !== PLANNER_META_AGENT &&
-                                    agentType !== META_AGENT &&
                                     feedBack !== "no" &&
                                     !showgenerateButton &&
                                     !isEditable &&
-                                    !(hasPlanContent && isLastPlanInMessages && data?.message === "" && !hasPartsContent && isHuman && !hasToolDetails) &&
+                                    // Previously this used isLastPlanInMessages (undefined). Use the actual intent:
+                                    // skip when this is a plan-only response that should be handled by the plan verifier UI
+                                    !(hasPlanContent && data?.message === "" && !hasPartsContent && isHuman && !hasToolDetails) &&
                                     !((agentType === PLANNER_META_AGENT || agentType === META_AGENT) && data?.message === "" && !hasPartsContent) && (
                                       <div className={`${chatBubbleCss.feedbackWrapper} feedbackWrapper-5`}>
-                                        <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(like, session)} title="Good response">
-                                          <FontAwesomeIcon icon={faThumbsUp} />
-                                        </button>
-                                        <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(dislike, session)} title="Poor response">
-                                          <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
-                                        </button>
-                                        <button className={chatBubbleCss.feedbackButton} onClick={() => handleFeedBack(regenerate, session)} title="Regenerate response">
-                                          <FontAwesomeIcon icon={faRotateRight} style={{ transform: "rotate(-106deg)" }} className={generating ? chatBubbleCss.spinning : ""} />
-                                        </button>
+                                        {agentType !== PIPELINE_AGENT && (
+                                          <>
+                                            <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(like, session)} title="Good response">
+                                              <FontAwesomeIcon icon={faThumbsUp} />
+                                            </button>
+                                            <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(dislike, session)} title="Poor response">
+                                              <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
+                                            </button>
+                                            <button className={chatBubbleCss.feedbackButton} onClick={() => handleFeedBack(regenerate, session)} title="Regenerate response">
+                                              <FontAwesomeIcon icon={faRotateRight} style={{ transform: "rotate(-106deg)" }} className={generating ? chatBubbleCss.spinning : ""} />
+                                            </button>
+                                          </>
+                                        )}
                                         {data?.response_time && (
                                           <span className={chatBubbleCss.responseTime}>
                                             <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
@@ -1474,8 +1558,18 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                           </div>
                         </div>
                       ) : null}
-                      <div className={chatBubbleCss.timestamp}>{/* Time to be displayed here */}</div>
                     </div>
+                    {(() => {
+                      // Render timestamp below the bubble if available
+                      const formattedTimestamp = formatMessageTimestamp(data?.start_timestamp);
+                      if (!formattedTimestamp) return null;
+                      
+                      return (
+                        <div className={chatBubbleCss.timestamp} title={`Query sent at: ${formattedTimestamp.fullTime}`}>
+                          {formattedTimestamp.displayText}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </>
               )}

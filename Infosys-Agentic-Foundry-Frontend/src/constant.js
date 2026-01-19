@@ -15,6 +15,7 @@ export const agentTypesDropdown = [
   { label: "Meta Planner ", value: "planner_meta_agent" },
   { label: "Planner Executor", value: "planner_executor_agent" },
   { label: "Planner Executor Critic", value: "multi_agent" },
+  { label: "Pipeline", value: "pipeline" },
   { label: "React", value: "react_agent" },
   { label: "React Critic", value: "react_critic_agent" },
 ];
@@ -27,6 +28,7 @@ export const CUSTOM_TEMPLATE = "custom_template";
 export const REACT_CRITIC_AGENT = "react_critic_agent";
 export const PLANNER_EXECUTOR_AGENT = "planner_executor_agent";
 export const HYBRID_AGENT = "hybrid_agent";
+export const PIPELINE_AGENT = "pipeline";
 
 export const like = "like";
 export const regenerate = "regenerate";
@@ -51,6 +53,7 @@ export const APIs = {
   //Unused Items APIs
   AGENTS_UNUSED: "/agents/unused/get",
   TOOLS_UNUSED: "/tools/unused/get",
+  MCP_SERVERS_UNUSED: "/tools/mcp/unused/get",
 
   // Default APIs
   LOGIN: "/auth/login",
@@ -72,6 +75,12 @@ export const APIs = {
   TRANSCRIBE_AUDIO: "/utility/transcribe/",
   LIST_ALL_MARKDOWN_FILES: "/utility/docs/list-all-markdown-files",
   LIST_MARKDOWN_FILES_IN_DIRECTORY: "/utility/docs/list-markdown-files-in-directory/{dir_name}",
+
+  // Installation/VM APIs
+  GET_MISSING_DEPENDENCIES: "/utility/get-missing-dependencies",
+  GET_INSTALLED_PACKAGES: "/utility/get/installed-packages",
+  INSTALL_DEPENDENCIES: "/utility/vm/install-dependencies",
+  RESTART_SERVER: "/utility/vm/restart-server",
 
   //Tags APIs
   GET_TAGS: "/tags/get",
@@ -116,14 +125,15 @@ export const APIs = {
   // Validator-specific tool segregation
   // Backend expected to return only non-validator tools for existing endpoints.
   // New endpoints explicitly differentiate validator tools so UI can fetch them for validation patterns.
-  GET_VALIDATOR_TOOLS: "/tools/validators/get", 
+  GET_VALIDATOR_TOOLS: "/tools/validators/get",
   TOOLS_BY_TAGS: "/tools/get/by-tags",
-  GET_TOOLS_BY_ID:"/tools/get/{tool_id}",
+  GET_TOOLS_BY_ID: "/tools/get/{tool_id}",
   TOOLS_RECYCLE_BIN: "/tools/recycle-bin/get",
   RESTORE_TOOLS: "/tools/recycle-bin/restore/",
   DELETE_TOOLS_PERMANENTLY: "/tools/recycle-bin/permanent-delete/",
   EXECUTE_CODE: "/tools/execute",
   INLINE_MCP_RUN: "/tools/inline-mcp/run",
+  PENDING_MODULES: "/tools/pending-modules",
 
   // Agents APIs
   ONBOARD_AGENTS: "/agents/onboard",
@@ -138,6 +148,7 @@ export const APIs = {
   RESTORE_AGENTS: "/agents/recycle-bin/restore/",
   DELETE_AGENTS_PERMANENTLY: "/agents/recycle-bin/permanent-delete/",
   EXPORT_AGENTS: "/agents/export",
+  GET_TOOLS_MAPPED_BY_AGENT: "/agents/tools-mapped/",
 
   // Agent Assignment APIs
   GET_USERS: "/user-agent-access/all",
@@ -159,8 +170,8 @@ export const APIs = {
   GET_ROLES: "/roles/list",
   ADD_ROLE: "/roles/add",
   DELETE_ROLE: "/roles",
-  
-  // Role Assignment APIs  
+
+  // Role Assignment APIs
   GET_ROLE_ASSIGNMENTS: "/role-agent-access/get/assignments",
   CREATE_ROLE_ASSIGNMENT: "/role-agent-access/create",
   DELETE_ROLE_ASSIGNMENT: "/role-agent-access/delete",
@@ -179,6 +190,9 @@ export const APIs = {
   MCP_GET_ALL_SERVERS: "/tools/mcp/get/search-paginated/",
   MCP_UPDATE_SERVER: "/tools/mcp/update/",
   MCP_LIVE_TOOL_DETAIL: "/tools/mcp/get/live-tool-details/",
+  MCP_SERVERS_RECYCLE_BIN: "/tools/mcp/recycle-bin/get",
+  MCP_RESTORE_SERVERS: "/tools/mcp/recycle-bin/restore/",
+  MCP_DELETE_SERVERS_PERMANENTLY: "/tools/mcp/recycle-bin/permanent-delete/",
 
   //Data Connector APIs
   GET_ACTIVE_CONNECTIONS: "/data-connector/get/active-connection-names",
@@ -204,6 +218,20 @@ export const APIs = {
   SECRETS_GET: "/secrets/get",
   PUBLIC_SECRETS_GET: "/secrets/public/get",
   HEALTH_SECRETS: "/secrets/health",
+
+  // Pipeline APIs
+  PIPELINE_CREATE: "/pipelines/create",
+  PIPELINE_GET_ALL: "/pipelines/get",
+  PIPELINE_GET_PAGINATED: "/pipelines/get/search-paginated/",
+  PIPELINE_GET_BY_ID: "/pipelines/get/",
+  PIPELINE_UPDATE: "/pipelines/update/",
+  PIPELINE_DELETE: "/pipelines/delete/",
+  PIPELINE_EXECUTE: "/pipelines/{pipeline_id}/execute",
+  PIPELINE_EXECUTE_SYNC: "/pipelines/{pipeline_id}/execute/sync",
+  PIPELINE_RESUME: "/pipelines/executions/{execution_id}/resume",
+  PIPELINE_EXECUTION_STATUS: "/pipelines/executions/{execution_id}/status",
+  PIPELINE_GET_EXECUTIONS: "/pipelines/{pipeline_id}/executions",
+  PIPELINE_AVAILABLE_AGENTS: "/pipelines/available-agents",
 };
 
 // export const sessionId = "test_101";

@@ -94,7 +94,7 @@ function ToolsCard(props) {
         }
         setIsDeleteClicked(false);
         setEmailId("");
-        // Prefer backend detail/status_message; fallback defined in handler
+        // Prefer backend detail; fallback defined in handler
         handleApiSuccess(response, { fallbackMessage: "Tool deleted" });
       } else {
         // Non-success shape returned (maybe error object from service) – surface detail via error handler

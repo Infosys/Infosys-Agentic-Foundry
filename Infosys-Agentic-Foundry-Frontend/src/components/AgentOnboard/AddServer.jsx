@@ -20,9 +20,9 @@ import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import DeleteModal from "../commonComponents/DeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext";
 
-export default function AddServer({ editMode = false, serverData = null, onClose, setRefreshPaginated = () => {} }) {
+export default function AddServer({ editMode = false, serverData = null, onClose, setRefreshPaginated = () => {}, recycle = false, unused = false, setRestoreData = () => {}, selectedType = "" }) {
   const { addServer } = useToolsAgentsService();
-  const { fetchData, postData } = useFetch();
+  const { fetchData, postData, deleteData } = useFetch();
   const { getAllServers, updateServer } = useMcpServerService();
   const user = { isAdmin: true, teams: ["dev", "ops"], team_ids: ["dev", "ops"] };
   const isAdmin = Boolean(user && (user.isAdmin || user.is_admin));
@@ -139,6 +139,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   }, [serverType]);
 
   const toggleTagSelection = (index) => {
+    if (recycle || unused) return; // Disable tag selection in recycle/unused mode
     setTagList((prev) => prev.map((tag, i) => (i === index ? { ...tag, selected: !tag.selected } : tag)));
   };
 
@@ -306,7 +307,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         if (response?.mcp_config?.args && response.mcp_config.args.length > 1) {
           setModuleName(response.mcp_config.args[1]); // This will set 'mcp_test' from your sample
         }
-        const msg = response?.status_message || response?.message || "Server added successfully!";
+        const msg = response?.result?.message;
         try {
           addMessage(msg, "success");
           setShowPopup(true);
@@ -455,7 +456,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       }
       const ok = response && (response?.status === "success" || response?.is_update === true || response?.is_updated === true);
       if (ok) {
-        const msg = response?.status_message || response?.message || "Server updated successfully!";
+        const msg =response?.message;
         try {
           addMessage(msg, "success");
           setShowPopup(true);
@@ -507,7 +508,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         if (onClose) onClose();
       } else {
         // Handle validation errors just like ToolOnBoarding
-        const permissionDenied = /permission denied|only the admin|only the tool's creator/i.test(response?.detail || response?.message || response?.status_message || "");
+        const permissionDenied = /permission denied|only the admin|only the tool's creator/i.test(response?.detail || response?.message || "");
         if (response?.message?.includes("Verification failed:")) {
           safeSetError(response.message);
         } else if (permissionDenied) {
@@ -518,7 +519,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           const msg = response?.response?.data?.detail || response?.detail || response?.message || "Update failed";
           safeSetError(msg);
         } else {
-          safeSetError(response?.detail || response?.message || response?.status_message || "Update failed");
+          safeSetError(response?.detail || response?.message || "Update failed");
         }
       }
     } catch (err) {
@@ -577,6 +578,75 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       window.dispatchEvent(new CustomEvent("AddServer:CloseRequested"));
     } catch (err) {
       console.debug("[AddServer] handleCancel fallback error", err);
+    }
+  };
+
+  // Recycle bin functions
+  const handleRestore = async () => {
+    if (!recycle || !serverData) return;
+    setSubmitting(true);
+    try {
+      const serverId = serverData?.tool_id || serverData?.id || serverData?.raw?.tool_id;
+      const url = `${APIs.MCP_RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      const response = await postData(url);
+      if (response?.is_restored) {
+        addMessage(response?.message || "Server restored successfully", "success");
+        setRestoreData(response);
+        handleCancel();
+      } else {
+        addMessage("Failed to restore server", "error");
+      }
+    } catch (err) {
+      addMessage( err?.response?.data?.detail || err?.message || "Failed to restore server", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!recycle || !serverData) return;
+    setSubmitting(true);
+    try {
+      const serverId = serverData?.tool_id || serverData?.id || serverData?.raw?.tool_id;
+      const url = `${APIs.MCP_DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      const response = await deleteData(url);
+      if (response?.is_deleted) {
+        addMessage(response?.message || "Server permanently deleted", "success");
+        setRestoreData(response);
+        handleCancel();
+      } else {
+        addMessage(response?.detail || "Failed to delete server", "error");
+      }
+    } catch (err) {
+      addMessage(err?.response?.data?.detail || err?.message || "Failed to delete server", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Unused delete function - soft delete (moves to recycle bin)
+  const handleUnusedDelete = async () => {
+    if (!unused || !serverData) return;
+    setSubmitting(true);
+    try {
+      const serverId = serverData?.tool_id || serverData?.id || serverData?.raw?.tool_id;
+      const userEmail = Cookies.get("email");
+      const url = `${APIs.MCP_DELETE_TOOLS}${serverId}?user_email_id=${encodeURIComponent(userEmail)}`;
+      const response = await deleteData(url);
+      if (response?.is_delete) {
+        addMessage(response?.message || "Server deleted successfully", "success");
+        // Call the refresh function if it's a function, otherwise toggle state
+        if (typeof setRefreshPaginated === "function") {
+          setRefreshPaginated();
+        }
+        handleCancel();
+      } else {
+        addMessage(response?.message || "Failed to delete server", "error");
+      }
+    } catch (err) {
+      addMessage(err?.response?.data?.detail || err?.message || "Failed to delete server", "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -769,7 +839,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           placeholder="http://localhost:5000/mcp"
           aria-label="Endpoint URL"
           style={commonInputStyle}
-          disabled={editMode}
+          disabled={editMode || recycle || unused}
         />
       </div>
       <div className={styles["controlGroup"]}>
@@ -780,20 +850,20 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           options={vaultOptions.map((option) => option.label)}
           selected={vaultValue ? vaultOptions.find((option) => option.value === vaultValue)?.label || vaultValue : ""}
           onSelect={(label) => {
-            if (editMode) return;
+            if (editMode || recycle || unused) return;
             const found = vaultOptions.find((option) => option.label === label);
             setVaultValue(found ? found.value : "");
           }}
-          placeholder={editMode ? "Select header" : "Select header"}
+          placeholder={editMode || recycle || unused ? "Select header" : "Select header"}
           width={260}
           style={{
             ...dropdownCommonStyle,
-            background: editMode ? "#f3f4f6" : "#fafbfc",
-            borderColor: editMode ? "#e5e7eb" : "#1976d2",
-            color: editMode ? "#6b7280" : "#222",
-            cursor: editMode ? "not-allowed" : "pointer",
+            background: (editMode || recycle || unused) ? "#f3f4f6" : "#fafbfc",
+            borderColor: (editMode || recycle || unused) ? "#e5e7eb" : "#1976d2",
+            color: (editMode || recycle || unused) ? "#6b7280" : "#222",
+            cursor: (editMode || recycle || unused) ? "not-allowed" : "pointer",
           }}
-          disabled={editMode}
+          disabled={editMode || recycle || unused}
         />
       </div>
     </>
@@ -805,7 +875,21 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         <label className={styles["label-desc"]} htmlFor="command">
           Command
         </label>
-        <NewCommonDropdown options={["python"]} selected={command} onSelect={() => setCommand("python")} placeholder="python" width={260} style={dropdownCommonStyle} />
+        <NewCommonDropdown 
+          options={["python"]} 
+          selected={command} 
+          onSelect={() => !recycle && setCommand("python")} 
+          placeholder="python" 
+          width={260} 
+          style={{
+            ...dropdownCommonStyle,
+            background: (recycle || unused) ? "#f3f4f6" : "#fafbfc",
+            borderColor: (recycle || unused) ? "#e5e7eb" : "#1976d2",
+            color: (recycle || unused) ? "#6b7280" : "#222",
+            cursor: (recycle || unused) ? "not-allowed" : "pointer",
+          }}
+          disabled={recycle || unused}
+        />
       </div>
       <div className={styles["form-block"]}>
         <label className={styles["label-desc"]} htmlFor="moduleName">
@@ -819,6 +903,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           placeholder="Enter MCP module name"
           aria-label="Module Name"
           required
+          disabled={recycle || unused}
           style={commonInputStyle}
         />
       </div>
@@ -923,16 +1008,18 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       <div className={styles.codeEditorContainer}>
         <CodeEditor
           value={codeFile ? "" : codeContent}
-          onChange={codeFile ? undefined : (value) => setCodeContent(value)}
-          readOnly={Boolean(codeFile) ? true : !(editMode && serverType === "code") && false}
+          onChange={codeFile || recycle || unused ? undefined : (value) => setCodeContent(value)}
+          readOnly={Boolean(codeFile) || recycle || unused ? true : !(editMode && serverType === "code") && false}
           isDarkTheme={isDarkTheme}
         />
         <button type="button" className={styles.copyIcon} onClick={() => handleCopy("code-snippet", codeFile ? "" : codeContent)} title="Copy">
           <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
         </button>
-        <button type="button" className={styles.playIcon} onClick={handlePlayClick} title="Run Code">
-          <SVGIcons icon="play" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
-        </button>
+        {!recycle && !unused && (
+          <button type="button" className={styles.playIcon} onClick={handlePlayClick} title="Run Code">
+            <SVGIcons icon="play" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
+          </button>
+        )}
         <div className={styles.iconGroup}>
           <button type="button" className={styles.expandIcon} onClick={() => handleZoomClick("Code Snippet", codeFile ? "" : codeContent)} title="Expand">
             <SVGIcons icon="fa-solid fa-up-right-and-down-left-from-center" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
@@ -942,7 +1029,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       </div>
       {/* Function selector removed: ExecutorPanel handles parameter discovery */}
       {/* File upload UI below, matching GroundTruth structure - Only show for Add Server mode */}
-      {!editMode && (
+      {!editMode && !recycle && (
         <div className={styles["form-block"]}>
           <label htmlFor="codeFile" className={styles["label-desc"]}>
             Python File (.py)
@@ -1110,7 +1197,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
             <div className={styles["main"]}>
               <div className={styles["nav"]}>
                 <div className={styles["header"]}>
-                  <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: 0 }}>{editMode ? "UPDATE SERVER" : "ADD SERVER"}</h2>
+                  <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: 0 }}>{recycle ? "RESTORE SERVER" : unused ? "UNUSED SERVER" : editMode ? "UPDATE SERVER" : "ADD SERVER"}</h2>
                 </div>
                 <button className={styles["closeBtn"]} onClick={handleCancel} aria-label="Cancel">
                   ×
@@ -1143,7 +1230,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                           <NewCommonDropdown
                             options={["REMOTE", "LOCAL", "EXTERNAL"]}
                             selected={
-                              editMode
+                              editMode || recycle || unused
                                 ? serverType === "active"
                                   ? "REMOTE"
                                   : serverType === "code"
@@ -1160,7 +1247,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                                 : ""
                             }
                             onSelect={(label) => {
-                              if (editMode) return;
+                              if (editMode || recycle || unused) return;
                               let val = "code";
                               if (label === "REMOTE") val = "active";
                               else if (label === "EXTERNAL") val = "external";
@@ -1174,15 +1261,15 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                             width={260}
                             style={{
                               ...dropdownCommonStyle,
-                              background: editMode ? "#f3f4f6" : "#fafbfc",
-                              borderColor: editMode ? "#e5e7eb" : "#1976d2",
-                              color: editMode ? "#6b7280" : "#222",
-                              cursor: editMode ? "not-allowed" : "pointer",
+                              background: (editMode || recycle || unused) ? "#f3f4f6" : "#fafbfc",
+                              borderColor: (editMode || recycle || unused) ? "#e5e7eb" : "#1976d2",
+                              color: (editMode || recycle || unused) ? "#6b7280" : "#222",
+                              cursor: (editMode || recycle || unused) ? "not-allowed" : "pointer",
                             }}
-                            disabled={editMode}
+                            disabled={editMode || recycle || unused}
                           />
                         </div>
-                        {editMode && (
+                        {(editMode || recycle || unused) && (
                           <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 260 }}>
                             <label className={styles["label-desc"]} style={{ marginBottom: 0, color: "#6b7280" }}>
                               CREATED BY
@@ -1214,7 +1301,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                           className={styles["input-class"]}
                           value={serverName}
                           onChange={(e) => setServerName(e.target.value)}
-                          disabled={editMode}
+                          disabled={editMode || recycle || unused}
                           placeholder={serverType === "external" ? "Enter MCP module name" : "Enter server name"}
                           aria-label={serverType === "external" ? "Module Name" : "Server Name"}
                           required
@@ -1234,6 +1321,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                           placeholder={serverType === "external" ? "Describe your module" : "Describe your server"}
                           aria-label="Description"
                           required
+                          disabled={recycle || unused}
                           style={commonInputStyle}
                         />
                       </div>
@@ -1256,13 +1344,58 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                   </div>
                   <div className={styles["modal-footer"]}>
                     <div className={styles["button-class"]}>
-                      <button type="submit" className="iafButton iafButtonPrimary" disabled={submitting} aria-label={editMode ? "Update Server" : "Add Server"}>
-                        {/* {submitting ? (editMode ? "UPDATING..." : "ADDING...") : editMode ? "UPDATE" : "ADD SERVER"} */}
-                        {editMode ? "UPDATE" : "ADD SERVER"}
-                      </button>
-                      <button type="button" className="iafButton iafButtonSecondary" onClick={handleCancel} aria-label="Cancel">
-                        CANCEL
-                      </button>
+                      {recycle ? (
+                        <>
+                          <button 
+                            type="button" 
+                            className="iafButton iafButtonPrimary" 
+                            disabled={submitting} 
+                            onClick={handlePermanentDelete}
+                            aria-label="Delete Permanently"
+                          >
+                            DELETE
+                          </button>
+                          <button 
+                            type="submit" 
+                            className="iafButton iafButtonSecondary" 
+                            disabled={submitting} 
+                            onClick={handleRestore}
+                            aria-label="Restore Server"
+                          >
+                            RESTORE
+                          </button>
+                        </>
+                      ) : unused ? (
+                        <>
+                          <button 
+                            type="button" 
+                            className="iafButton iafButtonPrimary" 
+                            disabled={submitting} 
+                            onClick={handleUnusedDelete}
+                            aria-label="Delete Server"
+                          >
+                            DELETE
+                          </button>
+                          <button 
+                            type="button" 
+                            className="iafButton iafButtonSecondary" 
+                            onClick={handleCancel}
+                            aria-label="Cancel"
+                          >
+                            CANCEL
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="submit" className="iafButton iafButtonPrimary" disabled={submitting} aria-label={editMode ? "Update Server" : "Add Server"}>
+                            {/* {submitting ? (editMode ? "UPDATING..." : "ADDING...") : editMode ? "UPDATE" : "ADD SERVER"} */}
+                            {editMode ? "UPDATE" : "ADD SERVER"}
+                          </button>
+                          <button type="button" className="iafButton iafButtonSecondary" onClick={handleCancel} aria-label="Cancel">
+                            CANCEL
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </form>

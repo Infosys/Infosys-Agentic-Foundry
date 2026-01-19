@@ -6,6 +6,19 @@
   background-color: #f8f9fa;
 }
 
+.loaderOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(128, 128, 128, 0.7);
+  z-index: 10;
+}
+
 .toggleWrapper {
   cursor: pointer;
   display: flex;
@@ -52,6 +65,7 @@ input:checked + .slider {
 .listArea {
   height: calc(100vh - 168px);
   overflow-y: auto;
+  position: relative;
 }
 
 .error {
@@ -74,4 +88,136 @@ input:checked + .slider {
 }
 .discriptionNoData {
   margin-top: 60px;
+}
+
+/* Server Detail Modal Styles */
+.serverDetailModal {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 24px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.serverDetailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.serverDetailHeader h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  text-transform: uppercase;
+}
+
+.closeBtn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.closeBtn:hover {
+  background-color: #f0f0f0;
+}
+
+.serverDetailContent {
+  margin-bottom: 24px;
+}
+
+.serverDetailRow {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+.serverDetailLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.serverDetailValue {
+  font-size: 14px;
+  color: #333;
+  word-break: break-word;
+}
+
+.serverDetailActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.deleteServerBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background-color: #dc3545;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.deleteServerBtn:hover {
+  background-color: #c82333;
+}
+
+.deleteServerBtn:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+.restoreServerBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background-color: #007ac0;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.restoreServerBtn:hover {
+  background-color: #006ba1;
+}
+
+.restoreServerBtn:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+.fullPageEditContainer {
+  position: fixed;
+  background-color: #fff;
+  top: 45px;
+  left: 70px;
+  z-index: 1000;
+  height: calc(100vh - 45px);
+  width: calc(100% - 70px);
+  padding: 8px 16px;
+  overflow: auto;
 }

@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import SVGIcons from "../../Icons/SVGIcons";
 import styles from "../../css_modules/AgentOnboard.module.css";
-import { APIs } from "../../constant";
 import ToolCard from "./ToolCard";
 import AgentForm from "./AgentForm";
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 import DropDown from "../commonComponents/DropDowns/DropDown";
-import { agentTypesDropdown, MULTI_AGENT, REACT_AGENT, META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT } from "../../constant";
+import { agentTypesDropdown, MULTI_AGENT, REACT_AGENT, META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT, APIs, PLANNER_EXECUTOR_AGENT, REACT_CRITIC_AGENT, PIPELINE_AGENT } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useToolsAgentsService } from "../../services/toolService";
 import SearchInputToolsAgents from "../commonComponents/SearchInputTools";
@@ -50,6 +49,7 @@ const AgentOnboard = (props) => {
 
   const { handleError } = useErrorHandler();
   const { hasPermission, permissions } = usePermissions();
+  const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value !== PIPELINE_AGENT);
 
   const fetchPaginatedData = useCallback(
     async (pageNumber, divsCount, tagParams = null) => {
@@ -59,7 +59,7 @@ const AgentOnboard = (props) => {
         if (selectedAgent === META_AGENT || selectedAgent === PLANNER_META_AGENT) {
           const response = await getAgentsSearchByPageLimit({ page: pageNumber, limit: divsCount, search: searchTerm, tags: tagsToUse });
           const allDetails = typeof response?.details === "object" && Array.isArray(response.details) ? response.details : [];
-          const filtered = allDetails.filter((agent) => agent.agentic_application_type === REACT_AGENT || agent.agentic_application_type === MULTI_AGENT);
+          const filtered = allDetails.filter((agent) => agent.agentic_application_type === REACT_AGENT || agent.agentic_application_type === MULTI_AGENT || agent.agentic_application_type === REACT_CRITIC_AGENT || agent.agentic_application_type === PLANNER_EXECUTOR_AGENT);
           setVisibleData((prev) => (pageNumber === 1 ? filtered : [...prev, ...filtered]));
           setTotalCount(response?.total_count || allDetails?.length || 0);
         } else {
@@ -211,7 +211,7 @@ const AgentOnboard = (props) => {
             search: searchTerm,
             tags: selectedTags,
           });
-          newData = (res?.details || []).filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT);
+          newData = (res?.details || []).filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT);
         } else {
           const res = await getToolsSearchByPageLimit({
             page: nextPage,
@@ -304,7 +304,7 @@ const AgentOnboard = (props) => {
             tags: selectedTags,
           });
           data = response?.details || [];
-          data = data.filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT);
+          data = data.filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT);
         } else {
           const response = await getToolsSearchByPageLimit({
             page: 1,
@@ -386,7 +386,7 @@ const AgentOnboard = (props) => {
             tags: selectedTags,
           });
           data = response?.details || [];
-          data = data.filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT);
+          data = data.filter((a) => a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT);
         } else {
           const response = await getToolsSearchByPageLimit({
             page: 1,
@@ -586,7 +586,7 @@ const AgentOnboard = (props) => {
             <label htmlFor="agent_type_select">Agent Type</label>
             <DropDown
               id="agent_type_select"
-              options={agentTypesDropdown}
+              options={filteredAgentTypesDropdown}
               value={selectedAgent}
               onChange={(e) => {
                 hasLoadedOnce.current = false;

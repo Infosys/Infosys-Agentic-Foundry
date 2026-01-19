@@ -63,7 +63,7 @@ const AgentsEvaluator = ({ onResponse }) => {
           Accept: "text/event-stream",
           ...(jwtToken ? { Authorization: `Bearer ${jwtToken}` } : {}),
         },
-        credentials: "omit", // previously was include , but dude to sast and not using any cookie changed to omit
+        credentials: "omit", // previously was include , but due to sast and not using any cookie changed to omit
       });
       if (!response.body) {
         addMessage("No response stream received", "error");

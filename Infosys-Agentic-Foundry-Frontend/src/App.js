@@ -22,6 +22,7 @@ import EvaluationPageNew from "./components/EvaluationPage/EvaluationPageNew";
 import useAutoLogout from "./Hooks/useAutoLogout";
 import useErrorHandler from "./Hooks/useErrorHandler";
 import { globalErrorService } from "./services/globalErrorService";
+import Pipeline from "./components/Pipeline";
 
 function App() {
   useErrorHandler(); // Calling error handler hook to catch errors from API calls across the application
@@ -169,6 +170,16 @@ function App() {
             <ProtectedRoute>
               <Layout>
                 <EvaluationPageNew />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+         <Route
+          path="/pipeline"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Pipeline />
               </Layout>
             </ProtectedRoute>
           }

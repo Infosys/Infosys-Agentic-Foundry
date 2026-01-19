@@ -153,6 +153,21 @@ export const useChatServices = () => {
     }
   };
 
+  // Get tools mapped to an agent
+  const getToolsMappedByAgent = async (agentId) => {
+    try {
+      const apiUrl = `${APIs.GET_TOOLS_MAPPED_BY_AGENT}${encodeURIComponent(agentId)}`;
+      const response = await fetchData(apiUrl);
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  };
+
   return {
     resetChat,
     getChatQueryResponse,
@@ -162,5 +177,6 @@ export const useChatServices = () => {
     fetchNewChats,
     getQuerySuggestions,
     storeMemoryExample,
+    getToolsMappedByAgent,
   };
 };

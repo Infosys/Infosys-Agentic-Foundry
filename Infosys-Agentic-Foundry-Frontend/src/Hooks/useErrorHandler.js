@@ -86,8 +86,6 @@ export const useErrorHandler = () => {
       response?.data?.detail,
       response.details,
       response?.data?.details,
-      response.status_message,
-      response?.data?.status_message,
       response.message,
       response?.data?.message,
       response?.data?.statusMessage,

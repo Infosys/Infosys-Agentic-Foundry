@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import SVGIcons from "../../../Icons/SVGIcons";
 import Toggle from "../../commonComponents/Toggle";
-import { META_AGENT, MULTI_AGENT, PLANNER_META_AGENT, REACT_AGENT } from "../../../constant";
+import { META_AGENT, MULTI_AGENT, PLANNER_META_AGENT, REACT_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT } from "../../../constant";
 import ToolCard from "./ToolCard";
 import SearchInput from "../../commonComponents/SearchInputTools";
 
@@ -147,7 +147,7 @@ const AddTools = (props) => {
             data =
               agentData?.filter(
                 (a) =>
-                  (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT) &&
+                  (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
                   !selectedAgents.some((mapped) => mapped.agentic_application_id === a.agentic_application_id)
               ) || [];
           } else {
@@ -214,7 +214,7 @@ const AddTools = (props) => {
             data =
               agentData?.filter(
                 (a) =>
-                  (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT) &&
+                  (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
                   !selectedAgents.some((mapped) => mapped.agentic_application_id === a.agentic_application_id)
               ) || [];
           } else {
@@ -310,7 +310,7 @@ const AddTools = (props) => {
         data =
           agentData?.filter(
             (a) =>
-              (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT) &&
+              (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
               !selectedAgents.some((mapped) => mapped.agentic_application_id === a.agentic_application_id)
           ) || [];
       } else {
@@ -360,7 +360,7 @@ const AddTools = (props) => {
         data =
           agentData?.filter(
             (a) =>
-              (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT) &&
+              (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
               !selectedAgents.some((mapped) => mapped.agentic_application_id === a.agentic_application_id)
           ) || [];
       } else {
@@ -459,7 +459,7 @@ const AddTools = (props) => {
             const agentData = sanitizeAgentsResponse(res?.details || []);
             newData = agentData.filter(
               (a) =>
-                (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT) &&
+                (a.agentic_application_type === REACT_AGENT || a.agentic_application_type === MULTI_AGENT || a.agentic_application_type === REACT_CRITIC_AGENT || a.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
                 !selectedAgents.some((mapped) => mapped.agentic_application_id === a.agentic_application_id)
             );
           } else {

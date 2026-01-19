@@ -459,7 +459,7 @@ export default function AvailableServers(props) {
         // Refresh the server list after delete
         const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
         getServersData(1, divsCount);
-        addMessage("Server has been deleted successfully!", "success");
+        addMessage(response?.message, "success");
         setShowPopup(true);
         setDeleteClickedId(null);
         setEmailId("");
@@ -469,9 +469,7 @@ export default function AvailableServers(props) {
 
         if (response?.message) {
           errorMessage = response.message;
-        } else if (response?.status_message) {
-          errorMessage = response.status_message;
-        } else if (response?.detail) {
+        }else if (response?.detail) {
           errorMessage = response.detail;
         } else if (typeof response === "string") {
           errorMessage = response;

@@ -2,9 +2,10 @@ import { useCallback, useMemo } from "react";
 import { APIs } from "../constant";
 import useFetch from "../Hooks/useAxios";
 import { extractErrorMessage } from "../utils/errorUtils";
+import Cookies from "js-cookie";
 
 export const useMcpServerService = () => {
-  const { fetchData, putData, deleteData } = useFetch();
+  const { fetchData, putData, deleteData, postData } = useFetch();
 
   const deleteServer = useCallback(
     async (data, serverId) => {
@@ -117,6 +118,46 @@ export const useMcpServerService = () => {
     [fetchData]
   );
 
+  // Recycle bin functions for servers
+  const getDeletedServers = useCallback(async () => {
+    try {
+      const userEmail = Cookies.get("email");
+      const apiUrl = `${APIs.MCP_SERVERS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(userEmail)}`;
+      const response = await fetchData(apiUrl);
+      return response || [];
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  }, [fetchData]);
+
+  const restoreServer = useCallback(
+    async (serverId) => {
+      try {
+        const userEmail = Cookies.get("email");
+        const apiUrl = `${APIs.MCP_RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(userEmail)}`;
+        const response = await postData(apiUrl);
+        return response;
+      } catch (error) {
+        return extractErrorMessage(error);
+      }
+    },
+    [postData]
+  );
+
+  const permanentDeleteServer = useCallback(
+    async (serverId) => {
+      try {
+        const userEmail = Cookies.get("email");
+        const apiUrl = `${APIs.MCP_DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(userEmail)}`;
+        const response = await deleteData(apiUrl);
+        return response;
+      } catch (error) {
+        return extractErrorMessage(error);
+      }
+    },
+    [deleteData]
+  );
+
   return useMemo(
     () => ({
       deleteServer,
@@ -124,7 +165,10 @@ export const useMcpServerService = () => {
       getServersSearchByPageLimit,
       updateServer,
       getLiveToolDetails,
+      getDeletedServers,
+      restoreServer,
+      permanentDeleteServer,
     }),
-    [deleteServer, getServersSearchByPageLimit, updateServer, getLiveToolDetails]
+    [deleteServer, getServersSearchByPageLimit, updateServer, getLiveToolDetails, getDeletedServers, restoreServer, permanentDeleteServer]
   );
 };

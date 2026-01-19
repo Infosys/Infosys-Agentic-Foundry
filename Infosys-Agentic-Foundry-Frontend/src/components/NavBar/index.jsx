@@ -7,7 +7,7 @@ import { useAuth } from "../../context/AuthContext";
 import { usePermissions } from "../../context/PermissionsContext";
 import Cookies from "js-cookie";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faKey } from "@fortawesome/free-solid-svg-icons";
+import { faKey, faProjectDiagram } from "@fortawesome/free-solid-svg-icons";
 import { emitActiveNavClick } from "../../events/navigationEvents";
 
 export default function NavBar() {
@@ -87,6 +87,17 @@ export default function NavBar() {
                     <>
                       <SVGIcons icon="fa-robot" fill="#343741" />
                       <span>Agents</span>
+                    </>
+                  )}
+                </li>
+              )}
+              {(typeof hasPermission === "function" ? hasPermission("read_access.agents") : !(permissions && permissions.read_access && permissions.read_access.agents === false)) && (
+                <li>
+                  {mainNavLink(
+                    "/pipeline",
+                    <>
+                      <FontAwesomeIcon icon={faProjectDiagram} />
+                      <span>Pipeline</span>
                     </>
                   )}
                 </li>

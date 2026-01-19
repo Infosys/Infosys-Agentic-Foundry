@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import styles from "../GroundTruth/GroundTruth.module.css";
-import { APIs, agentTypesDropdown } from "../../constant";
+import { APIs, agentTypesDropdown, PIPELINE_AGENT } from "../../constant";
 import Loader from "../commonComponents/Loader";
 import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -21,10 +21,13 @@ const ConsistencyTab = () => {
     agent_name: "",
     uploaded_file: null,
   });
+  
+// Filter out pipeline from agent types dropdown
+const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value !== PIPELINE_AGENT);
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState([]);
   const [agentsListData, setAgentsListData] = useState([]);
-  const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
+  const [agentType, setAgentType] = useState(filteredAgentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
   const [agentSearchTerm, setAgentSearchTerm] = useState("");
   const [filteredAgents, setFilteredAgents] = useState([]);
@@ -187,7 +190,7 @@ const ConsistencyTab = () => {
     setManualQuery("");
     setAddModeQueries([""]); // Reset to one empty query
     setModelSearchTerm("");
-    setAgentType(agentTypesDropdown[0].value);
+    setAgentType(filteredAgentTypesDropdown[0].value);
     setAgentTypeSearchTerm("");
     setAgentSearchTerm("");
     setSelectedModelIndex(-1);
@@ -221,7 +224,7 @@ const ConsistencyTab = () => {
     });
     setManualQuery("");
     setModelSearchTerm(agent.model_name || "");
-    setAgentType(agent.agent_type || agent.agentic_application_type || agentTypesDropdown[0].value);
+    setAgentType(agent.agent_type || agent.agentic_application_type || filteredAgentTypesDropdown[0].value);
     setAgentTypeSearchTerm(agent.agent_type || agent.agentic_application_type || "");
     setAgentSearchTerm(agentName);
     setSelectedModelIndex(-1);
@@ -827,7 +830,7 @@ const ConsistencyTab = () => {
 
   // --- Dropdown filtering logic ---
   useEffect(() => {
-    setFilteredAgentTypes(agentTypesDropdown);
+    setFilteredAgentTypes(filteredAgentTypesDropdown);
   }, []);
   useEffect(() => {
     setFilteredModels(models);
@@ -863,9 +866,9 @@ const ConsistencyTab = () => {
   }, [agentSearchTerm, agentListDropdown]);
   useEffect(() => {
     if (!agentTypeSearchTerm) {
-      setFilteredAgentTypes(agentTypesDropdown);
+      setFilteredAgentTypes(filteredAgentTypesDropdown);
     } else {
-      const filtered = agentTypesDropdown.filter((type) => type.label.toLowerCase().includes(agentTypeSearchTerm.toLowerCase()));
+      const filtered = filteredAgentTypesDropdown.filter((type) => type.label.toLowerCase().includes(agentTypeSearchTerm.toLowerCase()));
       setFilteredAgentTypes(filtered);
     }
     setSelectedAgentTypeIndex(-1);
@@ -1295,7 +1298,7 @@ const ConsistencyTab = () => {
         setManualQuery("");
         setAddModeQueries([""]); // Reset to one empty query
         setModelSearchTerm("");
-        setAgentType(agentTypesDropdown[0].value);
+        setAgentType(filteredAgentTypesDropdown[0].value);
         setAgentTypeSearchTerm("");
         setAgentSearchTerm("");
         setSelectedModelIndex(-1);
@@ -1320,7 +1323,7 @@ const ConsistencyTab = () => {
           });
 
           setModelSearchTerm(data.model_name || payload.model_name || "");
-          setAgentType(data.agent_type || payload.agent_type || agentTypesDropdown[0].value);
+          setAgentType(data.agent_type || payload.agent_type || filteredAgentTypesDropdown[0].value);
           setAgentTypeSearchTerm(data.agent_type || payload.agent_type || "");
           setAgentSearchTerm(data.agent_name || payload.agent_name || "");
           setEditQueries(data.queries || []);
@@ -2242,7 +2245,7 @@ const ConsistencyTab = () => {
                                           setModelSearchTerm(model.label);
                                           setIsModelDropdownOpen(false);
                                           setSelectedModelIndex(-1);
-                                          setAgentType(agentTypesDropdown[0].value);
+                                          setAgentType(filteredAgentTypesDropdown[0].value);
                                           setAgentSearchTerm("");
                                           setIsAgentDropdownOpen(false);
                                           setSelectedAgentIndex(-1);

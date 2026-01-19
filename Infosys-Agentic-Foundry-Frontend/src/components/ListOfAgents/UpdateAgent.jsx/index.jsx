@@ -309,7 +309,7 @@ const UpdateAgent = (props) => {
             : [];
           const agents = fetchedAgents?.filter(
             (agent) =>
-              (agent.agentic_application_type === REACT_AGENT || agent.agentic_application_type === MULTI_AGENT) &&
+              (agent.agentic_application_type === REACT_AGENT || agent.agentic_application_type === MULTI_AGENT || agent.agentic_application_type === REACT_CRITIC_AGENT || agent.agentic_application_type === PLANNER_EXECUTOR_AGENT) &&
               !selectedAgents?.some((selectedTool) => agent?.agentic_application_id === selectedTool.agentic_application_id)
           );
           setRemainingAgents((prev) => (pageNumber === 1 ? agents : [...prev, ...agents]));
@@ -467,8 +467,8 @@ const UpdateAgent = (props) => {
       }
       if (res.detail) {
         handleApiError(res);
-      } else if (res.status_message) {
-        addMessage(res.status_message, "success");
+      } else if (res.message) {
+        addMessage(res.message, "success");
       } else {
         addMessage("Updated successfully", "success");
       }

@@ -1,10 +1,10 @@
-import React from "react";
 import style from "../../css_modules/Loader.module.css";
+import loaderGif from "../../Assets/loading.gif";
 
-const Loader = () => {
+const Loader = ({ contained = false }) => {
   return (
-    <div className={style["loader-backdrop"]}>
-      <img src="/images/loading.gif" alt="Loading..." />
+    <div className={`${style["loader-backdrop"]} ${contained ? style["loader-contained"] : ""}`}>
+      <img src={loaderGif} alt="Loading..." className="loader-gif" />
     </div>
   );
 };

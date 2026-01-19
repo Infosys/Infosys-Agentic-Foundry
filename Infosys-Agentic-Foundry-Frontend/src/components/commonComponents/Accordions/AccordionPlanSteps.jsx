@@ -64,31 +64,109 @@ const AccordionPlanSteps = (props) => {
         {(() => {
           if (!props?.show_canvas) {
             // Only render if there's actually content to display
-            if (!textContent || textContent.trim() === "") {
+            if ((!textContent || textContent.trim() === "") && canvasParts.length === 0) {
               return null;
             }
 
-            // Show all text parts as text-only bubble
+            // Show all parts inline (both text and canvas parts) without canvas button
             return (
               <div className={`${styles.messageBubble} textOnlyBubble`}>
-                <ReactMarkdown
-                  rehypePlugins={[remarkGfm]}
-                  components={{
-                    code({ node, inline, className, children, ...props }) {
-                      const match = /language-(\w+)/.exec(className || "");
-                      return !inline && match ? (
-                        <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                          {String(children).replace(/\n$/, "")}
+                {textContent && textContent.trim() !== "" && (
+                  <ReactMarkdown
+                    rehypePlugins={[remarkGfm]}
+                    components={{
+                      code({ node, inline, className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || "");
+                        return !inline && match ? (
+                          <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                            {String(children).replace(/\n$/, "")}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}>
+                    {textContent}
+                  </ReactMarkdown>
+                )}
+                {canvasParts.length > 0 && canvasParts.map((part, idx) => {
+                  // Render canvas parts inline
+                  if (part.type === "code" && part.data) {
+                    const codeContent = part.data.content || "";
+                    const language = part.data.language || "text";
+                    return (
+                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px" }}>
+                        <SyntaxHighlighter style={oneDark} language={language} PreTag="div">
+                          {codeContent}
                         </SyntaxHighlighter>
-                      ) : (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}>
-                  {textContent}
-                </ReactMarkdown>
+                      </div>
+                    );
+                  } else if (part.type === "json" && part.data) {
+                    // Handle JSON type - display formatted JSON or result field
+                    const jsonContent = JSON.stringify(part.data, null, 2);
+                    return (
+                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px" }}>
+                        <ReactMarkdown
+                          rehypePlugins={[remarkGfm]}
+                          components={{
+                            code({ node, inline, className, children, ...props }) {
+                              const match = /language-(\w+)/.exec(className || "");
+                              return !inline && match ? (
+                                <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                                  {String(children).replace(/\n$/, "")}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              );
+                            },
+                          }}>
+                          {typeof jsonContent === "string" ? jsonContent : JSON.stringify(jsonContent, null, 2)}
+                        </ReactMarkdown>
+                      </div>
+                    );
+                  } else if (part.type === "email" && part.data) {
+                    return (
+                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px", padding: "12px", border: "1px solid #e5e7eb", borderRadius: "6px" }}>
+                        {part.data.to && <div><strong>To:</strong> {part.data.to}</div>}
+                        {part.data.subject && <div><strong>Subject:</strong> {part.data.subject}</div>}
+                        {part.data.body && (
+                          <div style={{ marginTop: "8px" }}>
+                            <ReactMarkdown rehypePlugins={[remarkGfm]}>{part.data.body}</ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } else if (part.data && part.data.content) {
+                    // Generic content rendering
+                    return (
+                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px" }}>
+                        <ReactMarkdown
+                          rehypePlugins={[remarkGfm]}
+                          components={{
+                            code({ node, inline, className, children, ...props }) {
+                              const match = /language-(\w+)/.exec(className || "");
+                              return !inline && match ? (
+                                <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                                  {String(children).replace(/\n$/, "")}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              );
+                            },
+                          }}>
+                          {part.data.content}
+                        </ReactMarkdown>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
               </div>
             );
           } else {
