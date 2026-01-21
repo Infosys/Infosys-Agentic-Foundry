@@ -1254,6 +1254,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../Inference/HybridAgent_inference/" class="md-nav__link">
         
   
@@ -1801,9 +1824,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tools-and-agents" class="md-nav__link">
+  <a href="#tools-agents-and-mcp-servers" class="md-nav__link">
     <span class="md-ellipsis">
-      Tools and Agents
+      Tools, Agents, and MCP Servers
     </span>
   </a>
   
@@ -1892,6 +1915,28 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agent_Pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Agent Pipelines
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1937,9 +1982,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tools-and-agents" class="md-nav__link">
+  <a href="#tools-agents-and-mcp-servers" class="md-nav__link">
     <span class="md-ellipsis">
-      Tools and Agents
+      Tools, Agents, and MCP Servers
     </span>
   </a>
   
@@ -1987,14 +2032,14 @@
 <li><code>Long-term chat history older than 30 days</code> is deleted from the database.</li>
 <li>Deleted records are first moved to the <code>Recycle</code> and kept for 15 days, allowing for restoration within this window.</li>
 </ul>
-<h2 id="tools-and-agents">Tools and Agents</h2>
-<p>TTL is also applied to tools and agents:</p>
+<h2 id="tools-agents-and-mcp-servers">Tools, Agents, and MCP Servers</h2>
+<p>TTL is also applied to tools, agents, and MCP servers:</p>
 <ul>
-<li>When a tool or agent is deleted, it is moved to the <code>Recycle Bin</code>.</li>
-<li>After 15 days in the Recycle Bin, the tool or agent is permanently deleted, including the removal of the agent's table from the database.</li>
+<li>When a tool, agent, or MCP server is deleted, it is moved to the <code>Recycle Bin</code>.</li>
+<li>After 45 days in the Recycle Bin, the tool, agent, or MCP server is permanently deleted, including the removal of the agent's table from the database.</li>
 </ul>
 <p><strong>Recycle Manager</strong></p>
-<p>The Recycle Manager acts as a holding area for deleted records (checkpoints, long-term records, tools, and agents). All items remain in the recycle area for <code>15 days</code> before permanent deletion. Restoration is possible during this period based on the number of days since deletion.</p>
+<p>The Recycle Manager acts as a holding area for deleted records (checkpoints, long-term records, tools, agents, and MCP servers). All items remain in the recycle area for <code>15 days</code> before permanent deletion. Restoration is possible during this period based on the number of days since deletion.</p>
 <h2 id="automated-cleanup-with-scheduler">Automated Cleanup with Scheduler</h2>
 <p>A daily task scheduler (cron job) is implemented to automate the cleanup process:</p>
 <ul>
@@ -2005,7 +2050,7 @@
 <ol>
 <li><strong>Short-term memory (checkpoints):</strong> Deleted after 30 days, retained in recycle for 15 days.</li>
 <li><strong>Long-term memory (chat history):</strong> Deleted after 30 days, retained in recycle for 15 days.</li>
-<li><strong>Tools &amp; agents:</strong> Moved to recycle bin on deletion, permanently deleted after 15 days.</li>
+<li><strong>Tools, agents &amp; MCP Servers:</strong> Moved to recycle bin on deletion, permanently deleted after 15 days.</li>
 <li><strong>Automated cleanup:</strong> Scheduled daily at 3 AM.</li>
 </ol>
 <p>This TTL implementation ensures efficient data management, reduces storage overhead, and provides a safety net for accidental deletions through the recycle manager.</p>
