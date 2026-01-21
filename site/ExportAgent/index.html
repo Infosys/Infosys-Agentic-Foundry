@@ -1254,6 +1254,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../Inference/HybridAgent_inference/" class="md-nav__link">
         
   
@@ -1870,6 +1893,28 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agent_Pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Agent Pipelines
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1942,13 +1987,19 @@
 </ul>
 <hr />
 <h2 id="exporting-agents">Exporting Agents</h2>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li><strong>SSE Streaming</strong>: The exported agents include Server-Sent Events (SSE) support for real-time inference streaming, enabling pipeline-based processing and live response streaming</li>
+<li><strong>Validator Support</strong>: Built-in validator configurations are included in the export, ensuring workflow integrity and data validation across agent operations</li>
+<li><strong>Tool Dependency Export</strong>: All tool dependencies and base requirements are automatically packaged with the agent export, ensuring complete portability</li>
+</ul>
 <p>All agent types can be exported, including React, React Critic, Planner Executor Critic, Planner Executor, Meta, and Planner Meta. The export includes both backend and frontend code, organized for easy redeployment.</p>
 <p>The backend is provided as a folder containing all logic, configuration, and scripts needed for the agent. This folder includes configuration files, tool definitions, a Dockerfile for containerization, environment variables, and documentation. All dependencies are listed in requirements.txt for easy installation.</p>
 <p>The frontend includes the source code, public assets, deployment configuration (such as YAML files for Kubernetes), and environment files. This ensures the user interface and all related assets are ready for deployment.</p>
 <p>A typical exported folder structure includes:</p>
 <ul>
-<li><strong>Agent_Backend</strong>: config files, tool scripts, Dockerfile, .env, requirements.txt, and documentation</li>
-<li><strong>Agent_Frontend</strong>: Source code, public assets, deployment YAML, .env, and package files</li>
+<li><strong>Agent_Backend</strong>: Contains the backend Python package (<code>exportagent</code>), configuration files, tool definitions with their dependencies, validator configurations, SSE streaming setup, Dockerfile for containerization, environment variables, and all scripts needed for agent operation. The wheel file is listed in <code>requirements.txt</code> so that installing dependencies will automatically install the agent backend along with all tool dependencies and base requirements.</li>
+<li><strong>Agent_Frontend</strong>: Contains the frontend source code, public assets, deployment configuration, SSE client implementations, and all files required to run the agent's user interface.</li>
 </ul>
 <p>This structure allows teams to:</p>
 <ul>

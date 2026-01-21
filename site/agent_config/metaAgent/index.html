@@ -1321,6 +1321,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../Inference/HybridAgent_inference/" class="md-nav__link">
         
   
@@ -1881,6 +1904,28 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agent_Pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Agent Pipelines
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1953,7 +1998,15 @@
 <p><strong>Meta Agent</strong> Serves as the central decision making entity. Individual agents are coordinated by a central <strong>supervisor</strong> agent. The supervisor controls all communication flow and task delegation, making decisions about which agent to invoke based on the current context and task requirements.</p>
 <hr />
 <h2 id="meta-agent-onboarding"><strong>Meta Agent Onboarding</strong></h2>
-<p>To onboard a Meta Agent, you'll begin by selecting the META AGENT template from the available options. Next, you'll choose the specific React or Multi agents from the listed agents that you want to coordinate under the meta agent's supervision. </p>
+<p>To onboard a Meta Agent, you'll begin by selecting the META AGENT template from the available options. Next, you'll choose the specific React, Multi or Meta agents from the listed agents that you want to coordinate under the meta agent's supervision. </p>
+<p>The Meta Agent supports binding of the following worker agent templates:</p>
+<ul>
+<li>React Agent</li>
+<li>React Critic Agent</li>
+<li>Multi Agent</li>
+<li>Planner Executor Agent</li>
+<li>Planner Executor Critic Agent</li>
+</ul>
 <p>You'll then assign a descriptive name that clearly represents your meta agent's purpose and function. After naming your agent, you'll define its primary goal and objective, explaining what the coordinated agent system is designed to accomplish. </p>
 <p>Finally, you'll provide comprehensive workflow instructions that detail how the meta agent should handle requests, classify user intent, and delegate tasks to the appropriate worker agents. The system will use your selected model to automatically generate a system prompt based on your agent goal and workflow description.</p>
 <details class="info">

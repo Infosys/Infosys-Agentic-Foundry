@@ -891,6 +891,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#selective-tool-interrupt" class="md-nav__link">
+    <span class="md-ellipsis">
+      Selective Tool Interrupt
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-interrupt-for-meta-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Agent Interrupt (For Meta Templates)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#best-practices" class="md-nav__link">
     <span class="md-ellipsis">
       Best Practices
@@ -1324,6 +1342,29 @@
   
   <span class="md-ellipsis">
     Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Meta Agent Inference
     
   </span>
   
@@ -1901,6 +1942,28 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agent_Pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Agent Pipelines
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1958,6 +2021,24 @@
   <a href="#benefits-of-tool-interrupt" class="md-nav__link">
     <span class="md-ellipsis">
       Benefits of Tool Interrupt
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#selective-tool-interrupt" class="md-nav__link">
+    <span class="md-ellipsis">
+      Selective Tool Interrupt
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agent-interrupt-for-meta-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Agent Interrupt (For Meta Templates)
     </span>
   </a>
   
@@ -2111,18 +2192,49 @@ Final Answer: -8
 - Understanding of how complex queries are broken down
 - Learning about tool dependencies and execution order
 - Insight into agent decision-making process</p>
+<h2 id="selective-tool-interrupt">Selective Tool Interrupt</h2>
+<p><strong>Granular Control</strong></p>
+<ul>
+<li>Enabled selective tool interruption in LangGraph, allowing users to choose which specific tools require approval before execution.</li>
+<li>Expanded support to include MCP tools and agents, providing comprehensive coverage across all tool types in the framework.</li>
+<li>Users can configure interrupt behavior on a per-tool basis, enabling automatic execution for trusted tools while maintaining manual approval for sensitive operations.</li>
+</ul>
+<h2 id="agent-interrupt-for-meta-templates">Agent Interrupt (For Meta Templates)</h2>
+<p>For <code>Meta Agent</code> and <code>Meta Planner Agent</code> templates, the concept of Tool Interrupt is replaced by <code>Agent Interrupt</code>. Since Meta templates orchestrate multiple worker agents rather than calling tools directly, Agent Interrupt provides control over which worker agents are invoked during query processing.</p>
+<p><strong>Overview</strong></p>
+<p>Agent Interrupt allows users to review and approve agent invocations before they are executed. This ensures transparency and control over how the Meta Agent delegates tasks to its worker agents.</p>
+<p><strong>How It Works</strong></p>
+<p>When Agent Interrupt is <code>enabled</code>:</p>
+<ul>
+<li>User submits a query to the Meta Agent</li>
+<li>The system displays which worker agent will be called</li>
+<li>User can approve or modify the agent selection before execution</li>
+<li>Process continues for each agent invocation in the workflow</li>
+</ul>
+<p><strong>Selective Agent Interrupt</strong></p>
+<p>Similar to Selective Tool Interrupt, <strong>Selective Agent Interrupt</strong> provides granular control over which worker agents require approval before invocation.</p>
+<p><strong>Granular Control</strong></p>
+<ul>
+<li>Users can select specific worker agents that should trigger an interrupt before being called.</li>
+<li>Trusted agents can be configured for automatic execution, while sensitive or critical agents require manual approval.</li>
+<li>This allows for a balance between automation and oversight in complex multi-agent workflows.</li>
+</ul>
 <h2 id="best-practices">Best Practices</h2>
-<p><strong>Enable Tool Interrupt when:</strong>
-- Testing new agent configurations
-- Working with sensitive data or operations
-- Learning how tools interact with each other
-- Debugging complex queries
-- Need precise control over tool parameters</p>
-<p><strong>Disable Tool Interrupt when:</strong>
-- Running routine, well-tested operations
-- Processing bulk queries
-- Working with trusted tool configurations
-- Need fast, automated responses</p>
+<p><strong>Enable Tool Interrupt when:</strong></p>
+<ul>
+<li>Testing new agent configurations</li>
+<li>Working with sensitive data or operations</li>
+<li>Learning how tools interact with each other</li>
+<li>Debugging complex queries</li>
+<li>Need precise control over tool parameters</li>
+</ul>
+<p><strong>Disable Tool Interrupt when:</strong></p>
+<ul>
+<li>Running routine, well-tested operations</li>
+<li>Processing bulk queries</li>
+<li>Working with trusted tool configurations</li>
+<li>Need fast, automated responses</li>
+</ul>
 <p><strong>Parameter Editing Guidelines :</strong></p>
 <ul>
 <li><strong>Review Carefully</strong>: Always review the suggested parameters before editing</li>

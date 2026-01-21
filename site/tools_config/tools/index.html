@@ -855,6 +855,15 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#tool-file-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tool File Storage
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1324,6 +1333,29 @@
   
   <span class="md-ellipsis">
     Meta Agent Inference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Planner Meta Agent Inference
     
   </span>
   
@@ -1901,6 +1933,28 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agent_Pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Agent Pipelines
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1967,6 +2021,15 @@
   <a href="#deleting-a-tool" class="md-nav__link">
     <span class="md-ellipsis">
       Deleting a Tool
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-file-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tool File Storage
     </span>
   </a>
   
@@ -2060,6 +2123,18 @@ You can either paste the complete Python function directly into the code block o
 <div class="admonition warning">
 <p class="admonition-title">Important</p>
 <p>Only the original creator of the tool has permission to update or delete it. Other users do not have access to modify or remove these resources.</p>
+</div>
+<h2 id="tool-file-storage">Tool File Storage</h2>
+<p>Tools are saved as files on the server during the onboarding and update process. This file-based storage approach ensures:</p>
+<ul>
+<li><strong>Persistence</strong>: Tool code is stored as physical files on the server, aligned with database records</li>
+<li><strong>Update Support</strong>: When a tool is updated, the corresponding file on the server is also updated</li>
+<li><strong>Delete Support</strong>: When a tool is deleted, the file is removed from the server</li>
+<li><strong>Restore Support</strong>: Deleted tools can be restored from the recycle bin, which also restores the associated tool file</li>
+</ul>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>This file management logic is synchronized with the database operations, ensuring consistency between the tool records in the database and the actual tool files on the server.</p>
 </div>
 
 
