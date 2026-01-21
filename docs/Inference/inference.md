@@ -70,7 +70,7 @@ You can configure your chat experience with toggle options for canvas view, cont
 
     Supported Agent Templates:
 
-    `React`, `React Critic`, `Planner Executor Critic`, `Planner Executor`
+    `React`, `React Critic`, `Planner Executor Critic`, `Planner Executor`, `Meta`, `Planner Meta`
 
     **Onboarding a Validator**
 

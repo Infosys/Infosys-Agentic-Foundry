@@ -43,6 +43,8 @@ SSE streaming has been implemented across all major agent templates in the frame
 
 - **Planner-Meta Agent** merges planning with meta-agent capabilities, streaming Generating Context, Generating Plan, Agent Call, Generating Final Response, and Memory Updation to show both the planning and delegation processes.
 
+- **Hybrid Agent** supports SSE streaming with nodes for Generating Context, Generating Plan, Processing..., Replanning, Generating Response, and Memory Updation. This pure Python-based template provides real-time visibility into both planning and execution phases within a single agent.
+
 !!! info "SSE Event Structure and Content"
     Each SSE event transmitted to the client contains structured information designed to provide meaningful insights into the agent's current state. The events include the node name identifying the current processing stage, a status indicator showing whether the node has started, completed, or failed, and relevant content such as tool arguments, execution results, or context summaries.
 
