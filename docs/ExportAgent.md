@@ -15,6 +15,12 @@ Exported agents are useful for:
 
 ## Exporting Agents
 
+**Key Features:**
+
+- **SSE Streaming**: The exported agents include Server-Sent Events (SSE) support for real-time inference streaming, enabling pipeline-based processing and live response streaming
+- **Validator Support**: Built-in validator configurations are included in the export, ensuring workflow integrity and data validation across agent operations
+- **Tool Dependency Export**: All tool dependencies and base requirements are automatically packaged with the agent export, ensuring complete portability
+
 All agent types can be exported, including React, React Critic, Planner Executor Critic, Planner Executor, Meta, and Planner Meta. The export includes both backend and frontend code, organized for easy redeployment.
 
 The backend is provided as a folder containing all logic, configuration, and scripts needed for the agent. This folder includes configuration files, tool definitions, a Dockerfile for containerization, environment variables, and documentation. All dependencies are listed in requirements.txt for easy installation.
@@ -23,8 +29,8 @@ The frontend includes the source code, public assets, deployment configuration (
 
 A typical exported folder structure includes:
 
-- **Agent_Backend**: config files, tool scripts, Dockerfile, .env, requirements.txt, and documentation
-- **Agent_Frontend**: Source code, public assets, deployment YAML, .env, and package files
+- **Agent_Backend**: Contains the backend Python package (`exportagent`), configuration files, tool definitions with their dependencies, validator configurations, SSE streaming setup, Dockerfile for containerization, environment variables, and all scripts needed for agent operation. The wheel file is listed in `requirements.txt` so that installing dependencies will automatically install the agent backend along with all tool dependencies and base requirements.
+- **Agent_Frontend**: Contains the frontend source code, public assets, deployment configuration, SSE client implementations, and all files required to run the agent's user interface.
 
 This structure allows teams to:
 

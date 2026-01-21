@@ -100,23 +100,84 @@ The system offers a comprehensive view of each feedback item. For each feedback,
 
 ## 3. RecycleBin
 
-The **RecycleBin** tab lets administrators manage deleted tools and agents. All removed items are listed here, providing a way to review them before permanent deletion.
+The **RecycleBin** tab lets administrators manage deleted tools, agents and MCP Servers. All removed items are listed here, providing a way to review them before permanent deletion.
 
 **Key Features**
 
-- **View Deleted Items:** See a list of all deleted tools and agents.
+- **View Deleted Items:** See a list of all deleted tools, agents and MCP Servers.
 - **Restore Functionality:** Restore mistakenly deleted items with a single click.
 - **Permanent Deletion:** Permanently remove items that are no longer needed. This action cannot be undone.
 
 > **Note:**
 > Only users with administrative privileges can access the RecycleBin tab and perform restore or permanent delete actions.
 
-## 4. Unused Tools & Agents
+## 4. Unused Tools, Agents and MCP Servers
 
-The **Unused Tools & Agents** tab displays all tools and agents that have not been used or updated in the last 15 days. `Unused` means there has been no interaction with the agent or modification to the tool/agent during this period.
+The **Unused Tools, Agents and MCP Servers** tab displays all tools, agents and MCP Servers that have not been used or updated in the last 15 days. `Unused` means there has been no interaction with the agent or modification to the tool/agent during this period.
 
 **Administrative Capabilities:**
 
-- View a comprehensive list of unused tools and agents.
-- Delete unused tools or agents directly from this tab.
+- View a comprehensive list of unused tools, agents and MCP Servers.
+- Delete unused tools, agents or MCP Servers directly from this tab.
 - Deleted items are automatically moved to the RecycleBin for potential recovery or permanent deletion.
+
+## 5. Installation
+
+The `Installation` tab provides administrators with comprehensive visibility into the Python package dependencies required by the tools in the system. This section helps ensure that all necessary packages are properly installed and tracks pending installation requests from users.
+
+### Missing Dependencies
+
+This tab identifies Python packages that are required by existing tools but are not currently installed in the environment.
+
+**How It Works:**
+
+- The system extracts all tool code snippets from the database for existing tools.
+- It parses the import statements from each tool's code to identify all referenced modules.
+- User-defined modules and Python standard library (stdlib) packages are filtered out.
+- The remaining packages are identified as real PyPI packages.
+- These identified packages are compared against: `requirements.txt` file and currently installed packages in the environment.
+- Any packages that are not installed are listed under `Missing Dependencies`.
+
+!!! Info "Admin Action"
+
+    - Review the list of missing packages.
+    - Install the required packages to ensure all tools function correctly.
+
+---
+
+### Installed Dependencies
+
+This tab displays all Python packages currently installed in the environment.
+
+**How It Works:**
+
+- The system runs a subprocess command to list all installed packages.
+- The complete list of installed packages with their versions is displayed to the administrator.
+
+!!! info "Use Case"
+
+    - Verify that required packages are installed.
+    - Check package versions for compatibility.
+    - Audit the environment for security or compliance purposes.
+
+---
+
+### Pending Dependencies
+
+This tab tracks tool onboarding failures caused by missing module dependencies and displays them for admin review.
+
+**How It Works:**
+
+- During tool onboarding, the system validates that all imported modules in the tool code are available.
+- If a module is not found, the tool onboarding is blocked with a "module not found" validation error.
+- The system records the following details in the database:
+   - `Module Name:` The missing package/module that caused the failure.
+   - `Tool Code:` The tool code snippet that contains the import.
+   - `User:` The user who attempted to onboard the tool.
+- These pending dependency requests are displayed to the administrator under this tab.
+
+!!! info "Admin Action"
+
+    - Review pending dependency requests from users.
+    - Install the requested packages after validation.
+    - Notify users once the package is installed so they can retry tool onboarding.

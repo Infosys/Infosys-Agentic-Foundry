@@ -153,9 +153,45 @@ Final Answer: -8
 - Learning about tool dependencies and execution order
 - Insight into agent decision-making process
 
+## Selective Tool Interrupt
+
+**Granular Control**
+
+- Enabled selective tool interruption in LangGraph, allowing users to choose which specific tools require approval before execution.
+- Expanded support to include MCP tools and agents, providing comprehensive coverage across all tool types in the framework.
+- Users can configure interrupt behavior on a per-tool basis, enabling automatic execution for trusted tools while maintaining manual approval for sensitive operations.
+
+## Agent Interrupt (For Meta Templates)
+
+For `Meta Agent` and `Meta Planner Agent` templates, the concept of Tool Interrupt is replaced by `Agent Interrupt`. Since Meta templates orchestrate multiple worker agents rather than calling tools directly, Agent Interrupt provides control over which worker agents are invoked during query processing.
+
+**Overview**
+
+Agent Interrupt allows users to review and approve agent invocations before they are executed. This ensures transparency and control over how the Meta Agent delegates tasks to its worker agents.
+
+**How It Works**
+
+When Agent Interrupt is `enabled`:
+
+- User submits a query to the Meta Agent
+- The system displays which worker agent will be called
+- User can approve or modify the agent selection before execution
+- Process continues for each agent invocation in the workflow
+
+**Selective Agent Interrupt**
+
+Similar to Selective Tool Interrupt, **Selective Agent Interrupt** provides granular control over which worker agents require approval before invocation.
+
+**Granular Control**
+
+- Users can select specific worker agents that should trigger an interrupt before being called.
+- Trusted agents can be configured for automatic execution, while sensitive or critical agents require manual approval.
+- This allows for a balance between automation and oversight in complex multi-agent workflows.
+
 ## Best Practices
 
 **Enable Tool Interrupt when:**
+
 - Testing new agent configurations
 - Working with sensitive data or operations
 - Learning how tools interact with each other
@@ -163,6 +199,7 @@ Final Answer: -8
 - Need precise control over tool parameters
 
 **Disable Tool Interrupt when:**
+
 - Running routine, well-tested operations
 - Processing bulk queries
 - Working with trusted tool configurations

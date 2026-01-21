@@ -7,7 +7,12 @@
 The onboarding steps are the same as the Meta Agent. See [Meta Agent Onboarding](./metaAgent.md#meta-agent-onboarding):
 
 1. **Select Template**: Choose the Meta Planner Agent template.
-2. **Select Agents**: Select worker agents (e.g., React, Multi-Agent) to be managed.
+2. **Select Agents**: From the available list, select the worker agents to be managed by the Meta Planner Agent. The Meta Planner Agent supports binding of the following worker agent templates:
+    - React Agent
+    - React Critic Agent
+    - Multi Agent
+    - Planner Executor Agent
+    - Planner Executor Critic Agent
 3. **Agent Name**: Provide a name for your meta planner agent.
 4. **Agent Goal**: Define the main objective.
 5. **Workflow Description**: Give instructions and guidelines for orchestration and task delegation.

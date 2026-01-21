@@ -22,16 +22,16 @@ For each agent, a dedicated table is created upon onboarding to store all long-t
 - `Long-term chat history older than 30 days` is deleted from the database.
 - Deleted records are first moved to the `Recycle` and kept for 15 days, allowing for restoration within this window.
 
-## Tools and Agents
+## Tools, Agents, and MCP Servers
 
-TTL is also applied to tools and agents:
+TTL is also applied to tools, agents, and MCP servers:
 
-- When a tool or agent is deleted, it is moved to the `Recycle Bin`.
-- After 15 days in the Recycle Bin, the tool or agent is permanently deleted, including the removal of the agent's table from the database.
+- When a tool, agent, or MCP server is deleted, it is moved to the `Recycle Bin`.
+- After 45 days in the Recycle Bin, the tool, agent, or MCP server is permanently deleted, including the removal of the agent's table from the database.
 
 **Recycle Manager**
 
-The Recycle Manager acts as a holding area for deleted records (checkpoints, long-term records, tools, and agents). All items remain in the recycle area for `15 days` before permanent deletion. Restoration is possible during this period based on the number of days since deletion.
+The Recycle Manager acts as a holding area for deleted records (checkpoints, long-term records, tools, agents, and MCP servers). All items remain in the recycle area for `15 days` before permanent deletion. Restoration is possible during this period based on the number of days since deletion.
 
 ## Automated Cleanup with Scheduler
 
@@ -45,7 +45,7 @@ A daily task scheduler (cron job) is implemented to automate the cleanup process
 
 1. **Short-term memory (checkpoints):** Deleted after 30 days, retained in recycle for 15 days.
 2. **Long-term memory (chat history):** Deleted after 30 days, retained in recycle for 15 days.
-3. **Tools & agents:** Moved to recycle bin on deletion, permanently deleted after 15 days.
+3. **Tools, agents & MCP Servers:** Moved to recycle bin on deletion, permanently deleted after 15 days.
 4. **Automated cleanup:** Scheduled daily at 3 AM.
 
 This TTL implementation ensures efficient data management, reduces storage overhead, and provides a safety net for accidental deletions through the recycle manager.

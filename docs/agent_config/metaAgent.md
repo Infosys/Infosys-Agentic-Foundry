@@ -5,7 +5,15 @@
 ## **Meta Agent Onboarding**
 
 
-To onboard a Meta Agent, you'll begin by selecting the META AGENT template from the available options. Next, you'll choose the specific React or Multi agents from the listed agents that you want to coordinate under the meta agent's supervision. 
+To onboard a Meta Agent, you'll begin by selecting the META AGENT template from the available options. Next, you'll choose the specific React, Multi or Meta agents from the listed agents that you want to coordinate under the meta agent's supervision. 
+
+The Meta Agent supports binding of the following worker agent templates:
+
+- React Agent
+- React Critic Agent
+- Multi Agent
+- Planner Executor Agent
+- Planner Executor Critic Agent
 
 You'll then assign a descriptive name that clearly represents your meta agent's purpose and function. After naming your agent, you'll define its primary goal and objective, explaining what the coordinated agent system is designed to accomplish. 
 

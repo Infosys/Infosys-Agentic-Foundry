@@ -98,3 +98,16 @@ To delete a tool, you must also provide the `creator email address`
 
 !!! warning "Important"
     Only the original creator of the tool has permission to update or delete it. Other users do not have access to modify or remove these resources.
+
+## Tool File Storage
+
+Tools are saved as files on the server during the onboarding and update process. This file-based storage approach ensures:
+
+- **Persistence**: Tool code is stored as physical files on the server, aligned with database records
+- **Update Support**: When a tool is updated, the corresponding file on the server is also updated
+- **Delete Support**: When a tool is deleted, the file is removed from the server
+- **Restore Support**: Deleted tools can be restored from the recycle bin, which also restores the associated tool file
+
+!!! info
+
+    This file management logic is synchronized with the database operations, ensuring consistency between the tool records in the database and the actual tool files on the server.

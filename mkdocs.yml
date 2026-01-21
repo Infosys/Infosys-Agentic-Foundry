@@ -60,6 +60,7 @@ nav:
       - Multi Agent Inference: Inference/multiAgent_inference.md
       - Planner Executor Agent Inference: Inference/PlannerExecutorAgent_inference.md
       - Meta Agent Inference: Inference/metaAgent_inference.md
+      - Planner Meta Agent Inference: Inference/MetaPlanner_inference.md
       - Hybrid Agent Inference: Inference/HybridAgent_inference.md
       - Canvas Screen: Inference/Canvas_Screen.md
   - Files: files_upload/files.md
@@ -83,3 +84,4 @@ nav:
   - Model Server Integration: Model_server.md
   - Role Base Access Control: RBAC.md
   - Serever Sent Events: SSE.md
+  - Agent Pipelines: Agent_Pipelines.md
