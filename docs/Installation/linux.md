@@ -36,7 +36,7 @@ Make sure it is **3.11 or higher**. If it's not, you'll need to update your Pyth
 
 There are 2 ways to install the required Python version:
 
-1. **Install from CCD** - Install a required greenlisted Python version
+1. **Install** - Install a required greenlisted Python version
 2. **Use pyenv** - Update the Python version using pyenv (recommended)
 
 ## Installing Python with pyenv on RHEL
@@ -92,7 +92,7 @@ pyenv --version
 
 **Step 5: Install Python Version**
 
-Install the required Python version (example with Python 3.11.8):
+Install the required Python version (example with Python >=3.11.8 or <3.13):
 
 ```bash
 pyenv install 3.11.8
@@ -130,19 +130,17 @@ To verify your Node.js and npm installations, open Terminal and run:
 node -v
 npm -v
 ```
+
 - If Node.js is installed, running the version command will display the installed version.
 - If Node.js is not installed, you will see an error in the terminal such as `"node" is not recognized as an internal or external command`.
 
 **Installation Guidance**
 
 - **For Local Linux Setup:**  
-   You can use your system's Software Center or Company Portal to install Node.js (version 22 or higher). Npm comes bundled with Node.js. JFrog access is required for downloading Node dependencies—see below for details.
+   Install Node.js (version 22 or higher). Npm comes bundled with Node.js. For downloading Node dependencies—see below for details.
 
-- **For Akaash VM or Production VM:**  
-   Software Center, Company Portal, and public internet access may not be available. In such cases, you must request all required software installation files (including Node.js and npm) from CCD.
-
-- **Linux Node.js Exception:**  
-   On Linux VMs (including Akaash/Production), you can install Node.js and npm using the following commands:
+- **Linux RHEL VM Setup:**  
+   On RHEL VMs, you can install Node.js and npm using the following commands:
 
    ```bash
    sudo dnf module enable nodejs:22
@@ -153,23 +151,11 @@ npm -v
    If you are behind a proxy, configure npm as follows:
 
    ```bash
-   npm config set proxy http://blrproxy.ad.infosys.com:443
-   npm config set https-proxy http://blrproxy.ad.infosys.com:443
+   npm config set proxy <your_proxy>
+   npm config set https-proxy <your_proxy>
    ```
 
 ---
-
-## JFrog Access for Node Dependencies
-
-To download Node dependencies for the React UI, you need JFrog access.
-
-- If you already have JFrog access, you can proceed with `npm install`.
-- If not, follow these steps:
-    1. Ensure you are connected to the Infosys network or that Zscaler is enabled.
-    2. Refer to the guide: **NPM – Install and Publish with JFrog Artifactory SAAS and ZS**.
-
-Contact your administrator if you need help with JFrog access.
-
 
 
 ## Setting Up Proxy in Linux Environment (If Required)
@@ -184,10 +170,6 @@ If your network requires a proxy to access the internet, follow these steps to s
 # Replace with your actual proxy server and port
 export http_proxy=http://your-proxy-server:your-proxy-port
 export https_proxy=http://your-proxy-server:your-proxy-port
-
-# Example (replace with your actual proxy details):
-# export http_proxy=http://blrproxy.ad.infosys.com:443
-# export https_proxy=http://blrproxy.ad.infosys.com:443
 ```
 
  **To make proxy settings permanent, add to your shell profile:**
@@ -200,26 +182,23 @@ source ~/.bashrc
 ```
 
 !!! note
-    💡 Always verify proxy details with your CCD or VM administrator and replace the example values with your actual proxy configuration.
+    💡 Always verify proxy details with your administrator and replace the example values with your actual proxy configuration.
 
 ## Download the Backend Project Code
 
-- To access the Agentic Foundry GitHub repository, you must have access to InfyGit.
-
-- If you already have InfyGit access, click the link below and authenticate to gain access to the Agentic Foundry GitHub repository.  [https://github.com/enterprises/infosys/sso](https://github.com/enterprises/infosys/sso)
 
 You can obtain the project files using one of the following methods:
 
 **Option 1: Clone Using Git**
 
 ```bash
-git clone https://github.com/Infosys-Generative-AI/Infyagentframework
-cd Infyagentframework
+git clone https://github.com/Infosys/Infosys-Agentic-Foundry
+cd Infosys-Agentic-Foundry
 ```
 
 **Option 2: Download Zip from GitHub**
 
-1. Navigate to: [https://github.com/Infosys-Generative-AI/Infyagentframework](https://github.com/Infosys-Generative-AI/Infyagentframework)
+1. Navigate to: [https://github.com/Infosys/Infosys-Agentic-Foundry](https://github.com/Infosys/Infosys-Agentic-Foundry)
 2. Click "Code" → "Download Zip"
 3. Extract to your preferred location
 
@@ -229,9 +208,6 @@ If transferring from another machine, use SCP:
 ```bash
 # Replace with your actual username, VM IP address, and file paths
 scp -r /path/to/your/local/project your-username@your-vm-ip-address:/home/your-username/
-
-# Example:
-# scp -r /Users/john/Infyagentframework projadmin@192.168.1.100:/home/projadmin/
 ```
 
 ## Backend Setup
@@ -241,7 +217,7 @@ scp -r /path/to/your/local/project your-username@your-vm-ip-address:/home/your-u
 1. **Navigate to Backend Directory:**
 
 ```bash
-cd Infyagentframework
+cd Infosys-Agentic-Foundry-Backend
 ```
 
 2. **Create a Virtual Environment:**
@@ -275,7 +251,7 @@ pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pyt
 1. **Navigate to Frontend Directory:**
 
 ```bash
-cd Agentic-Pro-UI
+cd Infosys-Agentic-Foundry-Frontend
 ```
 
 2. **Remove Existing Lock File (if present):**
@@ -301,35 +277,13 @@ npm config set https-proxy http://your-proxy-server:your-proxy-port
 npm install
 ```
 
-4. **Configure Port and Host in `package.json`:**
-
-Edit `package.json` to configure the development server:
-
-```json
-"scripts": {
-  "start": "PORT=your-frontend-port HOST=0.0.0.0 react-scripts start",
-  "build": "PORT=your-frontend-port HOST=0.0.0.0 react-scripts build"
-}
-```
-
-**Example configuration:**
-```json
-"scripts": {
-  "start": "PORT=6002 HOST=0.0.0.0 react-scripts start",
-  "build": "PORT=6002 HOST=0.0.0.0 react-scripts build"
-}
-```
-
-5. **Open Firewall Ports:**
+4. **Open Firewall Ports (RHEL):**
 
 ```bash
 # Replace with your actual frontend and backend port numbers
 sudo firewall-cmd --permanent --add-port=your-frontend-port/tcp
 sudo firewall-cmd --permanent --add-port=your-backend-port/tcp
 
-# Example with default ports:
-# sudo firewall-cmd --permanent --add-port=6002/tcp  # Frontend
-# sudo firewall-cmd --permanent --add-port=8000/tcp  # Backend
 
 # Reload firewall
 sudo firewall-cmd --reload
@@ -346,7 +300,7 @@ Configure Frontend to Connect to Backend
 **1. Edit Constants File:**
 
 ```bash
-nano frontend/src/constants.js
+nano Infosys-Agentic-Foundry-Frontend/.env
 ```
 
 **2. Update Base URL for the API server:**
@@ -355,15 +309,11 @@ nano frontend/src/constants.js
 // Replace with your actual backend server IP address and port
 REACT_APP_BASE_URL = "http://your-backend-server-ip:your-backend-port";
 
-// Examples:
-// REACT_APP_BASE_URL = "http://192.168.1.100:8000";
-// REACT_APP_BASE_URL = "http://10.0.0.50:8000";
-// REACT_APP_BASE_URL = "http://localhost:8000";  // If frontend and backend are on same machine
 ```
 
 **Configure Backend CORS Settings**
 
-In the backend `.env` file (`Infyagentframework/.env`), set the allowed frontend origins:
+In the backend `.env` file (`Infosys-Agentic-Foundry-Backend/.env`), set the allowed frontend origins:
 
 ```env
 # Add your frontend IP address
@@ -373,7 +323,7 @@ UI_CORS_IP="<your-frontend-server-ip>"
 UI_CORS_IP_WITH_PORT="<your-frontend-server-ip:your-frontend-port>"
 ```
 
-Update the backend server file (typically `run_server.py`):
+If you want to let other UI connect to the backend, Update the backend server file (typically `run_server.py` or `main.py`):
 
 ```python
 origins = [
@@ -384,13 +334,6 @@ origins = [
     # Add additional origins as needed
 ]
 
-# Examples:
-# origins = [
-#     "http://192.168.1.101:6002",
-#     "http://10.0.0.51:6002",
-#     "http://localhost:3000",
-#     "http://localhost:6002",
-# ]
 ```
 
 ## Environment Configuration
@@ -400,7 +343,7 @@ origins = [
 Create `.env` file in backend directory:
 
 ```bash
-nano Infyagentframework/.env
+nano Infosys-Agentic-Foundry-Backend/.env
 ```
 
 Add the following content (replace with your actual values):
@@ -412,10 +355,6 @@ API_KEY=your_actual_api_key_here
 DATABASE_URL=your_database_url_here
 SECRET_KEY=your_secret_key_here
 
-# Example:
-# API_KEY=sk-1234567890abcdef
-# DATABASE_URL=postgresql://user:password@localhost/dbname
-# SECRET_KEY=your-super-secret-key-here
 ```
 
 **Frontend Environment Variables**
@@ -423,7 +362,7 @@ SECRET_KEY=your_secret_key_here
 Create `.env` file in frontend directory:
 
 ```bash
-nano Agentic-Pro-UI/.env
+nano Infosys-Agentic-Foundry-Frontend/.env
 ```
 
 Add the following content:
@@ -431,12 +370,7 @@ Add the following content:
 ```bash
 # Replace with your actual backend IP address and port
 REACT_APP_API_URL=http://your-backend-ip:your-backend-port
-REACT_APP_API_TIMEOUT=30000
 
-# Examples:
-# REACT_APP_API_URL=http://192.168.1.100:8000
-# REACT_APP_API_URL=http://10.0.0.50:8000
-# REACT_APP_API_URL=http://localhost:8000
 ```
 
 ## Running the Applications
@@ -446,24 +380,23 @@ REACT_APP_API_TIMEOUT=30000
 With the virtual environment activated:
 
 ```bash
-cd Infyagentframework
-# Replace port number if using a different backend port
-uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port your-backend-port --workers 4
+cd Infosys-Agentic-Foundry-Backend
 
-# Example:
-# uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4
+python run_server.py --host 0.0.0.0 --port your-backend-port `or`
+python main.py --host 0.0.0.0 --port your-backend-port
+
 ```
 
 **Start the Frontend**
 
 ```bash
-cd Agentic-Pro-UI
+cd Infosys-Agentic-Foundry-Frontend
 npm start
 ```
 
 The React UI will be accessible at:
+
 - `http://your-vm-ip:your-frontend-port`
-- Example: `http://192.168.1.101:6002`
 
 ## Accessing the Applications
 
@@ -471,13 +404,11 @@ The React UI will be accessible at:
 
 - Local access: `http://localhost:your-frontend-port`
 - Network access: `http://your-vm-ip:your-frontend-port`
-- Example: `http://192.168.1.101:6002`
 
 **Backend API Access URLs:**
 
 - Local access: `http://localhost:your-backend-port`
 - Network access: `http://your-vm-ip:your-backend-port`
-- Example: `http://192.168.1.100:8000`
 - API Documentation: `http://your-vm-ip:your-backend-port/docs`
 
 ## Service Deployment
@@ -502,8 +433,8 @@ After=network.target
 [Service]
 WorkingDirectory=/home/your-username/your-project-directory/
 Environment="NO_PROXY=localhost,127.0.0.1,::1,model_server_ip,ip_of_this_VM"
-Environment="HTTP_PROXY=http://blrproxy.ad.infosys.com:443"
-Environment="HTTPS_PROXY=http://blrproxy.ad.infosys.com:443"
+Environment="HTTP_PROXY=<your_proxy>"
+Environment="HTTPS_PROXY=<your_proxy>"
 Environment=VIRTUAL_ENV=/home/your-username/your-project-directory/venv
 Environment=PATH=/home/your-username/your-project-directory/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin
 ExecStart=/home/your-username/your-project-directory/venv/bin/python main.py --host 0.0.0.0 --port your-backend-port
@@ -516,29 +447,6 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-**Example backend configuration:**
-
-```ini
-[Unit]
-Description=FastAPI Application
-After=network.target
-
-[Service]
-WorkingDirectory=/home/projadmin/Infyagentframework
-Environment="NO_PROXY=localhost,127.0.0.1,::1,10.212.121.151,10.208.85.72"
-Environment="HTTP_PROXY=http://blrproxy.ad.infosys.com:443"
-Environment="HTTPS_PROXY=http://blrproxy.ad.infosys.com:443"
-Environment=VIRTUAL_ENV=/home/projadmin/Infyagentframework/venv
-Environment=PATH=/home/projadmin/Infyagentframework/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin
-ExecStart=/home/projadmin/Infyagentframework/venv/bin/python main.py --host 0.0.0.0 --port 5001
-Restart=always
-User=projadmin
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-```
 
 **Things You Need to Customize:**
 
@@ -546,7 +454,7 @@ WantedBy=multi-user.target
 2. **Username:** Replace `your-username` with your actual Linux username.
 3. **Backend Port:** Replace `your-backend-port` with your chosen backend port (e.g., 8000).
 4. **NO_PROXY:** Update with your model server IP and VM IP as needed.
-5. **ExecStart:** Ensure the Python path and script name (`main.py`) match your project.
+5. **ExecStart:** Ensure the Python path and script name (`main.py` or `run_server.py`) match your project.
 6. **Proxy Settings:** Adjust or remove proxy environment variables if not required.
 
 Enable and start the service:
@@ -578,29 +486,11 @@ ExecStart=/usr/bin/npm start
 Restart=always
 User=your-username
 Environment=NODE_ENV=production
-Environment=PORT=3003
+Environment=PORT=<your_port>
 
 [Install]
 WantedBy=multi-user.target
-```
 
-**Example frontend configuration:**
-
-```ini
-[Unit]
-Description=My Node.js Application
-After=network.target
-
-[Service]
-WorkingDirectory=/home/projadmin/Agentic-Pro-UI1
-ExecStart=/usr/bin/npm start
-Restart=always
-User=projadmin
-Environment=NODE_ENV=production
-Environment=PORT=3003
-
-[Install]
-WantedBy=multi-user.target
 ```
 
 **Customize the following:**
@@ -636,7 +526,7 @@ curl http://your-frontend-server-ip:your-frontend-port
 
 **1. Frontend cannot connect to Backend:**
 
-   - Verify `BASE_URL` in `frontend/src/constants.js`
+   - Verify `REACT_APP_BASE_URL` in `Infosys-Agentic-Foundry-Frontend/.env`
    - Check CORS settings in backend
    - Ensure backend server is running and accessible
    - Test: `curl http://your-backend-ip:your-backend-port/health`
@@ -679,12 +569,12 @@ Keep your deployment updated:
 git pull origin main
 
 # Update backend dependencies
-cd Infyagentframework
+cd Infosys-Agentic-Foundry-Backend
 source ./.venv/bin/activate
 pip install -r requirements.txt
 
 # Update frontend dependencies
-cd Agentic-Pro-UI
+cd Infosys-Agentic-Foundry-Frontend
 npm install
 
 # Restart services after updates
@@ -699,7 +589,7 @@ The structure shown below is a sample. The full project includes additional file
 Backend project structure:
 
 ```
-Infyagentframework/
+Infosys-Agentic-Foundry-Backend/
 ├── src/                  # Source code
 │   ├── agent_templates/  # Agent onboarding templates and configurations   
 │   ├── api/              # REST API endpoints and route handlers
@@ -725,7 +615,7 @@ Infyagentframework/
 Frontend project structure:
 
 ```
-Agentic-Pro-UI/                    # React frontend application
+Infosys-Agentic-Foundry-Frontend/  # React frontend application
 ├── .github/                       # GitHub configuration
 ├── node_modules/                  # Node.js dependencies (generated)
 ├── public/                        # Static assets
@@ -753,7 +643,8 @@ Agentic-Pro-UI/                    # React frontend application
 
 ```bash
 # Backend startup
-uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port your-backend-port
+python run_server.py --host 0.0.0.0 --port your-backend-port `or`
+python main.py --host 0.0.0.0 --port your-backend-port
 
 # Frontend access
 http://your-vm-ip:your-frontend-port

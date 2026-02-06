@@ -16,7 +16,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
     
     
       
@@ -24,7 +24,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.342714a4.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
       
       
 
@@ -528,9 +528,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#access-requirements" class="md-nav__link">
+  <a href="#download-source-code" class="md-nav__link">
     <span class="md-ellipsis">
-      Access Requirements
+      Download Source Code
     </span>
   </a>
   
@@ -538,15 +538,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#local-development-setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      Local Development Setup
-    </span>
-  </a>
   
 </li>
       
@@ -584,27 +575,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-to-make-the-server-run-247-on-windows-using-nssm" class="md-nav__link">
-    <span class="md-ellipsis">
-      How to Make the Server Run 24/7 on Windows Using NSSM
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       Troubleshooting
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#additional-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Additional Notes
     </span>
   </a>
   
@@ -2051,9 +2024,9 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#access-requirements" class="md-nav__link">
+  <a href="#download-source-code" class="md-nav__link">
     <span class="md-ellipsis">
-      Access Requirements
+      Download Source Code
     </span>
   </a>
   
@@ -2061,15 +2034,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#local-development-setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      Local Development Setup
-    </span>
-  </a>
   
 </li>
       
@@ -2107,27 +2071,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-to-make-the-server-run-247-on-windows-using-nssm" class="md-nav__link">
-    <span class="md-ellipsis">
-      How to Make the Server Run 24/7 on Windows Using NSSM
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       Troubleshooting
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#additional-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Additional Notes
     </span>
   </a>
   
@@ -2162,106 +2108,29 @@
 <li><strong>React</strong> - Frontend framework</li>
 <li><strong>Azure Postgres DB</strong> - Database service</li>
 </ul>
-<h3 id="access-requirements">Access Requirements</h3>
-<ol>
-<li>
-<p><strong>JFrog Repository Access</strong></p>
-<ul>
-<li>Ensure you have access to: <code>https://infyartifactory.jfrog.io/artifactory/infyagenticrepo</code></li>
-<li>This is the IAF JFrog Repository for container images</li>
-</ul>
-</li>
-<li>
-<p><strong>Azure Resource Access</strong></p>
-<ul>
-<li><strong>Azure Container Registry (ACR)</strong> - [Raise IHD ticket if access needed]</li>
-<li><strong>Azure Kubernetes Service (AKS)</strong> - [Raise IHD ticket if access needed]</li>
-<li><strong>Azure Postgres Service</strong> - [Try enabling yourself; raise IHD if access issues occur]</li>
-</ul>
-</li>
-<li>
-<p><strong>Image Availability</strong></p>
-<ul>
-<li>Ensure the latest frontend and backend images are present in JFrog Artifactory</li>
-<li>Verify images contain the desired functionality</li>
-</ul>
-</li>
-</ol>
-<div class="admonition warning">
-<p class="admonition-title">Important</p>
-<p>Make sure you have push and pull permissions for all Azure resources before proceeding with deployment.</p>
-</div>
-<h2 id="local-development-setup">Local Development Setup</h2>
-<p><strong>Step 1: Create a Virtual Environment</strong></p>
-<p>A virtual environment is used to isolate project dependencies. Run the following command in the terminal or command prompt:</p>
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
-</code></pre></div>
-<p>This will create a virtual environment named <code>.venv</code> in the project directory.</p>
-<p><strong>Step 2: Activate the Virtual Environment</strong></p>
-<p>To activate the virtual environment, use the appropriate command for your operating system:</p>
-<p>For Windows :
-<div class="highlight"><pre><span></span><code>.<span class="se">\.</span>venv<span class="se">\S</span>cripts<span class="se">\a</span>ctivate
-</code></pre></div></p>
-<p>For macOS/Linux
-<div class="highlight"><pre><span></span><code><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
-</code></pre></div></p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Once activated, your terminal prompt will change to indicate the virtual environment is active.</p>
-</div>
-<p><strong>Step 3: Install Project Dependencies</strong></p>
-<p>After activating the virtual environment, install the required dependencies:</p>
-<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
-</code></pre></div>
-<p>This will install all the libraries and packages listed in the <code>requirements.txt</code> file.</p>
-<p><strong>Step 4: Run the Backend Server</strong></p>
-<p>To start the backend server, ensure the virtual environment is active and run:</p>
-<div class="highlight"><pre><span></span><code>uvicorn<span class="w"> </span>agentic_workflow_as_service_endpoints:app<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span><span class="w"> </span>--workers<span class="w"> </span><span class="m">4</span>
-</code></pre></div>
-<p><strong>Command Explanation:</strong></p>
-<ul>
-<li><code>uvicorn</code>: A lightweight ASGI server</li>
-<li><code>agentic_workflow_as_service_endpoints:app</code>: Refers to the Python module and the FastAPI app instance</li>
-<li><code>--host 0.0.0.0</code>: Makes the server accessible from any network interface</li>
-<li><code>--port 8000</code>: Specifies the port on which the server will run</li>
-<li><code>--workers 4</code>: Specifies the number of worker processes to handle requests</li>
-</ul>
-<div class="admonition success">
-<p class="admonition-title">Success</p>
-<p>The backend server will start and be accessible at:
-- <code>http://0.0.0.0:8000</code> (local access)
-- <code>http://&lt;your-local-ip&gt;:8000</code> (network access)</p>
-</div>
-<p><strong>Step 5: Run the User Interface</strong></p>
-<p>To launch the user interface, ensure the virtual environment is active and execute:</p>
-<div class="highlight"><pre><span></span><code>streamlit<span class="w"> </span>run<span class="w"> </span>user_interface.py<span class="w"> </span>--server.port<span class="w"> </span><span class="m">8501</span><span class="w"> </span>--server.address<span class="w"> </span><span class="m">0</span>.0.0.0
-</code></pre></div>
-<p><strong>Command Explanation:</strong></p>
-<ul>
-<li><code>streamlit</code>: A Python library for building web-based user interfaces</li>
-<li><code>user_interface.py</code>: The script containing the Streamlit application</li>
-<li><code>--server.port 8501</code>: Specifies the port for the Streamlit app</li>
-<li><code>--server.address 0.0.0.0</code>: Makes the app accessible from any network interface</li>
-</ul>
-<div class="admonition info">
-<p class="admonition-title">Info</p>
-<p>The Streamlit app will open in your default web browser automatically. If not, access it at:
-- <code>http://0.0.0.0:8501</code> (local access)
-- <code>http://&lt;your-local-ip&gt;:8501</code> (network access)</p>
-</div>
+<h3 id="download-source-code">Download Source Code</h3>
+<p>Download Backend and Frontend code from GitHub. For detailed instructions, see <a href="../windows/#download-the-backend-project-code">Download the Backend Project Code</a>.</p>
 <h2 id="azure-deployment">Azure Deployment</h2>
 <h3 id="backend">BACKEND</h3>
 <ol>
 <li>Login in to Azure VM</li>
-<li>Login in to Infosys Jfrog artifactory:
-    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>login<span class="w"> </span>infyartifactory.jfrog.io
-</code></pre></div></li>
-<li>Pull the docker image pushed from Akaash VM:
-    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>infyartifactory.jfrog.io/infyagenticrepo/iafbackend:08jul
-</code></pre></div></li>
-<li>Retag the pulled image to ACR name:
-    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>tag<span class="w"> </span>infyartifactory.jfrog.io/infyagenticrepo/iafbackend:08jul<span class="w"> </span>&lt;acr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
-</code></pre></div></li>
+<li>Download Backend source code folder into Azure VM</li>
+<li>
+<p>Change working directory to the Backend Folder:</p>
+<p>cd <code>&lt;BE foldername&gt;</code></p>
+</li>
+<li>
+<p>Create Dockerfile inside Backend folder to create docker image from Backend code.</p>
+</li>
+<li>
+<p>Create backend image:</p>
+<p>docker build -f <code>&lt;dockerfile-name&gt;</code> -t <code>&lt;tag-name&gt;</code></p>
+</li>
+<li>
+<p>Retag the created image to ACR name:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>tag<span class="w"> </span>localhost/&lt;imagename&gt;:&lt;tag&gt;<span class="w"> </span>&lt;acr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
+</code></pre></div></p>
+</li>
 <li>Login to az and then login to acr:
     <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>login<span class="w"> </span>&lt;acr<span class="w"> </span>login<span class="w"> </span>servername&gt;
 </code></pre></div></li>
@@ -2276,23 +2145,33 @@
     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
 </code></pre></div></li>
 <li>Check if the pods is deployed successfully:
-     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods
 </code></pre></div></li>
 <li>Check if the service is up &amp; running successfully:
-     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc
 </code></pre></div></li>
 </ol>
 <h3 id="frontend">FRONTEND</h3>
 <ol>
 <li>Login in to Azure VM</li>
-<li>Login into Infosys Jfrog Artifactory:
-    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>login<span class="w"> </span>infyartifactory.jfrog.io
+<li>Download Frontend source code folder into Azure VM</li>
+<li>Change working directory to the Frontend Folder:
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="nb">cd</span><span class="w"> </span>&lt;Frontend<span class="w"> </span>foldername&gt;
 </code></pre></div></li>
-<li>Pull the docker image pushed from Akaash VM:
-    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>infyartifactory.jfrog.io/infyagenticrepo/iaffrontend:08jul
-</code></pre></div></li>
-<li>Retag the pulled image to ACR name:
-    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>tag<span class="w"> </span>infyartifactory.jfrog.io/infyagenticrepo/iaffrontend:08jul<span class="w"> </span>&lt;acr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
+<li>Create Dockerfile inside Frontend golder to create docker image from Frontend code.</li>
+<li>
+<p>In <code>.env</code> file of Frontend, update below service loadbalancer urls which were generated after deployment of backend server in Azure Kubernetes.
+    <code>REACT_APP_BASE_URL</code>,
+    <code>REACT_APP_MKDOCS_BASE_URL</code>,
+    <code>REACT_APP_LIVE_TRACKING_URL</code></p>
+</li>
+<li>
+<p>Create Frontend image:
+<div class="highlight"><pre><span></span><code><span class="w">    </span>docker<span class="w"> </span>build<span class="w"> </span>-f<span class="w"> </span>&lt;dockerfile-name&gt;<span class="w"> </span>-t<span class="w"> </span>&lt;tag-name&gt;
+</code></pre></div></p>
+</li>
+<li>Retag the created image to ACR name:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>tag<span class="w"> </span>localhost/&lt;imagename&gt;:&lt;tag&gt;<span class="w"> </span>&lt;acr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
 </code></pre></div></li>
 <li>Login to az and then login to acr:
     <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>login<span class="w"> </span>&lt;acr<span class="w"> </span>login<span class="w"> </span>servername&gt;
@@ -2300,7 +2179,7 @@
 <li>Push the retagged image to ACR:
     <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>push<span class="w"> </span>&lt;acr<span class="w"> </span>login<span class="w"> </span>servername&gt;/&lt;imagename&gt;:&lt;tag&gt;
 </code></pre></div></li>
-<li>Create frontend deployment file:
+<li>Create Frontend deployment file:
     <div class="highlight"><pre><span></span><code>nano<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
 </code></pre></div></li>
 <li>Login to Azure Kubernetes</li>
@@ -2308,74 +2187,15 @@
     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
 </code></pre></div></li>
 <li>Check if the pods is deployed successfully:
-     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods
 </code></pre></div></li>
 <li>Check if the service is up &amp; running successfully:
-     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc
 </code></pre></div></li>
 </ol>
-<h2 id="how-to-make-the-server-run-247-on-windows-using-nssm">How to Make the Server Run 24/7 on Windows Using NSSM</h2>
-<p><strong>Step 1: Create a Batch File</strong></p>
-<p>Create a new file named <code>servers.bat</code> (you can choose any name).</p>
-<p>Paste the following content into the file:</p>
-<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">echo</span> off
-<span class="c1">REM Activate Python virtual environment</span>
-<span class="k">cd</span> /d <span class="s2">&quot;C:\Code\Infyagentframework-main\Infyagentframework-main\.venv\Scripts&quot;</span>
-<span class="k">call</span> activate.bat
-
-<span class="c1">REM Change to project directory</span>
-<span class="k">cd</span> /d <span class="s2">&quot;C:\Code\Infyagentframework-main\Infyagentframework-main\backend&quot;</span>
-
-<span class="c1">REM Start FastAPI backend</span>
-<span class="k">start</span> cmd /k <span class="s2">&quot;uvicorn agentic_workflow_as_service_endpoints:app --host 0.0.0.0 --port 8000 --workers 4&quot;</span>
-
-<span class="c1">REM Start Node.js frontend</span>
-<span class="k">cd</span> /d <span class="s2">&quot;C:\Code\Agentic-Pro-UI\frontend&quot;</span>
-<span class="k">start</span> cmd /k <span class="s2">&quot;npm start&quot;</span>
-
-<span class="k">pause</span>
-</code></pre></div>
-<div class="admonition warning">
-<p class="admonition-title">Important</p>
-<p>Make sure the file paths match your system's folder structure.</p>
-</div>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>Save the file somewhere accessible, like your desktop or project root.</p>
-</div>
-<p><strong>Step 2: Install and Configure NSSM</strong></p>
-<ol>
-<li><strong>Download NSSM</strong> if not already installed: <a href="https://nssm.cc/download">https://nssm.cc/download</a></li>
-<li>Open <strong>Command Prompt as Administrator</strong>.</li>
-<li>Run this command to open the NSSM setup:</li>
-</ol>
-<div class="highlight"><pre><span></span><code>nssm<span class="w"> </span>install<span class="w"> </span>infy_agent.service
-</code></pre></div>
-<div class="admonition note">
-<p class="admonition-title">Custom Service Name</p>
-<p>You can replace <code>infy_agent.service</code> with any name you prefer, such as <code>my_server_service</code>, <code>webstack_service</code>, or <code>custom_backend</code>. Just make sure to use the same name consistently in all subsequent commands.</p>
-</div>
-<ol>
-<li>In the NSSM GUI:</li>
-<li>For <strong>Application path</strong>, browse and select your <code>servers.bat</code> file.</li>
-<li>Click <strong>Install Service</strong>.</li>
-</ol>
-<p><strong>Step 3: Manage the Service</strong></p>
-<p>Use these commands from the terminal (as Administrator):</p>
-<p><strong>Start the service:</strong>
-<div class="highlight"><pre><span></span><code>nssm<span class="w"> </span>start<span class="w"> </span>infy_agent.service
-</code></pre></div></p>
-<p><strong>Stop the service:</strong>
-<div class="highlight"><pre><span></span><code>nssm<span class="w"> </span>stop<span class="w"> </span>infy_agent.service
-</code></pre></div></p>
-<p><strong>Edit the service:</strong>
-<div class="highlight"><pre><span></span><code>nssm<span class="w"> </span>edit<span class="w"> </span>infy_agent.service
-</code></pre></div></p>
-<p>You can also go to <strong>Windows Services</strong> (press <code>Win + R</code>, type <code>services.msc</code>) to start, stop, or set the service to run automatically on startup.</p>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <p><strong>Virtual Environment Activation Fails</strong></p>
 <ul>
-<li><strong>Windows</strong>: Ensure you're using the correct command for your OS</li>
 <li><strong>Permissions Error</strong>: Try running command prompt as administrator</li>
 </ul>
 <p><strong>Dependency Installation Errors</strong></p>
@@ -2387,16 +2207,11 @@
 <li>Verify the virtual environment is active</li>
 <li>Check for typos in commands or file names</li>
 <li>Ensure all dependencies are properly installed</li>
+<li>To troubleshoot check pod logs in Kubernetes, By using below commands: 
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>describe<span class="w"> </span>pods<span class="w"> </span>&lt;pod_name&gt;
+kubectl<span class="w"> </span>logs<span class="w"> </span>&lt;pod_name&gt;
+</code></pre></div></li>
 </ol>
-<h2 id="additional-notes">Additional Notes</h2>
-<div class="admonition tip">
-<p class="admonition-title">Best Practices</p>
-<ul>
-<li>Always activate the virtual environment before running project commands</li>
-<li>Verify all dependencies are installed correctly by checking <code>requirements.txt</code></li>
-<li>To deactivate the virtual environment, simply run: <code>deactivate</code></li>
-</ul>
-</div>
 
 
 
@@ -2445,10 +2260,10 @@
     
     
       
-      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.13a4f30d.min.js"></script>
+      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
       
     
   </body>

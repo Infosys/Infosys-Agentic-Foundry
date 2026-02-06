@@ -31,29 +31,12 @@ npm -v
 
 **For Local Windows Setup**
 
-- To install Node.js:
-    - Go to Software Center / Company Portal on your laptop  
+- To install Node.js: 
     - Search for NodeJs  
     - Choose version **22** or any higher stable version.
     - Install Node.js (NPM comes bundled with Node.js).
 - After installation, open your command prompt or terminal.
 - Run `node -v` to confirm that it shows version 22 or higher.
-
-**JFrog Access for Node Dependencies:**
-
-- You need JFrog access to download node dependencies for the React UI application.
-- If you already have JFrog access, you can proceed.
-- If not, follow these steps:
-    - Ensure you are connected to the Infosys network or that Zscaler is enabled.
-    - Follow the instructions in the guide: **NPM – Install and Publish with JFrog Artifactory SAAS and ZS**.
-
-**For Akaash VM or Production VM Setup**
-
-- **Important:** In Akaash VMs or Production VMs, public internet access and access to Software Center or Company Portal may not be available.
-- In such cases, you must request all required software installation files (such as Node.js, Python, Git, etc.) from your CCD (Cloud/Compute/Desktop support) team.
-- CCD will provide the necessary installers and instructions for offline installation.
-- Ensure you have JFrog access configured, as node dependencies will still be downloaded from internal repositories.
-- If you face any issues with installations or access, contact your CCD or VM administrator for support.
 
 ##  Setting Up Proxy in System Environment Variables (If Required)
 
@@ -65,27 +48,21 @@ If your network requires a proxy to access the internet, follow these steps to s
 2. Click on **"Edit the system environment variables"**.
 3. In the **System Properties** window, click on the **"Environment Variables"** button.
 4. Under the **System variables** section, click **New**.
-5. Create the following two variables (ask your VM creator or CCD):
+5. Create the following two variables (ask your VM creator):
 
 ```bash
    Variable name: http_proxy
-   Variable value: http://blrproxy.ad.infosys.com:443
+   Variable value: `<your_proxy>`
    
    Variable name: https_proxy
-   Variable value: http://blrproxy.ad.infosys.com:443
+   Variable value: `<your_proxy>`
 ```
 
 6. Click **OK** to save and close all windows.
 7. Restart your Command Prompt or system (if needed) for the changes to take effect.
 
-!!! note
-    💡 These values are just examples. Always verify proxy details with your CCD or VM administrator.
 
 ## Download the Backend Project Code
-
-- To access the Agentic Foundry GitHub repository, you must have access to InfyGit.
-
-- If you already have InfyGit access, click the link below and authenticate to gain access to the Agentic Foundry GitHub repository.  [https://github.com/enterprises/infosys/sso](https://github.com/enterprises/infosys/sso)
 
 You can obtain the project files using one of the following methods:
 
@@ -94,44 +71,20 @@ You can obtain the project files using one of the following methods:
 If you have Git installed, open Terminal and run:
 
 ```bash
-git clone https://github.com/Infosys-Generative-AI/Infyagentframework
-cd Infyagentframework
+git clone https://github.com/Infosys/Infosys-Agentic-Foundry
+cd Infosys-Agentic-Foundry
 ```
 
-- The git clone command will create a new folder named "Infyagentframework" in your current directory and download all repository files into it.
+- The git clone command will create a new folder named "Infosys-Agentic-Foundry" in your current directory and download all repository files into it.
 - The cd command navigates into the newly created folder.
 
 **Option 2: Download Zip from GitHub**
 
-1. Navigate to the repository in your web browser: [https://github.com/Infosys-Generative-AI/Infyagentframework](https://github.com/Infosys-Generative-AI/Infyagentframework)
+1. Navigate to the repository in your web browser: [https://github.com/Infosys/Infosys-Agentic-Foundry](https://github.com/Infosys/Infosys-Agentic-Foundry)
 2. Click the green "Code" button
 3. Select "Download Zip"
 4. Extract the Zip file to your preferred location on your machine
 
-!!!Note 
-     ZIP file will be difficult have track of development from other developers, so avoid this option unless necessary
-
-## Branching Mechanism
-
-The project uses a two-branch workflow to manage code stability and development:
-
-- **main**:  
-    - Contains stable, production-ready code.
-    - Deployments to the production (Linux) server are made from this branch.
-    - QA testing and client demos are conducted using code from `main`.
-
-- **development**:  
-    - Used for ongoing development and testing.
-    - All new features and defect fixes are first implemented here.
-    - Developers create separate feature or fix branches from `development` for their work.
-    - After completing their task and unit testing, developers merge their feature/fix branch back into `development` to keep it up to date.
-
-**Release Process:**
-
-- Once QA verifies that the application is working as expected in the `development` branch, the code is merged into `main`.
-- The updated `main` branch is then deployed to production for demos and further testing.
-
-This workflow ensures that only tested and approved code reaches production, while active development happens separately.
 
 ## Download the Frontend Project Code
 
@@ -142,16 +95,16 @@ You can obtain the project files using one of the following methods:
 If you have Git installed, open Terminal and run:
 
 ```bash
-git clone https://github.com/Infosys-Generative-AI/Agentic-Pro-UI.git
-cd Agentic-Pro-UI
+git clone https://github.com/Infosys/Infosys-Agentic-Foundry
+cd Infosys-Agentic-Foundry-Frontend
 ```
 
-- The git clone command will create a new folder named "Agentic-Pro-UI" in your current directory and download all repository files into it.
+- The git clone command will create a new folder named "Infosys-Agentic-Foundry-Frontend" in your current directory and download all repository files into it.
 - The cd command navigates into the newly created folder.
 
 **Option 2: Download Zip from GitHub**
 
-1. Navigate to the repository in your web browser: [https://github.com/Infosys-Generative-AI/Agentic-Pro-UI.git](https://github.com/Infosys-Generative-AI/Agentic-Pro-UI.git)
+1. Navigate to the repository in your web browser: [https://github.com/Infosys//Infosys-Agentic-Foundry-Frontend.git](https://github.com/Infosys/Infosys-Agentic-Foundry-Frontend.git)
 2. Click the green "Code" button
 3. Select "Download Zip"
 4. Extract the Zip file to your preferred location on your machine
@@ -173,11 +126,11 @@ Follow these steps in Terminal (opened in the project directory):
 **1. Create a Virtual Environment for the Backend:**
 
 ```bash
-cd Infyagentframework
+cd Infosys-Agentic-Foundry-Backend
 python -m venv .venv
 ```
 
-This creates a virtual environment named `.venv` in the Infyagentframework directory.
+This creates a virtual environment named `.venv` in the Infosys-Agentic-Foundry-Backend directory.
 
 **2. Activate the Virtual Environment:**
 
@@ -210,14 +163,14 @@ pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pyt
 In a new Terminal window, navigate to the project's frontend directory:
 
 ```bash
-cd Agentic-Pro-UI
+cd Infosys-Agentic-Foundry-Frontend
 ```
 
 **Install Frontend Dependencies**
 
 After cloning or pulling the UI code from GitHub, delete the `package-lock.json` file (if present) before installing dependencies. This helps avoid potential conflicts.
 
-- Open a terminal in the `Agentic-Pro-UI` directory.
+- Open a terminal in the `Infosys-Agentic-Foundry-Frontend` directory.
 - Delete the `package-lock.json` file if it exists:
     ```bash
     del package-lock.json
@@ -236,48 +189,38 @@ After cloning or pulling the UI code from GitHub, delete the `package-lock.json`
     ```
 - Wait for the installation to complete. This may take a few minutes.
 
-!!! note
-    If you see only a blinking cursor or a loader for more than 3 minutes and no progress, check your Zscaler or JFrog access settings. This usually indicates a network or authentication issue.
-
 
 ## Configuration Setup
 
 **Frontend Configuration (.env file)**
 
-Open the `.env` file in your frontend project (`Agentic-Pro-UI/.env`) and set the base URL for the API server:
+Open the `.env` file in your frontend project (`Infosys-Agentic-Foundry-Frontend/.env`) and set the base URL for the API server:
 
 ```env
 # Base URL for the API server
-REACT_APP_BASE_URL="http://10.77.18.62:8000"
+REACT_APP_BASE_URL=`<your_backend_api_url>`
 ```
-
-- Replace `10.77.18.62` with your VM's IP address.
-- `8000` is the port where the FastAPI backend runs.
 
 **Backend Configuration (.env file)**
 
-Open the `.env` file in your backend project (`Infyagentframework/.env`) and set the allowed frontend origins:
+Open the `.env` file in your backend project (`Infosys-Agentic-Foundry-Backend/.env`) and set the allowed frontend origins:
 
 ```env
 # Add your frontend IP address
-UI_CORS_IP="http://10.77.18.62"
+UI_CORS_IP=`<your_ui_url>`
 
 # Add your frontend IP with port number
-UI_CORS_IP_WITH_PORT="http://10.77.18.62:3000"
+UI_CORS_IP_WITH_PORT=`<your_ui_url:port>`
 ```
 
-- Replace `10.77.18.62` and `3000` with your frontend's actual IP and port.
 
 **CORS Origins List**
-
-In `run_server.py` (or `agentic_workflow_as_service_endpoints.py`), you will find an `origins` list:
+If you want to let other UI connect to the backend, In `run_server.py` (or `main.py`), you will find an `origins` list:
 
 ```python
 origins = [
     "http://localhost",
     "http://localhost:3000",
-    "http://10.77.18.62",
-    "http://10.77.18.62:3000",
     "null",
     # Add other origins as needed, such as your deployed frontend URL
 ]
@@ -291,22 +234,17 @@ Make sure to update the `.env` files with your API keys and other required confi
 
 **1. Start the Backend Server**
 
-Set the environment variables to enable telemetry:
-
-```bash
-set HTTP_PROXY=
-set NO_PROXY=localhost,127.0.0.1
-```
 In the Terminal with the active virtual environment:
 
 ```bash
-cd Infyagentframework  # If not already in the backend directory
-python run_server.py --host 0.0.0.0 --port 5001
+cd Infosys-Agentic-Foundry-Backend  # If not already in the backend directory
+python run_server.py --host 0.0.0.0 --port `<your_port_number>` `or`
+python main.py --host 0.0.0.0 --port `<your_port_number>`
 ```
 
 !!! info "Backend Server Details"
     - **Server**: FastAPI (run via Python)
-    - **Module**: `run_server.py`
+    - **Module**: `run_server.py` or `main.py`
     - **Host**: 0.0.0.0 (accessible from any network interface)
     - **Port**: 5001
 
@@ -317,7 +255,7 @@ Once running, you can access the backend API at [http://localhost:5001](http://l
 In a new Terminal window:
 
 ```bash
-cd Agentic-Pro-UI  # If not already in the frontend directory
+cd Infosys-Agentic-Foundry-Frontend  # If not already in the frontend directory
 npm start
 ```
 
@@ -325,7 +263,7 @@ npm start
     - **Development Server**: The React development server is used for local development and testing.
         - **Default Port**: Runs on port `3000` by default.
         - **Hot Reloading**: Automatically reloads the page when you make changes to the source code.
-        - **Custom Port**: To run the frontend on a different port (e.g., `3003`), open PowerShell and run:
+        - **Custom Port**: To run the frontend on a different port, open PowerShell and run:
           ```
           $env:PORT=3003; npm start
           ```
@@ -347,11 +285,11 @@ Paste the following content into the file:
 ```bat
 @echo off
 REM Activate Python virtual environment
-cd /d "C:\Code\Infyagentframework-main\Infyagentframework-main\.venv\Scripts"
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\.venv\Scripts"
 call activate.bat
 
 REM Change to backend project directory
-cd /d "C:\Code\Infyagentframework-main\Infyagentframework-main\backend"
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
 
 REM Ensure logs directory exists
 if not exist logs mkdir logs
@@ -360,11 +298,14 @@ REM Get today's date in YYYY-MM-DD format
 for /f %%i in ('powershell -Command "Get-Date -Format yyyy-MM-dd"') do set datetime=%%i
 
 REM Start FastAPI backend and log to logs\server_YYYY-MM-DD.log
-start cmd /k "python run_server.py --host 0.0.0.0 --port 5001 >> logs\server_%datetime%.log 2>&1"
+start cmd /k "python run_server.py --host 0.0.0.0 --port <your_port_number> >> logs\server_%datetime%.log 2>&1"
 
-REM Start Node.js frontend on port 3003
-cd /d "C:\Code\Agentic-Pro-UI"
-start cmd /k "set PORT=3003 && npm start"
+REM Start Node.js frontend 
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Frontend"
+start cmd /k "npm start"
+
+REM Or if you want specific port number run the below command:
+start cmd /k "set PORT=<your_port_number> && npm start"
 
 pause
 ```
@@ -379,9 +320,6 @@ pause
 
 1. **Download NSSM** if not already installed: [https://nssm.cc/download](https://nssm.cc/download)
 2. Open **Command Prompt as Administrator**. 
-
-!!! note 
-    If you have access to an Aakash VM and can connect to it using the Remote Desktop Connection application, you will be able to run NSSM commands with administrative privileges.
 
 3. Run this command to open the NSSM setup:
 
@@ -424,7 +362,7 @@ The structure shown below is a sample. The full project includes additional file
 Backend project structure:
 
 ```
-Infyagentframework/
+Infosys-Agentic-Foundry-Backend/
 ├── src/                  # Source code
 │   ├── agent_templates/  # Agent onboarding templates and configurations   
 │   ├── api/              # REST API endpoints and route handlers
@@ -450,7 +388,7 @@ Infyagentframework/
 Frontend project structure:
 
 ```
-Agentic-Pro-UI/                    # React frontend application
+Infosys-Agentic-Foundry-Frontend/                    # React frontend application
 ├── .github/                       # GitHub configuration
 ├── node_modules/                  # Node.js dependencies (generated)
 ├── public/                        # Static assets
@@ -481,7 +419,7 @@ If your React UI cannot connect to the backend:
 
 **1. Verify BASE_URL Configuration**: 
 
-- Check that `src/constants.js` has the correct backend URL
+- Check that `Infosys-Agentic-Foundry-Frontend\.env` has the correct backend URL
 - Ensure the IP address and port match your backend server
 
 **2. Check Backend CORS Settings**: 
