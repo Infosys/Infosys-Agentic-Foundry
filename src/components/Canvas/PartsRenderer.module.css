@@ -1,0 +1,161 @@
+/* PartsRenderer Styles */
+.partsRenderer {
+  width: 100%;
+  min-height: 200px;
+  background: #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  overflow-y: auto;
+}
+
+.partsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.componentWrapper {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.componentWrapper:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.componentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  min-height: 40px;
+}
+
+.componentType {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typeIndicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.typeIndicator[data-type="text"] {
+  background: #ddd6fe;
+  color: #7c3aed;
+}
+
+.typeIndicator[data-type="chart"] {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.typeIndicator[data-type="table"] {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.typeIndicator[data-type="image"] {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.componentTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  text-align: right;
+}
+
+.componentContent {
+  /* Remove any default padding since DynamicWidget components handle their own */
+  padding: 0;
+  background: #ffffff;
+}
+
+/* Empty state */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  margin: 16px;
+}
+
+.emptyState p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .partsContainer {
+    padding: 12px;
+    gap: 12px;
+  }
+  
+  .componentHeader {
+    padding: 6px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-height: auto;
+  }
+  
+  .componentTitle {
+    text-align: left;
+    font-size: 13px;
+  }
+}
+
+/* Animation for component mounting */
+.componentWrapper {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Multiple components spacing */
+.componentWrapper + .componentWrapper {
+  margin-top: 0; /* Gap is handled by flex gap */
+}
+
+/* Component content specific adjustments */
+.componentContent > * {
+  border-radius: 0 0 8px 8px;
+}
+
+/* Handle component without header */
+.componentWrapper:not(:has(.componentHeader)) .componentContent > * {
+  border-radius: 8px;
+}

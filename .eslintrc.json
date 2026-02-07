@@ -1,0 +1,26 @@
+{
+  "extends": ["react-app", "react-app/jest"],
+  "rules": {
+    "no-unsafe-optional-chaining": "error",
+    "no-undef": "error",
+    "no-undefined": "warn",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/prop-types": "off",
+    "no-unused-vars": "warn",
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "prefer-const": "warn",
+    "no-var": "error",
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "jsx-a11y/alt-text": "error",
+    "jsx-a11y/anchor-has-content": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.js", "**/*.jsx"],
+      "rules": {
+        "no-implicit-coercion": "warn",
+        "no-magic-numbers": ["warn", { "ignore": [0, 1, -1] }]
+      }
+    }
+  ]
+}

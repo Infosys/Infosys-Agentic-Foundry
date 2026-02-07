@@ -1,0 +1,71 @@
+/* CodeEditor component styles */
+.codeEditorWrapper {
+  position: relative;
+  width: 100%;
+  height: 300px;
+}
+
+.loadingContainer {
+  width: 100%;
+  height: 300px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f8f9fa;
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.loadingText {
+  text-align: center;
+}
+
+.loadingSubtext {
+  font-size: 12px;
+  margin-top: 5px;
+  opacity: 0.7;
+}
+
+.fallbackTextarea {
+  width: 100%;
+  height: 300px;
+  resize: vertical;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  padding: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: white;
+  color: black;
+}
+
+.fallbackTextarea:read-only {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+.fallbackTextarea:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+/* Dark theme support */
+.darkTheme .fallbackTextarea {
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  border-color: #3e3e3e;
+}
+
+.darkTheme .fallbackTextarea:read-only {
+  background-color: #2d2d30;
+  color: #969696;
+}
+
+.darkTheme .loadingContainer {
+  background-color: #2d2d30;
+  color: #d4d4d4;
+  border-color: #3e3e3e;
+}

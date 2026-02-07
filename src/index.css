@@ -1,0 +1,179 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+/* Global thin scrollbar styles */
+* {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #787b7d transparent; /* Firefox - thumb and track colors */
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+  width: 4px; /* Vertical scrollbar width */
+  height: 4px; /* Horizontal scrollbar height */
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent; /* Invisible track */
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #787b7d; /* Light gray thumb */
+  border-radius: 2px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1; /* Slightly darker on hover */
+}
+
+/* Optional: Style scrollbar corner */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.iafTabsBtn {
+  min-width: 60px;
+  max-width: 180px;
+  height: 18px;
+  font-size: 13px;
+  padding: 8px 15px;
+  margin-right: 0;
+  text-align: center;
+  border: 1.5px solid #e6e9ef;
+  outline: none;
+  justify-content: space-evenly;
+  border-radius: 5px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  background: #f5f7fa;
+  color: #343741;
+}
+
+.iafTabsBtn.active {
+  background: #007cc3;
+  border: 1.5px solid #007cc3;
+  color: #ffffff;
+}
+
+.iafTabsBtn:hover:not(.active) {
+  background: #e1e5eb;
+  color: #343741;
+}
+
+/* Global action button style for all major actions */
+.global-action-btn {
+  background: linear-gradient(90deg, #3b82f6 0%, #6366f1 100%);
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #e0e7ef;
+  transition: background 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+.global-action-btn:focus {
+  box-shadow: 0 0 0 3px #a5b4fc;
+}
+.global-action-btn:active {
+  background: linear-gradient(90deg, #2563eb 0%, #4f46e5 100%);
+}
+.global-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.iafPageSubHeader h6 {
+  font: normal normal 400 20px / 27px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.formRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.formRow .formGroup {
+  flex: 1;
+  min-width: 0;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+}
+
+.required {
+  color: #e74c3c;
+  font-weight: bold;
+}
+
+.iafButton {
+  font-size: 14px;
+  opacity: 1;
+  color: white;
+  margin-right: 22px;
+  border-radius: 4px;
+  padding: 8px;
+  border: none;
+}
+
+.iafButton:disabled,
+.iafButton.disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.iafButtonPrimary {
+  background: #007cc3 0% 0% no-repeat padding-box;
+}
+
+.iafButtonSecondary {
+  background: #3d4359 0% 0% no-repeat padding-box;
+}
+
+.iafWarningButton {
+  background: #e74c3c 0% 0% no-repeat padding-box;
+}
+
+.iafSubButton {
+  background: #2b9edf 0% 0% no-repeat padding-box;
+}

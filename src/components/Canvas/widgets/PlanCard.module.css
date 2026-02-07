@@ -1,0 +1,226 @@
+.cardImage {
+  width: 300%;
+  max-width: 320px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  display: block;
+  background: #f6f8fa;
+}
+.mainButton {
+  background: #cc0011;
+  color: #fff;
+  border: 2px solid #cc0011;
+  border-radius: 24px;
+  padding: 12px 0;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 18px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  transition: background 0.2s;
+  text-align: center;
+  text-transform: capitalize;
+}
+.imageRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.planImage {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.location {
+  color: #1e293b;
+  font-weight: 500;
+}
+.card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 24px;
+  margin: 0 12px;
+  width: 350px;
+  max-width: 350px;
+  min-width: 320px;
+  min-height: 420px;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  align-items: flex-start;
+  overflow: visible;
+  flex: 0 0 auto;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.4;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+}
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  margin-top: -24px;
+}
+
+ .toggleRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 0 0;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.priceRow{
+  text-align: center;
+  margin-top: 12px;
+  width: 100%;
+  font-weight: bold;
+  border-top: 1px solid #f0f0f0;
+  padding:32px;
+  font-size: 20px;
+}
+.title {
+  font-weight: 700;
+  margin-bottom: 15px;
+  font-size: 20px;
+  text-transform: capitalize;
+  white-space: pre-line;
+
+}
+.toggleContainer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toggleLabel {
+  font-weight: 700;
+  color: #222;
+  margin-right: 2px;
+  font-size: 16px;
+  text-transform: capitalize;
+  min-width:100px;
+  max-width: 250px;
+  white-space: pre-line;
+}
+.toggleSwitch {
+  width: 32px;
+  height: 18px;
+  background: #eee;
+  border-radius: 12px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.toggleIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+.toggleOn {
+  width: 16px;
+  height: 16px;
+  background: #3bb77e;
+  border-radius: 50%;
+  position: absolute;
+  right: 2px;
+  top: 1px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  transition: right 0.2s;
+}
+.toggleOff {
+  width: 16px;
+  height: 16px;
+  background: #ccc;
+  border-radius: 50%;
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  transition: left 0.2s;
+}
+.tvDetailsBelow {
+  color: #444;
+  margin-bottom: 20px;
+  margin-top: 2px;
+  margin-left: 0;
+  font-weight: 400;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  max-width: 100%;
+  overflow: hidden;
+}
+.description {
+  color: #666;
+  margin-bottom: 25px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  max-width: 100%;
+  overflow: hidden;
+}
+.featureRow {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.icon {
+  margin-right: 8px;
+}
+.benefitsBox {
+  background: #f6f8fa;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 20px;
+  width: 100%;
+}
+.benefitsTitle {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.benefitsList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.benefitItem {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+.check {
+  color: #3bb77e;
+  margin-right: 8px;
+}
+.cardListMinimized,
+.cardListFullscreen,
+.cardListDefault {
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 16px 0;
+  white-space: nowrap;
+  align-items: stretch;
+  height: 100%;
+}
+.benifitsContent{
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}

@@ -1,0 +1,74 @@
+/* filepath: AgentsEvaluator.module.css */
+.container {
+  padding: 24px;
+  background: #fff;
+  border-radius: 16px;
+}
+
+.heading {
+  text-align: center;
+  color: #1a237e;
+  margin-bottom: 28px;
+  letter-spacing: 1px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+  flex-direction: column;
+  padding-top: 16px;
+}
+
+.label {
+  min-width: 80px;
+  font-weight: 500;
+  color: #333;
+  margin-right: 8px;
+}
+
+.select {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #bdbdbd;
+  font-size: 16px;
+}
+
+.button {
+  font-size: 15px;
+  background: #007cc3 0% 0% no-repeat padding-box;
+  opacity: 1;
+  color: white;
+  margin-right: 2px;
+  border-radius: 4px;
+  padding: 8px;
+  border: none;
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.response {
+  margin-top: 24px;
+  background: #f4f7fa;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 15px;
+  color: #263238;
+  overflow-x: auto;
+  border: 1px solid #e3e3e3;
+}
+
+.buttonContainer {
+  display: flex;
+  width: 100%;
+}

@@ -1,0 +1,70 @@
+{
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": false
+  },
+  "eslint.enable": true,
+  "eslint.validate": ["javascript", "javascriptreact", "typescript", "typescriptreact"],
+  "editor.tabSize": 2,
+  "editor.detectIndentation": false,
+  "editor.renderWhitespace": "all",
+  "editor.minimap.enabled": false,
+  "editor.cursorSmoothCaretAnimation": "on",
+  "editor.smoothScrolling": true,
+  "editor.guides.indentation": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.inlineSuggest.enabled": true,
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": true
+  },
+  "editor.parameterHints.enabled": true,
+  "editor.suggest.snippetsPreventQuickSuggestions": false,
+  "editor.suggestSelection": "first",
+  "editor.acceptSuggestionOnEnter": "smart",
+  "editor.snippetSuggestions": "inline",
+  "editor.hover.enabled": "on",
+  "editor.linkedEditing": true,
+  "editor.codeLens": true,
+  "editor.renderControlCharacters": true,
+  "editor.renderFinalNewline": "on",
+  "editor.renderLineHighlight": "all",
+  "editor.renderValidationDecorations": "on",
+  "editor.scrollBeyondLastLine": false,
+  "editor.stickyScroll.enabled": true,
+  "editor.cursorBlinking": "phase",
+  "editor.cursorStyle": "line",
+  "editor.fontLigatures": true,
+  "editor.fontSize": 14,
+  "editor.fontFamily": "Fira Code, Consolas, 'Courier New', monospace",
+  "editor.lineHeight": 22,
+  "editor.formatOnPaste": true,
+  "editor.formatOnType": true,
+  // Ensure no soft wrapping in editor
+  "editor.wordWrap": "off",
+
+  // Use Prettier but avoid aggressive line breaks
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "prettier.printWidth": 180, // Large so long prop lists stay on one line
+  "prettier.singleAttributePerLine": false, // Prevent one-attribute-per-line style
+  "prettier.bracketSameLine": true, // Keep closing > with last prop
+  "prettier.proseWrap": "preserve",
+
+  // (Optional) If still breaking, you can disable format on save for JSX only:
+  "[javascriptreact]": {
+    "editor.formatOnSave": true
+  },
+  "[typescriptreact]": {
+    "editor.formatOnSave": true
+  },
+
+  // If ESLint is reformatting via --fix and causing splits, limit that:
+  "eslint.format.enable": true,
+  "eslint.rules.customizations": [{ "rule": "react/jsx-max-props-per-line", "severity": "off" }]
+}

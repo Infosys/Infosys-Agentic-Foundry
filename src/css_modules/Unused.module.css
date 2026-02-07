@@ -1,0 +1,121 @@
+.toggleWrapper {
+  margin-bottom: 20px;
+  padding: 0 20px;
+}
+
+.visibleAgentsContainer {
+  display: flex;
+  padding: 20px;
+  flex-wrap: wrap;
+  gap: 24px;
+  overflow-y: auto;
+  height: calc(100vh - 135px);
+  width: 98%;
+  padding-left: 20px;
+  padding-top: 0;
+  padding-bottom: 8px;
+}
+
+.listArea {
+  width: 100%;
+  overflow-y: auto;
+  padding: 0 20px;
+}
+
+/* Card specific styles for unused items */
+.card {
+  background: #3d4359 0% 0% no-repeat padding-box;
+  box-shadow: 5px 15px 6px #00000029;
+  border-radius: 4px;
+  width: 200px;
+  min-height: 140px;
+  height: 140px;
+  max-height: 160px;
+  padding: 11px;
+  color: white;
+  position: relative;
+  transition: transform 0.2s, box-shadow 0.2s;
+  transform: translateY(0px);
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 5px 18px 10px #00000029;
+}
+
+.cardTitle {
+  font-size: 16px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  word-wrap: break-word;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  max-height: 35px;
+}
+
+.card-info {
+  margin-top: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.info-item {
+  color: #ffffff;
+  font-size: 12px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  opacity: 0.9;
+}
+
+.info-item:last-child {
+  margin-bottom: 0;
+}
+
+.info-label {
+  color: #ffffff;
+  opacity: 0.7;
+  margin-right: 4px;
+}
+
+.cardNoData {
+  width: 100%;
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-size: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+
+.discriptionNoData {
+  font-size: 16px;
+  color: #666;
+  font-weight: 500;
+}
+
+/* Delete button styles */
+.btn-grp {
+  display: flex;
+  justify-content: end;
+  position: absolute;
+  bottom: 20px;
+  right: 5px;
+}
+
+.deleteBtn {
+  width: 30px;
+  height: 24px;
+  position: absolute;
+  transform: translateY(50%);
+  box-shadow: 0px 4px 4px #00000029;
+  border-radius: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #6a2020;
+  right: 44px;
+  bottom: 0;
+}

@@ -1,0 +1,533 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  /* height: 100vh; */
+  margin-top: 20px;
+}
+.plus {
+  background: #f5f5f5;
+  box-shadow: 0px 4px 4px #00000029;
+  border: 1px solid #c7c7c745;
+  border-radius: 3px;
+  padding: 7px;
+  display: flex;
+  margin-right: 0px;
+}
+.header {
+  margin-left: 50px !important;
+  margin-top: 2px !important;
+  font: normal normal 400 20px / 27px Segoe UI;
+  letter-spacing: 0px;
+  color: #343741;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+}
+.secretCss {
+  margin-left: 20px !important;
+  margin-top: 8px;
+  max-height: Calc(100vh - 165px);
+  overflow-y: auto;
+  padding-bottom: 16px;
+  /* padding: 10px; */
+  /* border: 1px solid #ccc;    */
+}
+.plusIcons {
+  display: flex;
+  justify-content: space-between;
+  margin-right: 25px;
+  margin-left: 20px;
+  margin-top: 5px;
+  margin-bottom: 20px;
+  /* color: #007bc1; */
+  cursor: pointer;
+}
+.titleCss {
+  font-size: 20px;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-weight: 400;
+  /* color: #007bc1; */
+  /* cursor: pointer; */
+}
+.addSecret {
+  margin-left: 5px;
+  cursor: pointer;
+  color: #007bc1;
+}
+.iconCss {
+  cursor: pointer;
+  margin-left: 10px;
+  font-size: 16px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  transition: background 0.2s ease, color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iconEye {
+  color: #6c757d;
+}
+.iconEye:hover {
+  color: #005a9e;
+}
+
+.iconCopy {
+  color: #6c757d;
+}
+.iconCopy:hover {
+  color: #007bc1;
+}
+
+.iconDelete {
+  color: #6c757d;
+}
+.iconDelete:hover {
+  color: #b02a37;
+}
+
+.row {
+  margin-top: 20px;
+}
+.saveButton {
+  background-color: #007bc1;
+  color: white;
+  border-radius: 2px;
+}
+.secretContainer {
+  padding: 20px;
+}
+
+.addSecretBtn {
+  cursor: pointer;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  color: #007bff;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.input {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 200px;
+  box-sizing: border-box;
+}
+
+.icon {
+  cursor: pointer;
+  margin-left: 5px;
+  color: #333;
+}
+
+.icon:hover {
+  color: #007bff;
+}
+
+.disabled {
+  pointer-events: none;
+  opacity: 0.4;
+}
+.publicCss {
+  margin-left: 20px;
+}
+.secretWrapper {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+}
+
+.leftCard,
+.rightCard {
+  flex: 1 1 50%;
+  max-width: 50%;
+  /* box-sizing: border-box; */
+  padding: 16px;
+  /* border-radius: 8px; */
+  background-color: #fff;
+  overflow-y: auto;
+  min-height: 400px; /* optional */
+  display: flex;
+}
+.leftCard {
+  border-right: 1px solid #ccc;
+}
+.secretItem {
+  padding: 5px 0;
+  /* border-bottom: 1px solid #eee; */
+}
+.input {
+  height: 40px;
+  width: 250px;
+  padding: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.valueTextarea {
+  height: 40px;
+  width: 250px;
+  resize: both;
+  padding: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.privateCss {
+  margin-left: 2px;
+}
+.tab,
+.activeTab {
+  border: none;
+  padding: 8px 16px;
+  margin-left: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  background: none;
+}
+
+.tab {
+  color: #007bc1;
+  background-color: #ffffff;
+}
+
+.activeTab {
+  background-color: #007bc1;
+  color: #ffffff;
+}
+
+.plus {
+  background: #f5f5f5;
+  box-shadow: 0px 4px 4px #00000029;
+  border: 1px solid #c7c7c745;
+  border-radius: 3px;
+  padding: 7px;
+  display: flex;
+}
+.iconClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  color: #333;
+}
+
+.iconClose:hover {
+  color: #007bc1;
+}
+.cssForText {
+  margin-left: 8px;
+  margin-top: 20px;
+}
+.cssForcode {
+  margin-bottom: 66px;
+  min-width: 530px;
+  margin-left: 8px;
+  margin-right: 16px;
+  margin-top: 16px;
+}
+/* Select Group Message - Matching Project Style */
+.selectGroupMessage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 60px 20px;
+  margin: 50px 20px;
+  background-color: #f9f9f9;
+  border: 1px solid #ccc;
+  border-radius: 14px;
+  text-align: center;
+}
+
+.selectGroupContent {
+  color: #343741;
+}
+
+.selectGroupTitle {
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: #343741;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0px;
+}
+
+.selectGroupSubtitle {
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  color: #6c757d;
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.noSecretsMessage {
+  margin-left: 20px !important;
+  margin-top: 100px !important;
+  height: 104px;
+  overflow-y: auto;
+  padding: 37px;
+  border: 1px solid #ccc;
+  display: flex;
+  justify-content: center;
+  margin-right: 50px;
+  border-radius: 14px;
+  background-color: #f9f9f9;
+}
+
+.vaultWrapper {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  overflow: auto;
+}
+
+.groupDropdownContainer {
+  position: relative;
+  min-width: 200px;
+  margin-right: 10px;
+}
+
+.groupDropdownContent {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 9999;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+/* New Group Tab Styles */
+.groupTabContainer {
+  display: flex;
+  height: calc(100vh - 300px);
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.domainListSection {
+  flex: 0 0 300px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.domainListSection h3 {
+  background: #f8f9fa;
+  margin: 0;
+  padding: 15px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #343741;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.domainList {
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+}
+
+.domainItem {
+  padding: 15px 20px;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.domainItem:hover {
+  background: #f8f9fa;
+}
+
+.domainItem.selectedDomain {
+  background: #e3f2fd;
+  border-left: 3px solid #2196f3;
+}
+
+.domainName {
+  display: block;
+  font-weight: 500;
+  color: #343741;
+  margin-bottom: 4px;
+}
+
+.domainDescription {
+  display: block;
+  font-size: 12px;
+  color: #666;
+}
+
+.noDomains {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.secretsSection {
+  flex: 1;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.secretsHeader {
+  background: #f8f9fa;
+  padding: 15px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.secretsHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #343741;
+}
+
+.addButton {
+  background: #2196f3;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+.addButton:hover {
+  background: #1976d2;
+}
+
+.addButton:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.secretsList {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.secretRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  background: white;
+}
+
+.secretInputs {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+}
+
+.domainInput {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.valueInputContainer {
+  position: relative;
+  flex: 1;
+}
+
+.toggleButton {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.secretActions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.saveButton {
+  background: #4caf50;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.saveButton:hover {
+  background: #45a049;
+}
+
+.saveButton:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.updateButton {
+  background: #ff9800;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.updateButton:hover {
+  background: #f57c00;
+}
+
+.deleteButton {
+  background: #f44336;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.deleteButton:hover {
+  background: #d32f2f;
+}
+
+.noSecrets {
+  text-align: center;
+  color: #666;
+  font-style: italic;
+  padding: 40px 20px;
+}

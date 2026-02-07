@@ -1,0 +1,491 @@
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import ToolOnBoarding from "./ToolOnBoarding.jsx";
+import style from "../../css_modules/AvailableTools.module.css";
+import ToolsCard from "./ToolsCard.jsx";
+import AvailableServers from "./AvailableServers.jsx";
+import { useToolsAgentsService } from "../../services/toolService.js";
+import Loader from "../commonComponents/Loader.jsx";
+import { usePermissions } from "../../context/PermissionsContext";
+import { APIs } from "../../constant";
+import useFetch from "../../Hooks/useAxios.js";
+import FilterModal from "../commonComponents/FilterModal.jsx";
+import SubHeader from "../commonComponents/SubHeader.jsx";
+import { debounce } from "lodash";
+import { useErrorHandler } from "../../Hooks/useErrorHandler";
+import { useActiveNavClick } from "../../events/navigationEvents";
+
+const AvailableTools = () => {
+  const { permissions, loading: permissionsLoading } = usePermissions();
+  const [toolList, setToolList] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [isAddTool, setIsAddTool] = useState(true);
+  const [editTool, setEditTool] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [visibleData, setVisibleData] = useState([]);
+  const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useState("tools");
+  const [filterModal, setFilterModal] = useState(false);
+  const [tags, setTags] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [totalToolsCount, setTotalToolsCount] = useState(0);
+  const [hasMore, setHasMore] = useState(true); // track if more pages are available
+  const toolListContainerRef = useRef(null);
+  const { fetchData } = useFetch();
+  const pageRef = useRef(1);
+  const [loader, setLoaderState] = useState(false);
+  const isLoadingRef = React.useRef(false);
+  const { getToolsAndValidatorsPaginated, calculateDivs } = useToolsAgentsService();
+  // Track validator tools fetched once (backend returns full list without pagination)
+  const validatorToolsRef = useRef([]);
+  const hasLoadedValidatorsOnce = useRef(false);
+  const { handleError } = useErrorHandler();
+
+  // Helper to force re-fetch of validator tools on explicit refreshes (e.g. after adding a validator)
+  const resetValidatorsCache = useCallback(() => {
+    hasLoadedValidatorsOnce.current = false;
+    validatorToolsRef.current = [];
+  }, []);
+
+  // Normalize API responses to always return a clean array of tool objects
+  const sanitizeToolsResponse = (response) => {
+    if (!response) return [];
+    // If backend sometimes returns an object instead of array
+    if (!Array.isArray(response)) return [];
+    // If array contains a single message object with no tool fields, treat as empty
+    if (response.length === 1 && response[0] && typeof response[0] === "object" && "message" in response[0] && !("tool_id" in response[0])) {
+      return [];
+    }
+    return response
+      .filter((item) => item && typeof item === "object" && ("tool_id" in item || "tool_name" in item))
+      .map((item) => {
+        let isValidator = false;
+        if (item.tool_id) {
+          if (String(item.tool_id).startsWith("_validator_")) {
+            isValidator = true;
+          }
+        }
+        return { ...item, is_validator: isValidator };
+      });
+  };
+
+  const handleSearch = async (searchValue, divsCount, pageNumber, tagsToUse = null) => {
+    setSearchTerm(searchValue || "");
+    setPage(1);
+    pageRef.current = 1;
+    setVisibleData([]);
+    setHasMore(true);
+    if (searchValue.trim()) {
+      try {
+        setLoading(true);
+        const tagsForSearch = tagsToUse !== null ? tagsToUse : selectedTags;
+        const response = await getToolsAndValidatorsPaginated({
+          page: pageNumber,
+          limit: divsCount,
+          search: searchValue,
+          tags: tagsForSearch?.length > 0 ? tagsForSearch : undefined,
+        });
+        let dataToSearch = sanitizeToolsResponse(response?.details);
+        if (tagsForSearch?.length > 0) {
+          dataToSearch = dataToSearch.filter((item) => item.tags && item.tags.some((tag) => tagsForSearch.includes(tag?.tag_name)));
+        }
+        setTotalToolsCount(response.total_count || 0);
+        setVisibleData(dataToSearch);
+        setHasMore(dataToSearch.length >= divsCount);
+      } catch (error) {
+        handleError(error, { context: "AvailableTools.handleSearch" });
+        setVisibleData([]); // Clear visibleData on error
+        setHasMore(false);
+      } finally {
+        setLoading(false); // Hide loader
+      }
+    } else {
+      // If search term is empty, reset to default data
+      setVisibleData(toolList); // Reset to the initial list of tools
+      setHasMore(true);
+    }
+  };
+
+  const getToolsData = async (pageNumber, divsCount) => {
+    return getToolsDataWithTags(pageNumber, divsCount, selectedTags);
+  };
+
+  const getToolsDataWithTags = async (pageNumber, divsCount, tagsToUse) => {
+    setLoading(true);
+    try {
+      const response = await getToolsAndValidatorsPaginated({
+        page: pageNumber,
+        limit: divsCount,
+        search: "",
+        tags: tagsToUse?.length > 0 ? tagsToUse : undefined,
+      });
+      const data = sanitizeToolsResponse(response?.details);
+      let finalData = data;
+      if ((tagsToUse || []).length > 0) {
+        finalData = data.filter((item) => item.tags && item.tags.some((tag) => (tagsToUse || []).includes(tag?.tag_name)));
+      }
+      if (pageNumber === 1) {
+        setToolList(finalData);
+        setVisibleData(finalData);
+      } else {
+        if (finalData.length > 0) {
+          setVisibleData((prev) => (Array.isArray(prev) ? [...prev, ...finalData] : [...finalData]));
+        }
+      }
+      setTotalToolsCount(response.total_count || data?.length || 0);
+      if (data.length < divsCount) {
+        setHasMore(false);
+      } else if (pageNumber === 1) {
+        // Reset hasMore on fresh load only when page is full
+        setHasMore(true);
+      }
+      return finalData; // return fetched merged data for caller decisions
+    } catch (error) {
+      handleError(error, { context: "AvailableTools.getToolsData" });
+      if (pageNumber === 1) {
+        setToolList([]);
+        setVisibleData([]);
+      }
+      setHasMore(false);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchTerm("");
+    setSelectedTags([]); // Clear tags when clearing search
+    setVisibleData([]);
+    setHasMore(true);
+    // Also reset validators so they re-fetch on next load (captures newly added validator tools)
+    resetValidatorsCache();
+    setTimeout(() => {
+      // Trigger fetchToolsData with no search term and no tags (reset to first page)
+      const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+      setPage(1);
+      pageRef.current = 1;
+      // Call getToolsData with explicitly empty tags
+      getToolsDataWithTags(1, divsCount, []);
+    }, 5);
+  };
+
+  useEffect(() => {
+    const container = toolListContainerRef?.current;
+    if (!container) return;
+
+    // Extract the check logic into a separate function
+    const checkAndLoadMore = () => {
+      if (
+        container.scrollTop + container.clientHeight >= container.scrollHeight - 10 &&
+        !loading &&
+        !isLoadingRef.current &&
+        hasMore // Prevent if no more pages
+      ) {
+        handleScrollLoadMore();
+      }
+    };
+
+    const debouncedCheckAndLoad = debounce(checkAndLoadMore, 200); // 200ms debounce
+
+    const handleResize = () => {
+      debouncedCheckAndLoad();
+    };
+
+    window.addEventListener("resize", handleResize);
+    container.addEventListener("scroll", debouncedCheckAndLoad);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      debouncedCheckAndLoad.cancel && debouncedCheckAndLoad.cancel();
+      container.removeEventListener("scroll", debouncedCheckAndLoad);
+    };
+  }, [toolListContainerRef, hasMore, loading]);
+
+  const handleScrollLoadMore = async () => {
+    if (loader || isLoadingRef.current || !hasMore) return; // Prevent multiple calls or if no more data
+    isLoadingRef.current = true;
+    const nextPage = pageRef.current + 1;
+    const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+    try {
+      setLoaderState(true);
+      setLoading && setLoading(true);
+      let newData = [];
+      if (searchTerm.trim()) {
+        const res = await getToolsAndValidatorsPaginated({
+          page: nextPage,
+          limit: divsCount,
+          search: searchTerm,
+          tags: selectedTags?.length > 0 ? selectedTags : undefined,
+        });
+        newData = sanitizeToolsResponse(res.details);
+
+        if (selectedTags?.length > 0) {
+          newData = newData.filter((item) => item.tags && item.tags.some((tag) => selectedTags.includes(tag?.tag_name)));
+        }
+        if (newData.length > 0) {
+          setVisibleData((prev) => (Array.isArray(prev) ? [...prev, ...newData] : [...newData]));
+          // Only increment page if we actually appended data
+          setPage(nextPage);
+          pageRef.current = nextPage;
+        }
+        if (newData.length < divsCount) setHasMore(false);
+      } else {
+        // Only call fetchToolsData if no searchTerm; capture returned data
+        const appended = await getToolsData(nextPage, divsCount);
+        if (appended.length > 0) {
+          setPage(nextPage);
+          pageRef.current = nextPage;
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setHasMore(false);
+    } finally {
+      setLoaderState(false);
+      setLoading && setLoading(false);
+      isLoadingRef.current = false;
+    }
+  };
+
+  const handlePlusIconClick = () => {
+    setShowForm(true);
+    setIsAddTool(true);
+  };
+
+  const onSettingClick = () => {
+    setFilterModal(true);
+  };
+
+  const getTags = async () => {
+    try {
+      const data = await fetchData(APIs.GET_TAGS);
+      setTags(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Use a ref to ensure tags are fetched only once
+  const hasLoadedTagsOnce = useRef(false);
+
+  useEffect(() => {
+    if (hasLoadedTagsOnce.current) return;
+    hasLoadedTagsOnce.current = true;
+    getTags();
+  }, [showForm]);
+
+  const hasLoadedOnce = useRef(false);
+
+  useEffect(() => {
+    if (hasLoadedOnce.current) return; // prevent duplicate initial load
+    hasLoadedOnce.current = true;
+
+    const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+    pageRef.current = 1;
+    setPage(1);
+    getToolsData(1, divsCount);
+  }, []);
+
+  const handleRefresh = () => {
+    setPage(1);
+    pageRef.current = 1;
+    setSearchTerm("");
+    setSelectedTags([]);
+    setVisibleData([]);
+    setHasMore(true);
+    resetValidatorsCache();
+    const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+    // Call getToolsData with explicitly empty tags
+    getToolsDataWithTags(1, divsCount, []);
+  };
+  const handleFilter = async (selectedTagsParam) => {
+    setSelectedTags(selectedTagsParam);
+    setPage(1);
+    pageRef.current = 1;
+    setVisibleData([]);
+    setHasMore(true);
+
+    // Trigger new API call with selected tags - pass selectedTagsParam directly
+    const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+    if (searchTerm.trim()) {
+      // If there's a search term, use handleSearch with current search and new tags
+      await handleSearch(searchTerm, divsCount, 1, selectedTagsParam);
+    } else {
+      // If no search term, fetch data with tag filter - pass selectedTagsParam directly
+      await getToolsDataWithTags(1, divsCount, selectedTagsParam);
+    }
+  };
+
+  const fetchPaginatedTools = async (pageNumber = 1, refreshValidators = false) => {
+    setVisibleData([]);
+    setPage(pageNumber);
+    pageRef.current = pageNumber;
+    setHasMore(true);
+    const divsCount = calculateDivs(toolListContainerRef, 200, 141, 40);
+    if (refreshValidators || pageNumber === 1) {
+      // If explicitly requested or first page reset, invalidate validator cache so latest validators appear
+      resetValidatorsCache();
+    }
+    await getToolsData(pageNumber, divsCount);
+  };
+
+  useActiveNavClick(["/", "/tools"], () => {
+    setShowForm((open) => (open ? false : open));
+  });
+
+  if (permissionsLoading) {
+    return <Loader />;
+  }
+  if (permissions && permissions.read_access && permissions.read_access.tools === false) {
+    return <div style={{ padding: 24, color: '#b91c1c', fontWeight: 600 }}>You do not have permission to view tools.</div>;
+  }
+
+  return (
+    <>
+      <FilterModal
+        show={filterModal}
+        onClose={() => setFilterModal(false)}
+        tags={tags}
+        handleFilter={handleFilter}
+        selectedTags={selectedTags}
+        showfilterHeader={"Filter tools by Tags"}
+      />
+      {showForm && (
+        <ToolOnBoarding
+          setShowForm={setShowForm}
+          isAddTool={isAddTool}
+          editTool={editTool}
+          setIsAddTool={setIsAddTool}
+          tags={tags}
+          fetchPaginatedTools={fetchPaginatedTools}
+          hideServerTab={true}
+          contextType="tools"
+        />
+      )}
+      {loading && <Loader />}
+      <div className={style.container}>
+        <div
+          className={`${
+            selectedTags.length > 0 || searchTerm.trim() ? (activeTab === "tools" ? style.tagOrSerachIsOn : activeTab === "servers" ? style.tagOrSerachIsOnServer : "") : ""
+          }`}
+          style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12, flexDirection: "column", alignItems: "baseline", gap: "2px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", width: "98%" }}>
+            <div style={{ display: "flex", gap: 0 }}>
+              <button
+                onClick={() => {
+                  if (activeTab !== "tools") {
+                    setActiveTab("tools");
+                    clearSearch();
+                  }
+                }}
+                className={`iafTabsBtn ${activeTab === "tools" ? " active" : ""}`}>
+                TOOLS
+              </button>
+              <button onClick={() => setActiveTab("servers")} className={`iafTabsBtn ${activeTab === "servers" ? " active" : ""}`}>
+                SERVERS
+              </button>
+            </div>
+            {/* SubHeader sits on its own row below the tabs (only when tools tab is active) */}
+            {activeTab === "tools" && (
+              <div style={{ width: "100%", marginBottom: 0 }} className={style.subHeaderContainer}>
+                <SubHeader
+                  heading={""}
+                  activeTab={activeTab}
+                  onSearch={(value) => handleSearch(value, calculateDivs(toolListContainerRef, 200, 141, 40), 1)}
+                  onSettingClick={onSettingClick}
+                  onPlusClick={handlePlusIconClick}
+                  handleRefresh={handleRefresh}
+                  selectedTags={selectedTags}
+                  clearSearch={clearSearch}
+                />
+              </div>
+            )}
+          </div>
+          {activeTab === "servers" ? (
+            <AvailableServers />
+          ) : (
+            <>
+              {/* {((searchTerm.trim() && visibleData.length > 0) || (selectedTags.length > 0 && visibleData.length)) && ( */}
+              <div style={{ display: "flex", gap: "12px", marginBottom: "3px", width: "100%", overflow: "hidden" }}>
+                {/* Display searched tool text if searchTerm exists and results are found */}
+                {searchTerm.trim() && visibleData.length > 0 && (
+                  <div className={style.searchedToolText}>
+                    <p>
+                      Search term:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={searchTerm}>
+                        {searchTerm}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                {/* Display filtered tools text if filters are applied */}
+                {selectedTags.length > 0 && visibleData.length > 0 && (
+                  <div className={style.filteredToolText}>
+                    <p>
+                      Selected tags:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={selectedTags.join(", ")}>
+                        {selectedTags.join(", ")}
+                      </span>
+                    </p>
+                  </div>
+                )}
+              </div>
+              {/* )} */}
+              {/* Display total count summary */}
+              {visibleData.length > 0 && (
+                <div className={style.summaryLine}>
+                  <strong>{visibleData.length}</strong> tools (of {totalToolsCount} total)
+                </div>
+              )}
+              <div className={style.visibleToolsContainer} ref={toolListContainerRef}>
+                {visibleData?.length > 0 && (
+                  <div className={style.toolsList}>
+                    {visibleData?.map((item, index) => (
+                      <ToolsCard
+                        tool={item}
+                        setShowForm={setShowForm}
+                        setIsAddTool={setIsAddTool}
+                        isAddTool={isAddTool}
+                        key={`tools-card-${index}`}
+                        setEditTool={setEditTool}
+                        loading={loading}
+                        fetchPaginatedTools={fetchPaginatedTools}
+                        createdBy={item.created_by || ""}
+                      />
+                    ))}
+                  </div>
+                )}
+                {/* Display "No Tools Found" messages when search or filters applied but no results */}
+                {searchTerm.trim() && visibleData.length < 1 && (
+                  <div className={style.filteredToolText}>
+                    <p>
+                      No tools found for:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={searchTerm}>
+                        {searchTerm}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                {selectedTags.length > 0 && visibleData.length < 1 && (
+                  <div className={style.searchedToolText}>
+                    <p>
+                      No tools found for:{" "}
+                      <span className={`boldText ${style.filterOrSearchText}`} title={selectedTags.join(", ")}>
+                        {selectedTags.join(", ")}
+                      </span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default AvailableTools;

@@ -1,0 +1,213 @@
+.dropdownContainer {
+  position: relative;
+  width: 240px;
+  /* top: 40px;
+    left: 20px; */
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+}
+
+.dropdownLabel {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #1976d2;
+  font-size: 15px;
+}
+
+.dropdownInput {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #6c757d;
+  margin-bottom: 6px;
+  font-size: 15px;
+  background: #fff;
+  color: #222;
+}
+
+.dropdownInput.disabled {
+  background-color: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.dropdownSearchInput {
+  width: 96%;
+  margin: 8px 2%;
+  padding: 18px 12px; /* Increased vertical padding for more height */
+  border-radius: 6px;
+  border: 1.5px solid #b0b0b0;
+  font-size: 17px;
+  background: #f9f9f9;
+  color: #222;
+  box-sizing: border-box;
+  outline: none;
+  transition: border 0.2s;
+  /* min-height: 48px;  */
+  /* Ensures a minimum height */
+  height: 20px;
+}
+.dropdownSearchInput:focus {
+  border: 1.5px solid #1976d2;
+  background: #fff;
+}
+
+.dropdownList {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  width: 100%;
+  min-width: 220px;
+  max-width: 320px;
+  background: #fff;
+  border: 1px solid #1976d2;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(25,118,210,0.08);
+  z-index: 10;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.dropdownHeader {
+  padding: 8px 10px;
+  color: #1976d2;
+  font-weight: 600;
+  border-bottom: 1px solid #eee;
+  background: #f5faff;
+}
+
+.dropdownScrollArea {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.dropdownOption {
+  padding: 8px 10px;
+  background: #fff;
+  color: #222;
+  cursor: pointer;
+  font-weight: normal;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
+}
+
+.dropdownOption.selected {
+  background: #d9e8f4;
+  font-weight: bold;
+}
+
+.dropdownOption.highlighted {
+  background: rgb(235, 235, 245) 
+}
+
+.dropdownNoOption {
+  padding: 10px;
+  color: #888;
+}
+
+.dropdownInputUnified {
+  font-size: 16px;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  color: #222;
+  margin-bottom: 8px;
+  font-family: inherit;
+}
+
+.dropdownListUnified {
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  max-height: 220px;
+  /* overflow-y: auto; */
+  font-family: inherit;
+}
+
+.dropdownHeaderUnified {
+  font-weight: 700;
+  font-size: 16px;
+  color: #222;
+  padding: 10px 0 10px 12px;
+  background: #f7f7f7;
+  border-bottom: 1px solid #e0e0e0;
+  font-family: inherit;
+}
+
+.dropdownScrollAreaUnified {
+  max-height: 180px;
+  /* overflow-y: auto; */
+  padding-bottom: 4px;
+}
+
+.dropdownOptionUnified {
+  font-size: 15px;
+  font-weight: 500;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  margin-bottom: 2px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dropdownOptionUnified.selected {
+  background: #0071b3;
+  color: #fff;
+}
+
+.dropdownOptionUnified.highlighted {
+  background: rgb(226 226 238);
+  color: #222;
+}
+
+.dropdownNoOptionUnified {
+  font-size: 15px;
+  color: #888;
+  padding: 10px;
+  font-family: inherit;
+}
+
+.codeSnippetPreviewUnified {
+  margin-top: 18px;
+}
+
+.codeSnippetHeaderUnified {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.codeSnippetTitleUnified {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0071b3;
+  margin-right: 8px;
+}
+
+.codeSnippetInfoIconUnified {
+  font-size: 16px;
+  color: #888;
+}
+
+.codeSnippetEditorWrapperUnified {
+  border-radius: 12px;
+  background: #23272f;
+  padding: 0;
+}
+
+.codeSnippetEditorUnified {
+  background: #23272f;
+  color: #fff;
+  border-radius: 12px;
+  padding: 18px 20px;
+  font-size: 16px;
+  font-family: "Fira Mono", Menlo, Monaco, Consolas, monospace;
+  margin: 0;
+  overflow-x: auto;
+}
