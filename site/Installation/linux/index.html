@@ -3123,14 +3123,14 @@ npm<span class="w"> </span>start
 <span class="na">After</span><span class="o">=</span><span class="s">network.target</span>
 
 <span class="k">[Service]</span>
-<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/</span>
+<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend</span>
 <span class="na">Environment</span><span class="o">=</span><span class="s">&quot;NO_PROXY=localhost,127.0.0.1,::1,model_server_ip,ip_of_this_VM&quot;</span>
 <span class="na">Environment</span><span class="o">=</span><span class="s">&quot;HTTP_PROXY=&lt;your_proxy&gt;&quot;</span>
 <span class="na">Environment</span><span class="o">=</span><span class="s">&quot;HTTPS_PROXY=&lt;your_proxy&gt;&quot;</span>
 <span class="na">Environment</span><span class="o">=</span><span class="s">&quot;PYTHONUNBUFFERED=1&quot;</span>
-<span class="na">Environment</span><span class="o">=</span><span class="s">VIRTUAL_ENV=/home/your-username/your-project-directory/venv</span>
-<span class="na">Environment</span><span class="o">=</span><span class="s">PATH=/home/your-username/your-project-directory/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin</span>
-<span class="na">ExecStart</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/venv/bin/python main.py --host 0.0.0.0 --port your-backend-port</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">VIRTUAL_ENV=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">PATH=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin</span>
+<span class="na">ExecStart</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv/bin/python main.py --host 0.0.0.0 --port your-backend-port</span>
 <span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
 <span class="na">User</span><span class="o">=</span><span class="s">your-username</span>
 <span class="na">StandardOutput</span><span class="o">=</span><span class="s">journal</span>
@@ -3163,7 +3163,7 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="
 <span class="na">After</span><span class="o">=</span><span class="s">network.target</span>
 
 <span class="k">[Service]</span>
-<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/</span>
+<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Frontend</span>
 <span class="na">ExecStart</span><span class="o">=</span><span class="s">/usr/bin/npm start</span>
 <span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
 <span class="na">User</span><span class="o">=</span><span class="s">your-username</span>
@@ -3180,9 +3180,28 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="
 <li><strong>PORT:</strong> Set to your desired frontend port.</li>
 </ul>
 <p>Enable and start the frontend service:</p>
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>infyagent-frontend.service
+<p><div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>infyagent-frontend.service
 sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>infyagent-frontend.service
 sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>infyagent-frontend.service
+</code></pre></div>
+<strong>Start Phoenix server using systemctl</strong></p>
+<div class="highlight"><pre><span></span><code><span class="k">[Unit]</span>
+<span class="na">Description</span><span class="o">=</span><span class="s">Phoenix Logging Server</span>
+<span class="na">After</span><span class="o">=</span><span class="s">network.target</span>
+
+<span class="k">[Service]</span>
+<span class="na">User</span><span class="o">=</span><span class="s">your-username</span>
+<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend</span>
+<span class="na">ExecStart</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv/bin/python -m phoenix.server.main serve</span>
+<span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
+<span class="na">RestartSec</span><span class="o">=</span><span class="s">5</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">HTTP_PROXY=</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">NO_PROXY=localhost,127.0.0.1</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">PHOENIX_GRPC_PORT=50051</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">PHOENIX_SQL_DATABASE_URL=postgresql://postgres:&lt;your-password&gt;@localhost:5432/arize_traces</span>
+
+<span class="k">[Install]</span>
+<span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
 </code></pre></div>
 <h2 id="network-testing">Network Testing</h2>
 <p>Test connectivity between frontend and backend:</p>

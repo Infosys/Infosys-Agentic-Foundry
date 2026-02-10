@@ -2884,12 +2884,17 @@ npm<span class="w"> </span>start
 <p>Create a new file named <code>servers.bat</code> (you can choose any name).</p>
 <p>Paste the following content into the file:</p>
 <div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">echo</span> off
+<span class="k">set</span> <span class="nv">PYTHONIOENCODING</span><span class="p">=</span>utf-8
+
 <span class="c1">REM Activate Python virtual environment</span>
 <span class="k">cd</span> /d <span class="s2">&quot;C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\.venv\Scripts&quot;</span>
 <span class="k">call</span> activate.bat
 
 <span class="c1">REM Change to backend project directory</span>
 <span class="k">cd</span> /d <span class="s2">&quot;C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend&quot;</span>
+
+<span class="c1">REM Start Phoenix Server</span>
+<span class="k">start</span> <span class="s2">&quot;&quot;</span> cmd /k <span class="s2">&quot;python -m phoenix.server.main serve&quot;</span>
 
 <span class="c1">REM Ensure logs directory exists</span>
 <span class="k">if</span> <span class="k">not</span> <span class="k">exist</span> logs <span class="k">mkdir</span> logs

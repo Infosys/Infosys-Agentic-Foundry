@@ -587,11 +587,7 @@ Keep this process running for the models to remain available.
 
 **Connect to Model Server from Backend**
 
-Use this approach when connecting to an existing model server hosted elsewhere.
-
-**Configure Remote Model Server Connection**
-
-Update your `.env` file with the remote model server details:
+Update `.env` file of backend with the model server details:
 
 ```env
 MODEL_SERVER_URL="http://your-model-server-ip:port"

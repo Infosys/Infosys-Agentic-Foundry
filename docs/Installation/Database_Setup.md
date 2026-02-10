@@ -1,23 +1,5 @@
 # Database Setup Guide
 
-## Table of Contents
-
-- [PostgreSQL Installation on Windows VM](#postgresql-installation-on-windows-vm)
-- [PostgreSQL Installation on Linux](#postgresql-installation-on-linux)
-    - [Installation using PostgreSQL Official Packages](#installation-using-postgresql-official-packages)
-    - [Installation from Source](#installation-from-source)
-    - [Recommended: Set Up PostgreSQL as a systemd Service](#recommended-set-up-postgresql-as-a-systemd-service)
-    - [Additional Configuration (Remote Access, Password Setup)](#additional-configuration-remote-access-password-setup)
-- [PostgreSQL Database Setup](#postgresql-database-setup)
-- [Redis Installation on Windows](#redis-installation-on-windows)
-- [Redis Installation on Linux](#redis-installation-on-linux)
-    - [Install dependencies (per OS)](#install-dependencies-per-os)
-    - [Build and install from source](#build-and-install-from-source)
-    - [Configuration (redis.conf)](#configuration-redisconf)
-    - [Optional: Set Up Redis as a systemd Service](#optional-set-up-redis-as-a-systemd-service)
-
----
-
 ## PostgreSQL Installation on Windows VM
 
 1. Download the PostgreSQL installation wizard and start it up.  
@@ -47,7 +29,7 @@
 
 ## PostgreSQL Installation on Linux
 
-### Installation using PostgreSQL Official Packages
+**Installation using PostgreSQL Official Packages**
 
 1. Go to the [PostgreSQL Linux download page](https://www.postgresql.org/download/linux/).
 2. Select your OS distribution and follow the instructions to get the appropriate installation script.
@@ -61,7 +43,7 @@
     sudo systemctl start postgresql-17
     ```
 
-### Installation from Source
+**Installation from Source**
 
 1. **Download and extract source:**
     ```bash
@@ -95,7 +77,7 @@
     psql --version
     ```
 
-### Recommended: Set Up PostgreSQL as a systemd Service
+**Recommended: Set Up PostgreSQL as a systemd Service**
 
 1. **Create the systemd service file:**
     ```bash
@@ -128,7 +110,7 @@
     journalctl -u postgresql.service -f  # (to view logs)
     ```
 
-### Additional Configuration (Remote Access, Password Setup)
+**Additional Configuration (Remote Access, Password Setup)**
 
 1. **Allow connections from other hosts:**
     - Edit `postgresql.conf`:
@@ -269,7 +251,7 @@ async def check_and_create_databases():
 
 ## Redis Installation on Linux
 
-### Install dependencies (per OS)
+**Install dependencies (per OS)**
 
 Use the command for your distribution:
 
@@ -286,7 +268,7 @@ Use the command for your distribution:
     sudo zypper install gcc make libopenssl-devel tcl libtool autoconf automake -y
     ```
 
-### Build and install from source
+**Build and install from source**
 
 1. **Download Redis 8.2.1:**
     ```bash
@@ -300,7 +282,7 @@ Use the command for your distribution:
     sudo make install
     ```
 
-### Configuration (redis.conf)
+**Configuration (redis.conf)**
 
 1. Edit `redis.conf` to set the following values:
     ```
@@ -318,7 +300,7 @@ Use the command for your distribution:
     sudo chown -R projadmin:projadmin /var/run/redis
     ```
 
-### Optional: Set Up Redis as a systemd Service
+**Optional: Set Up Redis as a systemd Service**
 
 1. Create a systemd service file:
     ```bash

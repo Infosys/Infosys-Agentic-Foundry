@@ -438,14 +438,14 @@ Description=FastAPI Application
 After=network.target
 
 [Service]
-WorkingDirectory=/home/your-username/your-project-directory/
+WorkingDirectory=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend
 Environment="NO_PROXY=localhost,127.0.0.1,::1,model_server_ip,ip_of_this_VM"
 Environment="HTTP_PROXY=<your_proxy>"
 Environment="HTTPS_PROXY=<your_proxy>"
 Environment="PYTHONUNBUFFERED=1"
-Environment=VIRTUAL_ENV=/home/your-username/your-project-directory/venv
-Environment=PATH=/home/your-username/your-project-directory/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin
-ExecStart=/home/your-username/your-project-directory/venv/bin/python main.py --host 0.0.0.0 --port your-backend-port
+Environment=VIRTUAL_ENV=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv
+Environment=PATH=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin
+ExecStart=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv/bin/python main.py --host 0.0.0.0 --port your-backend-port
 Restart=always
 User=your-username
 StandardOutput=journal
@@ -489,7 +489,7 @@ Description=My Node.js Application
 After=network.target
 
 [Service]
-WorkingDirectory=/home/your-username/your-project-directory/
+WorkingDirectory=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Frontend
 ExecStart=/usr/bin/npm start
 Restart=always
 User=your-username
@@ -513,6 +513,27 @@ Enable and start the frontend service:
 sudo systemctl enable infyagent-frontend.service
 sudo systemctl start infyagent-frontend.service
 sudo systemctl status infyagent-frontend.service
+```
+**Start Phoenix server using systemctl**
+
+```ini
+[Unit]
+Description=Phoenix Logging Server
+After=network.target
+
+[Service]
+User=your-username
+WorkingDirectory=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend
+ExecStart=/home/your-username/your-project-directory/Infosys-Agentic-Foundry-Backend/venv/bin/python -m phoenix.server.main serve
+Restart=always
+RestartSec=5
+Environment=HTTP_PROXY=
+Environment=NO_PROXY=localhost,127.0.0.1
+Environment=PHOENIX_GRPC_PORT=50051
+Environment=PHOENIX_SQL_DATABASE_URL=postgresql://postgres:<your-password>@localhost:5432/arize_traces
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 ## Network Testing

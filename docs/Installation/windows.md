@@ -288,13 +288,19 @@ Create a new file named `servers.bat` (you can choose any name).
 Paste the following content into the file:
 
 ```bat
+
 @echo off
+set PYTHONIOENCODING=utf-8
+
 REM Activate Python virtual environment
 cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\.venv\Scripts"
 call activate.bat
 
 REM Change to backend project directory
 cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
+
+REM Start Phoenix Server
+start "" cmd /k "python -m phoenix.server.main serve"
 
 REM Ensure logs directory exists
 if not exist logs mkdir logs

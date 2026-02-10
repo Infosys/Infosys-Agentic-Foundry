@@ -2978,9 +2978,7 @@ CROSS_ENCODER_PATH=path/to/your/folder/bge-reranker-large
 Keep this process running for the models to remain available.</p>
 <hr />
 <p><strong>Connect to Model Server from Backend</strong></p>
-<p>Use this approach when connecting to an existing model server hosted elsewhere.</p>
-<p><strong>Configure Remote Model Server Connection</strong></p>
-<p>Update your <code>.env</code> file with the remote model server details:</p>
+<p>Update <code>.env</code> file of backend with the model server details:</p>
 <div class="highlight"><pre><span></span><code>MODEL_SERVER_URL=&quot;http://your-model-server-ip:port&quot;
 MODEL_SERVER_HOST=&quot;your-model-server-ip&quot;   # Often derived from MODEL_SERVER_URL
 MODEL_SERVER_PORT=&quot;port_number&quot;            # Often derived from MODEL_SERVER_URL
