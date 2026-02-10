@@ -15,16 +15,19 @@
         <link rel="next" href="../../Agents_Design/overview/">
       
       
+        
+      
+      
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.12">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
-        <title>PostgreSQL setup - Agentic Foundry</title>
+        <title>Database setup - Agentic Foundry</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.2afb09e1.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
       
 
@@ -51,7 +54,6 @@
 
     
     
-    
   </head>
   
   
@@ -64,7 +66,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#postgresql-setup-guide" class="md-skip">
+        <a href="#database-setup-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -99,7 +101,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              PostgreSQL setup
+              Database setup
             
           </span>
         </div>
@@ -199,9 +201,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Introduction
+  
+
     
   </span>
+  
   
 
       </a>
@@ -232,9 +239,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Definitions
+  
+
     
   </span>
+  
   
 
             <span class="md-nav__icon md-icon"></span>
@@ -243,7 +255,11 @@
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
-            Definitions
+            
+  
+    Definitions
+  
+
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -259,9 +275,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Vocabulary - Definitions
+  
+
     
   </span>
+  
   
 
       </a>
@@ -282,9 +303,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Human in the loop
+  
+
     
   </span>
+  
   
 
       </a>
@@ -312,9 +338,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Features
+  
+
     
   </span>
+  
   
 
       </a>
@@ -334,9 +365,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Core Building Blocks
+  
+
     
   </span>
+  
   
 
       </a>
@@ -356,9 +392,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Architecture
+  
+
     
   </span>
+  
   
 
       </a>
@@ -391,9 +432,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Installation
+  
+
     
   </span>
+  
   
 
             <span class="md-nav__icon md-icon"></span>
@@ -402,7 +448,11 @@
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
-            Installation
+            
+  
+    Installation
+  
+
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -418,9 +468,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Windows
+  
+
     
   </span>
+  
   
 
       </a>
@@ -441,9 +496,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Linux
+  
+
     
   </span>
+  
   
 
       </a>
@@ -464,9 +524,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Azure
+  
+
     
   </span>
+  
   
 
       </a>
@@ -496,9 +561,14 @@
   
   
   <span class="md-ellipsis">
-    PostgreSQL setup
+    
+  
+    Database setup
+  
+
     
   </span>
+  
   
 
           <span class="md-nav__icon md-icon"></span>
@@ -509,9 +579,14 @@
   
   
   <span class="md-ellipsis">
-    PostgreSQL setup
+    
+  
+    Database setup
+  
+
     
   </span>
+  
   
 
       </a>
@@ -532,29 +607,168 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#installation-on-vm" class="md-nav__link">
+  <a href="#table-of-contents" class="md-nav__link">
     <span class="md-ellipsis">
-      Installation on VM
+      
+        Table of Contents
+      
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#installation-on-local" class="md-nav__link">
+  <a href="#postgresql-installation-on-windows-vm" class="md-nav__link">
     <span class="md-ellipsis">
-      Installation on local
+      
+        PostgreSQL Installation on Windows VM
+      
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#database-setup" class="md-nav__link">
+  <a href="#postgresql-installation-on-linux" class="md-nav__link">
     <span class="md-ellipsis">
-      Database Setup
+      
+        PostgreSQL Installation on Linux
+      
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="PostgreSQL Installation on Linux">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installation-using-postgresql-official-packages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation using PostgreSQL Official Packages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#installation-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation from Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-set-up-postgresql-as-a-systemd-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended: Set Up PostgreSQL as a systemd Service
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-configuration-remote-access-password-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Configuration (Remote Access, Password Setup)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#postgresql-database-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL Database Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#redis-installation-on-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Redis Installation on Windows
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#redis-installation-on-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Redis Installation on Linux
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Redis Installation on Linux">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install-dependencies-per-os" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install dependencies (per OS)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-and-install-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build and install from source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-redisconf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration (redis.conf)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional-set-up-redis-as-a-systemd-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: Set Up Redis as a systemd Service
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -597,9 +811,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Agents Design
+  
+
     
   </span>
+  
   
 
             <span class="md-nav__icon md-icon"></span>
@@ -608,7 +827,11 @@
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
-            Agents Design
+            
+  
+    Agents Design
+  
+
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -624,9 +847,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Overview
+  
+
     
   </span>
+  
   
 
       </a>
@@ -647,9 +875,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     React Agent Design
+  
+
     
   </span>
+  
   
 
       </a>
@@ -670,9 +903,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     React Critic Agent Design
+  
+
     
   </span>
+  
   
 
       </a>
@@ -693,9 +931,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Multi Agent Design
+  
+
     
   </span>
+  
   
 
       </a>
@@ -716,9 +959,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Planner Executor Agent Design
+  
+
     
   </span>
+  
   
 
       </a>
@@ -739,9 +987,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Orchestration Meta Agent Design
+  
+
     
   </span>
+  
   
 
       </a>
@@ -762,9 +1015,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Planner Meta Agent Design
+  
+
     
   </span>
+  
   
 
       </a>
@@ -785,9 +1043,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Hybrid Agent Design
+  
+
     
   </span>
+  
   
 
       </a>
@@ -815,9 +1078,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Admin Screen
+  
+
     
   </span>
+  
   
 
       </a>
@@ -837,9 +1105,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Tools Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -859,9 +1132,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Tool Validation
+  
+
     
   </span>
+  
   
 
       </a>
@@ -881,9 +1159,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Tool Interrupt
+  
+
     
   </span>
+  
   
 
       </a>
@@ -903,9 +1186,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Memory Management
+  
+
     
   </span>
+  
   
 
       </a>
@@ -936,9 +1224,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Agent Configuration
+  
+
     
   </span>
+  
   
 
             <span class="md-nav__icon md-icon"></span>
@@ -947,7 +1240,11 @@
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_13">
             <span class="md-nav__icon md-icon"></span>
-            Agent Configuration
+            
+  
+    Agent Configuration
+  
+
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -963,9 +1260,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Overview
+  
+
     
   </span>
+  
   
 
       </a>
@@ -986,9 +1288,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     React Agent Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1009,9 +1316,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     React Critic Agent Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1032,9 +1344,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Multi Agent Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1055,9 +1372,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Planner Executor Agent Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1078,9 +1400,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Meta Agent Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1101,9 +1428,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Planner Meta Agent Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1124,9 +1456,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Hybrid Agent Configuration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1165,9 +1502,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Inference
+  
+
     
   </span>
+  
   
 
             <span class="md-nav__icon md-icon"></span>
@@ -1176,7 +1518,11 @@
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_14">
             <span class="md-nav__icon md-icon"></span>
-            Inference
+            
+  
+    Inference
+  
+
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -1192,9 +1538,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Overview
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1215,9 +1566,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     React Agent Inference
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1238,9 +1594,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     React Critic Agent Inference
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1261,9 +1622,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Multi Agent Inference
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1284,9 +1650,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Planner Executor Agent Inference
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1307,9 +1678,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Meta Agent Inference
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1330,9 +1706,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Planner Meta Agent Inference
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1353,9 +1734,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Hybrid Agent Inference
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1376,9 +1762,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Canvas Screen
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1406,9 +1797,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Files
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1439,9 +1835,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Telemetry
+  
+
     
   </span>
+  
   
 
             <span class="md-nav__icon md-icon"></span>
@@ -1450,7 +1851,11 @@
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_16">
             <span class="md-nav__icon md-icon"></span>
-            Telemetry
+            
+  
+    Telemetry
+  
+
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -1466,9 +1871,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Open Telemetry
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1489,9 +1899,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Connecting to Grafana
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1512,9 +1927,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Arize Phoenix
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1553,9 +1973,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Evaluation
+  
+
     
   </span>
+  
   
 
             <span class="md-nav__icon md-icon"></span>
@@ -1564,7 +1989,11 @@
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_17">
             <span class="md-nav__icon md-icon"></span>
-            Evaluation
+            
+  
+    Evaluation
+  
+
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -1580,9 +2009,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Evaluation Metrics
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1603,9 +2037,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Groundtruth Evaluation
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1626,9 +2065,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Consistency Evaluation
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1656,9 +2100,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Vault
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1678,9 +2127,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     API Authentication
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1700,9 +2154,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     GZIP Compression
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1722,9 +2181,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Knowledge Base
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1744,9 +2208,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     DataConnectors
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1766,9 +2235,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Export Agent
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1788,9 +2262,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Prompt Optimization
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1810,9 +2289,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     MCP Registry
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1832,9 +2316,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Time-To-Live
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1854,9 +2343,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Model Server Integration
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1876,9 +2370,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Role Base Access Control
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1898,9 +2397,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Serever Sent Events
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1920,9 +2424,14 @@
   
   
   <span class="md-ellipsis">
+    
+  
     Agent Pipelines
+  
+
     
   </span>
+  
   
 
       </a>
@@ -1957,29 +2466,168 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#installation-on-vm" class="md-nav__link">
+  <a href="#table-of-contents" class="md-nav__link">
     <span class="md-ellipsis">
-      Installation on VM
+      
+        Table of Contents
+      
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#installation-on-local" class="md-nav__link">
+  <a href="#postgresql-installation-on-windows-vm" class="md-nav__link">
     <span class="md-ellipsis">
-      Installation on local
+      
+        PostgreSQL Installation on Windows VM
+      
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#database-setup" class="md-nav__link">
+  <a href="#postgresql-installation-on-linux" class="md-nav__link">
     <span class="md-ellipsis">
-      Database Setup
+      
+        PostgreSQL Installation on Linux
+      
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="PostgreSQL Installation on Linux">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#installation-using-postgresql-official-packages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation using PostgreSQL Official Packages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#installation-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation from Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-set-up-postgresql-as-a-systemd-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended: Set Up PostgreSQL as a systemd Service
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-configuration-remote-access-password-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Configuration (Remote Access, Password Setup)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#postgresql-database-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL Database Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#redis-installation-on-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Redis Installation on Windows
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#redis-installation-on-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Redis Installation on Linux
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Redis Installation on Linux">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install-dependencies-per-os" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install dependencies (per OS)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-and-install-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build and install from source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-redisconf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration (redis.conf)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional-set-up-redis-as-a-systemd-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: Set Up Redis as a systemd Service
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1993,83 +2641,223 @@
           
           
             <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Introduction
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../windows/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Installation
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
               <article class="md-content__inner md-typeset">
                 
                   
 
 
 
-<h1 id="postgresql-setup-guide">PostgreSQL Setup Guide</h1>
-<h2 id="installation-on-vm">Installation on VM</h2>
-<ol>
-<li>Download the PostgreSQL installation wizard and start it up.
-<img alt="postgres1" src="../../images/postgres1.png" /></li>
-<li>Choose the default directory or customize as required.
-<img alt="postgres2" src="../../images/postgres2.png" /></li>
-<li>
-<p>All the components will be selected by default and will be useful, 
-so keep them as it is and Next to continue. </p>
-<p><img alt="postgres3" src="../../images/postgres3.png" /></p>
-</li>
-<li>
-<p>Choose the default Data directory or change as required.
-<img alt="postgres4" src="../../images/postgres4.png" /></p>
-</li>
-<li>
-<p>Create a password for postgres (superuser) - This password will be used in the connection string for connecting to the database: <code>postgresql://postgres:password@localhost:port/database</code>.</p>
-<p><img alt="postgres5" src="../../images/postgres5.png" /></p>
-</li>
-<li>
-<p>Set the port number (default: 5432) or change if required.
-<img alt="postgres6" src="../../images/postgres6.png" /></p>
-</li>
-<li>
-<p>Use the Locale field to specify the locale that will be used by the new database cluster. The Default locale is the operating system locale. You can leave this as is and click next to continue.</p>
-<p><img alt="postgres7" src="../../images/postgres7.png" /></p>
-</li>
-<li>
-<p>Click Next to continue.</p>
-<p><img alt="postgres8" src="../../images/postgres8.png" /></p>
-</li>
-<li>
-<p>Click Next to start the installation.
-<img alt="postgres9" src="../../images/postgres9.png" /></p>
-</li>
-<li>After installation is complete, there will be a checked check box which asks if additional tools should be installed to complement your postgres installation using Stack Builder.</li>
-<li>
-<p>You should uncheck this as it is not necessary, and it is also not possible as the url gets blocked by the VM.</p>
-<p><img alt="postgres10" src="../../images/postgres10.png" /></p>
-</li>
-</ol>
-<h2 id="installation-on-local">Installation on local</h2>
-<ol>
-<li>Install PostgreSQL from company portal</li>
-<li>
-<p>Verify installation:</p>
+<h1 id="database-setup-guide">Database Setup Guide</h1>
+<h2 id="table-of-contents">Table of Contents</h2>
 <ul>
-<li>Open SQL Shell (psql)</li>
-<li>Default username, password, database: <code>postgres</code></li>
-<li>
-<p>Default port: <code>5432</code> </p>
-<p><img alt="postgres12" src="../../images/postgres12.png" /></p>
-</li>
-<li>
-<p>Default connection string: <code>postgresql://postgres:postgres@localhost:5432/postgres</code></p>
-</li>
-<li>Connection String Format</li>
+<li><a href="#postgresql-installation-on-windows-vm">PostgreSQL Installation on Windows VM</a></li>
+<li><a href="#postgresql-installation-on-linux">PostgreSQL Installation on Linux</a><ul>
+<li><a href="#installation-using-postgresql-official-packages">Installation using PostgreSQL Official Packages</a></li>
+<li><a href="#installation-from-source">Installation from Source</a></li>
+<li><a href="#recommended-set-up-postgresql-as-a-systemd-service">Recommended: Set Up PostgreSQL as a systemd Service</a></li>
+<li><a href="#additional-configuration-remote-access-password-setup">Additional Configuration (Remote Access, Password Setup)</a></li>
 </ul>
-<div class="highlight"><pre><span></span><code>postgresql://username:password@host:port/database
-</code></pre></div>
-<p><strong>Example:</strong></p>
-<div class="highlight"><pre><span></span><code>postgresql://postgres:postgres@localhost:5432/postgres
-</code></pre></div>
 </li>
-<li>
-<p>Run <code>\l</code> command to check list of databases, username, and password status</p>
-<p><img alt="postgres11" src="../../images/postgres11.png" /></p>
+<li><a href="#postgresql-database-setup">PostgreSQL Database Setup</a></li>
+<li><a href="#redis-installation-on-windows">Redis Installation on Windows</a></li>
+<li><a href="#redis-installation-on-linux">Redis Installation on Linux</a><ul>
+<li><a href="#install-dependencies-per-os">Install dependencies (per OS)</a></li>
+<li><a href="#build-and-install-from-source">Build and install from source</a></li>
+<li><a href="#configuration-redisconf">Configuration (redis.conf)</a></li>
+<li><a href="#optional-set-up-redis-as-a-systemd-service">Optional: Set Up Redis as a systemd Service</a></li>
+</ul>
 </li>
+</ul>
+<hr />
+<h2 id="postgresql-installation-on-windows-vm">PostgreSQL Installation on Windows VM</h2>
+<ol>
+<li>Download the PostgreSQL installation wizard and start it up.<br />
+<img alt="postgres1" src="../../images/postgres1.png" /></li>
+<li>Choose the default directory or customize as required.<br />
+<img alt="postgres2" src="../../images/postgres2.png" /></li>
+<li>All the components will be selected by default; keep them as is and click "Next" to continue.<br />
+<img alt="postgres3" src="../../images/postgres3.png" /></li>
+<li>Choose the default Data directory or change as required.<br />
+<img alt="postgres4" src="../../images/postgres4.png" /></li>
+<li>Create a password for postgres (superuser) – This password will be used in the connection string for connecting to the database:<br />
+<code>postgresql://postgres:password@localhost:port/database</code><br />
+<img alt="postgres5" src="../../images/postgres5.png" /></li>
+<li>Set the port number (default: 5432) or change if required.<br />
+<img alt="postgres6" src="../../images/postgres6.png" /></li>
+<li>Use the Locale field as desired (default is OS locale). Leave this as is and click next to continue.<br />
+<img alt="postgres7" src="../../images/postgres7.png" /></li>
+<li>Click Next to continue.<br />
+<img alt="postgres8" src="../../images/postgres8.png" /></li>
+<li>Click Next to start the installation.<br />
+<img alt="postgres9" src="../../images/postgres9.png" /></li>
+<li>After installation, a checkbox will ask if you wish to install additional tools with Stack Builder.</li>
+<li>Uncheck this as it is not necessary and likely not supported inside a VM.<br />
+<img alt="postgres10" src="../../images/postgres10.png" /></li>
 </ol>
-<h2 id="database-setup">Database Setup</h2>
+<hr />
+<h2 id="postgresql-installation-on-linux">PostgreSQL Installation on Linux</h2>
+<h3 id="installation-using-postgresql-official-packages">Installation using PostgreSQL Official Packages</h3>
+<ol>
+<li>Go to the <a href="https://www.postgresql.org/download/linux/">PostgreSQL Linux download page</a>.</li>
+<li>Select your OS distribution and follow the instructions to get the appropriate installation script.</li>
+<li><strong>Choose PostgreSQL version 17</strong>.</li>
+<li><strong>Example for RHEL9/CentOS9:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>postgresql17-server
+sudo<span class="w"> </span>/usr/pgsql-17/bin/postgresql-17-setup<span class="w"> </span>initdb
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>postgresql-17
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>postgresql-17
+</code></pre></div></li>
+</ol>
+<h3 id="installation-from-source">Installation from Source</h3>
+<ol>
+<li><strong>Download and extract source:</strong>
+    <div class="highlight"><pre><span></span><code>wget<span class="w"> </span>https://ftp.postgresql.org/pub/source/v17.3/postgresql-17.3.tar.gz
+tar<span class="w"> </span>-xzf<span class="w"> </span>postgresql-17.3.tar.gz
+<span class="nb">cd</span><span class="w"> </span>postgresql-17.3
+</code></pre></div></li>
+<li><strong>Install required build dependencies:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>libicu-devel<span class="w"> </span>readline-devel<span class="w"> </span>perl-FindBin
+</code></pre></div></li>
+<li><strong>Compile and install:</strong>
+    <div class="highlight"><pre><span></span><code>./configure
+make
+sudo<span class="w"> </span>make<span class="w"> </span>install
+</code></pre></div></li>
+<li><strong>Initialize data directory and configure permissions:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>mkdir<span class="w"> </span>/usr/local/pgsql/data
+sudo<span class="w"> </span>useradd<span class="w"> </span>-r<span class="w"> </span>-s<span class="w"> </span>/bin/bash<span class="w"> </span>postgres
+sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>postgres:postgres<span class="w"> </span>/usr/local/pgsql/
+
+sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/home/postgres
+sudo<span class="w"> </span>chown<span class="w"> </span>postgres:postgres<span class="w"> </span>/home/postgres
+sudo<span class="w"> </span>-u<span class="w"> </span>postgres<span class="w"> </span>/usr/local/pgsql/bin/initdb<span class="w"> </span>-D<span class="w"> </span>/usr/local/pgsql/data
+</code></pre></div></li>
+<li><strong>Start PostgreSQL server and verify installation:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>-u<span class="w"> </span>postgres<span class="w"> </span>/usr/local/pgsql/bin/pg_ctl<span class="w"> </span>-D<span class="w"> </span>/usr/local/pgsql/data<span class="w"> </span>start
+psql<span class="w"> </span>--version
+</code></pre></div></li>
+</ol>
+<h3 id="recommended-set-up-postgresql-as-a-systemd-service">Recommended: Set Up PostgreSQL as a systemd Service</h3>
+<ol>
+<li><strong>Create the systemd service file:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/systemd/system/postgresql.service
+</code></pre></div>
+    Paste the following:
+    <div class="highlight"><pre><span></span><code>[Unit]
+Description=PostgreSQL database server
+After=network.target
+
+[Service]
+Type=forking
+
+User=postgres
+Group=postgres
+
+ExecStart=/usr/local/pgsql/bin/pg_ctl start -D /usr/local/pgsql/data -s -l /usr/local/pgsql/data/serverlog -o &quot;-p 5432&quot;
+ExecStop=/usr/local/pgsql/bin/pg_ctl stop -D /usr/local/pgsql/data -s -m fast
+ExecReload=/usr/local/pgsql/bin/pg_ctl reload -D /usr/local/pgsql/data -s
+Environment=PGDATA=/usr/local/pgsql/data
+
+[Install]
+WantedBy=multi-user.target
+</code></pre></div></li>
+<li><strong>Enable and start the service:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>postgresql.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>postgresql.service
+journalctl<span class="w"> </span>-u<span class="w"> </span>postgresql.service<span class="w"> </span>-f<span class="w">  </span><span class="c1"># (to view logs)</span>
+</code></pre></div></li>
+</ol>
+<h3 id="additional-configuration-remote-access-password-setup">Additional Configuration (Remote Access, Password Setup)</h3>
+<ol>
+<li><strong>Allow connections from other hosts:</strong><ul>
+<li>Edit <code>postgresql.conf</code>:
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/usr/local/pgsql/data/postgresql.conf
+</code></pre></div>
+    Set the following values:
+    <div class="highlight"><pre><span></span><code>listen_addresses = &#39;*&#39;
+max_connections = 500
+</code></pre></div></li>
+</ul>
+</li>
+<li><strong>Set postgres user password:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>-u<span class="w"> </span>postgres<span class="w"> </span>/usr/local/pgsql/bin/psql
+</code></pre></div>
+    In psql prompt:
+    <div class="highlight"><pre><span></span><code>alter user postgres password &#39;&lt;yourpassword&gt;&#39;;
+</code></pre></div></li>
+<li><strong>Enable password authentication for remote access:</strong><ul>
+<li>Edit <code>pg_hba.conf</code>:
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/usr/local/pgsql/data/pg_hba.conf
+</code></pre></div>
+    Add this line:
+    <div class="highlight"><pre><span></span><code>host  all  all  0.0.0.0/0  md5
+</code></pre></div></li>
+</ul>
+</li>
+<li><strong>Restart PostgreSQL to apply changes:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>postgresql.service
+journalctl<span class="w"> </span>-u<span class="w"> </span>postgresql.service<span class="w"> </span>-f
+</code></pre></div></li>
+<li><strong>If firewall is active, open port 5432:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--permanent<span class="w"> </span>--add-port<span class="o">=</span><span class="m">5432</span>/tcp<span class="w"> </span><span class="c1">#Example for RHEL</span>
+sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--reload
+</code></pre></div></li>
+</ol>
+<blockquote>
+<p><strong>Note</strong>: Adjust paths and version numbers as needed for your environment.</p>
+</blockquote>
+<hr />
+<h2 id="postgresql-database-setup">PostgreSQL Database Setup</h2>
 <p><strong>Environment Configuration</strong></p>
 <p>Create a <code>.env</code> file with the following variables:</p>
 <div class="highlight"><pre><span></span><code>DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
@@ -2082,7 +2870,9 @@ DATABASE=your_database_name
 POSTGRESQL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/your_database_name?sslmode=disable
 </code></pre></div>
 <p><strong>Database Creation</strong></p>
-<p><strong>1. Define required databases in a list variable in <code>database_manager.py</code> file:</strong></p>
+<ol>
+<li><strong>Define required databases in a list variable in <code>database_manager.py</code>:</strong></li>
+</ol>
 <div class="highlight"><pre><span></span><code><span class="n">REQUIRED_DATABASES</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;feedback_learning&quot;</span><span class="p">,</span>
     <span class="s2">&quot;telemetry_logs&quot;</span><span class="p">,</span> 
@@ -2092,7 +2882,9 @@ POSTGRESQL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/your_datab
     <span class="s2">&quot;arize_traces&quot;</span>
 <span class="p">]</span>
 </code></pre></div>
-<p><strong>2. Load environment variables in <code>database_manager.py</code> file:</strong></p>
+<ol>
+<li><strong>Load environment variables in <code>database_manager.py</code>:</strong></li>
+</ol>
 <div class="highlight"><pre><span></span><code><span class="n">Postgre_string</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;DATABASE_URL&quot;</span><span class="p">)</span>
 <span class="n">POSTGRESQL_HOST</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;POSTGRESQL_HOST&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 <span class="n">POSTGRESQL_USER</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;POSTGRESQL_USER&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
@@ -2100,17 +2892,23 @@ POSTGRESQL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/your_datab
 <span class="n">DATABASE</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;DATABASE&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 <span class="n">DATABASE_URL</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;POSTGRESQL_DATABASE_URL&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p><strong>3. Create function to connect to postgres database in <code>database_manager.py</code> file:</strong></p>
+<ol>
+<li><strong>Function to connect to postgres database in <code>database_manager.py</code>:</strong></li>
+</ol>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_postgres_url</span><span class="p">():</span>
     <span class="n">url</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">Postgre_string</span><span class="p">)</span>
     <span class="c1"># Replace path with &#39;/postgres&#39;</span>
     <span class="n">new_url</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="s2">&quot;/postgres&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">urlunparse</span><span class="p">(</span><span class="n">new_url</span><span class="p">)</span>
 </code></pre></div>
-<p><strong>4. Create Databases function</strong></p>
-<ul>
-<li>The system will connect to the 'postgres' database under postgres user and create the required databases listed in <code>REQUIRED_DATABASES</code> using following code in <code>database_manager.py</code> file.</li>
-</ul>
+<ol>
+<li>
+<p><strong>Create Databases function</strong></p>
+</li>
+<li>
+<p>The system will connect to the 'postgres' database under postgres user and create the required databases listed in <code>REQUIRED_DATABASES</code>:</p>
+</li>
+</ol>
 <div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">check_and_create_databases</span><span class="p">():</span>
     <span class="n">conn</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncpg</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">get_postgres_url</span><span class="p">())</span>
     <span class="k">try</span><span class="p">:</span>
@@ -2126,6 +2924,100 @@ POSTGRESQL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/your_datab
     <span class="k">finally</span><span class="p">:</span>
         <span class="k">await</span> <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </code></pre></div>
+<hr />
+<h2 id="redis-installation-on-windows">Redis Installation on Windows</h2>
+<ol>
+<li>Go to the <a href="https://github.com/redis-windows/redis-windows/releases">redis-windows GitHub releases page</a>.</li>
+<li>Download the ZIP build for Redis 8.2.1:<br />
+<code>Redis-8.2.1-Windows-x64-msys2.zip</code></li>
+<li>Extract the ZIP file to a folder of your choice.</li>
+<li>Open <code>redis.conf</code> in the same folder and set the following parameters:
+    <div class="highlight"><pre><span></span><code>bind 0.0.0.0
+requirepass &lt;password&gt;
+</code></pre></div></li>
+<li>Open PowerShell or CMD <strong>inside that folder</strong>.</li>
+<li>Start Redis server:
+    <div class="highlight"><pre><span></span><code>redis-server.exe redis.conf
+</code></pre></div></li>
+</ol>
+<hr />
+<h2 id="redis-installation-on-linux">Redis Installation on Linux</h2>
+<h3 id="install-dependencies-per-os">Install dependencies (per OS)</h3>
+<p>Use the command for your distribution:</p>
+<ul>
+<li><strong>Red Hat/CentOS/Fedora:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>gcc<span class="w"> </span>make<span class="w"> </span>openssl-devel<span class="w"> </span>tcl<span class="w"> </span>libtool<span class="w"> </span>autoconf<span class="w"> </span>automake<span class="w"> </span>-y
+</code></pre></div></li>
+<li><strong>Debian/Ubuntu:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>build-essential<span class="w"> </span>libssl-dev<span class="w"> </span>tcl-dev<span class="w"> </span>libtool<span class="w"> </span>autoconf<span class="w"> </span>automake<span class="w"> </span>-y
+</code></pre></div></li>
+<li><strong>SUSE/OpenSUSE:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>zypper<span class="w"> </span>install<span class="w"> </span>gcc<span class="w"> </span>make<span class="w"> </span>libopenssl-devel<span class="w"> </span>tcl<span class="w"> </span>libtool<span class="w"> </span>autoconf<span class="w"> </span>automake<span class="w"> </span>-y
+</code></pre></div></li>
+</ul>
+<h3 id="build-and-install-from-source">Build and install from source</h3>
+<ol>
+<li><strong>Download Redis 8.2.1:</strong>
+    <div class="highlight"><pre><span></span><code>wget<span class="w"> </span>https://github.com/redis/redis/archive/refs/tags/8.2.1.tar.gz
+</code></pre></div></li>
+<li><strong>Extract and build:</strong>
+    <div class="highlight"><pre><span></span><code>tar<span class="w"> </span>xvf<span class="w"> </span><span class="m">8</span>.2.1.tar.gz
+<span class="nb">cd</span><span class="w"> </span>redis-8.2.1
+make
+sudo<span class="w"> </span>make<span class="w"> </span>install
+</code></pre></div></li>
+</ol>
+<h3 id="configuration-redisconf">Configuration (redis.conf)</h3>
+<ol>
+<li>Edit <code>redis.conf</code> to set the following values:
+    <div class="highlight"><pre><span></span><code>bind 0.0.0.0
+requirepass &lt;password&gt;
+pidfile /var/run/redis/
+</code></pre></div></li>
+<li>Copy the config and set permissions:
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/redis
+sudo<span class="w"> </span>cp<span class="w"> </span>/path/to/redis-8.2.1/redis.conf<span class="w"> </span>/etc/redis/redis.conf
+sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>projadmin:projadmin<span class="w"> </span>/etc/redis/
+
+sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/var/run/redis
+sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>projadmin:projadmin<span class="w"> </span>/var/run/redis
+</code></pre></div></li>
+</ol>
+<h3 id="optional-set-up-redis-as-a-systemd-service">Optional: Set Up Redis as a systemd Service</h3>
+<ol>
+<li>
+<p>Create a systemd service file:
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/systemd/system/redis.service
+</code></pre></div>
+    Paste in the following:
+    <div class="highlight"><pre><span></span><code>[Unit]
+Description=Redis In-Memory Data Store
+After=network.target
+
+[Service]
+User=projadmin
+ExecStart=/usr/local/bin/redis-server /etc/redis/redis.conf
+ExecStop=/usr/local/bin/redis-cli -a &lt;password&gt; shutdown
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+</code></pre></div></p>
+</li>
+<li>
+<p>Start and enable Redis service:
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>redis.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>redis.service
+</code></pre></div></p>
+</li>
+<li><strong>If firewall is active, open port 6379:</strong>
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--permanent<span class="w"> </span>--add-port<span class="o">=</span><span class="m">6379</span>/tcp<span class="w"> </span><span class="c1">#Example for RHEL</span>
+sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--reload
+</code></pre></div><blockquote>
+<p><strong>Note:</strong> Update <code>User</code> and <code>&lt;password&gt;</code> in your redis configuration and service file to match your security and environment needs.</p>
+</blockquote>
+</li>
+</ol>
 
 
 
@@ -2174,10 +3066,11 @@ POSTGRESQL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/your_datab
     
     
       
-      <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
