@@ -17,6 +17,8 @@ Ensure you have the following installed on your Linux system:
 - **NodeJS version 22 or higher**  
 - **NPM version 10.9.2 or higher** ( comes bundled with NodeJs) 
 - **Git** (optional, for cloning the repository)
+- **Redis 8.2.1**
+- **Postgres 17**
 
 ## Python Version Setup
 
@@ -373,6 +375,11 @@ REACT_APP_API_URL=http://your-backend-ip:your-backend-port
 
 ```
 
+## Model Server Setup
+
+For detailed instructions on deploying and configuring your model server, refer to the [Model Server Deployment](../Model_server.md#model-server-setup-localvm-deployment) guide.
+
+
 ## Running the Applications
 
 **Start the Backend Server**
@@ -435,6 +442,7 @@ WorkingDirectory=/home/your-username/your-project-directory/
 Environment="NO_PROXY=localhost,127.0.0.1,::1,model_server_ip,ip_of_this_VM"
 Environment="HTTP_PROXY=<your_proxy>"
 Environment="HTTPS_PROXY=<your_proxy>"
+Environment="PYTHONUNBUFFERED=1"
 Environment=VIRTUAL_ENV=/home/your-username/your-project-directory/venv
 Environment=PATH=/home/your-username/your-project-directory/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin/:/sbin:/bin
 ExecStart=/home/your-username/your-project-directory/venv/bin/python main.py --host 0.0.0.0 --port your-backend-port
@@ -465,7 +473,7 @@ sudo systemctl start infyagent-backend.service
 sudo systemctl status infyagent-backend.service
 ```
 
-**Frontend Service (Optional)**
+**Frontend Service**
 
 Create a systemd service file for the frontend:
 
@@ -517,6 +525,222 @@ curl http://your-backend-server-ip:your-backend-port/health
 
 # Test frontend access
 curl http://your-frontend-server-ip:your-frontend-port
+```
+
+## Git Installation
+
+Install Git using your OS package manager:
+
+- **RHEL/CentOS/Fedora:**
+    ```bash
+    sudo dnf install git -y
+    ```
+- **Debian/Ubuntu:**
+    ```bash
+    sudo apt update
+    sudo apt install git -y
+    ```
+- **SUSE/OpenSUSE:**
+    ```bash
+    sudo zypper install git -y
+    ```
+
+---
+
+## Grafana Installation
+
+1. Download and install Grafana Enterprise:
+    ```bash
+    wget https://dl.grafana.com/enterprise/release/grafana-enterprise-12.0.2-1.x86_64.rpm
+    sudo dnf install grafana-enterprise-12.0.2-1.x86_64.rpm -y
+    ```
+
+2. Start and enable Grafana service:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl start grafana-server
+    sudo systemctl enable grafana-server
+    ```
+
+---
+
+## OpenTelemetry Collector Installation
+
+1. Download and extract the OpenTelemetry Collector Contrib binary:
+    ```bash
+    wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.127.0/otelcol-contrib_0.127.0_linux_amd64.tar.gz
+    tar -xvzf otelcol-contrib_0.127.0_linux_amd64.tar.gz
+    sudo mv otelcol-contrib /usr/local/bin/
+    sudo chmod +x /usr/local/bin/otelcol-contrib
+    ```
+
+2. Create the configuration file:
+    ```bash
+    sudo nano /usr/local/bin/otelcol-contrib.yaml
+    ```
+    Sample config:
+    ```
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4319
+          http:
+            endpoint: 0.0.0.0:4320
+
+    exporters:
+      debug:
+        verbosity: detailed
+      elasticsearch:
+        endpoints: ["http://localhost:9200"]
+        logs_index: "agentic-foundry-tool-logs"
+        sending_queue:
+          enabled: true
+
+    processors:
+      batch:
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug, elasticsearch]
+
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          level: basic
+          address: localhost:8889
+    ```
+
+**Systemd Service Setup for OpenTelemetry Collector**
+
+1. Create a systemd unit file:
+    ```bash
+    sudo nano /etc/systemd/system/otelcol-contrib.service
+    ```
+    Content:
+    ```
+    [Unit]
+    Description=OpenTelemetry Collector Contrib
+    After=network.target
+
+    [Service]
+    Type=simple
+    ExecStart=/usr/local/bin/otelcol-contrib --config /usr/local/bin/otelcol-contrib.yaml
+    Restart=on-failure
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+2. Enable and start the service:
+    ```bash
+    sudo systemctl enable otelcol-contrib.service
+    sudo systemctl start otelcol-contrib.service
+    sudo systemctl status otelcol-contrib.service
+    ```
+
+**Firewall Example for RHEL9**
+
+To allow external access to OpenTelemetry ports (replace as needed):
+```bash
+# Example: RHEL9 firewall commands for OpenTelemetry Collector (if using firewalld)
+sudo firewall-cmd --permanent --add-port=4318/tcp
+sudo firewall-cmd --permanent --add-port=4319/tcp
+sudo firewall-cmd --permanent --add-port=4320/tcp
+sudo firewall-cmd --reload
+```
+
+---
+
+## Elasticsearch Installation
+
+1. Download and extract Elasticsearch:
+    ```bash
+    wget https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.17.3-linux-x86_64.tar.gz
+    tar -xzf elasticsearch-8.17.3-linux-x86_64.tar.gz
+    sudo mv elasticsearch-8.17.3 /opt/
+    cd /opt/elasticsearch-8.17.3/config/
+    ```
+
+**Elasticsearch Configuration (elasticsearch.yml)**
+
+1. Edit or create `elasticsearch.yml` (location: `/opt/elasticsearch-8.17.3/config/elasticsearch.yml`):
+    ```bash
+    sudo nano elasticsearch.yml
+    ```
+    Sample local development configuration:
+    ```
+    # ======================== Elasticsearch Configuration =========================
+
+    cluster.name: my-local-dev-cluster
+    node.name: node-1
+
+    # Security & network settings for local dev ONLY:
+    network.host: 0.0.0.0
+    http.port: 9200
+    discovery.type: single-node
+
+    xpack.security.enabled: false
+    xpack.security.enrollment.enabled: false
+    xpack.security.http.ssl.enabled: false
+    xpack.security.transport.ssl.enabled: false
+    ```
+
+    > Leave other default settings as-is or commented. For true single-node development, set `discovery.type: single-node`, disable all security as above, and bind only to `127.0.0.1`.
+
+**Systemd Service Setup for Elasticsearch**
+
+1. Create a systemd unit file:
+    ```bash
+    sudo nano /etc/systemd/system/elasticsearch.service
+    ```
+    Content:
+    ```
+    [Unit]
+    Description=Elasticsearch
+    Documentation=https://www.elastic.co
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=projadmin
+    Group=projadmin
+    ExecStart=/opt/elasticsearch-8.17.3/bin/elasticsearch
+    Environment="ES_JAVA_OPTS=-Xms4g -Xmx4g"
+    WorkingDirectory=/opt/elasticsearch-8.17.3
+    Restart=on-failure
+    LimitNOFILE=65535
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+2. Enable and start Elasticsearch:
+    ```bash
+    sudo systemctl enable elasticsearch.service
+    sudo systemctl start elasticsearch.service
+    sudo systemctl status elasticsearch.service
+    ```
+
+**Elasticsearch Firewall Example for RHEL9**
+
+To allow HTTP access (default port 9200, for local development only):
+
+```bash
+# Example: RHEL9 firewall commands for Elasticsearch (if using firewalld)
+sudo firewall-cmd --permanent --add-port=9200/tcp
+sudo firewall-cmd --reload
 ```
 
 ## Troubleshooting

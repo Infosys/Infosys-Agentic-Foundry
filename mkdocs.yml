@@ -29,7 +29,7 @@ nav:
      - Windows: Installation/windows.md
      - Linux: Installation/linux.md
      - Azure : Installation/Azure.md
-     - PostgreSQL setup: Installation/Database_Setup.md
+     - Database setup: Installation/Database_Setup.md
   - Agents Design: 
      - Overview: Agents_Design/overview.md
      - React Agent Design: Agents_Design/React Agent Design.md

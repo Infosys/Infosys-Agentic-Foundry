@@ -1,68 +1,178 @@
-# PostgreSQL Setup Guide
+# Database Setup Guide
 
-## Installation on VM
+## Table of Contents
 
-1. Download the PostgreSQL installation wizard and start it up.
-![postgres1](../images/postgres1.png)
-2. Choose the default directory or customize as required.
-![postgres2](../images/postgres2.png)
-3. All the components will be selected by default and will be useful, 
-so keep them as it is and Next to continue. 
+- [PostgreSQL Installation on Windows VM](#postgresql-installation-on-windows-vm)
+- [PostgreSQL Installation on Linux](#postgresql-installation-on-linux)
+    - [Installation using PostgreSQL Official Packages](#installation-using-postgresql-official-packages)
+    - [Installation from Source](#installation-from-source)
+    - [Recommended: Set Up PostgreSQL as a systemd Service](#recommended-set-up-postgresql-as-a-systemd-service)
+    - [Additional Configuration (Remote Access, Password Setup)](#additional-configuration-remote-access-password-setup)
+- [PostgreSQL Database Setup](#postgresql-database-setup)
+- [Redis Installation on Windows](#redis-installation-on-windows)
+- [Redis Installation on Linux](#redis-installation-on-linux)
+    - [Install dependencies (per OS)](#install-dependencies-per-os)
+    - [Build and install from source](#build-and-install-from-source)
+    - [Configuration (redis.conf)](#configuration-redisconf)
+    - [Optional: Set Up Redis as a systemd Service](#optional-set-up-redis-as-a-systemd-service)
 
-    ![postgres3](../images/postgres3.png)
+---
 
-4. Choose the default Data directory or change as required.
-![postgres4](../images/postgres4.png)
-5. Create a password for postgres (superuser) - This password will be used in the connection string for connecting to the database: `postgresql://postgres:password@localhost:port/database`.
+## PostgreSQL Installation on Windows VM
 
-    ![postgres5](../images/postgres5.png)
-
-6. Set the port number (default: 5432) or change if required.
-![postgres6](../images/postgres6.png)
-
-7. Use the Locale field to specify the locale that will be used by the new database cluster. The Default locale is the operating system locale. You can leave this as is and click next to continue.
-
-    ![postgres7](../images/postgres7.png)
-
-8. Click Next to continue.
-
-    ![postgres8](../images/postgres8.png)
-
-9. Click Next to start the installation.
-![postgres9](../images/postgres9.png)
-10. After installation is complete, there will be a checked check box which asks if additional tools should be installed to complement your postgres installation using Stack Builder.
-11. You should uncheck this as it is not necessary, and it is also not possible as the url gets blocked by the VM.
-
+1. Download the PostgreSQL installation wizard and start it up.  
+   ![postgres1](../images/postgres1.png)
+2. Choose the default directory or customize as required.  
+   ![postgres2](../images/postgres2.png)
+3. All the components will be selected by default; keep them as is and click "Next" to continue.  
+   ![postgres3](../images/postgres3.png)
+4. Choose the default Data directory or change as required.  
+   ![postgres4](../images/postgres4.png)
+5. Create a password for postgres (superuser) – This password will be used in the connection string for connecting to the database:  
+   `postgresql://postgres:password@localhost:port/database`  
+   ![postgres5](../images/postgres5.png)
+6. Set the port number (default: 5432) or change if required.  
+   ![postgres6](../images/postgres6.png)
+7. Use the Locale field as desired (default is OS locale). Leave this as is and click next to continue.  
+   ![postgres7](../images/postgres7.png)
+8. Click Next to continue.  
+   ![postgres8](../images/postgres8.png)
+9. Click Next to start the installation.  
+   ![postgres9](../images/postgres9.png)
+10. After installation, a checkbox will ask if you wish to install additional tools with Stack Builder.
+11. Uncheck this as it is not necessary and likely not supported inside a VM.  
     ![postgres10](../images/postgres10.png)
 
-## Installation on local
+---
 
-1. Install PostgreSQL from company portal
-2. Verify installation:
-    - Open SQL Shell (psql)
-    - Default username, password, database: `postgres`
-    - Default port: `5432` 
+## PostgreSQL Installation on Linux
 
-        ![postgres12](../images/postgres12.png)
+### Installation using PostgreSQL Official Packages
 
-    - Default connection string: `postgresql://postgres:postgres@localhost:5432/postgres`
-    - Connection String Format
-
-    ```
-    postgresql://username:password@host:port/database
-    ```
-
-    **Example:**
-
-    ```
-    postgresql://postgres:postgres@localhost:5432/postgres
+1. Go to the [PostgreSQL Linux download page](https://www.postgresql.org/download/linux/).
+2. Select your OS distribution and follow the instructions to get the appropriate installation script.
+3. **Choose PostgreSQL version 17**.
+4. **Example for RHEL9/CentOS9:**
+    ```bash
+    sudo dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+    sudo dnf install -y postgresql17-server
+    sudo /usr/pgsql-17/bin/postgresql-17-setup initdb
+    sudo systemctl enable postgresql-17
+    sudo systemctl start postgresql-17
     ```
 
-3. Run `\l` command to check list of databases, username, and password status
+### Installation from Source
 
-    ![postgres11](../images/postgres11.png)
+1. **Download and extract source:**
+    ```bash
+    wget https://ftp.postgresql.org/pub/source/v17.3/postgresql-17.3.tar.gz
+    tar -xzf postgresql-17.3.tar.gz
+    cd postgresql-17.3
+    ```
+2. **Install required build dependencies:**
+    ```bash
+    sudo dnf install libicu-devel readline-devel perl-FindBin
+    ```
+3. **Compile and install:**
+    ```bash
+    ./configure
+    make
+    sudo make install
+    ```
+4. **Initialize data directory and configure permissions:**
+    ```bash
+    sudo mkdir /usr/local/pgsql/data
+    sudo useradd -r -s /bin/bash postgres
+    sudo chown -R postgres:postgres /usr/local/pgsql/
 
-## Database Setup
+    sudo mkdir -p /home/postgres
+    sudo chown postgres:postgres /home/postgres
+    sudo -u postgres /usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data
+    ```
+5. **Start PostgreSQL server and verify installation:**
+    ```bash
+    sudo -u postgres /usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data start
+    psql --version
+    ```
+
+### Recommended: Set Up PostgreSQL as a systemd Service
+
+1. **Create the systemd service file:**
+    ```bash
+    sudo nano /etc/systemd/system/postgresql.service
+    ```
+    Paste the following:
+    ```
+    [Unit]
+    Description=PostgreSQL database server
+    After=network.target
+
+    [Service]
+    Type=forking
+
+    User=postgres
+    Group=postgres
+
+    ExecStart=/usr/local/pgsql/bin/pg_ctl start -D /usr/local/pgsql/data -s -l /usr/local/pgsql/data/serverlog -o "-p 5432"
+    ExecStop=/usr/local/pgsql/bin/pg_ctl stop -D /usr/local/pgsql/data -s -m fast
+    ExecReload=/usr/local/pgsql/bin/pg_ctl reload -D /usr/local/pgsql/data -s
+    Environment=PGDATA=/usr/local/pgsql/data
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+2. **Enable and start the service:**
+    ```bash
+    sudo systemctl enable postgresql.service
+    sudo systemctl restart postgresql.service
+    journalctl -u postgresql.service -f  # (to view logs)
+    ```
+
+### Additional Configuration (Remote Access, Password Setup)
+
+1. **Allow connections from other hosts:**
+    - Edit `postgresql.conf`:
+        ```bash
+        sudo nano /usr/local/pgsql/data/postgresql.conf
+        ```
+        Set the following values:
+        ```
+        listen_addresses = '*'
+        max_connections = 500
+        ```
+2. **Set postgres user password:**
+    ```bash
+    sudo -u postgres /usr/local/pgsql/bin/psql
+    ```
+    In psql prompt:
+    ```
+    alter user postgres password '<yourpassword>';
+    ```
+3. **Enable password authentication for remote access:**
+    - Edit `pg_hba.conf`:
+        ```bash
+        sudo nano /usr/local/pgsql/data/pg_hba.conf
+        ```
+        Add this line:
+        ```
+        host  all  all  0.0.0.0/0  md5
+        ```
+4. **Restart PostgreSQL to apply changes:**
+    ```bash
+    sudo systemctl restart postgresql.service
+    journalctl -u postgresql.service -f
+    ```
+5. **If firewall is active, open port 5432:**
+    ```bash
+    sudo firewall-cmd --permanent --add-port=5432/tcp #Example for RHEL
+    sudo firewall-cmd --reload
+    ```
+
+> **Note**: Adjust paths and version numbers as needed for your environment.
+
+---
+
+## PostgreSQL Database Setup
 
 **Environment Configuration**
 
@@ -81,7 +191,7 @@ POSTGRESQL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/your_datab
 
 **Database Creation**
 
-**1. Define required databases in a list variable in `database_manager.py` file:**
+1. **Define required databases in a list variable in `database_manager.py`:**
 
 ```python
 REQUIRED_DATABASES = [
@@ -94,7 +204,7 @@ REQUIRED_DATABASES = [
 ]
 ```
 
-**2. Load environment variables in `database_manager.py` file:**
+2. **Load environment variables in `database_manager.py`:**
 
 ```python
 Postgre_string = os.getenv("DATABASE_URL")
@@ -105,7 +215,7 @@ DATABASE = os.getenv("DATABASE", "")
 DATABASE_URL = os.getenv("POSTGRESQL_DATABASE_URL", "")
 ```
 
-**3. Create function to connect to postgres database in `database_manager.py` file:**
+3. **Function to connect to postgres database in `database_manager.py`:**
 
 ```python
 def get_postgres_url():
@@ -115,9 +225,9 @@ def get_postgres_url():
     return urlunparse(new_url)
 ```
 
-**4. Create Databases function**
+4. **Create Databases function**
 
-- The system will connect to the 'postgres' database under postgres user and create the required databases listed in `REQUIRED_DATABASES` using following code in `database_manager.py` file.
+- The system will connect to the 'postgres' database under postgres user and create the required databases listed in `REQUIRED_DATABASES`:
 
 ```python
 async def check_and_create_databases():
@@ -135,3 +245,109 @@ async def check_and_create_databases():
     finally:
         await conn.close()
 ```
+
+---
+
+## Redis Installation on Windows
+
+1. Go to the [redis-windows GitHub releases page](https://github.com/redis-windows/redis-windows/releases).
+2. Download the ZIP build for Redis 8.2.1:  
+   `Redis-8.2.1-Windows-x64-msys2.zip`
+3. Extract the ZIP file to a folder of your choice.
+4. Open `redis.conf` in the same folder and set the following parameters:
+    ```
+    bind 0.0.0.0
+    requirepass <password>
+    ```
+5. Open PowerShell or CMD **inside that folder**.
+6. Start Redis server:
+    ```
+    redis-server.exe redis.conf
+    ```
+
+---
+
+## Redis Installation on Linux
+
+### Install dependencies (per OS)
+
+Use the command for your distribution:
+
+- **Red Hat/CentOS/Fedora:**
+    ```bash
+    sudo dnf install gcc make openssl-devel tcl libtool autoconf automake -y
+    ```
+- **Debian/Ubuntu:**
+    ```bash
+    sudo apt install build-essential libssl-dev tcl-dev libtool autoconf automake -y
+    ```
+- **SUSE/OpenSUSE:**
+    ```bash
+    sudo zypper install gcc make libopenssl-devel tcl libtool autoconf automake -y
+    ```
+
+### Build and install from source
+
+1. **Download Redis 8.2.1:**
+    ```bash
+    wget https://github.com/redis/redis/archive/refs/tags/8.2.1.tar.gz
+    ```
+2. **Extract and build:**
+    ```bash
+    tar xvf 8.2.1.tar.gz
+    cd redis-8.2.1
+    make
+    sudo make install
+    ```
+
+### Configuration (redis.conf)
+
+1. Edit `redis.conf` to set the following values:
+    ```
+    bind 0.0.0.0
+    requirepass <password>
+    pidfile /var/run/redis/
+    ```
+2. Copy the config and set permissions:
+    ```bash
+    sudo mkdir -p /etc/redis
+    sudo cp /path/to/redis-8.2.1/redis.conf /etc/redis/redis.conf
+    sudo chown -R projadmin:projadmin /etc/redis/
+
+    sudo mkdir -p /var/run/redis
+    sudo chown -R projadmin:projadmin /var/run/redis
+    ```
+
+### Optional: Set Up Redis as a systemd Service
+
+1. Create a systemd service file:
+    ```bash
+    sudo nano /etc/systemd/system/redis.service
+    ```
+    Paste in the following:
+    ```
+    [Unit]
+    Description=Redis In-Memory Data Store
+    After=network.target
+
+    [Service]
+    User=projadmin
+    ExecStart=/usr/local/bin/redis-server /etc/redis/redis.conf
+    ExecStop=/usr/local/bin/redis-cli -a <password> shutdown
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+2. Start and enable Redis service:
+    ```bash
+    sudo systemctl start redis.service
+    sudo systemctl enable redis.service
+    ```
+3. **If firewall is active, open port 6379:**
+    ```bash
+    sudo firewall-cmd --permanent --add-port=6379/tcp #Example for RHEL
+    sudo firewall-cmd --reload
+    ```
+> **Note:** Update `User` and `<password>` in your redis configuration and service file to match your security and environment needs.

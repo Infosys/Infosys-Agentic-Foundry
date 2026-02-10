@@ -1,6 +1,11 @@
+# Model Server
+
 To optimize the deployment and usage of bi-encoder and cross-encoder models, we have enhanced our integration to support accessing hosted models via server URLs. Previously, models had to be manually downloaded from Hugging Face and their local paths specified in the `.env` file. This process was inefficient, consuming significant disk space (several GBs per model) and complicating deployments across multiple virtual machines (VMs), as each VM required its own copy of the models.
 
 To resolve these challenges, we introduced a model server based on FastAPI. With this architecture, models are hosted on a single machine (either local or remote), and clients connect to the model server by specifying its URL in their `.env` file. This eliminates redundant downloads and local storage, streamlining both setup and ongoing maintenance.
+
+!!! Note
+    To enable or use features such as **Groundtruth Evaluation**, **Episodic Memory**, **Semantic Memory**, and **Knowledge Base**, you need to set up the Model Server. This is especially required when local models are used for embeddings and reranking operations.
 
 ### How It Works
 
@@ -534,7 +539,72 @@ def get_remote_models(base_url: str = None):
     return components["embedding_model"], components["cross_encoder"]
 ```
 
-### Key Benefits
+## Model Server Setup (Local/VM Deployment)
+
+Use this approach when you want to host the embedding and reranker models on a dedicated server (localhost or VM).
+
+---
+
+**Local/VM Model Server Deployment**
+
+**1. Setup Model Server Environment**
+
+- Configure a model server (either on `localhost` or a dedicated VM). Ensure it runs on a distinct port from your primary application server.
+- Verify the server machine possesses adequate RAM resources for efficient model inference.
+
+**2. Download Required Models Manually**
+
+Download both models manually to avoid SSL connectivity issues:
+
+- **`all-MiniLM-L6-v2`** model: [Download Link](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
+- **`bge-reranker-large`** model: [Download Link](https://huggingface.co/BAAI/bge-reranker-large)
+
+After downloading, **extract both `.zip` archives** into a chosen directory on your server machine.
+
+**3. Configure Environment Variables (`.env`)**
+
+Update your `.env` file to point to the local paths of your extracted models:
+
+```env
+SBERT_MODEL_PATH=path/to/your/folder/all-MiniLM-L6-v2
+CROSS_ENCODER_PATH=path/to/your/folder/bge-reranker-large
+```
+
+!!! Important
+    Replace the placeholder paths with the actual folder paths where you extracted the models.
+
+**4. Start Model Server**
+
+Execute the `model_server.py` script to launch your model server. This will load the models into memory and expose them via API endpoints.
+
+Start the server with:
+```bash
+python model_server.py
+```
+Keep this process running for the models to remain available.
+
+---
+
+**Connect to Model Server from Backend**
+
+Use this approach when connecting to an existing model server hosted elsewhere.
+
+**Configure Remote Model Server Connection**
+
+Update your `.env` file with the remote model server details:
+
+```env
+MODEL_SERVER_URL="http://your-model-server-ip:port"
+MODEL_SERVER_HOST="your-model-server-ip"   # Often derived from MODEL_SERVER_URL
+MODEL_SERVER_PORT="port_number"            # Often derived from MODEL_SERVER_URL
+```
+
+---
+
+!!! Tip
+    Always ensure correct paths and server details are supplied for seamless connectivity and model inference.
+
+## Key Benefits
 
 - **Reduced Storage Requirements**: Models are downloaded and stored only once on the server.
 - **Simplified Deployment**: No need to manage model files on every VM or environment.

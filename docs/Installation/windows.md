@@ -18,6 +18,8 @@ Before proceeding, ensure you have the following installed:
 - A code editor (e.g., VS Code is recommended, but any editor of your choice will work)
 - NodeJS version 22 or above  
 - NPM version 10.9.2 or above ( comes bundled with NodeJs) 
+- Redis 8.2.1
+- Postgres 17
 
 To verify your Node.js and npm installations, open Terminal and run:
 
@@ -213,6 +215,9 @@ UI_CORS_IP=`<your_ui_url>`
 UI_CORS_IP_WITH_PORT=`<your_ui_url:port>`
 ```
 
+**Model Server Setup**
+
+For detailed instructions on deploying and configuring your model server, refer to the [Model Server Deployment](../Model_server.md#model-server-setup-localvm-deployment) guide.
 
 **CORS Origins List**
 If you want to let other UI connect to the backend, In `run_server.py` (or `main.py`), you will find an `origins` list:
