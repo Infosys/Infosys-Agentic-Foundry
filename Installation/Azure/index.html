@@ -602,6 +602,72 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#arize-phoenix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ARIZE PHOENIX
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#redis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REDIS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grafana" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAFANA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#elastic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ELASTIC SEARCH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OPEN-TELEMETRY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL SERVER
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backend" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2384,6 +2450,72 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#arize-phoenix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ARIZE PHOENIX
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#redis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REDIS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grafana" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAFANA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#elastic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ELASTIC SEARCH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OPEN-TELEMETRY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL SERVER
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backend" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2487,7 +2619,7 @@
 
 
 <h1 id="project-setup-guide">Project Setup Guide</h1>
-<p>This document provides comprehensive step-by-step instructions to set up and run the project on your local machine and deploy it to Azure VM.</p>
+<p>This document provides comprehensive step-by-step instructions to deploy Infosys Agentic Foundry in Azure Kubernetes Cluster(AKS).</p>
 <h2 id="prerequisites">Prerequisites</h2>
 <p>Before setting up the project, ensure you have the following requirements and access permissions:</p>
 <p><strong>Ensure users have access to below:</strong></p>
@@ -2507,13 +2639,13 @@
 <li>Azure Linux Virtual Machine</li>
 </ul>
 </li>
-<li>Please setup model server by following the steps mentioned in this URL ()</li>
 <li>Install Docker, Azure CLI, kubectl in your Azure VM</li>
 <li>Create a namespace in the AKS cluster as per your requirement (Optional)</li>
 </ul>
 <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>create<span class="w"> </span>namespace<span class="w"> </span>&lt;namespace&gt;
 </code></pre></div>
 <h2 id="azure-deployment">Azure Deployment</h2>
+<h3 id="arize-phoenix">ARIZE PHOENIX</h3>
 <p><strong>STEPS FOR DEPLOYING ARIZE PHOENIX IN AKS</strong></p>
 <ol>
 <li>Create a yaml file for deploying arize phoenix as a container, you can use the arize phoenix image in the yaml file.</li>
@@ -2536,6 +2668,7 @@
 </code></pre></div></li>
 <li>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend and frontend folders before creating the respective docker images.</li>
 </ol>
+<h3 id="redis">REDIS</h3>
 <p><strong>STEPS FOR DEPLOYING REDIS IN AKS</strong></p>
 <ol>
 <li>Create a yaml file for deploying Redis as a container, you can use the redis image in the yaml file.</li>
@@ -2544,7 +2677,7 @@
 </code></pre></div>
 <div class="admonition info">
 <p class="admonition-title">Info</p>
-<p>You can get the image from <a href="https://hub.docker.com/layers/library/redis/8.2.1/images/sha256-b282a7c852f3920972c5fd13a47fcd26baa7f046b7e5633152714124f32bf28c">from Image Layer Details - redis:8.2.1</a> or any other trusted sources which your organization allows</p>
+<p>You can get the image from <a href="https://hub.docker.com/layers/library/redis/8.2.1/images/sha256-b282a7c852f3920972c5fd13a47fcd26baa7f046b7e5633152714124f32bf28c">Image Layer Details - redis:8.2.1</a> or any other trusted sources which your organization allows</p>
 </div>
 <ol>
 <li>Now you need to use this command for creating deployment and service:
@@ -2558,6 +2691,7 @@
 </code></pre></div></li>
 <li>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend folder before creating the respective docker image.</li>
 </ol>
+<h3 id="grafana">GRAFANA</h3>
 <p><strong>STEPS FOR DEPLOYING GRAFANA IN AKS</strong></p>
 <ol>
 <li>Create a yaml file for deploying Grafana as a container, you can use the grafana image in the yaml file. </li>
@@ -2578,9 +2712,11 @@
 <li>You can check the services deployed using the command below
 <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>namespace
 </code></pre></div></li>
-<li>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend and frontend folders before creating the respective docker images.
-<div class="highlight"><pre><span></span><code>STEPS<span class="w"> </span>FOR<span class="w"> </span>DEPLOYING<span class="w"> </span>ELASTIC<span class="w"> </span>SEARCH<span class="w"> </span>IN<span class="w"> </span>AKS
-</code></pre></div></li>
+<li>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend and frontend folders before creating the respective docker images.</li>
+</ol>
+<h3 id="elastic-search">ELASTIC SEARCH</h3>
+<p><strong>STEPS FOR DEPLOYING ELASTIC SEARCH IN AKS</strong></p>
+<ol>
 <li>Create a yaml file for deploying elastic search as a container, you can use the elastic search image in the yaml file. </li>
 </ol>
 <div class="highlight"><pre><span></span><code>nano<span class="w"> </span>filename4.yaml
@@ -2594,22 +2730,23 @@
 <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>filename4.yaml
 </code></pre></div></li>
 <li>You can check the pods deployed using the command below
-<div class="highlight"><pre><span></span><code><span class="w">    </span>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>namespace
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>namespace
 </code></pre></div></li>
 <li>You can check the services deployed using the command below
 <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>namespace
 </code></pre></div></li>
-<li>Note down the load balancer IP for the container and update it in the opentelemetry YAML script. </li>
+<li>Note down the load balancer IP for the container and update it in the OpenTelemetry YAML script. </li>
 </ol>
-<p><strong>STPES FOR DEPLOYING OPENTELEMETRY IN AKS</strong></p>
+<h3 id="open-telemetry">OPEN-TELEMETRY</h3>
+<p><strong>STEPS FOR DEPLOYING OPEN-TELEMETRY IN AKS</strong></p>
 <ol>
-<li>Create a yaml file for deploying opentlemetry as a container, you can use the opentelemetry directly in the yaml file. </li>
+<li>Create a yaml file for deploying OpenTelemetry as a container, you can use the OpenTelemetry directly in the yaml file. </li>
 </ol>
 <div class="highlight"><pre><span></span><code>nano<span class="w"> </span>filename5.yaml
 </code></pre></div>
 <div class="admonition info">
 <p class="admonition-title">Info</p>
-<p>You can get the image from <a href="https://hub.docker.com/r/otel/opentelemetry-collector-contrib">otel/opentelemetry-collector-contrib - Docker Image </a> or any other trusted sources your organization allows</p>
+<p>You can get the image from <a href="https://hub.docker.com/r/otel/opentelemetry-collector-contrib">otel/OpenTelemetry-collector-contrib - Docker Image </a> or any other trusted sources your organization allows</p>
 </div>
 <ol>
 <li>Now you need to use this command for creating deployment and service:
@@ -2627,18 +2764,21 @@
 <p>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend folder before creating the respective docker image.</p>
 </li>
 </ol>
-<p><strong>Model Server Setup</strong></p>
+<h3 id="model-server">MODEL SERVER</h3>
+<p><strong>STEPS TO SETUP MODEL SERVER</strong></p>
 <p>For detailed instructions on deploying and configuring your model server, refer to the <a href="../../Model_server/#model-server-setup-localvm-deployment">Model Server Deployment</a> guide.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>You need to update the URL for the model server in the <code>.env</code> of the backend folder</p>
 </div>
 <h3 id="backend">BACKEND</h3>
+<p><strong>STEPS TO SETUP BACKEND</strong></p>
 <p>Download Backend code from GitHub. For detailed instructions, see <a href="../windows/#download-the-backend-project-code">Download the Backend Project Code</a>.</p>
 <ol>
 <li>Login in to Azure VM</li>
 <li>Download Backend source code folder into Azure VM</li>
-<li>Update the values for the variables in the <code>.env</code> file.</li>
+<li>Before starting backend image creation make sure that arize phoenix, OpenTelemetry, Grafana, Elastic Search, Redis and Model server are setup as per instructions provided above. Update the respective urls of all these services in <code>.env</code> file.</li>
+<li>Update the remaining values for the variables in the <code>.env</code> file.</li>
 <li>Change working directory to the Backend Folder:
 <div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span><span class="sb">`</span>&lt;BE<span class="w"> </span>foldername&gt;<span class="sb">`</span>
 </code></pre></div></li>
@@ -2663,28 +2803,30 @@
     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
 </code></pre></div></li>
 <li>Check if the pods is deployed successfully:
-    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
 </code></pre></div></li>
 <li>Check if the service is up &amp; running successfully:
-    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
 </code></pre></div></li>
 </ol>
 <h3 id="frontend">FRONTEND</h3>
+<p><strong>STEPS TO SETUP FRONTEND</strong></p>
 <p>Download Frontend code from GitHub. For detailed instructions, see <a href="../windows/#download-the-frontend-project-code">Download the Frontend Project Code</a>.</p>
 <ol>
 <li>Login in to Azure VM</li>
 <li>Download Frontend source code folder into Azure VM</li>
+<li>Before starting frontend image creation make sure that arize phoenix, Grafana are setup as per instructions provided above. Update the respective urls of all these services in <code>.env</code> file.</li>
 <li>Change working directory to the Frontend Folder:
 <div class="highlight"><pre><span></span><code><span class="w">    </span><span class="nb">cd</span><span class="w"> </span>&lt;Frontend<span class="w"> </span>foldername&gt;
 </code></pre></div></li>
-<li>Create Dockerfile inside Frontend golder to create docker image from Frontend code.</li>
+<li>Create Dockerfile inside Frontend folder to create docker image from Frontend code.</li>
 <li>
 <p>In <code>.env</code> file of Frontend, update below service loadbalancer urls which were generated after deployment of backend server in Azure Kubernetes.</p>
 <ul>
-<li><code>REACT_APP_BASE_URL</code>,</li>
-<li><code>REACT_APP_MKDOCS_BASE_URL</code>,</li>
-<li><code>REACT_APP_LIVE_TRACKING_URL</code>,</li>
-<li><code>REACT_APP_GRAFANA_DASHBOARD_URL</code></li>
+<li><code>REACT_APP_BASE_URL</code> (use Backend url),</li>
+<li><code>REACT_APP_MKDOCS_BASE_URL</code> (use mkdocs url),</li>
+<li><code>REACT_APP_LIVE_TRACKING_URL</code> (use Arize phoenix url),</li>
+<li><code>REACT_APP_GRAFANA_DASHBOARD_URL</code> (use Grafana url)</li>
 </ul>
 </li>
 <li>
@@ -2709,10 +2851,10 @@
     <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
 </code></pre></div></li>
 <li>Check if the pods is deployed successfully:
-    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
 </code></pre></div></li>
 <li>Check if the service is up &amp; running successfully:
-    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
 </code></pre></div></li>
 </ol>
 <h2 id="troubleshooting">Troubleshooting</h2>
