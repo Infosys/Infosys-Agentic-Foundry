@@ -509,6 +509,7 @@ async def run_agent_inference_endpoint(
                 )
 
                 log.info(f"[{session_id}] Streaming completed in {time_taken:.2f}s")
+                last_message = dict()
                 if "executor_messages" in full_accumulated_response and isinstance(full_accumulated_response["executor_messages"], list) and full_accumulated_response["executor_messages"]:
                     last_message = full_accumulated_response["executor_messages"][-1]
                     last_message["start_timestamp"] = start_time_stamp.isoformat()
@@ -566,6 +567,7 @@ async def run_agent_inference_endpoint(
 
             # Inject Response Time into the last message payload only if not already set
             # (Historical messages should already have response_time from the base class)
+            last_message = dict()
             if "executor_messages" in response and isinstance(response["executor_messages"], list) and response["executor_messages"]:
                 last_message = response["executor_messages"][-1]
                 last_message["start_timestamp"] = start_time_stamp.isoformat()
