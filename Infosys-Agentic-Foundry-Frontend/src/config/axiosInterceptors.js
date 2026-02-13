@@ -1,5 +1,6 @@
 import axios from "axios";
 import { extractErrorMessage } from "../utils/errorUtils";
+import {env} from "../constant";
 
 // Module-level counter for request IDs
 let requestIdCounter = 0;
@@ -15,7 +16,7 @@ export function registerAxiosInterceptors(instance = axios) {
 
   const canPerf = typeof performance !== "undefined" && typeof performance.now === "function" && typeof performance.getEntriesByType === "function";
   const mkId = () => `req-${++requestIdCounter}`;
-  const VERBOSE = process.env.REACT_APP_API_TIMING_VERBOSE === "true";
+  const VERBOSE = (env.REACT_APP_API_TIMING_VERBOSE || process.env.REACT_APP_API_TIMING_VERBOSE ) === "true";
   const DRIFT_WARN_THRESHOLD_MS = 80;
 
   const findResourceTiming = (url, startNow, prevResCount, reqId) => {

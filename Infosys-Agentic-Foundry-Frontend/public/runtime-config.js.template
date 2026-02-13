@@ -1,0 +1,14 @@
+// public/runtime-config.js.template
+// Generated at container start using envsubst. Do not commit the generated file.
+//
+// Values here are PUBLIC (served to the browser). Do not put secrets in these vars.
+//
+// Pass these as container env vars (e.g., docker run -e REACT_APP_API_URL=...).
+ 
+window._env_ = {
+REACT_APP_BASE_URL: "${REACT_APP_BASE_URL}",
+REACT_APP_MKDOCS_BASE_URL: "${REACT_APP_MKDOCS_BASE_URL}",
+REACT_APP_LIVE_TRACKING_URL: "${REACT_APP_LIVE_TRACKING_URL}",
+REACT_APP_SUPPRESS_404_TOASTS: "${REACT_APP_SUPPRESS_404_TOASTS}",
+REACT_APP_GRAFANA_DASHBOARD_URL: "${REACT_APP_GRAFANA_DASHBOARD_URL}"
+}

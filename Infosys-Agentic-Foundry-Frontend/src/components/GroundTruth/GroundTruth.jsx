@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import styles from "./GroundTruth.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
-import { APIs, agentTypesDropdown, PIPELINE_AGENT } from "../../constant";
+import { APIs, agentTypesDropdown, PIPELINE_AGENT, env } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 import { storageService } from "../../core/storage/storageService";
@@ -290,7 +290,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
         `agentic_application_id=${encodeURIComponent(agentic_application_id)}`,
         `use_llm_grading=${encodeURIComponent(formData.use_llm_grading.toString())}`,
       ].join("&");
-      const baseUrl = process.env.REACT_APP_BASE_URL || "";
+      const baseUrl = env.REACT_APP_BASE_URL || process.env.REACT_APP_BASE_URL || "";
       const finalUrl = `${baseUrl}${APIs.UPLOAD_AND_EVALUATE_JSON}/?${params}`;
       const formDataToSend = new FormData();
       if (formData.uploaded_file) {
