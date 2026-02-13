@@ -7,7 +7,7 @@ const SSEContext = createContext({
   connectionStatus: "closed",
 });
 
-export const SSEProvider = ({ children, sseUrl = `${process.env.REACT_APP_BASE_URL || ""}/sse/stream/` }) => {
+export const SSEProvider = ({ children, sseUrl = `${env.REACT_APP_BASE_URL || process.env.REACT_APP_BASE_URL || ""}/sse/stream/` }) => {
   const { isAuthenticated, sessionId } = useAuth();
   const eventSourceRef = useRef(null);
   const [sseMessages, setSseMessages] = useState([]);

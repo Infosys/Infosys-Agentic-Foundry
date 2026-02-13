@@ -2,6 +2,10 @@ import Cookies from "js-cookie";
 
 import pkg from "../package.json";
 
+// Runtime environment config injected by nginx (from runtime-config.js)
+// Falls back to process.env for local development
+export const env = window._env_ || {};
+
 export const APP_VERSION = pkg.version;
 
 export const BOT = "bot";
@@ -36,13 +40,14 @@ export const dislike = "submit_feedback";
 
 export const CHAT_BOT_DATA = "CHAT_BOT_DATA";
 
-export const BASE_URL = process.env.REACT_APP_BASE_URL;
+export const BASE_URL = env.REACT_APP_BASE_URL || process.env.REACT_APP_BASE_URL ;
 
-export const mkDocs_baseURL = process.env.REACT_APP_MKDOCS_BASE_URL;
+export const mkDocs_baseURL = env.REACT_APP_MKDOCS_BASE_URL || process.env.REACT_APP_MKDOCS_BASE_URL;
 
-export const liveTrackingUrl = process.env.REACT_APP_LIVE_TRACKING_URL;
+export const liveTrackingUrl = env.REACT_APP_LIVE_TRACKING_URL || process.env.REACT_APP_LIVE_TRACKING_URL;
 
-export const grafanaDashboardUrl = process.env.REACT_APP_GRAFANA_DASHBOARD_URL;
+export const grafanaDashboardUrl = env.REACT_APP_GRAFANA_DASHBOARD_URL || process.env.REACT_APP_GRAFANA_DASHBOARD_URL;
+
 export const APIs = {
   //Feedback Learning APIs
   GET_APPROVALS_LIST: "/feedback-learning/get/approvals-list",
