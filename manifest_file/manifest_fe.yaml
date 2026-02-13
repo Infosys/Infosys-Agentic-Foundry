@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <fe-container-name>
+  namespace: <namespace>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: <fe-container-name>
+  template:
+    metadata:
+      labels:
+        app: <fe-container-name>
+    spec:
+      containers:
+      - name: <fe-container-name>
+        image: <region>-docker.pkg.dev/<project-id>/<repository>/<imagename>:<tag>
+        ports:
+        - containerPort: 80
+        env:
+          - name: REACT_APP_BASE_URL
+            value: <backend_url>
+          - name: REACT_APP_MKDOCS_BASE_URL
+            value: <mk_docs_public_hosted_url>
+          - name: REACT_APP_LIVE_TRACKING_URL
+            value: <live_tracking_url>
+          - name: REACT_APP_GRAFANA_DASHBOARD_URL
+            value: <grafana_url>
+--- 
+apiVersion: v1
+kind: Service
+metadata:
+  name: <fe-container-name>
+  namespace: <namespace>
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: <fe-container-name>
+  ports:
+    - port: 80
+      targetPort: 80

@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <be-container-name>
+  namespace: <namespace>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: <be-container-name>
+  template:
+    metadata:
+      labels:
+        app: <be-container-name>
+    spec:
+      initContainers:
+      - name: host-check
+        image: <region>-docker.pkg.dev/<project-id>/<repository>/busybox:latest
+        command: ['sh', '-c']
+        args:
+          - |
+            echo "Checking host resolution..."
+            nslookup b2172283516e.postgresql-srv-10052.private.postgres.database.azure.com || echo "DNS lookup failed"
+            ping -c 3 b2172283516e.postgresql-srv-10052.private.postgres.database.azure.com || echo "Ping failed"
+            echo "Host check completed"
+      - name: wait-for-phoenix
+        image: <region>-docker.pkg.dev/<project-id>/<repository>/busybox:latest
+        command: ['sh', '-c']
+        args:
+          - |
+            echo "Waiting for Phoenix to be ready..."
+            until nc -zv phoenix.iafv4.svc.cluster.local 4317; do
+              echo "Waiting for Phoenix on 4317..."
+              sleep 3
+            done
+            echo "Phoenix is up!"
+      containers:
+        - name: <be-container-name>
+          image: <region>-docker.pkg.dev/<project-id>/<repository>/<imagename>:<tag>
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://<username>:<password>@<postgres-ip>:<postgres-post>/<postgres-dbname>"
+            - name: POSTGRESQL_HOST
+              value: <postgres-ip>
+            - name: POSTGRESQL_USER
+              value: <username>
+            - name: POSTGRESQL_PASSWORD
+              value: <password>
+            - name: DB_PORT
+              value: "<postgres-post>"
+            - name: POSTGRESQL_PORT
+              value: "<postgres-post>"
+            - name: DATABASE
+              value: <postgres-dbname>
+            - name: POSTGRESQL_DB_URL_PREFIX
+              value: "postgresql://<username>:<password>@<postgres-ip>:<postgres-post>/"
+            - name: POSTGRESQL_DATABASE_URL
+              value: "postgresql://<username>:<password>@<postgres-ip>:<postgres-post>/<postgres-dbname>?sslmode=require"
+            - name: PHOENIX_SQL_DATABASE_URL
+              value: 'postgresql://<username>:<password>@<postgres-ip>:<postgres-post>/arize_traces'
+            - name: PHOENIX_COLLECTOR_ENDPOINT
+              value: "<arizephoneix-endpoint>:4317"
+            - name: PHOENIX_GRPC_PORT
+              value: "4317"
+            - name: REDIS_HOST
+              value: "<redis-url>"
+            - name: REDIS_PORT
+              value: "<redis-port"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+            - name: NO_PROXY_HOSTS
+              value: "localhost,127.0.0.1"
+            - name: PHOENIX_PORT   # ✅ Add this line
+              value: "<arizephoneix-port"
+            - name: NO_PROXY
+              value: "localhost,127.0.0.1"
+            - name: EMBEDDING_MODEL_PATH
+              value: "e5-base-v2"
+            - name: CROSS_ENCODER_PATH
+              value: "stsb-roberta-base"
+            - name: UI_CORS_IP
+              value: "<frontend-ip>"
+            - name: UI_CORS_IP_WITH_PORT
+              value: "<frontend-ip>:<frontend-port>"
+            - name: ENABLE_REDIS_CONNECTIONS
+              value: "True"
+--- 
+apiVersion: v1
+kind: Service
+metadata:
+  name: <be-container-name>
+  namespace: <namespace>
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+spec:
+  selector:
+    app: <be-container-name>
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: LoadBalancer
