@@ -28,7 +28,8 @@ nav:
   - Installation: 
      - Windows: Installation/windows.md
      - Linux: Installation/linux.md
-     - Azure : Installation/Azure.md
+     - Azure Kubernetes Service: Installation/Azure.md
+     - Google Kubernetes Engine: Installation/GCP.md
      - Database setup: Installation/Database_Setup.md
   - Agents Design: 
      - Overview: Agents_Design/overview.md

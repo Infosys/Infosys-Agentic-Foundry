@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useMessage } from "./MessageContext"; // assumes MessageContext exports useMessage
 import { extractErrorMessage, extractErrorWithFriendlyMessage } from "../utils/errorUtils";
+import { env } from "../constant";
 
 // dynamic suppression support (module scoped) ---
 let suppressedStatusCodes = new Set();
@@ -103,7 +104,7 @@ export const useErrorHandler = () => {
 
       // Suppression logic (generic errors that might carry status)
       const status = error?.response?.status || error?.statusCode || error?.status;
-      const suppress404Env = process.env.REACT_APP_SUPPRESS_404_TOASTS === "true";
+      const suppress404Env = (env.REACT_APP_SUPPRESS_404_TOASTS || process.env.REACT_APP_SUPPRESS_404_TOASTS) === "true";
       const isSuppressed = (status && suppressedStatusCodes.has(status)) || (suppress404Env && status === 404);
 
       if (logError && process.env.NODE_ENV === "development") {
@@ -174,7 +175,7 @@ export const useErrorHandler = () => {
         userMessage = customMessage || backendMessage || userMessage || "Authentication required";
       }
 
-      const suppress404Env = process.env.REACT_APP_SUPPRESS_404_TOASTS === "true";
+      const suppress404Env = (env.REACT_APP_SUPPRESS_404_TOASTS || process.env.REACT_APP_SUPPRESS_404_TOASTS) === "true";
       const isSuppressed = (statusCode && suppressedStatusCodes.has(statusCode)) || (suppress404Env && statusCode === 404);
 
       const finalErrorObject = {

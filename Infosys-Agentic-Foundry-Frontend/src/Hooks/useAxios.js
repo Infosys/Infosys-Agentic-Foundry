@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { APIs, BASE_URL } from "../constant";
+import { APIs, BASE_URL, env } from "../constant";
 import Cookies from "js-cookie";
 import axios from "axios";
 import { registerAxiosInterceptors } from "../config/axiosInterceptors"; // ensure timing/error interceptors on custom instance
@@ -135,7 +135,7 @@ export const getSessionId = () => {
   return sessionId;
 };
 
-const REQUEST_TIMEOUT_MS = Number(process.env.REACT_APP_API_TIMEOUT ?? 20 * 60 * 1000); // If not declared in ENV , it will be 20 minutes
+const REQUEST_TIMEOUT_MS = Number(env.REACT_APP_API_TIMEOUT || process.env.REACT_APP_API_TIMEOUT) || (20 * 60 * 1000); // If not declared in ENV , it will be 20 minutes
 
 const defaultConfig = {
   headers: {
