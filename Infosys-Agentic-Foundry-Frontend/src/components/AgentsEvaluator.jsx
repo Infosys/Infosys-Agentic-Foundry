@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { APIs } from "../constant";
+import { APIs, env } from "../constant";
 import Loader from "./commonComponents/Loader";
 import { useMessage } from "../Hooks/MessageContext";
 import styles from "../css_modules/AgentsEvaluator.module.css";
@@ -50,7 +50,7 @@ const AgentsEvaluator = ({ onResponse }) => {
     setIsStreaming(true);
 
     // Use BASE_URL from constant.js
-    const baseUrl = process.env.REACT_APP_BASE_URL || "";
+    const baseUrl = env.REACT_APP_BASE_URL || process.env.REACT_APP_BASE_URL || "";
     const apiUrl = `${baseUrl}${APIs.PROCESS_UNPROCESSED}?evaluating_model1=${encodeURIComponent(model1)}&evaluating_model2=${encodeURIComponent(model2)}`;
 
     try {

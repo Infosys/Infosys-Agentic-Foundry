@@ -130,7 +130,7 @@ const AskAssistant = () => {
   const [mentionAgentTypeFilter, setMentionAgentTypeFilter] = useState("all");
   const [isHumanVerifierEnabled, setIsHumanVerifierEnabled] = useState(false);
   const [isToolVerifierEnabled, setIsToolVerifierEnabled] = useState(false);
-  const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
+  const [isCanvasEnabled, setIsCanvasEnabled] = useState(false);
   const [isContextEnabled, setIsContextEnabled] = useState(true);
   const [useValidator, setUseValidator] = useState(false); // validator toggle
   const [showChatHistory, setShowChatHistory] = useState(false);
