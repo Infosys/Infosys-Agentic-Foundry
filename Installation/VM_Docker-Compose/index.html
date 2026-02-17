@@ -1,0 +1,3619 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../Database_Setup/">
+      
+      
+        <link rel="next" href="../../Agents_Design/overview/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>VM installation using docker-compose - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#infosys-agentic-foundry-iaf-vm-deployment-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              VM installation using docker-compose
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Definitions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Definitions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/Vocabulary_Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vocabulary - Definitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Human in the loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core_building_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Building Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Installation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Azure Kubernetes Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../GCP/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Database_Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM installation using docker-compose
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM installation using docker-compose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-download-code-from-public-github" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Download Code from Public GitHub
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-create-docker-compose-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Create Docker Compose File
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Create Docker Compose File">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-compose-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Compose Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-configure-opentelemetry-grafana-elasticsearch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Configure OpenTelemetry, Grafana, Elasticsearch
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Configure OpenTelemetry, Grafana, Elasticsearch">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-opentelemetry-collector-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 OpenTelemetry Collector Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#below-is-the-otel-collector-configyaml-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Below is the otel-collector-config.yaml file
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-grafana" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Grafana
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-elasticsearch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Elasticsearch
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-rename-env-example-to-env-and-update-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Rename .env-example to .env and Update Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Rename .env-example to .env and Update Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-backend-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Backend Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-frontend-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Frontend Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-dockerfile-in-frontend-and-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Dockerfile in Frontend and Backend
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: Dockerfile in Frontend and Backend">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#backend-dockerfile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Dockerfile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontend-dockerfile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontend Dockerfile
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-rebuild-images-after-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6: Rebuild Images After Changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-execute-docker-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7: Execute Docker Compose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-verify-deployed-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8: Verify Deployed Services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-9-model-server-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 9: Model Server Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#port-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Port Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-database-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix: Database Initialization
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agents Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/ReactCriticAgent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Planner_executor_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Orchestration_Meta_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Planner_meta_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agents_Design/Hybrid_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Admin_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Tool_Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Interrupt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../memory_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_13" id="__nav_13_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/reactCritic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/PlannerExecutor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/PlannerMeta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agent_config/HybridAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Inference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/ReactCriticAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/PlannerExecutorAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/HybridAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Inference/Canvas_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canvas Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        
+          
+          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Telemetry
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/Connecting_to_Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connecting to Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arize Phoenix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        
+          
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Evaluation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/Groundtruth_Evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Groundtruth Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Evaluation/Consistency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consistency Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../JWT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../GZIP_Compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GZIP Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Knowledge_Base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge Base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../DataConnectors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DataConnectors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ExportAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompt_optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompt Optimization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../MCP_Registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Time-To-Live/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Time-To-Live
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Model_server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Server Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../RBAC/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Role Base Access Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../SSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serever Sent Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../Agent_Pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Pipelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-download-code-from-public-github" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Download Code from Public GitHub
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-create-docker-compose-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Create Docker Compose File
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Create Docker Compose File">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-compose-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Compose Template
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-configure-opentelemetry-grafana-elasticsearch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Configure OpenTelemetry, Grafana, Elasticsearch
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Configure OpenTelemetry, Grafana, Elasticsearch">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-opentelemetry-collector-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 OpenTelemetry Collector Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#below-is-the-otel-collector-configyaml-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Below is the otel-collector-config.yaml file
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-grafana" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Grafana
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-elasticsearch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Elasticsearch
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-rename-env-example-to-env-and-update-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Rename .env-example to .env and Update Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Rename .env-example to .env and Update Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-backend-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Backend Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-frontend-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Frontend Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-dockerfile-in-frontend-and-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Dockerfile in Frontend and Backend
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: Dockerfile in Frontend and Backend">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#backend-dockerfile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend Dockerfile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontend-dockerfile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontend Dockerfile
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-rebuild-images-after-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6: Rebuild Images After Changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-execute-docker-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7: Execute Docker Compose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-verify-deployed-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8: Verify Deployed Services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-9-model-server-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 9: Model Server Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#port-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Port Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-database-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix: Database Initialization
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Introduction
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../windows/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Installation
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="infosys-agentic-foundry-iaf-vm-deployment-guide">Infosys Agentic Foundry (IAF) — VM Deployment Guide</h1>
+<p>This document provides step-by-step instructions to deploy <strong>Infosys Agentic Foundry</strong> (Frontend + Backend) on a Virtual Machine (VM) using Docker-compose, including configuration of OpenTelemetry, Grafana, Elasticsearch,Redis,Arize Phoenix , &amp; Postgres(optional).</p>
+<hr />
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li><strong>Docker</strong> and <strong>Docker-compose</strong> installed on the VM</li>
+<li><strong>Git</strong> installed</li>
+<li><strong>Python 3.12</strong> (for backend)</li>
+<li>Sufficient resources: recommended <strong>8 GB+ RAM</strong>, <strong>30 GB+ disk</strong></li>
+<li>Network access to pull images and clone repositories</li>
+</ul>
+<hr />
+<h2 id="step-1-download-code-from-public-github">Step 1: Download Code from Public GitHub</h2>
+<p>Clone the Frontend and Backend repositories. This will create two <code>Infosys-Agentic-Foundry-Frontend</code> and <code>Infosys-Agentic-Foundry-Backend</code> folders.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Create a parent directory</span>
+mkdir<span class="w"> </span>-p<span class="w"> </span>~/agentic-foundry
+<span class="nb">cd</span><span class="w"> </span>~/agentic-foundry
+
+<span class="c1"># Clone Backend</span>
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Infosys/Infosys-Agentic-Foundry-Backend.git
+
+<span class="c1"># Clone Frontend</span>
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Infosys/Infosys-Agentic-Foundry-Frontend.git
+</code></pre></div>
+<p><strong>Expected structure after download:</strong>
+<div class="highlight"><pre><span></span><code>agentic-foundry/
+├── Infosys-Agentic-Foundry-Backend/
+├── Infosys-Agentic-Foundry-Frontend/
+└── (docker-compose.yml will go here)
+└── otel-collector-config.yaml
+</code></pre></div></p>
+<hr />
+<h2 id="step-2-create-docker-compose-file">Step 2: Create Docker Compose File</h2>
+<p>Create a <code>docker-compose.yml</code> file in the parent directory (same level as both frontend and backend folders). Use the template below.</p>
+<h3 id="docker-compose-template">Docker Compose Template</h3>
+<p>Create a file named <code>docker-compose.yml</code> in your project root (e.g., <code>~/agentic-foundry/docker-compose.yml</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># 1. The Database (Persistence)</span>
+<span class="w">  </span><span class="nt">db</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres:15-alpine</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">POSTGRES_USER</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres</span>
+<span class="w">      </span><span class="nt">POSTGRES_PASSWORD</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres</span>
+<span class="w">      </span><span class="nt">POSTGRES_DB</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;5432:5432&quot;</span>
+
+<span class="w">  </span><span class="c1"># 2. Task Queue (Asynchronous Agent Thinking)</span>
+<span class="w">  </span><span class="nt">redis</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis:alpine</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;6379:6379&quot;</span>
+
+
+<span class="w">  </span><span class="c1"># 1. Grafana</span>
+<span class="w">  </span><span class="nt">grafana</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">grafana/grafana:latest</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">GF_SECURITY_ADMIN_PASSWORD</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">admin</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;3000:3000&quot;</span>
+
+<span class="w">  </span><span class="c1"># 1. Arize Phoenix</span>
+<span class="w">  </span><span class="nt">arphx</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arizephoenix/phoenix:latest</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">PHOENIX_SQL_DATABASE_URL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgresql://userid:password@&lt;IP&gt;:5432/arize_traces</span>
+<span class="w">      </span><span class="nt">PHOENIX_PORT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6006</span>
+<span class="w">      </span><span class="nt">PHOENIX_GRPC_PORT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4317</span>
+<span class="w">      </span><span class="nt">PHOENIX_GRPC_HOST</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;6006:6006&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;4317:4317&quot;</span>
+
+<span class="w">  </span><span class="c1"># ELASTICSEARCH</span>
+<span class="w">  </span><span class="nt">elasticsearch</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">elasticsearch:9.0.3</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">discovery.type=single-node</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xpack.security.enabled=false</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ES_JAVA_OPTS=-Xms2g -Xmx2g</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;9200:9200&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;9300:9300&quot;</span>
+
+<span class="w">  </span><span class="c1"># OPENTELEMETRY</span>
+<span class="w">  </span><span class="nt">otel-collector</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel/opentelemetry-collector-contrib:0.130.1</span>
+<span class="w">    </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;--config=/etc/otel-collector-config.yaml&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;4318:4318&quot;</span><span class="w">   </span><span class="c1"># OTLP HTTP default (common)</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;4319:4319&quot;</span><span class="w">   </span><span class="c1"># Your custom gRPC port (optional)</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;4320:4320&quot;</span><span class="w">   </span><span class="c1"># Your custom HTTP port (optional)</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro</span>
+<span class="w">    </span><span class="nt">depends_on</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">elasticsearch</span>
+
+<span class="w">  </span><span class="c1"># 4. The Brain (Backend Orchestrator)</span>
+<span class="w">  </span><span class="nt">backend</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">build</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./Infosys-Agentic-Foundry-Backend</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;8000:8000&quot;</span>
+<span class="w">    </span><span class="nt">env_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./.env</span>
+<span class="w">    </span><span class="nt">depends_on</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">db</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arphx</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+
+<span class="w">  </span><span class="c1"># 5. The User Interface (Frontend)</span>
+<span class="w">  </span><span class="nt">frontend</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">build</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./Infosys-Agentic-Foundry-Frontend</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;3003:3003&quot;</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">REACT_APP_BASE_URL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://&lt;IP&gt;:8000</span>
+<span class="w">      </span><span class="nt">REACT_APP_LIVE_TRACKING_URL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://&lt;IP&gt;:6006</span>
+<span class="w">      </span><span class="nt">REACT_APP_GRAFANA_DASHBOARD_URL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://&lt;IP&gt;:3000</span>
+<span class="w">    </span><span class="nt">env_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./Infosys-Agentic-Foundry-Frontend/.env</span>
+<span class="w">    </span><span class="nt">depends_on</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backend</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arphx</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">grafana</span>
+</code></pre></div>
+<blockquote>
+<p><strong>Note:</strong> Replace <code>&lt;IP&gt;</code> with your VM IP address or hostname. For Arize Phoenix, replace <code>userid</code> and <code>password</code> in <code>PHOENIX_SQL_DATABASE_URL</code> with your PostgreSQL credentials.</p>
+</blockquote>
+<hr />
+<h2 id="step-3-configure-opentelemetry-grafana-elasticsearch">Step 3: Configure OpenTelemetry, Grafana, Elasticsearch</h2>
+<h3 id="31-opentelemetry-collector-configuration">3.1 OpenTelemetry Collector Configuration</h3>
+<p>Create <code>otel-collector-config.yaml</code> in the same directory as <code>docker-compose.yml</code>.</p>
+<blockquote>
+<p><strong>Important:</strong> Replace <code>&lt;IP&gt;</code>address with your VM IP address or <code>localhost</code> in 'otel-collector-config.yaml' when Elasticsearch runs on the host. If all services run in the same Docker Compose network, you may use <code>http://elasticsearch:9200</code> instead of <code>http://&lt;IP&gt;:9200</code>.</p>
+</blockquote>
+<h3 id="below-is-the-otel-collector-configyaml-file">Below is the otel-collector-config.yaml file</h3>
+<p><strong>File: <code>otel-collector-config.yaml</code></strong> </p>
+<div class="highlight"><pre><span></span><code><span class="nt">receivers</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">otlp</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">protocols</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">grpc</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0:4319</span>
+<span class="w">      </span><span class="nt">http</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0:4320</span>
+
+<span class="nt">exporters</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">debug</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">verbosity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">detailed</span>
+<span class="w">  </span><span class="nt">elasticsearch</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">endpoints</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;http://&lt;IP&gt;:9200&quot;</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1">#replace &lt;IP&gt; with elastice search ip</span>
+<span class="w">    </span><span class="nt">sending_queue</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="nt">processors</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+
+<span class="nt">service</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">pipelines</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">traces</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">receivers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">otlp</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">processors</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">batch</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">exporters</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">debug</span><span class="p p-Indicator">]</span><span class="w">           </span><span class="c1"># add elasticsearch here if you want traces in ES</span>
+<span class="w">    </span><span class="nt">metrics</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">receivers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">otlp</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">processors</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">batch</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">exporters</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">debug</span><span class="p p-Indicator">]</span><span class="w">           </span><span class="c1"># add elasticsearch here if you want metrics in ES</span>
+<span class="w">    </span><span class="nt">logs</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">receivers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">otlp</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">processors</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">batch</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">exporters</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">debug</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">elasticsearch</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">telemetry</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">logs</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">info</span>
+<span class="w">    </span><span class="nt">metrics</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic</span>
+</code></pre></div>
+<p><strong>Configuration notes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Pipeline</th>
+<th>Purpose</th>
+<th>Elasticsearch</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>traces</strong></td>
+<td>Distributed tracing data</td>
+<td>Add <code>elasticsearch</code> to exporters list if you want traces stored in Elasticsearch</td>
+</tr>
+<tr>
+<td><strong>metrics</strong></td>
+<td>Performance metrics</td>
+<td>Add <code>elasticsearch</code> to exporters list if you want metrics stored in Elasticsearch</td>
+</tr>
+<tr>
+<td><strong>logs</strong></td>
+<td>Application logs</td>
+<td>Already exports to both <code>debug</code> and <code>elasticsearch</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-grafana">3.2 Grafana</h3>
+<ul>
+<li><strong>URL:</strong> <code>http://&lt;VM_IP&gt;:3000</code></li>
+<li><strong>Default login:</strong> <code>admin</code> / <code>admin</code> (change on first login)</li>
+<li>Configure data sources (Elasticsearch) as needed from the Grafana UI.</li>
+</ul>
+<h3 id="33-elasticsearch">3.3 Elasticsearch</h3>
+<ul>
+<li><strong>URL:</strong> <code>http://&lt;VM_IP&gt;:9200</code></li>
+<li><strong>Health check:</strong> <code>curl http://localhost:9200</code></li>
+<li>Stores logs (and optionally traces/metrics) exported by OpenTelemetry Collector.</li>
+</ul>
+<hr />
+<h2 id="step-4-rename-env-example-to-env-and-update-configuration">Step 4: Rename <code>.env-example</code> to <code>.env</code> and Update Configuration</h2>
+<h3 id="41-backend-environment">4.1 Backend Environment</h3>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>Infosys-Agentic-Foundry-Backend
+cp<span class="w"> </span>.env.example<span class="w"> </span>.env
+<span class="c1"># Edit .env with your values</span>
+</code></pre></div>
+<p><strong>Key variables to update in <code>Infosys-Agentic-Foundry-Backend/.env</code>:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ENDPOINT_URL_PREFIX</code></td>
+<td>Backend URL (e.g., <code>http://&lt;VM_IP&gt;:8000</code>)</td>
+</tr>
+<tr>
+<td><code>UI_CORS_IP</code></td>
+<td>Frontend IP for CORS</td>
+</tr>
+<tr>
+<td><code>UI_CORS_IP_WITH_PORT</code></td>
+<td>Frontend IP with port (e.g., <code>http://&lt;VM_IP&gt;:3003</code>)</td>
+</tr>
+<tr>
+<td><code>SECRETS_MASTER_KEY</code></td>
+<td>Run <code>python generate_master_secret_key.py</code> to generate</td>
+</tr>
+<tr>
+<td><code>USE_OTEL_LOGGING</code></td>
+<td>Set to <code>True</code> for VM deployment with OpenTelemetry, Elasticsearch and Grafana</td>
+</tr>
+<tr>
+<td><code>POSTGRESQL_HOST</code></td>
+<td><code>db</code> (Docker service name) or <code>localhost</code> if DB is on host</td>
+</tr>
+<tr>
+<td><code>POSTGRESQL_PASSWORD</code></td>
+<td><code>postgres</code> as defined in docker-compose</td>
+</tr>
+<tr>
+<td><code>DATABASE_URL</code></td>
+<td><code>postgresql://postgres:postgres@db:5432/postgres</code></td>
+</tr>
+<tr>
+<td><code>POSTGRESQL_DB_URL_PREFIX</code></td>
+<td><code>postgresql://postgres:postgres@db:5432/</code></td>
+</tr>
+<tr>
+<td><code>POSTGRESQL_DATABASE_URL</code></td>
+<td><code>postgresql://postgres:postgres@db:5432/agentic_workflow_as_service_database</code></td>
+</tr>
+<tr>
+<td><code>PHOENIX_SQL_DATABASE_URL</code></td>
+<td><code>postgresql://postgres:postgres@db:5432/arize_traces</code></td>
+</tr>
+<tr>
+<td><code>ENABLE_CACHING</code></td>
+<td>Set to <code>True</code> if Redis is setup</td>
+</tr>
+<tr>
+<td><code>REDIS_HOST</code></td>
+<td><code>redis</code> (Docker service name)</td>
+</tr>
+<tr>
+<td><code>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT</code></td>
+<td><code>http://otel-collector:4318/v1/traces</code></td>
+</tr>
+<tr>
+<td><code>OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_HTTP</code></td>
+<td><code>http://otel-collector:4320/v1/logs</code></td>
+</tr>
+<tr>
+<td><code>OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_GRPC</code></td>
+<td><code>otel-collector:4319</code></td>
+</tr>
+<tr>
+<td><code>AUTH_JWT_SECRET</code></td>
+<td>Run <code>python generate_master_secret_key.py</code> to generate</td>
+</tr>
+<tr>
+<td><code>MODEL_SERVER_URL</code></td>
+<td><code>http://&lt;VM_IP&gt;:5500</code></td>
+</tr>
+<tr>
+<td><code>MODEL_SERVER_HOST</code></td>
+<td><code>&lt;VM_IP&gt;</code></td>
+</tr>
+<tr>
+<td><code>MODEL_SERVER_PORT</code></td>
+<td>Port of hosted model server (e.g., <code>5500</code>)</td>
+</tr>
+<tr>
+<td><code>ENVIRONMENT</code></td>
+<td>Enable Swagger UI with <code>development</code> or disable it with <code>production</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="42-frontend-environment">4.2 Frontend Environment</h3>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>Infosys-Agentic-Foundry-Frontend
+cp<span class="w"> </span>.env-example<span class="w"> </span>.env
+</code></pre></div>
+<p><strong>Update <code>Infosys-Agentic-Foundry-Frontend/.env</code>:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REACT_APP_BASE_URL</code></td>
+<td>Backend API URL (e.g., <code>http://&lt;VM_IP&gt;:8000</code>)</td>
+</tr>
+<tr>
+<td><code>REACT_APP_GRAFANA_DASHBOARD_URL</code></td>
+<td>Grafana URL (e.g., <code>http://&lt;VM_IP&gt;:3000</code>)</td>
+</tr>
+<tr>
+<td><code>REACT_APP_MKDOCS_BASE_URL</code></td>
+<td>MkDocs URL if hosted</td>
+</tr>
+<tr>
+<td><code>REACT_APP_LIVE_TRACKING_URL</code></td>
+<td>Phoenix/tracking URL (e.g., <code>http://&lt;VM_IP&gt;:6006</code>)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="step-5-dockerfile-in-frontend-and-backend">Step 5: Dockerfile in Frontend and Backend</h2>
+<h3 id="backend-dockerfile">Backend Dockerfile</h3>
+<p>Location: <code>Infosys-Agentic-Foundry-Backend/Dockerfile</code></p>
+<p>The backend already includes a Dockerfile. Ensure it exists with content similar to:</p>
+<div class="highlight"><pre><span></span><code><span class="k">FROM</span><span class="w"> </span><span class="s">python:3.12-slim</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="s">builder</span>
+<span class="k">WORKDIR</span><span class="w"> </span><span class="s">/app</span>
+<span class="k">RUN</span><span class="w"> </span>apt-get<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>rm<span class="w"> </span>-rf<span class="w"> </span>/var/lib/apt/lists/*
+<span class="k">RUN</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>uv
+<span class="k">COPY</span><span class="w"> </span>requirements.txt<span class="w"> </span>.
+<span class="k">RUN</span><span class="w"> </span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--no-cache<span class="w"> </span>--system<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+
+<span class="k">FROM</span><span class="w"> </span><span class="s">python:3.12-slim</span>
+<span class="k">WORKDIR</span><span class="w"> </span><span class="s">/app</span>
+<span class="k">COPY</span><span class="w"> </span>--from<span class="o">=</span>builder<span class="w"> </span>/usr/local/lib/python3.12/site-packages<span class="w"> </span>/usr/local/lib/python3.12/site-packages
+<span class="k">COPY</span><span class="w"> </span>.<span class="w"> </span>.
+<span class="k">EXPOSE</span><span class="w"> </span><span class="s">8000</span>
+<span class="k">CMD</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;uvicorn&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;main:app&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--host&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--port&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;8000&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h3 id="frontend-dockerfile">Frontend Dockerfile</h3>
+<p>Location: <code>Infosys-Agentic-Foundry-Frontend/DockerFile</code> (note: capital <code>F</code> in <code>DockerFile</code>)</p>
+<p>The frontend Dockerfile uses Node.js:</p>
+<div class="highlight"><pre><span></span><code><span class="k">FROM</span><span class="w"> </span><span class="s">node:22-alpine</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="s">build</span>
+<span class="k">WORKDIR</span><span class="w"> </span><span class="s">/app</span>
+<span class="k">COPY</span><span class="w"> </span>package*.json<span class="w"> </span>./
+<span class="k">RUN</span><span class="w"> </span>npm<span class="w"> </span>install
+<span class="k">COPY</span><span class="w"> </span>.<span class="w"> </span>.
+<span class="k">ENV</span><span class="w"> </span><span class="nv">PORT</span><span class="o">=</span><span class="m">3003</span>
+<span class="k">EXPOSE</span><span class="w"> </span><span class="s">3003</span>
+<span class="k">CMD</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;npm&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;start&quot;</span><span class="p">]</span>
+</code></pre></div>
+<hr />
+<h2 id="step-6-rebuild-images-after-changes">Step 6: Rebuild Images After Changes</h2>
+<p><strong>Whenever you modify:</strong></p>
+<ul>
+<li>Any service configuration</li>
+<li>Frontend or Backend application code</li>
+<li><code>.env</code> file</li>
+</ul>
+<p><strong>You must remove existing images and rebuild:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Stop and remove containers</span>
+docker<span class="w"> </span>compose<span class="w"> </span>down
+
+<span class="c1"># Remove old images (optional but recommended)</span>
+docker<span class="w"> </span>rmi<span class="w"> </span><span class="k">$(</span>docker<span class="w"> </span>images<span class="w"> </span>-q<span class="w"> </span><span class="s1">&#39;infosys-agentic*&#39;</span><span class="k">)</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span>
+
+<span class="c1"># Rebuild and start fresh</span>
+docker<span class="w"> </span>compose<span class="w"> </span>build<span class="w"> </span>--no-cache
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<hr />
+<h2 id="step-7-execute-docker-compose">Step 7: Execute Docker Compose</h2>
+<p>From the directory containing <code>docker-compose.yml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Build all images</span>
+docker<span class="w"> </span>compose<span class="w"> </span>build
+
+<span class="c1"># Start all services in detached mode</span>
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+
+<span class="c1"># Or build and start in one command</span>
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--build
+</code></pre></div>
+<p><strong>Useful commands:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docker compose up -d</code></td>
+<td>Start all services in background</td>
+</tr>
+<tr>
+<td><code>docker compose up -d --build</code></td>
+<td>Build and start</td>
+</tr>
+<tr>
+<td><code>docker compose down</code></td>
+<td>Stop and remove containers</td>
+</tr>
+<tr>
+<td><code>docker compose logs -f</code></td>
+<td>Follow logs from all services</td>
+</tr>
+<tr>
+<td><code>docker compose logs -f backend</code></td>
+<td>Follow backend logs only</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="step-8-verify-deployed-services">Step 8: Verify Deployed Services</h2>
+<p>Check the status of all containers:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>ps<span class="w"> </span>-a
+</code></pre></div>
+<p><strong>Expected output:</strong> All services should show <code>Up</code> status:</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Port</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>db</td>
+<td>5432</td>
+<td>Up</td>
+</tr>
+<tr>
+<td>redis</td>
+<td>6379</td>
+<td>Up</td>
+</tr>
+<tr>
+<td>grafana</td>
+<td>3000</td>
+<td>Up</td>
+</tr>
+<tr>
+<td>arphx</td>
+<td>6006, 4317</td>
+<td>Up</td>
+</tr>
+<tr>
+<td>elasticsearch</td>
+<td>9200, 9300</td>
+<td>Up</td>
+</tr>
+<tr>
+<td>otel-collector</td>
+<td>4318, 4319, 4320</td>
+<td>Up</td>
+</tr>
+<tr>
+<td>backend</td>
+<td>8000</td>
+<td>Up</td>
+</tr>
+<tr>
+<td>frontend</td>
+<td>3003</td>
+<td>Up</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="step-9-model-server-setup">Step 9: Model Server Setup</h2>
+<p>For detailed instructions on deploying and configuring your model server, refer to the <a href="../../Model_server/#model-server-setup-localvm-deployment">Model Server Deployment</a> guide.</p>
+<hr />
+<h2 id="port-summary">Port Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Port(s)</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frontend</td>
+<td>3003</td>
+<td>Web UI</td>
+</tr>
+<tr>
+<td>Backend</td>
+<td>8000</td>
+<td>API</td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td>5432</td>
+<td>Database</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>6379</td>
+<td>Cache/Queue</td>
+</tr>
+<tr>
+<td>Grafana</td>
+<td>3000</td>
+<td>Dashboards</td>
+</tr>
+<tr>
+<td>Arize Phoenix</td>
+<td>6006, 4317</td>
+<td>LLM observability</td>
+</tr>
+<tr>
+<td>Elasticsearch</td>
+<td>9200, 9300</td>
+<td>Log storage/search</td>
+</tr>
+<tr>
+<td>OTLP Collector</td>
+<td>4318, 4319, 4320</td>
+<td>Telemetry ingestion</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Issue</th>
+<th>Solution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Container keeps restarting</td>
+<td>Check <code>docker compose logs &lt;service&gt;</code></td>
+</tr>
+<tr>
+<td>Connection refused</td>
+<td>Ensure services use Docker network names (<code>db</code>, <code>redis</code>) not <code>localhost</code> in <code>.env</code></td>
+</tr>
+<tr>
+<td>Out of memory</td>
+<td>Increase <code>ES_JAVA_OPTS</code> or VM RAM; reduce Elasticsearch heap</td>
+</tr>
+<tr>
+<td>Port already in use</td>
+<td>Change port mapping in <code>docker-compose.yml</code> or stop conflicting process</td>
+</tr>
+<tr>
+<td><code>.env</code> not loaded</td>
+<td>Ensure file is at correct path: <code>./Infosys-Agentic-Foundry-Backend/.env</code></td>
+</tr>
+<tr>
+<td>Phoenix DB connection error</td>
+<td>Use <code>postgresql://postgres:postgres@db:5432/arize_traces</code> and ensure DB password matches</td>
+</tr>
+<tr>
+<td>OpenTelemetry not sending</td>
+<td>Set <code>USE_OTEL_LOGGING=True</code> in backend <code>.env</code>; verify <code>otel-collector</code> is reachable</td>
+</tr>
+<tr>
+<td>OTEL Collector ES connection failed</td>
+<td>For same-network deployment, use <code>http://elasticsearch:9200</code>. For host ES, use <code>http://&lt;VM_IP&gt;:9200</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="appendix-database-initialization">Appendix: Database Initialization</h2>
+<p>Arize Phoenix and the application may require databases to exist. To create <code>arize_traces</code> and other DBs:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Connect to PostgreSQL container</span>
+docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>&lt;db_container_id&gt;<span class="w"> </span>psql<span class="w"> </span>-U<span class="w"> </span>postgres<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;CREATE DATABASE arize_traces;&quot;</span>
+docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>&lt;db_container_id&gt;<span class="w"> </span>psql<span class="w"> </span>-U<span class="w"> </span>postgres<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;CREATE DATABASE agentic_workflow_as_service_database;&quot;</span>
+<span class="c1"># Add other DBs as per .env (feedback_learning, evaluation_logs, recycle, login)</span>
+</code></pre></div>
+<p>Or run the backend once; it may auto-create schemas on startup.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
