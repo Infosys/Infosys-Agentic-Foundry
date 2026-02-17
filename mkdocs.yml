@@ -31,6 +31,7 @@ nav:
      - Azure Kubernetes Service: Installation/Azure.md
      - Google Kubernetes Engine: Installation/GCP.md
      - Database setup: Installation/Database_Setup.md
+     - VM installation using docker-compose: Installation/VM_Docker-Compose.md
   - Agents Design: 
      - Overview: Agents_Design/overview.md
      - React Agent Design: Agents_Design/React Agent Design.md
