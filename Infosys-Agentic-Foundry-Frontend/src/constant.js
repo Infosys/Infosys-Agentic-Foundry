@@ -68,6 +68,8 @@ export const APIs = {
   GUEST_LOGIN: "/auth/guest-login",
   REFRESH_TOKEN: "/auth/refresh-token",
 
+  ADD_TOOLS_WITH_FILE: "/tools/add-with-file",
+
   //Utility APIs
   GET_VERSION: "/utility/get/version",
   GET_MODELS: "/utility/get/models",

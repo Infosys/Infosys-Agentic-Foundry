@@ -120,15 +120,9 @@ export const useToolsAgentsService = () => {
     }
   };
 
-  // Modified: add isValidator flag as query param (backend expects Query not Form field)
-  const addTool = async (toolData, force_add, isValidator = false) => {
+  const addTool = async (toolData, toolHasFile = false) => {
     try {
-      // Expect toolData is FormData prepared by caller without is_validator appended
-      const base = APIs.ADD_TOOLS;
-      const params = [];
-      if (force_add) params.push("force_add=true");
-      if (isValidator) params.push("is_validator=true");
-      const apiUrl = params.length ? `${base}?${params.join("&")}` : base;
+      const apiUrl = toolHasFile ? APIs.ADD_TOOLS_WITH_FILE : APIs.ADD_TOOLS;
       const response = await postData(apiUrl, toolData);
       return response;
     } catch (error) {

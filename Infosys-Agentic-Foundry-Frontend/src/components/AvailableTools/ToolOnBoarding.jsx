@@ -306,31 +306,38 @@ function ToolOnBoarding(props) {
     setLoading(true);
     let response;
     if (isAddTool) {
-      const formDataToSend = new FormData();
-
-      formDataToSend.append("tool_description", formData.description);
-      formDataToSend.append("model_name", formData.model);
-      formDataToSend.append("created_by", userName === "Guest" ? formData.createdBy : loggedInUserEmail);
-      formDataToSend.append(
-        "tag_ids",
-        initialTags
-          .filter((e) => e.selected)
-          .map((e) => e.tagId)
-          .join(",")
-      );
-      formDataToSend.append("is_validator", isValidatorTool ? "true" : "false");
-
-      // If file is uploaded, use file for tool_file and empty code_snippet
-      // If no file, use textarea content for code_snippet and empty tool_file
       if (codeFile) {
-        formDataToSend.append("code_snippet", "");
+        // Use FormData when file is uploaded
+        const formDataToSend = new FormData();
+        formDataToSend.append("tool_description", formData.description);
+        formDataToSend.append("model_name", formData.model);
+        formDataToSend.append("created_by", userName === "Guest" ? formData.createdBy : loggedInUserEmail);
+        formDataToSend.append(
+          "tag_ids",
+          initialTags
+            .filter((e) => e.selected)
+            .map((e) => e.tagId)
+            .join(",")
+        );
+        formDataToSend.append("force_add", force ? "true" : "false");
+        formDataToSend.append("is_validator", isValidatorTool ? "true" : "false");
         formDataToSend.append("tool_file", codeFile);
+        
+        response = await addTool(formDataToSend, true);
       } else {
-        formDataToSend.append("code_snippet", formData.code);
-        formDataToSend.append("tool_file", "");
+        // Use JSON payload when no file is uploaded
+        const toolsdata = {
+          tool_description: formData.description,
+          code_snippet: formData.code,
+          model_name: formData.model,
+          created_by: userName === "Guest" ? formData.createdBy : loggedInUserEmail,
+          tag_ids: initialTags.filter((e) => e.selected).map((e) => e.tagId),
+          force_add: force,
+          is_validator: isValidatorTool,
+        };
+        
+        response = await addTool(toolsdata, false);
       }
-
-      response = await addTool(formDataToSend, force, isValidatorTool);
     } else if (!isAddTool && !props?.recycle) {
       const isAdmin = role && role?.toUpperCase() === "ADMIN";
       const toolsdata = {

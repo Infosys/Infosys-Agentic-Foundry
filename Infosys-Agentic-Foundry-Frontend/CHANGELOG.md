@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.7.1]
+-1. Hot Fix: Addtool with and without file two diffrenent api
+
 ## [1.7.0]
 
 - 1. As part of SAST fixes "password" is modified to "user_pwd" in DataConnectors Screen.
@@ -20,8 +23,8 @@
 - 10. Include Validator toggle for hybrid agent.
 - 11. For admin role, Enable the installation of modules.
 - 12. Recycle bin and TTL for servers.
-  13. Removed Validator toggle for hybrid agent.
 - 12. Removed the pipeline agent type from the list in agent onboard, consistency tab, groundtruth .
+- 13. Removed Validator toggle for hybrid agent.
 
 ## [1.6.0]
 
