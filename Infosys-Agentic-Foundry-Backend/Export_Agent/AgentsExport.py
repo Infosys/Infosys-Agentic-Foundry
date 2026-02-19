@@ -6,8 +6,7 @@ import shutil
 import asyncio
 import asyncpg
 import tempfile
-import subprocess
-from fastapi import HTTPException
+import zipfile
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -54,7 +53,71 @@ class AgentExporter:
         self.login_pool = login_pool
 
     #------------------------------------------------------------------------
+    @staticmethod
+    def extract_frontend_from_zip():
+        """
+        Extracts the bundled Frontend-Export.zip to Export_Agent/Agentcode/Agent_Frontend.
+        This runs once at server startup to populate the frontend code.
+        Deletes existing Agent_Frontend folder first to ensure clean extraction.
+        """
+        # Paths
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        zip_path = os.path.join(base_dir, 'Frontend-Export.zip')
+        target_path = os.path.join(base_dir, 'Agentcode', 'Agent_Frontend')
         
+        # Check if ZIP exists
+        if not os.path.exists(zip_path):
+            log.warning(f'Frontend ZIP not found at {zip_path}. Frontend will not be included in exports.')
+            return False
+        
+        log.info(f'Extracting frontend from {zip_path}')
+        
+        # Clean up existing Agent_Frontend folder first
+        if os.path.exists(target_path):
+            try:
+                shutil.rmtree(target_path)
+                log.info(f'Removed existing Agent_Frontend folder at {target_path}')
+            except Exception as e:
+                log.error(f'Error removing existing Agent_Frontend folder: {e}')
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                # Extract ZIP to temp directory
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                log.info('ZIP extracted to temporary directory.')
+                
+                # Find the root folder (GitHub format: {repo}-{branch})
+                extracted_folders = os.listdir(temp_dir)
+                if not extracted_folders:
+                    log.error('No contents found in extracted ZIP')
+                    return False
+                
+                source_folder = os.path.join(temp_dir, extracted_folders[0])
+                
+                # Create target directory
+                os.makedirs(target_path, exist_ok=True)
+                
+                # Copy contents to target folder
+                for item in os.listdir(source_folder):
+                    s = os.path.join(source_folder, item)
+                    d = os.path.join(target_path, item)
+                    if os.path.isdir(s):
+                        shutil.copytree(s, d, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(s, d)
+                
+                log.info(f'Frontend extracted successfully to {target_path}')
+                return True
+                
+            except zipfile.BadZipFile as e:
+                log.error(f'Invalid ZIP file: {e}')
+                return False
+            except Exception as e:
+                log.error(f'Error extracting frontend: {e}')
+                return False
+
+    #------------------------------------------------------------------------
     
     def clean_nested_nulls_iterative(self,data, default_null=""):
         """
@@ -365,18 +428,7 @@ class AgentExporter:
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
         self.copy_user_uploads(target_folder)
-        tool = await self.tool_service.get_tool(tool_name="download_and_copy_repo")
-        if tool:
-            code = str(tool[0]["code_snippet"])
-            namespace={
-                'os': os,
-                'subprocess': subprocess,
-                'tempfile': tempfile,
-                'shutil': shutil,
-                'log': log
-            }
-            exec(code,namespace)
-            namespace['download_and_copy_repo'](target_folder) # type: ignore
+
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
         os.makedirs(agent_backend, exist_ok=True)
         if agent_type in {"meta_agent", "planner_meta_agent"}:
@@ -435,18 +487,7 @@ class AgentExporter:
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
         self.copy_user_uploads(target_folder)
-        tool = await self.tool_service.get_tool(tool_name="download_and_copy_repo")
-        if tool:
-            code = str(tool[0]["code_snippet"])
-            namespace={
-                'os': os,
-                'subprocess': subprocess,
-                'tempfile': tempfile,
-                'shutil': shutil,
-                'log': log
-            }
-            exec(code,namespace)
-            namespace['download_and_copy_repo'](target_folder) # type: ignore
+
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
         os.makedirs(agent_backend, exist_ok=True)
         tools_ids = set()

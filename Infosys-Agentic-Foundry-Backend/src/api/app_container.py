@@ -40,6 +40,7 @@ from src.inference.python_based_inference.hybrid_agent_inference import HybridAg
 from src.utils.file_manager import FileManager
 from src.utils.tool_file_manager import ToolFileManager
 from MultiDBConnection_Manager import MultiDBConnectionRepository
+from Export_Agent.AgentsExport import AgentExporter
 
 from telemetry_wrapper import logger as log
 
@@ -467,7 +468,11 @@ class AppContainer:
 
         log.info("AppContainer: All database tables checked/created.")
 
-        # 10. Running necessary data migrations/fixes
+        # 10. Extract frontend code from bundled ZIP for agent exports
+        AgentExporter.extract_frontend_from_zip()
+        log.info("AppContainer: Frontend extraction completed.")
+
+        # 11. Running necessary data migrations/fixes
         # Delete the 'models' table from main_pool if it exists
         # async with main_pool.acquire() as conn:
         #     await conn.execute("DROP TABLE IF EXISTS models;")

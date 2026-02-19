@@ -11,6 +11,19 @@ class ToolData(BaseModel):
     tag_ids: Optional[Union[List[str], str]] = Field(None, description="Optional list of tag IDs for the tool.")
     is_validator: Optional[bool] = Field(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
 
+
+
+class AddToolRequest(BaseModel):
+    """Schema for adding a new tool."""
+    tool_description: str = Field(..., description="A brief description of the tool.")
+    code_snippet: str = Field(..., description="The Python code snippet for the tool's function.")
+    model_name: str = Field(..., description="The name of the LLM model to be used for docstring regeneration.")
+    created_by: str = Field(..., description="The email ID of the user who created the tool.")
+    tag_ids: Optional[Union[List[str], str]] = Field(None, description="Optional comma-separated string or list of tag IDs for the tool.")
+    force_add: Optional[bool] = Field(False, description="Force add flag for bypassing certain validations.")
+    is_validator: Optional[bool] = Field(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
+
+
 class UpdateToolRequest(BaseModel):
     """Schema for updating an existing tool."""
     model_name: str = Field(..., description="The name of the LLM model to be used for docstring regeneration.")

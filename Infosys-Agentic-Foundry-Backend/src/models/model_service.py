@@ -23,12 +23,43 @@ class ModelService:
 
         self._loaded_models: Dict[str, Union[AzureChatOpenAI, ChatOpenAI, ChatGoogleGenerativeAI]] = {} # Cache for loaded LLM instances
 
-        self.azure_openai_models = self.convert_string_to_list(os.getenv("AZURE_OPENAI_MODELS", ""))
-        self.azure_openai_gpt_5_models = self.convert_string_to_list(os.getenv("AZURE_OPENAI_GPT_5_MODELS", ""))
-        self.google_genai_models = self.convert_string_to_list(os.getenv("GOOGLE_GENAI_MODELS", ""))
-        self.gpt_oss_models = self.convert_string_to_list(os.getenv("GPT_OSS_MODELS", ""))
-        self.openai_models = self.convert_string_to_list(os.getenv("OPENAI_MODELS", ""))
- 
+        # Azure OpenAI configuration
+        self.__azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", None)
+        self.__azure_api_base = os.getenv("AZURE_ENDPOINT", None)
+        self.__azure_api_version = os.getenv("OPENAI_API_VERSION", None)
+        self.azure_openai_models = []
+        if self.__azure_api_key and self.__azure_api_base and self.__azure_api_version:
+            self.azure_openai_models = self.convert_string_to_list(os.getenv("AZURE_OPENAI_MODELS", ""))
+
+        # Azure OpenAI GPT-5 configuration
+        self.__azure_gpt_5_api_key = os.getenv("AZURE_OPENAI_API_KEY_GPT_5", None)
+        self.__azure_gpt_5_api_base = os.getenv("AZURE_ENDPOINT_GPT_5", None)
+        self.__azure_gpt_5_api_version = os.getenv("OPENAI_API_VERSION_GPT_5", None)
+        self.azure_openai_gpt_5_models = []
+        if self.__azure_gpt_5_api_key and self.__azure_gpt_5_api_base and self.__azure_gpt_5_api_version:
+            self.azure_openai_gpt_5_models = self.convert_string_to_list(os.getenv("AZURE_OPENAI_GPT_5_MODELS", ""))
+
+        # Google Generative AI configuration
+        self.__gemini_api_key = os.getenv("GOOGLE_API_KEY", "")
+        self.google_genai_models = []
+        if self.__gemini_api_key:
+            self.google_genai_models = self.convert_string_to_list(os.getenv("GOOGLE_GENAI_MODELS", ""))
+
+        # GPT-OSS configuration
+        self.__gpt_oss_api_key = "gpt-oss-api-key"
+        self.__gpt_oss_base_url = os.getenv("GPT_OSS_BASE_URL_ENDPOINT", None)
+        self.gpt_oss_models = []
+        if self.__gpt_oss_api_key and self.__gpt_oss_base_url:
+            self.gpt_oss_models = self.convert_string_to_list(os.getenv("GPT_OSS_MODELS", ""))
+
+        # OpenAI configuration
+        self.__openai_api_key = os.getenv("OPENAI_API_KEY", None)
+        self.__openai_base_url = os.getenv("OPENAI_BASE_URL_ENDPOINT", None)
+        self.openai_models = []
+        if self.__openai_api_key and self.__openai_base_url:
+            self.openai_models = self.convert_string_to_list(os.getenv("OPENAI_MODELS", ""))
+
+
         self.azure_ai_model_service, self.azure_ai_model_service_gpt_5 = self.get_azure_ai_model_service()
 
         self.available_models = self.azure_openai_models + self.azure_openai_gpt_5_models + self.google_genai_models + self.gpt_oss_models + self.openai_models
@@ -54,28 +85,20 @@ class ModelService:
         """
         client_gpt, client_gpt_5 = None, None
 
-        api_key = os.getenv("AZURE_OPENAI_API_KEY", None)
-        api_base = os.getenv("AZURE_ENDPOINT", None)
-        api_version = os.getenv("OPENAI_API_VERSION", None)
-
-        if self.azure_openai_models and api_key and api_base and api_version:
+        if self.azure_openai_models and self.__azure_api_key and self.__azure_api_base and self.__azure_api_version:
             client_gpt = AzureAIModelService(
-                api_key=api_key,
-                api_base=api_base,
-                api_version=api_version,
+                api_key=self.__azure_api_key,
+                api_base=self.__azure_api_base,
+                api_version=self.__azure_api_version,
                 model=self.azure_openai_models[0],
                 chat_history_manager=self.chat_state_history_manager
             )
 
-        api_key = os.getenv("AZURE_OPENAI_API_KEY_GPT_5", None)
-        api_base = os.getenv("AZURE_ENDPOINT_GPT_5", None)
-        api_version = os.getenv("OPENAI_API_VERSION_GPT_5", None)
-
-        if self.azure_openai_gpt_5_models and api_key and api_base and api_version:
+        if self.azure_openai_gpt_5_models and self.__azure_gpt_5_api_key and self.__azure_gpt_5_api_base and self.__azure_gpt_5_api_version:
             client_gpt_5 = AzureAIModelService(
-                api_key=api_key,
-                api_base=api_base,
-                api_version=api_version,
+                api_key=self.__azure_gpt_5_api_key,
+                api_base=self.__azure_gpt_5_api_base,
+                api_version=self.__azure_gpt_5_api_version,
                 model=self.azure_openai_gpt_5_models[0],
                 chat_history_manager=self.chat_state_history_manager
             )
@@ -88,42 +111,40 @@ class ModelService:
         """
 
         if model_name in self.azure_openai_models:
-            api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-            if not api_key:
-                log.error("AZURE_OPENAI_API_KEY environment variable is not set.")
-                raise ValueError("AZURE_OPENAI_API_KEY is not set in environment variables.")
+            if not self.__azure_api_key or not self.__azure_api_base or not self.__azure_api_version:
+                log.error("Azure model's environment variable is not set.")
+                raise ValueError("Azure model's is not set in environment variables.")
 
             log.info(f"Loading OpenAI model: {model_name}")
             return AzureChatOpenAI(
-                openai_api_key=api_key,
-                azure_endpoint=os.getenv("AZURE_ENDPOINT", ""),
-                openai_api_version=os.getenv("OPENAI_API_VERSION", ""),
+                openai_api_key=self.__azure_api_key,
+                azure_endpoint=self.__azure_api_base,
+                openai_api_version=self.__azure_api_version,
                 azure_deployment=model_name,
                 temperature=temperature,
                 max_tokens=None,
             )
 
         if model_name in self.azure_openai_gpt_5_models:
-            api_key = os.getenv("AZURE_OPENAI_API_KEY_GPT_5", "")
             if model_name != "gpt-5-chat":
                 temperature = 1
-            if not api_key:
-                log.error("AZURE_OPENAI_API_KEY_GPT_5 environment variable is not set.")
-                raise ValueError("AZURE_OPENAI_API_KEY_GPT_5 is not set in environment variables.")
+            if not self.__azure_gpt_5_api_key or not self.__azure_gpt_5_api_base or not self.__azure_gpt_5_api_version:
+                log.error("Azure GPT-5 model's environment variable is not set.")
+                raise ValueError("Azure GPT-5 model's is not set in environment variables.")
 
             log.info(f"Loading OpenAI model: {model_name}")
             return AzureChatOpenAI(
-                openai_api_key=api_key,
-                azure_endpoint=os.getenv("AZURE_ENDPOINT_GPT_5", ""),
-                openai_api_version=os.getenv("OPENAI_API_VERSION_GPT_5", ""),
+                openai_api_key=self.__azure_gpt_5_api_key,
+                azure_endpoint=self.__azure_gpt_5_api_base,
+                openai_api_version=self.__azure_gpt_5_api_version,
                 azure_deployment=model_name,
                 temperature=temperature,
                 max_tokens=None,
             )
         
         if model_name in self.openai_models:
-            api_key = os.getenv("OPENAI_API_KEY")
-            base_url = os.getenv("OPENAI_BASE_URL_ENDPOINT", None)
+            api_key = self.__openai_api_key
+            base_url = self.__openai_base_url
             if not base_url:
                 log.error("OPENAI_BASE_URL_ENDPOINT environment variable is not set.")
                 raise ValueError("OPENAI_BASE_URL_ENDPOINT is not set in environment variables.")
@@ -137,29 +158,26 @@ class ModelService:
             )
 
         if model_name in self.google_genai_models:
-            api_key = os.getenv("GOOGLE_API_KEY", "")
-            if not api_key:
-                log.error("GOOGLE_API_KEY environment variable is not set.")
-                raise ValueError("GOOGLE_API_KEY is not set in environment variables.")
+            if not self.__gemini_api_key:
+                log.error("Google Generative AI model's environment variable is not set.")
+                raise ValueError("Google Generative AI model's is not set in environment variables.")
 
             log.info(f"Loading Google Generative AI model: {model_name}")
             return ChatGoogleGenerativeAI(
-                api_key=api_key,
+                api_key=self.__gemini_api_key,
                 model=model_name,
                 temperature=temperature,
             )
 
         if model_name in self.gpt_oss_models:
-            api_key = "gpt-oss-api-key"
-            base_url = os.getenv("GPT_OSS_BASE_URL_ENDPOINT", None)
-            if not base_url:
+            if not self.__gpt_oss_base_url:
                 log.error("GPT_OSS_BASE_URL_ENDPOINT environment variable is not set.")
                 raise ValueError("GPT_OSS_BASE_URL_ENDPOINT is not set in environment variables.")
 
             log.info(f"Loading GPT-OSS model: {model_name}")
             return ChatOpenAI(
-                openai_api_key=api_key,
-                openai_api_base=base_url,
+                openai_api_key=self.__gpt_oss_api_key,
+                openai_api_base=self.__gpt_oss_base_url,
                 model=model_name,
                 temperature=temperature,
             )

@@ -11,6 +11,86 @@ from telemetry_wrapper import logger as log, update_session_context
 from src.prompts.tool_validation_prompts import docstring_length,error_handling,safe_validation,validate_inputs,hardcoded_values,name_descriptiveness
 
 
+def safe_unparse(tree: ast.AST) -> str:
+    """
+    Safely unparse AST to source code, fixing known issues with parentheses.
+    ast.unparse() has a bug where it drops parentheses around expressions like:
+        **(options or {})  ->  **options or {}  (WRONG)
+    This function fixes that by post-processing the output.
+    """
+    code = ast.unparse(tree)
+    
+    # Fix ** unpacking with 'or' operator
+    # Order matters: more specific patterns first!
+    
+    # **func(nested()) or {} -> **(func(nested()) or {})  [nested function calls]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\([^)]*\([^)]*\)[^)]*\))\s+or\s+\{\}', r'**(\1 or {})', code)
+    # **func() or {} -> **(func() or {})  [function calls]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\([^)]*\))\s+or\s+\{\}', r'**(\1 or {})', code)
+    # **var["key"] or {} -> **(var["key"] or {})  [subscript with string key]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\[["\'][^\]]+["\']\])\s+or\s+\{\}', r'**(\1 or {})', code)
+    # **var[0] or {} -> **(var[0] or {})  [subscript with index]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\[[^\]]+\])\s+or\s+\{\}', r'**(\1 or {})', code)
+    # **expr.attr or {} -> **(expr.attr or {})  [has dots]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_.]+)\s+or\s+\{\}', r'**(\1 or {})', code)
+    # **a or b or {} -> **((a or b) or {})  [chained or - partial fix]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+\{\}', r'**((\1 or \2) or {})', code)
+    # **var or default -> **(var or default)  [two identifiers]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+([a-zA-Z_][a-zA-Z0-9_]*)', r'**(\1 or \2)', code)
+    # **var or {"key": val} -> **(var or {"key": val})  [non-empty dict default]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+(\{[^}]+\})', r'**(\1 or \2)', code)
+    # **var or {} -> **(var or {})  [simple case - last]
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+\{\}', r'**(\1 or {})', code)
+    
+    # Fix ** unpacking with 'and' operator (order: specific to general)
+    # **func(nested()) and {} -> **(func(nested()) and {})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\([^)]*\([^)]*\)[^)]*\))\s+and\s+\{\}', r'**(\1 and {})', code)
+    # **func() and {} -> **(func() and {})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\([^)]*\))\s+and\s+\{\}', r'**(\1 and {})', code)
+    # **var["key"] and {} -> **(var["key"] and {})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\[["\'][^\]]+["\']\])\s+and\s+\{\}', r'**(\1 and {})', code)
+    # **var[0] and {} -> **(var[0] and {})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*\[[^\]]+\])\s+and\s+\{\}', r'**(\1 and {})', code)
+    # **expr.attr and {} -> **(expr.attr and {})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_.]+)\s+and\s+\{\}', r'**(\1 and {})', code)
+    # **var and default -> **(var and default)
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+and\s+([a-zA-Z_][a-zA-Z0-9_]*)', r'**(\1 and \2)', code)
+    # **var and {"key": val} -> **(var and {"key": val})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+and\s+(\{[^}]+\})', r'**(\1 and \2)', code)
+    # **var and {} -> **(var and {})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+and\s+\{\}', r'**(\1 and {})', code)
+    
+    # Fix ** unpacking with ternary (if/else)
+    # **var if cond else {} -> **(var if cond else {})
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+if\s+(.+?)\s+else\s+\{\}', r'**(\1 if \2 else {})', code)
+    # **var if cond else default -> **(var if cond else default)
+    code = re.sub(r'\*\*([a-zA-Z_][a-zA-Z0-9_]*)\s+if\s+(.+?)\s+else\s+([a-zA-Z_][a-zA-Z0-9_]*)', r'**(\1 if \2 else \3)', code)
+    
+    # Fix * list unpacking with 'or' operator (order: specific to general)
+    # *var[0] or [] -> *(var[0] or [])
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*\[[^\]]+\])\s+or\s+\[\]', r'*(\1 or [])', code)
+    # *expr.attr or [] -> *(expr.attr or [])
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_.]+)\s+or\s+\[\]', r'*(\1 or [])', code)
+    # *items or [1, 2] -> *(items or [1, 2])  [non-empty list default]
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+(\[[^\]]+\])', r'*(\1 or \2)', code)
+    # *items or default -> *(items or default)
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+([a-zA-Z_][a-zA-Z0-9_]*)', r'*(\1 or \2)', code)
+    # *items or [] -> *(items or [])
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*)\s+or\s+\[\]', r'*(\1 or [])', code)
+    
+    # Fix * list unpacking with 'and' operator
+    # *var[0] and [] -> *(var[0] and [])
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*\[[^\]]+\])\s+and\s+\[\]', r'*(\1 and [])', code)
+    # *items and [1, 2] -> *(items and [1, 2])  [non-empty list default]
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*)\s+and\s+(\[[^\]]+\])', r'*(\1 and \2)', code)
+    # *items and [] -> *(items and [])
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*)\s+and\s+\[\]', r'*(\1 and [])', code)
+    # *items and default -> *(items and default)
+    code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*)\s+and\s+([a-zA-Z_][a-zA-Z0-9_]*)', r'*(\1 and \2)', code)
+    
+    return code
+
+
 class ToolValidationState(BaseModel):
     code: Annotated[Optional[str],lambda x, y: x or y] = None
     model: Annotated[Optional[str],lambda x, y: x or y] = None
@@ -155,7 +235,7 @@ def rename_function(code_str: str) -> str:
         tree = ast.parse(code_str)
         tree = FunctionRenamer().visit(tree)
         ast.fix_missing_locations(tree)
-        new_code = ast.unparse(tree)
+        new_code = safe_unparse(tree)
         return new_code
     except Exception as e:
         return f"Error: {e}"

@@ -13,9 +13,13 @@ new/
 
 *.ipynb
 *.zip
+!Export_Agent/Frontend-Export.zip
+Export_Agent/Agentcode/Agent_Frontend/
 
 .vscode/
 
+src/inference/chat_logs/
+agent_workspaces/
 onboarded_tools/
 user_uploads/
 evaluation_uploads/

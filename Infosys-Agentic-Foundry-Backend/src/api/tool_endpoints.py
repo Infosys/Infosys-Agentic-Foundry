@@ -19,10 +19,10 @@ except Exception:  # pragma: no cover
     MISSING = object()
     def fields(x):
         return []
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, Query, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, Query, File, Form, Body
 
 from src.tools.tool_validation import graph
-from src.schemas import ToolData, UpdateToolRequest, DeleteToolRequest, TagIdName, ExecuteRequest, ExecuteResponse, ParamInfo, McpToolUpdateRequest, McpToolTestRequest, McpToolTestResponse, InlineMcpRequest, InlineMcpIntrospectResponse, InlineMcpExecuteResponse, InlineMcpErrorResponse
+from src.schemas import ToolData, UpdateToolRequest,AddToolRequest, DeleteToolRequest, TagIdName, ExecuteRequest, ExecuteResponse, ParamInfo, McpToolUpdateRequest, McpToolTestRequest, McpToolTestResponse, InlineMcpRequest, InlineMcpIntrospectResponse, InlineMcpExecuteResponse, InlineMcpErrorResponse
 from src.database.services import ToolService, McpToolService
 
 from src.api.dependencies import ServiceProvider # The dependency provider
@@ -557,38 +557,26 @@ async def _execute_tool_with_timeout(func, args: dict, timeout_sec: int) -> tupl
 
 @router.post("/add")
 async def add_tool_endpoint(
-    request: Request, 
-    tool_description: str = Form(..., description="A brief description of the tool."),
-    code_snippet: Optional[str] = Form(None, description="The Python code snippet for the tool's function (required if no file is uploaded)."),
-    model_name: str = Form(..., description="The name of the LLM model to be used for docstring regeneration."),
-    created_by: str = Form(..., description="The email ID of the user who created the tool."),
-    tag_ids: Optional[str] = Form(None, description="Optional comma-separated list of tag IDs for the tool."),
-    tool_file: Union[UploadFile, str, None] = File(None, description="Optional: Upload a .py file for the tool (required if code_snippet is empty)."),
+    request: Request,
+    add_tool_request: AddToolRequest = Body(..., description="Tool details as JSON object."),
     tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-    user_data: User = Depends(get_current_user),
-    force_add: Optional[bool] = False,
-    is_validator: Optional[bool] = Query(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
+    user_data: User = Depends(get_current_user)
 ):
     """
     Adds a new tool to the tool table.
 
     Parameters:
     ----------
-    tool_description : str
-        A brief description of the tool.
-    code_snippet : str, optional
-        The Python code snippet for the tool's function (required if no file is uploaded).
-    model_name : str
-        The name of the LLM model to be used for docstring regeneration.
-    created_by : str
-        The email ID of the user who created the tool.
-    tag_ids : str, optional
-        Optional comma-separated list of tag IDs for the tool.
-    tool_file : UploadFile, optional
-        Upload a .py file for the tool (required if code_snippet is empty).
-    is_validator : bool, optional
-        Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.
+    add_tool_request : AddToolRequest
+        JSON object containing:
+        - tool_description: A brief description of the tool.
+        - code_snippet: The Python code snippet for the tool's function.
+        - model_name: The name of the LLM model to be used for docstring regeneration.
+        - created_by: The email ID of the user who created the tool.
+        - tag_ids: Optional comma-separated string or list of tag IDs for the tool.
+        - force_add: Force add flag for bypassing certain validations.
+        - is_validator: Indicates if the tool is a validator tool.
 
     Returns:
     -------
@@ -606,8 +594,6 @@ async def add_tool_endpoint(
     - is_created : bool
         Indicates whether the tool was successfully created.
     """
-    if isinstance(tool_file, str):
-        tool_file = None
 
     # Check permissions first
     if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools"):
@@ -616,19 +602,107 @@ async def add_tool_endpoint(
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
 
-    # Handle file upload or use code_snippet
-    final_code_snippet = code_snippet
-    if tool_file and tool_file.filename:
-        if not tool_file.filename.endswith(".py"):
-            raise HTTPException(status_code=400, detail="Only .py files can be uploaded for tools.")
-        final_code_snippet = await tool_service._read_uploaded_file_content(tool_file)
-        if not final_code_snippet:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty or could not be read.")
-    elif not code_snippet:
-        raise HTTPException(status_code=400, detail="Either 'code_snippet' or a '.py' file must be provided.")
+    # Validate code_snippet is provided
+    if not add_tool_request.code_snippet:
+        raise HTTPException(status_code=400, detail="'code_snippet' is required.")
 
-    if not final_code_snippet:
-        raise HTTPException(status_code=400, detail="Either 'code_snippet' or a '.py' file must be provided.")
+    # Convert tag_ids from comma-separated string to list if provided
+    tag_ids_list = []
+    if add_tool_request.tag_ids:
+        if isinstance(add_tool_request.tag_ids, str):
+            tag_ids_list = [t.strip() for t in add_tool_request.tag_ids.split(',') if t.strip()]
+        else:
+            tag_ids_list = add_tool_request.tag_ids
+
+    # Create tool_data dictionary compatible with ToolData schema
+    tool_data_dict = {
+        "tool_description": add_tool_request.tool_description.strip(),
+        "code_snippet": add_tool_request.code_snippet.strip(),
+        "model_name": add_tool_request.model_name.strip(),
+        "created_by": add_tool_request.created_by.strip(),
+        "tag_ids": tag_ids_list
+    }
+
+    update_session_context(
+        model_used=add_tool_request.model_name,
+        tags=tag_ids_list,
+        user_session=user_session,
+        user_id=user_id
+    )
+    register(
+            project_name='add-tool',
+            auto_instrument=True,
+            set_global_tracer_provider=False,
+            batch=True
+        )
+    with traced_project_context_sync('add-tool'):
+        status = await tool_service.create_tool(tool_data=tool_data_dict, force_add=add_tool_request.force_add, is_validator=add_tool_request.is_validator)
+        log.debug(f"Tool creation status: {status}")
+
+    update_session_context(model_used='Unassigned',
+                            tags='Unassigned',
+                            tool_id='Unassigned',
+                            tool_name='Unassigned',)
+    if not status.get("is_created"):
+        if not status.get("warnings"):
+            raise HTTPException(status_code=400, detail=status.get("message"))
+    return status
+
+
+@router.post("/add-with-file")
+async def add_tool_with_file_endpoint(
+    request: Request,
+    tool_description: str = Form(..., description="A brief description of the tool."),
+    model_name: str = Form(..., description="The name of the LLM model to be used for docstring regeneration."),
+    created_by: str = Form(..., description="The email ID of the user who created the tool."),
+    tool_file: UploadFile = File(..., description="Upload a .py file for the tool."),
+    tag_ids: Optional[str] = Form(None, description="Optional comma-separated string of tag IDs for the tool."),
+    force_add: Optional[bool] = Form(False, description="Force add flag for bypassing certain validations."),
+    is_validator: Optional[bool] = Form(False, description="Indicates if the tool is a validator tool."),
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Adds a new tool to the tool table by uploading a .py file.
+    Use this endpoint when you want to upload a file instead of pasting code.
+
+    Parameters:
+    ----------
+    tool_description : str
+        A brief description of the tool.
+    model_name : str
+        The name of the LLM model to be used for docstring regeneration.
+    created_by : str
+        The email ID of the user who created the tool.
+    tool_file : UploadFile
+        Upload a .py file for the tool.
+    tag_ids : str, optional
+        Optional comma-separated string of tag IDs for the tool.
+    force_add : bool, optional
+        Force add flag for bypassing certain validations.
+    is_validator : bool, optional
+        Indicates if the tool is a validator tool.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the status of the operation.
+    """
+    # Check permissions first
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools"):
+        raise HTTPException(status_code=403, detail="You don't have permission to create tools. Only admins and developers can perform this action")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+
+    # Validate file upload
+    if not tool_file.filename.endswith(".py"):
+        raise HTTPException(status_code=400, detail="Only .py files can be uploaded for tools.")
+    
+    code_snippet = await tool_service._read_uploaded_file_content(tool_file)
+    if not code_snippet:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty or could not be read.")
 
     # Convert tag_ids from comma-separated string to list if provided
     tag_ids_list = []
@@ -638,7 +712,7 @@ async def add_tool_endpoint(
     # Create tool_data dictionary compatible with ToolData schema
     tool_data_dict = {
         "tool_description": tool_description.strip(),
-        "code_snippet": final_code_snippet,
+        "code_snippet": code_snippet,
         "model_name": model_name.strip(),
         "created_by": created_by.strip(),
         "tag_ids": tag_ids_list
