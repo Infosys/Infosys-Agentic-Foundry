@@ -1,4 +1,62 @@
 # Release Notes
+
+## Version 1.7.0 - January 2026
+
+### Features
+
+* **Agent Pipelines**
+Introduced agent pipeline feature for chaining multiple agents to create deterministic workflows.
+
+* **Selective Tool Interrupt**
+Enabled selective tool interruption for agent templates (React, React Critic, Planner Executor, Planner Executor Critic, Meta, and Meta Planner).
+Expanded support to include both tools and agents.
+
+* **Meta & Meta Planner**
+Added plan verifier for Planner Meta agent template.
+Enabled validator support for Meta and Planner Meta agents.
+Enabled SSE streaming for Meta and Planner Meta agent responses.
+Meta and Meta Planner can now bind React Critic (RC) and Planner Executor (PE) worker agents (previously restricted to React and Planner-Executor-Critic).
+
+* **Hybrid Agent**
+Enabled SSE streaming for hybrid agent template.
+
+### Enhancements
+
+* **Chat & UX**
+Plans are displayed for planner agents even after SSE steps complete and regardless of plan verifier toggle.
+Display timestamp for all user queries.
+For Meta and Planner Meta agents, feedback buttons are now shown for the final response.
+
+* **Export Agent**
+Enabled SSE streaming for export agent inference.
+Introduced validator support within export agent workflows.
+Added ability to export agents along with tool dependencies and base requirements.
+Updated and improved inference and export endpoints for consistency.
+Reduced image sizes during export and trimmed requirements/dependency packages.
+Removed unused imports and integrated new response time logic.
+
+* **Tools & Admin**
+Tools saved as files on server during onboarding/update; supports update, delete, and restore aligned with DB logic.
+Admins can view installed packages, find missing dependencies referenced by older tools, and list pending modules needed for new tools (module name, tool code, user email, timestamp).
+
+* **Database & TTL**
+All database names configurable via .env.
+Modified logic for restoring long-term memory records in TTL system (fixed previous error during restore).
+MCP servers have recycle bin with TTL on deletions; endpoint to restore MCP servers from recycle bin items.
+Detect and display unused MCP servers in the unused tab on Admin page.
+
+* **Evaluation & Feedback**
+Persist evaluation and validation feedback (like/dislike/regenerate) for chat inferences to database.
+
+### Fixes
+
+* Resolved UI display issues and fixed feedback reset in plan verifier.
+* Fixed epoch handling in React Critic and Planner-Executor-Critic templates.
+* Resolved infinite loop in evaluation flow.
+* Fixed response time calculation for all agent templates.
+* Added exception handling to manage SBERT model connection failures.
+* Fixed Ground Truth page to display toast message for streaming response errors instead of leaving screen in idle state.
+
 ## Version 1.6.0 - December 18, 2025
 Everyone Release Notes – 1.6.0
  
