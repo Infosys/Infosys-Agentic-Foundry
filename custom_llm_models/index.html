@@ -9,10 +9,10 @@
       
       
       
-        <link rel="prev" href="../Features/">
+        <link rel="prev" href="../Installation/VM_Docker-Compose/">
       
       
-        <link rel="next" href="../Architecture/">
+        <link rel="next" href="../Agents_Design/overview/">
       
       
         
@@ -23,7 +23,7 @@
     
     
       
-        <title>Core Building Blocks - Agentic Foundry</title>
+        <title>Enabling Additional LLM Models - Agentic Foundry</title>
       
     
     
@@ -66,7 +66,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#enterprise-ai-agent-building-blocks" class="md-skip">
+        <a href="#adding-custom-llm-models" class="md-skip">
           Skip to content
         </a>
       
@@ -101,7 +101,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Core Building Blocks
+              Enabling Additional LLM Models
             
           </span>
         </div>
@@ -357,35 +357,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Core Building Blocks
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../core_building_blocks/" class="md-nav__link">
         
   
   
@@ -401,112 +376,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#enterprise-ai-agent-building-blocks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Enterprise AI Agent Building Blocks
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#1-agent-orchestration-mcp-registry" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Agent Orchestration &amp; MCP Registry
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-planner-tool-verifier" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Planner &amp; Tool Verifier
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-knowledge-memory-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Knowledge &amp; Memory Management
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#4-agent-evaluation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Agent Evaluation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#5-agent-telemetry" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Agent Telemetry
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#6-rai-guardrails" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        6. RAI Guardrails
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#7-optimization-scalability" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        7. Optimization &amp; Scalability
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -792,10 +661,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../custom_llm_models/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enabling Additional LLM Models
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -811,6 +707,136 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-add-environment-variables-in-env" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Add Environment Variables in .env
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-update-the-modelservice-constructor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Update the ModelService Constructor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-add-a-loading-block-in-_load_llm_instance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Add a Loading Block in _load_llm_instance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-install-the-required-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Install the Required Package
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-verify-the-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Verify the Integration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-example-adding-anthropic-claude" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete Example: Adding Anthropic Claude
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-a-custom-chat-model-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using a Custom Chat Model Class
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-of-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary of Changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#popular-langchain-provider-classes-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Popular LangChain Provider Classes Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2483,6 +2509,8 @@
   
   
   
+    
+  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
@@ -2491,10 +2519,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#enterprise-ai-agent-building-blocks" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Enterprise AI Agent Building Blocks
+        Prerequisites
       
     </span>
   </a>
@@ -2502,10 +2530,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#1-agent-orchestration-mcp-registry" class="md-nav__link">
+  <a href="#1-add-environment-variables-in-env" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Agent Orchestration &amp; MCP Registry
+        1. Add Environment Variables in .env
       
     </span>
   </a>
@@ -2513,10 +2541,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-planner-tool-verifier" class="md-nav__link">
+  <a href="#2-update-the-modelservice-constructor" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Planner &amp; Tool Verifier
+        2. Update the ModelService Constructor
       
     </span>
   </a>
@@ -2524,10 +2552,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-knowledge-memory-management" class="md-nav__link">
+  <a href="#3-add-a-loading-block-in-_load_llm_instance" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Knowledge &amp; Memory Management
+        3. Add a Loading Block in _load_llm_instance
       
     </span>
   </a>
@@ -2535,10 +2563,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-agent-evaluation" class="md-nav__link">
+  <a href="#4-install-the-required-package" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Agent Evaluation
+        4. Install the Required Package
       
     </span>
   </a>
@@ -2546,10 +2574,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-agent-telemetry" class="md-nav__link">
+  <a href="#5-verify-the-integration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Agent Telemetry
+        5. Verify the Integration
       
     </span>
   </a>
@@ -2557,10 +2585,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-rai-guardrails" class="md-nav__link">
+  <a href="#complete-example-adding-anthropic-claude" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. RAI Guardrails
+        Complete Example: Adding Anthropic Claude
       
     </span>
   </a>
@@ -2568,10 +2596,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-optimization-scalability" class="md-nav__link">
+  <a href="#using-a-custom-chat-model-class" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Optimization &amp; Scalability
+        Using a Custom Chat Model Class
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-of-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary of Changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#popular-langchain-provider-classes-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Popular LangChain Provider Classes Reference
       
     </span>
   </a>
@@ -2603,255 +2653,382 @@
 
 
 
-  <h1>Core Building Blocks</h1>
-
-<h2 id="enterprise-ai-agent-building-blocks">Enterprise AI Agent Building Blocks</h2>
-<p>These foundational components are critical for the creation and operation of autonomous agents. Each block encapsulates a key function, from task orchestration and memory management to evaluation, safety measures, and scalability. Together, they form a robust system that ensures agents function reliably, securely, and efficiently in dynamic environments.</p>
-<h2 id="1-agent-orchestration-mcp-registry">1. Agent Orchestration &amp; MCP Registry</h2>
-<p>The Agent Orchestration &amp; MCP Registry is the foundational layer that manages how agents collaborate, execute tasks, and communicate across platforms. It establishes a centralized system for coordinating multiple agents, ensuring they work together harmoniously, share responsibilities, and follow pre-defined workflows in a flexible and adaptive manner.</p>
-<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; 
-background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
-
-<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-  <strong style="color: #0d47a1; font-size: 13px;">Multi-Agent Coordination</strong>
-  <p style="margin: 5px 0;">Delegation, collaboration, and planning with team-based RBAC</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-  <strong style="color: #0d47a1; font-size: 13px;">Dynamic Orchestration</strong>
-  <p style="margin: 5px 0;">Intelligent planners (ReAct, CoT, task graphs) for adaptive workflows</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-  <strong style="color: #0d47a1; font-size: 13px;">Platform Integration</strong>
-  <p style="margin: 5px 0;">Runtime coordination through LangGraph, MCP, and workflow engines</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-  <strong style="color: #0d47a1; font-size: 13px;">Natural Language MCP</strong>
-  <p style="margin: 5px 0;">Convert agent functions into servers through conversation</p>
-</div>
-</div>
-</div>
-
-<p><strong>Multi-Agent Coordination:</strong> </p>
-<p>This involves intelligent delegation and management of tasks between multiple agents using Role-Based Access Control (RBAC). By defining roles and responsibilities, this module ensures that agents work in collaboration, respecting boundaries and optimizing their individual contributions to larger projects. It allows for complex, coordinated actions like joint problem-solving and information sharing across different agents or groups.</p>
-<p><strong>Dynamic Orchestration:</strong> </p>
-<p>This block uses advanced planners such as ReAct, Chain-of-Thought (CoT) reasoning, and task graphs to adapt workflows based on real-time needs. These tools help the system dynamically adjust task priorities, reassign tasks based on resource availability, and optimize time-sensitive operations.</p>
-<p><strong>Platform Integration:</strong> </p>
-<p>Integration with LangGraph, MCP, and other workflow engines ensures smooth communication across systems, allowing agents to connect with diverse platforms for task execution, information retrieval, or service integration. This ensures that agents can leverage external systems and resources while staying within the defined workflow.</p>
-<p><strong>Natural Language MCP:</strong> </p>
-<p>This component allows agents to interact with each other and users using natural language interfaces (NLIs). This feature transforms complex tasks and commands into a more intuitive, human-readable form, simplifying agent control and improving accessibility for non-technical users. Users can converse with agents to control them, get insights, or configure operations without needing deep technical expertise.</p>
+<h1 id="adding-custom-llm-models">Adding Custom LLM Models</h1>
+<p>This guide provides step-by-step instructions on how to integrate a new LLM provider into the framework. You will need to make changes in two files:</p>
+<ol>
+<li><strong><code>.env</code></strong> — Define your connection credentials and model names.</li>
+<li><strong><code>src/models/model_service.py</code></strong> — Register the new provider in the model service.</li>
+</ol>
 <hr />
-<h2 id="2-planner-tool-verifier">2. Planner &amp; Tool Verifier</h2>
-<p>The Planner &amp; Tool Verifier module focuses on evaluating and verifying the feasibility, logic, and execution of agent-generated plans. It ensures that agent decisions are grounded in reality, avoiding contradictions or inefficient actions. It also helps ensure that the tools agents call are used appropriately and effectively.</p>
-<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
-<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Feasibility Analysis</strong>
-<p style="margin: 5px 0;">Instant evaluation of every plan step for practical viability</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Logic Chain Validation</strong>
-<p style="margin: 5px 0;">Ensures logical connections with no gaps or contradictions</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Tool Call Verification</strong>
-<p style="margin: 5px 0;">User verification and argument editing before execution</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Learning System</strong>
-<p style="margin: 5px 0;">Learns from human corrections and preferences</p>
-</div>
-
-</div>
-</div>
-
-<p><strong>Feasibility Analysis:</strong> </p>
-<p>Before execution, each plan step is evaluated for feasibility, considering real-world constraints and data availability. The system checks whether the task is achievable within the given resources, time, and environment.</p>
-<p><strong>Logic Chain Validation:</strong> </p>
-<p>This ensures that plans are logically sound by confirming that each step follows from the last. It helps prevent logical gaps and contradictions, ensuring that no assumptions are made without proper validation. This guarantees that agents execute tasks in a structured and coherent manner.</p>
-<p><strong>Tool Call Verification:</strong> </p>
-<p>This feature enables agents to verify the tools they intend to use before executing them. This includes user validation of parameters and inputs to ensure that the right tool is being invoked with the correct arguments. If discrepancies are found, agents can prompt the user to modify or confirm the inputs before proceeding.</p>
-<p><strong>Learning System:</strong> </p>
-<p>Over time, the system learns from human interactions and feedback, adapting its decision-making processes. By learning from corrections and preferences, the planner can refine its judgment, becoming more efficient and accurate in future interactions. This feature ensures continuous improvement in how the agent handles new tasks and situations.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>API key (and optionally base URL, API version, or any other credentials) for the LLM provider you want to add.</li>
+<li>The list of model deployment names available under your provider account.</li>
+<li>If the provider is supported by LangChain, identify the corresponding LangChain chat model class (e.g., <code>ChatAnthropic</code>, <code>ChatMistralAI</code>, <code>ChatGroq</code>, etc.). If not, you will need a custom chat model class that inherits from LangChain's <code>BaseChatModel</code>.</li>
+</ul>
 <hr />
-<h2 id="3-knowledge-memory-management">3. Knowledge &amp; Memory Management</h2>
-<p>Knowledge &amp; Memory Management ensures agents retain contextual information and use it to make informed decisions. This module is critical for ensuring that agents don’t operate in isolation from previous interactions, creating a coherent and continuous understanding of tasks over time.</p>
-<div style="width: 450px; height: 105px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
-<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Enterprise Database</strong>
-<p style="margin: 5px 0;">Reliable, scalable memory persistence with high performance</p>
+<h2 id="1-add-environment-variables-in-env">1. Add Environment Variables in <code>.env</code></h2>
+<p>Open the <code>.env</code> file at the project root and add a new section for your LLM provider. You need to define:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API Key</td>
+<td>Authentication credential for the provider</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Base URL / Endpoint</td>
+<td>The API endpoint (if the provider requires one)</td>
+<td>Depends on provider</td>
+</tr>
+<tr>
+<td>API Version</td>
+<td>API version string (if the provider requires one)</td>
+<td>Depends on provider</td>
+</tr>
+<tr>
+<td>Models list</td>
+<td>Comma-separated list of model deployment names available under this provider</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Naming Convention</strong></p>
+<p>Use a consistent prefix for all keys related to your provider. </p>
+<div class="admonition example">
+<p class="admonition-title">Example</p>
+<p>if you are adding <strong>Anthropic Claude</strong> then use the prefix <code>ANTHROPIC_</code>:</p>
 </div>
+<div class="highlight"><pre><span></span><code># ─── Anthropic Claude Configuration ───
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
+ANTHROPIC_MODELS=claude-3-5-sonnet-20241022,claude-3-opus-20240229,claude-3-haiku-20240307
+</code></pre></div>
+<p>If your provider requires additional connection parameters (base URL, API version, region, etc.), add those as well:</p>
+<div class="highlight"><pre><span></span><code># ─── Example: Provider with Base URL and API Version ───
+MY_PROVIDER_API_KEY=your-api-key-here
+MY_PROVIDER_BASE_URL=https://api.myprovider.com/v1
+MY_PROVIDER_API_VERSION=2025-01-01
+MY_PROVIDER_MODELS=model-a,model-b,model-c
+</code></pre></div>
+<p><strong>Reference: Existing Provider Configurations</strong></p>
+<p>Below are the existing provider configurations in the <code>.env</code> file for reference:</p>
+<div class="highlight"><pre><span></span><code># ─── Azure OpenAI ───
+AZURE_OPENAI_API_KEY=your-azure-key
+AZURE_ENDPOINT=https://your-resource.openai.azure.com/
+OPENAI_API_VERSION=2024-02-15-preview
+AZURE_OPENAI_MODELS=gpt-4,gpt-4o,gpt-4o-mini
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Context-Aware Actions</strong>
-<p style="margin: 5px 0;">Every decision considers full historical context</p>
-</div>
+# ─── Google Generative AI ───
+GOOGLE_API_KEY=your-google-key
+GOOGLE_GENAI_MODELS=gemini-1.5-pro,gemini-1.5-flash
 
-</div>
-</div>
+# ─── OpenAI (Direct) ───
+OPENAI_API_KEY=your-openai-key
+OPENAI_BASE_URL_ENDPOINT=https://api.openai.com/v1
+OPENAI_MODELS=gpt-4o,gpt-4-turbo
 
-<p><strong>Enterprise Database:</strong> </p>
-<p>The memory system uses a reliable, high-performance enterprise-grade database to store knowledge, including past actions, decisions, interactions, and outcomes. This provides scalability, allowing agents to manage vast amounts of data while maintaining quick access to relevant information.</p>
-<p><strong>Context-Aware Actions:</strong> </p>
-<p>Every decision made by the agent is informed by historical context. This ensures that agents take into account past events, preferences, or mistakes when making decisions. For example, if a task was performed incorrectly in the past, the agent can take corrective actions or suggest different approaches based on previous failures or successes.</p>
+# ─── GPT-OSS ───
+GPT_OSS_BASE_URL_ENDPOINT=https://your-oss-endpoint.com
+GPT_OSS_MODELS=your-oss-model
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Important</p>
+<p>The models key (e.g., <code>ANTHROPIC_MODELS</code>) must contain a <strong>comma-separated list</strong> of the exact model deployment names your provider supports. These names are what you will use when requesting a model from the framework.</p>
+</div>
 <hr />
-<h2 id="4-agent-evaluation">4. Agent Evaluation</h2>
-<p>The Agent Evaluation module helps monitor and assess the performance of agents in real-time, ensuring they are working optimally. This system evaluates not only the results of tasks but also the efficiency of the processes used to achieve them.</p>
-<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
-<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+<h2 id="2-update-the-modelservice-constructor">2. Update the <code>ModelService</code> Constructor</h2>
+<p>Open <code>src/models/model_service.py</code> and make the following changes:</p>
+<p><strong>2.1 Add the Import</strong></p>
+<p>At the top of the file, import the LangChain chat model class for your provider.</p>
+<p><strong>Option A — LangChain has a built-in class for your provider:</strong></p>
+<p>LangChain provides built-in chat model classes for many popular providers. Install the provider's LangChain package and import it.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Example: Anthropic</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_anthropic</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatAnthropic</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">LLM-as-a-Judge</strong>
-<p style="margin: 5px 0;">Comprehensive performance assessment across agents and models</p>
-</div>
+<span class="c1"># Example: Mistral</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_mistralai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatMistralAI</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Tool Utilization Metrics</strong>
-<p style="margin: 5px 0;">Selection accuracy, usage efficiency, precision, success rate</p>
-</div>
+<span class="c1"># Example: Groq</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_groq</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatGroq</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Agent Efficiency Score</strong>
-<p style="margin: 5px 0;">Task decomposition, reasoning quality, robustness metrics</p>
-</div>
+<span class="c1"># Example: Cohere</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_cohere</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatCohere</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Interactive Dashboard</strong>
-<p style="margin: 5px 0;">Real-time visualization with advanced filtering capabilities</p>
-</div>
+<span class="c1"># Example: AWS Bedrock</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_aws</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatBedrock</span>
 
+<span class="c1"># Example: NVIDIA NIM</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_nvidia_ai_endpoints</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatNVIDIA</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You will also need to install the corresponding pip package. For example:
+<code>pip install langchain-anthropic</code> or <code>pip install langchain-mistralai</code></p>
 </div>
-</div>
+<p><strong>Option B — You have a custom chat model class:</strong></p>
+<p>If your LLM provider is not supported by LangChain natively, you can create a custom chat model class by inheriting from LangChain's <code>BaseChatModel</code>. The custom class must implement the required methods such as <code>_generate</code>, <code>_stream</code>, <code>bind_tools</code>, and define the <code>_llm_type</code> property. Once you have built your custom class, place it in an appropriate module inside the project and import it:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">your_module.your_custom_chat_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">YourCustomChatModel</span>
+</code></pre></div>
+<p><strong>2.2 Add Configuration Attributes in <code>__init__</code></strong></p>
+<p>Inside the <code>ModelService.__init__</code> method, add a new configuration block for your provider. Follow the existing pattern:</p>
+<ol>
+<li>Read your environment variables using <code>os.getenv()</code>.</li>
+<li>Initialize the models list as empty.</li>
+<li>Only populate the models list if the required credentials are present.</li>
+<li>Use the <code>convert_string_to_list()</code> helper to parse the comma-separated models string.</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chat_state_history_manager</span><span class="p">:</span> <span class="n">ChatStateHistoryManagerRepository</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># ... existing code ...</span>
 
-<p><strong>LLM-as-a-Judge:</strong> </p>
-<p>Leveraging advanced Large Language Models (LLMs), this module evaluates agent performance comprehensively. It provides detailed assessments of how well agents perform their tasks, examining reasoning quality, the accuracy of output, and alignment with objectives.</p>
-<p><strong>Tool Utilization Metrics:</strong> </p>
-<p>By analyzing key performance indicators (KPIs) such as tool selection accuracy, usage efficiency, and overall success rates, this block helps identify the most effective tools for specific tasks and pinpoints areas of inefficiency. It ensures that agents are always using the right tools for the job.</p>
-<p><strong>Agent Efficiency Score:</strong> </p>
-<p>This score assesses the overall efficiency of an agent. It considers factors like task decomposition (how well the agent breaks down complex tasks), reasoning quality (how logically sound and coherent its thought processes are), and robustness (how effectively the agent can handle disruptions or unexpected conditions).</p>
-<p><strong>Interactive Dashboard:</strong> </p>
-<p>A real-time, interactive dashboard provides insights into agent performance. With advanced filtering and visualization capabilities, users can track agent performance, identify trends, and act upon real-time data to optimize system operations.</p>
+    <span class="c1"># ─── Your New Provider Configuration ───</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">__my_provider_api_key</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;MY_PROVIDER_API_KEY&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">__my_provider_base_url</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;MY_PROVIDER_BASE_URL&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>       <span class="c1"># if needed</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">__my_provider_api_version</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;MY_PROVIDER_API_VERSION&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>  <span class="c1"># if needed</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">my_provider_models</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__my_provider_api_key</span><span class="p">:</span>  <span class="c1"># add other required checks as applicable</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">my_provider_models</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">convert_string_to_list</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;MY_PROVIDER_MODELS&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="p">)</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Use <code>self.__</code> (name mangling) for sensitive values like API keys and <code>self.</code> for non-sensitive values like the models list.</p>
+</div>
+<p><strong>2.3 Add Your Models to <code>available_models</code></strong></p>
+<p>In the same <code>__init__</code> method, append your new models list to <code>self.available_models</code>. Find the existing line and add your list:</p>
+<div class="highlight"><pre><span></span><code>    <span class="bp">self</span><span class="o">.</span><span class="n">available_models</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">azure_openai_models</span>
+        <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">azure_openai_gpt_5_models</span>
+        <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">google_genai_models</span>
+        <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpt_oss_models</span>
+        <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">openai_models</span>
+        <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">my_provider_models</span>       <span class="c1"># ← Add your new list here</span>
+    <span class="p">)</span>
+</code></pre></div>
 <hr />
-<h2 id="5-agent-telemetry">5. Agent Telemetry</h2>
-<p>Enables real-time observability into agent behavior and actions. It integrates telemetry frameworks for logging, monitoring, tracing, and generating governance-ready logs.</p>
-<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
-<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+<h2 id="3-add-a-loading-block-in-_load_llm_instance">3. Add a Loading Block in <code>_load_llm_instance</code></h2>
+<p>Inside the <code>_load_llm_instance</code> method, add a new <code>if</code> block that checks whether the requested <code>model_name</code> belongs to your provider's models list. If it does, validate the required credentials and return an instance of the chat model class.</p>
+<p>Insert the new block <strong>before</strong> the final error-raising lines at the end of the method:</p>
+<div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_load_llm_instance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
+    <span class="c1"># ... existing if blocks for Azure, Google, OpenAI, GPT-OSS ...</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">OpenTelemetry Integration</strong>
-<p style="margin: 5px 0;">Framework-level logging with Elasticsearch & Grafana</p>
-</div>
+    <span class="c1"># ─── Your New Provider ───</span>
+    <span class="k">if</span> <span class="n">model_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">my_provider_models</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">__my_provider_api_key</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;MY_PROVIDER_API_KEY environment variable is not set.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;MY_PROVIDER_API_KEY is not set in environment variables.&quot;</span><span class="p">)</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Arize-Phoenix Tracing</strong>
-<p style="margin: 5px 0;">Detailed agent-level behavior insights and analysis</p>
-</div>
+        <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loading My Provider model: </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">MyProviderChatModel</span><span class="p">(</span>
+            <span class="n">api_key</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__my_provider_api_key</span><span class="p">,</span>
+            <span class="c1"># base_url=self.__my_provider_base_url,      # if needed</span>
+            <span class="c1"># api_version=self.__my_provider_api_version, # if needed</span>
+            <span class="n">model</span><span class="o">=</span><span class="n">model_name</span><span class="p">,</span>
+            <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
+        <span class="p">)</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Real-time Monitoring</strong>
-<p style="margin: 5px 0;">Live tracking of agent actions and performance</p>
+    <span class="c1"># This must remain at the very end</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid model name: </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Invalid model name specified&quot;</span><span class="p">)</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Important</p>
+<p>The constructor parameters (<code>api_key</code>, <code>model</code>, <code>temperature</code>, etc.) vary across different LangChain chat model classes. Refer to the specific class documentation to use the correct parameter names.</p>
 </div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Audit-Ready Logs</strong>
-<p style="margin: 5px 0;">Compliance-ready logging for governance requirements</p>
-</div>
-
-</div>
-</div>
-
-<p><strong>OpenTelemetry Integration:</strong> </p>
-<p>Leveraging frameworks like OpenTelemetry, this system integrates seamlessly with logging tools such as Elasticsearch and Grafana. It enables detailed logging and monitoring of agent behavior, actions, and system performance, ensuring that every step is recorded and traceable.</p>
-<p><strong>Arize-Phoenix Tracing:</strong> </p>
-<p>This enables deep visibility into agent-level behavior and decision-making processes. By tracing how agents arrive at conclusions or take actions, users can analyze decision pathways and improve process transparency.</p>
-<p><strong>Real-time Monitoring:</strong> </p>
-<p>Provides live tracking of agent actions and performance, allowing for proactive intervention when necessary. Users can monitor agent behavior in real-time, ensuring that any issues or inefficiencies are quickly addressed.</p>
-<p><strong>Audit-Ready Logs:</strong> </p>
-<p>To comply with regulatory requirements, this module generates logs that are formatted for easy auditing. It ensures the system is fully compliant with governance and legal standards, providing an accurate record of all agent activities.</p>
 <hr />
-<h2 id="6-rai-guardrails">6. RAI Guardrails</h2>
-<p>Protects agent systems from unsafe, biased, or inaccurate behaviors using automated red teaming, PII protection, hallucination detection, and fairness strategies.</p>
-<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
-<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Automated Red Teaming</strong>
-<p style="margin: 5px 0;">Continuous vulnerability scanning and security assessment</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Hallucination Detection</strong>
-<p style="margin: 5px 0;">Detect and mitigate LLM drift and inaccuracies</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">PII Protection</strong>
-<p style="margin: 5px 0;">Analyze, anonymize, and hash personal data in interactions</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Bias Mitigation</strong>
-<p style="margin: 5px 0;">Detect and reduce bias in LLMs and ML models</p>
-</div>
-
-</div>
-</div>
-
-<p><strong>Automated Red Teaming:</strong> </p>
-<p>This continuously assesses vulnerabilities in the system by simulating potential attacks or misuse. Automated red-teaming helps identify weaknesses in the agent system’s defenses, improving overall system security.</p>
-<p><strong>Hallucination Detection:</strong> </p>
-<p>Agents that rely on LLMs are prone to generating “hallucinations” (incorrect or fabricated information). This system detects and mitigates hallucinations, ensuring that agents only provide valid, fact-based output.</p>
-<p><strong>PII Protection:</strong> </p>
-<p>This block helps safeguard personal data by anonymizing and hashing sensitive information before it’s used by agents. It ensures compliance with data privacy regulations (e.g., GDPR) and protects against accidental data breaches.</p>
-<p><strong>Bias Mitigation:</strong> </p>
-<p>This module detects and reduces biases in machine learning models and LLMs. By ensuring that agents do not exhibit bias in decision-making, it promotes fairness and inclusivity, which is especially important in sensitive applications like hiring or legal decisions.</p>
+<h2 id="4-install-the-required-package">4. Install the Required Package</h2>
+<p>If you are using a LangChain built-in provider class, install it via pip:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>langchain-anthropic<span class="w">      </span><span class="c1"># for Anthropic Claude</span>
+pip<span class="w"> </span>install<span class="w"> </span>langchain-mistralai<span class="w">      </span><span class="c1"># for Mistral AI</span>
+pip<span class="w"> </span>install<span class="w"> </span>langchain-groq<span class="w">           </span><span class="c1"># for Groq</span>
+pip<span class="w"> </span>install<span class="w"> </span>langchain-cohere<span class="w">         </span><span class="c1"># for Cohere</span>
+pip<span class="w"> </span>install<span class="w"> </span>langchain-aws<span class="w">            </span><span class="c1"># for AWS Bedrock</span>
+pip<span class="w"> </span>install<span class="w"> </span>langchain-nvidia-ai-endpoints<span class="w">  </span><span class="c1"># for NVIDIA NIM</span>
+pip<span class="w"> </span>install<span class="w"> </span>langchain-together<span class="w">       </span><span class="c1"># for Together AI</span>
+pip<span class="w"> </span>install<span class="w"> </span>langchain-fireworks<span class="w">      </span><span class="c1"># for Fireworks AI</span>
+</code></pre></div>
+<p>Also add the package to <code>requirements.txt</code> so it is installed during deployment.</p>
 <hr />
-<h2 id="7-optimization-scalability">7. Optimization &amp; Scalability</h2>
-<p>Ensures your system scales with efficiency. Supports advanced prompt optimization, role-based personas, message-driven workflows, and scalable service orchestration.</p>
-<div style="width: 450px; height: 195px; border: 1px solid #2979ff; border-radius: 6px; padding: 10px; background-color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.1); font-size: 10px; overflow: auto;">
-<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+<h2 id="5-verify-the-integration">5. Verify the Integration</h2>
+<p>After making the above changes:</p>
+<ol>
+<li><strong>Restart the application</strong> to ensure the new environment variables are loaded.</li>
+<li>Call the <code>/utility/get/models</code> API endpoint to confirm your new models appear in the available models list.</li>
+<li>Test model invocation by selecting one of your new model names in an agent configuration or API call.</li>
+</ol>
+<hr />
+<h2 id="complete-example-adding-anthropic-claude">Complete Example: Adding Anthropic Claude</h2>
+<p>Below is a full worked example showing all changes needed to add Anthropic Claude support.</p>
+<div class="admonition example">
+<p class="admonition-title">Example</p>
+<p><strong><code>.env</code></strong></p>
+<div class="highlight"><pre><span></span><code># ─── Anthropic Claude Configuration ───
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
+ANTHROPIC_MODELS=claude-3-5-sonnet-20241022,claude-3-opus-20240229,claude-3-haiku-20240307
+</code></pre></div>
+<p><strong><code>src/models/model_service.py</code></strong></p>
+<p><strong>Import:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_anthropic</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatAnthropic</span>
+</code></pre></div>
+<p><strong>Constructor (inside <code>__init__</code>):</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Anthropic Claude configuration</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">__anthropic_api_key</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ANTHROPIC_API_KEY&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">anthropic_models</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__anthropic_api_key</span><span class="p">:</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">anthropic_models</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">convert_string_to_list</span><span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;ANTHROPIC_MODELS&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+</code></pre></div>
+<p><strong>Available models list:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="bp">self</span><span class="o">.</span><span class="n">available_models</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">azure_openai_models</span>
+    <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">azure_openai_gpt_5_models</span>
+    <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">google_genai_models</span>
+    <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpt_oss_models</span>
+    <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">openai_models</span>
+    <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">anthropic_models</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Loading block (inside <code>_load_llm_instance</code>):</strong></p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span> <span class="n">model_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">anthropic_models</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">__anthropic_api_key</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;ANTHROPIC_API_KEY environment variable is not set.&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;ANTHROPIC_API_KEY is not set in environment variables.&quot;</span><span class="p">)</span>
 
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Prompt Optimizer</strong>
-<p style="margin: 5px 0;">Real-time refinement with self-improving AI capabilities</p>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loading Anthropic model: </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ChatAnthropic</span><span class="p">(</span>
+        <span class="n">api_key</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__anthropic_api_key</span><span class="p">,</span>
+        <span class="n">model</span><span class="o">=</span><span class="n">model_name</span><span class="p">,</span>
+        <span class="n">temperature</span><span class="o">=</span><span class="n">temperature</span><span class="p">,</span>
+        <span class="n">max_retries</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div>
 </div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Role-Based Prompting</strong>
-<p style="margin: 5px 0;">Automatic persona assumption for optimal task execution</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">Azure Service Bus</strong>
-<p style="margin: 5px 0;">Reliable message passing with event-driven workflows</p>
-</div>
-
-<div style="background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 5px; padding: 8px;">
-<strong style="color: #0d47a1; font-size: 13px;">KEDA + Dapr</strong>
-<p style="margin: 5px 0;">Auto-scaling and seamless service communication</p>
-</div>
-
-</div>
-</div>
-
-<p><strong>Prompt Optimizer:</strong> </p>
-<p>This tool continuously refines prompts based on agent performance and user feedback. It helps enhance task accuracy and efficiency by making iterative adjustments to the prompts used in tasks, ensuring that agents perform at their highest capability.</p>
-<p><strong>Role-Based Prompting:</strong> </p>
-<p>This system automatically adjusts the agent’s persona based on the task at hand. By tailoring the agent’s behavior and communication style, it ensures that tasks are executed in the most efficient manner possible, considering the specific context.</p>
-<p><strong>Azure Service Bus:</strong> </p>
-<p>A cloud-based message-passing infrastructure that ensures reliable communication between services. It facilitates event-driven workflows, ensuring that messages and data are passed efficiently and without bottlenecks.</p>
-<p><strong>KEDA + Dapr:</strong> </p>
-<p>These technologies provide auto-scaling capabilities to dynamically adjust resources based on real-time load and demand. This ensures that the system can handle sudden spikes in traffic without degradation of performance.</p>
+<hr />
+<h2 id="using-a-custom-chat-model-class">Using a Custom Chat Model Class</h2>
+<p>If your LLM provider does not have a LangChain integration, you can create a custom chat model class. At a high level, your custom class should:</p>
+<ol>
+<li><strong>Inherit from <code>BaseChatModel</code></strong> (from <code>langchain_core.language_models.chat_models</code>).</li>
+<li><strong>Implement <code>_generate</code></strong> — Makes the API call and returns a <code>ChatResult</code>.</li>
+<li><strong>Implement <code>_stream</code></strong> (optional) — For streaming responses, yields <code>ChatGenerationChunk</code> objects.</li>
+<li><strong>Implement <code>bind_tools</code></strong> (optional) — For tool/function calling support, injects tool descriptions into the system prompt and parses tool call responses.</li>
+<li><strong>Define <code>_llm_type</code></strong> property — Returns a string identifier for your model type.</li>
+<li><strong>Handle authentication</strong> — Validate API credentials in a model validator or constructor.</li>
+</ol>
+<p>Once your custom class is ready, import it in <code>model_service.py</code> and return its instance from the <code>_load_llm_instance</code> method just like any other provider.</p>
+<hr />
+<h2 id="summary-of-changes">Summary of Changes</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What to Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.env</code></td>
+<td>Add API key, base URL (if needed), API version (if needed), and comma-separated models list using a consistent prefix</td>
+</tr>
+<tr>
+<td><code>src/models/model_service.py</code></td>
+<td><strong>Import</strong> — Add the chat model class import</td>
+</tr>
+<tr>
+<td></td>
+<td><strong><code>__init__</code></strong> — Read env vars, create models list, add to <code>available_models</code></td>
+</tr>
+<tr>
+<td></td>
+<td><strong><code>_load_llm_instance</code></strong> — Add an <code>if</code> block to validate credentials and return the model instance</td>
+</tr>
+<tr>
+<td><code>requirements.txt</code></td>
+<td>Add the pip package for the LangChain provider integration (if applicable)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="popular-langchain-provider-classes-reference">Popular LangChain Provider Classes Reference</h2>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Pip Package</th>
+<th>Class Name</th>
+<th>Key Env Variables</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Anthropic Claude</td>
+<td><code>langchain-anthropic</code></td>
+<td><code>ChatAnthropic</code></td>
+<td><code>ANTHROPIC_API_KEY</code></td>
+</tr>
+<tr>
+<td>Mistral AI</td>
+<td><code>langchain-mistralai</code></td>
+<td><code>ChatMistralAI</code></td>
+<td><code>MISTRAL_API_KEY</code></td>
+</tr>
+<tr>
+<td>Groq</td>
+<td><code>langchain-groq</code></td>
+<td><code>ChatGroq</code></td>
+<td><code>GROQ_API_KEY</code></td>
+</tr>
+<tr>
+<td>Cohere</td>
+<td><code>langchain-cohere</code></td>
+<td><code>ChatCohere</code></td>
+<td><code>COHERE_API_KEY</code></td>
+</tr>
+<tr>
+<td>AWS Bedrock</td>
+<td><code>langchain-aws</code></td>
+<td><code>ChatBedrock</code></td>
+<td><code>AWS_REGION</code>, AWS credentials</td>
+</tr>
+<tr>
+<td>NVIDIA NIM</td>
+<td><code>langchain-nvidia-ai-endpoints</code></td>
+<td><code>ChatNVIDIA</code></td>
+<td><code>NVIDIA_API_KEY</code></td>
+</tr>
+<tr>
+<td>Together AI</td>
+<td><code>langchain-together</code></td>
+<td><code>ChatTogether</code></td>
+<td><code>TOGETHER_API_KEY</code></td>
+</tr>
+<tr>
+<td>Fireworks AI</td>
+<td><code>langchain-fireworks</code></td>
+<td><code>ChatFireworks</code></td>
+<td><code>FIREWORKS_API_KEY</code></td>
+</tr>
+<tr>
+<td>Ollama (Local)</td>
+<td><code>langchain-ollama</code></td>
+<td><code>ChatOllama</code></td>
+<td><code>OLLAMA_BASE_URL</code></td>
+</tr>
+<tr>
+<td>Hugging Face</td>
+<td><code>langchain-huggingface</code></td>
+<td><code>ChatHuggingFace</code></td>
+<td><code>HUGGINGFACEHUB_API_TOKEN</code></td>
+</tr>
+</tbody>
+</table>
 
 
 
