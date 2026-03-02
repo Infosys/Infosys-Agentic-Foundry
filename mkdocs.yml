@@ -30,8 +30,10 @@ nav:
      - Linux: Installation/linux.md
      - Azure Kubernetes Service: Installation/Azure.md
      - Google Kubernetes Engine: Installation/GCP.md
+     - AWS Kubernetes Engine: Installation/AWS.md
      - Database setup: Installation/Database_Setup.md
      - VM installation using docker-compose: Installation/VM_Docker-Compose.md
+  - Enabling Additional LLM Models: custom_llm_models.md
   - Agents Design: 
      - Overview: Agents_Design/overview.md
      - React Agent Design: Agents_Design/React Agent Design.md

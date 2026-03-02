@@ -9,10 +9,10 @@
       
       
       
-        <link rel="prev" href="../reactAgent/">
+        <link rel="prev" href="../GCP/">
       
       
-        <link rel="next" href="../multiAgent/">
+        <link rel="next" href="../Database_Setup/">
       
       
         
@@ -23,7 +23,7 @@
     
     
       
-        <title>React Critic Agent Configuration - Agentic Foundry</title>
+        <title>AWS Kubernetes Engine - Agentic Foundry</title>
       
     
     
@@ -66,7 +66,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#react-critic-agent-onboarding" class="md-skip">
+        <a href="#project-setup-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -101,7 +101,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              React Critic Agent Configuration
+              AWS Kubernetes Engine
             
           </span>
         </div>
@@ -411,18 +411,20 @@
       
   
   
+    
   
   
+  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
           <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
@@ -443,7 +445,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -461,7 +463,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../Installation/windows/" class="md-nav__link">
+      <a href="../windows/" class="md-nav__link">
         
   
   
@@ -489,7 +491,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../Installation/linux/" class="md-nav__link">
+      <a href="../linux/" class="md-nav__link">
         
   
   
@@ -517,7 +519,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../Installation/Azure/" class="md-nav__link">
+      <a href="../Azure/" class="md-nav__link">
         
   
   
@@ -545,7 +547,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../Installation/GCP/" class="md-nav__link">
+      <a href="../GCP/" class="md-nav__link">
         
   
   
@@ -570,10 +572,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../Installation/AWS/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -589,6 +618,153 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aws-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AWS Deployment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AWS Deployment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arize-phoenix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ARIZE PHOENIX
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#redis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        REDIS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grafana" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAFANA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#elastic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ELASTIC SEARCH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OPEN-TELEMETRY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL SERVER
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BACKEND
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FRONTEND
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -601,7 +777,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../Installation/Database_Setup/" class="md-nav__link">
+      <a href="../Database_Setup/" class="md-nav__link">
         
   
   
@@ -629,7 +805,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../Installation/VM_Docker-Compose/" class="md-nav__link">
+      <a href="../VM_Docker-Compose/" class="md-nav__link">
         
   
   
@@ -1101,20 +1277,18 @@
       
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
         
           
           <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
@@ -1135,7 +1309,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_14">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1153,7 +1327,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../Overview/" class="md-nav__link">
+      <a href="../../agent_config/Overview/" class="md-nav__link">
         
   
   
@@ -1181,7 +1355,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reactAgent/" class="md-nav__link">
+      <a href="../../agent_config/reactAgent/" class="md-nav__link">
         
   
   
@@ -1206,35 +1380,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    React Critic Agent Configuration
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../agent_config/reactCritic/" class="md-nav__link">
         
   
   
@@ -1250,57 +1399,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#react-critic-agent-onboarding" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        React Critic Agent Onboarding
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#agent-updation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Agent Updation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#agent-deletion" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Agent Deletion
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1313,7 +1411,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../multiAgent/" class="md-nav__link">
+      <a href="../../agent_config/multiAgent/" class="md-nav__link">
         
   
   
@@ -1341,7 +1439,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../PlannerExecutor/" class="md-nav__link">
+      <a href="../../agent_config/PlannerExecutor/" class="md-nav__link">
         
   
   
@@ -1369,7 +1467,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../metaAgent/" class="md-nav__link">
+      <a href="../../agent_config/metaAgent/" class="md-nav__link">
         
   
   
@@ -1397,7 +1495,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../PlannerMeta/" class="md-nav__link">
+      <a href="../../agent_config/PlannerMeta/" class="md-nav__link">
         
   
   
@@ -1425,7 +1523,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../HybridAgent/" class="md-nav__link">
+      <a href="../../agent_config/HybridAgent/" class="md-nav__link">
         
   
   
@@ -2430,6 +2528,8 @@
   
   
   
+    
+  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
@@ -2438,10 +2538,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#react-critic-agent-onboarding" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       
-        React Critic Agent Onboarding
+        Prerequisites
       
     </span>
   </a>
@@ -2449,21 +2549,115 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#agent-updation" class="md-nav__link">
+  <a href="#aws-deployment" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Agent Updation
+        AWS Deployment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AWS Deployment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arize-phoenix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ARIZE PHOENIX
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#agent-deletion" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#redis" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Agent Deletion
+        REDIS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grafana" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAFANA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#elastic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ELASTIC SEARCH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OPEN-TELEMETRY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL SERVER
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BACKEND
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FRONTEND
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
       
     </span>
   </a>
@@ -2513,10 +2707,10 @@
     
     
       <li class="md-path__item">
-        <a href="../Overview/" class="md-path__link">
+        <a href="../windows/" class="md-path__link">
           
   <span class="md-ellipsis">
-    Agent Configuration
+    Installation
   </span>
 
         </a>
@@ -2535,26 +2729,262 @@
 
 
 
-  <h1>React Critic Agent Configuration</h1>
-
-<p>The <strong>React Critic Agent</strong> builds on the React Agent by adding a dual system prompt for improved self-critique and output quality. All onboarding and configuration steps are the same as the React Agent, except for the system prompt.</p>
-<hr />
-<h3 id="react-critic-agent-onboarding"><strong>React Critic Agent Onboarding</strong></h3>
-<p>Follow the onboarding steps in <a href="../reactAgent/#react-agent-onboarding">React Agent Onboarding</a>. The only difference is that the React Critic Agent generates two system prompts during setup:</p>
+<h1 id="project-setup-guide">Project Setup Guide</h1>
+<p>This document provides comprehensive step-by-step instructions to deploy Infosys Agentic Foundry in Amazon Elastic Kubernetes Service (EKS).</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Before setting up the project, ensure you have the following requirements and access permissions:</p>
+<p><strong>Ensure users have access to the following:</strong></p>
+<ul>
+<li><strong>Python 3.12+</strong> - Required Python version</li>
+<li>
+<p><strong>React</strong> - Frontend framework</p>
+</li>
+<li>
+<p>Infosys GitHub Repo: <a href="https://github.com/Infosys/Infosys-Agentic-Foundry">Infosys-Agentic-Foundry</a></p>
+</li>
+<li>Ensure users have their AWS Bedrock / Amazon Comprehend / Amazon Transcribe (Speech-to-Text) Keys and Endpoints as required.</li>
+<li>Ensure AWS resources are created, and you have access/connectivity to push and pull from these resources:<ul>
+<li>Amazon Elastic Container Registry (ECR)</li>
+<li>Amazon Elastic Kubernetes Service (EKS)</li>
+<li>Amazon RDS for PostgreSQL
+(Instance equivalent: db.t3.small – 2 vCPUs, 4 GiB memory, 32 GiB storage or as per requirement)</li>
+<li>Amazon EC2 Linux Virtual Machine</li>
+</ul>
+</li>
+<li>Install Docker, AWS CLI, and kubectl on your EC2 instance</li>
+<li>Create a namespace in the EKS cluster as per your requirement (Optional)</li>
+</ul>
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>create<span class="w"> </span>namespace<span class="w"> </span>&lt;namespace&gt;
+</code></pre></div>
+<h2 id="aws-deployment">AWS Deployment</h2>
+<h3 id="arize-phoenix">ARIZE PHOENIX</h3>
+<p><strong>STEPS FOR DEPLOYING ARIZE PHOENIX IN EKS</strong></p>
 <ol>
-<li><strong>Executor Agent System Prompt</strong>: Guides the agent's reasoning and actions (same as React Agent).</li>
-<li><strong>Critic Agent System Prompt</strong>: Adds critical evaluation, reviewing and refining the agent's reasoning, actions, and outputs.</li>
+<li>Create a YAML file for deploying Arize Phoenix as a container. You can use the Arize Phoenix image in the YAML file.</li>
 </ol>
-<hr />
-<h3 id="agent-updation"><strong>Agent Updation</strong></h3>
-<p>To update the agent (e.g., add/remove tools, update workflow), follow the same steps as in <a href="../reactAgent/#agent-updation">React Agent Updation</a>.</p>
-<hr />
-<h3 id="agent-deletion"><strong>Agent Deletion</strong></h3>
-<p>See <a href="../reactAgent/#agent-deletion">React Agent Deletion</a> for deletion steps and permission notes.</p>
-<div class="admonition warning">
-<p class="admonition-title">Important</p>
-<p>Only the original creator of the agent can update or delete it. Other users cannot modify or remove these resources.</p>
+<div class="highlight"><pre><span></span><code>nano<span class="w"> </span>filename1.yaml
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>You can get the image from <a href="https://arize.com/docs/phoenix/self-hosting/deployment-options/docker#docker">Docker - Phoenix</a> or any other trusted source which your organization allows</p>
 </div>
+<ol>
+<li>Now you need to use this command for creating deployment and service:
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>filename1.yaml
+</code></pre></div></li>
+<li>You can check the pods deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>You can check the services deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend and frontend folders before creating the respective docker images.</li>
+</ol>
+<h3 id="redis">REDIS</h3>
+<p><strong>STEPS FOR DEPLOYING REDIS IN EKS</strong></p>
+<ol>
+<li>Create a YAML file for deploying Redis as a container. You can use the Redis image in the YAML file.</li>
+</ol>
+<div class="highlight"><pre><span></span><code>nano<span class="w"> </span>filename2.yaml
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>You can get the image from <a href="https://hub.docker.com/layers/library/redis/8.2.1/images/sha256-b282a7c852f3920972c5fd13a47fcd26baa7f046b7e5633152714124f32bf28c">Image Layer Details - redis:8.2.1</a> or any other trusted source which your organization allows</p>
+</div>
+<ol>
+<li>Now you need to use this command for creating deployment and service:
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>filename2.yaml
+</code></pre></div></li>
+<li>You can check the pods deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>You can check the services deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend folder before creating the respective docker image.</li>
+</ol>
+<h3 id="grafana">GRAFANA</h3>
+<p><strong>STEPS FOR DEPLOYING GRAFANA IN EKS</strong></p>
+<ol>
+<li>Create a YAML file for deploying Grafana as a container. You can use the Grafana image in the YAML file.</li>
+</ol>
+<div class="highlight"><pre><span></span><code>nano<span class="w"> </span>filename3.yaml
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>You can get the image from <a href="https://hub.docker.com/layers/grafana/grafana/11.2.0/images/sha256-37a5d8860aef847dfa09f5f8947f010f6479f98cf7820b5186f9c6314b44be60?context=explore">Image Layer Details - grafana/grafana:11.2.0</a> or any other trusted source which your organization allows</p>
+</div>
+<ol>
+<li>Now you need to use this command for creating deployment and service:
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>filename3.yaml
+</code></pre></div></li>
+<li>You can check the pods deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>You can check the services deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend and frontend folders before creating the respective docker images.</li>
+</ol>
+<h3 id="elastic-search">ELASTIC SEARCH</h3>
+<p><strong>STEPS FOR DEPLOYING ELASTIC SEARCH IN EKS</strong></p>
+<ol>
+<li>Create a YAML file for deploying Elasticsearch as a container. You can use the Elasticsearch image in the YAML file.</li>
+</ol>
+<div class="highlight"><pre><span></span><code>nano<span class="w"> </span>filename4.yaml
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>You can get the image from <a href="https://hub.docker.com/_/elasticsearch">elasticsearch - Official Image | Docker Hub</a> or any other trusted source which your organization allows</p>
+</div>
+<ol>
+<li>Now you need to use this command for creating deployment and service:
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>filename4.yaml
+</code></pre></div></li>
+<li>You can check the pods deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>You can check the services deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>Note down the load balancer IP for the container and update it in the OpenTelemetry YAML script. </li>
+</ol>
+<h3 id="open-telemetry">OPEN-TELEMETRY</h3>
+<p><strong>STEPS FOR DEPLOYING OPEN-TELEMETRY IN EKS</strong></p>
+<ol>
+<li>Create a YAML file for deploying OpenTelemetry as a container, and use the OpenTelemetry Collector image in the YAML file. </li>
+</ol>
+<div class="highlight"><pre><span></span><code>nano<span class="w"> </span>filename5.yaml
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+<p>You can get the image from <a href="https://hub.docker.com/r/otel/opentelemetry-collector-contrib">otel/OpenTelemetry-collector-contrib - Docker Image </a> or any other trusted source your organization allows</p>
+</div>
+<ol>
+<li>Now you need to use this command for creating deployment and service:
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>filename5.yaml
+</code></pre></div></li>
+<li>You can check the pods deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></li>
+<li>
+<p>You can check the services deployed using the command below
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>namespace
+</code></pre></div></p>
+</li>
+<li>
+<p>Note down the load balancer IP for the container. You need to update it in the <code>.env</code> of your backend folder before creating the respective docker image.</p>
+</li>
+</ol>
+<h3 id="model-server">MODEL SERVER</h3>
+<p><strong>STEPS TO SET UP MODEL SERVER</strong></p>
+<p>For detailed instructions on deploying and configuring your model server, refer to the <a href="../../Model_server/#model-server-setup-localvm-deployment">Model Server Deployment</a> guide.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You need to update the URL for the model server in the <code>.env</code> of the backend folder</p>
+</div>
+<h3 id="backend">BACKEND</h3>
+<p><strong>STEPS TO SET UP BACKEND</strong></p>
+<p>Download Backend code from GitHub. For detailed instructions, see <a href="../windows/#download-the-backend-project-code">Download the Backend Project Code</a>.</p>
+<ol>
+<li>Log in to AWS EC2 Linux OS (AWS VM).</li>
+<li>Download Backend source code folder into AWS VM.</li>
+<li>Before starting backend image creation make sure that Arize Phoenix, OpenTelemetry, Grafana, Elasticsearch, Redis, and Model server are set up as per instructions provided above. Update the respective URLs of all these services in <code>.env</code> file.</li>
+<li>Update the remaining values for the variables in the <code>.env</code> file.</li>
+<li>Change working directory to the Backend Folder:
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span><span class="sb">`</span>&lt;BE<span class="w"> </span>foldername&gt;<span class="sb">`</span>
+</code></pre></div></li>
+<li>Create a Dockerfile inside the Backend folder to create docker image for Backend code.</li>
+<li>Create backend image:
+<div class="highlight"><pre><span></span><code><span class="w">    </span>docker<span class="w"> </span>build<span class="w"> </span>-f<span class="w"> </span><span class="sb">`</span>&lt;dockerfile-name&gt;<span class="sb">`</span><span class="w"> </span>-t<span class="w"> </span><span class="sb">`</span>&lt;tag-name&gt;<span class="sb">`</span>
+</code></pre></div></li>
+<li>Retag the created image to ECR name:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>tag<span class="w"> </span>localhost/&lt;imagename&gt;:&lt;tag&gt;<span class="w"> </span>&lt;ecr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
+</code></pre></div></li>
+<li>Log in to ECR:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>login<span class="w"> </span>&lt;ecr<span class="w"> </span>login<span class="w"> </span>server&gt;
+</code></pre></div></li>
+<li>Push the retagged image to ECR:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>push<span class="w"> </span>&lt;ecr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
+</code></pre></div></li>
+<li>Create backend deployment file:
+    <div class="highlight"><pre><span></span><code>nano<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
+</code></pre></div></li>
+<li>Log in to EKS</li>
+<li>Execute the deployment file:
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
+</code></pre></div></li>
+<li>Check if the pods are deployed successfully:
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</code></pre></div></li>
+<li>Check if the service is up &amp; running successfully:
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</code></pre></div></li>
+</ol>
+<h3 id="frontend">FRONTEND</h3>
+<p><strong>STEPS TO SET UP FRONTEND</strong></p>
+<p>Download Frontend code from GitHub. For detailed instructions, see <a href="../windows/#download-the-frontend-project-code">Download the Frontend Project Code</a>.</p>
+<ol>
+<li>Log in to AWS VM</li>
+<li>Download Frontend source code folder into AWS VM</li>
+<li>Before starting frontend image creation make sure that Arize Phoenix and Grafana are set up as per instructions provided above. Update the respective URLs of all these services in <code>.env</code> file.</li>
+<li>Change working directory to the Frontend Folder:
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="nb">cd</span><span class="w"> </span>&lt;Frontend<span class="w"> </span>foldername&gt;
+</code></pre></div></li>
+<li>Create a Dockerfile inside the Frontend folder to create docker image from Frontend code.</li>
+<li>
+<p>In <code>.env</code> file of Frontend, update the following service load balancer URLs, which   were generated after deployment of the backend server in Amazon Elastic Kubernetes Service (EKS).</p>
+<ul>
+<li><code>REACT_APP_BASE_URL</code> (use Backend URL),</li>
+<li><code>REACT_APP_MKDOCS_BASE_URL</code> (use mkdocs URL),</li>
+<li><code>REACT_APP_LIVE_TRACKING_URL</code> (use Arize Phoenix URL),</li>
+<li><code>REACT_APP_GRAFANA_DASHBOARD_URL</code> (use Grafana URL)</li>
+</ul>
+</li>
+<li>
+<p>Create Frontend image:
+<div class="highlight"><pre><span></span><code><span class="w">    </span>docker<span class="w"> </span>build<span class="w"> </span>-f<span class="w"> </span>&lt;dockerfile-name&gt;<span class="w"> </span>-t<span class="w"> </span>&lt;tag-name&gt;
+</code></pre></div></p>
+</li>
+<li>Retag the created image to ECR name:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>tag<span class="w"> </span>localhost/&lt;imagename&gt;:&lt;tag&gt;<span class="w"> </span>&lt;ecr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
+</code></pre></div></li>
+<li>Log in to ECR:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>login<span class="w"> </span>&lt;ecr<span class="w"> </span>login<span class="w"> </span>server&gt;
+</code></pre></div></li>
+<li>Push the retagged image to ECR:
+    <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>push<span class="w"> </span>&lt;ecr<span class="w"> </span>login<span class="w"> </span>server&gt;/&lt;imagename&gt;:&lt;tag&gt;
+</code></pre></div></li>
+<li>Create Frontend deployment file:
+    <div class="highlight"><pre><span></span><code>nano<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
+</code></pre></div></li>
+<li>Log in to Amazon Elastic Kubernetes Service (EKS)</li>
+<li>Execute the deployment file:
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>&lt;deployment<span class="w"> </span>filename.yaml&gt;
+</code></pre></div></li>
+<li>Check if the pods are deployed successfully:
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>pods<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</code></pre></div></li>
+<li>Check if the service is up &amp; running successfully:
+    <div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>get<span class="w"> </span>svc<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</code></pre></div></li>
+</ol>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>Virtual Environment Activation Fails</strong></p>
+<ul>
+<li><strong>Permissions Error</strong>: Try running command prompt as administrator</li>
+</ul>
+<p><strong>Dependency Installation Errors</strong></p>
+<p>Update pip to the latest version:
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+</code></pre></div></p>
+<ol>
+<li>Check for typos in commands or file names</li>
+<li>To troubleshoot, check pod logs in Kubernetes using the following commands: 
+<div class="highlight"><pre><span></span><code>kubectl<span class="w"> </span>describe<span class="w"> </span>pods<span class="w"> </span>&lt;pod_name&gt;<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+kubectl<span class="w"> </span>logs<span class="w"> </span>&lt;pod_name&gt;<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</code></pre></div></li>
+</ol>
 
 
 
