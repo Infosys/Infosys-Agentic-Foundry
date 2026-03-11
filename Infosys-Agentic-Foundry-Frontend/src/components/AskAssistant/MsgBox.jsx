@@ -3,9 +3,12 @@ import { useMessage } from "../../Hooks/MessageContext";
 import PlaceholderScreen from "./PlaceholderScreen";
 import DOMPurify from "dompurify";
 import SVGIcons from "../../Icons/SVGIcons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import TextareaWithActions from "../commonComponents/TextareaWithActions";
+
 import {
   BOT,
-  CUSTOM_TEMPLATE,
   HYBRID_AGENT,
   META_AGENT,
   MULTI_AGENT,
@@ -24,12 +27,13 @@ import {
 } from "../../constant";
 import LoadingChat from "./LoadingChat";
 import AccordionPlanSteps from "../commonComponents/Accordions/AccordionPlanSteps";
+import PlanVerifier from "./PlanVerifier";
 import parse from "html-react-parser";
 import ToolCallFinalResponse from "./ToolCallFinalResponse";
 import { useChatServices } from "../../services/chatService";
 import chatBubbleCss from "./ChatBubble.module.css";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faUser, faRobot, faThumbsUp, faThumbsDown, faRotateRight, faChevronDown } from "@fortawesome/free-solid-svg-icons";
+import { faUser, faRobot, faChevronDown } from "@fortawesome/free-solid-svg-icons";
 import { formatResponseTimeSeconds, formatMessageTimestamp } from "../../utils/timeFormatter";
 import ExecutionStepsList from "./ExecutionStepsList";
 
@@ -39,30 +43,27 @@ const SLICE_LAST_TWO = -2;
 
 export const extractPlanFromDetails = (details) => {
   if (!Array.isArray(details)) return null;
-  const entry = details.find(
-    (d) =>
-      d &&
-      (
-        d.role === "plan" ||
-        d.type === "plan" ||
-        d.role === "re-plan" ||
-        d.type === "re-plan"
-      )
-  );
+  const entry = details.find((d) => d && (d.role === "plan" || d.type === "plan" || d.role === "re-plan" || d.type === "re-plan"));
   if (!entry) return null;
   if (Array.isArray(entry.content) && entry.content.length > 0) return entry.content;
   if (typeof entry.content === "string" && entry.content.trim().length > 0)
-    return entry.content.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    return entry.content
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
   return null;
 };
-
 
 export const getPlanForMessage = (item) => {
   if (!item) return null;
   const fromDetails = extractPlanFromDetails(item?.additional_details) || extractPlanFromDetails(item?.toolcallData?.additional_details);
   if (Array.isArray(fromDetails) && fromDetails.length > 0) return fromDetails;
   if (Array.isArray(item?.plan) && item.plan.length > 0) return item.plan;
-  if (typeof item?.plan === "string" && item.plan.trim().length > 0) return item.plan.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (typeof item?.plan === "string" && item.plan.trim().length > 0)
+    return item.plan
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
   return null;
 };
 
@@ -114,6 +115,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     isDeletingChat,
     isCanvasEnabled,
     isContextEnabled,
+    isFileContextEnabled,
+    isMessageQueueEnabled,
     onlineEvaluatorFlag,
     mentionedAgent,
     planVerifierText,
@@ -121,6 +124,10 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     temperature,
     selectedInterruptTools,
     mappedTools,
+    selectedAgent,
+    framework,
+    onViewFile,
+    setGenerating,
   } = props;
   const [parsedValues, setParsedValues] = useState({});
   const { getChatQueryResponse, fetchFeedback, storeMemoryExample } = useChatServices();
@@ -137,6 +144,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
   // Track the index of the message whose plan was approved via "Good response" from feedbackWrapper-1
   // null = no plan approved, number = index of the approved message (to hide only that message's feedbackWrapper-3)
   const [planApprovedIndex, setPlanApprovedIndex] = useState(null);
+
+  // Track all approved plan queries by userText (persists across new queries and survives array slicing)
+  const [approvedPlanQueries, setApprovedPlanQueries] = useState(new Set());
 
   // Persist plans per-message so plans remain attached to the response
   // key: message index, value: plan array
@@ -166,6 +176,10 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       // For like and regenerate, show loading state
       setGenerateButton(true);
       setLoadingText(value === regenerate ? "Re-generating" : "Generating");
+      // For regenerate, set generating to true to disable chat input
+      if (value === regenerate && setGenerating) {
+        setGenerating(true);
+      }
     }
 
     // Call sendFeedback for like and regenerate (not for dislike - that shows input first)
@@ -190,12 +204,13 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         tool_verifier_flag: Boolean(toolInterrupt),
         response_formatting_flag: Boolean(isCanvasEnabled),
         context_flag: Boolean(isContextEnabled),
+        file_context_management_flag: Boolean(isFileContextEnabled),
         evaluation_flag: Boolean(onlineEvaluatorFlag),
         plan_verifier_flag: Boolean(isHuman),
         mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
         validator_flag: useValidator,
         temperature: temperature,
-        ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
+        message_queue: Boolean(isMessageQueueEnabled),
       };
 
       const resp = await storeMemoryExample(payload);
@@ -233,12 +248,13 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         tool_verifier_flag: Boolean(toolInterrupt),
         response_formatting_flag: Boolean(isCanvasEnabled),
         context_flag: Boolean(isContextEnabled),
+        file_context_management_flag: Boolean(isFileContextEnabled),
         evaluation_flag: Boolean(onlineEvaluatorFlag),
         plan_verifier_flag: Boolean(isHuman),
         mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
         validator_flag: useValidator,
         temperature: temperature,
-        ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
+        message_queue: Boolean(isMessageQueueEnabled),
       };
 
       const resp = await storeMemoryExample(payload);
@@ -269,11 +285,10 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     } catch {
       setParsedValues({});
     }
-    props.setLikeIcon(true);
     setIsEditable(true);
     setSendIconShow(true);
   };
-  const handlePlanFeedBack = async (feedBack, userText, messageIndex = null) => {
+  const handlePlanFeedBack = async (feedBack, userText, messageIndex = null, msgId = null) => {
     setClose(feedBack === "no" ? true : false);
     setFeedback(feedBack);
     setgenerateFeedBackButton(true);
@@ -286,6 +301,10 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     if (feedBack === "yes") {
       const idx = typeof messageIndex === "number" ? messageIndex : messageData.length - 1;
       setPlanApprovedIndex(idx);
+      // Add msgId to persistent approved queries set (survives array slicing)
+      if (msgId) {
+        setApprovedPlanQueries((prev) => new Set([...prev, msgId]));
+      }
     }
 
     try {
@@ -301,19 +320,21 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       setFetching(false);
       setgenerateFeedBackButton(false);
       // don't immediately clear planApprovedIndex here so UI can show any toast
-       if (feedBack === "yes") {
-	          setPlanApprovedIndex(null);	      
-	      }
+      if (feedBack === "yes") {
+        setPlanApprovedIndex(null);
+      }
     }
   };
 
-  const handlePlanDislikeFeedBack = async (userText) => {
+  const handlePlanDislikeFeedBack = async (userText, feedbackTextParam = null) => {
     setShowInput(false); // Hide textarea immediately
     setLoadingText("Re-generating");
     setFetching(true);
     setgenerateFeedBackButton(true); // Show loading indicator
+    // Use passed parameter if available, otherwise fall back to state
+    const textToSend = feedbackTextParam || feedBackText;
     try {
-      const response = await sendHumanInLoop(feedBack, feedBackText, userText);
+      const response = await sendHumanInLoop(feedBack, textToSend, userText);
       setFeedBackText("");
       // Reset all feedback-related states so new plan shows with fresh feedback buttons
       setFeedback("");
@@ -341,10 +362,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
 
     chatHistory?.executor_messages?.forEach((item, index) => {
       // Find existing USER message with matching query to preserve its timestamp
-      const existingUserMsg = messageData.find(
-        (msg) => msg.type === USER && msg.message === item?.user_query && msg.start_timestamp
-      );
-      
+      const existingUserMsg = messageData.find((msg) => msg.type === USER && msg.message === item?.user_query && msg.start_timestamp);
+
       // USER bubble - use existing timestamp if available, otherwise try backend fields
       chats.push({
         type: USER,
@@ -382,7 +401,6 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
 
       const toolcallData = { ...(item || {}), ...(synthesized ? { additional_details: synthesized } : {}) };
 
-
       const _planArr = getPlanForMessage(item) || null;
 
       // Tool interrupt case: suppress bot message if tool calls exist
@@ -407,11 +425,13 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         }
       }
 
+      const stableQuery = item?.user_query || chatHistory?.query || "";
       chats.push({
         type: BOT,
         message: botMessage,
         toolcallData: toolcallData,
-        userText: item?.user_query || chatHistory?.query || "",
+        userText: stableQuery,
+        msgId: `plan-${stableQuery}-${index}`,
         steps: JSON.stringify(item?.agent_steps, null, JSON_INDENT),
         debugExecutor: item?.additional_details,
         // Attach plan (if any) extracted from details or top-level
@@ -427,7 +447,14 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
 
     // Edge case: only plan verifier prompt, no executor messages
     if ((!chatHistory?.executor_messages || chatHistory.executor_messages.length === 0) && localPlanVerifierText) {
-      chats.push({ type: BOT, message: localPlanVerifierText, plan_verifier: true });
+      const stableQueryEdge = chatHistory?.query || "";
+      chats.push({
+        type: BOT,
+        message: localPlanVerifierText,
+        plan_verifier: true,
+        msgId: `plan-${stableQueryEdge}-edge`,
+        userText: stableQueryEdge,
+      });
     }
 
     return chats;
@@ -444,6 +471,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       setLoadingText("Generating");
     }
     const data = {
+      framework_type: framework,
       agentic_application_id: agentSelectValue,
       query: lastResponse.query,
       session_id: oldSessionId !== "" ? oldSessionId : session,
@@ -454,11 +482,12 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       tool_verifier_flag: Boolean(toolInterrupt),
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
+      file_context_management_flag: Boolean(isFileContextEnabled),
       evaluation_flag: Boolean(onlineEvaluatorFlag),
       plan_verifier_flag: Boolean(isHuman),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       temperature: temperature,
-      ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
+      message_queue: Boolean(isMessageQueueEnabled),
     };
     // Reset feedback state to close the feedback section
     if (feedBack === dislike) {
@@ -477,15 +506,34 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     setFetching(false);
     setgenerateFeedBackButton(false);
     setGenerateButton(false);
+    // Reset generating state to re-enable chat input
+    if (setGenerating) {
+      setGenerating(false);
+    }
   };
 
   const handleChange = (e) => {
     setFeedBackText(e?.target?.value);
   };
   const handleEditChange = (key, newValue, val) => {
+    // Parse the new value if it looks like JSON, otherwise keep as string
+    let parsedNewValue = newValue;
+    if (typeof newValue === "string") {
+      const trimmed = newValue.trim();
+      // Try to parse if it looks like JSON object or array
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          parsedNewValue = JSON.parse(trimmed);
+        } catch {
+          // Keep as string if parsing fails
+          parsedNewValue = newValue;
+        }
+      }
+    }
     setParsedValues((prev) => ({
       ...prev,
-      [key]: newValue,
+      [key]: parsedNewValue,
     }));
   };
   function convertStringifiedObjects(data) {
@@ -578,6 +626,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     props.setCurrentNodeIndex?.(-1);
 
     const payload = {
+      framework_type: framework,
       agentic_application_id: agentSelectValue,
       query: data?.userText || lastResponse?.query || "",
       session_id: oldSessionId !== "" ? oldSessionId : session,
@@ -587,12 +636,14 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       tool_feedback: JSON.stringify(argData),
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
+      file_context_management_flag: Boolean(isFileContextEnabled),
       evaluation_flag: Boolean(onlineEvaluatorFlag),
       plan_verifier_flag: Boolean(isHuman),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
       enable_streaming_flag: true,
       temperature: temperature,
+      message_queue: Boolean(isMessageQueueEnabled),
       ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
     };
 
@@ -604,26 +655,35 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       const statusVal = obj.Status || obj.status || obj.state || null;
       const toolName = obj["Tool Name"] || obj.tool_name || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || null;
 
+      // Extract content from multiple possible fields
+      let contentVal = null;
+      if (obj.content && typeof obj.content === "string") {
+        contentVal = obj.content;
+      } else if (obj["Tool Output"]) {
+        const toolOutput = obj["Tool Output"];
+        contentVal = typeof toolOutput === "string" ? toolOutput : JSON.stringify(toolOutput);
+      } else if (obj.raw) {
+        if (obj.raw.content) {
+          contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
+        } else if (obj.raw["Tool Output"]) {
+          const rawToolOutput = obj.raw["Tool Output"];
+          contentVal = typeof rawToolOutput === "string" ? rawToolOutput : JSON.stringify(rawToolOutput);
+        }
+      }
+
       if (nodeName && statusVal) {
         nodeIndex++;
         const newNode = {
           "Node Name": nodeName,
           Status: statusVal,
           "Tool Name": toolName,
+          ...(obj["Tool Output"] && { "Tool Output": obj["Tool Output"] }),
+          ...(contentVal && { content: contentVal }),
         };
         props.setNodes?.((prev) => [...prev, newNode]);
         props.setCurrentNodeIndex?.(nodeIndex);
-      } else if (obj && (obj.content || obj.raw || obj["Tool Output"])) {
+      } else if (contentVal) {
         // Content-only chunk (tool output or interim message) — append as content event
-        const rawToolOut = obj["Tool Output"] || (obj.raw && (obj.raw["Tool Output"] || obj.raw.ToolOutput || obj.raw["tool_output"]));
-        let contentVal = "";
-        if (typeof obj.content === "string" && obj.content.trim().length > 0) {
-          contentVal = obj.content;
-        } else if (rawToolOut != null) {
-          contentVal = String(rawToolOut);
-        } else if (obj.raw && typeof obj.raw === "object" && obj.raw.content) {
-          contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
-        }
         props.setNodes?.((prev) => [...prev, { content: contentVal, raw: obj.raw || {} }]);
       }
     };
@@ -648,6 +708,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     props.setCurrentNodeIndex?.(-1);
 
     const payload = {
+      framework_type: framework,
       agentic_application_id: agentSelectValue,
       query: data?.userText || lastResponse?.query || "",
       session_id: oldSessionId !== "" ? oldSessionId : session,
@@ -657,12 +718,14 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       tool_feedback: "yes",
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
+      file_context_management_flag: Boolean(isFileContextEnabled),
       evaluation_flag: Boolean(onlineEvaluatorFlag),
       plan_verifier_flag: Boolean(isHuman),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
       enable_streaming_flag: true,
       temperature: temperature,
+      message_queue: Boolean(isMessageQueueEnabled),
       ...(toolInterrupt && { interrupt_items: selectedInterruptTools || [] }),
     };
     let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
@@ -673,26 +736,35 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
       const statusVal = obj.Status || obj.status || obj.state || null;
       const toolName = obj["Tool Name"] || obj.tool_name || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || null;
 
+      // Extract content from multiple possible fields
+      let contentVal = null;
+      if (obj.content && typeof obj.content === "string") {
+        contentVal = obj.content;
+      } else if (obj["Tool Output"]) {
+        const toolOutput = obj["Tool Output"];
+        contentVal = typeof toolOutput === "string" ? toolOutput : JSON.stringify(toolOutput);
+      } else if (obj.raw) {
+        if (obj.raw.content) {
+          contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
+        } else if (obj.raw["Tool Output"]) {
+          const rawToolOutput = obj.raw["Tool Output"];
+          contentVal = typeof rawToolOutput === "string" ? rawToolOutput : JSON.stringify(rawToolOutput);
+        }
+      }
+
       if (nodeName && statusVal) {
         nodeIndex++;
         const newNode = {
           "Node Name": nodeName,
           Status: statusVal,
           "Tool Name": toolName,
+          ...(obj["Tool Output"] && { "Tool Output": obj["Tool Output"] }),
+          ...(contentVal && { content: contentVal }),
         };
         props.setNodes?.((prev) => [...prev, newNode]);
         props.setCurrentNodeIndex?.(nodeIndex);
-      } else if (obj && (obj.content || obj.raw || obj["Tool Output"])) {
+      } else if (contentVal) {
         // Content-only chunk (tool output or interim message) — append as content event
-        const rawToolOut = obj["Tool Output"] || (obj.raw && (obj.raw["Tool Output"] || obj.raw.ToolOutput || obj.raw["tool_output"]));
-        let contentVal = "";
-        if (typeof obj.content === "string" && obj.content.trim().length > 0) {
-          contentVal = obj.content;
-        } else if (rawToolOut != null) {
-          contentVal = String(rawToolOut);
-        } else if (obj.raw && typeof obj.raw === "object" && obj.raw.content) {
-          contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
-        }
         props.setNodes?.((prev) => [...prev, { content: contentVal, raw: obj.raw || {} }]);
       }
     };
@@ -706,13 +778,13 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     if (response && !isDeletingChat) {
       try {
         setToastMessage && setToastMessage(response?.message || "Thanks for the like!");
-      } catch (e) {}
+      } catch (e) { }
       setShowToast(true);
       setTimeout(() => {
         setShowToast(false);
         try {
           setToastMessage && setToastMessage("");
-        } catch (e) {}
+        } catch (e) { }
       }, FEEDBACK_TIMEOUT_MS);
     }
     setLoadingText("");
@@ -730,8 +802,30 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
   };
 
   useEffect(() => {
-    setIsEditable(false);
-  }, [messageData, setIsEditable]);
+    if (!Array.isArray(messageData) || messageData.length === 0) {
+      setIsEditable(false);
+      setSendIconShow(false);
+      return;
+    }
+
+    // Automatically enter edit mode for the latest tool interrupt message
+    const lastToolInterrupt = [...messageData]
+      .slice()
+      .reverse()
+      .find((m) => {
+        if (!m || m.type !== BOT) return false;
+        if (m.message !== "") return false;
+        const details = m?.toolcallData?.additional_details;
+        return Array.isArray(details) && details.length > 0 && details[0]?.additional_kwargs && Object.keys(details[0].additional_kwargs || {}).length > 0;
+      });
+
+    if (lastToolInterrupt) {
+      onMsgEdit(lastToolInterrupt);
+    } else {
+      setIsEditable(false);
+      setSendIconShow(false);
+    }
+  }, [messageData]);
 
   // keep the original argument key/value placeholders — required by child components
   let argunentKey;
@@ -756,10 +850,37 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     }
   }, [nodes.length, showNodeDetails, currentNodeIndex]);
 
+  // Auto-collapse Reasoning Steps accordion when streaming ends (response complete)
+  useEffect(() => {
+    if (!props.isStreaming && showNodeDetails) {
+      setShowNodeDetails(false);
+    }
+  }, [props.isStreaming]);
+
   return (
     <div className={styles.messagesContainer}>
-      {((!props?.isMissingRequiredOptions && props?.oldChats.length === 0) || (props?.isMissingRequiredOptions && props?.oldChats.length === 0)) && messageData.length === 0 && (
+      {/* PlaceholderScreen only shows when no agent is selected */}
+      {props?.oldChats?.length === 0 && messageData.length === 0 && !generating && !selectedAgent && (
         <PlaceholderScreen agentType={agentType} model={model} selectedAgent={agentSelectValue} />
+      )}
+
+      {/* Welcome message from selected agent - always shows as first bot response when agent is selected */}
+      {selectedAgent && (
+        <div className={`${chatBubbleCss.container} ${chatBubbleCss.botMessage}`}>
+          <div className={chatBubbleCss.messageWrapper}>
+            <div className={styles.accordionContainer}>
+              <div className={styles.accordion}>
+                <div className={styles["accordion-header"]}>
+                  <div className={`${chatBubbleCss.messageBubble} ${chatBubbleCss.welcomeMessageBubble}`}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {selectedAgent?.welcome_message || `Hello! I'm ${selectedAgent?.agentic_application_name || "your assistant"}. How can I help you today?`}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Loading indicator when streaming has started but no nodes have arrived yet */}
@@ -793,6 +914,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
               baseId={baseId}
               listRef={executionStepsInitialRef}
               isStreaming={props.isStreaming}
+              showNamesOnly={props.canExecutionSteps === false}
             />
           </div>
         </div>
@@ -803,12 +925,12 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
           // Determine the actual array to iterate based on feedback state
           const displayMessages =
             (feedBack === "no" || feedBack === dislike) &&
-            ((agentType === REACT_AGENT && close) ||
-              agentType === MULTI_AGENT ||
-              agentType === PLANNER_EXECUTOR_AGENT ||
-              agentType === REACT_CRITIC_AGENT ||
-              agentType === PLANNER_META_AGENT ||
-              agentType === HYBRID_AGENT)
+              ((agentType === REACT_AGENT && close) ||
+                agentType === MULTI_AGENT ||
+                agentType === PLANNER_EXECUTOR_AGENT ||
+                agentType === REACT_CRITIC_AGENT ||
+                agentType === PLANNER_META_AGENT ||
+                agentType === HYBRID_AGENT)
               ? messageData.slice(SLICE_LAST_TWO)
               : messageData;
 
@@ -819,25 +941,25 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
           const hasMessageObject = data?.message && typeof data.message === "object" && !Array.isArray(data.message) && Object.keys(data.message).length > 0;
           const hasPartsContent = Array.isArray(data?.parts)
             ? data.parts.some((part) => {
-                const partContent = part?.data?.content || part?.text || part?.content;
-                if (typeof partContent === "string") {
-                  return partContent.trim().length > 0;
-                }
-                return Boolean(partContent);
-              })
+              const partContent = part?.data?.content || part?.text || part?.content;
+              if (typeof partContent === "string") {
+                return partContent.trim().length > 0;
+              }
+              return Boolean(partContent);
+            })
             : false;
           // Derive plan from message data (handles array or string plans)
           const effectivePlan = getPlanForMessage(data) || data?.plan || [];
           const hasPlanContent = Array.isArray(effectivePlan)
             ? effectivePlan.some((step) => {
-                if (typeof step === "string") {
-                  return step.trim().length > 0;
-                }
-                if (step && typeof step === "object") {
-                  return Object.keys(step).length > 0;
-                }
-                return Boolean(step);
-              })
+              if (typeof step === "string") {
+                return step.trim().length > 0;
+              }
+              if (step && typeof step === "object") {
+                return Object.keys(step).length > 0;
+              }
+              return Boolean(step);
+            })
             : false;
 
           // During streaming, skip the last BOT bubble to avoid showing duplicate/incomplete content
@@ -863,7 +985,8 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
           const willRenderInner = shouldRenderBotMessage || hasPlanContent;
           const hasVisibleBubbleContent = willRenderInner;
 
-          const shouldShowPlan = Array.isArray(effectivePlan) && effectivePlan.length > 0;
+          // Show plan only if Plan Verifier (isHuman) is enabled AND plan data exists
+          const shouldShowPlan = isHuman && Array.isArray(effectivePlan) && effectivePlan.length > 0;
 
           const hasPlanOnly = data.type === BOT && hasPlanContent && !hasMessageText && !hasMessageObject && !hasPartsContent && !hasToolDetails && !hasToolInterruptFallback;
 
@@ -883,309 +1006,90 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
           const lastIndex = currentArray.length - 1;
 
           const messageKey = `${baseId}-message-${index}`;
+          const processing = Boolean(processingFeedback[index]);
           return (
             <div className={`${chatBubbleCss.container} ${data.type === BOT ? chatBubbleCss.botMessage : chatBubbleCss.userMessage}`} key={messageKey}>
               {data.type === BOT && hasVisibleBubbleContent && (
                 <>
-                  {showAvatar && (
-                    <div className={chatBubbleCss.avatarContainer}>
-                      <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.botAvatar}`}>
-                        <span className={chatBubbleCss.agentIcon}>
-                          <FontAwesomeIcon icon={faRobot} />
-                        </span>
-                      </div>
-                    </div>
-                  )}
                   <div className={chatBubbleCss.messageWrapper}>
-                    {/* Nodes summary */}
-                    {index === lastIndex && !props.isStreaming && Array.isArray(nodes) && nodes.length > 0 && (
-                      <div style={{ marginBottom: 6 }}>
-                        <ExecutionStepsList
-                          rawNodes={nodes}
-                          showDetails={showNodeDetails}
-                          onToggleDetails={() => setShowNodeDetails((v) => !v)}
-                          expandedNodes={expandedNodes}
-                          onToggleNode={toggleNodeExpand}
-                          keyPrefix="inline"
-                          baseId={baseId}
-                          listRef={executionStepsInlineRef}
-                          isStreaming={false}
-                        />
-                      </div>
-                    )}
-                    {/* {shouldRenderAccordion && agentType !== CUSTOM_TEMPLATE && agentType === PLANNER_META_AGENT && data?.plan?.length === 0 && (
-                      <AccordionPlanSteps
-                        response={
-                          typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
-                            ? JSON.stringify(data.message, null, 2)
-                            : typeof data.message === "string"
-                            ? data.message
-                            : ""
-                        }
-                        content={
-                          typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
-                            ? JSON.stringify(data.steps, null, 2)
-                            : typeof data.steps === "string"
-                            ? data.steps
-                            : ""
-                        }
-                        debugExecutor={
-                          Array.isArray(data.debugExecutor)
-                            ? data.debugExecutor.map((item) =>
-                                typeof item === "object" && item !== null && !Array.isArray(item)
-                                  ? {
-                                      ...item,
-                                      content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
-                                    }
-                                  : item
-                              )
-                            : []
-                        }
-                        messageData={messageData}
-                        isEditable={isEditable}
-                        value={value}
-                        text={text}
-                        argunentKey={argunentKey}
-                        openCanvas={props.openCanvas}
-                        parts={data?.parts || []}
-                        show_canvas={data?.show_canvas || false}
-                        detectCanvasContent={props.detectCanvasContent}
-                      />
-                    )} */}
                     <div className={styles.accordionContainer}>
+                      {/* Nodes summary - only show when NOT streaming to avoid duplicate with streaming panel */}
+                      {index === lastIndex && !props.isStreaming && !generating && Array.isArray(nodes) && nodes.length > 0 && (
+                        <div style={{ marginBottom: 6 }}>
+                          <ExecutionStepsList
+                            rawNodes={nodes}
+                            showDetails={showNodeDetails}
+                            onToggleDetails={() => setShowNodeDetails((v) => !v)}
+                            expandedNodes={expandedNodes}
+                            onToggleNode={toggleNodeExpand}
+                            keyPrefix="inline"
+                            baseId={baseId}
+                            listRef={executionStepsInlineRef}
+                            isStreaming={false}
+                            showNamesOnly={props.canExecutionSteps === false}
+                          />
+                        </div>
+                      )}
+
                       {shouldShowPlan && (
                         <>
-                          <div className={styles.planContainer}>
-                            <h3>Plan</h3>
-                            {effectivePlan.map((planItem, planIndex) => (
-                              <p className={styles.stepsContent} key={`plan-step-${planIndex}`}>
-                                {planItem}
-                              </p>
-                            ))}
-                          </div>
-
-                          {!fetching &&
-                            feedBack !== "no" &&
-                            !hasMessageText &&
-                            !hasMessageObject &&
-                            !hasPartsContent &&
-                            !(toolInterrupt && hasToolDetails) &&
-                            (
-                              <div className={`${chatBubbleCss.feedbackWrapper} feedbackWrapper-1`}>
-                              <button
-                                className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("yes", data?.userText, index)}
-                                title="Good response">
-                                <FontAwesomeIcon icon={faThumbsUp} />
-                              </button>{" "}
-                              <button
-                                className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("no", data?.userText, index)}
-                                title="Poor response">
-                                <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
-                              </button>
-                              {data?.response_time && (
-                                <span className={chatBubbleCss.responseTime}>
-                                  <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
-                                    {formatResponseTimeSeconds(data.response_time)}
-                                  </span>
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {!fetching &&
-                            showInput &&
-                            feedBack === "no" &&
-                            !hasMessageText &&
-                            !hasMessageObject &&
-                            !hasPartsContent &&
-                            !(toolInterrupt && hasToolDetails) && (
-                            <div className={styles.feedBackSection}>
-                              <p className={styles.warning}>{feedBackMessage}</p>
-                              <div className={styles.feedBackInput}>
-                                <textarea
-                                  type="text"
-                                  placeholder="Enter your feedback:"
-                                  className={styles.feedBackTextArea}
-                                  value={feedBackText}
-                                  onChange={handleChange}
-                                  rows={4}></textarea>
-                                <button
-                                  disabled={generating || feedBackText.trim().length < 1}
-                                  onClick={() => handlePlanDislikeFeedBack(data?.userText)}
-                                  className={styles.feedbackSendBtn}>
-                                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                          <PlanVerifier
+                            plan={effectivePlan}
+                            onApprove={() => handlePlanFeedBack("yes", data?.userText, index, data?.msgId)}
+                            onRequestChanges={() => handlePlanFeedBack("no", data?.userText, index, data?.msgId)}
+                            onSubmitFeedback={(feedbackText) => {
+                              handlePlanDislikeFeedBack(data?.userText, feedbackText);
+                            }}
+                            onCancelFeedback={() => {
+                              setFeedBackText("");
+                              setShowInput(false);
+                            }}
+                            isProcessing={fetching || generating}
+                            isApproved={approvedPlanQueries.has(data?.msgId) || hasMessageText || hasMessageObject || hasPartsContent}
+                            showButtons={isHuman}
+                          />
                         </>
                       )}
 
-                      {shouldRenderAccordion && agentType !== CUSTOM_TEMPLATE && agentType !== PLANNER_META_AGENT && (
+                      {agentType === PLANNER_META_AGENT && (
                         <AccordionPlanSteps
                           response={
                             typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
                               ? JSON.stringify(data.message, null, 2)
                               : typeof data.message === "string"
-                              ? data.message
-                              : ""
-                          }
-                          content={
-                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
-                              ? JSON.stringify(data.steps, null, 2)
-                              : typeof data.steps === "string"
-                              ? data.steps
-                              : ""
-                          }
-                          debugExecutor={
-                            Array.isArray(data.debugExecutor)
-                              ? data.debugExecutor.map((item) =>
-                                  typeof item === "object" && item !== null && !Array.isArray(item)
-                                    ? {
-                                        ...item,
-                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
-                                      }
-                                    : item
-                                )
-                              : []
-                          }
-                          messageData={messageData}
-                          isEditable={isEditable}
-                          value={value}
-                          text={text}
-                          argunentKey={argunentKey}
-                          openCanvas={props.openCanvas}
-                          parts={data?.parts || []}
-                          show_canvas={agentType === PIPELINE_AGENT ? false : (data?.show_canvas || false)}
-                          detectCanvasContent={props.detectCanvasContent}
-                        />
-                      )}
-
-                      {agentType !== CUSTOM_TEMPLATE && agentType === PLANNER_META_AGENT && (
-                        <AccordionPlanSteps
-                          response={
-                            typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
-                              ? JSON.stringify(data.message, null, 2)
-                              : typeof data.message === "string"
-                              ? data.message
-                              : ""
-                          }
-                          content={
-                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
-                              ? JSON.stringify(data.steps, null, 2)
-                              : typeof data.steps === "string"
-                              ? data.steps
-                              : ""
-                          }
-                          debugExecutor={
-                            Array.isArray(data.debugExecutor)
-                              ? data.debugExecutor.map((item) =>
-                                  typeof item === "object" && item !== null && !Array.isArray(item)
-                                    ? {
-                                        ...item,
-                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
-                                      }
-                                    : item
-                                )
-                              : []
-                          }
-                          messageData={messageData}
-                          isEditable={isEditable}
-                          value={value}
-                          text={text}
-                          argunentKey={argunentKey}
-                          openCanvas={props.openCanvas}
-                          parts={data?.parts || []}
-                          show_canvas={agentType === PIPELINE_AGENT ? false : (data?.show_canvas || false)}
-                          detectCanvasContent={props.detectCanvasContent}
-                        />
-                      )}
-                      {agentType === CUSTOM_TEMPLATE && (
-                        <>
-                          <AccordionPlanSteps
-                            response={
-                              typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
-                                ? JSON.stringify(data.message, null, JSON_INDENT)
-                                : typeof data.message === "string"
                                 ? data.message
                                 : ""
-                            }
-                            content={
-                              typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
-                                ? JSON.stringify(data.steps, null, JSON_INDENT)
-                                : typeof data.steps === "string"
+                          }
+                          content={
+                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                              ? JSON.stringify(data.steps, null, 2)
+                              : typeof data.steps === "string"
                                 ? data.steps
                                 : ""
-                            }
-                            debugExecutor={
-                              Array.isArray(data.debugExecutor)
-                                ? data.debugExecutor.map((item) =>
-                                    typeof item === "object" && item !== null && !Array.isArray(item)
-                                      ? {
-                                          ...item,
-                                          content: typeof item.content === "object" ? JSON.stringify(item.content, null, JSON_INDENT) : item.content,
-                                        }
-                                      : item
-                                  )
-                                : []
-                            }
-                            messageData={messageData}
-                            isEditable={isEditable}
-                            value={value}
-                            text={text}
-                            argunentKey={argunentKey}
-                            openCanvas={props.openCanvas}
-                            parts={data?.parts || []}
-                            show_canvas={agentType === PIPELINE_AGENT ? false : (data?.show_canvas || false)}
-                            detectCanvasContent={props.detectCanvasContent}
-                          />
-                          {!fetching && index === lastIndex && agentType === CUSTOM_TEMPLATE && (
-                            <div className={`${chatBubbleCss.feedbackWrapper}  feedbackWrapper-2`}>
-                              <button
-                                className={`${chatBubbleCss.feedbackButton} `} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("yes", data?.userText, index)}
-                                title="Good response">
-                                <FontAwesomeIcon icon={faThumbsUp} />
-                              </button>
-                              <button
-                                className={`${chatBubbleCss.feedbackButton}`} /*  ${highlightedFeedback === 'down' ? chatBubbleCss.highlighted : ''} */
-                                onClick={() => handlePlanFeedBack("no", data?.userText, index)}
-                                title="Poor response">
-                                <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
-                              </button>
-                              {data?.response_time && (
-                                <span className={chatBubbleCss.responseTime}>
-                                  <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
-                                    {formatResponseTimeSeconds(data.response_time)}
-                                  </span>
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {showInput && index === lastIndex && agentType === CUSTOM_TEMPLATE && (
-                            <div className={styles.feedBackInput}>
-                              <textarea
-                                type="text"
-                                placeholder="Enter your feedback:"
-                                className={styles.feedBackTextArea}
-                                value={feedBackText}
-                                onChange={handleChange}
-                                rows={4}></textarea>
-                              <button disabled={generating} onClick={() => handlePlanDislikeFeedBack(data?.userText)} className={styles.feedbackSendBtn}>
-                                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                  <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
-                                </svg>
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Removed duplicate unconditional loader for plan feedback (CUSTOM_TEMPLATE) */}
-                        </>
+                          }
+                          debugExecutor={
+                            Array.isArray(data.debugExecutor)
+                              ? data.debugExecutor.map((item) =>
+                                typeof item === "object" && item !== null && !Array.isArray(item)
+                                  ? {
+                                    ...item,
+                                    content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                  }
+                                  : item,
+                              )
+                              : []
+                          }
+                          messageData={messageData}
+                          isEditable={isEditable}
+                          value={value}
+                          text={text}
+                          argunentKey={argunentKey}
+                          openCanvas={props.openCanvas}
+                          parts={data?.parts || []}
+                          show_canvas={data?.show_canvas || false}
+                          detectCanvasContent={props.detectCanvasContent}
+                          agentType={agentType}
+                        />
                       )}
                       {data?.message === "" &&
                         Array.isArray(data?.toolcallData?.additional_details) &&
@@ -1198,26 +1102,26 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                 typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
                                   ? JSON.stringify(data.message, null, JSON_INDENT)
                                   : typeof data.message === "string"
-                                  ? data.message
-                                  : ""
+                                    ? data.message
+                                    : ""
                               }
                               content={
                                 typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
                                   ? JSON.stringify(data.steps, null, JSON_INDENT)
                                   : typeof data.steps === "string"
-                                  ? data.steps
-                                  : ""
+                                    ? data.steps
+                                    : ""
                               }
                               debugExecutor={
                                 Array.isArray(data.debugExecutor)
                                   ? data.debugExecutor.map((item) =>
-                                      typeof item === "object" && item !== null && !Array.isArray(item)
-                                        ? {
-                                            ...item,
-                                            content: typeof item.content === "object" ? JSON.stringify(item.content, null, JSON_INDENT) : item.content,
-                                          }
-                                        : item
-                                    )
+                                    typeof item === "object" && item !== null && !Array.isArray(item)
+                                      ? {
+                                        ...item,
+                                        content: typeof item.content === "object" ? JSON.stringify(item.content, null, JSON_INDENT) : item.content,
+                                      }
+                                      : item,
+                                  )
                                   : []
                               }
                               messageData={data}
@@ -1229,13 +1133,14 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                               setParsedValues={setParsedValues}
                               rawData={rawData}
                               setIsEditable={setIsEditable}
-                              setLikeIcon={setLikeIcon}
                               handleEditChange={handleEditChange}
                               sendArgumentEditData={sendArgumentEditData}
                               fetching={fetching}
                               sendIconShow={sendIconShow}
                               generating={generating}
                               agentType={agentType}
+                              submitFeedbackYes={submitFeedbackYes}
+                              canExecute={toolInterrupt}
                             />
                           </>
                         )}
@@ -1247,9 +1152,9 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                           // Try to surface the last streamed tool_verifier message if present in the overall message list
                           const lastVerifier = Array.isArray(props?.messageData)
                             ? [...props.messageData]
-                                .slice()
-                                .reverse()
-                                .find((m) => m && m.tool_verifier && m.message)
+                              .slice()
+                              .reverse()
+                              .find((m) => m && m.tool_verifier && m.message)
                             : null;
                           if (lastVerifier) {
                             return (
@@ -1278,16 +1183,65 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                           );
                         })()}
                     </div>
+                    {shouldRenderAccordion && agentType !== PLANNER_META_AGENT && (
+                      <>
+                        <AccordionPlanSteps
+                          response={
+                            typeof data.message === "object" && data.message !== null && !Array.isArray(data.message)
+                              ? JSON.stringify(data.message, null, 2)
+                              : typeof data.message === "string"
+                                ? data.message
+                                : ""
+                          }
+                          content={
+                            typeof data.steps === "object" && data.steps !== null && !Array.isArray(data.steps)
+                              ? JSON.stringify(data.steps, null, 2)
+                              : typeof data.steps === "string"
+                                ? data.steps
+                                : ""
+                          }
+                          debugExecutor={
+                            Array.isArray(data.debugExecutor)
+                              ? data.debugExecutor.map((item) =>
+                                typeof item === "object" && item !== null && !Array.isArray(item)
+                                  ? {
+                                    ...item,
+                                    content: typeof item.content === "object" ? JSON.stringify(item.content, null, 2) : item.content,
+                                  }
+                                  : item,
+                              )
+                              : []
+                          }
+                          messageData={messageData}
+                          isEditable={isEditable}
+                          value={value}
+                          text={text}
+                          argunentKey={argunentKey}
+                          openCanvas={props.openCanvas}
+                          parts={data?.parts || []}
+                          show_canvas={data?.show_canvas || false}
+                          detectCanvasContent={props.detectCanvasContent}
+                          agentType={agentType}
+                        />
+                      </>
+                    )}
                     {data.type === BOT &&
                       hasVisibleBubbleContent &&
                       index !== lastIndex &&
                       planApprovedIndex !== index &&
-                      (processingFeedback[index] ? (
+                      (processingFeedback[index] && agentType !== PIPELINE_AGENT ? (
                         <div className={`${styles.loadingChat} generating-2`} style={{ marginTop: 8 }}>
                           <LoadingChat label={"Generating"} />
                         </div>
                       ) : (
-                        <div className={`${chatBubbleCss.feedbackWrapper}  feedbackWrapper-3`} style={{ marginTop: 8 }}>
+                        <div className={`${chatBubbleCss.feedbackWrapper}  feedbackWrapper-3`} style={{ marginTop: 0 }}>
+                          {data?.response_time && (
+                            <span className={chatBubbleCss.responseTime}>
+                              <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
+                                {formatResponseTimeSeconds(data.response_time)}
+                              </span>
+                            </span>
+                          )}
                           {agentType !== PIPELINE_AGENT && (
                             <>
                               <button
@@ -1298,7 +1252,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                   handleMessageLike(data, index);
                                 }}
                                 title="Good response">
-                                <FontAwesomeIcon icon={faThumbsUp} />
+                                <SVGIcons icon="thumbs-up" width={16} height={16} />
                               </button>
                               <button
                                 type="button"
@@ -1307,72 +1261,49 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                   e.stopPropagation();
                                   handleMessageDislike(data, index);
                                 }}
-                                title="Poor response">
-                                <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
+                                title="Not helpful">
+                                <SVGIcons icon="thumbs-down" width={16} height={16} />
                               </button>
                             </>
-                          )}
-                          {data?.response_time && (
-                            <span className={chatBubbleCss.responseTime}>
-                              <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
-                                {formatResponseTimeSeconds(data.response_time)}
-                              </span>
-                            </span>
                           )}
                         </div>
                       ))}
                     {feedBack === dislike &&
                       index === lastIndex &&
-                      (agentType === REACT_AGENT ||
-                        agentType === "react_agent" ||
-                        agentType === MULTI_AGENT ||
-                        agentType === PLANNER_EXECUTOR_AGENT ||
-                        agentType === REACT_CRITIC_AGENT ||
-                        agentType === "multi_agent" ||
-                      agentType === PLANNER_META_AGENT ||
-                      agentType === META_AGENT ||
-                        agentType === HYBRID_AGENT) && (
+                      agentType && ( // Only require that agentType is set
                         <div className={styles.feedBackSection}>
-                          {!fetching &&
-                          (((agentType === REACT_AGENT ||
-                            agentType === MULTI_AGENT ||
-                            agentType === PLANNER_EXECUTOR_AGENT ||
-                            agentType === REACT_CRITIC_AGENT ||
-                            agentType === HYBRID_AGENT) &&
-                            close) ||
-                            ((agentType === PLANNER_META_AGENT || agentType === META_AGENT) && feedBack === dislike && close)) ? (
-                            <div className={styles["cancel-btn"]}>
+                          <p className={styles.warning}>What could be improved?</p>
+                          <div className={styles.feedBackInput}>
+                            <TextareaWithActions
+                              name="feedbackText"
+                              placeholder="Please Share Your Feedback..."
+                              value={feedBackText}
+                              onChange={handleChange}
+                              rows={4}
+                              showCopy={false}
+                              showExpand={false}
+                            />
+                            <div className={styles.feedbackActions}>
+                              <button disabled={generating || feedBackText.trim().length < 1} onClick={handleDislikeFeedBack} className={styles.submitFeedbackBtn}>
+                                Submit Feedback
+                              </button>
                               <button
+                                className={styles.cancelFeedbackBtn}
                                 onClick={() => {
                                   setClose(false);
                                   setFeedback("");
                                   setShowInput(false);
                                   setGenerateButton(false);
                                 }}>
-                                <SVGIcons icon="fa-xmark" fill="#3D4359" width={13} height={13} />
+                                Cancel
                               </button>
                             </div>
-                          ) : null}
-                          <p className={styles.warning}>{feedBackMessage}</p>
-                          <div className={styles.feedBackInput}>
-                            <textarea
-                              type="text"
-                              placeholder="Enter your feedback:"
-                              className={styles.feedBackTextArea}
-                              value={feedBackText}
-                              onChange={handleChange}
-                              rows={4}></textarea>
-                            <button disabled={generating || feedBackText.trim().length < 1} onClick={handleDislikeFeedBack} className={styles.feedbackSendBtn}>
-                              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
-                              </svg>
-                            </button>
                           </div>
                         </div>
                       )}
-                    {index === lastIndex && hasVisibleBubbleContent && feedBack === dislike && (
+                    {index === lastIndex && hasVisibleBubbleContent && (feedBack === dislike || feedBack === regenerate) && (
                       <>
-                        {fetching && generateFeedBackButton && !props.isStreaming && (
+                        {(fetching || generating) && generateFeedBackButton && !props.isStreaming && (
                           <div className={`${styles.loadingChat} generating-3`}>
                             <LoadingChat label={loadingText || "Re-generating"} />
                           </div>
@@ -1381,17 +1312,11 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                     )}
                     {index === lastIndex &&
                       hasVisibleBubbleContent &&
-                      (agentType === REACT_AGENT ||
-                        agentType === MULTI_AGENT ||
-                        agentType === PLANNER_EXECUTOR_AGENT ||
-                        agentType === REACT_CRITIC_AGENT ||
-                        agentType === HYBRID_AGENT ||
-                        agentType === PLANNER_META_AGENT ||
-                        agentType === META_AGENT ||
-                        agentType === PIPELINE_AGENT) &&
-                      feedBack !== dislike && (
+                      agentType && // Only require that agentType is set (not empty)
+                      !props.isStreaming &&
+                      !generating && (
                         <div className={styles["feedback-section"]}>
-                          {!fetching && !generateFeedBackButton && (
+                          {!fetching && !generateFeedBackButton && feedBack !== dislike && (
                             <div className={styles["button-container"]}>
                               {loadingText && fetching && !props.isStreaming ? (
                                 <>
@@ -1404,71 +1329,20 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                               )}
 
                               {hasVisibleBubbleContent &&
-                              data?.message === "" &&
-                              !props?.likeIcon &&
-                              Array.isArray(data?.toolcallData?.additional_details) &&
-                              data.toolcallData.additional_details.length > 0 &&
-                              data.toolcallData.additional_details[0]?.additional_kwargs &&
-                              Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs).length > 0 ? (
-                                <>
-                                  <div className={`${chatBubbleCss.feedbackWrapper}  feedbackWrapper-4`}>
-                                    {agentType !== PIPELINE_AGENT && (
-                                      <>
-                                        <button
-                                          className={`${chatBubbleCss.feedbackButton}`} /* ${highlightedFeedback === 'up' ? chatBubbleCss.highlighted : ''} */
-                                          onClick={() => submitFeedbackYes(data)}
-                                          title="Good response">
-                                          <FontAwesomeIcon icon={faThumbsUp} />
-                                        </button>
-
-                                        {Array.isArray(props?.messageData?.toolcallData?.additional_details) &&
-                                        props.messageData.toolcallData.additional_details.length > 0 &&
-                                        Array.isArray(props.messageData.toolcallData.additional_details[0]?.additional_kwargs?.tool_calls) &&
-                                        props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls.length > 0 &&
-                                        props.messageData.toolcallData.additional_details[0].additional_kwargs.tool_calls[0]?.function?.arguments === "{}" ? (
-                                          <></>
-                                        ) : (
-                                          <></>
-                                        )}
-
-                                        <button className={chatBubbleCss.editBtn} onClick={() => onMsgEdit(data)} title="Edit">
-                                          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                                            <g>
-                                              <path
-                                                d="M15.2 3.8c.5-.5 1.3-.5 1.8 0l.2.2c.5.5.5 1.3 0 1.8l-9.7 9.7-2.7.3.3-2.7 9.7-9.7z"
-                                                fill="currentColor"
-                                                stroke="currentColor"
-                                                strokeWidth="1.5"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                              />
-                                              <rect x="2.5" y="14.5" width="5" height="2" rx="0.8" fill="currentColor" opacity="0.18" />
-                                              <path d="M13.7 5.7l1.6 1.6" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                                            </g>
-                                          </svg>
-                                        </button>
-                                      </>
-                                    )}
-                                    {data?.response_time && (
-                                      <span className={chatBubbleCss.responseTime}>
-                                        <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
-                                          {formatResponseTimeSeconds(data.response_time)}
-                                        </span>
-                                      </span>
-                                    )}
-                                  </div>
-                                </>
-                              ) : (
+                                data?.message === "" &&
+                                Array.isArray(data?.toolcallData?.additional_details) &&
+                                data.toolcallData.additional_details.length > 0 &&
+                                data.toolcallData.additional_details[0]?.additional_kwargs &&
+                                Object.keys(data.toolcallData.additional_details[0]?.additional_kwargs).length > 0 ? null : ( // buttons inside the ToolCallFinalResponse card and skip extra feedback icons. // For tool-call verifier messages, rely on the Approve / Request Changes
                                 <>
                                   {" "}
                                   {/* Generic feedback when there is visible content (message text, parts, or other content) */}
                                   {/* Skip rendering if Plan Feedback wrapper is already shown (Plan Verifier scenario) */}
                                   {/* Also skip for plan-only responses when Plan Verifier (isHuman) is enabled */}
-                                  {/* Also skip when feedBack === "no" (user clicked thumbs down on plan, showing feedback input) */}
                                   {/* Hide feedback buttons when generating (like/regenerate in progress) */}
                                   {/* For PLANNER_META_AGENT/META_AGENT: Show feedback buttons when there's a final response (non-empty message) */}
+                                  {/* Hide feedback buttons for pipeline agents but show response time */}
                                   {hasVisibleBubbleContent &&
-                                    feedBack !== "no" &&
                                     !showgenerateButton &&
                                     !isEditable &&
                                     // Previously this used isLastPlanInMessages (undefined). Use the actual intent:
@@ -1476,25 +1350,28 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                     !(hasPlanContent && data?.message === "" && !hasPartsContent && isHuman && !hasToolDetails) &&
                                     !((agentType === PLANNER_META_AGENT || agentType === META_AGENT) && data?.message === "" && !hasPartsContent) && (
                                       <div className={`${chatBubbleCss.feedbackWrapper} feedbackWrapper-5`}>
-                                        {agentType !== PIPELINE_AGENT && (
-                                          <>
-                                            <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(like, session)} title="Good response">
-                                              <FontAwesomeIcon icon={faThumbsUp} />
-                                            </button>
-                                            <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(dislike, session)} title="Poor response">
-                                              <FontAwesomeIcon icon={faThumbsDown} style={{ transform: "scaleX(-1)" }} />
-                                            </button>
-                                            <button className={chatBubbleCss.feedbackButton} onClick={() => handleFeedBack(regenerate, session)} title="Regenerate response">
-                                              <FontAwesomeIcon icon={faRotateRight} style={{ transform: "rotate(-106deg)" }} className={generating ? chatBubbleCss.spinning : ""} />
-                                            </button>
-                                          </>
-                                        )}
                                         {data?.response_time && (
                                           <span className={chatBubbleCss.responseTime}>
                                             <span className={chatBubbleCss.time} title={`Response time: ${formatResponseTimeSeconds(data.response_time)}`}>
                                               {formatResponseTimeSeconds(data.response_time)}
                                             </span>
                                           </span>
+                                        )}
+                                        {agentType !== PIPELINE_AGENT && (
+                                          <>
+                                            <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(like, session)} title="Good response">
+                                              <SVGIcons icon="thumbs-up" width={16} height={16} />
+                                            </button>
+                                            <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(dislike, session)} title="Not helpful">
+                                              <SVGIcons icon="thumbs-down" width={16} height={16} />
+                                            </button>
+                                            <button
+                                              className={`${chatBubbleCss.feedbackButton} ${generating ? chatBubbleCss.spinning : ""}`}
+                                              onClick={() => handleFeedBack(regenerate, session)}
+                                              title="Regenerate response">
+                                              <SVGIcons icon="rotate-ccw" width={16} height={16} />
+                                            </button>
+                                          </>
                                         )}
                                       </div>
                                     )}
@@ -1520,11 +1397,6 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
               )}
               {data.type === USER && (
                 <>
-                  <div className={chatBubbleCss.avatarContainer}>
-                    <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.userAvatar}`}>
-                      <FontAwesomeIcon icon={faUser} className={chatBubbleCss.avatarIcon} />
-                    </div>
-                  </div>
                   <div className={chatBubbleCss.messageWrapper}>
                     <div className={`${chatBubbleCss.messageBubble} ${chatBubbleCss.userBubble}`}>
                       {/* Only render if data.message is a string or a plain object, never as a React child or array */}
@@ -1543,27 +1415,93 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                       ) : typeof data.message === "string" ? (
                         <div className={chatBubbleCss.messageContent}>
                           <div className={chatBubbleCss.userText}>
-                            {parse(DOMPurify.sanitize((data.message || "").replace(/\n/g, "<br />")), {
-                              replace: (domNode) => {
-                                if (domNode.name === "ul") {
-                                  domNode.attribs = domNode.attribs || {};
-                                  domNode.attribs.class = (domNode.attribs.class || "") + " markdownList";
-                                }
-                                if (domNode.name === "li") {
-                                  domNode.attribs = domNode.attribs || {};
-                                  domNode.attribs.class = (domNode.attribs.class || "") + " markdownListItem";
-                                }
-                              },
-                            })}
+                            {(() => {
+                              // Remove "[Attached files: ...]" section from displayed message
+                              let cleanMessage = data.message || "";
+                              cleanMessage = cleanMessage.replace(/\[Attached files:[\s\S]*?\]/gi, "").trim();
+                              if (!cleanMessage) return null;
+                              return parse(DOMPurify.sanitize(cleanMessage.replace(/\n/g, "<br />")), {
+                                replace: (domNode) => {
+                                  if (domNode.name === "ul" || domNode.name === "ol") {
+                                    domNode.attribs = domNode.attribs || {};
+                                    domNode.attribs.class = (domNode.attribs.class || "") + " " + chatBubbleCss.markdownList;
+                                  }
+                                  if (domNode.name === "li") {
+                                    domNode.attribs = domNode.attribs || {};
+                                    domNode.attribs.class = (domNode.attribs.class || "") + " " + chatBubbleCss.markdownListItem;
+                                  }
+                                },
+                              });
+                            })()}
                           </div>
                         </div>
                       ) : null}
+                      {/* Attached files display - from attachedFiles prop or parsed from message */}
+                      {(() => {
+                        // Use attachedFiles if available, otherwise try to parse from message
+                        let filesToShow = data.attachedFiles;
+                        if ((!filesToShow || filesToShow.length === 0) && typeof data.message === "string") {
+                          // Parse files from "[Attached files: - path1 - path2]" format
+                          const match = data.message.match(/\[Attached files:([\s\S]*?)\]/i);
+                          if (match && match[1]) {
+                            // Split by newline or " - " (with spaces) to avoid breaking filenames with hyphens
+                            const fileLines = match[1].split(/\n| - /).map(s => s.trim()).filter(Boolean);
+                            filesToShow = fileLines.map(filePath => {
+                              // Extract filename from path
+                              const fileName = filePath.split("/").pop() || filePath;
+                              // Try to extract original name by removing email and UUID parts
+                              // Format: original_name_email@domain.com_uuid1_uuid2_uuid3_uuid4.ext
+                              // Or: original_name_uuid-uuid-uuid-uuid_email@domain.com_uuid_uuid_uuid_uuid.ext
+                              const emailUuidPattern = /_[^_]+@[^_]+\.[^_]+_[a-f0-9]{4,}_[a-f0-9]{4,}_[a-f0-9]{4,}_[a-f0-9]{4,}\./i;
+                              const uuidEmailPattern = /_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}_[^_]+@[^_]+\.[^_]+_[a-f0-9]{4,}_[a-f0-9]{4,}_[a-f0-9]{4,}_[a-f0-9]{4,}\./i;
+                              let displayName = fileName;
+
+                              // Try the uuid-email pattern first (for filenames like optimization_results_uuid_email_uuid.ext)
+                              let patternMatch = fileName.match(uuidEmailPattern);
+                              if (!patternMatch) {
+                                // Fall back to email-uuid pattern
+                                patternMatch = fileName.match(emailUuidPattern);
+                              }
+
+                              if (patternMatch) {
+                                // Get the extension
+                                const ext = fileName.split(".").pop();
+                                // Get everything before the pattern match
+                                const beforePattern = fileName.substring(0, patternMatch.index);
+                                displayName = beforePattern ? `${beforePattern}.${ext}` : fileName;
+                              }
+                              return {
+                                name: displayName,
+                                path: filePath,
+                              };
+                            });
+                          }
+                        }
+                        if (!filesToShow || filesToShow.length === 0) return null;
+                        return (
+                          <div className={chatBubbleCss.attachedFilesContainer}>
+                            {filesToShow.map((file, fileIdx) => (
+                              <div
+                                key={file.path || fileIdx}
+                                className={chatBubbleCss.attachedFileChip}
+                                onClick={() => onViewFile && onViewFile(file)}
+                                title={`View ${file.name}`}
+                              >
+                                <SVGIcons icon="file" width={14} height={14} />
+                                <span className={chatBubbleCss.attachedFileName}>
+                                  {file.name.length > 25 ? `${file.name.substring(0, 22)}...` : file.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {(() => {
                       // Render timestamp below the bubble if available
                       const formattedTimestamp = formatMessageTimestamp(data?.start_timestamp);
                       if (!formattedTimestamp) return null;
-                      
+
                       return (
                         <div className={chatBubbleCss.timestamp} title={`Query sent at: ${formattedTimestamp.fullTime}`}>
                           {formattedTimestamp.displayText}
@@ -1602,33 +1540,35 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
         if (!Array.isArray(nodes) || nodes.length === 0) return false;
         return true;
       })() && (
-        <div className={`${chatBubbleCss.container} ${chatBubbleCss.botMessage}`}>
-          {/* Streaming active steps (no avatar / feedback) */}
-          <div className={chatBubbleCss.avatarContainer}>
-            <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.botAvatar}`}>
-              <span className={chatBubbleCss.agentIcon}>
-                <FontAwesomeIcon icon={faRobot} />
-              </span>
+          <div className={`${chatBubbleCss.container} ${chatBubbleCss.botMessage}`}>
+            {/* Streaming active steps (no avatar / feedback) */}
+            <div className={chatBubbleCss.avatarContainer}>
+              <div className={`${chatBubbleCss.avatar} ${chatBubbleCss.botAvatar}`}>
+                <span className={chatBubbleCss.agentIcon}>
+                  <FontAwesomeIcon icon={faRobot} />
+                </span>
+              </div>
+            </div>
+
+            <div className={chatBubbleCss.messageWrapper} style={{ marginLeft: 0 }}>
+              <ExecutionStepsList
+                rawNodes={nodes}
+                showDetails={showNodeDetails}
+                onToggleDetails={() => setShowNodeDetails((v) => !v)}
+                expandedNodes={expandedNodes}
+                onToggleNode={toggleNodeExpand}
+                keyPrefix="streaming"
+                baseId={baseId}
+                listRef={sseNodeListRef}
+                isStreaming={true}
+                streamContents={props?.streamContents}
+                currentNodeIndex={currentNodeIndex}
+                showNamesOnly={props.canExecutionSteps === false}
+              />
             </div>
           </div>
+        )}
 
-          <div className={chatBubbleCss.messageWrapper} style={{ marginLeft: 0 }}>
-            <ExecutionStepsList
-              rawNodes={nodes}
-              showDetails={showNodeDetails}
-              onToggleDetails={() => setShowNodeDetails((v) => !v)}
-              expandedNodes={expandedNodes}
-              onToggleNode={toggleNodeExpand}
-              keyPrefix="streaming"
-              baseId={baseId}
-              listRef={sseNodeListRef}
-              isStreaming={true}
-              streamContents={props?.streamContents}
-              currentNodeIndex={currentNodeIndex}
-            />
-          </div>
-        </div>
-      )}
       <div className={`${"fixedDebugpanel"} ${styles.loadingChat}`} style={{ width: "100%", maxWidth: "98%" }}></div>
     </div>
   );

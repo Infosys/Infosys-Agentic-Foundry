@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import chatInputModule from "./ChatInput.module.css";
+import SVGIcons from "../../Icons/SVGIcons";
 
 const SuggestionPopover = ({ suggestions, userValue, onSelect, visible, onClose }) => {
   const popoverRef = useRef(null);
@@ -84,16 +85,15 @@ const SuggestionPopover = ({ suggestions, userValue, onSelect, visible, onClose 
 
   return (
     <div ref={popoverRef} className={chatInputModule.suggestionPopover}>
+      {/* Close button */}
+      <button className={chatInputModule.suggestionCloseButton} onClick={() => onClose && onClose()} aria-label="Close suggestions">
+        <SVGIcons icon="close-small" width={16} height={16} stroke="currentColor" />
+      </button>
+
       {suggestions.history.length > 0 && (
         <div className={chatInputModule.suggestionSection}>
           <div className={chatInputModule.suggestionLabel}>
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-label="History" xmlns="http://www.w3.org/2000/svg" style={{ verticalAlign: "middle" }}>
-              <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.3" fill="none" />
-              <path d="M10 6V10L13 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              {/* <path d="M4.5 10a5.5 5.5 5.5 0 1 1 2.5 4.7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
-              <path d="M4.5 10H7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-              <path d="M4.5 10l1.5 1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /> */}
-            </svg>
+            <SVGIcons icon="history-clock" width={18} height={18} stroke="currentColor" />
             <span>History</span>
           </div>
           <ul className={chatInputModule.suggestionList}>
@@ -104,8 +104,7 @@ const SuggestionPopover = ({ suggestions, userValue, onSelect, visible, onClose 
                   key={item + idx}
                   className={`${chatInputModule.suggestionItem} ${isHighlighted ? chatInputModule.highlighted : ""}`}
                   onClick={() => onSelect(item, false)}
-                  tabIndex={0}
-                  style={isHighlighted ? { background: "#e0f2fe", color: "#007acc" } : {}}>
+                  tabIndex={0}>
                   {item}
                 </li>
               );
@@ -116,17 +115,7 @@ const SuggestionPopover = ({ suggestions, userValue, onSelect, visible, onClose 
       {filteredRecommendations.length > 0 && (
         <div className={chatInputModule.suggestionSection}>
           <div className={chatInputModule.suggestionLabel}>
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-label="Recommended" xmlns="http://www.w3.org/2000/svg" style={{ verticalAlign: "middle" }}>
-              <path d="M10 3.5V7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              <path d="M10 12.5V16.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              <path d="M3.5 10H7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              <path d="M12.5 10H16.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              <circle cx="10" cy="10" r="2.8" stroke="currentColor" strokeWidth="1.1" fill="none" />
-              <path d="M10 8.5L10 11.5" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" opacity="0.7" />
-              <path d="M8.5 10L11.5 10" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" opacity="0.7" />
-              <circle cx="15.2" cy="5.2" r="0.7" fill="currentColor" opacity="0.7" />
-              <circle cx="4.8" cy="15.2" r="0.7" fill="currentColor" opacity="0.7" />
-            </svg>
+            <SVGIcons icon="star-outline" width={18} height={18} stroke="currentColor" />
             <span>Suggested</span>
           </div>
           <ul className={chatInputModule.suggestionList}>
@@ -138,8 +127,7 @@ const SuggestionPopover = ({ suggestions, userValue, onSelect, visible, onClose 
                   key={item + idx}
                   className={`${chatInputModule.suggestionItem} ${isHighlighted ? chatInputModule.highlighted : ""}`}
                   onClick={() => onSelect(item)}
-                  tabIndex={0}
-                  style={isHighlighted ? { background: "#e0f2fe", color: "#007acc" } : {}}>
+                  tabIndex={0}>
                   {item}
                 </li>
               );

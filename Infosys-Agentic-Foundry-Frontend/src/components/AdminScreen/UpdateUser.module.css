@@ -1,0 +1,271 @@
+/* Admin Update User Form - Matches Login Card Style */
+
+/* Container - Now nested inside AnimatedContainer */
+.updateContainer {
+  width: 448px;
+  padding: 33px 33px 24px 33px;
+  background-color: transparent;
+  box-sizing: border-box;
+}
+
+/* Title */
+.updateTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--header-color);
+  margin: 0 0 24px 0;
+}
+
+/* Form layout */
+.form {
+  width: 382px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Input group wrapper */
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Input wrapper for password fields with eye icon */
+.inputWrapper {
+  position: relative;
+  width: 382px;
+}
+
+/* Password wrapper with eye toggle button */
+.passwordWrapper {
+  position: relative;
+  width: 382px;
+}
+
+.passwordWrapper .input {
+  padding-right: 44px;
+}
+
+/* Eye button for password toggle */
+.eyeButton {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  color: var(--text-tertiary);
+}
+
+.eyeButton:hover {
+  color: var(--muted);
+}
+
+/* Input fields - pill style with 20px radius */
+.input {
+  width: 382px;
+  height: 40px;
+  padding: 0 40px 0 16px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+}
+
+/* Eye icon for password toggle */
+.eyeIcon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+.eyeIcon:hover {
+  color: var(--muted);
+}
+
+/* Error text */
+.errorText {
+  font-size: var(--font-size-xs);
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+/* API Error display - matches form styling */
+.apiError {
+  font-size: var(--font-size-xs);
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+/* Error box */
+.errorBox {
+  font-size: var(--font-size-xs);
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+/* Success box */
+.successBox {
+  font-size: var(--font-size-xs);
+  color: var(--success);
+  margin-top: 4px;
+}
+
+/* Dropdown Styles */
+.dropdown {
+  position: relative;
+  width: 382px;
+}
+
+.dropdownToggle {
+  width: 382px;
+  height: 40px;
+  padding: 0 40px 0 16px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: border-color 0.2s ease;
+}
+
+.dropdownToggle:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+}
+
+.dropdownPlaceholder {
+  color: var(--text-tertiary);
+}
+
+.dropdownArrow {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--muted);
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 382px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.dropdownItem {
+  padding: 10px 16px;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.dropdownItem:hover {
+  background-color: var(--hover-background);
+}
+
+.dropdownItemSelected {
+  background-color: var(--accent-light);
+  color: var(--app-primary-color);
+}
+
+/* Submit Button - Update User */
+.submitButton {
+  width: 138px;
+  height: 45px;
+  margin-top: 8px;
+  padding: 0 16px;
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  transition: background-color 0.2s ease;
+}
+
+.submitButton:hover {
+  background-color: var(--app-secondary-color);
+}
+
+.submitButton:disabled {
+  background-color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
+.buttonArrow {
+  display: flex;
+  align-items: center;
+}
+
+/* Form Footer - matches Register page */
+.formFooter {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* Legacy styles for backward compatibility */
+.updatePasswordContainers {
+  display: flex;
+}
+
+.error {
+  color: var(--danger);
+  font-size: var(--font-size-xs);
+  margin-top: 4px;
+}
+
+.rootWrapper {
+  width: 100%;
+}

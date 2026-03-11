@@ -1,0 +1,69 @@
+/* Button container for modal buttons */
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+/* Login button style */
+.loginBtn {
+  padding: 8px 16px;
+  background-color: var(--app-primary-color, #007cc3);
+  color: #ffffff !important;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+
+.loginBtn:hover {
+  opacity: 0.9;
+}
+
+/* Cancel button style */
+.cancelBtn {
+  padding: 8px 16px;
+  background-color: var(--muted, #6b7280) !important;
+  color: #ffffff !important;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+
+.cancelBtn:hover {
+  opacity: 0.9;
+}
+
+/* Export button SVG styling - make second path transparent/filled for upload-new icon */
+:global(.subheaderExportBtn) svg path {
+  fill: transparent !important;
+}
+
+/* Export button hover state - second path */
+:global(.subheaderExportBtn):hover:not(:disabled) svg path:nth-of-type(2) {
+  fill: transparent !important;
+}
+
+/* Export button disabled state - second path */
+:global(.subheaderExportBtn):disabled svg path:nth-of-type(2) {
+  fill: transparent !important;
+}
+
+/* Loading more indicator for pagination */
+.loadingMore {
+  text-align: center;
+  padding: 12px;
+  color: var(--app-primary-color, #0073cf);
+  font-weight: 600;
+  font-style: normal;
+  background-color: rgba(0, 115, 207, 0.08);
+  border-top: 1px solid rgba(0, 115, 207, 0.2);
+  box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.05);
+  border-radius: 0 0 8px 8px;
+}

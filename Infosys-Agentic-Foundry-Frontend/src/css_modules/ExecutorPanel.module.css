@@ -1,0 +1,192 @@
+/* ============================================
+   EXECUTOR PANEL STYLES
+   ============================================ */
+
+/* Executor Container - Main scrollable container */
+.executorContainer {
+  position: relative;
+  border-radius: var(--radius, 8px);
+  margin: 0;
+  overflow-y: auto;
+  max-height: 80vh;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  min-height: 200px;
+  padding-bottom: 16px;
+}
+
+/* Loading Overlay */
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* background: rgba(255, 255, 255, 0.85); */
+  z-index: 1200;
+  border-radius: var(--radius, 8px);
+}
+
+.executorHeaderWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--secondary-bg);
+  border-bottom: 1px solid var(--border);
+
+  padding: 6px 16px;
+}
+
+.executorPanelHeader {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+/* Close Button Positioning */
+.closeBtnPosition {
+  z-index: 1300;
+}
+
+.sectionWrapper {
+  padding: 6px 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sectionWrapper:last-child {
+  border-bottom: none;
+}
+
+/* Form block for server tools dropdown */
+.formBlock {
+  position: relative;
+  top: 6px;
+  left: 0;
+  margin-bottom: 16px;
+}
+
+/* Execution Header */
+.executionHeader {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-size-lg, 18px);
+  font-weight: 600;
+}
+
+/* Header Text */
+.headerText {
+  color: var(--header-color);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-semibold, 600);
+  margin: 0;
+}
+
+/* Input Error State - for validation */
+.inputError {
+  border-color: #dc3545 !important;
+}
+
+.inputError:focus {
+  box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.2);
+}
+
+/* Subtle Error Message */
+.subtleErrorMessage {
+  color: #dc3545;
+  font-size: 12px;
+  opacity: 0.9;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 0.9;
+    transform: translateX(0);
+  }
+}
+
+/* Dark theme variant */
+:root[data-theme="dark"] .subtleErrorMessage {
+  color: #ff6b6b;
+}
+
+/* Run Button Right Alignment */
+.runButtonRight {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* Check Icon */
+.checkIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+/* Execution Title */
+.executionTitle {
+  color: var(--header-color);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Execution Output Panel */
+.executionOutputPanel {
+  margin-right: 15px;
+  border: 1px solid var(--content-border-color);
+  border-radius: 12px;
+  padding: 18px 22px;
+  margin-top: 18px;
+  color: var(--header-color);
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Execution Output Text Block */
+.executionOutputTextBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Execution Step */
+.executionStep {
+  padding-block: 12px;
+  font-size: 15px;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+}
+
+/* Execution Result Text */
+.executionResultText {
+  font-size: 15px;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  margin: 0;
+  margin-top: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Success/Error Content - used in renderValidationContent helper */
+.success_error_content {
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  text-wrap: auto;
+}

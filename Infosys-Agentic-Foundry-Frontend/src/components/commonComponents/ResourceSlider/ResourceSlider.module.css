@@ -1,0 +1,556 @@
+/* ResourceSlider Component Styles - Multi-theme Support */
+
+/* Backdrop overlay - blocks content behind slider */
+.sliderBackdrop {
+  position: fixed;
+  top: 0;
+  left: var(--main-width, 60px);
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay);
+  z-index: 1000050;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.3s ease,
+    visibility 0.3s ease;
+}
+
+.sliderBackdrop.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Slider Overlay - theme adaptive */
+.sliderOverlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 32rem;
+  max-width: 50%;
+  z-index: 1000051;
+  background: var(--card-bg, var(--modal-bg));
+  transition:
+    width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    max-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.3s ease-in-out;
+  transform: translateX(0);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Collapsed state - slider shrinks to show only toggle button */
+.sliderOverlay.collapsed {
+  transform: translateX(calc(100% - 0px));
+}
+
+/* Expanded state - takes full width minus navbar */
+.sliderOverlayExpanded {
+  width: calc(100vw - var(--main-width));
+  max-width: calc(100vw - var(--main-width));
+}
+
+.sliderContainer {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg, var(--modal-bg));
+  box-shadow: var(--shadow-lg);
+  border-left: 1px solid var(--border-color);
+  flex: 1 1 auto;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sliderToggle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translate(-100%, -50%);
+  border-top-left-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-lg);
+  padding: 9px 6px 4px 6px;
+  background: var(--modal-bg);
+  border: 1px solid var(--accent-light);
+  border-right: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sliderToggle:hover {
+  background: var(--hover-background);
+  transform: translate(-100%, -50%) !important;
+}
+
+.sliderToggle svg {
+  width: 16px;
+  height: 16px;
+  color: var(--content-color) !important;
+  transition: transform 0.3s ease;
+}
+
+/* Rotate toggle arrow when slider is collapsed */
+.sliderToggle.toggleCollapsed svg {
+  transform: rotate(180deg);
+}
+
+/* Slider Header - Fixed */
+.sliderHeader {
+  flex-shrink: 0;
+  padding: 8.8px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sliderTitle {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  margin: 0;
+  letter-spacing: 0.5px;
+  text-transform: capitalize;
+}
+
+.sliderSubtitle {
+  font-size: var(--font-size-xs);
+  color: var(--content-color, var(--text-secondary));
+  margin-top: 0.25rem;
+}
+
+/* .sliderCloseButton {
+  flex-shrink: 0;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sliderCloseButton:hover {
+  background: rgba(0, 113, 179, 0.15);
+} */
+
+/* .sliderCloseButton svg {
+  width: 20px;
+  height: 20px;
+  color: var(--content-color) !important;
+} */
+
+/* Tab Container - Fixed */
+.tabContainer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.1rem 1.5rem 0.5rem;
+  background: transparent;
+}
+
+.tab {
+  position: relative;
+  top: -5px;
+  flex-direction: row;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 6px 9px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--content-color, var(--text-secondary));
+  /* background: rgba(0, 0, 0, 0.2); */
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: capitalize;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  background: var(--accent-light);
+  border-color: var(--accent-light);
+}
+
+.tab.tabActive {
+  color: var(--primary-button-color);
+  background: var(--btn-color);
+  border-color: var(--accent-color);
+  box-shadow: 0 2px 8px var(--accent-light);
+}
+.tab.tabActive svg {
+  color: var(--primary-button-color) !important;
+}
+
+.tab svg {
+  width: 16px;
+  height: 16px;
+  color: var(--content-color) !important;
+}
+
+.tabLabel {
+  font-weight: var(--font-weight-medium);
+}
+
+/* No Permission Text - Displayed when user lacks access to all resource types */
+.noPermissionText {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-style: normal;
+  padding: 0.5rem 0;
+}
+
+/* Search Container - Fixed */
+.searchContainer {
+  top: 7px;
+  flex-shrink: 0;
+  position: relative;
+  padding: 0.5rem 1.5rem;
+}
+
+/* Search and Filter Row - Flex container for search input and filter dropdown */
+.searchFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.searchInputWrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Resources List Container - Scrollable */
+.resourcesListContainer {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1rem 1.5rem;
+  min-height: 0;
+}
+
+.resourcesGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.resourceItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2px 12px;
+  background: var(--menu-bg);
+  /* border: 1px solid var(--border-color); */
+  border: 1px solid var(--content-border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.resourceItem:hover {
+  background: var(--hover-background);
+  border-color: var(--accent-color);
+  transform: translateX(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.resourceItem.resourceItemSelected {
+  background: var(--accent-light);
+  border-color: var(--accent-color);
+  box-shadow: var(--shadow-md);
+}
+
+.checkbox {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--dashboard-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.checkbox[aria-checked="true"] {
+  background: var(--btn-color);
+  border-color: var(--btn-color);
+}
+
+.checkbox svg {
+  width: 14px;
+  height: 14px;
+  color: var(--primary-button-color);
+}
+
+.resourceIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resourceIcon svg {
+  color: var(--content-color) !important;
+}
+
+.resourceItemName {
+  text-transform: capitalize;
+  font-weight: var(--font-weight-normal);
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--header-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewButton {
+  flex-shrink: 0;
+  padding: 0.375rem;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.previewButton:hover {
+  background: var(--accent-light);
+  border-color: var(--accent-color);
+}
+
+.previewButton svg {
+  width: 16px;
+  height: 16px;
+  color: var(--btn-color) !important;
+  stroke: var(--btn-color) !important;
+}
+
+.loadingState,
+.emptyResourcesState {
+  padding: 2rem;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--content-color, var(--text-secondary));
+}
+
+/* Slider Footer - Fixed */
+.sliderFooter {
+  flex-shrink: 0;
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  background: var(--header-bg);
+}
+
+.selectedCount {
+  font-size: var(--font-size-xs);
+  color: var(--content-color, var(--text-secondary));
+  text-align: center;
+}
+
+.sliderFooterButtons {
+  display: flex;
+  gap: 0.5rem;
+  flex-direction: row-reverse;
+}
+
+.clearAllButton,
+.saveSelectionButton {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0rem 1rem;
+  height: 38px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow);
+  text-transform: capitalize;
+  letter-spacing: 0.05em;
+}
+
+.clearAllButton {
+  color: var(--content-color, var(--text-primary));
+  background: var(--primary-button-color);
+  border: 1px solid var(--border-color);
+}
+
+.clearAllButton:hover {
+  background: var(--btn-color);
+  border-color: var(--accent-light);
+  transform: translateY(-1px);
+  color: var(--primary-button-color);
+}
+
+.saveSelectionButton {
+  color: var(--primary-button-color);
+  background: var(--btn-color);
+  border: 1px solid var(--accent-color);
+}
+
+/* ============================================
+   Preview Panel Styles - Full height/width overlay
+   ============================================ */
+
+.previewOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--card-bg, var(--modal-bg));
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.previewContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.previewContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px;
+  overflow-y: auto;
+  gap: 16px;
+}
+
+.previewDescription {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--content-color, var(--text-secondary));
+  line-height: 1.6;
+}
+
+.previewLabel {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--content-color);
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.previewEndpoint {
+  display: flex;
+  flex-direction: column;
+}
+
+.previewEndpointValue {
+  padding: 10px 12px;
+  background: var(--dashboard-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--accent-color);
+  word-break: break-all;
+}
+
+.previewCodeSection {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 200px;
+}
+
+.previewCodeContainer {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  min-height: 300px;
+  background: var(--code-bg);
+}
+
+.previewCodeContainer :global(.ace_editor) {
+  background: var(--code-bg) !important;
+}
+
+.previewCodeContainer :global(.ace_gutter) {
+  background: var(--code-bg) !important;
+}
+
+/* Preview Footer Styles */
+.previewFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+/* Server Edit Overlay Styles */
+.serverEditOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay);
+  z-index: 1100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.serverEditContainer {
+  position: relative;
+  background: var(--card-bg);
+  border-radius: var(--radius-card);
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: var(--shadow-lg);
+}
+
+.serverEditCloseBtn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  color: var(--content-color);
+  font-size: 24px;
+  cursor: pointer;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s ease;
+}
+
+.serverEditCloseBtn:hover {
+  background: var(--modal-close-hover-bg);
+}

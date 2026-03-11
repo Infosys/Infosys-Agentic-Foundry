@@ -8,32 +8,22 @@ const AgentAssignment = () => {
   const [activeTab, setActiveTab] = useState("individual"); // State for active sub-tab
 
   return (
-    <div className={styles.containerCss}>
+    <div className={"pageContainer"}>
       <div className={styles.agentAssignmentContainer}>
         {/* Sub-tabs Header */}
         <div className={styles.toggleWrapper}>
-          <button
-            type="button"
-            className={`iafTabsBtn ${activeTab === "individual" ? " active" : ""}`}
-            onClick={() => setActiveTab("individual")}>
+          <button type="button" className={`iafTabsBtn ${activeTab === "individual" ? " active" : ""}`} onClick={() => setActiveTab("individual")}>
             Individual
           </button>
-          <button
-            type="button"
-            className={`iafTabsBtn ${activeTab === "group" ? " active" : ""}`}
-            onClick={() => setActiveTab("group")}>
+          <button type="button" className={`iafTabsBtn ${activeTab === "group" ? " active" : ""}`} onClick={() => setActiveTab("group")}>
             Group
           </button>
-          <button
-            type="button"
-            className={`iafTabsBtn ${activeTab === "role" ? " active" : ""}`}
-            onClick={() => setActiveTab("role")}>
+          <button type="button" className={`iafTabsBtn ${activeTab === "role" ? " active" : ""}`} onClick={() => setActiveTab("role")}>
             Role
           </button>
-
         </div>
 
-        <div className={styles.listArea}>
+        <div className="listWrapper">
           {activeTab === "individual" && <IndividualAgentAssignment />}
           {activeTab === "group" && <GroupAgentAssignment />}
           {activeTab === "role" && <RoleAgentAssignment />}

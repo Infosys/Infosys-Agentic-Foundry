@@ -1,8 +1,96 @@
 # Changelog
 
-## [1.7.1]
--1. Hot Fix: Addtool with and without file two diffrenent api
+## [1.8.0]
 
+### Feature
+
+New Modernised UI is designed with dark theme and light theme and consistent design across the pages.
+
+- 13. Implemented GoogleAdk
+- 14. File upload feature enhancement in chat page.
+- 14. Tool to MCP server conversion changes.
+- 15. Epoch and Threshold toggles enabled in admin screen.
+- 15. Bug fixes:
+    - In Add screens of tools, agents servers the default tag shows as No tags, show as General tag by default.
+    - While updating the agent, the tool section is unable to open the tool details.
+    - When a user logs in for the first time and tries to create a new agent, the system shows “Failed to load model".
+    - In the Update Agent screen, the welcome message does not show an asterisk (*), while the agent goal and workflow description do show it.
+    - In the agent welcome message, the popup or highlight behavior is inconsistent compared to other messages.
+- 16. Parallelism of agent node in pipelines
+- 17. Removal of pipelines get endpoint from the chat page.
+- 18. On Add or Update of tools, servers, agents the form retains and shows the update screen untill user maually closes the FullModal. Also fixed the Api implementations , filtering in Server page instead of locally handling the data.
+- 19. Added default_model_value to all the model dropdowns.
+- 20. File upload removed from Tool Add and Server add instead reads from UI itself in the Code Snippet.
+- 21. Bug Fixes
+   1. remove the file context and message queue toggle for google adk and pure python framework types.
+   2. agent type filter changes in evaluation metrics.
+   3. Remove the feedback buttons for the pipeline agents in final response and old chats responses.
+   4. Export agent modal configuration changes.
+   5. Change "Generate" label "Convert to MCP"
+   6. Realtime Filtering is happening on created by - All/Me, Filtering should only happen after the user clicks on "Apply"
+   7. Search button should be placed beside search bar to be able to click by the "Mouse"
+   8. In chat page on clicking "X" in select tools pop up in tool verifier toggle settings, it's not working.
+- 22. Bug Fixes
+   1. add specific icons for specific databases
+   2. Text is overlapping with the copy and expand icons in tools/server/agents pages.
+- 23. Sast scan issues fix. Microphone changes in chat page.
+- 24. Agent Form page issues fix.
+- 25.  - 26.  Bug Fixes
+  - 1. data connectors logo colors should not change while switiching between the light and dark theme.
+  - 2. In Add Resources, filter option is not working.
+  - 3. Add a clickable search icon next to the search bar in the ‘Add Resources’ section of Agents.
+  - 4. The ‘General’ tag remains selected even when the user chooses other tags. Since ‘General’ is selected by default, it should be automatically removed if the user deselects it or selects alternative tags.
+- 27. 
+ - 1. vault page group value rendering issue fix.
+ - 2. Version number visibility issue.
+ - 3. tag selector rendering issue in tool/agents/servers pages.
+ - 4. welcome message format changes in chat page.
+ - 5. Chat-bot icon overlapping issue in tool onboarding page.
+ - 6. Knowledge base update endpoint integration.
+ - 7. Agent onboarding payload changes.
+ - 8. Theme issues for the input fields.
+ - 9. update agent page tool and servers rendering issue fix.
+ - 10. In list of tools page duplicate data rendering issue.
+ - 28. 
+ - 11. Removal new card  creation from all the pages.
+ - 12. Theme button postion changes.
+ - 13. when the menu is expanded/collapsed the cards width is changing issue fix.
+ - 14. Submenu is hiding when the loader is present in admin pages, always enable the menu.
+ - 15. In login, register, contact pages have for theme preferences.
+ - 16. In contact page, on click of the copy button text is not shown in dark theme.
+ - 17. On agent update, don't enable toggles to true like "regenerate welcome message", "regenerate system prompt", "regenerate file context prompt".
+ - 29. filtering issues fix in tools/agents/servers.
+ - 30. Chat page enhancement changes.
+ - 31. 
+  - 1. when updating agent, let's say agent having some resources already, when you click on "+" resource button and clear all selection and without save selection if you click on cross mark, then already existing resources for that agent not displaying. 
+  - 2. Frequent logout issue fix.
+  - 3. When admin changes password, so when you login using temporary password, it will redirect to a card to change password. So, when you type incorrect current password and trying to change password, it is again redirecting to login page.
+  - 4. when switching between tabs, search term is not cleared in valut page.
+  - 5. LLM As judge, same model value shown in two dropdowns.
+  - 6. On ground truth page, when select model name, agent type, agent name, upload a file and LLM grade toggle to true and click on execute button, disable to edit on that page as execution going on at that time.
+  - 7. In metrics/Evaluation records, when you select any filter called "React", then from backend we are getting "No evaluation data found", but still Ui is showing some records.
+  - 8. Agent type not showing in list of agents in learning page for admin menu.
+- 32. Include validator toggle for hybrid agents. For knowledge bases in update agent page to render update the endpoint.
+- 33. Enhancement changes.
+- 34. Bug fixes
+- 1. In data connectors page for the editor styling changes.
+- 2. On click of the coding agent button, trigger the endpoint to fetch the pipeline id data instead of the static value from the UI to send to payload while inferencing.
+- 3. In LLM as judge page while execution is in progress do not allow for input changes.
+- 4. Hide the code execution button and access control guide in recycle bin for servers.
+- 5. In value page for all the tabs enable the secret value to edit.
+- 6. In framework for all the pages use the font style as normal for consistency by replacing from italic.
+- 7. In recycle bin for agents, tools, servers do not show the copy and expand buttons.
+- 8. In ground truth page disable the fields while execution is in progress.
+- 9. In data connectors, in query modal when the results are not present still showing the empty container in ui , do not render the empty container. render only when data is present.
+- 10. In register form page, on hover the href link content is not visible.
+- 11. In consistency add form page, the fields data updation is depend on model name filling remove that logic. User can fill the form in any order.
+- 12. on click of regenerate button in the final response block show the regenerating loading text until the response is rendered.
+- 13. Code editor cursor positions issues fix.
+- 14. for add server endpoint payload issues fix.
+- 35. Bug fixes
+- 1. In evaluation records, tools efficiency, agents efficiency pages, When you apply any filter that returns no evaluation data, and then when you clear selection and apply, no data is showing.
+- 2. The selected agents in filter dropdown,show on top as selected.
+- 36. Disable the convert to mcp button when the validators are selected.
 ## [1.7.0]
 
 - 1. As part of SAST fixes "password" is modified to "user_pwd" in DataConnectors Screen.
@@ -23,8 +111,8 @@
 - 10. Include Validator toggle for hybrid agent.
 - 11. For admin role, Enable the installation of modules.
 - 12. Recycle bin and TTL for servers.
+  13. Removed Validator toggle for hybrid agent.
 - 12. Removed the pipeline agent type from the list in agent onboard, consistency tab, groundtruth .
-- 13. Removed Validator toggle for hybrid agent.
 
 ## [1.6.0]
 
@@ -77,7 +165,6 @@
 - Admin screen ui updated , scroll issues fixed. Removed monaco editor.
 - In the groundtruth page reset the execution results when the inputs are changed and removal of multiple scrolls.
 - Defect fixes :
-
   - Made all screens Close button to Cancel button.
   - Select agent if default disable model and agent dropdowns.
   - Star icon should be refresh if the list is empty

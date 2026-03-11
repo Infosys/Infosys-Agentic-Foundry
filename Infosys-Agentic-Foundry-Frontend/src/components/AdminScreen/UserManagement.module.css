@@ -1,0 +1,335 @@
+/**
+ * UserManagement - Card style matching Tools/Servers/Groups pages
+ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  padding: 0 20px 20px 20px;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Header Row with Department Dropdown */
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+/* Department Filter Row - SuperAdmin */
+.departmentFilterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.departmentFilterInner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.departmentIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-primary-color, #37acea);
+  flex-shrink: 0;
+}
+
+.departmentLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--header-color);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.departmentUserCount {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 4px 12px;
+  background: var(--hover-background);
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+/* Responsive - Department Filter */
+@media (max-width: 1024px) {
+  .departmentFilterRow {
+    padding: 8px 12px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 767px) {
+  .departmentFilterRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .departmentFilterInner {
+    width: 100%;
+  }
+
+  .departmentFilterInner > :last-child {
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .departmentFilterRow {
+    padding: 8px 10px;
+  }
+
+  .departmentLabel {
+    font-size: 12px;
+  }
+}
+
+/* Card Grid - Uses global display-cards-grid from DisplayCard1.css */
+/* Uses same responsive minmax pattern as Tools/Agents pages */
+.cardGrid {
+  /* Auto-fill with fixed min width - consistent card sizes, auto-wraps when space is tight */
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+  padding-right: 0 !important;
+}
+
+/* Responsive breakpoints matching DisplayCard1.css */
+@media (max-width: 1200px) {
+  .cardGrid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .cardGrid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .cardGrid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .cardGrid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* User Card */
+.userCard {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 140px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Border light effect pseudo-element */
+.userCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(55, 172, 234, 0.85), rgba(2, 93, 138, 1), rgba(55, 172, 234, 0.85), transparent);
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.userCard:hover::before {
+  opacity: 1;
+  animation: borderLightMove 1.5s ease-in-out infinite;
+}
+
+@keyframes borderLightMove {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.userCard:hover {
+  border-color: #37acea;
+  box-shadow: 
+    0 8px 32px rgba(55, 172, 234, 0.25),
+    0 16px 48px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(55, 172, 234, 0.15);
+}
+
+.cardInactive {
+  opacity: 0.6;
+}
+
+.cardInactive:hover {
+  opacity: 0.8;
+}
+
+/* Card Header */
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.userInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.userName {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--header-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userEmail {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Role Tag */
+.roleTag {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.roleAdmin {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.roleSuperAdmin {
+  background: #fce7f3;
+  color: #be185d;
+}
+
+.roleDeveloper {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.roleManager {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.roleDefault {
+  background: var(--hover-background);
+  color: var(--muted);
+}
+
+/* Card Footer */
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.togglesWrapper {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.toggleGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggleLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .container {
+    padding: 0 12px 12px 12px;
+  }
+
+  .userCard {
+    padding: 16px;
+  }
+
+  .cardFooter {
+    gap: 12px;
+  }
+}
+
+/* Dark Theme */
+:root[data-theme="dark"] .roleAdmin {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+:root[data-theme="dark"] .roleSuperAdmin {
+  background: rgba(236, 72, 153, 0.2);
+  color: #f472b6;
+}
+
+:root[data-theme="dark"] .roleDeveloper {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+}
+
+:root[data-theme="dark"] .roleManager {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+:root[data-theme="dark"] .roleDefault {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+}

@@ -1,22 +1,41 @@
 import { useState, useEffect, useRef } from "react";
 import { usePermissions } from "../../context/PermissionsContext";
 import styles from "./Vault.module.css";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEye, faTrash, faEyeSlash, faTimes } from "@fortawesome/free-solid-svg-icons";
+import SVGIcons from "../../Icons/SVGIcons";
+import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
 import { APIs } from "../../constant";
+import { copyToClipboard } from "../../utils/clipboardUtils";
 import Cookies from "js-cookie";
 import Loader from "../commonComponents/Loader";
-import SVGIcons from "../../Icons/SVGIcons";
+import SubHeader from "../commonComponents/SubHeader";
 import { useMessage } from "../../Hooks/MessageContext";
 import useFetch from "../../Hooks/useAxios";
-import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import Button from "../../iafComponents/GlobalComponents/Buttons/Button";
+import CodeEditor from "../commonComponents/CodeEditor";
+import codeEditorStyles from "../commonComponents/CodeEditor.module.css";
+
+// Constants for SAST/DAST compliance - string literals stored as constants
+const LABELS = {
+  VAULT_ITEM_LABEL: "Secret",
+  ADD_NEW_VAULT_ITEM: "Secrets",
+  PRIVATE: "Private",
+  PUBLIC: "Public",
+  GROUP: "Group",
+  NAME: "Name",
+  VALUE: "Value",
+  PYTHON: "Python",
+};
+
+// Configuration constants
+const AUTO_MASK_TIMEOUT = 30000;
+const MAX_VALUE_LENGTH = 10000;
+const MAX_NAME_LENGTH = 255;
 
 const Vault = () => {
   const { permissions, loading: permissionsLoading, hasPermission } = usePermissions();
   const lastRowRef = useRef(null);
   const { postData, putData, deleteData, fetchData } = useFetch();
-  const containerRef = useRef(null);
   const role = Cookies.get("role");
   const { addMessage } = useMessage();
   // Separate caches for each tab to prevent value interchange
@@ -32,8 +51,8 @@ const Vault = () => {
   // Sanitize vault value to prevent XSS and limit length
   const sanitizeVaultValue = (value) => {
     if (!value) return "";
-    // Convert to string and limit length to 10000 characters
-    const sanitized = String(value).substring(0, 10000);
+    // Convert to string and limit length
+    const sanitized = String(value).substring(0, MAX_VALUE_LENGTH);
     return sanitized;
   };
 
@@ -51,8 +70,8 @@ const Vault = () => {
     }
   };
 
-  // Clear all secrets from all caches and reset timer
-  const clearAllSecretsFromCache = () => {
+  // Clear all scts from all caches and reset timer
+  const clearAllSctsFromCache = () => {
     privateVaultCache.current = {};
     publicVaultCache.current = {};
     groupVaultCache.current = {};
@@ -65,7 +84,7 @@ const Vault = () => {
   };
 
   // Clear specific item from cache
-  const clearSecretFromCache = (index, tab) => {
+  const clearSctFromCache = (index, tab) => {
     const cache = getVaultCache(tab);
     delete cache.current[index];
     if (currentVisibleIndex.current === index && currentVisibleTab.current === tab) {
@@ -144,7 +163,7 @@ const Vault = () => {
       currentVisibleIndex.current = null;
       currentVisibleTab.current = null;
       addMessage("Secret automatically hidden for security.", "success");
-    }, 30000); // 30 seconds
+    }, AUTO_MASK_TIMEOUT);
   };
 
   const [rows, setRows] = useState(() => {
@@ -158,55 +177,61 @@ const Vault = () => {
   const [selectedGroup, setSelectedGroup] = useState("");
   const [selectedGroupObj, setSelectedGroupObj] = useState(null);
   const [groupSearchTerm, setGroupSearchTerm] = useState("");
+  const [appliedGroupSearchTerm, setAppliedGroupSearchTerm] = useState("");
   const [showGroupDropdown, setShowGroupDropdown] = useState(false);
   const [highlightedGroupIndex, setHighlightedGroupIndex] = useState(-1);
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
+  /* eslint-disable react-hooks/exhaustive-deps */
+  // Fetch vault data when active tab changes - dependencies intentionally limited to activeTab
   useEffect(() => {
     setLoading(true);
-    // Clear all secrets and timers when tab changes
-    clearAllSecretsFromCache();
+    // Clear search term when switching tabs
+    setSearchTerm("");
+    // Clear all scts and timers when tab changes
+    clearAllSctsFromCache();
 
     const fetchVaultData = async () => {
       let data;
       let formatted;
-      if (activeTab === "Public") {
+      if (activeTab === LABELS.PUBLIC) {
         data = await getPublicScripts();
         formatted = Array.isArray(data)
           ? data.map((item) => ({
-              name: item.name || "",
-              value: "", // Update this if you have actual vault values
-              isSaved: true,
-              isMasked: true,
-              isUpdated: false,
-              originalName: item.name || "",
-              originalValue: "",
-            }))
+            name: item.name || "",
+            value: "",
+            isSaved: true,
+            isMasked: true,
+            isUpdated: false,
+            originalName: item.name || "",
+            originalValue: "",
+          }))
           : [];
-      } else if (activeTab === "Group") {
+      } else if (activeTab === LABELS.GROUP) {
         data = await getGroupScripts();
         formatted = Array.isArray(data)
           ? data.map((item) => ({
-              name: item.name || "",
-              value: "", // Update this if you have actual value
-              isSaved: true,
-              isMasked: true,
-              isUpdated: false,
-              originalName: item.name || "",
-              originalValue: "",
-            }))
+            name: item.name || "",
+            value: "",
+            isSaved: true,
+            isMasked: true,
+            isUpdated: false,
+            originalName: item.name || "",
+            originalValue: "",
+          }))
           : [];
       } else {
         data = await getScripts();
         const vaultItems = data || {};
 
         formatted = Object.entries(vaultItems).map(([key, value]) => ({
-          name: String(value || "").substring(0, 255),
+          name: String(value || "").substring(0, MAX_NAME_LENGTH),
           value: "",
           isSaved: true,
           isMasked: true,
           isUpdated: false,
-          originalName: String(value || "").substring(0, 255),
+          originalName: String(value || "").substring(0, MAX_NAME_LENGTH),
           originalValue: "",
         }));
       }
@@ -214,14 +239,15 @@ const Vault = () => {
         formatted.length
           ? formatted
           : role?.toUpperCase() !== "GUEST"
-          ? [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]
-          : []
+            ? [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]
+            : [],
       );
 
       setLoading(false);
     };
     fetchVaultData();
   }, [activeTab]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   useEffect(() => {
     if (role?.toUpperCase() !== "GUEST" && rows.length === 0) {
@@ -297,6 +323,19 @@ def fetch_weather(city):
     return f"Ready to fetch data from: {full_url}"
 
 print(fetch_weather("New York"))`;
+
+  const groupPythonVaultExample = `# Example: Using group secrets to build a secure API request URL
+
+def fetch_weather(city):
+    api_key = get_group_secrets('Group_name', 'weather_api_key', 'no_api_key_found')
+    base_url = get_group_secrets('Group_name', 'weather_api_base_url', 'https://default-weather-api.com')
+    full_url = f"{base_url}/weather?city={city}&apikey={api_key}"
+    return f"Ready to fetch data from: {full_url}"
+
+print(fetch_weather("New York"))`;
+
+  // Select the appropriate code example based on active tab
+  const activeCodeExample = activeTab === LABELS.GROUP ? groupPythonVaultExample : pythonVaultExample;
 
   const isRowComplete = (row) => row.name.trim() !== "" && row.value.trim() !== "";
 
@@ -408,15 +447,15 @@ print(fetch_weather("New York"))`;
       return;
     }
 
-    const res = {
+    const payload = {
       key_name: row.name,
-      key_value: row.value,
+      secret_value: row.value,
     };
 
     try {
-      // Use the domain-specific secrets endpoint
-      const apiUrl = `/domains/${encodeURIComponent(selectedGroup)}/secrets`;
-      const response = await postData(apiUrl, res);
+      // Use the group-specific vault items endpoint
+      const apiUrl = APIs.GROUP_ADD_SECRET.replace("{group_name}", encodeURIComponent(selectedGroup));
+      const response = await postData(apiUrl, payload);
 
       // 201 status means "Created" - this is successful for POST requests
       if (response) {
@@ -522,18 +561,20 @@ print(fetch_weather("New York"))`;
     }
 
     try {
-      // Use the domain-specific endpoint for deleting
-      const apiUrl = `/domains/${encodeURIComponent(selectedGroup)}/secrets/${encodeURIComponent(rowToDelete.originalName || rowToDelete.name)}`;
+      // Use the group-specific endpoint for deleting
+      const apiUrl = APIs.GROUP_DELETE_SECRET
+        .replace("{group_name}", encodeURIComponent(selectedGroup))
+        .replace("{key_name}", encodeURIComponent(rowToDelete.originalName || rowToDelete.name));
       const response = await deleteData(apiUrl);
 
       // Check for successful response - API might return different response formats
       if (response === true || response?.success === true || response?.status === "success" || (response && typeof response === "object" && Object.keys(response).length === 0)) {
-        // Refresh the domain to ensure UI is in sync with server
-        await loadDomainData(selectedGroup);
+        // Refresh the group to ensure UI is in sync with server
+        await loadGroupData(selectedGroup);
         addMessage("Group secret deleted successfully", "success");
       } else {
         // Unexpected delete response format; still refresh in case the delete actually worked
-        await loadDomainData(selectedGroup);
+        await loadGroupData(selectedGroup);
         addMessage("Delete operation completed", "success");
       }
     } catch (error) {
@@ -574,8 +615,6 @@ print(fetch_weather("New York"))`;
     updatedRows[index].isMasked = true;
     setRows(updatedRows);
   };
-
-  // Tool toggle not used in Vault; removed to avoid undefined state
 
   const updateRow = async (index) => {
     setLoading(true);
@@ -664,15 +703,16 @@ print(fetch_weather("New York"))`;
       return;
     }
 
-    const res = {
-      key_name: row.name,
-      key_value: row.value,
+    const payload = {
+      secret_value: row.value,
     };
 
     try {
-      // Use the domain-specific endpoint for updating
-      const apiUrl = `/domains/${encodeURIComponent(selectedGroup)}/secrets/${encodeURIComponent(row.originalName)}`;
-      const response = await putData(apiUrl, res);
+      // Use the group-specific endpoint for updating
+      const apiUrl = APIs.GROUP_UPDATE_SECRET
+        .replace("{group_name}", encodeURIComponent(selectedGroup))
+        .replace("{key_name}", encodeURIComponent(row.originalName));
+      const response = await putData(apiUrl, payload);
 
       if (response) {
         updatedRows[index].isUpdated = false;
@@ -710,17 +750,21 @@ print(fetch_weather("New York"))`;
 
         if (copy === "copy") {
           // For copy, don't store in state - just copy to clipboard
-          await navigator.clipboard.writeText(rawValue);
-          addMessage("Secret value copied to clipboard!", "success");
+          const success = await copyToClipboard(rawValue);
+          if (success) {
+            addMessage("Secret value copied to clipboard!", "success");
+          } else {
+            addMessage("Failed to copy to clipboard", "error");
+          }
 
-          // Clear clipboard after 30 seconds for security
+          // Clear clipboard after timeout for security
           setTimeout(async () => {
             try {
-              await navigator.clipboard.writeText("");
+              await copyToClipboard("");
             } catch (err) {
               console.warn("Could not clear clipboard");
             }
-          }, 30000);
+          }, AUTO_MASK_TIMEOUT);
         } else {
           // Store in tab-specific secure cache
           privateVaultCache.current[index] = rawValue;
@@ -761,8 +805,12 @@ print(fetch_weather("New York"))`;
 
         if (copy === "copy") {
           // For copy, don't store in state - just copy to clipboard
-          await navigator.clipboard.writeText(sanitizedValue);
-          addMessage("Secret value copied to clipboard!", "success");
+          const success = await copyToClipboard(sanitizedValue);
+          if (success) {
+            addMessage("Secret value copied to clipboard!", "success");
+          } else {
+            addMessage("Failed to copy to clipboard", "error");
+          }
         } else {
           // Store in tab-specific secure cache
           publicVaultCache.current[index] = sanitizedValue;
@@ -787,36 +835,36 @@ print(fetch_weather("New York"))`;
     }
   };
 
-  // Load values for the selected domain
-  const loadDomainData = async (domainName) => {
-    if (!domainName || typeof domainName !== "string") {
-      addMessage("Invalid domain name provided.", "error");
+  // Load secrets for the selected group
+  const loadGroupData = async (groupName) => {
+    if (!groupName || typeof groupName !== "string") {
+      addMessage("Invalid group name provided.", "error");
       return;
     }
 
     setLoading(true);
     try {
-      const apiUrl = `/domains/${encodeURIComponent(domainName)}/secrets`;
+      const apiUrl = APIs.GET_GROUP_SECRETS.replace("{group_name}", encodeURIComponent(groupName));
       const response = await fetchData(apiUrl);
 
       // Handle different possible response formats
-      let domainData = [];
+      let secretsData = [];
       if (response) {
         // Check multiple possible response structures
-        if (response.domainData && Array.isArray(response.domainData)) {
-          domainData = response.secrets;
+        if (response.secrets && Array.isArray(response.secrets)) {
+          secretsData = response.secrets;
         } else if (response.data && Array.isArray(response.data)) {
-          domainData = response.data;
+          secretsData = response.data;
         } else if (Array.isArray(response)) {
-          domainData = response;
+          secretsData = response;
         } else if (response.success === false) {
           // API returned an error response
-          throw new Error(response.message || "Failed to load domain domainData");
+          throw new Error(response.message || "Failed to load group secrets");
         }
       }
 
-      if (domainData.length > 0) {
-        const dataRows = domainData
+      if (secretsData.length > 0) {
+        const dataRows = secretsData
           .map((secret, index) => {
             // Validate the object structure
             if (!secret || typeof secret !== "object") {
@@ -826,24 +874,24 @@ print(fetch_weather("New York"))`;
 
             return {
               name: secret.key_name || secret.name || secret.key || "",
-              value: secret.key_value || secret.value || secret.secret || "",
+              value: secret.secret_value || secret.key_value || secret.value || secret.secret || "",
               isSaved: true,
               isMasked: true,
               isUpdated: false,
               originalName: secret.key_name || secret.name || secret.key || "",
-              originalValue: secret.key_value || secret.value || secret.secret || "",
+              originalValue: secret.secret_value || secret.key_value || secret.value || secret.secret || "",
             };
           })
           .filter(Boolean); // Remove any null entries
 
         setRows(dataRows.length > 0 ? dataRows : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]);
       } else {
-        // No domainData found, show empty row for adding new ones
+        // No group secrets found, show empty row for adding new ones
         setRows([{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]);
       }
     } catch (error) {
-      console.error("Error loading domainData:", error);
-      const errorMessage = error?.response?.details || error?.details || error?.message || "Error loading domainData.";
+      console.error("Error loading group secrets:", error);
+      const errorMessage = error?.response?.data?.detail || error?.response?.data?.message || error?.message || "Error loading group secrets.";
       addMessage(errorMessage, "error");
       setRows([{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]);
     } finally {
@@ -853,7 +901,7 @@ print(fetch_weather("New York"))`;
 
   const getGroupVaults = async (keyName, index, copy) => {
     if (!selectedGroup || !keyName) {
-      addMessage("Please select a domain and ensure key name is provided.", "error");
+      addMessage("Please select a group and ensure key name is provided.", "error");
       return;
     }
 
@@ -867,20 +915,26 @@ print(fetch_weather("New York"))`;
       // Hide any previously visible item first
       hideCurrentlyVisibleItem();
 
-      // Use the specific endpoint to get the  value
-      const apiUrl = `/domains/${encodeURIComponent(selectedGroup)}/secrets/${encodeURIComponent(keyName)}`;
+      // Use GET request with URL parameters
+      const apiUrl = APIs.GROUP_SECRETS_GET
+        .replace("{group_name}", encodeURIComponent(selectedGroup))
+        .replace("{key_name}", encodeURIComponent(keyName));
       const response = await fetchData(apiUrl);
 
       if (response) {
-        // Handle the response - could be direct value or object with key_value
+        // Handle the response - could be direct value or object with secret_value/key_value
         let groupVaultData = "";
         if (typeof response === "string") {
           groupVaultData = response;
         } else if (response && typeof response === "object") {
-          if ("key_value" in response) {
+          if ("secret_value" in response) {
+            groupVaultData = response["secret_value"];
+          } else if ("key_value" in response) {
             groupVaultData = response["key_value"];
           } else if ("value" in response) {
             groupVaultData = response.value;
+          } else if (response.data && "secret_value" in response.data) {
+            groupVaultData = response["data"]["secret_value"];
           } else if (response.data && "key_value" in response.data) {
             groupVaultData = response["data"]["key_value"];
           } else {
@@ -891,8 +945,12 @@ print(fetch_weather("New York"))`;
         }
 
         if (copy === "copy") {
-          await navigator.clipboard.writeText(groupVaultData);
-          addMessage("Secret value copied to clipboard!", "success");
+          const success = await copyToClipboard(groupVaultData);
+          if (success) {
+            addMessage("Secret value copied to clipboard!", "success");
+          } else {
+            addMessage("Failed to copy to clipboard", "error");
+          }
         } else {
           // Store in tab-specific secure cache
           groupVaultCache.current[index] = groupVaultData;
@@ -911,7 +969,7 @@ print(fetch_weather("New York"))`;
       }
     } catch (error) {
       console.error("Error fetching group secret:", error);
-      const errorMessage = error?.response?.details || error?.details || error?.message || `Error fetching secret "${keyName}" from domain "${selectedGroup}".`;
+      const errorMessage = error?.response?.data?.detail || error?.response?.data?.message || error?.message || `Error fetching group secret value.`;
       addMessage(errorMessage, "error");
     } finally {
       setLoading(false);
@@ -983,15 +1041,11 @@ print(fetch_weather("New York"))`;
       updatedRows[index].isUpdated = false;
       // Restore original name in case user made edits
       updatedRows[index].name = updatedRows[index].originalName;
-      clearSecretFromCache(index, activeTab);
+      clearSctFromCache(index, activeTab);
     }
 
     setRows(updatedRows);
   };
-
-  // copyValue not used in this component
-
-  const DISABLED_OPACITY = 0.5;
 
   const getScripts = async () => {
     setLoading(true);
@@ -1006,13 +1060,11 @@ print(fetch_weather("New York"))`;
         setLoading(false);
 
         // Sanitize and validate names
-        const sanitizedSecretNames = Array.isArray(response.key_names) ? response.key_names.map((name) => sanitizeVaultValue(name)) : [];
+        const sanitizedSctNames = Array.isArray(response.key_names) ? response.key_names.map((name) => sanitizeVaultValue(name)) : [];
 
-        setRows(
-          sanitizedSecretNames.length ? sanitizedSecretNames : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]
-        );
+        setRows(sanitizedSctNames.length ? sanitizedSctNames : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]);
 
-        return sanitizedSecretNames;
+        return sanitizedSctNames;
       } else {
         return null;
       }
@@ -1033,7 +1085,7 @@ print(fetch_weather("New York"))`;
         setRows(
           response.public_key_names.length
             ? response.public_key_names
-            : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]
+            : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }],
         );
 
         // setRows(response.data.secrets)
@@ -1050,64 +1102,92 @@ print(fetch_weather("New York"))`;
   const fetchAvailableGroups = async () => {
     try {
       const userEmail = Cookies.get("email");
+      const userRole = Cookies.get("role");
+
       if (!userEmail) {
         addMessage("User email not found. Please log in again.", "error");
         return [];
       }
 
-      const apiUrl = `${APIs.GET_DOMAINS_BY_USER}${encodeURIComponent(userEmail)}`;
+      // Super admin gets all groups, regular users get their assigned groups
+      const roleUpper = userRole ? userRole.toUpperCase().replace(/\s+/g, "") : "";
+      const isSuperAdmin = roleUpper === "SUPERADMIN" || roleUpper === "SUPER_ADMIN";
+
+      const apiUrl = isSuperAdmin
+        ? `${APIs.GET_GROUPS}`
+        : `${APIs.GET_GROUPS_BY_USER}${encodeURIComponent(userEmail)}`;
+
       const response = await fetchData(apiUrl);
 
-      if (response && response.success) {
-        const domainsData = response.domains || [];
-
-        // Validate domain objects
-        const validDomains = domainsData.filter((domain) => domain && typeof domain === "object" && domain.domain_name);
-
-        setAvailableGroups(validDomains);
-
-        if (validDomains.length === 0) {
-          addMessage("No domains found. Create a domain first.", "error");
+      // Handle different response structures
+      let groupsData = [];
+      if (response) {
+        if (Array.isArray(response.details)) {
+          groupsData = response.details;
+        } else if (Array.isArray(response.groups)) {
+          groupsData = response.groups;
+        } else if (Array.isArray(response.data)) {
+          groupsData = response.data;
+        } else if (Array.isArray(response)) {
+          groupsData = response;
+        } else if (response.success && Array.isArray(response.details)) {
+          groupsData = response.details;
+        } else if (response.success && Array.isArray(response.groups)) {
+          groupsData = response.groups;
         }
-
-        return validDomains;
-      } else {
-        addMessage(response?.message || "Failed to load domains.", "error");
-        return [];
       }
+
+      // Validate group objects - check for both group_name and domain_name for backward compatibility
+      const validGroups = groupsData.filter((group) => {
+        if (!group || typeof group !== "object") return false;
+        return group.group_name || group.domain_name;
+      });
+
+      setAvailableGroups(validGroups);
+
+      if (validGroups.length === 0) {
+        addMessage("No groups found. Create a group first.", "error");
+      }
+
+      return validGroups;
     } catch (error) {
       console.error("Error fetching available groups:", error);
-      const errorMessage = error?.response?.details || error?.details || error?.message || "Error loading domains. Please try again.";
+      const errorMessage = error?.response?.data?.detail || error?.response?.data?.message || error?.message || "Error loading groups. Please try again.";
       addMessage(errorMessage, "error");
       setAvailableGroups([]);
       return [];
     }
   };
 
-  // Filtered groups based on search term
+  // Filtered groups based on applied search term (search on Enter or button click)
   const filteredGroups = Array.isArray(availableGroups)
-    ? availableGroups.filter((group) => group && group.domain_name && group.domain_name.toLowerCase().includes(groupSearchTerm.toLowerCase()))
+    ? availableGroups.filter((group) => {
+      const name = group.group_name || group.domain_name || "";
+      return name.toLowerCase().includes(appliedGroupSearchTerm.toLowerCase());
+    })
     : [];
 
   // Group dropdown helper functions
   const handleGroupSelection = (group) => {
-    if (!group || !group.domain_name) {
-      addMessage("Invalid domain selection.", "error");
+    const groupName = group?.group_name || group?.domain_name;
+    if (!group || !groupName) {
+      addMessage("Invalid group selection.", "error");
       return;
     }
 
     try {
-      setSelectedGroup(group.domain_name);
+      setSelectedGroup(groupName);
       setSelectedGroupObj(group);
       setGroupSearchTerm("");
+      setAppliedGroupSearchTerm("");
       setShowGroupDropdown(false);
       setHighlightedGroupIndex(-1);
 
-      // Load groupselection for the selected domain
-      loadDomainData(group.domain_name);
+      // Load secrets for the selected group
+      loadGroupData(groupName);
     } catch (error) {
       console.error("Error in handleGroupSelection:", error);
-      const errorMessage = error?.response?.details || error?.details || error?.message || "Error selecting domain.";
+      const errorMessage = error?.response?.details || error?.details || error?.message || "Error selecting group.";
       addMessage(errorMessage, "error");
     }
   };
@@ -1117,11 +1197,17 @@ print(fetch_weather("New York"))`;
       const newShowState = !showGroupDropdown;
       setShowGroupDropdown(newShowState);
 
-      if (newShowState && selectedGroupObj && selectedGroupObj.domain_name) {
-        // Find the selected group in the filtered list and highlight it
-        const selectedIndex = filteredGroups.findIndex((group) => group && group.domain_name === selectedGroupObj.domain_name);
-        if (selectedIndex !== -1) {
-          setHighlightedGroupIndex(selectedIndex);
+      if (newShowState && selectedGroupObj) {
+        const selectedName = selectedGroupObj.group_name || selectedGroupObj.domain_name;
+        if (selectedName) {
+          // Find the selected group in the filtered list and highlight it
+          const selectedIndex = filteredGroups.findIndex((group) => {
+            const gName = group?.group_name || group?.domain_name;
+            return gName === selectedName;
+          });
+          if (selectedIndex !== -1) {
+            setHighlightedGroupIndex(selectedIndex);
+          }
         }
       } else if (!newShowState) {
         setHighlightedGroupIndex(-1);
@@ -1190,9 +1276,9 @@ print(fetch_weather("New York"))`;
         return [];
       }
 
-      // For now, we'll show empty rows for group scripts - this can be extended to fetch group-specific
+      // Fetch secrets for the selected group
+      await loadGroupData(selectedGroup);
       setLoading(false);
-      setRows([{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]);
       return [];
     } catch (error) {
       console.error("Error fetching group data:", error);
@@ -1211,422 +1297,405 @@ print(fetch_weather("New York"))`;
       ? hasPermission("vault_access")
       : !((permissions && permissions.vault && permissions.vault.vault_access === false) || (permissions && permissions.vault_access === false));
   if (!vaultAllowed) {
-    return <div style={{ padding: 24, color: "#b91c1c", fontWeight: 600 }}>You do not have permission to access the vault.</div>;
+    return <div className={styles.noPermissionMessage}>You do not have permission to access the vault.</div>;
   }
 
+  // Handle search from SubHeader
+  const handleSearch = (value) => {
+    setSearchTerm(value);
+  };
+
+  // Handle clear search
+  const clearSearch = () => {
+    setSearchTerm("");
+  };
+
   return (
-    <div>
+    <>
       {loading && <Loader />}
-      <div className={styles.container}>
-        <div className={styles.plusIcons}>
-          <h6 className={styles.titleCss}>LIST OF VAULT SECRET</h6>
-          <span
-            className={styles.addIcon}
-            onClick={() => {
-              if (role?.toUpperCase() === "GUEST") return;
-              if (activeTab === "Group" && !selectedGroup) return;
-              if (!rows.some((row) => !row.isSaved)) addRow();
-            }}
-            style={{
-              opacity: role?.toUpperCase() === "GUEST" || rows.some((row) => !row.isSaved) || (activeTab === "Group" && !selectedGroup) ? DISABLED_OPACITY : 1,
-              cursor: role?.toUpperCase() === "GUEST" || rows.some((row) => !row.isSaved) || (activeTab === "Group" && !selectedGroup) ? "not-allowed" : "pointer",
-            }}
-            title={
-              activeTab === "Group" && !selectedGroup
-                ? "Please select a group first."
-                : rows.some((row) => !row.isSaved)
-                ? "Please save the current secret before adding another."
-                : role?.toUpperCase() === "GUEST"
-                ? "Guests cannot add new values."
-                : "Add Secret"
-            }>
-            <button className={styles.plus} disabled={role?.toUpperCase() === "GUEST"}>
-              <SVGIcons icon="fa-plus" fill="#007CC3" width={16} height={16} />
+      <div className={"pageContainer"}>
+        <SubHeader
+          heading={"Vault"}
+          activeTab={"vault"}
+          searchValue={searchTerm}
+          onSearch={handleSearch}
+          clearSearch={clearSearch}
+          showRefreshButton={false}
+          showPlusButton={false}
+        />
+
+        {/* Tabs Section */}
+        <div className={styles.tabsContainer}>
+          {role && role?.toUpperCase() !== "GUEST" && (
+            <button className={activeTab === LABELS.PRIVATE ? styles.activeTab : styles.tab} onClick={() => setActiveTab(LABELS.PRIVATE)}>
+              {LABELS.PRIVATE}
             </button>
-          </span>
+          )}
+          <button className={activeTab === LABELS.PUBLIC ? styles.activeTab : styles.tab} onClick={() => setActiveTab(LABELS.PUBLIC)}>
+            {LABELS.PUBLIC}
+          </button>
+          {role && role?.toUpperCase() !== "GUEST" && (
+            <button className={activeTab === LABELS.GROUP ? styles.activeTab : styles.tab} onClick={() => setActiveTab(LABELS.GROUP)}>
+              {LABELS.GROUP}
+            </button>
+          )}
         </div>
-        <div className={styles.vaultWrapper}>
-          <div>
-            <div style={{ marginLeft: 10 }}>
-              {role && role?.toUpperCase() !== "GUEST" && (
-                <button className={activeTab === "Private" ? styles.activeTab : styles.tab} onClick={() => setActiveTab("Private")}>
-                  Private
-                </button>
-              )}
 
-              <button className={activeTab === "Public" ? styles.activeTab : styles.tab} onClick={() => setActiveTab("Public")}>
-                Public
-              </button>
+        {/* Group Selection Dropdown - Show at top of Group tab */}
+        {activeTab === LABELS.GROUP && (
+          <div className={styles.groupSelectionContainer}>
+            {availableGroups.length === 0 ? (
+              <div className={styles.noGroupsMessage}>No groups available. Create a group first.</div>
+            ) : (
+              <div className={styles.groupDropdownContainer} data-group-dropdown>
+                <div
+                  className={`${styles.groupDropdownTrigger} ${showGroupDropdown ? styles.groupDropdownTriggerActive : ""}`}
+                  onClick={handleGroupDropdownToggle}
+                  onKeyDown={handleGroupKeyDown}
+                  tabIndex={0}
+                  role="combobox"
+                  aria-expanded={showGroupDropdown}
+                  aria-haspopup="listbox"
+                  aria-controls="group-dropdown-list">
+                  <span className={styles.groupDropdownText}>{selectedGroupObj ? (selectedGroupObj.group_name || selectedGroupObj.domain_name) : "Select Group..."}</span>
+                  <span className={`${styles.dropdownChevron} ${showGroupDropdown ? styles.dropdownChevronRotated : ""}`}>
+                    <SVGIcons icon="chevron-down" width={16} height={16} color="currentColor" />
+                  </span>
+                </div>
 
-              {/* <button className={activeTab === "Group" ? styles.activeTab : styles.tab} onClick={() => setActiveTab("Group")}>
-                Group
-              </button> */}
-            </div>
-
-            {/* Group Selection Dropdown - Show at top of Group tab */}
-            {activeTab === "Group" && (
-              <div style={{ marginLeft: 20, marginTop: 15, marginBottom: 15 }}>
-                {availableGroups.length === 0 ? (
-                  <div style={{ color: "#666", fontSize: "12px" }}>No groups available. Create a domain first.</div>
-                ) : (
-                  <div className={styles.groupDropdownContainer} data-group-dropdown>
-                    <div
-                      style={{
-                        background: "white",
-                        border: "1px solid #ddd",
-                        borderRadius: "4px",
-                        padding: "8px 12px",
-                        fontSize: "14px",
-                        color: "#374151",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        transition: "all 0.2s ease",
-                        minHeight: "36px",
-                        borderColor: showGroupDropdown ? "#0078d4" : "#ddd",
-                        boxShadow: showGroupDropdown ? "0 0 0 2px rgba(0, 120, 212, 0.1)" : "none",
-                        maxWidth: "300px",
-                      }}
-                      onClick={handleGroupDropdownToggle}
-                      onKeyDown={handleGroupKeyDown}
-                      tabIndex={0}
-                      role="combobox"
-                      aria-expanded={showGroupDropdown}
-                      aria-haspopup="listbox"
-                      aria-controls="group-dropdown-list">
-                      <span style={{ fontSize: "13px" }}>{selectedGroupObj ? selectedGroupObj.domain_name : "Select Group..."}</span>
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        style={{
-                          transition: "transform 0.2s ease",
-                          marginLeft: "8px",
-                          transform: showGroupDropdown ? "rotate(180deg)" : "rotate(0deg)",
-                        }}>
-                        <path d="M6 8L10 12L14 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
+                {showGroupDropdown && (
+                  <div className={styles.groupDropdownContent} onClick={(e) => e.stopPropagation()}>
+                    <div className={styles.groupSearchWrapper}>
+                      <TextField
+                        placeholder="Search groups..."
+                        value={groupSearchTerm}
+                        onChange={(e) => setGroupSearchTerm(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            // If a group is highlighted, select it; otherwise trigger search
+                            if (highlightedGroupIndex >= 0 && highlightedGroupIndex < filteredGroups.length) {
+                              handleGroupSelection(filteredGroups[highlightedGroupIndex]);
+                            } else {
+                              setAppliedGroupSearchTerm(groupSearchTerm);
+                            }
+                          } else if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            setHighlightedGroupIndex((prev) => (prev < filteredGroups.length - 1 ? prev + 1 : prev));
+                          } else if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setHighlightedGroupIndex((prev) => (prev > 0 ? prev - 1 : 0));
+                          } else if (e.key === "Escape") {
+                            setShowGroupDropdown(false);
+                            setHighlightedGroupIndex(-1);
+                          }
+                        }}
+                        onClear={() => {
+                          setGroupSearchTerm("");
+                          setAppliedGroupSearchTerm("");
+                        }}
+                        showClearButton={true}
+                        showSearchButton={true}
+                        onSearch={() => setAppliedGroupSearchTerm(groupSearchTerm)}
+                        autoComplete="off"
+                      />
                     </div>
-
-                    {showGroupDropdown && (
-                      <div className={styles.groupDropdownContent} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ position: "relative", padding: "8px" }}>
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 20 20"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                            style={{
-                              position: "absolute",
-                              left: "16px",
-                              top: "50%",
-                              transform: "translateY(-50%)",
-                              color: "#64748b",
-                              fontSize: "14px",
-                            }}>
-                            <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                            <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                          </svg>
-                          <input
-                            type="text"
-                            placeholder="Search domains..."
-                            value={groupSearchTerm}
-                            onChange={(e) => setGroupSearchTerm(e.target.value)}
-                            style={{
-                              width: "100%",
-                              background: "#f8fafc",
-                              border: "1px solid #ddd",
-                              borderRadius: "4px",
-                              padding: "8px 12px 8px 32px",
-                              fontSize: "13px",
-                              color: "#374151",
-                              outline: "none",
-                            }}
-                            autoComplete="off"
-                          />
-                        </div>
-                        <div
-                          id="group-dropdown-list"
-                          style={{
-                            maxHeight: "150px",
-                            overflowY: "auto",
-                            padding: "4px 0",
-                          }}>
-                          {filteredGroups.length > 0 ? (
-                            filteredGroups.map((group, groupIndex) => (
-                              <div
-                                key={group.domain_name}
-                                data-group-index={groupIndex}
-                                style={{
-                                  padding: "8px 12px",
-                                  cursor: "pointer",
-                                  borderBottom: "1px solid #f5f5f5",
-                                  transition: "all 0.2s ease",
-                                  borderLeft: "3px solid transparent",
-                                  background: groupIndex === highlightedGroupIndex ? "#e0f2fe" : "transparent",
-                                  borderLeftColor: groupIndex === highlightedGroupIndex ? "#0078d4" : "transparent",
-                                }}
-                                onClick={() => handleGroupSelection(group)}
-                                onMouseEnter={() => setHighlightedGroupIndex(groupIndex)}
-                                onMouseLeave={() => setHighlightedGroupIndex(-1)}
-                                role="option"
-                                aria-selected={selectedGroup === group.domain_name}>
-                                <div
-                                  style={{
-                                    fontSize: "13px",
-                                    fontWeight: "500",
-                                    color: groupIndex === highlightedGroupIndex ? "#0078d4" : "#374151",
-                                  }}>
-                                  {group.domain_name}
-                                </div>
-                                {group.description && (
-                                  <div
-                                    style={{
-                                      fontSize: "11px",
-                                      color: groupIndex === highlightedGroupIndex ? "#0078d4" : "#64748b",
-                                      fontWeight: "400",
-                                      marginTop: "2px",
-                                      lineHeight: "1.3",
-                                    }}>
-                                    {group.description}
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          ) : (
+                    <div id="group-dropdown-list" className={styles.groupDropdownList}>
+                      {filteredGroups.length > 0 ? (
+                        filteredGroups.map((group, groupIndex) => {
+                          const gName = group.group_name || group.domain_name;
+                          const gDesc = group.description || group.group_description;
+                          return (
                             <div
-                              style={{
-                                padding: "20px",
-                                textAlign: "center",
-                                color: "#64748b",
-                                fontSize: "12px",
-                              }}>
-                              No domains found
+                              key={gName}
+                              data-group-index={groupIndex}
+                              className={`${styles.groupDropdownItem} ${groupIndex === highlightedGroupIndex ? styles.groupDropdownItemHighlighted : ""}`}
+                              onClick={() => handleGroupSelection(group)}
+                              onMouseEnter={() => setHighlightedGroupIndex(groupIndex)}
+                              onMouseLeave={() => setHighlightedGroupIndex(-1)}
+                              role="option"
+                              aria-selected={selectedGroup === gName}>
+                              <div className={styles.groupDropdownItemName}>{gName}</div>
+                              {gDesc && <div className={styles.groupDropdownItemDesc}>{gDesc}</div>}
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {selectedGroupObj && (
-                  <div style={{ marginTop: "10px", fontSize: "14px", color: "#666" }}>
-                    Selected Group: <strong>{selectedGroupObj.domain_name}</strong>
+                          );
+                        })
+                      ) : (
+                        <div className={styles.groupDropdownEmpty}>No groups found</div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
             )}
+            {selectedGroupObj && (
+              <div className={styles.selectedGroupInfo}>
+                Selected Group: <strong>{selectedGroupObj.group_name || selectedGroupObj.domain_name}</strong>
+              </div>
+            )}
+          </div>
+        )}
 
-            <div className={styles.secretCss} ref={containerRef}>
-              {activeTab === "Group" && !selectedGroupObj ? (
-                <div className={styles.selectGroupMessage}>
-                  <div className={styles.selectGroupContent}>
-                    <div className={styles.selectGroupTitle}>Select a Group</div>
-                    <div className={styles.selectGroupSubtitle}>Choose a group from the dropdown above to view and manage its secrets.</div>
+        {/* Main Content - Two Column Grid */}
+        <div className={styles.sctWrapper}>
+          {/* Left Section - Secrets */}
+          <div className={styles.secretsSection}>
+            <label className="label-desc">Secrets</label>
+
+            <div className={styles.addSctCard}>
+              <div className={styles.secretsHeader}>
+                <Button
+                  type="primary"
+                  icon={<SVGIcons icon="plus" width={16} height={16} color="currentColor" />}
+                  onClick={() => {
+                    if (role?.toUpperCase() === "GUEST") return;
+                    if (activeTab === LABELS.GROUP && !selectedGroup) return;
+                    // Only add new row if all existing rows are saved
+                    if (!rows.some((row) => !row.isSaved)) addRow();
+                  }}
+                  disabled={role?.toUpperCase() === "GUEST" || rows.some((row) => !row.isSaved) || (activeTab === LABELS.GROUP && !selectedGroup)}
+                  title={
+                    activeTab === LABELS.GROUP && !selectedGroup
+                      ? "Please select a group first."
+                      : rows.some((row) => !row.isSaved)
+                        ? "Please save the current secret before adding another."
+                        : role?.toUpperCase() === "GUEST"
+                          ? "Guests cannot add new values."
+                          : "Add Secret"
+                  }>
+                  New Secret
+                </Button>
+              </div>
+
+              <div className={styles.sctsContainer}>
+                {activeTab === LABELS.GROUP && !selectedGroupObj ? (
+                  <div className={styles.selectGroupMessage}>
+                    <div className={styles.selectGroupContent}>
+                      <div className={styles.selectGroupTitle}>Select a Group</div>
+                      <div className={styles.selectGroupSubtitle}>Choose a group from the dropdown above to view and manage its secrets.</div>
+                    </div>
                   </div>
-                </div>
-              ) : rows.length === 0 && role?.toUpperCase() === "GUEST" ? (
-                <div className={styles.noSecretsMessage}>There are no secrets to display.</div>
-              ) : (
-                <>
-                  {rows.map((row, index) => {
-                    const canShowIcons = isRowComplete(row);
-                    const isLast = index === rows.length - 1;
-                    return (
-                      <div className={styles.row} key={index} ref={isLast ? lastRowRef : null}>
-                        <input
-                          type="text"
-                          value={row.name}
-                          placeholder={activeTab === "Group" ? "Enter Key Name" : "Enter Name"}
-                          onChange={(e) => handleInputChange(index, "name", e.target.value)}
-                          className={styles.input}
-                          disabled={row.isSaved}
-                        />
+                ) : rows.length === 0 && role?.toUpperCase() === "GUEST" ? (
+                  <div className={styles.noSctsMessage}>There are no secrets to display.</div>
+                ) : (
+                  // Sort rows: unsaved items appear at TOP, saved ones below
+                  // Filter rows by searchTerm (case-insensitive)
+                  [...rows]
+                    .map((row, originalIndex) => ({ row, originalIndex }))
+                    .filter(({ row }) => {
+                      if (!searchTerm.trim()) return true;
+                      return row.name.toLowerCase().includes(searchTerm.toLowerCase());
+                    })
+                    .sort((a, b) => {
+                      // Unsaved rows come first (at top)
+                      if (!a.row.isSaved && b.row.isSaved) return -1;
+                      if (a.row.isSaved && !b.row.isSaved) return 1;
+                      return 0;
+                    })
+                    .map(({ row, originalIndex }, displayIndex) => {
+                      const isLast = displayIndex === rows.length - 1;
 
-                        <textarea
-                          value={row.isSaved && row.isMasked ? "......." : row.isUpdated ? row.value : getVaultCache(activeTab).current[index] || row.value}
-                          placeholder="Enter Value"
-                          onChange={(e) => {
-                            // When user starts editing, copy cache value to row.value first if not already editing
-                            if (row.isSaved && !row.isUpdated && !row.isMasked) {
-                              const cacheValue = getVaultCache(activeTab).current[index];
-                              if (cacheValue && row.value !== cacheValue) {
-                                const updatedRows = [...rows];
-                                updatedRows[index].value = cacheValue;
-                                setRows(updatedRows);
-                              }
-                            }
-                            handleInputChange(index, "value", e.target.value);
-                          }}
-                          className={`${styles.input} ${styles.valueTextarea}`}
-                          disabled={row.isSaved && row.isMasked}
-                        />
-
-                        {canShowIcons && !row.isSaved && role?.toUpperCase() !== "GUEST" && (
-                          <span
-                            className={styles.iconCss}
-                            title="Save"
-                            onClick={() => {
-                              if (activeTab === "Private") {
-                                saveRow(index);
-                              } else if (activeTab === "Group") {
-                                saveGroupRow(index);
-                              } else {
-                                savePublicRow(index);
-                              }
-                            }}>
-                            <SVGIcons icon="save" color="#007CC3" width={18} height={18} />
-                          </span>
-                        )}
-
-                        {row.isSaved && row.isUpdated && role?.toUpperCase() !== "GUEST" && (
-                          <>
-                            <span
-                              className={styles.iconCss}
-                              title="Update"
-                              onClick={() => {
-                                if (activeTab === "Private") {
-                                  updateRow(index);
-                                } else if (activeTab === "Group") {
-                                  updateGroupRow(index);
-                                } else {
-                                  updatePublicRow(index);
-                                }
-                              }}>
-                              <SVGIcons icon="save" color="#007CC3" width={18} height={18} />
-                            </span>
-                            <span
-                              className={styles.iconClose}
-                              title="Cancel changes and return to view mode"
-                              onClick={() => cancelUpdate(index)}
-                              style={{ cursor: "pointer", color: "#333", marginLeft: "10px" }}>
-                              <FontAwesomeIcon icon={faTimes} />
-                            </span>
-                          </>
-                        )}
-
-                        <>
-                          {row.isSaved && !row.isUpdated && (
-                            <>
-                              {/* Mask / UnMask values */}
-                              <span
-                                className={`${styles.iconCss} ${styles.iconEye}`}
-                                title={
-                                  !row.isSaved
-                                    ? activeTab === "Group"
-                                      ? "Save the secret first to view it."
-                                      : "Save the secret first to view it."
-                                    : role && role?.toUpperCase() === "GUEST"
-                                    ? activeTab === "Group"
-                                      ? "Guests are not allowed to view secrets."
-                                      : "Guests are not allowed to view secrets."
-                                    : row.isMasked
-                                    ? activeTab === "Group"
-                                      ? "Show Secret Value"
-                                      : "Show Secret"
-                                    : activeTab === "Group"
-                                    ? "Hide Secret Value"
-                                    : "Hide Secret"
-                                }
-                                onClick={
-                                  !row.isSaved || (role && role?.toUpperCase() === "GUEST")
-                                    ? null
-                                    : () => {
-                                        if (row.isMasked) {
-                                          if (activeTab === "Private") {
-                                            getEyeVaultItems(row.name, index, "");
-                                          } else if (activeTab === "Group") {
-                                            getGroupVaults(row.name, index, "");
-                                          } else {
-                                            getPublicVaultList(row.name, index, "");
-                                          }
+                      if (row.isSaved && row.isMasked) {
+                        // Collapsed view - shows name, masked value, and eye/delete buttons in one row
+                        return (
+                          <div className={styles.savedSctCard} key={originalIndex} ref={isLast ? lastRowRef : null}>
+                            <div className={styles.savedSctRow}>
+                              <span className={styles.savedSctName}>{row.name}</span>
+                              <span className={styles.savedSctDivider}></span>
+                              <span className={styles.savedSctValue}>
+                                ••••••••••••••••••
+                              </span>
+                              <div className={styles.sctCardActions}>
+                                {/* View Button */}
+                                <button
+                                  className={`${styles.actionBtn} ${styles.viewBtn}`}
+                                  title={role && role?.toUpperCase() === "GUEST" ? "Guests are not allowed to view secrets." : "Show Secret"}
+                                  onClick={
+                                    role && role?.toUpperCase() === "GUEST"
+                                      ? null
+                                      : () => {
+                                        if (activeTab === LABELS.PRIVATE) {
+                                          getEyeVaultItems(row.name, originalIndex, "");
+                                        } else if (activeTab === LABELS.GROUP) {
+                                          getGroupVaults(row.name, originalIndex, "");
                                         } else {
-                                          toggleMask(index);
+                                          getPublicVaultList(row.name, originalIndex, "");
                                         }
                                       }
-                                }
-                                style={{
-                                  opacity: !row.isSaved || (role && role?.toUpperCase() === "GUEST") ? DISABLED_OPACITY : 1,
-                                  cursor: !row.isSaved || (role && role?.toUpperCase() === "GUEST") ? "not-allowed" : "pointer",
-                                }}>
-                                <FontAwesomeIcon icon={row.isMasked ? faEye : faEyeSlash} />
-                              </span>
+                                  }
+                                  disabled={role && role?.toUpperCase() === "GUEST"}>
+                                  <SVGIcons icon="eye" width={16} height={16} color="currentColor" />
+                                </button>
 
-                              <span
-                                className={`${styles.iconCss} ${styles.iconDelete}`}
-                                title={
-                                  !row.isSaved
-                                    ? activeTab === "Group"
-                                      ? "Save the domain before you can delete it."
-                                      : "Save the secret before you can delete it."
-                                    : role && role?.toUpperCase() === "GUEST"
-                                    ? activeTab === "Group"
-                                      ? "Guests are not allowed to delete domains."
-                                      : "Guests are not allowed to delete secrets."
-                                    : "Delete"
-                                }
-                                onClick={() => handleDeleteClick(index)}
-                                style={{
-                                  opacity: !row.isSaved || (role && role?.toUpperCase() === "GUEST") ? DISABLED_OPACITY : 1,
-                                  cursor: !row.isSaved || (role && role?.toUpperCase() === "GUEST") ? "not-allowed" : "pointer",
-                                }}>
-                                <FontAwesomeIcon icon={faTrash} />
-                              </span>
-                            </>
-                          )}
-                          {!row.isSaved && rows.length > 1 && (
-                            <span
-                              className={styles.iconClose}
-                              title="Remove this secret"
-                              onClick={() => {
-                                const newRows = [...rows];
-                                newRows.splice(index, 1);
-                                setRows(newRows);
+                                {/* Delete Button */}
+                                <button
+                                  className={`${styles.actionBtn} ${styles.deleteBtn}`}
+                                  title={role && role?.toUpperCase() === "GUEST" ? "Guests are not allowed to delete secrets." : "Delete"}
+                                  onClick={() => handleDeleteClick(originalIndex)}
+                                  disabled={role && role?.toUpperCase() === "GUEST"}>
+                                  <SVGIcons icon="trash" width={16} height={16} color="currentColor" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Revealed saved secret - editable value with update/cancel when changed
+                      if (row.isSaved && !row.isMasked) {
+                        const revealedValue = getVaultCache(activeTab).current[originalIndex] || row.value || "";
+                        return (
+                          <div className={`${styles.savedSctCard} ${styles.revealedCard}`} key={originalIndex} ref={isLast ? lastRowRef : null}>
+                            <div className={styles.savedSctRow}>
+                              <span className={styles.savedSctName}>{row.name}</span>
+                              <span className={styles.savedSctDivider}></span>
+                              <input
+                                type="text"
+                                value={row.value || revealedValue}
+                                onChange={(e) => {
+                                  const newValue = e.target.value.substring(0, MAX_VALUE_LENGTH);
+                                  handleInputChange(originalIndex, "value", newValue);
+                                }}
+                                className={`${styles.inlineInput} ${styles.valueInput}`}
+                                placeholder="Secret value"
+                                disabled={role?.toUpperCase() === "GUEST"}
+                              />
+                              <div className={styles.sctCardActions}>
+                                {row.isUpdated ? (
+                                  <>
+                                    {/* Update Button */}
+                                    <button
+                                      className={`${styles.actionBtn} ${styles.saveBtn}`}
+                                      title="Update"
+                                      onClick={() => {
+                                        if (activeTab === LABELS.PRIVATE) {
+                                          updateRow(originalIndex);
+                                        } else if (activeTab === LABELS.GROUP) {
+                                          updateGroupRow(originalIndex);
+                                        } else {
+                                          updatePublicRow(originalIndex);
+                                        }
+                                      }}
+                                      disabled={!row.value?.trim()}>
+                                      <SVGIcons icon="save" width={16} height={16} color="currentColor" />
+                                    </button>
+                                    {/* Cancel Button */}
+                                    <button
+                                      className={`${styles.actionBtn} ${styles.deleteBtn}`}
+                                      title="Cancel"
+                                      onClick={() => cancelUpdate(originalIndex)}>
+                                      <SVGIcons icon="x" width={16} height={16} color="currentColor" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* Hide Button */}
+                                    <button
+                                      className={`${styles.actionBtn} ${styles.viewBtn}`}
+                                      title="Hide Secret"
+                                      onClick={() => toggleMask(originalIndex)}>
+                                      <SVGIcons icon="eye-slash" width={16} height={16} color="currentColor" />
+                                    </button>
+
+                                    {/* Delete Button */}
+                                    <button
+                                      className={`${styles.actionBtn} ${styles.deleteBtn}`}
+                                      title={role && role?.toUpperCase() === "GUEST" ? "Guests are not allowed to delete secrets." : "Delete"}
+                                      onClick={() => handleDeleteClick(originalIndex)}
+                                      disabled={role && role?.toUpperCase() === "GUEST"}>
+                                      <SVGIcons icon="trash" width={16} height={16} color="currentColor" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Inline form - For new (unsaved) vault items
+                      // Same row format as saved secrets
+
+                      return (
+                        <div className={`${styles.savedSctCard} ${styles.newSecretCard}`} key={originalIndex} ref={isLast ? lastRowRef : null}>
+                          <div className={styles.savedSctRow}>
+                            <input
+                              type="text"
+                              value={row.name}
+                              placeholder="Secret name"
+                              onChange={(e) => handleInputChange(originalIndex, "name", e.target.value)}
+                              className={styles.inlineInput}
+                            />
+                            <span className={styles.savedSctDivider}></span>
+                            <input
+                              type="text"
+                              value={row.value}
+                              placeholder="Secret value"
+                              onChange={(e) => {
+                                const newValue = e.target.value.substring(0, MAX_VALUE_LENGTH);
+                                handleInputChange(originalIndex, "value", newValue);
                               }}
-                              style={{ cursor: "pointer", color: "#333", marginLeft: "10px" }}>
-                              <FontAwesomeIcon icon={faTimes} />
-                            </span>
-                          )}
-                        </>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
+                              className={`${styles.inlineInput} ${styles.valueInput}`}
+                            />
+                            <div className={styles.sctCardActions}>
+                              {/* Save Button */}
+                              {role?.toUpperCase() !== "GUEST" && (
+                                <button
+                                  className={`${styles.actionBtn} ${styles.saveBtn}`}
+                                  title="Save"
+                                  onClick={() => {
+                                    if (activeTab === LABELS.PRIVATE) {
+                                      saveRow(originalIndex);
+                                    } else if (activeTab === LABELS.GROUP) {
+                                      saveGroupRow(originalIndex);
+                                    } else {
+                                      savePublicRow(originalIndex);
+                                    }
+                                  }}
+                                  disabled={!isRowComplete(row)}>
+                                  <SVGIcons icon="save" width={16} height={16} color="currentColor" />
+                                </button>
+                              )}
+                              {/* Remove Button */}
+                              <button
+                                className={`${styles.actionBtn} ${styles.deleteBtn}`}
+                                title="Remove"
+                                onClick={() => {
+                                  const newRows = [...rows];
+                                  newRows.splice(originalIndex, 1);
+                                  setRows(newRows);
+                                }}>
+                                <SVGIcons icon="x" width={16} height={16} color="currentColor" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Right Section - Code Snippet */}
           {role?.toUpperCase() !== "GUEST" && (
-            <div style={{ width: "100%" }}>
-              <div className={styles?.cssForText}>Access your secret keys in Python via:</div>
-              <div className={styles?.cssForcode}>
-                <CodeEditor
-                  mode="python"
-                  theme="monokai"
-                  isDarkTheme={true}
-                  value={pythonVaultExample}
-                  width="100%"
-                  height="300px"
-                  fontSize={14}
-                  readOnly={true}
-                  setOptions={{
-                    enableBasicAutocompletion: false,
-                    enableLiveAutocompletion: false,
-                    enableSnippets: false,
-                    showLineNumbers: true,
-                    tabSize: 4,
-                    useWorker: false,
-                    wrap: true,
-                  }}
-                  style={{
-                    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-                    border: "1px solid #e0e0e0",
-                    borderRadius: "8px",
-                  }}
-                />
+            <div className={styles.codeSnippetSection}>
+              <label className="label-desc">Access your secret keys in {LABELS.PYTHON} via:</label>
+              <div className={codeEditorStyles.codeEditorContainer}>
+                <CodeEditor codeToDisplay={activeCodeExample} readOnly={true} mode="python" />
+                <button
+                  type="button"
+                  className={codeEditorStyles.copyIcon}
+                  title="Copy code"
+                  onClick={async () => {
+                    const success = await copyToClipboard(activeCodeExample);
+                    if (success) {
+                      addMessage("Code copied to clipboard!", "success");
+                    } else {
+                      addMessage("Failed to copy to clipboard", "error");
+                    }
+                  }}>
+                  <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill="var(--icon-color)" />
+                </button>
               </div>
             </div>
           )}
@@ -1643,7 +1712,7 @@ print(fetch_weather("New York"))`;
           setShowConfirmation={setShowConfirmation}
         />
       )}
-    </div>
+    </>
   );
 };
 

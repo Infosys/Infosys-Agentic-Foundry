@@ -14,23 +14,12 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
   }, [searchValue]);
 
   const handleInputChange = (e) => {
-    const value = e.target.value;
-    setLocalSearchValue(value);
-    if (value.trim() === "") {
-      const toClearTheValueFully = setTimeout(() => {
-        safeClearSearch();
-        handleSearch("");
-        clearTimeout(toClearTheValueFully);
-      }, 500); // Show all items when search is cleared
-    }
+    setLocalSearchValue(e.target.value);
   };
 
   const handleSearchClick = () => {
-    const trimmedValue = localSearchValue?.trim();
-
-    if (trimmedValue) {
-      handleSearch(trimmedValue);
-    }
+    const trimmedValue = localSearchValue?.trim() || "";
+    handleSearch(trimmedValue);
   };
 
   const handleClearSearch = () => {

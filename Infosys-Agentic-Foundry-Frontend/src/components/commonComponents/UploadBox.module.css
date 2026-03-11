@@ -1,0 +1,216 @@
+/* Icon container with circular gray background */
+.iconContainer {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  margin-bottom: 0;
+}
+
+/* Upload container styles */
+.uploadContainer {
+  width: 100%;
+  min-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 25px;
+}
+
+.uploadContainerDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.uploadContainerEnabled {
+  cursor: pointer;
+}
+
+/* Upload prompt styles */
+.uploadPrompt {
+  width: 100%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.uploadPromptText {
+  font-size: 16px;
+  color: var(--header-color);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.uploadPromptHighlight {
+  color: var(--btn-color);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.supportedText {
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color);
+  font-weight: 450;
+  margin-top: 4px;
+}
+
+/* Disabled hint text - shows why upload is disabled */
+.disabledHintText {
+  font-size: var(--font-size-sm, 14px);
+  color: var(--muted, #9ca3af);
+  font-weight: 500;
+  font-style: normal;
+}
+
+/* File card styles */
+.fileCard {
+  width: 100%;
+  min-width: 100%;
+}
+
+.fileInfo {
+  width: 100%;
+  text-align: left;
+}
+
+.removeButton {
+  color: #ff6b6b;
+}
+
+/* Additional upload box specific styles */
+.uploadBox {
+  width: 100%;
+  position: relative;
+}
+
+.uploadBoxDisabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+/* Multi-file container styles */
+.multiFileContainer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fileCardMultiple {
+  margin-bottom: 0;
+}
+
+/* Upload box wrapper - contains both upload area and file list */
+.uploadBoxWrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+}
+
+.uploadContainer:hover:not(:disabled):not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.uploadContainer:focus:not(:disabled) {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+/* Files list section below upload area */
+.filesListSection {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filesList {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  flex-direction: row;
+  overflow: hidden;
+  overflow-x: auto;
+}
+
+/* File item - matching FilesPage design */
+.fileItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px;
+  background: var(--secondary-bg, #f9fafb);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.fileItemLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fileItemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.fileItemInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.fileItemName {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-primary, #1f2937);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fileItemSize {
+  font-size: 10px;
+  color: var(--text-secondary, #6b7280);
+}
+
+.fileItemRemoveBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.fileItemRemoveBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.fileItemRemoveBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

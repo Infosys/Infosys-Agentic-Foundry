@@ -1,0 +1,441 @@
+/* ============================================
+   FullModal Component Styles
+   ============================================
+   
+   This CSS module provides complete styles for the FullModal component.
+   These styles work standalone and also enhance the global modal classes.
+============================================ */
+
+/* Overlay */
+.fullModalOverlay {
+  position: fixed;
+  top: 0;
+  left: var(--main-width, 56px); /* Start after left nav */
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  z-index: 1000001;
+  animation: fadeIn 0.2s ease-out;
+  width: calc(100vw - var(--main-width, 56px)); /* Full width minus left nav */
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal Container */
+.fullModal {
+  background-color: var(--menu-bg);
+  position: relative;
+  display: flex;
+  /* overflow: hidden - Intentional: prevents modal container scrolling.
+     Scrolling is handled by .fullModalMain for proper fixed header behavior */
+  overflow: hidden;
+  height: 100vh;
+  padding-right: 0;
+  width: 100%;
+  max-width: 100%;
+  transition: width 0.3s ease-in-out;
+  flex-direction: column;
+  animation: slideIn 0.25s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Header */
+.fullModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: var(--header-gradient);
+  border-bottom: 1px solid var(--header-border);
+  padding: 2.7px 24px;
+  flex-shrink: 0;
+  position: relative;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.fullModalHeader::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(55, 172, 234, 0.4) 20%,
+    rgba(55, 172, 234, 0.6) 50%,
+    rgba(55, 172, 234, 0.4) 80%,
+    transparent
+  );
+  animation: headerGlow 3s ease-in-out infinite;
+}
+
+@keyframes headerGlow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.fullModalHeaderLeft {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1;
+}
+
+.fullModalHeaderTitle {
+  font-size: var(--font-size-xl, 20px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.5px;
+  background: linear-gradient(135deg, #ffffff 0%, #37acea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 30px rgba(55, 172, 234, 0.3);
+}
+
+.fullModalHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.fullModalHeaderInfoItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 1.5rem 8px 0;
+  border-right: 1px solid rgba(55, 172, 234, 0.15);
+}
+
+.fullModalHeaderInfoItem:last-of-type {
+  border-right: none;
+  padding-right: 0;
+}
+
+.fullModalHeaderInfoLabel {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 450);
+  font-size: var(--font-size-xs, 12px);
+  color: rgba(55, 172, 234, 0.7);
+  letter-spacing: 0.05em;
+}
+
+.fullModalHeaderInfoValue {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--text-primary, #ffffff);
+}
+
+.fullModalCloseBtn {
+  color: var(--header-color, #1a1a1a);
+  background: rgba(55, 172, 234, 0.08);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid rgba(55, 172, 234, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fullModalCloseBtn:hover,
+.fullModalCloseBtn:focus-within {
+  background: rgba(55, 172, 234, 0.15);
+  border-color: rgba(55, 172, 234, 0.4);
+  box-shadow: 0 0 20px rgba(55, 172, 234, 0.2);
+}
+
+/* .fullModalCloseBtn:focus-within {
+  outline: 2px solid var(--focus-border, #0073cf);
+  outline-offset: 2px;
+} */
+
+.fullModalCloseBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Main Content */
+/* Scrollable content area - handles all scrolling for the modal */
+.fullModalMain {
+  flex: 1 1;
+  overflow-y: auto; /* Content scrolls here, not on .fullModal container */
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0 24px 16px 24px; /* top right bottom left */
+  min-height: 0; /* Required for flex child to enable scrolling */
+}
+
+/* Sticky spacer to maintain gap between header and content during scroll */
+.fullModalMain::before {
+  content: "";
+  display: block;
+  height: 12px;
+  position: sticky;
+  top: 0;
+  background: var(--menu-bg);
+  margin: 0 -24px 0 -38px; /* top right bottom left */
+  padding: 0 24px 0 38px; /* top right bottom left */
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+/* Full Height Mode - For canvas/editors that need full height */
+.fullModalMainFullHeight {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fullModalContentWrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  transition: all 0.3s ease-in-out;
+}
+
+/* Full Height Content Wrapper - Takes all available space */
+.fullModalContentWrapperFullHeight {
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Full Height Content Inner - For non-split layouts */
+.fullModalContentInner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Footer */
+.fullModalFooter {
+  bottom: 0;
+  padding: 13px 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: var(--footer-gradient);
+  border-top: 1px solid var(--header-border);
+  flex-shrink: 0;
+  z-index: 10;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  position: relative;
+}
+
+.fullModalFooter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(55, 172, 234, 0.3) 30%,
+    rgba(55, 172, 234, 0.5) 50%,
+    rgba(55, 172, 234, 0.3) 70%,
+    transparent
+  );
+}
+
+/* ============================================
+   Split Layout Styles
+   ============================================ */
+
+.splitLayout {
+  display: flex;
+  width: 100%;
+  gap: 0;
+  align-items: flex-start;
+  height: auto;
+  max-height: calc(100vh - 200px);
+  flex-direction: row;
+}
+
+.splitHeaderBar {
+  background-color: var(--muted-foreground, #f5f5f5);
+  display: flex;
+
+  display: none;
+  flex-direction: row;
+  width: 100%;
+  border-radius: 8px 8px 0 0;
+  margin-bottom: 12px;
+  min-height: 48px;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.splitHeaderColLeft {
+  flex: 0 0 58%;
+  max-width: 60%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0 0 24px; /* top right bottom left */
+  border-right: 1px solid var(--content-border-color, #e5e7eb);
+  height: 48px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.splitHeaderColRight {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0 0 24px; /* top right bottom left */
+  height: 48px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.splitLeftPanel {
+  flex: 0 0 61%;
+  max-width: 58%;
+  height: calc(100vh - 150px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 16px 0 0; /* top right bottom left */
+  background: transparent;
+}
+
+.splitRightPanel {
+  flex: 1;
+  height: calc(100vh - 150px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 0 24px; /* top right bottom left */
+  border-left: 1px solid var(--border-color, #e5e7eb);
+}
+
+/* ============================================
+   Responsive Adjustments
+   ============================================ */
+
+@media (max-width: 1024px) {
+  .splitLayout {
+    flex-direction: column;
+  }
+
+  .splitLeftPanel,
+  .splitRightPanel {
+    flex: none;
+    max-width: 100%;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding-right: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .splitRightPanel {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color, #e5e7eb);
+  }
+
+  .splitHeaderBar {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .fullModal {
+    max-width: 100%;
+  }
+
+  .fullModalHeader {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .fullModalHeaderRight {
+    gap: 12px;
+  }
+
+  .fullModalHeaderInfoItem {
+    display: none;
+  }
+
+  .fullModalHeaderInfoItem:last-of-type {
+    display: flex;
+  }
+
+  .fullModalMain {
+    padding: 16px;
+  }
+
+  .fullModalFooter {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+}
+
+/* ============================================
+   Light Mode Overrides
+   ============================================ */
+
+:global([data-theme="light"]) .fullModalHeaderTitle {
+  background: linear-gradient(135deg, #025d8a 0%, #37acea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+}
+
+:global([data-theme="light"]) .fullModalHeader::after {
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(2, 93, 138, 0.3) 20%,
+    rgba(2, 93, 138, 0.5) 50%,
+    rgba(2, 93, 138, 0.3) 80%,
+    transparent
+  );
+}
+
+:global([data-theme="light"]) .fullModalHeaderInfoLabel {
+  color: rgba(2, 93, 138, 0.7);
+}

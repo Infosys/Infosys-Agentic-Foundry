@@ -1,0 +1,380 @@
+/* Admin Register User Form - Figma Design */
+.registerContainer {
+  width: 448px;
+  padding: 33px 33px 24px 33px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.registerTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  margin: 0 0 24px 0;
+}
+
+.form {
+  width: 382px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inputWrapper {
+  position: relative;
+  width: 382px;
+}
+
+.input {
+  width: 382px;
+  min-width: 0;
+  height: 36px;
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: text;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+/* Input with left icon - extra padding for icon space */
+.inputWithIcon {
+  padding-left: 44px !important;
+}
+
+/* Input with right eye icon - extra padding for eye icon */
+.inputPassword {
+  padding-right: 44px !important;
+}
+
+.input::placeholder {
+  color: var(--muted);
+  font-weight: var(--font-weight-normal);
+  text-transform: capitalize;
+}
+
+.input:hover:not(:disabled):not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+/* Dark theme overrides - match Login page input styling */
+:root[data-theme="dark"] .input {
+  background: rgba(4, 28, 41, 0.7);
+  border-color: rgba(55, 172, 234, 0.25);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 10px rgba(55, 172, 234, 0.03);
+}
+
+:root[data-theme="dark"] .input:hover:not(:disabled):not(:focus) {
+  border-color: rgba(55, 172, 234, 0.4);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 16px rgba(55, 172, 234, 0.08);
+}
+
+:root[data-theme="dark"] .input:focus {
+  border-color: #37acea;
+  box-shadow: 0 0 0 3px rgba(55, 172, 234, 0.15),
+              0 0 20px rgba(55, 172, 234, 0.1);
+}
+
+/* Hide browser's native password reveal button (Edge/Chrome) */
+.input::-ms-reveal,
+.input::-ms-clear,
+.input::-webkit-credentials-auto-fill-button {
+  display: none !important;
+}
+
+/* Left-side Input Icon */
+.inputIcon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.inputIcon svg {
+  color: var(--muted) !important;
+}
+
+/* Eye Icon for Password Toggle */
+.eyeIcon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.2s ease;
+}
+
+.eyeIcon svg {
+  color: var(--muted);
+  stroke: var(--muted);
+}
+
+.eyeIcon:hover {
+  color: var(--muted);
+}
+
+.eyeIcon:hover svg {
+  color: var(--text-primary);
+  stroke: var(--text-primary);
+}
+
+.errorText {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.successText {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--success);
+  margin-top: 4px;
+}
+
+/* Dropdown Styles */
+.dropdown {
+  position: relative;
+  width: 382px;
+}
+
+.dropdownToggle {
+  width: 382px;
+  height: 36px;
+  padding: 0 40px 0 16px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+}
+
+.dropdownToggle:hover:not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.dropdownToggle:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+:root[data-theme="dark"] .dropdownToggle {
+  background: rgba(4, 28, 41, 0.7);
+  border-color: rgba(55, 172, 234, 0.25);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 10px rgba(55, 172, 234, 0.03);
+}
+
+:root[data-theme="dark"] .dropdownToggle:hover:not(:focus) {
+  border-color: rgba(55, 172, 234, 0.4);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 16px rgba(55, 172, 234, 0.08);
+}
+
+:root[data-theme="dark"] .dropdownToggle:focus {
+  border-color: #37acea;
+  box-shadow: 0 0 0 3px rgba(55, 172, 234, 0.15),
+              0 0 20px rgba(55, 172, 234, 0.1);
+}
+
+.dropdownPlaceholder {
+  color: var(--muted);
+}
+
+.dropdownArrow {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--muted);
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 382px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.dropdownItem {
+  padding: 10px 16px;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.dropdownItem:hover {
+  background-color: var(--hover-background);
+}
+
+.dropdownItemSelected {
+  background-color: var(--accent-light);
+  color: var(--accent);
+}
+
+.dropdownItemFocused {
+  background-color: var(--hover-background);
+}
+
+.dropdownSearch {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dropdownSearchInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.dropdownSearchInput::placeholder {
+  color: var(--muted);
+}
+
+.dropdownSearchInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+}
+
+.dropdownNoResults {
+  padding: 10px 16px;
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+  text-align: center;
+}
+
+.buttonArrow {
+  display: flex;
+  align-items: center;
+}
+
+/* Form Footer */
+.formFooter {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.formFooterWithLink {
+  justify-content: space-between;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.loginLink {
+  font-size: var(--font-size-sm);
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.loginLink:hover {
+  color: var(--accent-hover, var(--accent));
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* Admin Screen Variant - Inside AnimatedContainer, uses transparent bg */
+.adminRegister {
+  background-color: transparent;
+  border: none;
+}
+
+/* Submit Button - Match Login page submitBtn styling */
+.submitBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-button-color, #ffffff);
+  border: 1px solid #37acea;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base, 16px);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.submitBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(55, 172, 234, 0.5);
+}
+
+.submitBtn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(55, 172, 234, 0.35);
+}
+
+.submitBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

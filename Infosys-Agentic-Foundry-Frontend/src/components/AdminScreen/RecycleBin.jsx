@@ -1,35 +1,39 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import styles from "./RecycleBin.module.css";
 import Cookies from "js-cookie";
-import AgentCard from "../ListOfAgents/AgentCard";
-import style from "../../css_modules/ListOfAgents.module.css";
+import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.jsx";
 import { APIs, REACT_AGENT } from "../../constant";
-import style2 from "../../css_modules/AvailableTools.module.css";
-import serverStyles from "../../css_modules/AvailableServers.module.css";
-import ToolsCard from "../AvailableTools/ToolsCard";
-import UpdateAgent from "../ListOfAgents/UpdateAgent.jsx";
+import UpdateAgent from "../AvailableAgents/UpdateAgent.jsx";
 import ToolOnBoarding from "../AvailableTools/ToolOnBoarding.jsx";
 import AddServer from "../AgentOnboard/AddServer.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 import Loader from "../commonComponents/Loader.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
+import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
+import EmptyState from "../commonComponents/EmptyState.jsx";
+import { getServerType } from "../../utils/serverUtils.js";
 
-const RecycleBin = ({ initialType = "agents" }) => {
+const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selectedAgentTypes = [], selectedServerTypes = [], selectedToolTypes = [] }) => {
   const [selectedType, setSelectedType] = useState(initialType); // for data fetching
   const [activeTab, setActiveTab] = useState(initialType); // for tab highlight
   const [lastTab, setLastTab] = useState(initialType); // to restore tab highlight after modal
   const [data, setData] = useState([]);
+  const [internalSearchTerm, setInternalSearchTerm] = useState("");
+
+  // Use external search term if provided, otherwise use internal
+  const searchTerm = externalSearchTerm !== undefined ? externalSearchTerm : internalSearchTerm;
   const [error, setError] = useState(null);
   const { fetchData, postData, deleteData } = useFetch();
   const [editAgentData, setEditAgentData] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [isAddTool, setIsAddTool] = useState(true);
   const [editTool, setEditTool] = useState({});
+  const [selectedServer, setSelectedServer] = useState(null);
+  const [showServerForm, setShowServerForm] = useState(false);
   const [restoreData, setRestoreData] = useState();
   const { addMessage } = useMessage();
   const [loader, setLoader] = useState(false);
-  const [selectedServer, setSelectedServer] = useState(null);
-  const [showServerForm, setShowServerForm] = useState(false);
+
   const onAgentEdit = (data) => {
     setEditAgentData(data);
   };
@@ -41,6 +45,11 @@ const RecycleBin = ({ initialType = "agents" }) => {
     let url = "";
     if (selectedType === "agents") {
       url = `${APIs.RESTORE_AGENTS}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+    } else if (selectedType === "tools") {
+      url = `${APIs.RESTORE_TOOLS}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+    } else if (selectedType === "servers") {
+      const serverId = editAgentData?.tool_id || editAgentData?.id;
+      url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
     }
     const response = await postData(url);
     if (response?.is_restored) {
@@ -62,10 +71,11 @@ const RecycleBin = ({ initialType = "agents" }) => {
     } else if (selectedType === "tools") {
       url = `${APIs.DELETE_TOOLS_PERMANENTLY}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
     } else if (selectedType === "servers") {
-      url = `${APIs.MCP_DELETE_SERVERS_PERMANENTLY}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      const serverId = editAgentData?.tool_id || editAgentData?.id;
+      url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
     }
     const response = await deleteData(url);
-    if (response?.is_delete) {
+    if (response?.is_delete || response?.is_deleted) {
       setLoader(false);
       addMessage(response.message, "success");
       setEditAgentData(false);
@@ -76,19 +86,6 @@ const RecycleBin = ({ initialType = "agents" }) => {
       addMessage(response.message, "error");
     }
   };
-
-  // Helper to get server type display
-  const getServerType = (server) => {
-    const raw = server || {};
-    const hasCode = Boolean(raw?.mcp_config?.args?.[1] || raw?.mcp_file?.code_content || raw?.code_content || raw?.code || raw?.script);
-    const hasUrl = Boolean(raw?.mcp_config?.url || raw?.mcp_url || raw?.endpoint || raw?.mcp_config?.mcp_url || raw?.mcp_config?.endpoint);
-    
-    if (raw.mcp_type === "module") return "EXTERNAL";
-    if (hasCode) return "LOCAL";
-    if (hasUrl) return "REMOTE";
-    return ((raw.mcp_type || raw.type || "") + "").toUpperCase() || "UNKNOWN";
-  };
-
   useEffect(() => {
     if (!selectedType) return;
     const fetchRecycleData = async () => {
@@ -101,19 +98,118 @@ const RecycleBin = ({ initialType = "agents" }) => {
         } else if (selectedType === "tools") {
           url = `${APIs.TOOLS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
         } else if (selectedType === "servers") {
-          url = `${APIs.MCP_SERVERS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+          url = `${APIs.SERVERS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
         }
         const json = await fetchData(url);
-        setData(json);
+
+        // Normalize server data to include correct type and consistent field names
+        if (selectedType === "servers" && Array.isArray(json)) {
+          const normalizedServers = json.map(item => {
+            const serverType = getServerType(item);
+            return {
+              ...item,
+              // Ensure both name and tool_name fields exist for search compatibility
+              name: item.name || item.tool_name || "Unnamed Server",
+              tool_name: item.name || item.tool_name || "Unnamed Server",
+              description: item.description || item.tool_description || "",
+              tool_description: item.description || item.tool_description || "",
+              type: serverType,
+              category: serverType,
+              tool_type: serverType,
+            };
+          });
+          setData(normalizedServers);
+        } else if (selectedType === "tools" && Array.isArray(json)) {
+          // Normalize tool data to include category for filtering
+          const normalizedTools = json.map(item => {
+            const id = item.id || item.tool_id;
+            const isValidator = item.is_validator === true || item.is_validator === "true" || (id && String(id).startsWith("_validator"));
+            return {
+              ...item,
+              name: item.name || item.tool_name || "Unnamed Tool",
+              tool_name: item.name || item.tool_name || "Unnamed Tool",
+              description: item.description || item.tool_description || "",
+              tool_description: item.description || item.tool_description || "",
+              category: isValidator ? "validator" : "tool",
+            };
+          });
+          setData(normalizedTools);
+        } else if (Array.isArray(json)) {
+          setData(json);
+        } else {
+          // Handle case where response is not an array (empty or error response)
+          setData([]);
+        }
+        setError(null);
       } catch (err) {
-        setError(err.response.data.detail);
-        setData([]);
+        // Treat only specific "not found" errors as empty data, not actual errors
+        const errorMessage = err?.response?.data?.detail || err?.message || "";
+        const isNotFoundError =
+          err?.response?.status === 404 ||
+          errorMessage === "No agents found" ||
+          errorMessage === "No tools found" ||
+          errorMessage === "No servers found" ||
+          errorMessage.toLowerCase().includes("not found");
+
+        if (isNotFoundError) {
+          setData([]);
+          setError(null);
+        } else {
+          setError(errorMessage || "Failed to fetch data");
+          setData([]);
+        }
       } finally {
         setLoader(false);
       }
     };
     fetchRecycleData();
-  }, [selectedType, restoreData]);
+  }, [selectedType, restoreData, fetchData]);
+
+  // Filter data based on search term and agent type filter
+  const filteredData = useMemo(() => {
+    let result = data;
+
+    // Apply agent type filter (only for agents)
+    if (selectedType === "agents" && selectedAgentTypes && selectedAgentTypes.length > 0) {
+      result = result.filter((item) => selectedAgentTypes.includes(item?.agentic_application_type));
+    }
+
+    // Apply tool type filter (only for tools)
+    if (selectedType === "tools" && selectedToolTypes && selectedToolTypes.length > 0) {
+      result = result.filter((item) => {
+        const toolType = (item?.category || item?.tool_type || item?.type || "").toLowerCase();
+        return selectedToolTypes.some((filterType) => filterType.toLowerCase() === toolType);
+      });
+    }
+
+    // Apply server type filter (only for servers)
+    if (selectedType === "servers" && selectedServerTypes && selectedServerTypes.length > 0) {
+      result = result.filter((item) => {
+        const serverType = (item?.type || item?.category || item?.tool_type || "").toLowerCase();
+        return selectedServerTypes.some((filterType) => filterType.toLowerCase() === serverType);
+      });
+    }
+
+    // Apply search term filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((item) => {
+        let name = "";
+        if (selectedType === "agents") {
+          name = item?.agentic_application_name || "";
+        } else if (selectedType === "servers") {
+          // Check both name and tool_name fields for servers
+          name = item?.name || item?.tool_name || "";
+        } else {
+          name = item?.tool_name || "";
+        }
+        const createdBy = item?.created_by || "";
+        return (name && name.toLowerCase().includes(term)) || (createdBy && createdBy.toLowerCase().includes(term));
+      });
+    }
+
+    return result;
+  }, [data, searchTerm, selectedType, selectedAgentTypes, selectedServerTypes, selectedToolTypes]);
 
   return (
     <>
@@ -133,13 +229,7 @@ const RecycleBin = ({ initialType = "agents" }) => {
           setRestoreData={setRestoreData}
         />
       )}
-      {loader && (
-        <div className={styles.loaderOverlay}>
-          <Loader contained />
-        </div>
-      )}
-      <div className={style.containerCss}>
-        {/* <div className={styles.recycleBinContainer}> */}
+      <>
         {!initialType && (
           <div className={styles.toggleWrapper}>
             <button
@@ -148,6 +238,7 @@ const RecycleBin = ({ initialType = "agents" }) => {
               onClick={() => {
                 setActiveTab("agents");
                 setSelectedType("agents");
+                setInternalSearchTerm("");
               }}>
               Agents
             </button>
@@ -157,209 +248,177 @@ const RecycleBin = ({ initialType = "agents" }) => {
               onClick={() => {
                 setActiveTab("tools");
                 setSelectedType("tools");
+                setInternalSearchTerm("");
               }}>
               Tools
             </button>
           </div>
         )}
 
-        <div className={styles.listArea}>
+        <SummaryLine visibleCount={filteredData.length} />
+        <div className="listWrapper">
+          {loader && <Loader />}
           {error && <p className={styles.error}>{error}</p>}
           {!loader && !error && selectedType === "agents" && (
             <>
-              <div className={styles.visibleAgentsContainer}>
-                {!data.length > 0 ? (
-                  <>
-                    <div className={style.agentsList}>
-                      <div className={styles.cardNoData}>
-                        <div className={styles.discriptionNoData}>{"No Deleted Agents To Display"}</div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className={style.agentsList}>
-                      {data.length > 0 &&
-                        data?.map((data1) => (
-                          <AgentCard
-                            recycle={"recycle"}
-                            key={`agent-${data1.agentic_application_id}`}
-                            styles={style}
-                            data={data1}
-                            onAgentEdit={(agent) => {
-                              setLastTab(activeTab);
-                              setActiveTab("");
-                              onAgentEdit(agent);
-                            }}
-                            deleteAgent={""}
-                            fetchAgents={""}
-                          />
-                        ))}
-                    </div>
-                  </>
-                )}
-              </div>
+              {filteredData.length === 0 && searchTerm.trim() ? (
+                <EmptyState
+                  filters={[`Search: ${searchTerm}`]}
+                  onClearFilters={() => setInternalSearchTerm("")}
+                  message="No deleted agents found"
+                  showCreateButton={false}
+                />
+              ) : filteredData.length === 0 && !searchTerm.trim() ? (
+                <EmptyState
+                  message="No deleted agents found"
+                  subMessage="Deleted agents will appear here"
+                  showClearFilter={false}
+                  showCreateButton={false}
+                />
+              ) : (
+                <DisplayCard1
+                  data={filteredData}
+                  onCardClick={null}
+                  onEditClick={(item) => {
+                    setLastTab(activeTab);
+                    setActiveTab("");
+                    onAgentEdit(item);
+                  }}
+                  showDeleteButton={false}
+                  isRecycleMode={true}
+                  showCreateCard={false}
+                  cardNameKey="agentic_application_name"
+                  cardDescriptionKey="agentic_application_description"
+                  cardOwnerKey="created_by"
+                  cardCategoryKey="agentic_application_type"
+                  emptyMessage="No Deleted Agents To Display"
+                  contextType="agent"
+                  footerButtonsConfig={[]}
+                />
+              )}
             </>
           )}
           {!loader && !error && selectedType === "tools" && (
             <>
-              {!data.length > 0 ? (
-                <>
-                  <div className={style.agentsList}>
-                    <div className={styles.cardNoData}>
-                      <div className={styles.discriptionNoData}>{"No Deleted Tools To Display"}</div>
-                    </div>
-                  </div>
-                </>
+              {filteredData.length === 0 && searchTerm.trim() ? (
+                <EmptyState
+                  filters={[`Search: ${searchTerm}`]}
+                  onClearFilters={() => setInternalSearchTerm("")}
+                  message="No deleted tools found"
+                  showCreateButton={false}
+                />
+              ) : filteredData.length === 0 && !searchTerm.trim() ? (
+                <EmptyState
+                  message="No deleted tools found"
+                  subMessage="Deleted tools will appear here"
+                  showClearFilter={false}
+                  showCreateButton={false}
+                />
               ) : (
-                <>
-                  <div className={style2.toolsList}>
-                    {data.length > 0 &&
-                      data?.map((item, index) => (
-                        <ToolsCard
-                          tool={item}
-                          setShowForm={(show) => {
-                            if (show) setLastTab("tools");
-                            if (!show) setActiveTab(lastTab);
-                            setShowForm(show);
-                          }}
-                          isAddTool={isAddTool}
-                          setIsAddTool={setIsAddTool}
-                          key={`tool-card-${item.tool_id}`}
-                          style={style2}
-                          setEditTool={setEditTool}
-                          loading={loader}
-                          fetchPaginatedTools={""}
-                          recycle={true}
-                        />
-                      ))}
-                  </div>
-                </>
+                <DisplayCard1
+                  data={filteredData}
+                  onCardClick={null}
+                  onEditClick={(item) => {
+                    setLastTab("tools");
+                    setActiveTab("");
+                    setEditTool(item);
+                    setIsAddTool(false);
+                    setShowForm(true);
+                  }}
+                  showDeleteButton={false}
+                  isRecycleMode={true}
+                  showCreateCard={false}
+                  cardNameKey="tool_name"
+                  cardDescriptionKey="tool_description"
+                  cardOwnerKey="created_by"
+                  cardCategoryKey="category"
+                  emptyMessage="No Deleted Tools To Display"
+                  contextType="tool"
+                  footerButtonsConfig={[]}
+                />
               )}
             </>
           )}
-          {/* Servers Section */}
           {!loader && !error && selectedType === "servers" && (
             <>
-              {!data.length > 0 ? (
-                <>
-                  <div className={style.agentsList}>
-                    <div className={styles.cardNoData}>
-                      <div className={styles.discriptionNoData}>{"No Deleted Servers To Display"}</div>
-                    </div>
-                  </div>
-                </>
+              {filteredData.length === 0 && searchTerm.trim() ? (
+                <EmptyState
+                  filters={[`Search: ${searchTerm}`]}
+                  onClearFilters={() => setInternalSearchTerm("")}
+                  message="No deleted servers found"
+                  showCreateButton={false}
+                />
+              ) : filteredData.length === 0 && !searchTerm.trim() ? (
+                <EmptyState
+                  message="No deleted servers found"
+                  subMessage="Deleted servers will appear here"
+                  showClearFilter={false}
+                  showCreateButton={false}
+                />
               ) : (
-                <>
-                  <div className={serverStyles.serverGrid}>
-                    {data.length > 0 &&
-                      data?.map((server) => (
-                        <div
-                          key={`server-${server.tool_id || server.id}`}
-                          className={serverStyles.serverCard}
-                          style={{
-                            width: "200px",
-                            minHeight: "140px",
-                            height: "140px",
-                            maxHeight: "160px",
-                            padding: "11px",
-                            color: "white",
-                            position: "relative",
-                            backgroundColor: "#3d4359",
-                            boxShadow: "5px 15px 6px #00000029",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            display: "flex",
-                            flexDirection: "column",
-                            justifyContent: "space-between",
-                            fontFamily: "Segoe UI",
-                            transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                          }}
-                          onMouseOver={(e) => {
-                            e.currentTarget.style.transform = "translateY(-3px)";
-                            e.currentTarget.style.boxShadow = "5px 18px 10px #00000029";
-                          }}
-                          onMouseOut={(e) => {
-                            e.currentTarget.style.transform = "translateY(0)";
-                            e.currentTarget.style.boxShadow = "5px 15px 6px #00000029";
-                          }}
-                          onClick={() => {
-                            setSelectedServer(server);
-                            setShowServerForm(true);
-                          }}
-                        >
-                          <div style={{ flex: 1 }}>
-                            <span
-                              style={{
-                                fontSize: "16px",
-                                lineHeight: "14px",
-                                fontWeight: 600,
-                                letterSpacing: "-0.8px",
-                                wordBreak: "break-word",
-                                textTransform: "uppercase",
-                                marginBottom: "4px",
-                                maxHeight: "35px",
-                                color: "#fff",
-                              }}>
-                              {server.tool_name || server.name}
-                            </span>
-                            <div style={{ width: "28px", height: "2px", backgroundColor: "#0071b3", marginTop: "5px" }} />
-                            <div style={{ marginTop: "5px" }}>
-                              <div
-                                title={server.tool_description || server.description || "No description"}
-                                style={{
-                                  font: "normal normal 400 12px/16px Segoe UI",
-                                  letterSpacing: "-0.24px",
-                                  color: "#ffffff",
-                                  wordBreak: "break-word",
-                                  whiteSpace: "pre-line",
-                                  maxHeight: "32px",
-                                  marginBottom: "30px",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  display: "-webkit-box",
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: "vertical",
-                                }}>
-                                {server.tool_description || server.description || "No description"}
-                              </div>
-                            </div>
-                          </div>
-                          <div style={{ position: "absolute", left: "2px", bottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span style={{ fontSize: "12px", padding: "4px 10px", background: "#6b7280", color: "#fff", borderRadius: "8px" }}>
-                              {getServerType(server)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </>
+                <DisplayCard1
+                  data={filteredData}
+                  onCardClick={null}
+                  onEditClick={(item) => {
+                    setLastTab(activeTab);
+                    setActiveTab("");
+                    setSelectedServer(item);
+                    setShowServerForm(true);
+                  }}
+                  showDeleteButton={false}
+                  isRecycleMode={true}
+                  showCreateCard={false}
+                  cardNameKey="name"
+                  cardDescriptionKey="description"
+                  cardOwnerKey="created_by"
+                  cardCategoryKey="type"
+                  emptyMessage="No Deleted Servers To Display"
+                  contextType="server"
+                  footerButtonsConfig={[]}
+                />
               )}
             </>
           )}
         </div>
 
         {editAgentData && (
-          <div className={styles.fullPageEditContainer}>
-            <UpdateAgent
-              onClose={() => {
-                setActiveTab(lastTab);
-                handleUpdateAgentClose();
-              }}
-              agentData={editAgentData}
-              setEditAgentData={setEditAgentData}
-              tags={""}
-              agentsListData={data?.filter((agent) => agent?.agentic_application_type === REACT_AGENT)}
-              styles={style}
-              fetchAgents={""}
-              searchTerm={""}
-              selectedType={selectedType}
-              recycleBin={true}
-              setRestoreData={setRestoreData}
-              RestoreAgent={RestoreAgent}
-              deleteAgent={deleteAgent}
-            />
-          </div>
+          // <div className={styles.EditAgentContainer}>
+          <UpdateAgent
+            onClose={() => {
+              setActiveTab(lastTab);
+              handleUpdateAgentClose();
+            }}
+            agentData={editAgentData}
+            setEditAgentData={setEditAgentData}
+            tags={""}
+            agentsListData={data?.filter((agent) => agent?.agentic_application_type === REACT_AGENT)}
+            styles={styles}
+            fetchAgents={""}
+            searchTerm={""}
+            selectedType={selectedType}
+            recycleBin={true}
+            setRestoreData={setRestoreData}
+            RestoreAgent={RestoreAgent}
+            deleteAgent={deleteAgent}
+          />
+          // </div>
+        )}
+
+        {showForm && editTool && (
+          <ToolOnBoarding
+            setShowForm={(show) => {
+              if (!show) setActiveTab(lastTab);
+              setShowForm(show);
+            }}
+            isAddTool={isAddTool}
+            editTool={editTool}
+            setIsAddTool={setIsAddTool}
+            tags={""}
+            fetchPaginatedTools={""}
+            recycle={true}
+            selectedType={selectedType}
+            setRestoreData={setRestoreData}
+          />
         )}
 
         {/* Server Form for Restore/Delete - uses AddServer component */}
@@ -373,10 +432,9 @@ const RecycleBin = ({ initialType = "agents" }) => {
             }}
             recycle={true}
             setRestoreData={setRestoreData}
-            selectedType={selectedType}
           />
         )}
-      </div>
+      </>
     </>
   );
 };

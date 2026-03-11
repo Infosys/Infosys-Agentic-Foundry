@@ -1,0 +1,292 @@
+/* Admin Screen with Hamburger Menu */
+
+/**
+ * NOTE: Layout/scroll behavior for content sections is handled by PageLayout.
+ * Child components (AgentsList, Unused, RecycleBin, etc.) use listWrapper for scrolling.
+ */
+
+.adminContainer {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 45px);
+  background: var(--card-bg);
+  position: relative;
+}
+
+/* Top bar with hamburger on left */
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 24px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.hamburgerButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.hamburgerButton:hover {
+  background: var(--hover-background);
+}
+
+.hamburgerButton svg path {
+  stroke: var(--text-primary);
+}
+
+.adminHeader {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--header-color);
+  margin: 0;
+  padding-left: 16px;
+}
+
+/* Slide-out menu overlay */
+.menuOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  z-index: 999;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.menuOverlay.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Left side menu panel */
+.menuPanel {
+  position: fixed;
+  top: 55px;
+  left: calc(var(--main-width, 90px) + 10px);
+  width: 238px;
+  background: var(--card-bg);
+  border: 1px solid var(--app-primary-color);
+  border-radius: 8px;
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  box-shadow: var(--shadow-lg);
+}
+
+.menuPanel.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* Navigation items */
+.menuNav {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.navSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.navSectionLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+  padding: 0;
+  margin: 0 0 8px 0;
+}
+
+.navItem {
+  display: block;
+  width: 100%;
+  padding: 6px 0 6px 20px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.navItem:hover {
+  color: var(--app-primary-color);
+}
+
+.navItem.active {
+  color: var(--app-primary-color);
+  font-weight: 500;
+}
+
+/* Standalone section item (like Learning) */
+.navSectionItem {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--app-primary-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.navSectionItem:hover {
+  opacity: 0.8;
+}
+
+.navSectionItem.active {
+  color: var(--app-primary-color);
+}
+
+/* Main content area */
+.mainContent {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--card-bg);
+}
+/* ===== Header Dropdown Navigation (Amazon-style) ===== */
+.headerNav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  z-index: 100000;
+  overflow-x: auto;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: calc(100vw - 600px);
+  scrollbar-width: thin;
+}
+
+.headerNav::-webkit-scrollbar {
+  height: 4px;
+}
+
+.headerNav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.headerNav::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.headerNav::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.navDropdown {
+  position: relative;
+}
+
+.navDropdownTrigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.navDropdownTrigger:hover {
+  background: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+.navDropdownTrigger.active {
+  color: var(--app-primary-color);
+}
+
+.navDropdownTrigger svg {
+  transition: transform 0.2s ease;
+}
+
+.navDropdown:hover .navDropdownTrigger svg {
+  transform: rotate(180deg);
+}
+
+.navDropdownMenu {
+  position: fixed;
+  min-width: 180px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  padding: 8px 0;
+  z-index: 999999;
+}
+
+.navDropdownMenu.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.navDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.navDropdownItem:hover {
+  background: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+.navDropdownItem.active {
+  background: var(--app-primary-color-light, rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.1));
+  color: var(--app-primary-color);
+  font-weight: 500;
+}
+
+.navDropdownItem svg {
+  flex-shrink: 0;
+}
+
+/* Dark theme adjustments */
+:root[data-theme="dark"] .navDropdownMenu {
+  background: var(--card-bg);
+  border-color: var(--border);
+}

@@ -1,0 +1,101 @@
+/*
+ * AnimatedContainer - Shared styles for centered forms with animated border
+ * Used by Admin User pages (Assignment, Update) and other centered form layouts
+ * Inspired by GroundTruth design pattern
+ */
+
+/* Page wrapper - Full screen centered container */
+.pageWrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  box-sizing: border-box;
+  background: transparent;
+  overflow: auto;
+}
+
+/* Container - Main wrapper with 3D effect and animated border */
+.container {
+  padding: 32px 40px;
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+  border: 1px solid transparent;
+  position: relative;
+  width: auto;
+  max-width: 500px;
+  /* 3D effect with layered shadows */
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.04),
+    0 4px 8px rgba(0, 0, 0, 0.06),
+    0 8px 16px rgba(0, 0, 0, 0.08),
+    0 16px 32px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: translateY(0);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Animated glowing border using pseudo-element */
+.container::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: calc(var(--radius-lg) + 1px);
+  padding: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 25%,
+    rgba(55, 172, 234, 0.8) 50%,
+    transparent 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: borderGlow 3s linear infinite;
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* Second layer for full border visibility */
+.container::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* Hover states for subtle interaction */
+.container:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 4px 8px rgba(0, 0, 0, 0.06),
+    0 8px 16px rgba(0, 0, 0, 0.08),
+    0 16px 32px rgba(0, 0, 0, 0.1),
+    0 24px 48px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.container:hover::before {
+  opacity: 1;
+  animation-duration: 2s;
+}
+
+/* Border glow animation keyframes */
+@keyframes borderGlow {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

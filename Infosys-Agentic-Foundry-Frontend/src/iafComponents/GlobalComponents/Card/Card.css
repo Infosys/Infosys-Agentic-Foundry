@@ -1,0 +1,1246 @@
+/* Add drop-shadow to SVG icons in card footer on hover */
+/* .card-footer button:hover svg,
+.card-footer .info-button:hover svg,
+.card-footer .delete-button:hover svg,
+.card-footer .complexDeleteBtn:hover svg {
+  filter: drop-shadow(0 0 5px currentColor);
+} */
+
+/* Create Card Styles - Glassmorphism */
+.create-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(0, 115, 207, 0.3);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: 
+    all var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    border-color var(--transition-fast, 150ms) ease;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+:root[data-theme="dark"] .create-card {
+  background: rgba(30, 41, 59, 0.5);
+  border: 2px dashed rgba(0, 150, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* Create card border light effect */
+.create-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 115, 207, 0.8), rgba(0, 196, 255, 1), rgba(0, 115, 207, 0.8), transparent);
+  opacity: 0;
+  transition: opacity var(--transition-fast, 150ms) ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.create-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 115, 207, 0.6);
+  border-style: solid;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 
+    0 8px 32px rgba(0, 115, 207, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+:root[data-theme="dark"] .create-card:hover {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(0, 150, 255, 0.5);
+  box-shadow: 
+    0 8px 32px rgba(0, 150, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.create-card:hover::before {
+  opacity: 1;
+  animation: borderLightMove 1.5s ease-in-out infinite;
+}
+
+.create-card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-card-icon {
+  transition: 
+    transform var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)),
+    background-color var(--transition-fast, 150ms) ease;
+}
+
+.create-card:hover .create-card-icon {
+  transform: scale(1.15) rotate(90deg);
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+}
+
+.create-card:hover .create-card-icon svg {
+  color: #ffffff;
+  stroke: #ffffff;
+}
+
+.create-card:hover .create-card-label {
+  color: var(--app-primary-color);
+}
+
+/* Eye icon button for card actions */
+/* .card-eye-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+} */
+/* Card owner value (email) style */
+.card-owner-value {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 400);
+  font-size: var(--font-size-xs, 12px);
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+  color: var(--header-color);
+  margin: 0;
+  text-align: left;
+  word-break: break-word;
+}
+
+/* Card Container for flip animation */
+.card-container {
+  perspective: 1000px;
+  position: relative;
+  width: 100%;
+  height: 140px;
+  min-height: 140px;
+  transition: transform 0.9s;
+  transform-style: preserve-3d;
+  overflow: visible;
+}
+
+.card-container.flipped {
+  transform: rotateY(180deg);
+  transition: transform 0.9s ease-in-out;
+}
+
+/* Disable pointer events on front card when flipped */
+.card-container.flipped > .card:not(.card-back) {
+  pointer-events: none;
+}
+
+/* Main Card - Glassmorphism Style */
+.card {
+  transform-style: preserve-3d;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-left: 5px solid var(--accent, #37acea);
+  border-radius: var(--radius);
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+  padding: 14px;
+  min-height: 140px;
+  height: 100%;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: 
+    transform var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    border-color var(--transition-fast, 150ms) ease,
+    background var(--transition-fast, 150ms) ease;
+  max-width: 100%;
+  width: 100%;
+  position: absolute;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  top: 1px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  word-break: break-word;
+  box-sizing: border-box;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  animation: iafCardEnter var(--transition-slow, 350ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)) backwards;
+}
+
+/* Dark theme glassmorphism - dark blue accent */
+:root[data-theme="dark"] .card {
+  background: rgba(20, 28, 43, 0.85);
+  border: 1px solid rgba(55, 172, 234, 0.2);
+  border-left: 5px solid var(--accent, #37acea);
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(55, 172, 234, 0.1);
+}
+
+/* Border light effect - travels along the border */
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(55, 172, 234, 0.85), rgba(2, 93, 138, 1), rgba(55, 172, 234, 0.85), transparent);
+  opacity: 0;
+  transition: opacity var(--transition-fast, 150ms) ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Activate border light on hover */
+.card:hover:not(.card-back)::before {
+  opacity: 1;
+  animation: borderLightMove 1.5s ease-in-out infinite;
+}
+
+/* Border light animation - moves along top edge */
+@keyframes borderLightMove {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* Staggered animation for cards in grid */
+.card-container:nth-child(1) .card { animation-delay: 0ms; }
+.card-container:nth-child(2) .card { animation-delay: 50ms; }
+.card-container:nth-child(3) .card { animation-delay: 100ms; }
+.card-container:nth-child(4) .card { animation-delay: 150ms; }
+.card-container:nth-child(5) .card { animation-delay: 200ms; }
+.card-container:nth-child(6) .card { animation-delay: 250ms; }
+.card-container:nth-child(n+7) .card { animation-delay: 300ms; }
+
+.card:hover:not(.card-back) {
+  transform: var(--hover-lift, translateY(-4px));
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(55, 172, 234, 0.55);
+  box-shadow: 
+    0 8px 32px rgba(55, 172, 234, 0.18),
+    0 16px 48px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Dark theme border light - dark blue */
+:root[data-theme="dark"] .card::before {
+  background: linear-gradient(90deg, transparent, rgba(55, 172, 234, 0.9), rgba(2, 93, 138, 1), rgba(55, 172, 234, 0.9), transparent);
+}
+
+:root[data-theme="dark"] .card:hover:not(.card-back) {
+  background: rgba(20, 28, 43, 0.95);
+  border-color: #37acea;
+  box-shadow: 
+    0 8px 32px rgba(55, 172, 234, 0.25),
+    0 16px 48px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(55, 172, 234, 0.15);
+}
+
+/* Selected card styling - Glassmorphism */
+.card.selected {
+  border: 1.5px solid rgba(55, 172, 234, 0.7);
+  background: rgba(55, 172, 234, 0.1);
+  box-shadow: 
+    0 0 0 3px rgba(55, 172, 234, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+:root[data-theme="dark"] .card.selected {
+  background: rgba(0, 115, 207, 0.15);
+  border: 1.5px solid rgba(0, 150, 255, 0.5);
+  box-shadow: 
+    0 0 0 3px rgba(0, 150, 255, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Disable border animation on selected cards */
+.card.selected::before {
+  display: none;
+}
+
+.card.selected:hover:not(.card-back) {
+  border: 1.5px solid rgba(0, 115, 207, 0.7);
+  transform: translateY(-2px);
+  box-shadow: 
+    0 0 0 3px rgba(0, 115, 207, 0.12),
+    0 8px 24px rgba(0, 115, 207, 0.1);
+}
+
+:root[data-theme="dark"] .card.selected:hover:not(.card-back) {
+  border: 1.5px solid rgba(0, 150, 255, 0.6);
+  box-shadow: 
+    0 0 0 3px rgba(0, 150, 255, 0.18),
+    0 8px 24px rgba(0, 150, 255, 0.12);
+}
+
+/* Prevent hover effects when card is flipped */
+.card-container.flipped .card:not(.card-back) {
+  transform: rotateY(0deg) !important;
+  pointer-events: none;
+}
+
+.card-container.flipped .card:not(.card-back)::before {
+  display: none;
+}
+
+.card-container.flipped .card:not(.card-back):hover {
+  transform: rotateY(0deg) !important;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+:root[data-theme="dark"] .card-container.flipped .card:not(.card-back):hover {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.card-back {
+  transform: rotateY(180deg) !important;
+  transition: transform 0.9s ease-in-out;
+  pointer-events: auto;
+  cursor: default;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+:root[data-theme="dark"] .card-back {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Disable border animation on card-back */
+.card-back::before {
+  display: none;
+}
+
+.card-back:hover {
+  transform: rotateY(180deg) !important;
+  border-color: rgba(0, 115, 207, 0.3);
+}
+
+:root[data-theme="dark"] .card-back:hover {
+  border-color: rgba(0, 150, 255, 0.3);
+}
+
+.card-title {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-bold, 700);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--header-color);
+  transition: color 0.15s ease-in-out;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  margin-bottom: 8px;
+}
+
+.card-description {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 400);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color);
+  margin-bottom: 0;
+  line-height: 1.5;
+  letter-spacing: 0.2px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.card-created-by {
+  font-size: 11px;
+  color: var(--content-color);
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Card Stats - For Group/Role/Department cards */
+.card-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  padding: 8px 0;
+}
+
+.card-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-stat-value {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--text-primary);
+}
+
+.card-stat-label {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 400);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color);
+}
+
+.card-spacer {
+  flex: 1;
+}
+
+/* Node count chip for pipeline cards */
+.node-count-chip {
+  display: inline-block;
+  padding: 2px 14px;
+  border-radius: 16px;
+  background: var(--badge-bg, #f3f4f6);
+  color: var(--badge-color, #374151);
+  font-size: var(--font-size-xs, 13px);
+  font-weight: var(--font-weight-medium, 500);
+  border: 1px solid var(--badge-border, #e5e7eb);
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-top: 10px;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  /* border-top: 1px solid var(--color-border-subtle); */
+  font-size: 12px;
+  margin-top: auto;
+}
+
+/* .card-badge {
+  margin-top: 1px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  word-break: break-word;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-subtle);
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-brand-primary);
+  background-color: #6B72801A;
+  white-space: nowrap;
+  flex-shrink: 0;
+} */
+.card-badge {
+  position: relative;
+  top: 0;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--badge-border, #6b72804d);
+  background: var(--badge-bg, #6b72801a);
+  color: var(--badge-color, #4b5563);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  font-style: normal;
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: 1;
+  box-sizing: border-box;
+  /* Width constraints with content-based sizing */
+  min-width: 42px;
+  max-width: 95px;
+  width: fit-content;
+  /* Text overflow handling */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Modern transitions */
+  transition: 
+    background-color var(--transition-fast, 150ms) ease,
+    transform var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
+}
+
+.card:hover .card-badge {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Badge variants for specific statuses */
+.card-badge.badge-approved {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.card-badge.badge-non-approved {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+/* Department badge - same department (user's own department) */
+.card-badge.badge-department-same {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Department badge - different department */
+.card-badge.badge-department-other {
+  background: rgba(168, 85, 247, 0.15);
+  color: #df540f;
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.card-header-content {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 8px;
+  margin-top: 0;
+}
+
+.header-text {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-bold, 700);
+  font-size: var(--font-size-sm, 14px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--header-color);
+  margin-bottom: 0;
+  margin-top: 0;
+  text-align: left;
+  word-break: break-word;
+}
+
+.card-checkbox {
+  border: 2px solid rgba(107, 114, 128, 1) !important;
+}
+
+.card-checkbox[aria-checked="true"] {
+  border: 2px solid var(--app-primary-color) !important;
+}
+
+.card-checkbox:hover {
+  transform: scale(1.05);
+  transition: transform 0.15s ease-in-out;
+}
+
+.card-action-button {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 500;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+  transition: all 0.15s ease-in-out;
+  flex-shrink: 0;
+  margin-top: -5px;
+}
+
+.card-action-button:hover {
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.card-action-button:active {
+  background-color: #f3f4f6;
+  transform: scale(0.98);
+}
+
+.card-action-button:focus {
+  outline: 2px solid var(--color-border-subtle);
+  outline-offset: 2px;
+}
+
+/* Icon buttons - unified base with micro-interactions */
+.delete-button,
+.info-button,
+.chat-button {
+  margin-left: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: 
+    transform var(--transition-fast, 150ms) var(--transition-bounce, cubic-bezier(0.68, -0.55, 0.265, 1.55)),
+    background-color var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease,
+    color var(--transition-fast, 150ms) ease;
+  opacity: 1;
+  position: static;
+  z-index: 1;
+  margin-top: 0;
+}
+
+.delete-button:active,
+.info-button:active,
+.chat-button:active {
+  transform: var(--active-scale, scale(0.92));
+}
+
+.delete-button {
+  color: #dc2626;
+  margin-left: 0;
+}
+
+.delete-button:hover {
+  background-color: rgba(220, 38, 38, 0.12);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-glow-danger, 0 0 12px rgba(239, 68, 68, 0.2));
+}
+
+.info-button {
+  color: var(--content-color);
+}
+
+.info-button:hover {
+  background-color: rgba(107, 114, 128, 0.12);
+  transform: scale(1.1);
+  color: var(--app-primary-color);
+}
+
+.info-button svg {
+  stroke: var(--content-color);
+  transition: stroke var(--transition-fast, 150ms) ease;
+}
+
+.info-button:hover svg {
+  stroke: var(--app-primary-color);
+}
+
+.chat-button {
+  --ring: var(--color-brand-primary);
+  background: transparent;
+  color: #9ca3af;
+}
+
+.chat-button:hover {
+  background-color: rgba(0, 115, 207, 0.1);
+  color: var(--app-primary-color);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-glow, 0 0 12px rgba(0, 115, 207, 0.15));
+}
+
+.chat-button:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+.chat-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Clickable card specific styles */
+.clickable-card {
+  transition: border-color 0.2s ease;
+  cursor: pointer;
+}
+
+.clickable-card:hover {
+  border-color: var(--card-hover-border, #bfdbfe);
+}
+
+/* Disabled card - no access */
+.not-allowed-card {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.not-allowed-card:hover {
+  border-color: var(--card-border, #e5e7eb);
+}
+
+/* New styles for enhanced card functionality */
+.card.delete-mode {
+  border-color: #dc3545;
+  background-color: #fff5f5;
+}
+
+/* .card.unused-section {
+  border-color: #6b7280;
+  background-color: #f9fafb;
+} */
+
+.modalButtonContainer {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.modalLoginBtn {
+  padding: 8px 16px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.modalCancelBtn {
+  padding: 8px 16px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.cardInfoSection {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 8px;
+}
+
+.infoItem {
+  margin-bottom: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.infoLabel {
+  font-weight: 500;
+}
+
+/* Card actions container */
+.cardActionsContainer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: fit-content;
+  max-width: 146px;
+}
+
+.complexDeleteBtn,
+.editActionBtn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.complexDeleteBtn {
+  color: #dc3545;
+}
+
+.editActionBtn {
+  color: #6b7280;
+}
+
+.complexDeleteBtn:hover,
+.editActionBtn:hover {
+  background-color: #f8f9fa;
+}
+
+.deleteConfirmation {
+  position: relative;
+  padding: 16px !important;
+}
+
+.cancelDeleteBtn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.deleteEmailInput {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #f8f9fa;
+}
+
+.deleteWarningMessage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #856404;
+}
+
+.deleteErrorMessage {
+  color: #dc3545;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.deleteConfirmBtn {
+  width: 100%;
+  padding: 8px 16px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.deleteConfirmBtn:hover {
+  background-color: #c82333;
+}
+
+/* Reusable layout variations */
+.card-layout-agent {
+  min-height: 180px;
+}
+
+.card-layout-tool {
+  min-height: 160px;
+}
+
+.card-layout-compact {
+  min-height: 120px;
+  padding: 8px 12px 12px 12px;
+}
+
+/* Checkbox positioning */
+.checkbox-right {
+  flex-direction: row-reverse;
+}
+
+.checkbox-top {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.card-header:has(.checkbox-top) {
+  position: relative;
+  padding-top: 24px;
+}
+
+/* Type abbreviation styling */
+.card-type-abbreviation {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  background-color: #f3f4f6;
+  border: 2px solid #e5e7eb;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #374151;
+  cursor: help;
+  z-index: 1;
+}
+
+.card-type-abbreviation:hover {
+  background-color: #e5e7eb;
+  border-color: #d1d5db;
+}
+
+/* Layout-specific type abbreviation positioning */
+.card-layout-compact .card-type-abbreviation {
+  width: 24px;
+  height: 24px;
+  font-size: 8px;
+  bottom: 8px;
+  right: 8px;
+}
+
+/* Enhanced hover effects for different layouts */
+.card-layout-agent:hover {
+  transform: translateY(-2px);
+}
+
+.card-layout-tool:hover {
+  transform: translateY(-1px);
+}
+
+.card-layout-compact:hover {
+  transform: translateY(-1px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .card-type-abbreviation {
+    width: 28px;
+    height: 28px;
+    font-size: 9px;
+  }
+
+  .card-layout-compact .card-type-abbreviation {
+    width: 20px;
+    height: 20px;
+    font-size: 7px;
+  }
+}
+
+/* Delete Confirmation Card (Back Side) Styling */
+.delete-confirmation-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  cursor: default;
+  border: 1px solid var(--color-border-default);
+}
+
+.delete-confirmation-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  gap: 6px;
+}
+
+.delete-warning-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background-color: #fff5f5;
+  border-radius: 50%;
+  margin-bottom: 8px;
+}
+
+.delete-confirmation-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--header-color);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.delete-confirmation-message {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.delete-confirmation-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  width: 100%;
+  justify-content: center;
+}
+
+.delete-cancel-btn {
+  flex: 1;
+  max-width: 120px;
+  padding: 6px 20px;
+  background-color: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.delete-cancel-btn:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.delete-confirm-btn {
+  flex: 1;
+  max-width: 120px;
+  padding: 6px 20px;
+  background-color: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.delete-confirm-btn:hover {
+  background-color: #b91c1c;
+}
+
+/* Hide flip animation and back card in list view */
+.listView .card-container {
+  perspective: none;
+  transform-style: flat;
+  min-height: auto;
+}
+
+.listView .card-container.flipped {
+  transform: none;
+}
+
+.listView .card-back {
+  display: none;
+}
+
+/* Compact List View Styling */
+.listView .card {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 12px 16px;
+  min-height: 60px;
+  gap: 0;
+  position: relative;
+}
+
+.listView .card-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  flex: 0;
+  min-width: 0;
+  margin-bottom: 0;
+  margin-top: -18px;
+}
+
+.listView .card-header-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex: 0;
+  min-width: 0;
+  width: 100%;
+  margin-bottom: 0;
+  margin-top: 0;
+}
+
+.listView .card-type-abbreviation {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.listView .card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  margin-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #1f2937;
+  line-height: 1.4;
+}
+
+.listView .card:hover .card-title {
+  color: #2563eb;
+}
+
+.listView .card-created-by {
+  display: none;
+}
+
+.listView .card-description {
+  font-size: 12px;
+  margin: 0;
+  margin-top: -10px;
+  padding-left: 0;
+  padding-right: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: auto;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  color: #6b7280;
+  line-height: 1.3;
+  display: block;
+}
+
+.listView .card-spacer {
+  display: none;
+}
+
+.listView .card-footer {
+  border-top: none;
+  padding-top: 0;
+  margin-bottom: 0;
+  padding-left: 0;
+  flex-shrink: 0;
+  gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 50px;
+}
+
+.listView .card-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.listView .card-delete-button {
+  position: static;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.listView .card:hover .card-delete-button {
+  opacity: 1;
+}
+
+.listView .card-buttons-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Center delete button vertically in list view */
+.listView .delete-button {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Inline delete confirmation for list view */
+.listView .card.show-inline-delete-confirmation {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+}
+
+.listView .card.show-inline-delete-confirmation .card-header,
+.listView .card.show-inline-delete-confirmation .card-description,
+.listView .card.show-inline-delete-confirmation .card-footer,
+.listView .card.show-inline-delete-confirmation .delete-button {
+  display: none;
+}
+
+.listView .inline-delete-confirmation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 16px;
+}
+
+.listView .inline-delete-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.listView .inline-delete-message p {
+  margin: 0;
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.listView .inline-delete-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.listView .inline-delete-cancel-btn {
+  padding: 6px 16px;
+  background-color: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.listView .inline-delete-cancel-btn:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.listView .inline-delete-confirm-btn {
+  padding: 6px 16px;
+  background-color: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.listView .inline-delete-confirm-btn:hover {
+  background-color: #b91c1c;
+}

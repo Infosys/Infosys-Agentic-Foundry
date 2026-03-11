@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import styles from "./ConnectionModal.module.css";
-import groundTruthStyles from "../GroundTruth/GroundTruth.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useMessage } from "../../Hooks/MessageContext";
 import Loader from "../commonComponents/Loader.jsx";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
+import UploadBox from "../commonComponents/UploadBox.jsx";
+import { Modal } from "../commonComponents/Modal";
 
 const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
   const [formData, setFormData] = useState({});
@@ -163,7 +165,7 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
     setLoading(true);
     // Create a synthetic event object that mimics the form submission
     const syntheticEvent = {
-      preventDefault: () => {},
+      preventDefault: () => { },
       target: {
         elements: Object.keys(formData).reduce((acc, key) => {
           acc[key] = { value: formData[key] };
@@ -225,136 +227,131 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
   })();
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHeader}>
-          <div className={styles.modalTitle}>
-            <div className={styles.modalIcon} style={{ backgroundColor: database.color }}>
-              <SVGIcons icon={database.icon} width={24} height={24} fill="white" />
-            </div>
-            <div>
-              <h2>Connect to {database.name}</h2>
-              <p>{database.description}</p>
-            </div>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      size="md"
+      ariaLabel={`Connect to ${database.name}`}
+      className={styles.connectionModal}
+      showCloseButton={false}
+    >
+      <div className={styles.modalHeader}>
+        <div className={styles.modalTitle}>
+          <div className={styles.modalIcon} style={{ backgroundColor: database.color }}>
+            <SVGIcons icon={database.icon} width={24} height={24} fill="white" />
           </div>
-          <button className={styles.closeButton} onClick={onClose} type="button">
-            <SVGIcons icon="close" width={24} height={24} fill="#666" />
-          </button>
+          <div>
+            <h2>Connect to {database.name}</h2>
+            <p>{database.description}</p>
+          </div>
         </div>
+        <button className="closeBtn" aria-label="Close modal" onClick={onClose}>
+          ×
+        </button>
+      </div>
 
-        <form className={styles.form} onSubmit={handleSubmit}>
-          {loading && <Loader />}
-          <div className={styles.formBody}>
-            {database.fields.map((field, index) => (
-              <div key={field.name} className={styles.formGroup}>
-                <label htmlFor={field.name} className={styles.label}>
-                  {field.label}
-                  {field.required && <span className={styles.required}>*</span>}
-                </label>
+      <form className="form" onSubmit={handleSubmit}>
+        {loading && <Loader />}
+        <div className={styles.formBody}>
+          {database.fields.map((field, index) => (
+            <div key={field.name} className="formGroup">
+              <label htmlFor={field.name} className="label-desc">
+                {field.label}
+                {field.required && <span className="required">*</span>}
+              </label>
 
-                {field.type === "password" ? (
-                  <div className={styles.passwordContainer}>
-                    <input
-                      id={field.name}
-                      name={field.name}
-                      type={showPassword ? "text" : "password"}
-                      value={formData[field.name] || ""}
-                      onChange={handleInputChange}
-                      className={styles.input}
-                      required={field.required}
-                    />
-                    <button type="button" className={styles.passwordToggle} onClick={togglePasswordVisibility}>
-                      <SVGIcons icon={showPassword ? "eye-slash" : "eye"} width={20} height={20} fill="#666" />
-                    </button>
-                  </div>
-                ) : field.name === "databaseName" && database.id === "sqlite" ? (
+              {field.type === "password" ? (
+                <div className={styles.passwordContainer}>
                   <input
                     id={field.name}
                     name={field.name}
-                    type={field.type}
+                    type={showPassword ? "text" : "password"}
                     value={formData[field.name] || ""}
                     onChange={handleInputChange}
-                    className={styles.input}
+                    className="input"
                     required={field.required}
-                    readOnly={field.readOnly}
-                    disabled={!!formData.uploaded_file}
                   />
-                ) : (
-                  <input
-                    id={field.name}
-                    name={field.name}
-                    type={field.type}
-                    value={formData[field.name] || ""}
-                    onChange={handleInputChange}
-                    className={styles.input}
-                    required={field.required}
-                    readOnly={field.readOnly}
-                  />
-                )}
-              </div>
-            ))}
-            {database.id === "sqlite" && <div className={styles.warningMessage}>Please upload a file or enter a new file name.</div>}
-            {/* SQLite Upload File Field */}
-            {database.id === "sqlite" && (
-              <div className={groundTruthStyles.formGroup}>
-                <div className={groundTruthStyles.labelWithInfo}>
-                  <label htmlFor="sqlite_uploaded_file" className={groundTruthStyles.label}>
-                    Upload File
-                  </label>
+                  <button type="button" className={styles.passwordToggle} onClick={togglePasswordVisibility}>
+                    <SVGIcons icon={showPassword ? "eye-slash" : "eye"} width={20} height={20} fill="var(--content-color, #666)" />
+                  </button>
                 </div>
+              ) : field.name === "databaseName" && database.id === "sqlite" ? (
+                <input
+                  id={field.name}
+                  name={field.name}
+                  type={field.type}
+                  value={formData[field.name] || ""}
+                  onChange={handleInputChange}
+                  className="input"
+                  required={field.required}
+                  readOnly={field.readOnly}
+                  disabled={Boolean(formData.uploaded_file)}
+                />
+              ) : (
+                <input
+                  id={field.name}
+                  name={field.name}
+                  type={field.type}
+                  value={formData[field.name] || ""}
+                  onChange={handleInputChange}
+                  className="input"
+                  required={field.required}
+                  readOnly={field.readOnly}
+                />
+              )}
+            </div>
+          ))}
+
+          {/* SQLite warning and upload section - full width */}
+          {database.id === "sqlite" && (
+            <>
+              <div className={styles.fullWidth}>
+                <div className={styles.warningMessage}>Please upload a file or enter a new file name.</div>
+              </div>
+
+              <div className={styles.fullWidth}>
                 <input
                   type="file"
                   id="sqlite_uploaded_file"
                   name="uploaded_file"
                   onChange={handleFileInputChange}
-                  className={groundTruthStyles.fileInput}
                   accept=".db,.sqlite,.sqlite3"
                   style={{ display: "none" }}
                 />
-                {!formData.uploaded_file ? (
-                  <div
-                    className={`${groundTruthStyles.fileUploadContainer} ${isDragging ? groundTruthStyles.dragging : ""}`}
-                    onDragEnter={handleDragEnter}
-                    onDragLeave={handleDragLeave}
-                    onDragOver={handleDragOver}
-                    onDrop={hasDbPath ? undefined : handleDrop}
-                    onClick={() => !hasDbPath && document.getElementById("sqlite_uploaded_file").click()}
-                    style={{ pointerEvents: hasDbPath ? "none" : "auto", opacity: hasDbPath ? 0.5 : 1 }}>
-                    <div className={groundTruthStyles.uploadPrompt}>
-                      <span>{isDragging ? "Drop file here" : "Click to upload or drag and drop"}</span>
-                      <span>
-                        <small>Supported Extensions db, sqlite, sqlite3</small>
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className={groundTruthStyles.fileCard}>
-                    <div className={groundTruthStyles.fileInfo}>
-                      <span className={groundTruthStyles.fileName}> {formData.uploaded_file.name}</span>
-                      <button type="button" onClick={handleRemoveFile} className={groundTruthStyles.removeFileButton} aria-label="Remove file">
-                        &times;
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <UploadBox
+                  file={formData.uploaded_file || null}
+                  isDragging={isDragging}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={handleDragOver}
+                  onDrop={hasDbPath ? null : handleDrop}
+                  onClick={() => !hasDbPath && document.getElementById("sqlite_uploaded_file").click()}
+                  onRemoveFile={handleRemoveFile}
+                  fileInputId="sqlite_uploaded_file"
+                  acceptedFileTypes=".db,.sqlite,.sqlite3"
+                  supportedText="Supported Extensions: db, sqlite, sqlite3"
+                  dragText="Drop file here"
+                  uploadText="Click to upload"
+                  dragDropText=" or drag and drop"
+                  disabled={hasDbPath}
+                />
                 {errorMessage && <div className={styles.errorMessage}>{errorMessage}</div>}
                 {successMessage && !errorMessage && <div className={styles.successMessage}>{successMessage}</div>}
               </div>
-            )}
-          </div>
+            </>
+          )}
+        </div>
 
-          <div className={styles.modalFooter}>
-            <button type="button" className={styles.cancelButton} onClick={onClose} disabled={isConnecting}>
-              Cancel
-            </button>
-            <button type="submit" className={styles.connectButton} disabled={isConnecting || !areAllRequiredFieldsFilled}>
-              <SVGIcons icon="plug" width={16} height={16} fill="white" />
-              Connect
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className={styles.modalFooter}>
+          <IAFButton type="secondary" onClick={onClose} disabled={isConnecting}>
+            Cancel
+          </IAFButton>
+          <IAFButton type="primary" onClick={handleSubmit} disabled={isConnecting || !areAllRequiredFieldsFilled} icon={<SVGIcons icon="plug" width={16} height={16} fill="currentColor" />}>
+            Connect
+          </IAFButton>
+        </div>
+      </form>
+    </Modal>
   );
 };
 

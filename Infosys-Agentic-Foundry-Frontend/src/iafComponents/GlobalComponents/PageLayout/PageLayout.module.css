@@ -1,0 +1,25 @@
+/**
+ * PageLayout - Universal page wrapper for consistent scroll behavior.
+ *
+ * WHY THIS EXISTS:
+ * - pageContainer uses flex layout
+ * - listWrapper needs to be a direct flex child to calculate scroll height
+ * - Any wrapper div between them breaks the flex chain
+ * - This component bridges that gap by passing flex properties down
+ *
+ * RULES:
+ * 1. Always wrap page content in <PageLayout> when inside pageContainer
+ * 2. Put your scrollable content inside a div with className="listWrapper"
+ * 3. Never add height/overflow styles to intermediate wrappers
+ */
+
+.pageLayout {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0; /* Critical: allows flex children to shrink below content size */
+  position: relative; /* Contains absolutely positioned Loader within content area */
+}

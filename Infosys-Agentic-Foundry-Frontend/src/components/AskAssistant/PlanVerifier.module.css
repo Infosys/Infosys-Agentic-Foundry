@@ -1,0 +1,385 @@
+/* ===========================================
+   PLAN VERIFIER - Clean Card Design
+   =========================================== */
+
+/* Container */
+.planVerifierContainer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-family: var(--font-primary);
+  margin-bottom: 8px;
+  box-shadow: none;
+}
+
+/* Header */
+.planHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 20px;
+  background: var(--hover-background);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.planHeader:hover {
+  background: var(--hover-background-dark, var(--hover-background));
+}
+
+.planHeader.collapsed {
+  border-bottom: none;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.headerIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--app-primary-color);
+}
+
+.headerIcon svg {
+  color: var(--app-primary-color);
+}
+
+.headerTitle {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* Plan Content */
+.planContent {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.planDescription {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 6px 20px;
+  line-height: 1.6;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Plan Steps */
+.planSteps {
+  display: flex;
+  flex-direction: column;
+}
+
+.planStep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 20px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.planStep:last-child {
+  border-bottom: none;
+}
+
+.stepNumber {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  background: var(--app-primary-color);
+  color: #ffffff;
+  border-radius: 50%;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xs);
+  flex-shrink: 0;
+}
+
+.stepText {
+  flex: 1;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.stepChevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+
+.stepChevron.expanded {
+  transform: rotate(180deg);
+}
+
+/* Approved Status */
+.approvedStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  background: var(--hover-background);
+  border-top: 1px solid var(--border);
+}
+
+.approvedText {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--app-primary-color);
+}
+
+/* Execution Progress */
+.executionProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--hover-background);
+}
+
+.executionStep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.executionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.pendingDot {
+  width: 10px;
+  height: 10px;
+  background: var(--border);
+  border-radius: 50%;
+}
+
+.executionStepText {
+  font-family: var(--font-primary), Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.executionStepText.pending {
+  color: var(--muted);
+}
+
+.spinnerIcon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Action Buttons - Dark footer */
+.actionButtons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--checkbox-bg);
+  border-top: 1px solid var(--border);
+}
+
+/* Approve Button - Blue filled, rounded */
+.approveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--app-primary-color);
+  color: #ffffff;
+  border: none;
+  border-radius: 20px;
+  font-family: var(--font-primary), Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.approveBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.approveBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.approveBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Request Changes Button - Dark with border, rounded */
+.requestChangesBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-family: var(--font-primary), Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.requestChangesBtn svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.requestChangesBtn:hover:not(:disabled) {
+  background: var(--hover-background);
+  border-color: var(--accent-hover);
+}
+
+.requestChangesBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Feedback Section */
+.feedbackSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--checkbox-bg);
+  border-top: 1px solid var(--border);
+}
+
+.feedbackLabel {
+  font-family: var(--font-primary), Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.feedbackTextarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-primary), Inter, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  resize: none;
+  min-height: 80px;
+  background: var(--card-bg);
+  box-sizing: border-box;
+}
+
+.feedbackTextarea:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 2px rgba(0, 115, 207, 0.1);
+}
+
+.feedbackTextarea::placeholder {
+  color: var(--muted);
+}
+
+.feedbackButtons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.submitFeedbackBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--app-primary-color);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--font-primary), Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.submitFeedbackBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.submitFeedbackBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-primary), Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cancelBtn:hover {
+  background: var(--hover-background);
+  border-color: var(--border);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .planVerifierContainer {
+    max-width: 100%;
+  }
+}

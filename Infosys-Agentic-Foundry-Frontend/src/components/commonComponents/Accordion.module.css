@@ -7,12 +7,13 @@
 }
 
 .accordion-header {
-  cursor: pointer;
-  padding: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border: 1px solid #ccc;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  line-height: 1.6;
 }
 
 .accordion-content {

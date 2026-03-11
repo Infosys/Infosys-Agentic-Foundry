@@ -1,0 +1,95 @@
+/* ValidatorPatternsGroup Styles */
+.validatorGroup {
+  padding: 8px;
+  border-radius: 6px;
+  padding-left: 0px;
+  padding-bottom: 0;
+}
+
+.validatorHeader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.validatorRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 40px;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: end;
+}
+
+.col,
+.colSmall {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.validatorGroup label {
+  text-align: left;
+  font: normal normal 400 12px/16px Segoe UI;
+  letter-spacing: 0.3px;
+  color: var(--text-primary, #343741);
+  text-transform: capitalize;
+  margin-bottom: 7px;
+}
+
+.removeBtn {
+  padding: 6px;
+  background: none;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary, #666);
+  transition: all 0.2s ease;
+  font-size: 18px;
+}
+
+.removeBtn:hover {
+  background: var(--danger-bg, #fee2e2);
+  border-color: var(--danger-color, #b91c1c);
+  color: var(--danger-color, #b91c1c);
+}
+
+.muted {
+  font-size: 12px;
+  color: var(--text-muted, #666);
+}
+
+.helpText {
+  font-size: 11px;
+  color: var(--text-muted, #666);
+}
+
+.errorText {
+  color: #b91c1c;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.validatorCloseBtnWrapper {
+  display: flex;
+  align-items: center;
+}
+
+.ValidatorcloseBtn {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+/* Responsive: Stack columns on smaller screens */
+@media (max-width: 768px) {
+  .validatorRow {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .colSmall {
+    align-items: flex-start;
+  }
+}

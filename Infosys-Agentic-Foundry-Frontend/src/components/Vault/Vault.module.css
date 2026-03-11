@@ -1,9 +1,65 @@
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  padding: 20px 30px;
+  padding-right: 10px;
+  padding-bottom: 0px;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--menu-bg);
+}
+
 .container {
   display: flex;
   flex-direction: column;
-  /* height: 100vh; */
-  margin-top: 20px;
+  height: 100vh;
+  padding: 20px 30px;
+  padding-right: 10px;
+  padding-bottom: 0px;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--menu-bg);
 }
+
+.subHeaderContainer {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+/* Vault Subheader - matches SubHeader component styling */
+.vaultSubheader {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+  margin-bottom: 12px;
+}
+
+.vaultHeading {
+  width: auto;
+  height: 30px;
+  font-family: var(--font-secondary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xl);
+  line-height: 30px;
+  letter-spacing: 0.3px;
+  color: var(--header-color);
+  text-transform: none;
+  margin: 0;
+}
+
+/* Search field wrapper for TextField component */
+.searchFieldWrapper {
+  width: 220px;
+}
+
 .plus {
   background: #f5f5f5;
   box-shadow: 0px 4px 4px #00000029;
@@ -16,14 +72,14 @@
 .header {
   margin-left: 50px !important;
   margin-top: 2px !important;
-  font: normal normal 400 20px / 27px Segoe UI;
-  letter-spacing: 0px;
-  color: #343741;
-  text-transform: uppercase;
+  font: normal normal 400 20px / 27px var(--font-primary);
+  letter-spacing: 0.3px;
+  color: var(--header-color);
+  text-transform: capitalize;
   display: flex;
   justify-content: space-between;
 }
-.secretCss {
+.sctCss {
   margin-left: 20px !important;
   margin-top: 8px;
   max-height: Calc(100vh - 165px);
@@ -43,16 +99,16 @@
   cursor: pointer;
 }
 .titleCss {
-  font-size: 20px;
-  font-family: "Segoe UI", Arial, sans-serif;
-  font-weight: 400;
+  font-size: var(--font-size-xl);
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-normal);
   /* color: #007bc1; */
   /* cursor: pointer; */
 }
-.addSecret {
+.addSct {
   margin-left: 5px;
   cursor: pointer;
-  color: #007bc1;
+  color: var(--app-primary-color);
 }
 .iconCss {
   cursor: pointer;
@@ -60,53 +116,45 @@
   font-size: 16px;
   padding: 6px 8px;
   border-radius: 12px;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
 .iconEye {
-  color: #6c757d;
+  color: var(--muted);
 }
 .iconEye:hover {
-  color: #005a9e;
+  color: var(--app-secondary-color);
 }
 
 .iconCopy {
-  color: #6c757d;
+  color: var(--muted);
 }
 .iconCopy:hover {
-  color: #007bc1;
+  color: var(--app-primary-color);
 }
 
 .iconDelete {
-  color: #6c757d;
+  color: var(--muted);
 }
 .iconDelete:hover {
-  color: #b02a37;
+  color: var(--danger);
 }
 
 .row {
   margin-top: 20px;
 }
 .saveButton {
-  background-color: #007bc1;
-  color: white;
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
   border-radius: 2px;
 }
-.secretContainer {
+.sctContainer {
   padding: 20px;
-}
-
-.addSecretBtn {
-  cursor: pointer;
-  margin-bottom: 15px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: bold;
-  color: #007bff;
 }
 
 .row {
@@ -118,70 +166,110 @@
 
 .input {
   padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   width: 200px;
   box-sizing: border-box;
+  background: var(--card-bg, #ffffff);
+  color: var(--text-primary);
 }
 
 .icon {
   cursor: pointer;
   margin-left: 5px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .icon:hover {
-  color: #007bff;
+  color: var(--app-primary-color);
 }
 
 .disabled {
   pointer-events: none;
-  opacity: 0.4;
+  opacity: var(--disabled-opacity);
 }
 .publicCss {
   margin-left: 20px;
 }
-.secretWrapper {
+.sctWrapper {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
-  padding: 20px;
+  gap: 24px;
+  flex: 1;
+  min-height: 0;
 }
 
 .leftCard,
 .rightCard {
   flex: 1 1 50%;
   max-width: 50%;
-  /* box-sizing: border-box; */
-  padding: 16px;
-  /* border-radius: 8px; */
-  background-color: #fff;
+  padding: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   overflow-y: auto;
-  min-height: 400px; /* optional */
+  min-height: 400px;
   display: flex;
 }
 .leftCard {
-  border-right: 1px solid #ccc;
+  border-right: 1px solid var(--border-color);
 }
-.secretItem {
+.sctItem {
   padding: 5px 0;
   /* border-bottom: 1px solid #eee; */
 }
 .input {
-  height: 40px;
-  width: 250px;
-  padding: 8px;
-  font-size: 14px;
+  height: 42px;
+  width: 100%;
+  padding: 10px 14px;
+  font-size: var(--font-size-sm);
   box-sizing: border-box;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: all 0.25s ease;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.input:disabled {
+  background: var(--disabled-bg);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .valueTextarea {
-  height: 40px;
-  width: 250px;
-  resize: both;
-  padding: 8px;
-  font-size: 14px;
+  min-height: 80px;
+  width: 100%;
+  resize: none;
+  padding: 12px 14px;
+  font-size: var(--font-size-sm);
   box-sizing: border-box;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: all 0.25s ease;
+  font-family: inherit;
+}
+
+.valueTextarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.valueTextarea::placeholder {
+  color: rgba(255, 255, 255, 0.4);
 }
 .privateCss {
   margin-left: 2px;
@@ -189,23 +277,36 @@
 .tab,
 .activeTab {
   border: none;
-  padding: 8px 16px;
-  margin-left: 10px;
-  border-radius: 4px;
+  padding: 10px 24px;
+  margin-left: 8px;
+  border-radius: 8px 8px 0 0;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   background: none;
+  transition: all 0.25s ease;
+  position: relative;
 }
 
 .tab {
-  color: #007bc1;
-  background-color: #ffffff;
+  color: var(--muted);
+  background: var(--tab-bg);
+  border: 1px solid var(--tab-border);
+  border-bottom: none;
+}
+
+.tab:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--tab-hover-bg);
 }
 
 .activeTab {
-  background-color: #007bc1;
-  color: #ffffff;
+  background: var(--tab-active-bg);
+  color: var(--tab-active-color);
+  border: 1px solid var(--tab-active-border);
+  border-bottom: none;
+  box-shadow: var(--shadow-glow);
 }
 
 .plus {
@@ -223,11 +324,11 @@
   border-radius: 50%;
   width: 24px;
   height: 24px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .iconClose:hover {
-  color: #007bc1;
+  color: var(--app-primary-color);
 }
 .cssForText {
   margin-left: 8px;
@@ -247,54 +348,54 @@
   justify-content: center;
   flex-direction: column;
   padding: 60px 20px;
-  margin: 50px 20px;
-  background-color: #f9f9f9;
-  border: 1px solid #ccc;
-  border-radius: 14px;
+  margin: 30px 0;
+  background: var(--card-bg);
+  border: 1px dashed var(--border-color);
+  border-radius: 12px;
   text-align: center;
 }
 
 .selectGroupContent {
-  color: #343741;
+  color: var(--text-primary);
 }
 
 .selectGroupTitle {
-  font-family: "Segoe UI", Arial, sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-  color: #343741;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--accent);
+  margin-bottom: 10px;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
 }
 
 .selectGroupSubtitle {
-  font-family: "Segoe UI", Arial, sans-serif;
-  font-size: 14px;
-  color: #6c757d;
-  line-height: 1.4;
-  font-weight: 400;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-weight: var(--font-weight-normal);
 }
 
-.noSecretsMessage {
-  margin-left: 20px !important;
-  margin-top: 100px !important;
-  height: 104px;
-  overflow-y: auto;
-  padding: 37px;
-  border: 1px solid #ccc;
+.noSctsMessage {
+  margin-top: 40px !important;
+  padding: 40px;
+  border: 1px dashed var(--border-color);
   display: flex;
   justify-content: center;
-  margin-right: 50px;
-  border-radius: 14px;
-  background-color: #f9f9f9;
+  align-items: center;
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-style: normal;
 }
 
 .vaultWrapper {
   display: flex;
   flex-direction: row;
-  gap: 10px;
+  gap: 20px;
   overflow: auto;
+  background: transparent;
 }
 
 .groupDropdownContainer {
@@ -308,13 +409,16 @@
   top: 100%;
   left: 0;
   width: 100%;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--menu-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: var(--shadow-modal);
   z-index: 9999;
-  max-height: 200px;
+  max-height: 280px;
   overflow: hidden;
+  margin-top: 4px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 /* New Group Tab Styles */
@@ -327,19 +431,19 @@
 
 .domainListSection {
   flex: 0 0 300px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .domainListSection h3 {
-  background: #f8f9fa;
+  background: var(--checkbox-bg);
   margin: 0;
   padding: 15px 20px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #343741;
-  border-bottom: 1px solid #e0e0e0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .domainList {
@@ -349,111 +453,111 @@
 
 .domainItem {
   padding: 15px 20px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--checkbox-bg);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .domainItem:hover {
-  background: #f8f9fa;
+  background: var(--checkbox-bg);
 }
 
 .domainItem.selectedDomain {
-  background: #e3f2fd;
-  border-left: 3px solid #2196f3;
+  background: var(--accent-light);
+  border-left: 3px solid var(--app-primary-color);
 }
 
 .domainName {
   display: block;
-  font-weight: 500;
-  color: #343741;
+  font-weight: var(--font-weight-medium);
+  color: var(--header-color);
   margin-bottom: 4px;
 }
 
 .domainDescription {
   display: block;
-  font-size: 12px;
-  color: #666;
+  font-size: var(--font-size-xs);
+  color: var(--muted);
 }
 
 .noDomains {
   padding: 20px;
   text-align: center;
-  color: #666;
-  font-style: italic;
+  color: var(--muted);
+  font-style: normal;
 }
 
-.secretsSection {
+.sctsSection {
   flex: 1;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
-.secretsHeader {
-  background: #f8f9fa;
+.sctsHeader {
+  background: var(--checkbox-bg);
   padding: 15px 20px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.secretsHeader h3 {
+.sctsHeader h3 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #343741;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
 }
 
 .addButton {
-  background: #2196f3;
-  color: white;
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
   border: none;
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   transition: background 0.2s ease;
 }
 
 .addButton:hover {
-  background: #1976d2;
+  background: var(--app-secondary-color);
 }
 
 .addButton:disabled {
-  background: #ccc;
+  background: var(--border-color);
   cursor: not-allowed;
 }
 
-.secretsList {
+.sctsList {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
 }
 
-.secretRow {
+.sctRow {
   display: flex;
   align-items: flex-start;
   gap: 15px;
   padding: 15px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   margin-bottom: 15px;
-  background: white;
+  background: var(--card-bg);
 }
 
-.secretInputs {
+.sctInputs {
   flex: 1;
   display: flex;
   gap: 10px;
 }
 
 .domainInput {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--checkbox-bg);
+  color: var(--muted);
 }
 
 .valueInputContainer {
@@ -472,62 +576,557 @@
   font-size: 16px;
 }
 
-.secretActions {
+.sctActions {
   display: flex;
   gap: 8px;
   align-items: flex-start;
 }
 
 .saveButton {
-  background: #4caf50;
-  color: white;
+  background: var(--success);
+  color: var(--primary-button-color);
   border: none;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .saveButton:hover {
-  background: #45a049;
+  background: var(--success);
+  filter: brightness(0.9);
 }
 
 .saveButton:disabled {
-  background: #ccc;
+  background: var(--border-color);
   cursor: not-allowed;
 }
 
 .updateButton {
-  background: #ff9800;
-  color: white;
+  background: var(--warning);
+  color: var(--primary-button-color);
   border: none;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .updateButton:hover {
-  background: #f57c00;
+  background: var(--warning);
+  filter: brightness(0.9);
 }
 
 .deleteButton {
-  background: #f44336;
-  color: white;
+  background: var(--danger);
+  color: var(--primary-button-color);
   border: none;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .deleteButton:hover {
-  background: #d32f2f;
+  background: var(--danger);
+  filter: brightness(0.9);
 }
 
-.noSecrets {
+.noScts {
   text-align: center;
-  color: #666;
-  font-style: italic;
+  color: var(--muted);
+  font-style: normal;
   padding: 40px 20px;
+}
+
+/* ========================================
+   NEW VAULT UI STYLES
+   Modern card-based layout with sct prefix
+   ======================================== */
+
+/* Tabs Container */
+.tabsContainer {
+  border-bottom: 1px solid var(--border-color);
+  justify-content: center;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  padding: 0 20px;
+  background: var(--section-gradient);
+}
+
+/* Group Selection Container */
+.groupSelectionContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 0 20px;
+}
+
+.noGroupsMessage {
+  color: var(--muted);
+  font-style: normal;
+  padding: 12px 16px;
+  background: var(--checkbox-bg);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+/* Group Dropdown Styles */
+.groupDropdownTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  min-width: 220px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.groupDropdownTrigger:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.groupDropdownTriggerActive {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.groupDropdownText {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.dropdownChevron {
+  font-size: var(--font-size-xs);
+  transition: transform 0.25s ease;
+  color: var(--accent);
+}
+
+.dropdownChevronRotated {
+  transform: rotate(180deg);
+}
+
+.groupSearchWrapper {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--checkbox-bg);
+}
+
+/* Override TextField container styles for dropdown context */
+.groupSearchWrapper > div {
+  max-width: 100%;
+  margin: 0;
+  gap: 0;
+}
+
+.groupSearchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Override for search input with icon - only padding-left is needed */
+.groupSearchInput {
+  padding-left: 32px;
+  height: 36px;
+}
+
+.groupDropdownList {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+/* Custom scrollbar for dropdown list */
+.groupDropdownList::-webkit-scrollbar {
+  width: 5px;
+}
+
+.groupDropdownList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.groupDropdownList::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(107, 114, 128, 0.3));
+  border-radius: 3px;
+}
+
+.groupDropdownList::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, rgba(107, 114, 128, 0.5));
+}
+
+.groupDropdownItem {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  margin: 4px 8px;
+}
+
+.groupDropdownItem:hover {
+  background: var(--hover-background);
+}
+
+.groupDropdownItemHighlighted {
+  background: var(--accent-light);
+}
+
+.groupDropdownItemName {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.groupDropdownItemDesc {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.groupDropdownEmpty {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.selectedGroupInfo {
+  font-size: var(--font-size-sm);
+  color: var(--accent);
+  font-weight: var(--font-weight-medium);
+  padding: 8px 16px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.noPermissionMessage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  color: var(--danger);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  background: var(--checkbox-bg);
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  margin: 40px;
+}
+
+/* Left Section - Secrets */
+.secretsSection {
+  flex: 0 0 40%;
+  max-width: 40%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.secretsHeader {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Add Secret Card */
+.addSctCard {
+  gap: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 232px);
+  overflow: hidden;
+  height: fit-content;
+  box-shadow: var(--shadow-card);
+}
+
+/* Secrets Container */
+.sctsContainer {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 8px;
+  min-height: 0;
+}
+
+/* Custom scrollbar for secrets container */
+.sctsContainer::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sctsContainer::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 3px;
+}
+
+.sctsContainer::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(107, 114, 128, 0.3));
+  border-radius: 3px;
+}
+
+.sctsContainer::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, rgba(107, 114, 128, 0.5));
+}
+
+/* Secret Card Styles */
+.sctCard {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  transition: all 0.25s ease;
+  box-shadow: var(--shadow-card);
+}
+
+.sctCard:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.sctCardHeaderWithClose {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 7px;
+}
+
+.sctCardLabel {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sctCardActions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Action Buttons */
+.actionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+
+.viewBtn {
+  background: var(--accent-light);
+  color: var(--app-primary-color);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.viewBtn:hover {
+  background: var(--hover-background);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.deleteBtn {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+}
+
+.deleteBtn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: var(--danger);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.25);
+}
+
+.cancelBtn {
+  background: var(--secondary-btn-bg, rgba(107, 114, 128, 0.1));
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.cancelBtn:hover {
+  background: var(--hover-background);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+/* Field Group */
+.fieldGroup {
+  margin-bottom: 7px;
+}
+
+/* Card Footer */
+.cardFooter {
+  gap: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.saveBtn {
+  background: var(--primary-btn-bg);
+  color: var(--primary-btn-text);
+  border: 1px solid var(--accent);
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: var(--shadow-card);
+}
+
+.saveBtn:hover:not(:disabled) {
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+
+.saveBtn:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--border-color);
+  color: var(--muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Saved Secret Card */
+.savedSctCard {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.savedSctCard:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+.savedSctRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.savedSctName {
+  flex: 0 1 140px;
+  min-width: 80px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.savedSctDivider {
+  width: 2px;
+  height: 28px;
+  background: linear-gradient(180deg, transparent, var(--accent), transparent);
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.savedSctValue {
+  flex: 1 1 auto;
+  min-width: 60px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 6px 10px;
+  border-radius: 6px;
+  letter-spacing: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.savedSctValue.revealed {
+  color: var(--text-primary);
+  letter-spacing: normal;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.savedSctCard.revealedCard {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: var(--card-bg);
+}
+
+/* New Secret Card - Inline Form */
+.savedSctCard.newSecretCard {
+  border-color: rgba(59, 130, 246, 0.3);
+  border-style: dashed;
+  background: rgba(59, 130, 246, 0.03);
+}
+
+.inlineInput {
+  flex: 0 1 120px;
+  min-width: 60px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.inlineInput:focus {
+  border-color: var(--accent);
+  background: var(--card-bg);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.inlineInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.inlineInput.valueInput {
+  flex: 1 1 auto;
+  min-width: 60px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--font-size-xs);
+}
+
+/* Code Snippet Section - only layout positioning */
+.codeSnippetSection {
+  flex: 0 0 55%;
+  max-width: 55%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }

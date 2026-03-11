@@ -1,0 +1,737 @@
+/**
+ * InstallationTab Component Styles
+ *
+ * NOTE: Layout/scroll behavior is handled by PageLayout in AdminScreenNew.
+ * These styles are for visual appearance only.
+ */
+
+.subTabBar {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.subTabBar button {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  padding: 8px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.subTabBar .active {
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+}
+.tabContent {
+  min-height: 200px;
+}
+.cardsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  padding: 16px;
+  align-content: start;
+}
+.card {
+  background: var(--card-bg);
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: var(--shadow);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+  height: auto;
+  min-height: 50px;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-left: 5px solid var(--accent, #37acea);
+  font-size: 13px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--app-primary-color);
+}
+.cardHeader {
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+  color: var(--header-color);
+}
+.cardBody {
+  font-size: 0.98rem;
+  color: var(--text-secondary);
+}
+.emptyMsg {
+  color: var(--muted);
+  text-align: center;
+  margin-top: 40px;
+  font-size: 1.05rem;
+}
+
+/* Pending Module Card Styles */
+.pendingCard {
+  background: var(--card-bg);
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s,
+    border-color 0.2s;
+  min-height: 120px;
+  max-height: 140px;
+  width: 200px;
+  color: var(--text-primary);
+  position: relative;
+  border: 1px solid var(--border-color);
+}
+.pendingCard:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--app-primary-color);
+}
+.pendingCardTitle {
+  font-family: var(--font-primary);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--header-color);
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+  text-transform: capitalize;
+  word-wrap: break-word;
+  max-height: 38px;
+  overflow: hidden;
+}
+.pendingCardInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+}
+.pendingCardRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.pendingCardRow svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.pendingCardLabel {
+  font-weight: 500;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.pendingCardValue {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Modal styles - Matching AvailableServers modal styling */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  width: calc(100vw - var(--main-width, 200px));
+  margin-left: var(--main-width, 200px);
+  background: var(--modal-overlay);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000000;
+}
+
+.modal {
+  border: 1px solid var(--border-color);
+  width: 80%;
+  max-width: 1200px;
+  min-width: 400px;
+  height: 60vh;
+  max-height: 60vh;
+  background: var(--card-bg);
+  padding: 16px 20px;
+  position: relative;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius);
+  font-family: var(--font-primary);
+  pointer-events: auto;
+  text-align: left;
+}
+
+/* Widened modal variant for code preview */
+.modalWide {
+  width: 80%;
+  max-width: 80%;
+}
+
+:global(.pending) .modalWide {
+  max-height: 90vh;
+  height: max-content;
+}
+
+.modalWide .modalBody {
+  flex-direction: row;
+}
+
+.modalWide .modalLeft {
+  flex: 0 0 20%;
+  max-width: 40%;
+}
+
+.modalWide .modalRight {
+  flex: 0 0 80%;
+  max-width: 75%;
+}
+
+.closeBtn {
+  position: absolute;
+  right: 16px;
+  top: 12px;
+}
+
+.modalTitle {
+  margin: 0 0 16px 0;
+  font-family: var(--font-secondary) !important;
+  font-weight: var(--font-weight-bold, 700);
+  font-size: var(--font-size-base, 16px);
+  color: var(--header-color, #1a1a1a);
+  padding: 0;
+  padding-right: 40px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  line-height: 1.4;
+  text-align: left;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
+
+.modalBody {
+  display: flex;
+  gap: 14px;
+  font-size: 14px;
+  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  margin-bottom: 15px;
+  width: 100%;
+}
+
+.modalLeft {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.modalRight {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  height: fit-content;
+}
+
+.infoGrid {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+}
+
+.infoCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.infoRow {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.infoRow strong {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--header-color);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.codeLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--header-color);
+  margin-bottom: 8px;
+}
+
+.codeEditorContainer {
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--code-bg);
+  min-height: 200px;
+  position: relative;
+}
+
+/* Legacy styles kept for compatibility */
+.modalContainer {
+  background: var(--card-bg);
+  color: var(--header-color);
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.modalTitleHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--modal-header-bg);
+  flex-shrink: 0;
+}
+
+.modalContentScrollable {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.contentSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.sectionLabel {
+  display: block;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.descriptionText {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.codeEditorWrapper {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  max-height: 300px;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--modal-header-bg);
+  flex-shrink: 0;
+}
+
+.infoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.infoLabel {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.infoValue {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--text-primary);
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.codeSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.codePreview {
+  background: var(--code-bg);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  overflow: auto;
+  min-height: 180px;
+  max-height: 300px;
+  border: 1px solid var(--code-border);
+}
+
+.codePreview pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--code-color);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.codePreview code {
+  font-family: inherit;
+}
+
+.codeLine {
+  display: block;
+}
+
+:global(.pendingModulesCards) :global(.card-container),
+:global(.installedModulesCards) :global(.card-container),
+:global(.missingModulesCards) :global(.card-container) {
+  height: 75px;
+  min-height: 75px;
+}
+
+:global(.pendingModulesCards) :global(.card),
+:global(.installedModulesCards) :global(.card),
+:global(.missingModulesCards) :global(.card) {
+  min-height: 75px;
+}
+
+:global(.missingModulesCards) :global(.card-container):hover :global(.card) {
+  cursor: default;
+}
+
+:global(.pendingModulesCards) :global(.card-description),
+:global(.missingModulesCards) :global(.card-description) {
+  display: none;
+}
+
+/* COMMENTED OUT: Old Missing Modules Tab Styles (now using DisplayCard1) */
+/* .missingModulesHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24px;
+  justify-content: space-between;
+}
+
+.selectAllContainer {
+  display: flex;
+  align-items: center;
+}
+
+.selectAllCheckbox {
+  margin-right: 8px;
+  accent-color: var(--app-primary-color);
+}
+
+.selectAllLabel {
+  color: var(--app-primary-color);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.missingModulesActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.restartBtn {
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 8px 24px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.restartBtn:hover {
+  opacity: 0.9;
+}
+
+.installBtn {
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 8px 24px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.installBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.installBtn:disabled {
+  background: var(--disabled-bg);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity);
+}
+
+.addModuleBtn {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  width: 36px;
+  height: 36px;
+  font-size: 28px;
+  color: var(--app-primary-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.addModuleBtn:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+  border-color: var(--app-primary-color);
+}
+
+.cardSelected {
+  background: var(--accent-light);
+  border: 2px solid var(--app-primary-color);
+}
+
+.cardCheckboxRow {
+  display: flex;
+  align-items: center;
+}
+
+.cardCheckboxRowSpaced {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cardCheckbox {
+  margin-right: 8px;
+  accent-color: var(--app-primary-color);
+}
+
+.cardModuleName {
+  font-weight: 500;
+  color: var(--header-color);
+}
+
+.versionInput {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  font-size: 15px;
+  margin-top: 2px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  transition: border-color 0.2s ease;
+}
+
+.versionInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+} */
+
+/* Custom Install Modal Styles */
+.customModalOverlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--sidebar-width, 190px);
+  background: var(--modal-overlay);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.customModalContent {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 32px;
+  min-width: 400px;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  border: 1px solid var(--border-color);
+}
+
+.customModalCloseBtn {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: 0;
+  font-size: 22px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.customModalCloseBtn:hover {
+  color: var(--header-color);
+}
+
+.customModalTitle {
+  margin: 0;
+  margin-bottom: 18px;
+  font-weight: 600;
+  color: var(--header-color);
+}
+
+.customModalInputGroup {
+  margin-bottom: 18px;
+}
+
+.requiredAsterisk {
+  color: var(--danger);
+}
+
+.customModalInput {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  font-size: 16px;
+  margin-top: 6px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.customModalInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+.customModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelBtn {
+  background: var(--hover-background);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 24px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.cancelBtn:hover {
+  background: var(--muted-foreground);
+  border-color: var(--app-primary-color);
+}
+
+.customInstallBtn {
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 8px 24px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.customInstallBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.customInstallBtn:disabled {
+  background: var(--disabled-bg);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity);
+}
+
+/* Code Editor Font Style */
+.codeEditorFont {
+  font-family: var(--font-mono);
+}

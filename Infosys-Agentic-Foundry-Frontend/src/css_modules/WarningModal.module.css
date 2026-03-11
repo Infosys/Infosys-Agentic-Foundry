@@ -2,30 +2,37 @@
   position: fixed;
   bottom: 20px;
   top: 0;
-  left: 50px;
-  width: 100%;
+  left: 0px;
+  width: Calc(100vw - var(--main-width, 200px));
+  margin-left: var(--main-width, 200px);
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(12px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(12px));
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: 1000002;
+  animation: iafFadeIn var(--transition-fast, 150ms) ease;
 }
 
 .modalContent {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 16px;
-  padding: 24px;
-  width: min(90%, 500px);
+  background: var(--card-bg, rgba(255, 255, 255, 0.95));
+  border-radius: var(--radius-lg, 20px);
+  padding: 28px;
+  width: min(90%, 545px);
   max-height: 80vh;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-elevated, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--border-color, transparent);
+  color: var(--header-color, #1a1a1a);
+  animation: iafModalEnter var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .warningContainer {
   display: flex;
   align-items: center;
   gap: 8px;
-  }
+}
 
 .warningsList {
   padding: 0;
@@ -35,7 +42,6 @@
   max-height: 200px;
   flex-grow: 1;
   list-style-type: disc;
-  padding-left: 20px;
   margin-bottom: 20px;
   flex-grow: 1;
   overflow-y: auto;
@@ -65,44 +71,83 @@
 }
 
 .codeInner {
-  background: #f5f2f0;
-  padding: 4px 8px;
-  border-radius: 4px;
+  background: #1e1e2e;
+  padding: 12px 16px;
+  border-radius: 8px;
+  color: #e0e0e0;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-x: auto;
+  border: 1px solid #3d3d5c;
 }
 
 .buttonContainer {
- display: flex;
+  display: flex;
   justify-content: flex-end;
-  margin: 24px 0px 0 0;
+  margin: 0;
   padding: 2px;
+  gap: 12px;
+  padding-top: 24px;
 }
 
 .cancelButton {
-  font-size: 12px;
-  background: #3d4359 0% 0% no-repeat padding-box;
-  opacity: 1;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--hover-background, #f3f4f6);
+  color: var(--header-color, #1a1a1a);
+  margin-right: 12px;
+  border-radius: var(--radius, 12px);
+  padding: 10px 16px;
+  border: 1.5px solid var(--border-color, #d1d5db);
+  cursor: pointer;
+  transition: 
+    background-color var(--transition-fast, 150ms) ease,
+    transform var(--transition-fast, 150ms) ease,
+    border-color var(--transition-fast, 150ms) ease;
+}
+
+.cancelButton:hover {
+  background: var(--muted, #6b7280);
   color: white;
-  margin-right: 22px;
-  border-radius: 4px;
-  padding: 8px;
-  border: none;
+  border-color: var(--muted, #6b7280);
+  transform: translateY(-1px);
+}
+
+.cancelButton:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .forceButton {
- font-size: 12px;
-  background: #007cc3 0% 0% no-repeat padding-box;
-  opacity: 1;
-  color: white;
-  margin-right: 22px;
-  border-radius: 4px;
-  padding: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--gradient-primary, linear-gradient(135deg, #007cc3 0%, #005a8e 100%));
+  color: var(--primary-button-color, white);
+  margin-right: 12px;
+  border-radius: var(--radius, 12px);
+  padding: 10px 16px;
   border: none;
-}
-.confirmationText{
-  font-size: 16px;
+  cursor: pointer;
+  transition: 
+    transform var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
 }
 
-.modalFooter{
+.forceButton:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow-primary, 0 4px 16px rgba(0, 124, 195, 0.35));
+}
+
+.forceButton:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.confirmationText {
+  font-size: 16px;
+  color: var(--header-color, #1a1a1a);
+}
+
+.modalFooter {
   display: flex;
   flex-direction: row-reverse;
   justify-content: space-between;

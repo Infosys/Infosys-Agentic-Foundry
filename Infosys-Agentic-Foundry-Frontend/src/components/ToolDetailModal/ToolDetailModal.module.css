@@ -4,65 +4,263 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 1000100;
 }
 
+/* Server Edit Modal - Renders inline within the expanded ResourceSlider */
 .serverEditModalOverlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--modal-bg, #ffffff);
   display: flex;
-  justify-content: flex-end; /* Position drawer to the right */
-  align-items: stretch; /* Full height */
-  z-index: 2000; /* Higher z-index to appear above the original modal */
+  flex-direction: column;
+  z-index: 100;
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .serverEditModalContainer {
-  background: white;
-  color: #333;
-  width: 40%; /* Match the main modal width */
-  max-width: none; /* Remove max-width constraint */
-  height: 100vh;
-  max-height: 100vh;
-  overflow-y: auto;
-  border-radius: 0; /* No border radius for drawer */
-  padding: 0; /* Remove padding to eliminate extra space */
+  background: var(--modal-bg, #ffffff);
+  color: var(--text-primary, #333);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 0;
+  padding: 0;
   position: relative;
-  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.18); /* Left shadow for drawer effect */
   display: flex;
   flex-direction: column;
-  border-left: 1px solid #e0e0e0; /* Add left border for definition */
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .modalContainer {
-  background: rgb(255 255 255);
-  color: #333;
-  width: 40%;
-  max-height: 80vh; /* allow modal to grow but not exceed viewport */
-  padding: 20px;
-  border-radius: 10px;
+  background: var(--card-bg, #ffffff);
+  color: var(--header-color, #333);
+  width: 100%;
+  max-width: 600px;
+  min-width: 400px;
+  height: auto;
+  max-height: 90vh;
+  padding: 0;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
-  overflow-y: auto; /* container scrolls when content exceeds max-height */
-  justify-content: flex-start;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-  margin-top: 75px;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.15));
+  margin: 20px;
 }
 
+/* Header with title and close button */
+.modalTitleHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8.8px 20px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  background: var(--card-bg, #fafbfc);
+  flex-shrink: 0;
+}
+
+.modalTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--header-color, #1a1a2e);
+  margin: 0;
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: calc(100% - 48px);
+}
+
+/* Scrollable content area */
+.modalContentScrollable {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* When code section is present, make it flex and fill available space */
+.modalContentScrollable .contentSection:has(.codeEditorWrapper) {
+  flex: 1 1 auto;
+  min-height: 250px;
+}
+
+.descriptionText {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--text-primary, #374151);
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* Section label styling */
+.sectionLabel {
+  display: block;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+/* Content sections with labels */
+.contentSection {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+
+/* Endpoint section */
+.endpointSection {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.endpointLink {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 14px;
+  color: var(--btn-color, #2563eb);
+  text-decoration: none;
+  word-break: break-all;
+  padding: 8px 12px;
+  background: var(--input-bg, #eff6ff);
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.endpointLink:hover {
+  background: var(--hover-background, #dbeafe);
+  text-decoration: underline;
+}
+
+/* Module content */
+.moduleContent {
+  background: var(--input-bg, #f9fafb);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+/* Code editor wrapper */
+.codeEditorWrapper {
+  border-radius: 8px;
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 200px;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.codeEditorWrapper > div {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Markdown content container */
+.markdownContent {
+  background: var(--input-bg, #f9fafb);
+  border-radius: 8px;
+  padding: 12px 16px;
+  /* max-height: 200px; */
+  overflow-y: auto;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--content-color, #374151);
+}
+
+.markdownContent p {
+  margin: 0 0 8px 0;
+}
+
+.markdownContent p:last-child {
+  margin-bottom: 0;
+}
+
+.markdownContent code {
+  background: var(--hover-background, #e5e7eb);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 13px;
+}
+
+.markdownContent pre {
+  background: var(--code-bg, #1f2937);
+  color: var(--code-color, #f9fafb);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.markdownContent pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+/* Footer */
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  background: var(--card-bg, #fafbfc);
+  flex-shrink: 0;
+}
+
+/* Legacy styles kept for compatibility */
 .modalHeader h2 {
   margin-bottom: 10px;
 }
 
 .modalBody {
   margin-bottom: 20px;
-  /* background: #f5f5f5; */
   border-radius: 5px;
   padding: 8px;
 }
@@ -70,37 +268,6 @@
 .description {
   min-height: 40px;
   max-height: 310px;
-}
-
-.descriptionFont {
-  font-size: 16px;
-  font-weight: 100;
-}
-
-.descriptionTextarea {
-  width: 100%;
-  min-height: 60px;
-  padding: 10px;
-  font-size: 16px;
-  color: #333;
-  border-radius: 5px;
-  border: 1px solid #ccc;
-  background: #fff;
-  resize: vertical;
-  box-sizing: border-box;
-}
-
-.modalBody p {
-  color: #333;
-  text-align: left;
-  padding: 10px;
-  line-height: normal;
-  /* font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
-   monospace;  */
-  text-transform: none;
-  /* font: normal;
-  font-size: 16px;
-  font-weight: 100; */
 }
 
 .codeEditorContainer {
@@ -123,37 +290,6 @@
   font-weight: bold;
 }
 
-.closeBtn {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 0;
-  background: #fff;
-  box-shadow: 0 3px 8px rgba(2, 6, 23, 0.08);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  line-height: 1;
-  color: #333;
-  z-index: 9999;
-}
-
-.closeBtn:hover {
-  background: #f8f9fa;
-  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.12);
-}
-
-.modalFooter {
-  display: flex;
-  align-items: center;
-  justify-content: end;
-}
-
 .modifyBtn {
   padding: 5px;
   box-shadow: 0px 4px 4px #00000029;
@@ -164,8 +300,8 @@
 }
 
 .updateServerContainer {
-  background: rgb(255 255 255);
-  color: #333;
+  background: var(--card-bg, #ffffff);
+  color: var(--header-color, #333);
   width: 70%; /* Wider than standard modal to accommodate form fields */
   max-width: 900px;
   max-height: 90vh;
@@ -174,7 +310,7 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-lg, 0 5px 15px rgba(0, 0, 0, 0.3));
   position: relative;
 }
 
@@ -183,8 +319,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 24px;
-  border-bottom: 1px solid #e0e0e0;
-  background-color: #f5f5f5;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  background-color: var(--card-bg, #f5f5f5);
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
 }
@@ -192,7 +328,7 @@
 .updateServerHeader h2 {
   margin: 0;
   font-size: 20px;
-  color: #333;
+  color: var(--header-color, #333);
 }
 
 .closeUpdateBtn {
@@ -200,7 +336,7 @@
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #666;
+  color: var(--muted-foreground, #666);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -210,7 +346,7 @@
 }
 
 .closeUpdateBtn:hover {
-  color: #000;
+  color: var(--header-color, #000);
 }
 
 /* Styles for the Update Server modal - matches the second image */
@@ -223,9 +359,9 @@
   height: 100vh;
   max-height: 100vh;
   min-height: 100vh;
-  background: #fff;
-  z-index: 1200;
-  box-shadow: -2px 0 16px rgba(0, 0, 0, 0.18);
+  background: var(--card-bg, #fff);
+  z-index: 1000101;
+  box-shadow: var(--shadow-lg, -2px 0 16px rgba(0, 0, 0, 0.18));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -248,7 +384,7 @@
 .serverDrawerForm {
   height: 100vh !important;
   max-height: 100vh !important;
-  background-color: white;
+  background-color: var(--card-bg, white);
   padding: 20px !important;
   padding-bottom: 32px !important;
   z-index: 2;
@@ -265,20 +401,20 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  z-index: 2000;
+  z-index: 1000102;
   padding-top: 50px;
 }
 
 .centeredModal {
-  background: #fff;
+  background: var(--card-bg, #fff);
   width: 80%;
   max-width: 1000px;
   border-radius: 5px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-lg, 0 2px 10px rgba(0, 0, 0, 0.2));
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 100px);
@@ -290,14 +426,14 @@
   justify-content: space-between;
   align-items: center;
   padding: 15px 20px;
-  background: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--card-bg, #f5f5f5);
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
 }
 
 .updateServerHeader h2 {
   font-size: 18px;
   font-weight: 600;
-  color: #333;
+  color: var(--header-color, #333);
   margin: 0;
 }
 
@@ -308,6 +444,7 @@
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  color: var(--muted-foreground, #666);
 }
 
 .updateServerContent {

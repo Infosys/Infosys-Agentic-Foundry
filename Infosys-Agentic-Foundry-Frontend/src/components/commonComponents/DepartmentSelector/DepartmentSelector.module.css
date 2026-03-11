@@ -1,0 +1,306 @@
+/* DepartmentSelector.module.css - Matches TagSelector styling */
+.deptContainer {
+  position: relative;
+  width: 100%;
+  outline: none;
+  margin-top: 0;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.deptContainer:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card);
+}
+
+.pickerWrapper {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  cursor: default;
+  gap: 10px;
+  position: relative;
+  flex-wrap: nowrap;
+  min-height: 28px;
+}
+
+.deptPickerLabel {
+  font-size: var(--font-size-xs, 12px);
+  font-family: var(--font-primary);
+  color: var(--accent);
+  font-weight: var(--font-weight-semibold, 600);
+  margin: 0;
+  flex-shrink: 0;
+  letter-spacing: 0.05em;
+  line-height: 28px;
+}
+
+/* Add colon after Departments label */
+.deptPickerLabel::after {
+  content: ":";
+}
+
+.pillsContainer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Scrollbar styling for horizontal pills container */
+.pillsContainer::-webkit-scrollbar {
+  height: 4px;
+}
+
+.pillsContainer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pillsContainer::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+.pillsContainer::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Scrollbar styling for pills container */
+.pillsContainer::-webkit-scrollbar {
+  width: 4px;
+}
+
+.pillsContainer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pillsContainer::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.pillsContainer::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.pillsContainerDisabled {
+  opacity: 0.6;
+}
+
+.pillsContainerDisabled .deptPill {
+  cursor: not-allowed !important;
+}
+
+.placeholder {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  user-select: none;
+  pointer-events: none;
+  font-style: normal;
+}
+
+.deptPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--accent-light);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  font-family: var(--font-primary);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+  cursor: default;
+  max-width: 140px;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  min-width: auto;
+  position: relative;
+  box-shadow: var(--shadow-card);
+}
+
+.deptPill::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(55, 172, 234, 0.15), transparent);
+  transition: left 0.4s ease;
+}
+
+.deptPill:hover::before {
+  left: 100%;
+}
+
+.deptPill:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+
+.pillText {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pillIcon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.removeDeptBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: rgba(255, 107, 107, 0.15);
+  border: none;
+  border-radius: 50%;
+  color: #ff6b6b;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.removeDeptBtn:hover,
+.removeDeptBtn:focus,
+.removeDeptBtn:focus-visible {
+  outline: none;
+  background: rgba(255, 107, 107, 0.3);
+  transform: scale(1.1);
+}
+
+/* Dropdown Styling */
+.pickerDropdown {
+  background: var(--menu-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  max-height: 280px;
+  min-width: 200px;
+  width: max-content;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.pickerDropdown:focus-visible {
+  outline: none;
+}
+
+.dropdownTop {
+  /* Additional styles for top-opening dropdown if needed */
+}
+
+.dropdownBottom {
+  /* Additional styles for bottom-opening dropdown if needed */
+}
+
+/* Search container styling */
+.searchContainer {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-bg);
+  flex-shrink: 0;
+}
+
+.dropdownTop .searchContainer {
+  border-bottom: none;
+  border-top: 1px solid var(--border-color);
+  order: 2;
+}
+
+/* List items container */
+.listContainer {
+  overflow-y: auto;
+  max-height: 242px;
+  flex: 1;
+  scroll-behavior: auto;
+  overscroll-behavior: contain;
+}
+
+/* Adjust max-height for small viewports */
+@media (max-height: 400px) {
+  .pickerDropdown {
+    max-height: 200px;
+  }
+
+  .listContainer {
+    max-height: 142px;
+  }
+}
+
+@media (max-height: 600px) {
+  .pickerDropdown {
+    max-height: 250px;
+  }
+
+  .listContainer {
+    max-height: 192px;
+  }
+}
+
+.noResults {
+  padding: 16px;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  font-style: normal;
+}
+
+.deptItem {
+  margin: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  position: relative;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.deptItem:last-child {
+  border-bottom: none;
+}
+
+.deptItem.highlighted {
+  background: var(--accent-light);
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+
+.deptItem:hover {
+  background: var(--hover-background);
+  color: var(--text-primary);
+}
+
+.deptItem svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}

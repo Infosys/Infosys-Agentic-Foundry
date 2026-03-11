@@ -10,6 +10,8 @@ import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { DatabaseProvider, useDatabase } from "./context/DatabaseContext";
 import { useDatabases } from "./service/databaseService.js";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
+import SubHeader from "../commonComponents/SubHeader";
 
 const DataConnectorsContent = () => {
   // Always call hooks first
@@ -72,7 +74,7 @@ const DataConnectorsContent = () => {
   }
   const dataConnectorAllowed = typeof hasPermission === "function" ? hasPermission("data_connector_access") : !(permissions && permissions.data_connector_access === false);
   if (!dataConnectorAllowed) {
-    return <div style={{ padding: 24, color: "#b91c1c", fontWeight: 600 }}>You do not have permission to access Data Connectors.</div>;
+    return <div style={{ padding: 24, color: "var(--danger)", fontWeight: 600 }}>You do not have permission to access Data Connectors.</div>;
   }
 
   // Database types with their configurations
@@ -81,7 +83,7 @@ const DataConnectorsContent = () => {
       id: "postgresql",
       name: "PostgreSQL",
       description: "Open-source relational database",
-      icon: "database",
+      icon: "postgresql",
       color: "#336791",
       fields: [
         { name: "connectionName", label: "Connection Name", type: "text", required: true },
@@ -97,8 +99,8 @@ const DataConnectorsContent = () => {
       id: "mysql",
       name: "MySQL",
       description: "Popular open-source database",
-      icon: "database",
-      color: "#4479A1",
+      icon: "mysql",
+      color: "#00758f",
       fields: [
         { name: "connectionName", label: "Connection Name", type: "text", required: true },
         { name: "databaseType", label: "Database Type", type: "text", required: true, defaultValue: "MySQL", readOnly: true },
@@ -113,7 +115,7 @@ const DataConnectorsContent = () => {
       id: "mongodb",
       name: "MongoDB",
       description: "NoSQL document database",
-      icon: "database",
+      icon: "mongodb",
       color: "#47A248",
       fields: [
         { name: "connectionName", label: "Connection Name", type: "text", required: true },
@@ -129,7 +131,7 @@ const DataConnectorsContent = () => {
       id: "sqlite",
       name: "SQLite",
       description: "Lightweight file-based database",
-      icon: "database",
+      icon: "sqlite",
       color: "#003B57",
       fields: [
         { name: "connectionName", label: "Connection Name", type: "text", required: true },
@@ -210,85 +212,88 @@ const DataConnectorsContent = () => {
     }
   };
 
+  const filteredDatabaseTypes = databaseTypes;
+
   // (duplicate useEffect removed) all fetch logic is handled above to keep hooks in stable order
 
   return (
     <div className={styles.container}>
-      {/* Header */}
-      <div className="iafPageSubHeader">
-        <h6>Data Connectors</h6>
-      </div>
+      <SubHeader heading={"Data Connectors"} activeTab={"dataConnectors"} showRefreshButton={false} showPlusButton={false} showSearch={false} />
       {/* Database Cards */}
       <div className={styles.cardsContainer}>
-        {databaseTypes.filter((db) => !db.isManagement).length > 0
-          ? databaseTypes
-              .filter((db) => !db.isManagement)
-              .map((database) => {
-                // Count connections for this database type
-                const connectionCount = availableConnections.filter((conn) => {
-                  // Normalize type for comparison
-                  const dbType = (conn.connection_database_type || conn.type || "").toLowerCase();
-                  const expectedType = (database.name || "").toLowerCase();
-                  return dbType === expectedType;
-                }).length;
-                // Count active connections for this database type
-                let activeConnectionCount = 0;
-                if (database.id === "postgresql") {
-                  activeConnectionCount = getActivePostgresConnections().length;
-                } else if (database.id === "mysql") {
-                  activeConnectionCount = getActiveMySQLConnections().length;
-                } else if (database.id === "sqlite") {
-                  activeConnectionCount = getActiveSQLiteConnections().length;
-                } else if (database.id === "mongodb") {
-                  activeConnectionCount = getActiveMongoConnections().length;
-                }
-                return (
-                  <div key={database.id} className={styles.databaseCard} onClick={() => handleCardClick(database)} style={{ cursor: "pointer", opacity: 1 }}>
-                    <div className={styles.cardHeader} style={{ justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center" }}>
-                        <div className={styles.cardIcon} style={{ backgroundColor: database.color }}>
-                          <SVGIcons icon={database.icon} width={32} height={32} fill="white" />
-                        </div>
-                        <div className={styles.cardTitleSection}>
-                          <h3 className={styles.cardTitle}>{database.name}</h3>
-                          {/* Show connection count badge for non-management cards */}
-                          <span style={{ marginLeft: 0, background: "#eee", borderRadius: 12, padding: "2px 8px", fontSize: 12 }}>
-                            {connectionCount} connection{connectionCount !== 1 ? "s" : ""}, {activeConnectionCount} active
-                          </span>
-                        </div>
+        {filteredDatabaseTypes.filter((db) => !db.isManagement).length > 0 ? (
+          filteredDatabaseTypes
+            .filter((db) => !db.isManagement)
+            .map((database) => {
+              // Count connections for this database type
+              const connectionCount = availableConnections.filter((conn) => {
+                // Normalize type for comparison
+                const dbType = (conn.connection_database_type || conn.type || "").toLowerCase();
+                const expectedType = (database.name || "").toLowerCase();
+                return dbType === expectedType;
+              }).length;
+              // Count active connections for this database type
+              let activeConnectionCount = 0;
+              if (database.id === "postgresql") {
+                activeConnectionCount = getActivePostgresConnections().length;
+              } else if (database.id === "mysql") {
+                activeConnectionCount = getActiveMySQLConnections().length;
+              } else if (database.id === "sqlite") {
+                activeConnectionCount = getActiveSQLiteConnections().length;
+              } else if (database.id === "mongodb") {
+                activeConnectionCount = getActiveMongoConnections().length;
+              }
+              return (
+                <div key={database.id} className={styles.databaseCard} onClick={() => handleCardClick(database)} style={{ cursor: "pointer", opacity: 1 }}>
+                  <div className={styles.cardHeader} style={{ justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <div className={styles.cardIcon} style={{ backgroundColor: database.color }}>
+                        <SVGIcons icon={database.icon} width={32} height={32} fill="white" />
                       </div>
-                    </div>
-                    <p className={styles.cardDescription}>{database.description}</p>
-                    <div className={styles.cardFooter}>
-                      <div className={styles.cardButtons}>
-                        {/* Run button: Show for all databases except MongoDB */}
-                        {database.id !== "mongodb" && (
-                          <>
-                            <button className={styles.runButton} onClick={(e) => handleRunClick(database, e)}>
-                              Run
-                            </button>
-                            <button className={styles.manageButton} onClick={(e) => handleManagementClick(database, e)} style={{ marginLeft: 8 }}>
-                              Manage
-                            </button>
-                          </>
-                        )}
-                        {/* CRUD and Manage buttons: Show for MongoDB */}
-                        {database.id === "mongodb" && (
-                          <>
-                            <button className={styles.crudButton} onClick={(e) => handleCrudClick(database, e)}>
-                              CRUD
-                            </button>
-                            <button className={styles.manageButton} onClick={(e) => handleManagementClick(database, e)} style={{ marginLeft: 8 }}>
-                              Manage
-                            </button>
-                          </>
-                        )}
+                      <div className={styles.cardTitleSection}>
+                        <h3 className={styles.cardTitle}>{database.name}</h3>
+                        {/* Show connection count badge for non-management cards */}
+                        <span className={styles.connectionBadge}>
+                          {connectionCount} connection{connectionCount !== 1 ? "s" : ""}, {activeConnectionCount} active
+                        </span>
                       </div>
                     </div>
                   </div>
-                );
-              })
-          : null}
+                  <p className={styles.cardDescription}>{database.description}</p>
+                  <div className={styles.cardFooter}>
+                    <div className={styles.cardButtons}>
+                      {/* Run button: Show for all databases except MongoDB */}
+                      {database.id !== "mongodb" && (
+                        <>
+                          <IAFButton type="primary" onClick={(e) => handleRunClick(database, e)} className={styles.runbutton}>
+                            Run
+                          </IAFButton>
+                          <IAFButton type="primary" onClick={(e) => handleManagementClick(database, e)} className={styles.manageButtonSpacing}>
+                            Manage
+                          </IAFButton>
+                        </>
+                      )}
+                      {/* CRUD and Manage buttons: Show for MongoDB */}
+                      {database.id === "mongodb" && (
+                        <>
+                          <IAFButton type="primary" onClick={(e) => handleCrudClick(database, e)}>
+                            CRUD
+                          </IAFButton>
+                          <IAFButton type="primary" onClick={(e) => handleManagementClick(database, e)} className={styles.manageButtonSpacing}>
+                            Manage
+                          </IAFButton>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+        ) : (
+          <div className={styles.noResults}>
+            <p>No databases found.</p>
+          </div>
+        )}
       </div>
 
       {/* Connection Modal */}
@@ -334,13 +339,11 @@ const DataConnectorsContent = () => {
 
       {/* Python Code Example Section */}
       <div className={styles.codeExampleSection}>Python code example to use the connection_name to connect to database in your tools:</div>
-      <div className={styles.codeSnippet} style={{ marginLeft: "40px", marginRight: "40px", marginTop: "20px" }}>
+      <div className={styles.codeSnippet}>
         <CodeEditor
           mode="python"
-          theme="monokai"
-          isDarkTheme={true}
           readOnly={true}
-          value={`# [PostgreSQL,MySQL,SQLite]
+          codeToDisplay={`# [PostgreSQL,MySQL,SQLite]
 def fetch_all_from_xyz(connection_name: str):
     """
     Fetches all records from the 'xyz' table in the specified database using the provided database key.
@@ -400,7 +403,7 @@ async def fetch_all_for_mongo(connection_name: str):
 # -make sure you close the session after use:
 #       session.close()`}
           width="100%"
-          height="600px"
+          height="100%"
           fontSize={14}
           setOptions={{
             enableBasicAutocompletion: false,
@@ -413,8 +416,9 @@ async def fetch_all_for_mongo(connection_name: str):
           }}
           style={{
             fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-            border: "1px solid #e0e0e0",
+            border: "1px solid var(--border)",
             borderRadius: "8px",
+            minHeight: "300px",
           }}
         />
       </div>

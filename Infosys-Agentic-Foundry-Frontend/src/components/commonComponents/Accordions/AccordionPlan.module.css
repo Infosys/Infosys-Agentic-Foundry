@@ -1,49 +1,74 @@
 .accordion {
-  border-radius: 5px;
-  margin-bottom: 5px;
+  border-radius: 0;
+  margin-bottom: 0px;
   overflow: visible;
   max-width: 100%;
-  min-width: 225px;
-  width: fit-content;
+  min-width: 280px;
+  /* Use 100% width for consistent sizing */
+  width: 100%;
   background: none;
-  /* background: #eeeeee70; */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .accordion-header {
   display: flex;
-  align-items: center;
-  border-radius: 5px;
+  flex-direction: column;
+  align-items: flex-start;
+  border-radius: 0;
   position: relative;
-  border: 1px solid #ccc;
+  border: none;
   min-width: 180px;
-  background: #eeeeee70;
+  /* Stretch to fill parent width */
+  width: 100%;
+  background: transparent;
+  gap: 0;
+  padding: 0;
+  cursor: default;
+  transition: none;
+}
+
+.accordion-header:hover {
+  background: transparent;
 }
 
 .accordion-header p {
   margin: 0;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
 .accordion-content {
-  padding: 0 10px;
+  padding: 0;
   position: relative;
   z-index: 0;
-  background: #eeeeee2b;
-  /* max-height: 0; */
+  background: var(--card-bg);
   opacity: 0;
   overflow: hidden;
   overflow-y: auto;
-  transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
+  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.2s ease;
+  border-radius: 0 0 16px 16px;
+  border: 1px solid var(--border);
+  border-top: none;
+  margin-top: -8px;
+  /* Stretch to fill parent width */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .accordion-content.open {
   opacity: 1;
   padding: 0;
-  margin-top: 2px;
-  border-bottom-right-radius: 15px;
-  border-bottom-left-radius: 15px;
+  margin-top: 4px;
+  border-radius: 16px;
   scrollbar-width: thin;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  /* Stretch to fill parent width */
+  width: 100%;
 }
 
 .accordion-content:has(.MessagingboxToolcall) {
@@ -51,11 +76,11 @@
 }
 
 .debugExecutionsHeader {
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
   padding: 8px;
-  background: #f2f2f2;
-  color: #000000d6;
+  background: var(--checkbox-bg);
+  color: var(--text-primary);
 }
 
 .debugExecutionsteps {
@@ -81,67 +106,224 @@
 }
 
 .arrow {
-  transition: transform 0.3s;
-  /* background: #007cc3 0% 0% no-repeat padding-box; */
-  color: white;
+  transition: transform 0.3s ease;
+  color: var(--muted);
   border-radius: 50%;
-  height: 15px;
-  width: 16px;
-  text-align: center;
+  height: 20px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xs);
 }
 
 .arrow.open {
   transform: rotate(180deg);
+  color: var(--accent);
 }
 
 .accordionButton {
   display: flex;
   align-items: center;
-  font-weight: 600;
-  font-size: 10px;
-  line-height: 15px;
-  letter-spacing: 0px;
-  color: #373737;
-  text-transform: uppercase;
-  position: absolute;
-  right: 5px;
-  bottom: -10px;
-  z-index: 1;
+  justify-content: space-between;
+  gap: 10px;
   cursor: pointer;
-  background: #007cc3;
-  padding: 0px 6px;
-  padding-right: 0;
-  position: absolute;
-  border-radius: 11px;
+  padding: 8px 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%;
+  min-width: 280px;
+  margin-top: 0;
+  transition: background 0.15s ease;
+}
+
+.accordionButton:hover {
+  background: var(--checkbox-bg);
+}
+
+.accordionButtonLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Icon in accordion button - use primary color */
+.accordionButtonLeft svg {
+  color: var(--app-primary-color);
 }
 
 .accordionButton span {
-  color: white;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Reasoning Steps Button - at top */
+.reasoningButton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  padding: 14px 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: fit-content;
+  min-width: 280px;
+  transition: background 0.15s ease;
+}
+
+.reasoningButton:hover {
+  background: var(--checkbox-bg);
+}
+
+.reasoningButtonLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reasoningButton span {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Reasoning Steps Content - Expanded */
+.reasoningContent {
+  padding: 16px 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: -4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 280px;
+  width: fit-content;
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* Reasoning Step Item - Figma Style */
+.reasoningStepItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-left: 2px solid var(--border);
+  margin-left: 8px;
+  padding-left: 16px;
+  position: relative;
+}
+
+.reasoningStepItem:first-child {
+  padding-top: 0;
+}
+
+.reasoningStepItem:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+
+.reasoningStepIcon {
+  position: absolute;
+  left: -9px;
+  top: 12px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  background: var(--card-bg);
+}
+
+.reasoningStepItem:first-child .reasoningStepIcon {
+  top: 0;
+}
+
+.reasoningStepIcon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.reasoningStepContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.reasoningStepTitle {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  line-height: 16px;
+}
+
+.reasoningStepDescription {
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: var(--font-weight-normal);
+  color: var(--muted);
+  line-height: 16px;
+}
+
+/* Legacy reasoning step styles - keep for backward compatibility */
+
+.reasoningStep {
+  padding: 12px;
+  background: var(--checkbox-bg);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  line-height: 16px;
+  color: var(--text-primary);
+}
+
+.reasoningStep p {
+  margin: 0 0 8px 0;
+}
+
+.reasoningStep p:last-child {
+  margin-bottom: 0;
+}
+
+.reasoningStep ul,
+.reasoningStep ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.reasoningStep li {
+  margin-bottom: 4px;
 }
 
 .accordionButtonSend {
   display: flex;
   /* flex-direction: column; */
   align-items: center;
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xs);
   line-height: 16px;
-  letter-spacing: 0px;
-  color: #373737;
-  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-secondary, #373737);
   /* position: absolute; */
   z-index: 10;
   cursor: pointer;
   right: 75px;
   bottom: 7px;
 }
+
 .accordionContainerToolCall {
   max-width: 100%;
   min-width: 260px;
   padding: 3px;
   position: relative;
-  background: #eeeeee70;
-  border: 1px solid #ccc;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
   border-radius: 5px;
 }
 .toolNameCss {
@@ -165,7 +347,7 @@
 }
 .submitButtonCss {
   display: flex;
-  background-color: #007cc3;
+  background-color: var(--accent);
   margin-right: 2px;
   border-radius: 3px;
   padding: 2px;
@@ -176,16 +358,156 @@
 }
 
 .messageBubble {
-  border-radius: 5px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  white-space: normal;
+  line-height: 1.6;
+  position: relative;
+  padding: 16px 20px;
+  border: 1px solid var(--border) !important;
+  border-left: 4px solid var(--app-primary-color) !important;
+  border-radius: 12px;
+  box-shadow: 
+    0 6px 20px rgba(0, 0, 0, 0.18),
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  min-width: 280px;
+  /* Stretch to fill parent width for consistency with execution steps button */
+  width: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  transition: all 0.2s ease;
+}
+
+.messageBubble:hover {
+  box-shadow: 
+    0 10px 28px rgba(0, 0, 0, 0.22),
+    0 5px 10px rgba(0, 0, 0, 0.14),
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+/* Dark mode 3D shadow effect - subtle depth without glow */
+:root[data-theme="dark"] .messageBubble {
+  box-shadow: 
+    0 6px 16px rgba(0, 0, 0, 0.5),
+    0 3px 6px rgba(0, 0, 0, 0.35),
+    0 1px 3px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] .messageBubble:hover {
+  box-shadow: 
+    0 10px 24px rgba(0, 0, 0, 0.55),
+    0 5px 10px rgba(0, 0, 0, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  transform: translateY(-1px);
+}
+
+.messageBubble::-webkit-scrollbar {
+  width: 6px;
+}
+
+.messageBubble::-webkit-scrollbar-track {
+  background: var(--muted-foreground);
+  border-radius: 6px;
+}
+
+.messageBubble::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+
+.messageBubble::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Markdown heading styles */
+.messageBubble h1,
+.messageBubble h2,
+.messageBubble h3,
+.messageBubble h4,
+.messageBubble h5,
+.messageBubble h6 {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+  margin-top: 16px;
+  margin-bottom: 8px;
   line-height: 1.4;
-  letter-spacing: 0.3px;
-  font-size: 13px;
-  margin: 5px 10px;
-  width: 96%;
+}
+
+.messageBubble h1 {
+  font-size: var(--font-size-xl);
+}
+.messageBubble h2 {
+  font-size: 17px;
+  margin-top: 18px;
+}
+.messageBubble h3 {
+  font-size: 15px;
+  margin-top: 14px;
+}
+.messageBubble h4 {
+  font-size: var(--font-size-sm);
+}
+
+.messageBubble h1:first-child,
+.messageBubble h2:first-child,
+.messageBubble h3:first-child {
+  margin-top: 0;
+}
+
+/* Bold text */
+.messageBubble strong {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* Paragraph styling - tight spacing like welcome message */
+
+.messageBubble p {
+  margin: 0 0 5.5px 0;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-normal);
+}
+
+.messageBubble p:last-child {
+  margin-bottom: 0;
+}
+
+/* List styling - reduced spacing */
+.messageBubble ul,
+.messageBubble ol {
+  margin: 4px 0;
+  padding-left: 24px;
+}
+
+.messageBubble li {
+  margin-bottom: 2px;
+  line-height: 1.5;
 }
 
 .messageBubble:has(table) {
   overflow-x: auto;
+}
+
+/* When message bubble has View details button */
+.showCanvasBtn {
+  padding: 12px 16px;
+}
+
+/* Text-only bubble without View details button */
+.textOnlyBubble {
+  padding: 16px 20px;
 }
 
 .messageBubble p img {
@@ -199,7 +521,7 @@
 
 .messageBubble th,
 .messageBubble td {
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-secondary, #ddd);
   padding: 8px;
 }
 
@@ -209,63 +531,74 @@
   display: none;
 } */
 
-/* AccordionPlan.module.css */
+/* Modern View Details Button - Inside message bubble */
 .viewDetailsBubble {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: #f8fafc;
-  color: #007acc;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 999px;
-  padding: 7px 18px 7px 14px;
-  font-size: 14px;
-  font-weight: 600;
+  gap: 6px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 124, 195, 0.04);
-  transition: background 0.18s, box-shadow 0.18s, color 0.18s, border-color 0.18s;
+  box-shadow: none;
+  transition: all 0.2s ease;
   outline: none;
   user-select: none;
-  margin-top: 8px;
-  margin-bottom: 2px;
-  min-width: 110px;
-  animation: bubblePulse 1.2s infinite;
+  width: fit-content;
+  margin-top: 12px;
+}
+
+.viewDetailsBubble svg {
+  color: var(--app-primary-color);
+  stroke: var(--app-primary-color);
+}
+
+/* Inside message bubble styling */
+.showCanvasBtn .viewDetailsBubble {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  margin-top: 5px;
 }
 
 .viewDetailsBubble:hover,
 .viewDetailsBubble:focus {
-  background: #e0f2fe;
-  color: #005fa3;
-  border-color: #007acc;
-  box-shadow: 0 4px 16px rgba(0, 124, 195, 0.1);
+  background: var(--plan-bg-muted, #e5e7eb);
+  color: var(--plan-accent, #005ba3);
 }
 
-.viewDetailsBubble.canvasOpen {
-  cursor: pointer;
+.viewDetailsBubble:active {
+  background: var(--plan-bg-alt, #d1d5db);
 }
 
 .viewDetailsText {
-  letter-spacing: 0.2px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: inherit;
 }
 
 .viewDetailsArrow {
   display: flex;
   align-items: center;
-  margin-left: 2px;
-  transition: transform 0.18s;
+  transition: transform 0.2s ease;
 }
 
-.viewDetailsBubble:hover .viewDetailsArrow,
-.viewDetailsBubble:focus .viewDetailsArrow {
-  transform: translateX(3px) scale(1.1);
+.viewDetailsArrow svg path {
+  stroke: currentColor;
+}
+
+.viewDetailsBubble:hover .viewDetailsArrow {
+  transform: translateX(3px);
 }
 
 @keyframes bubblePulse {
   0%,
   100% {
-    box-shadow: 0 2px 8px rgba(0, 124, 195, 0.04);
+    box-shadow: var(--plan-shadow, 0 2px 8px rgba(0, 124, 195, 0.04));
   }
   50% {
     box-shadow: 0 4px 16px rgba(0, 124, 195, 0.1);

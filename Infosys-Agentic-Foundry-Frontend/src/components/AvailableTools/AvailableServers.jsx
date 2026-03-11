@@ -2,20 +2,25 @@ import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import SubHeader from "../commonComponents/SubHeader.jsx";
 import styles from "../../css_modules/AvailableServers.module.css";
 import { useMcpServerService } from "../../services/serverService";
+import { usePermissions } from "../../context/PermissionsContext";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useMessage } from "../../Hooks/MessageContext";
 import Loader from "../commonComponents/Loader.jsx";
 import Cookies from "js-cookie";
-import DeleteModal from "../commonComponents/DeleteModal";
-import { useAuth } from "../../context/AuthContext";
 import AddServer from "../AgentOnboard/AddServer.jsx";
 import FilterModal from "../commonComponents/FilterModal.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 import { APIs } from "../../constant";
 import { useToolsAgentsService } from "../../services/toolService.js";
 import { debounce } from "lodash";
+import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.jsx";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
+import EmptyState from "../commonComponents/EmptyState.jsx";
+import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
+import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
+import { useActiveNavClick } from "../../events/navigationEvents";
+import { Modal } from "../commonComponents/Modal";
 
 export default function AvailableServers(props) {
   const { getLiveToolDetails, deleteServer, getServersSearchByPageLimit } = useMcpServerService();
@@ -24,6 +29,7 @@ export default function AvailableServers(props) {
   const [liveToolDetails, setLiveToolDetails] = useState([]);
   const [loadingTools, setLoadingTools] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   // Handle + icon click internally to show AddServer modal
   const handlePlusClick = () => {
     setShowAddServerModal(true);
@@ -37,18 +43,34 @@ export default function AvailableServers(props) {
   const [open, setOpen] = useState(false);
   const [filterModal, setFilterModal] = useState(false);
   const [selectedFilterTags, setSelectedFilterTags] = useState([]);
+  const [selectedServerTypes, setSelectedServerTypes] = useState([]);
   const [showAddServerModal, setShowAddServerModal] = useState(false);
   const [editServerData, setEditServerData] = useState(null);
   const pageRef = useRef(1);
   const serverListContainerRef = useRef(null);
   const isLoadingRef = useRef(false);
-  const [deleteClickedId, setDeleteClickedId] = useState(null);
-  const [emailId, setEmailId] = useState("");
   const [tags, setTags] = useState([]);
   const { fetchData } = useFetch();
   const hasLoadedTagsOnce = useRef(false);
 
+  // Copy and Zoom popup state
+  const [copiedStates, setCopiedStates] = useState({});
+  const [zoomPopup, setZoomPopup] = useState({ open: false, title: "", content: "" });
+
+  // Created By dropdown state
+  const [createdBy, setCreatedBy] = useState("All");
+  const loggedInUserEmail = Cookies.get("email");
+  const userName = Cookies.get("userName");
+
   const { handleError } = useErrorHandler();
+
+  // Permission checks for CRUD operations on servers (using tools permissions)
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const canReadServers = typeof hasPermission === "function" ? hasPermission("read_access.tools") : false;
+  const canAddServers = typeof hasPermission === "function" ? hasPermission("add_access.tools") : false;
+  const canUpdateServers = typeof hasPermission === "function" ? hasPermission("update_access.tools") : false;
+  const canDeleteServers = typeof hasPermission === "function" ? hasPermission("delete_access.tools") : false;
+
   const getTags = useCallback(async () => {
     try {
       const data = await fetchData(APIs.GET_TAGS);
@@ -83,13 +105,15 @@ export default function AvailableServers(props) {
 
     let type;
     if (raw.mcp_type === "module") {
-      type = "EXTERNAL";
+      type = "External";
     } else if (hasCode) {
-      type = "LOCAL";
+      type = "Local";
     } else if (hasUrl) {
-      type = "REMOTE";
+      type = "Remote";
     } else {
-      type = ((raw.mcp_type || raw.type || "") + "").toUpperCase() || "UNKNOWN";
+      // Title case the fallback value
+      const rawType = String(raw.mcp_type || raw.type || "");
+      type = rawType ? rawType.charAt(0).toUpperCase() + rawType.slice(1).toLowerCase() : "Unknown";
     }
 
     const endpoint = raw.mcp_url || (raw.mcp_config && (raw.mcp_config.url || raw.mcp_config.mcp_url || raw.mcp_config.endpoint)) || raw.endpoint || "";
@@ -104,15 +128,16 @@ export default function AvailableServers(props) {
       tags: Array.isArray(raw.tag_ids)
         ? raw.tag_ids.map((t) => (typeof t === "object" ? t.tag_name || t.tag : t))
         : Array.isArray(raw.tags)
-        ? raw.tags.map((t) => (typeof t === "object" ? t.tag_name || t.tag : t))
-        : [],
+          ? raw.tags.map((t) => (typeof t === "object" ? t.tag_name || t.tag : t))
+          : [],
       endpoint: endpoint || "",
       tools: raw.tools || [],
       created_by: raw.created_by || raw.user_email_id || raw.createdBy || raw.created_by_email || raw.creator_email || "",
       raw: raw,
     };
   }, []);
-  const handleSearch = async (searchValue, divsCount, pageNumber, tagsToUse = null) => {
+
+  const handleSearch = async (searchValue, divsCount, pageNumber, tagsToUse = null, typesToUse = null, createdByToUse = null) => {
     setSearchTerm(searchValue || "");
     pageRef.current = 1;
     setVisibleData([]);
@@ -120,30 +145,27 @@ export default function AvailableServers(props) {
     setLoading(true);
 
     try {
-      // Use provided tagsToUse or fall back to selectedFilterTags state
+      // Use provided params or fall back to state
       const tagsForSearch = tagsToUse !== null ? tagsToUse : selectedFilterTags;
+      const typesForSearch = typesToUse !== null ? typesToUse : selectedServerTypes;
+      // Use createdByToUse if provided, otherwise fall back to state
+      const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
       const response = await getServersSearchByPageLimit({
         page: pageNumber,
         limit: divsCount,
         search: searchValue ? searchValue : "",
         tags: tagsForSearch?.length > 0 ? tagsForSearch : undefined,
+        types: typesForSearch?.length > 0 ? typesForSearch : undefined,
+        created_by: createdByEmail,
       });
 
       // Setting the total count from API response
       setTotalServersCount(response.total_count || 0);
 
       const dataToSearch = sanitizeServersResponse(response.details || response);
-      // if (tagsForSearch?.length > 0) {
-      //   dataToSearch = dataToSearch.filter((item) => {
-      //     const typeFilters = tagsForSearch.filter((t) => t === "LOCAL" || t === "REMOTE");
-      //     const tagFilters = tagsForSearch.filter((t) => t !== "LOCAL" && t !== "REMOTE");
-      //     const mapped = mapServerData(item);
-      //     const typeMatch = typeFilters.length === 0 || typeFilters.includes(String(mapped.type).toUpperCase());
-      //     const tagMatch = tagFilters.length === 0 || (Array.isArray(mapped.tags) && mapped.tags.some((tag) => tagFilters.includes(tag)));
-      //     return typeMatch && tagMatch;
-      //   });
-      // }
       const mappedData = dataToSearch.map(mapServerData);
+
       setVisibleData(mappedData);
       setHasMore(dataToSearch.length >= divsCount);
     } catch (error) {
@@ -156,21 +178,21 @@ export default function AvailableServers(props) {
   };
   const getServersData = useCallback(
     async (pageNumber, divsCount) => {
-      return getServersDataWithTags(pageNumber, divsCount, selectedFilterTags);
+      return getServersDataWithTags(pageNumber, divsCount, selectedFilterTags, selectedServerTypes);
     },
-    [getServersSearchByPageLimit, mapServerData, selectedFilterTags]
+    [getServersSearchByPageLimit, mapServerData, selectedFilterTags, selectedServerTypes]
   );
   const clearSearch = () => {
     setSearchTerm("");
     setSelectedFilterTags([]);
+    setSelectedServerTypes([]);
+    setCreatedBy("All");
     setVisibleData([]);
     setHasMore(true);
-    setTimeout(() => {
-      // Trigger fetchServersData with no search term (reset to first page)
-      const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
-      pageRef.current = 1;
-      getServersData(1, divsCount);
-    }, 500);
+    pageRef.current = 1;
+    const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+    // Call getServersDataWithTags with explicitly empty tags and types (matches handleRefreshClick)
+    getServersDataWithTags(1, divsCount, [], []);
   };
 
   const visible = useMemo(() => {
@@ -185,7 +207,7 @@ export default function AvailableServers(props) {
       try {
         setShowAddServerModal(false);
         setEditServerData(null);
-      } catch (e) {}
+      } catch (e) { }
     };
     window.addEventListener("AddServer:CloseRequested", handler);
     return () => window.removeEventListener("AddServer:CloseRequested", handler);
@@ -216,7 +238,7 @@ export default function AvailableServers(props) {
     }
 
     try {
-      setLoading(true);
+      setIsLoadingMore(true);
       let newData = [];
 
       if (searchTerm.trim()) {
@@ -226,6 +248,7 @@ export default function AvailableServers(props) {
           limit: divsCount,
           search: searchTerm,
           tags: selectedFilterTags?.length > 0 ? selectedFilterTags : undefined,
+          types: selectedServerTypes?.length > 0 ? selectedServerTypes : undefined,
         });
 
         // Update total count if provided in response (though it should be the same)
@@ -233,26 +256,19 @@ export default function AvailableServers(props) {
           setTotalServersCount(response.total_count);
         }
 
-        let initialData = sanitizeServersResponse(response.details || response);
-
-        if (selectedFilterTags?.length > 0) {
-          initialData = initialData.filter((item) => {
-            const typeFilters = selectedFilterTags.filter((t) => t === "LOCAL" || t === "REMOTE" || t === "EXTERNAL");
-            const tagFilters = selectedFilterTags.filter((t) => t !== "LOCAL" && t !== "REMOTE" && t !== "EXTERNAL");
-            const mapped = mapServerData(item);
-            const typeMatch = typeFilters.length === 0 || typeFilters.includes(String(mapped.type).toUpperCase());
-            const tagMatch = tagFilters.length === 0 || (Array.isArray(mapped.tags) && mapped.tags.some((tag) => tagFilters.includes(tag)));
-            return typeMatch && tagMatch;
-          });
-        }
+        const initialData = sanitizeServersResponse(response.details || response);
         newData = initialData.map(mapServerData);
       } else {
         // Load more regular data
+        // Pass created_by email when "Me" filter is selected
+        const createdByEmail = createdBy === "Me" ? loggedInUserEmail : undefined;
         const response = await getServersSearchByPageLimit({
           page: nextPage,
           limit: divsCount,
           search: "",
           tags: selectedFilterTags?.length > 0 ? selectedFilterTags : undefined,
+          types: selectedServerTypes?.length > 0 ? selectedServerTypes : undefined,
+          created_by: createdByEmail,
         });
 
         // Update total count if provided in response (though it should be the same)
@@ -261,7 +277,6 @@ export default function AvailableServers(props) {
         }
 
         const data = sanitizeServersResponse(response.details || response);
-
         newData = data.map(mapServerData);
         // Only update servers state for non-search scenarios
         setServers((prev) => {
@@ -269,9 +284,11 @@ export default function AvailableServers(props) {
           return updated;
         });
       }
+
       if (newData.length > 0) {
         setVisibleData((prev) => {
           const updated = [...(Array.isArray(prev) ? prev : []), ...newData];
+          if (updated.length >= totalServersCount) setHasMore(false);
           return updated;
         });
         pageRef.current = nextPage;
@@ -286,10 +303,10 @@ export default function AvailableServers(props) {
       handleError(error, { context: "AvailableServers.loadMore" });
       setHasMore(false);
     } finally {
-      setLoading(false);
+      setIsLoadingMore(false);
       isLoadingRef.current = false;
     }
-  }, [loading, hasMore, searchTerm, selectedFilterTags, getServersSearchByPageLimit, mapServerData, calculateDivs]);
+  }, [loading, hasMore, searchTerm, selectedFilterTags, getServersSearchByPageLimit, mapServerData, calculateDivs, totalServersCount]);
   useEffect(() => {
     const container = serverListContainerRef?.current;
     if (!container) return;
@@ -301,7 +318,7 @@ export default function AvailableServers(props) {
       const clientHeight = container.clientHeight;
 
       // Check if user has scrolled near the bottom (within 50px for better detection)
-      if (scrollTop + clientHeight >= scrollHeight - 50 && !loading && !isLoadingRef.current && hasMore) {
+      if (scrollTop + clientHeight >= scrollHeight - 50 && !loading && !isLoadingMore && !isLoadingRef.current && hasMore) {
         handleScrollLoadMore();
       }
     };
@@ -333,7 +350,7 @@ export default function AvailableServers(props) {
       if (debouncedCheckAndLoad.cancel) debouncedCheckAndLoad.cancel();
       container.removeEventListener("scroll", debouncedCheckAndLoad);
     };
-  }, [hasMore, loading, handleScrollLoadMore]);
+  }, [hasMore, loading, isLoadingMore, handleScrollLoadMore]);
 
   const fetchServers = useCallback(() => {
     const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
@@ -430,135 +447,116 @@ export default function AvailableServers(props) {
     // Intentionally exclude getLiveToolDetails from deps to avoid re-fetch loops due to unstable function reference.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, selected?.id]);
-  const handleDeleteClick = (server) => {
-    const loggedInUserEmail = Cookies.get("email");
-    const userName = Cookies.get("userName");
-    if (userName === "Guest") {
-      setEmailId(server?.created_by || "");
-    } else {
-      setEmailId(loggedInUserEmail || "");
+
+  // handleDeleteClick is called when user confirms delete in the Card component's delete confirmation UI
+  const handleDeleteClick = async (name, item) => {
+    const server = item || {};
+    const serverId = server.id || server.tool_id || (server.raw && (server.raw.id || server.raw.tool_id));
+
+    if (!serverId) {
+      addMessage("Cannot delete: Server ID not found", "error");
+      return;
     }
-    setDeleteClickedId(server.id);
-  };
 
-  const handleCancelDelete = () => {
-    setDeleteClickedId(null);
-    setEmailId("");
-  };
-
-  const handleDeleteConfirm = async (id, server) => {
-    // Always attempt the delete API call and let the server enforce permissions.
+    // Call the delete API directly since Card.jsx already shows confirmation
     const role = Cookies.get("role") || "";
-    const loggedInUserEmail = (Cookies.get("email") || emailId || "").trim();
+    const loggedInUserEmail = (Cookies.get("email") || "").trim();
     const isAdmin = (role || "").toLowerCase() === "admin";
     const data = { user_email_id: loggedInUserEmail, is_admin: isAdmin };
 
     try {
-      const response = await deleteServer(data, id);
+      const response = await deleteServer(data, serverId);
       if (response?.is_delete) {
         // Refresh the server list after delete
         const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
         getServersData(1, divsCount);
-        addMessage(response?.message, "success");
+        addMessage(response?.message || "Server deleted successfully", "success");
         setShowPopup(true);
-        setDeleteClickedId(null);
-        setEmailId("");
       } else {
-        // Handle error response properly - check for various error message formats
-        let errorMessage = "No response received. Please try again.";
-
+        let errorMessage = "Failed to delete server. Please try again.";
         if (response?.message) {
           errorMessage = response.message;
-        }else if (response?.detail) {
+        } else if (response?.detail) {
           errorMessage = response.detail;
-        } else if (typeof response === "string") {
-          errorMessage = response;
         }
-
         addMessage(errorMessage, "error");
-        // setErrorMessage(errorMessage);
       }
     } catch (err) {
-      // Better error handling for network errors and unexpected failures
       let errorMessage = "Failed deleting server";
-
       if (err?.response?.data?.detail) {
         errorMessage = err.response.data.detail;
       } else if (err?.response?.data?.message) {
         errorMessage = err.response.data.message;
       } else if (err?.message) {
         errorMessage = err.message;
-      } else if (typeof err === "string") {
-        errorMessage = err;
       }
-
       addMessage(errorMessage, "error");
-      // setErrorMessage(errorMessage);
     }
   };
+
   const { addMessage, setShowPopup } = useMessage();
-  const { logout } = useAuth();
-  const [deleteModal, setDeleteModal] = useState(false);
-  const handleLoginButton = (e) => {
-    e.preventDefault();
-    logout("/login");
-  };
-
-  useEffect(() => {
-    const loggedInUserEmail = Cookies.get("email");
-    const userName = Cookies.get("userName");
-    if (userName === "Guest") setEmailId("");
-    else setEmailId(loggedInUserEmail);
-  }, []);
-
-  const onSettingClick = () => {
-    setFilterModal(true);
-  }; // Explicit handlers for SubHeader refresh/clear (mirror AvailableTools)
 
   const handleRefreshClick = async () => {
     try {
       setSearchTerm("");
       setSelectedFilterTags([]);
+      setSelectedServerTypes([]);
+      setCreatedBy("All"); // Reset created by filter
       setServers([]);
       setVisibleData([]);
       setHasMore(true);
       pageRef.current = 1;
       const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16); // Use dynamic calculation
       // Call getServersDataWithTags with explicitly empty tags to match tools implementation
-      await getServersDataWithTags(1, divsCount, []);
+      await getServersDataWithTags(1, divsCount, [], []);
     } catch (e) {
       // swallow
     }
   };
 
-  const handleFilterApply = async (selectedTagsParam) => {
+  const handleFilterApply = async (selectedTagsParam, typesParam = null, createdByParam = null) => {
     setSelectedFilterTags(selectedTagsParam || []);
+    // If types parameter is provided, use it; otherwise use current state
+    const typesToUse = typesParam !== null ? typesParam : selectedServerTypes;
+    if (typesParam !== null) {
+      setSelectedServerTypes(typesParam);
+    }
+    // If createdBy parameter is provided, update state
+    const createdByToUse = createdByParam !== null ? createdByParam : createdBy;
+    if (createdByParam !== null) {
+      setCreatedBy(createdByParam);
+    }
     pageRef.current = 1;
     setVisibleData([]);
     setHasMore(true);
 
-    // Trigger new API call with selected tags - pass selectedTagsParam directly
+    // Trigger new API call with selected tags - pass all parameters directly
     const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
     if (searchTerm.trim()) {
-      // If there's a search term, use handleSearch with current search and new tags
-      await handleSearch(searchTerm, divsCount, 1, selectedTagsParam);
+      // If there's a search term, use handleSearch with current search and filters
+      await handleSearch(searchTerm, divsCount, 1, selectedTagsParam, typesToUse, createdByToUse);
     } else {
-      // No search term, fetch data with tag filter - pass selectedTagsParam directly
-      await getServersDataWithTags(1, divsCount, selectedTagsParam);
+      // No search term, fetch data with all filters
+      await getServersDataWithTags(1, divsCount, selectedTagsParam, typesToUse, createdByToUse);
     }
   };
 
-  const getServersDataWithTags = async (pageNumber, divsCount, tagsToUse) => {
+  const getServersDataWithTags = async (pageNumber, divsCount, tagsToUse, typesToUse, createdByToUse = null) => {
     if (isLoadingRef.current) return []; // Prevent multiple simultaneous calls
     isLoadingRef.current = true;
     setLoading(true);
     try {
+      // Use createdByToUse if provided, otherwise fall back to state
+      const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
       // Use the new API endpoint for paginated servers with tag filtering
       const response = await getServersSearchByPageLimit({
         page: pageNumber,
         limit: divsCount,
         search: searchTerm,
         tags: tagsToUse?.length > 0 ? tagsToUse : undefined,
+        types: typesToUse?.length > 0 ? typesToUse : undefined,
+        created_by: createdByEmail,
       });
 
       const dataToSearch = sanitizeServersResponse(response.details || response);
@@ -573,6 +571,7 @@ export default function AvailableServers(props) {
       //   });
       // }
       const mappedData = dataToSearch.map(mapServerData);
+
       if (pageNumber === 1) {
         // Initial load - replace all data
         setServers(mappedData);
@@ -618,271 +617,178 @@ export default function AvailableServers(props) {
     }
   };
 
+  const handleTypeFilter = async (e) => {
+    const types = e.target.value; // array for multi-select
+    setSelectedServerTypes(types);
+    pageRef.current = 1;
+    setVisibleData([]);
+    setHasMore(true);
+    const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+    if (searchTerm.trim()) {
+      await handleSearch(searchTerm, divsCount, 1, selectedFilterTags, types, createdBy);
+    } else {
+      await getServersDataWithTags(1, divsCount, selectedFilterTags, types, createdBy);
+    }
+  };
+
+  // Handler for Created By dropdown - only updates state
+  // API call is triggered by handleFilterApply via onTagsChange/onApply
+  const handleCreatedByChange = (value) => {
+    setCreatedBy(value);
+  };
+
+  useActiveNavClick("/servers", () => {
+    setShowAddServerModal(false);
+    setEditServerData(null);
+  });
+
   return (
     <>
-      <div className={styles.container}>
-        <div className={styles.subHeaderContainer}>
-          <SubHeader
-            heading={""}
-            activeTab={"servers"}
-            onSearch={(value) => handleSearch(value, calculateDivs(serverListContainerRef, 200, 140, 16), 1)}
-            searchValue={searchTerm}
-            clearSearch={clearSearch}
-            handleRefresh={handleRefreshClick}
-            onPlusClick={handlePlusClick}
-            onSettingClick={onSettingClick}
-            selectedTags={selectedFilterTags}
-            reverseButtons={true}
+      {/* AddServer modal for add/edit */}
+      {showAddServerModal &&
+        (editServerData ? (
+          <AddServer
+            editMode={true}
+            serverData={editServerData}
+            readOnly={canReadServers && !canUpdateServers}
+            setRefreshPaginated={async () => {
+              try {
+                const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+                pageRef.current = 1;
+                // Preserve search term: if search is active, use handleSearch to maintain filtered results
+                if (searchTerm.trim()) {
+                  await handleSearch(searchTerm, divsCount, 1, selectedFilterTags, selectedServerTypes, createdBy);
+                } else {
+                  await getServersData(1, divsCount);
+                }
+              } catch (e) {
+                console.error("[AvailableServers] Refresh paginated failed:", e);
+              }
+            }}
+            onClose={() => {
+              setShowAddServerModal(false);
+              setEditServerData(null);
+            }}
           />
-        </div>
+        ) : (
+          <AddServer
+            editMode={false}
+            serverData={null}
+            setRefreshPaginated={async () => {
+              try {
+                const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+                pageRef.current = 1;
+                // Preserve search term: if search is active, use handleSearch to maintain filtered results
+                if (searchTerm.trim()) {
+                  await handleSearch(searchTerm, divsCount, 1, selectedFilterTags, selectedServerTypes, createdBy);
+                } else {
+                  await getServersData(1, divsCount);
+                }
+              } catch (e) {
+                console.error("[AvailableServers] Refresh paginated failed:", e);
+              }
+            }}
+            onClose={() => {
+              setShowAddServerModal(false);
+              setEditServerData(null);
+            }}
+          />
+        ))}
 
-        {loading && <Loader />}
-        {/* Search/filter info badges similar to AvailableTools */}
-        <div style={{ display: "flex", gap: "12px", marginBottom: "3px", width: "100%", overflow: "hidden" }}>
-          {/* Display searched server text if searchTerm exists and results are found */}
-          {searchTerm.trim() && visible.length > 0 && (
-            <div className={styles.searchedToolText}>
-              <p>
-                Search term:{" "}
-                <span className={`boldText ${styles.filterOrSearchText}`} title={searchTerm}>
-                  {searchTerm}
-                </span>
-              </p>
-            </div>
-          )}
+      {loading && <Loader />}
 
-          {/* Display filtered servers text if filters are applied */}
-          {selectedFilterTags.length > 0 && visible.length > 0 && (
-            <div className={styles.filteredToolText}>
-              <p>
-                Selected tags:{" "}
-                <span className={`boldText ${styles.filterOrSearchText}`} title={selectedFilterTags.join(", ")}>
-                  {selectedFilterTags.join(", ")}
-                </span>
-              </p>
-            </div>
-          )}
-
-          {/* Display "No Tools Found" messages when search or filters applied but no results */}
-          {searchTerm.trim() && visibleData.length < 1 && !loading && (
-            <div className={styles.filteredToolText}>
-              <p>
-                No servers found for:{" "}
-                <span className={`boldText ${styles.filterOrSearchText}`} title={searchTerm}>
-                  {searchTerm}
-                </span>
-              </p>
-            </div>
-          )}
-
-          {selectedFilterTags.length > 0 && visibleData.length < 1 && !loading && (
-            <div className={styles.searchedToolText}>
-              <p>
-                No servers found for:{" "}
-                <span className={`boldText ${styles.filterOrSearchText}`} title={selectedFilterTags.join(", ")}>
-                  {selectedFilterTags.join(", ")}
-                </span>
-              </p>
-            </div>
-          )}
-        </div>
+      <div className={"pageContainer"}>
+        <SubHeader
+          heading={"Servers"}
+          activeTab={"servers"}
+          onSearch={(value) => handleSearch(value, calculateDivs(serverListContainerRef, 200, 140, 16), 1, selectedFilterTags, selectedServerTypes)}
+          searchValue={searchTerm}
+          clearSearch={clearSearch}
+          handleRefresh={handleRefreshClick}
+          onPlusClick={canAddServers ? handlePlusClick : undefined}
+          showPlusButton={canAddServers}
+          selectedTags={selectedFilterTags}
+          reverseButtons={true}
+          showTagsDropdown={true}
+          availableTags={tags.map((tag) => tag.tag_name || tag)}
+          selectedTagsForDropdown={selectedFilterTags}
+          onTagsChange={handleFilterApply}
+          selectedAgentType={selectedServerTypes}
+          showCreatedByDropdown={true}
+          createdBy={createdBy}
+          onCreatedByChange={handleCreatedByChange}
+          handleTypeFilter={handleTypeFilter}
+        />
 
         {/* Conditional summary line only when we have visible data */}
-        {visible.length > 0 && (
-          <div className={styles.summaryLine}>
-            <strong>{visible.length}</strong> servers (of {totalServersCount} total)
-          </div>
-        )}
-        <div
-          ref={serverListContainerRef}
-          className={`${styles.serverGrid} ${selectedFilterTags.length > 0 || searchTerm.trim() ? styles.tagOrSerachIsOnServer : ""}`}
-          aria-label="Servers list scrollable container">
-          {visible.map((s) => (
-            <div
-              key={s.id}
-              className={styles.serverCard}
-              style={{
-                width: "200px",
-                minHeight: "140px",
-                height: "140px",
-                maxHeight: "160px",
-                padding: "11px",
-                color: "white",
-                position: "relative",
-                backgroundColor: "#3d4359",
-                boxShadow: "5px 15px 6px #00000029",
-                borderRadius: "4px",
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                fontFamily: "Segoe UI",
-                transition: "transform 0.2s ease, box-shadow 0.2s ease",
+        <SummaryLine visibleCount={visible.length} totalCount={totalServersCount} />
+        <div className="listWrapper" ref={serverListContainerRef} aria-label="Servers list scrollable container">
+          {visible?.length > 0 && (
+            <DisplayCard1
+              data={visible}
+              // Card click - if read access, open modal (readOnly if no update access); if no read access, not clickable
+              onCardClick={(canReadServers || canUpdateServers) ? (name, item) => {
+                setEditServerData(item.raw && Object.keys(item.raw).length ? item.raw : item);
+                setShowAddServerModal(true);
+              } : undefined}
+              // Dotted button = view
+              onButtonClick={(name, item) => {
+                setSelected(item);
+                setOpen(true);
               }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.transform = "translateY(-3px)";
-                e.currentTarget.style.boxShadow = "5px 18px 10px #00000029";
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = "5px 15px 6px #00000029";
-              }}>
-              <div style={{ flex: 1 }}>
-                <span
-                  style={{
-                    fontSize: "16px",
-                    lineHeight: "14px",
-                    fontWeight: 600,
-                    letterSpacing: "-0.8px",
-                    wordBreak: "break-word",
-                    textTransform: "uppercase",
-                    marginBottom: "4px",
-                    maxHeight: "35px",
-                    color: "#fff",
-                  }}>
-                  {s.name}
-                </span>
-                <div style={{ width: "28px", height: "2px", backgroundColor: "#0071b3", marginTop: "5px" }} />{" "}
-                <div style={{ marginTop: "5px" }}>
-                  <div style={{ font: "normal normal 600 12px/16px Segoe UI", letterSpacing: "0px", textTransform: "uppercase", opacity: 1 }}></div>
-                  <div
-                    title={s.description || "No description"}
-                    style={{
-                      font: "normal normal 400 12px/16px Segoe UI",
-                      letterSpacing: "-0.24px",
-                      color: "#ffffff",
-                      wordBreak: "break-word",
-                      whiteSpace: "pre-line",
-                      maxHeight: "32px",
-                      marginBottom: "30px",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                    }}>
-                    {s.description || "No description"}
-                  </div>
-                </div>
-              </div>
-              <div style={{ position: "absolute", left: "2px", bottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span className={styles.typePill} style={{ fontSize: "12px", padding: "4px 10px", background: "#6b7280", color: "#fff", borderRadius: "8px" }}>
-                  {s.type}
-                </span>
-              </div>
-              <div className={styles.serverCardBtnWrapper} style={{ position: "absolute", right: "10px", bottom: "10px", display: "flex", gap: "8px" }}>
-                <button
-                  type="button"
-                  style={{
-                    background: "#007ac0",
-                    boxShadow: "0px 4px 4px #00000029",
-                    borderRadius: "3px",
-                    width: "30px",
-                    height: "24px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "none",
-                  }}
-                  title="View details"
-                  aria-label={`View ${s.name}`}
-                  onClick={() => {
-                    setSelected(s);
-                    setOpen(true);
-                  }}>
-                  <SVGIcons icon="eye" width={20} height={16} fill="#fff" />
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    background: "#6a2020",
-                    boxShadow: "0px 4px 4px #00000029",
-                    borderRadius: "3px",
-                    width: "30px",
-                    height: "24px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "none",
-                  }}
-                  title="Delete"
-                  aria-label={`Delete ${s.name}`}
-                  onClick={() => handleDeleteClick(s)}>
-                  <SVGIcons icon="recycle-bin" width={20} height={16} fill="#fff" />
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    background: "#007ac0",
-                    boxShadow: "0px 4px 4px #00000029",
-                    borderRadius: "3px",
-                    width: "30px",
-                    height: "24px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "none",
-                  }}
-                  title="Edit"
-                  aria-label={`Edit ${s.name}`}
-                  onClick={() => {
-                    // Always pass raw if available, fallback to s for legacy/local/remote
-                    setEditServerData(s.raw && Object.keys(s.raw).length ? s.raw : s);
-                    setShowAddServerModal(true);
-                  }}>
-                  <SVGIcons icon="fa-solid fa-pen" width={16} height={16} fill="#fff" />
-                </button>
-              </div>{" "}
-              {deleteClickedId === s.id && (
-                <div className={styles.cardDeleteOverlay}>
-                  <button className={styles.overlayClose} onClick={handleCancelDelete} aria-label="Close delete">
-                    <SVGIcons icon="fa-xmark" fill="#3D4359" />
-                  </button>
-                  <input className={styles.emailIdInput} type="text" value={s.created_by || ""} disabled />
-                  <div className={styles.actionInfo}>
-                    <span className={styles.warningIcon}>
-                      <SVGIcons icon="warnings" width={16} height={16} fill="#B8860B" />
-                    </span>
-                    creator / admin can perform this action
-                  </div>
-                  <div className={styles.deleteBtnContainer}>
-                    <button type="button" className={styles.confirmDeleteBtn} onClick={() => handleDeleteConfirm(s.tool_id || s.id, s)}>
-                      DELETE <SVGIcons icon="fa-circle-xmark" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {/* Loading indicator for infinite scroll */}
-          {loading && visible.length > 0 && (
-            <div
-              style={{
-                width: "100%",
-                padding: "20px",
-                textAlign: "center",
-                color: "#ffffff",
-                fontSize: "14px",
-              }}>
-              Loading more servers...
+              onDeleteClick={canDeleteServers ? (name, item) => handleDeleteClick(name, item) : undefined}
+              onEditClick={canUpdateServers ? (item) => {
+                setEditServerData(item.raw && Object.keys(item.raw).length ? item.raw : item);
+                setShowAddServerModal(true);
+              } : undefined}
+              onCreateClick={canAddServers ? handlePlusClick : undefined}
+              showDeleteButton={canDeleteServers}
+              showButton={true}
+              showCreateCard={false}
+              buttonIcon={<SVGIcons icon="eye" width={16} height={16} />}
+              enableComplexDelete={false}
+              // loading={loading}
+              // className={styles.serverGrid}
+              cardNameKey="name"
+              cardDescriptionKey="description"
+              cardOwnerKey="created_by"
+              cardCategoryKey="type"
+              emptyMessage="No servers found"
+              contextType="server"
+              cardDisabled={!canReadServers && !canUpdateServers}
+            />
+          )}
+          {/* Display EmptyState when filters are active but no results */}
+          {(searchTerm.trim() || selectedFilterTags.length > 0 || selectedServerTypes.length > 0 || (createdBy && createdBy !== "All")) && visible.length === 0 && !loading && (
+            <EmptyState
+              filters={[
+                ...selectedFilterTags,
+                ...selectedServerTypes.map((type) => type.charAt(0).toUpperCase() + type.slice(1).toLowerCase()),
+                ...(createdBy === "Me" ? ["Created By: Me"] : []),
+                ...(searchTerm.trim() ? [`Search: ${searchTerm}`] : []),
+              ]}
+              onClearFilters={clearSearch}
+              onCreateClick={canAddServers ? handlePlusClick : undefined}
+              createButtonLabel={canAddServers ? "New Server" : undefined}
+              showCreateButton={canAddServers}
+            />
+          )}
+          {/* Display EmptyState when no data exists from backend (no filters applied) */}
+          {!searchTerm.trim() && selectedFilterTags.length === 0 && selectedServerTypes.length === 0 && createdBy === "All" && visible.length === 0 && !loading && (
+            <EmptyState
+              message="No servers found"
+              subMessage={canAddServers ? "Get started by creating your first server" : "No servers available"}
+              onCreateClick={canAddServers ? handlePlusClick : undefined}
+              createButtonLabel={canAddServers ? "New Server" : undefined}
+              showClearFilter={false}
+              showCreateButton={canAddServers}
+            />
+          )}
+          {isLoadingMore && (
+            <div className={styles.loadingMore}>
+              Loading more...
             </div>
           )}
-
-          {/* End of list indicator */}
-          {/* {!hasMore && visible.length > 0 && (
-            <div
-              style={{
-                width: "100%",
-                padding: "20px",
-                textAlign: "center",
-                color: "#888888",
-                fontSize: "14px",
-                fontStyle: "italic",
-              }}>
-              No more servers to load
-            </div>
-          )} */}
         </div>
 
         {/* {visible.length === 0 && !loading && (
@@ -907,83 +813,58 @@ export default function AvailableServers(props) {
           </div>
         )} */}
 
-        {open && selected && (
-          <div className={styles.modalOverlay} onClick={() => setOpen(false)}>
-            <div className={`${styles.modal} ${String(selected.type || "").toUpperCase() === "LOCAL" ? styles.modalWide : ""}`} onClick={(e) => e.stopPropagation()}>
-              <button className={styles.closeBtn} onClick={() => setOpen(false)}>
-                ×
-              </button>
+        <Modal
+          isOpen={open && selected}
+          onClose={() => setOpen(false)}
+          size={String(selected?.type || "").toUpperCase() === "LOCAL" ? "xl" : "md"}
+          ariaLabel={`Server details: ${selected?.name || ""}`}
+          className={`${styles.serverModal} ${String(selected?.type || "").toUpperCase() === "LOCAL" ? styles.modalWide : ""}`}
+        >
+          {selected && (
+            <>
+              <h3 className={styles.modalTitle}>{selected.name}</h3>
               <div className={styles.modalBody} style={String(selected.type || "").toUpperCase() === "REMOTE" ? { flexDirection: "column" } : undefined}>
                 <div className={styles.modalLeft} style={String(selected.type || "").toUpperCase() === "REMOTE" ? { flex: "1 1 100%", maxWidth: "100%" } : undefined}>
-                  <h2 className={styles.modalTitle} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                    {selected.name}
-                    {String(selected.type || "").toUpperCase() === "REMOTE" && (
-                      <span style={{ display: "inline-flex", alignItems: "center", fontSize: 14, fontWeight: 600 }}>
-                        {loadingTools ? (
-                          <span style={{ color: "#374151", fontWeight: 500 }}>Checking...</span>
-                        ) : (
-                          (() => {
-                            const remoteCount =
-                              Array.isArray(liveToolDetails) && liveToolDetails.length > 0 ? liveToolDetails.length : Array.isArray(selected.tools) ? selected.tools.length : 0;
-                            const isActive = remoteCount > 0;
-                            return (
-                              <span
-                                aria-label={isActive ? "Server Active" : "Server Inactive"}
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  background: isActive ? "#dcfce7" : "#fee2e2",
-                                  color: isActive ? "#166534" : "#991b1b",
-                                  padding: "4px 10px",
-                                  borderRadius: 20,
-                                  lineHeight: 1,
-                                  boxShadow: "0 0 0 1px rgba(0,0,0,0.05)",
-                                }}>
-                                <span
-                                  style={{
-                                    width: 10,
-                                    height: 10,
-                                    borderRadius: "50%",
-                                    backgroundColor: isActive ? "#16a34a" : "#dc2626",
-                                    marginRight: 6,
-                                    boxShadow: isActive ? "0 0 4px #16a34a" : "0 0 4px #dc2626",
-                                  }}
-                                />
-                                {isActive ? "Active" : "Inactive"}
-                              </span>
-                            );
-                          })()
-                        )}
-                      </span>
-                    )}
-                  </h2>
-
                   <div className={styles.infoGrid}>
                     <div className={styles.infoCol}>
                       <div className={styles.infoRow}>
-                        <strong>Description:</strong> {selected.description}
+                        <strong>Description:</strong>
+                        <span>{selected.description}</span>
                       </div>
                       <div className={styles.infoRow}>
-                        <strong>Created by:</strong> {selected.created_by || "-"}
+                        <strong>Created by:</strong>
+                        <span>{selected.created_by || "-"}</span>
                       </div>
                       {(String(selected.type || "").toUpperCase() === "REMOTE" || selected.endpoint) && (
                         <div className={styles.infoRow}>
-                          <strong>Endpoint:</strong>{" "}
+                          <strong>Endpoint:</strong>
                           {selected.endpoint ? (
                             <a href={selected.endpoint} target="_blank" rel="noreferrer">
                               {selected.endpoint}
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M7.5 1.5H10.5V4.5" stroke="#0073CF" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d="M5 7L10.5 1.5" stroke="#0073CF" strokeLinecap="round" strokeLinejoin="round" />
+                                <path
+                                  d="M9 6.5V9.5C9 9.76522 8.89464 10.0196 8.70711 10.2071C8.51957 10.3946 8.26522 10.5 8 10.5H2.5C2.23478 10.5 1.98043 10.3946 1.79289 10.2071C1.60536 10.0196 1.5 9.76522 1.5 9.5V4C1.5 3.73478 1.60536 3.48043 1.79289 3.29289C1.98043 3.10536 2.23478 3 2.5 3H5.5"
+                                  stroke="#0073CF"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
                             </a>
                           ) : (
-                            "—"
+                            <span>—</span>
                           )}
                         </div>
                       )}
                       <div className={styles.infoRow}>
-                        <strong>Type:</strong> {selected.type}
+                        <strong>Type:</strong>
+                        <span className={styles.typeBadge}>{selected.type}</span>
                       </div>
                       {String(selected.type || "").toUpperCase() === "EXTERNAL" && selected?.raw?.mcp_config?.args?.[1] && (
                         <div className={styles.infoRow}>
-                          <strong>Module:</strong> {selected.raw.mcp_config.args[1]}
+                          <strong>Module:</strong>
+                          <span>{selected.raw.mcp_config.args[1]}</span>
                         </div>
                       )}
                       {(() => {
@@ -992,21 +873,22 @@ export default function AvailableServers(props) {
                           if (loadingTools) {
                             return (
                               <div className={styles.infoRow}>
-                                <strong>Tools:</strong> <span style={{ marginLeft: 8 }}>Loading...</span>
+                                <strong>Tools:</strong>
+                                <span>Loading...</span>
                               </div>
                             );
                           }
                           if (Array.isArray(liveToolDetails) && liveToolDetails.length > 0) {
                             return (
                               <div className={styles.infoRow}>
-                                <strong>Tools:</strong> {liveToolDetails.length}
-                                <ul style={{ margin: "6px 0 0 0", paddingLeft: 18, fontSize: "15px", color: "#111", fontWeight: 500 }}>
+                                <div>
+                                  <strong style={{ display: "inline-block" }}>Tools:</strong> <span className={styles.count}>{liveToolDetails.length}</span>
+                                </div>
+                                <ol className={styles.infoList}>
                                   {liveToolDetails.map((tool, idx) => (
-                                    <li key={tool.name || tool.tool_name || tool.id || idx}>
-                                      <strong>{tool.name || tool.tool_name || `Tool ${idx + 1}`}</strong>
-                                    </li>
+                                    <li key={tool.name || tool.tool_name || tool.id || idx}>{tool.name || tool.tool_name || `Tool ${idx + 1}`}</li>
                                   ))}
-                                </ul>
+                                </ol>
                               </div>
                             );
                           }
@@ -1014,45 +896,48 @@ export default function AvailableServers(props) {
                           if (count > 0) {
                             return (
                               <div className={styles.infoRow}>
-                                <strong>Tools:</strong> {count}
-                                <ul style={{ margin: "6px 0 0 0", paddingLeft: 18, fontSize: "15px", color: "#111", fontWeight: 500 }}>
+                                <div>
+                                  <strong style={{ display: "inline-block" }}>Tools:</strong> <span className={styles.count}>{count}</span>
+                                </div>
+                                <ol className={styles.infoList}>
                                   {selected.tools.map((tool, idx) => (
-                                    <li key={tool.name || tool.tool_name || tool.id || idx}>
-                                      <strong>{tool.name || tool.tool_name || `Tool ${idx + 1}`}</strong>
-                                    </li>
+                                    <li key={tool.name || tool.tool_name || tool.id || idx}>{tool.name || tool.tool_name || `Tool ${idx + 1}`}</li>
                                   ))}
-                                </ul>
+                                </ol>
                               </div>
                             );
                           }
                           return (
                             <div className={styles.infoRow}>
-                              <strong>Tools:</strong> <span style={{ marginLeft: 8 }}>No tools found for this REMOTE server.</span>
+                              <strong>Tools:</strong>
+                              <span>No tools found for this REMOTE server.</span>
                             </div>
                           );
                         } else if (loadingTools) {
                           return (
                             <div className={styles.infoRow}>
-                              <strong>Tools:</strong> <span style={{ marginLeft: 8 }}>Loading...</span>
+                              <strong>Tools:</strong>
+                              <span>Loading...</span>
                             </div>
                           );
                         } else if (liveToolDetails.length > 0) {
                           return (
                             <div className={styles.infoRow}>
-                              <strong>Tools:</strong> {liveToolDetails.length}
-                              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18, fontSize: "15px", color: "#111", fontWeight: 500 }}>
+                              <div>
+                                <strong style={{ display: "inline-block" }}>Tools:</strong> <span className={styles.count}>{liveToolDetails.length}</span>
+                              </div>
+                              <ol className={styles.infoList}>
                                 {liveToolDetails.map((tool, idx) => (
-                                  <li key={tool.name || tool.tool_name || tool.id || idx}>
-                                    <strong>{tool.name || tool.tool_name || `Tool ${idx + 1}`}</strong>
-                                  </li>
+                                  <li key={tool.name || tool.tool_name || tool.id || idx}>{tool.name || tool.tool_name || `Tool ${idx + 1}`}</li>
                                 ))}
-                              </ul>
+                              </ol>
                             </div>
                           );
                         } else {
                           return (
                             <div className={styles.infoRow}>
-                              <strong>Tools:</strong> 0
+                              <strong>Tools:</strong>
+                              <span>0</span>
                             </div>
                           );
                         }
@@ -1066,9 +951,7 @@ export default function AvailableServers(props) {
                     <div className={styles.codeEditorContainer}>
                       <CodeEditor
                         mode="python"
-                        theme="monokai"
-                        isDarkTheme={true}
-                        value={getCodePreview(selected)}
+                        codeToDisplay={getCodePreview(selected)}
                         width="100%"
                         height="250px"
                         fontSize={14}
@@ -1090,59 +973,14 @@ export default function AvailableServers(props) {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
+            </>
+          )}
+        </Modal>
+
+        {/* Zoom Popup for Description */}
+        {zoomPopup.open && (
+          <ZoomPopup title={zoomPopup.title} content={zoomPopup.content} type="text" readOnly={true} onClose={() => setZoomPopup({ open: false, title: "", content: "" })} />
         )}
-
-        <FilterModal
-          show={filterModal}
-          onClose={() => setFilterModal(false)}
-          tags={tags}
-          handleFilter={handleFilterApply}
-          selectedTags={selectedFilterTags}
-          showfilterHeader={"Filter Servers by Tags"}
-          filterTypes="servers"
-        />
-
-        <DeleteModal show={deleteModal} onClose={() => setDeleteModal(false)}>
-          <p>You are not authorized to delete this server. Please login with registered email.</p>
-          <div className={styles.buttonContainer}>
-            <button onClick={(e) => handleLoginButton(e)} className={styles.loginBtn}>
-              Login
-            </button>
-            <button onClick={() => setDeleteModal(false)} className={styles.cancelBtn}>
-              Cancel
-            </button>
-          </div>
-        </DeleteModal>
-
-        {/* AddServer modal for add/edit - OUTSIDE main container for full overlay */}
-        {showAddServerModal &&
-          (editServerData ? (
-            <AddServer
-              editMode={true}
-              serverData={editServerData}
-              setRefreshPaginated={() => {
-                /* refresh handled by AddServer:RefreshRequested */
-              }}
-              onClose={() => {
-                setShowAddServerModal(false);
-                setEditServerData(null);
-              }}
-            />
-          ) : (
-            <AddServer
-              editMode={false}
-              serverData={null}
-              setRefreshPaginated={() => {
-                /* refresh handled by AddServer:RefreshRequested */
-              }}
-              onClose={() => {
-                setShowAddServerModal(false);
-                setEditServerData(null);
-              }}
-            />
-          ))}
       </div>
     </>
   );

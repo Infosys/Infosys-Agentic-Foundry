@@ -2,8 +2,25 @@
 .textViewer {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  background: #ffffff;
+  height: auto;
+  background: var(--card-bg);
+  margin: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Section Header - CANVAS_TEXT style */
+.sectionHeader {
+  padding: 12px 16px;
+  background: var(--checkbox-bg);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
 }
 
 /* Toolbar */
@@ -11,11 +28,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f8fafc;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-bg);
   flex-shrink: 0;
-  min-height: 44px;
+  min-height: 48px;
 }
 
 .toolbarLeft {
@@ -25,52 +42,56 @@
 }
 
 .contentTag {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #e0f2fe;
-  color: #007acc;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  text-transform: uppercase;
+  background: var(--accent-light, #dbeafe);
+  color: var(--accent, #1d4ed8);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.025em;
+}
+
+.contentTag svg {
+  width: 14px;
+  height: 14px;
 }
 
 .toolbarActions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
 .toolbarButton {
   width: 32px;
   height: 32px;
-  border: none;
-  background: #ffffff;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid #e5e7eb;
+  transition: all 0.15s ease;
+  color: var(--muted);
 }
 
 .toolbarButton:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  transform: translateY(-1px);
+  background: var(--hover-background);
+  border-color: var(--border);
 }
 
 .toolbarButton:active {
-  transform: translateY(0);
+  background: var(--hover-background);
 }
 
 .toolbarButton.copied {
-  background: #dcfce7;
-  border-color: #22c55e;
+  background: var(--hover-background);
+  border-color: var(--success);
+  color: var(--success);
 }
 
 /* Text Content */
@@ -79,24 +100,25 @@
   overflow: auto;
   min-height: 0;
   padding: 16px;
+  background: var(--card-bg);
 }
 
 .textContent::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 .textContent::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 
 .textContent::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+  background: var(--muted);
+  border-radius: 3px;
 }
 
 .textContent::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--text-secondary);
 }
 
 .textPre {
@@ -104,29 +126,29 @@
   /* font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace; */
   font-size: 13px;
   line-height: 1.6;
-  color: #1f2937;
+  color: var(--text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
 }
 
 /* Footer */
 .footer {
-  padding: 8px 16px;
-  border-top: 1px solid #e5e7eb;
-  background: #f8fafc;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--checkbox-bg);
   flex-shrink: 0;
 }
 
 .stats {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .stat {
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  font-weight: var(--font-weight-medium);
 }
 
 /* Empty State */
@@ -142,7 +164,7 @@
 
 .emptyMessage {
   margin-top: 12px;
-  color: #64748b;
+  color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -152,19 +174,19 @@
   .toolbar {
     padding: 6px 12px;
   }
-  
+
   .textContent {
     padding: 12px;
   }
-  
+
   .textPre {
     font-size: 13px;
   }
-  
+
   .footer {
     padding: 6px 12px;
   }
-  
+
   .stats {
     gap: 12px;
   }

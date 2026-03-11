@@ -1,22 +1,116 @@
+/* Search field wrapper for TextField component */
+.searchFieldWrapper {
+  margin-right: 8px;
+}
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 0;
+}
+
 .container {
   display: flex;
   width: 100%; /* allow parent to control spacing */
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+  overflow-x: auto;
+  overflow-y: clip;
+  flex-shrink: 0;
 }
 
 .container h6 {
-  font: normal normal 400 20px/27px Segoe UI;
-  letter-spacing: 0px;
-  color: #343741;
-  text-transform: uppercase;
-  margin: 0; /* remove default margin that can break alignment */
+  width: auto;
+  height: 30px;
+  font-family: var(--font-secondary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xl);
+  line-height: 30px;
+  letter-spacing: 0.3px;
+  color: var(--header-color);
+  text-transform: none;
+  margin: 0;
 }
 
 .setting {
   display: flex;
   align-items: center;
+}
+
+/* Clear All Button */
+.clearAllButton {
+  height: 36px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--danger);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.clearAllButton:hover {
+  background: rgba(239, 68, 68, 0.1);
+  opacity: 0.9;
+}
+
+.clearAllText {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .clearAllText {
+    display: inline;
+  }
+}
+
+/* Search Clear Button styles moved to index.css as .iafClearSearchBtn */
+
+.primaryButton:focus-visible {
+  background: #0476b7;
+  /* border: 1px solid #0476b7; */
+  box-shadow: 0 0 0 3px rgba(2, 118, 210, 0.3);
+}
+
+.plusIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.createToolTextFull {
+  display: none;
+  color: #fff;
+  text-align: center;
+  font-family: Inter;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 24px; /* 150% */
+}
+
+.createToolTextShort {
+  display: inline;
+}
+
+@media (min-width: 640px) {
+  .createToolTextFull {
+    display: inline;
+  }
+  .createToolTextShort {
+    display: none;
+  }
 }
 
 .plus {
@@ -31,23 +125,35 @@
 .titleContainer {
   display: flex;
   align-items: center;
-  gap: 20px;
-  flex: 1 1 auto; /* allow title to take remaining space */
-  min-width: 0; /* allow truncation if needed */
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 125px;
 }
 
 .refreshButton {
-  box-shadow: 0px 4px 4px #00000029;
-  border: 1px solid #c7c7c745;
-  border-radius: 3px;
-  padding: 4px;
+  height: 36px;
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refreshButton:hover {
+  border-color: var(--accent-color);
+  background: var(--hover-background);
 }
 
 .rightPart {
+  /* overflow-y:auto; */
   display: flex;
   align-items: center;
-  gap: 14px;
-  flex: 0 0 auto; /* keep controls their natural size */
+  gap: 7px;
+  flex: 0 0 auto;
 }
 
 .setting {
@@ -167,4 +273,307 @@
 
 .cancelBtn:hover {
   background-color: #2a2f42;
+}
+
+/* New Type Dropdown Styles */
+.typeDropdownWrapper {
+  position: relative;
+}
+
+.typeDropdownButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  outline: none;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  color: #222;
+  padding: 6px 10px;
+  height: 36px;
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: fit-content;
+  display: flex;
+  align-items: center;
+}
+
+.typeDropdownButton:hover {
+  background-color: #f3f4f6;
+}
+
+.typeDropdownButton:focus-visible {
+  outline: none;
+}
+
+.typeDropdownButton:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.typeDropdownButton svg {
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.typeBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 2px 6px;
+  background-color: #6b7280;
+  color: #ffffff;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 20px;
+  height: 20px;
+}
+
+.chevronIcon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.5;
+  transition: transform 0.2s ease;
+}
+
+.typeDropdownButton[aria-expanded="true"] .chevronIcon {
+  transform: rotate(180deg);
+}
+
+.typeDropdownMenu {
+  position: absolute;
+  top: 33px;
+  left: 0;
+  z-index: 50;
+  min-width: 220px;
+  max-width: 220px;
+  width: 220px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 8px;
+  animation: dropdownFadeIn 0.15s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.typeDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: #1f2937;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  text-align: left;
+  font-weight: 400;
+  user-select: none;
+}
+
+.typeDropdownItem:hover {
+  background-color: #f3f4f6;
+}
+
+.typeDropdownItem.focused {
+  background-color: #f3f4f6;
+  outline: none;
+}
+
+.typeCheckbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #6b7280;
+  flex-shrink: 0;
+}
+
+.typeLabel {
+  flex: 1;
+  cursor: pointer;
+}
+
+.typeDropdownItem.selected {
+  background-color: transparent;
+}
+
+.dropdownFooter {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.clearTypeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #dc2626;
+  background-color: transparent;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.clearTypeButton:hover {
+  background-color: #fef2f2;
+  border-color: #dc2626;
+}
+
+.clearTypeButton.focused {
+  background-color: #fef2f2;
+  border-color: #dc2626;
+  outline: none;
+}
+
+.clearTypeButton svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* View toggle button (single toggle) */
+.viewToggleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #717182;
+  min-width: 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.viewToggleButton:hover {
+  background: #f0f9ff;
+  color: #000000;
+}
+
+.viewToggleButton:active {
+  background: #007cc3;
+  color: #ffffff;
+}
+
+.viewToggleButton svg {
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+/* Second row for filters */
+.secondRow {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: 8px;
+  padding-right: 0;
+}
+
+/* My Items filter */
+.myItemsFilter {
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0 10px;
+  height: 36px;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.myItemsCheckbox {
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.15s;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.myItemsCheckbox[data-state="checked"] {
+  background: black;
+  color: white;
+}
+
+.myItemsCheckbox:hover {
+  border-color: #9ca3af;
+}
+
+.myItemsCheckbox[data-state="checked"]:hover {
+  background: black;
+}
+
+.myItemsCheckbox:focus-visible {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.checkboxIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white !important;
+  transition: none;
+  pointer-events: none;
+}
+
+.checkboxIndicator svg {
+  stroke: white !important;
+  fill: none !important;
+  stroke-width: 2.5 !important;
+}
+
+.myItemsLabel {
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #374151;
 }

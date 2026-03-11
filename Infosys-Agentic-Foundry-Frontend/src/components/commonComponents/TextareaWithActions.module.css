@@ -1,0 +1,140 @@
+/* TextareaWithActions - Reusable textarea with copy/expand icons */
+
+.textareaContainer {
+  width: 100%;
+}
+
+.textareaWrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* Textarea inside wrapper needs right padding for icons */
+.textareaWrapper textarea {
+  padding-right: 40px;
+}
+
+/* Copy Icon - positioned top right */
+.copyIcon {
+  position: absolute;
+  right: 10px;
+  top: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  z-index: 10;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.copyIcon:hover {
+  opacity: 1;
+}
+
+.copyIcon svg {
+  stroke: var(--content-color);
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+  fill: none;
+}
+
+/* .copyIcon:hover svg {
+  transform: scale(1.15);
+} */
+
+.copyIcon:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+/* .copyIcon:disabled svg {
+  fill: #bdbdbd;
+} */
+
+/* Copied Text Feedback */
+.copiedText {
+  position: absolute;
+  top: 2px;
+  right: 40px;
+  font-size: 12px;
+  color: var(--accent, #007acc);
+  background: var(--card-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+}
+
+.copiedText.visible {
+  visibility: visible;
+  opacity: 1;
+}
+
+.copiedText.hidden {
+  visibility: hidden;
+  opacity: 0;
+}
+
+/* Icon Group - positioned bottom right */
+.iconGroup {
+  position: absolute;
+  bottom: 8px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  z-index: 11;
+}
+
+/* Expand Icon */
+.expandIcon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 22px;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.expandIcon svg {
+  fill: var(--content-color, #6b7280);
+  stroke: var(--content-color, #6b7280);
+  color: var(--content-color, #6b7280);
+  width: 16px;
+  height: 16px;
+  /* transition: transform 0.2s ease; */
+}
+
+.expandIcon:hover {
+  opacity: 1;
+}
+
+.expandIcon:hover svg {
+  fill: var(--content-color);
+  stroke: var(--content-color);
+  /* transform: scale(1.15); */
+}
+
+.expandIcon:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+/* .expandIcon:disabled svg {
+  fill: #bdbdbd !important;
+} */

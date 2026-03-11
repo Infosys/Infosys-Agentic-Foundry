@@ -1,0 +1,88 @@
+/* ================================
+   Group OnBoarding Modal - Styles
+   Uses global form classes (formGroup, label-desc, input, textarea)
+   ================================ */
+
+/* Footer buttons container */
+.footerButtons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Input with button row */
+.inputWithButton {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.inputWithButton .input,
+.inputWithButton input {
+  flex: 1;
+}
+
+/* Tags container for selected users/agents */
+.tagsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-secondary, var(--muted-foreground));
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.tag:hover {
+  background: var(--hover-background);
+  border-color: var(--app-primary-color);
+}
+
+.tagText {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--content-color);
+  transition: all 0.2s ease;
+}
+
+.tagRemove:hover {
+  background: var(--danger);
+  color: white;
+}
+
+/* Dark theme adjustments */
+:root[data-theme="dark"] .tag {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+:root[data-theme="dark"] .tag:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
+}

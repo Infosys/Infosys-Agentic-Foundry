@@ -1,0 +1,213 @@
+.container {
+  padding: 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Admin screen container - no SubHeader, cleaner layout */
+.adminContainer {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.adminContainer .listWrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 16px;
+  gap: 0 !important;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-left: 5px solid var(--accent, #37acea);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.card h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+}
+
+.card p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Modal styles - Clean centered modal */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1201;
+}
+
+.modal {
+  border: 1px solid var(--border, #e5e7eb);
+  width: 90%;
+  max-width: 500px;
+  min-width: 320px;
+  height: fit-content;
+  max-height: 80vh;
+  background: var(--card-bg, #ffffff);
+  padding: 0;
+  position: relative;
+  box-shadow: var(--shadow-lg, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius, 12px);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.closeBtn {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  z-index: 1;
+}
+
+.closeBtn:hover {
+  background: var(--hover-background, #f3f4f6);
+  color: var(--header-color, #111827);
+}
+
+.modalTitle {
+  margin: 0;
+  padding: 20px 24px;
+  padding-right: 50px;
+  font-family: var(--font-secondary, "Plus Jakarta Sans", "Inter", sans-serif);
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: var(--font-size-lg, 18px);
+  color: var(--header-color, #1a1a1a);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  line-height: 1.4;
+  text-align: left;
+  flex-shrink: 0;
+  background: var(--card-bg, #ffffff);
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 14px;
+  padding: 20px 24px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.infoRow {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary, #1a1a1a);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.infoRow strong {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--header-color, #1a1a1a);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.infoRow .count {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  padding: 2px 10px;
+  margin-left: 8px;
+}
+
+.infoList {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.infoList li {
+  margin-bottom: 8px;
+  color: var(--text-primary, #1a1a1a);
+  font-size: 14px;
+}
+
+.emptyMessage {
+  color: var(--text-secondary, #6b7280);
+  font-style: normal;
+  padding: 12px 0;
+}
+
+.loadingText {
+  color: var(--text-secondary, #6b7280);
+  padding: 12px 0;
+}

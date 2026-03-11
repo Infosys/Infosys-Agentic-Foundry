@@ -83,33 +83,34 @@ const EmailViewer = ({
             )}
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", marginBottom: 0 }}>
-                <span style={{ fontWeight: "500", color: "#333", width: "120px", textAlign: "left" }}>To</span>
+                <span className={styles.fieldLabel} style={{ width: "120px", textAlign: "left" }}>To</span>
                 {isLast ? (
                   <input
                     type="text"
                     autoFocus
                     value={toValue}
                     onChange={e => setToValue(e.target.value)}
-                    style={{ color: "#333", flex: 1, border: "none", outline: "none", fontSize: "15px", background: "#fff" }}
+                    className={styles.emailInput}
                   />
                 ) : (
-                  <span style={{ color: "#333", flex: 1 }}>{toValue}</span>
+                  <span className={styles.fieldValue} style={{ flex: 1 }}>{toValue}</span>
                 )}
               </div>
               <div style={{ margin: "0 0 8px 0" }}>
-                <hr style={{ border: "none", borderTop: "1px solid #eee" }} />
+                <hr className={styles.divider} />
               </div>
               <div style={{ display: "flex", alignItems: "center", marginBottom: 0 }}>
-                <span style={{ fontWeight: "500", color: "#333", width: "120px", textAlign: "left" }}>Subject</span>
+                <span className={styles.fieldLabel} style={{ width: "120px", textAlign: "left" }}>Subject</span>
                 {isLast ? (
                   <input
                     type="text"
                     value={subjectValue}
                     onChange={e => setSubjectValue(e.target.value)}
-                    style={{ marginLeft: "16px", color: "#333", flex: 1, border: "none",outline: "none", fontSize: "15px", background: "#fff" }}
+                    className={styles.emailInput}
+                    style={{ marginLeft: "16px" }}
                   />
                 ) : (
-                  <span style={{ marginLeft: "16px", color: "#333", flex: 1 }}>{subjectValue}</span>
+                  <span className={styles.fieldValue} style={{ marginLeft: "16px", flex: 1 }}>{subjectValue}</span>
                 )}
               </div>
             </div>

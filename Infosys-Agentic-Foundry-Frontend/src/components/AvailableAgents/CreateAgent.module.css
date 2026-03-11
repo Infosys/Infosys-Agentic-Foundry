@@ -1,0 +1,959 @@
+/* Create Agent Modal Styles - Multi-theme Support */
+
+/* Theme variables are defined globally in `src/index.css` (applied via ThemeContext)
+   This file uses those variables (e.g. --card-bg, --modal-bg, --header-bg) so
+   theme definitions remain centralized and consistent across the app. */
+
+/* Overlay for main modal */
+
+/* Overlay for main modal - theme adaptive */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  /* fallback for legacy browsers */
+  backdrop-filter: var(--backdrop-blur, blur(8px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(8px));
+}
+
+/* Modal Container */
+
+.modalContainer {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg, var(--modal-bg));
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-left: 200px;
+}
+
+/* Shrink modal when slider is open */
+.modalContainer.shrinked {
+  width: calc(100% - 28rem);
+  max-width: calc(1071px - 28rem);
+  min-width: 350px;
+}
+
+/* Header */
+.header {
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+@media (min-width: 768px) {
+  .header {
+    padding: 5px 24px;
+  }
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
+}
+
+@media (min-width: 768px) {
+  .headerLeft {
+    gap: 1rem;
+  }
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.5px;
+}
+
+.closeButton {
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  background: var(--muted-foreground);
+  /* transform: scale(1.05); */
+}
+
+.closeButton svg {
+  width: 20px;
+  height: 20px;
+  color: var(--text-primary);
+}
+
+/* Header Right - for Update Agent header info */
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.headerInfoItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding-right: 1.5rem;
+  border-right: 1px solid var(--border-color);
+}
+
+.headerInfoItem:last-of-type {
+  border-right: none;
+  padding-right: 0;
+}
+
+.headerInfoLabel {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-xs);
+  color: var(--content-color);
+}
+
+.headerInfoValue {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+/* Scrollable Body - contains content and footer */
+.scrollableBody {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Section Title - used in component sections */
+.sectionTitle {
+  margin-bottom: 0.75rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--content-color);
+  letter-spacing: 0.05em;
+}
+
+.linkButton {
+  padding: 0.375rem 0.75rem;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.linkButton::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(55, 172, 234, 0.15);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.4s ease, height 0.4s ease;
+}
+
+.linkButton:hover::before {
+  width: 200%;
+  height: 200%;
+}
+
+.linkButton:hover {
+  background: var(--hover-background);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+
+/* Tools & Components Section */
+.toolsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  margin-bottom: 8px;
+}
+
+.toolsHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Clear All Button */
+.clearAllButton {
+  padding: 0.25rem 0.75rem;
+  background: linear-gradient(135deg, rgba(255, 59, 48, 0.1), rgba(255, 59, 48, 0.05));
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 6px;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  color: #ff6b6b;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.clearAllButton:hover {
+  background: linear-gradient(135deg, rgba(255, 59, 48, 0.2), rgba(255, 59, 48, 0.1));
+  border-color: #ff6b6b;
+  box-shadow: 0 0 12px rgba(255, 107, 107, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Selected Resources */
+.selectedResourcesContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--card-bg);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  min-height: 60px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.selectedResourcesContainer:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card);
+}
+
+.resourceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.resourceChip::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(55, 172, 234, 0.1), transparent);
+  transition: left 0.4s ease;
+}
+
+.resourceChip:hover::before {
+  left: 100%;
+}
+
+.resourceChip:hover {
+  background: var(--hover-background);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow);
+}
+
+.resourceChipIcon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  filter: none;
+}
+
+.removeResourceButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: rgba(255, 59, 48, 0.1);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+.removeResourceButton:hover {
+  background: rgba(255, 59, 48, 0.3);
+  transform: scale(1.1);
+}
+
+.removeResourceButton svg {
+  width: 12px;
+  height: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.removeResourceButton:hover svg {
+  color: #ff6b6b;
+}
+.emptyStateText {
+  color: var(--content-color);
+  text-align: center;
+  padding: 30px 20px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+  font-style: normal;
+  opacity: 0.8;
+}
+
+.emptyResourcesMessage {
+  width: 100%;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-style: normal;
+  padding: 10px;
+  background: rgba(55, 172, 234, 0.03);
+  border-radius: 6px;
+}
+
+/* Resources Slider */
+
+/* Slider Overlay - theme adaptive */
+
+/* Tab Container - Fixed */
+
+.systemPromptWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+/* ============================================
+   Footer Toggle Styles (Agent Form Only)
+   ============================================ */
+
+.footerContainer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  min-height: 52px;
+  max-height: 52px;
+  background: var(--card-bg);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow: hidden;
+  gap: 16px;
+}
+
+.footerTogglesContainer {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* Scrollbar styling for footer toggles */
+.footerTogglesContainer::-webkit-scrollbar {
+  height: 4px;
+}
+
+.footerTogglesContainer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.footerTogglesContainer::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+.footerTogglesContainer::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.footerToggleItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--footer-toggle-bg, rgba(0, 0, 0, 0.2));
+  border-radius: 6px;
+  border: 1px solid var(--footer-toggle-border, rgba(55, 172, 234, 0.15));
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.footerToggleItem:hover {
+  background: var(--footer-toggle-hover-bg, rgba(55, 172, 234, 0.1));
+  border-color: var(--footer-toggle-hover-border, rgba(55, 172, 234, 0.3));
+}
+
+/* Light mode overrides for footer toggles */
+:global(:root[data-theme="light"]) .footerToggleItem {
+  background: rgba(2, 93, 138, 0.08);
+  border-color: rgba(2, 93, 138, 0.2);
+}
+
+:global(:root[data-theme="light"]) .footerToggleItem:hover {
+  background: rgba(2, 93, 138, 0.12);
+  border-color: rgba(2, 93, 138, 0.35);
+}
+
+:global(:root[data-theme="light"]) .footerToggleLabel {
+  color: var(--text-primary);
+}
+
+.footerToggleLabel {
+  margin-bottom: 0;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.footerActionsContainer {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   Preview Resource Modal Overlay Adjustment
+   ============================================ */
+
+.previewResourceModal > div {
+  margin-left: var(--main-width, 200px) !important;
+}
+
+/* ============================================
+   Department Selector Styling (Match TagSelector)
+   ============================================ */
+
+.deptSelectorContainer {
+  position: relative;
+  width: 100%;
+  outline: none;
+  margin-top: 0;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.deptSelectorContainer:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card);
+}
+
+.deptSelectorWrapper {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  cursor: default;
+  gap: 10px;
+  position: relative;
+  flex-wrap: wrap;
+}
+
+.deptSelectorLabel {
+  font-size: var(--font-size-xs, 12px);
+  font-family: var(--font-primary);
+  color: var(--accent);
+  font-weight: var(--font-weight-semibold, 600);
+  margin: 0;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.deptSelectorLabel::after {
+  content: ":";
+}
+
+.deptPillsContainer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 0;
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 80px;
+  flex: 1;
+}
+
+.deptPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--accent-light);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  font-family: var(--font-primary);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+  cursor: default;
+  max-width: 140px;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  min-width: auto;
+  position: relative;
+  box-shadow: var(--shadow-card);
+}
+
+.deptPill::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(55, 172, 234, 0.15), transparent);
+  transition: left 0.4s ease;
+}
+
+.deptPill:hover::before {
+  left: 100%;
+}
+
+.deptPill:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+
+.deptPillText {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deptPillIcon {
+  color: #37acea;
+  flex-shrink: 0;
+}
+
+.removeDeptBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: rgba(255, 107, 107, 0.15);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+}
+
+.removeDeptBtn:hover {
+  background: rgba(255, 107, 107, 0.4);
+  color: #ff6b6b;
+  transform: scale(1.1);
+}
+
+.deptDropdownWrapper {
+  position: relative;
+}
+
+.deptDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 250px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--menu-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 1000;
+  padding: 8px 0;
+}
+
+.deptDropdownSearch {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.deptDropdownSearch input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.deptDropdownSearch input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.deptDropdownSearch input::placeholder {
+  color: var(--muted);
+}
+
+.deptDropdownItem {
+  padding: 10px 16px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.deptDropdownItem:hover {
+  background: var(--hover-background);
+  color: var(--text-primary);
+}
+
+.deptDropdownEmpty {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+}
+
+.deptPlaceholder {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  user-select: none;
+  pointer-events: none;
+  font-style: normal;
+}
+
+/* Model Selector - Inline Layout */
+.modelSelectorContainer {
+  position: relative;
+  width: 100%;
+  outline: none;
+  margin-top: 0;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.modelSelectorContainer:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-card);
+}
+
+.modelSelectorWrapper {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  cursor: default;
+  gap: 10px;
+  position: relative;
+}
+
+.modelSelectorLabel {
+  font-size: var(--font-size-xs, 12px);
+  font-family: var(--font-primary);
+  color: var(--accent);
+  font-weight: var(--font-weight-semibold, 600);
+  margin: 0;
+  flex-shrink: 0;
+  letter-spacing: 0.05em;
+}
+
+.modelSelectorLabel::after {
+  content: ":";
+}
+
+.modelDropdownWrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Config Row - Horizontal layout for Model, Tags, Departments */
+.configRow {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.configRow > * {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* ============================================
+   COLLAPSIBLE SECTION STYLES
+   Compact accordion-like sections for single-screen view
+   ============================================ */
+
+.collapsibleSection {
+  background: var(--form-section-gradient);
+  border: 1px solid var(--section-border);
+  border-radius: var(--radius-lg, 12px);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.collapsibleSection:hover {
+  border-color: var(--accent);
+}
+
+.collapsibleSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+.collapsibleSectionHeader:hover {
+  background: var(--hover-background);
+}
+
+.collapsibleSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.collapsibleSectionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--app-primary-color);
+}
+
+.collapsibleSectionBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  background: var(--accent-light);
+  color: var(--app-primary-color);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  min-width: 20px;
+}
+
+.collapsibleSectionRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapsibleSectionPreview {
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collapsibleChevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+  transition: transform 0.3s ease, color 0.2s ease;
+}
+
+.collapsibleChevron.expanded {
+  transform: rotate(180deg);
+  color: var(--app-primary-color);
+}
+
+.collapsibleSectionContent {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, padding 0.3s ease;
+}
+
+.collapsibleSectionContent.expanded {
+  max-height: 800px;
+  padding: 0 16px 16px 16px;
+  overflow-y: auto;
+}
+
+.collapsibleSectionInner {
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Compact form wrapper - reduces default form gap */
+.compactForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px !important;
+}
+
+/* Quick action buttons in header */
+.collapsibleHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapsibleHeaderBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: rgba(55, 172, 234, 0.15);
+  border: 1.5px solid var(--app-primary-color);
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--app-primary-color);
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(55, 172, 234, 0.2);
+}
+
+.collapsibleHeaderBtn:hover {
+  background: var(--app-primary-color);
+  color: #fff;
+  border-color: var(--app-primary-color);
+}
+
+/* Compact form layout for collapsible sections */
+.compactFormGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.compactFormGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.compactFormGroup .input,
+.compactFormGroup .textarea {
+  padding: 8px 12px;
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.compactFormGroup .textarea {
+  min-height: 60px;
+  max-height: 100px;
+  resize: none;
+}
+
+/* ============================================
+   Prompt Section Textarea - Larger Height
+   ============================================ */
+/* For agent onboard/update page only - fill available space */
+.collapsibleSectionInner :global(.formGroup) textarea,
+.collapsibleSectionInner :global(textarea),
+.systemPromptWrapper :global(textarea) {
+  min-height: 150px !important;
+  resize: none;
+}
+
+/* Remove max-height constraint for prompt textareas */
+.systemPromptWrapper :global(textarea) {
+  max-height: none;
+}
+
+/* Inline Add Button - for empty state */
+.inlineAddBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0 2px;
+  background: rgba(55, 172, 234, 0.15);
+  border: 1.5px solid var(--app-primary-color);
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--app-primary-color);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(55, 172, 234, 0.2);
+  vertical-align: middle;
+}
+
+.inlineAddBtn:hover {
+  background: var(--app-primary-color);
+  color: #fff;
+  border-color: var(--app-primary-color);
+  transform: scale(1.1);
+}

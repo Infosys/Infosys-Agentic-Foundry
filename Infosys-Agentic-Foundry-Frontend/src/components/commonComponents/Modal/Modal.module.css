@@ -1,0 +1,105 @@
+/**
+ * Modal Component Styles
+ * 
+ * Reusable modal overlay and container styles.
+ * Uses CSS custom properties for navbar-aware positioning.
+ * 
+ * USAGE: Components using this modal only need to style their inner content.
+ * The overlay and base modal container are handled by this stylesheet.
+ */
+
+/* Modal Overlay - positioned to account for sidebar */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: var(--main-width, 180px);
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(12px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(12px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Use configurable modal z-index with a sane default to avoid conflicts */
+  z-index: var(--z-index-modal, 49);
+  transition: left var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1));
+  animation: iafFadeIn var(--transition-fast, 150ms) ease;
+}
+
+/* Adjust left position when navbar is collapsed */
+:global([data-nav-collapsed="true"]) .modalOverlay {
+  left: var(--main-width, 90px);
+}
+
+/* Base Modal Container */
+.modal {
+  background: var(--card-bg, #ffffff);
+  border-radius: var(--radius-lg, 20px);
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: var(--shadow-elevated, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
+  animation: iafModalEnter var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 1px solid var(--border, #e5e7eb);
+}
+
+/* Size variants */
+.modalSm {
+  width: 400px;
+  max-width: 90vw;
+}
+
+.modalMd {
+  width: 500px;
+  max-width: 90vw;
+}
+
+.modalLg {
+  width: 700px;
+  max-width: 90vw;
+}
+
+.modalXl {
+  width: 900px;
+  max-width: 95vw;
+}
+
+.modalAuto {
+  width: fit-content;
+  min-width: 400px;
+  max-width: 95vw;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .modalOverlay {
+    left: 0;
+    padding: 16px;
+  }
+
+  .modal {
+    max-width: 100%;
+    width: 100%;
+    max-height: 85vh;
+    border-radius: var(--radius, 12px);
+  }
+
+  .modalSm,
+  .modalMd,
+  .modalLg,
+  .modalXl,
+  .modalAuto {
+    width: 100%;
+  }
+}
+
+/* Close button positioning - uses global .closeBtn class */
+.modal > :global(.closeBtn) {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+}

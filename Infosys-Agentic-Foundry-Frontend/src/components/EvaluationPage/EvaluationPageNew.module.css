@@ -1,0 +1,129 @@
+/* EvaluationPageNew specific styles */
+/* Note: Split layout styles removed - Consistency tab now uses ResourceSlider pattern internally */
+
+/* Header dropdown for agent filter */
+.headerDropdown {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+/* ===== Header Dropdown Navigation (Amazon-style) ===== */
+.headerNav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  z-index: 100000;
+  overflow-x: auto;
+  flex-shrink: 0;
+  max-width: calc(100vw - 400px);
+  scrollbar-width: thin;
+}
+
+.headerNav::-webkit-scrollbar {
+  height: 4px;
+}
+
+.headerNav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.headerNav::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.headerNav::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.navDropdown {
+  position: relative;
+}
+
+.navDropdownTrigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.navDropdownTrigger:hover {
+  background: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+.navDropdownTrigger.active {
+  color: var(--app-primary-color);
+}
+
+.navDropdownTrigger svg {
+  transition: transform 0.2s ease;
+}
+
+.navDropdown:hover .navDropdownTrigger svg {
+  transform: rotate(180deg);
+}
+
+.navDropdownMenu {
+  position: fixed;
+  min-width: 180px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  padding: 8px 0;
+  z-index: 999999;
+}
+
+.navDropdownMenu.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.navDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.navDropdownItem:hover {
+  background: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+.navDropdownItem.active {
+  background: var(--app-primary-color-light, rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.1));
+  color: var(--app-primary-color);
+  font-weight: 500;
+}
+
+.navDropdownItem svg {
+  flex-shrink: 0;
+}
+
+/* Dark theme adjustments */
+:root[data-theme="dark"] .navDropdownMenu {
+  background: var(--card-bg);
+  border-color: var(--border);
+}

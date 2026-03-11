@@ -1,0 +1,202 @@
+/* ResourceAccordion Component Styles */
+
+/* Container for all accordions */
+.accordionContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Individual accordion item */
+.accordionItem {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: var(--radius-lg, 8px);
+  overflow: hidden;
+  background: var(--card-bg, #ffffff);
+}
+
+/* Accordion Header */
+.accordionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  user-select: none;
+}
+
+.accordionHeader:hover {
+  background: color-mix(in oklab, var(--muted-foreground, #f3f4f6) 30%, transparent);
+}
+
+.accordionHeader:focus {
+  outline: none;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(0, 115, 207, 0.15));
+}
+
+.accordionHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Chevron icon */
+.chevronIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.chevronIcon svg {
+  color: var(--text-primary, #1a1a1a) !important;
+}
+
+/* Type icon (wrench, server, robot) */
+.typeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.typeIcon svg {
+  color: var(--text-primary, #1a1a1a) !important;
+}
+
+/* Accordion title */
+.accordionTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--text-primary, #1a1a1a);
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+}
+
+/* Count badge */
+.countBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 23px;
+  min-height: 20px;
+  padding: 2px 6px;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: 10px;
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--app-primary-color, #0073cf);
+  background: rgba(0, 115, 207, 0.1);
+  border-radius: 16px;
+}
+
+/* Accordion Content */
+.accordionContent {
+  padding: 10px 12px;
+  /* border-top: 1px solid var(--border-color, #e5e7eb); */
+  background: var(--card-bg, #ffffff);
+}
+
+/* Pills container */
+.pillsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Resource pill */
+.resourcePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 19px;
+  padding: 0 8px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 16px;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--text-primary, #1a1a1a);
+  transition: all 0.2s ease;
+}
+
+.resourcePill:hover {
+  border-color: var(--app-primary-color, #0073cf);
+  background: var(--accent-light, rgba(0, 115, 207, 0.1));
+}
+
+/* Clickable resource pill */
+.resourcePill.clickable {
+  cursor: pointer;
+}
+
+.resourcePill.clickable:focus {
+  outline: none;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(0, 115, 207, 0.15));
+}
+
+.accordionContainerDisabled .accordionTitle,
+.accordionContainerDisabled .typeIcon svg {
+  color: var(--muted) !important;
+}
+
+.accordionContainerDisabled .resourcePill:hover {
+  border-color: var(--border, #e5e7eb);
+  background: var(--disabled-bg, #f1f1f1);
+}
+
+.accordionContainerDisabled .resourcePill {
+  opacity: 1;
+  cursor: pointer;
+  background: var(--disabled-bg, #f1f1f1);
+  color: var(--muted);
+}
+
+.accordionContainerDisabled .resourcePill .removePillButton {
+  display: none;
+}
+
+/* Pill text */
+.pillText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+/* Remove pill button */
+.removePillButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.removePillButton:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.removePillButton svg {
+  width: 10px;
+  height: 10px;
+  color: var(--muted, #6b7280) !important;
+}
+
+.removePillButton:hover svg {
+  color: var(--danger, #ef4444) !important;
+}

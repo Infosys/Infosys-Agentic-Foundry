@@ -272,6 +272,38 @@ export function formatMessageTimestamp(timestamp) {
   return { displayText, fullTime };
 }
 
+/**
+ * Format a timestamp string into a human-readable date/time in the system timezone.
+ * Displays the timezone abbreviation (e.g., IST, EST, UTC) alongside the formatted date.
+ *
+ * @param {string} timestamp - A date/time string (ISO or similar)
+ * @returns {string} - Formatted date string with timezone, or the original value if parsing fails
+ *
+ * @example
+ * formatDateTimeWithTimezone("2025-06-25T10:30:00Z");
+ * // Returns: "Jun 25, 2025, 04:00:00 PM IST"
+ */
+export function formatDateTimeWithTimezone(timestamp) {
+  if (!timestamp || typeof timestamp !== "string") return "";
+
+  const normalized = normalizeUTCTimestamp(timestamp);
+  if (!normalized) return "";
+
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return timestamp;
+
+  return date.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
+  });
+}
+
 export default {
   parseToDate,
   formatDate,
@@ -281,4 +313,5 @@ export default {
   formatResponseTimeSeconds,
   normalizeUTCTimestamp,
   formatMessageTimestamp,
+  formatDateTimeWithTimezone,
 };

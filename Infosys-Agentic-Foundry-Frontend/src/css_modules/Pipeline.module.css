@@ -1,0 +1,1903 @@
+/**
+ * Pipeline CSS Module
+ *
+ * Modern, sleek styling for Pipeline components
+ * Supports both light and dark themes via CSS variables
+ */
+
+/* ===== Pipeline Container ===== */
+.pipelineContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--dashboard-bg);
+  position: relative;
+}
+
+/* ===== Pipeline Header ===== */
+.pipelineHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 24px;
+  background-color: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  backdrop-filter: blur(12px);
+}
+
+.pipelineHeader h2 {
+  font: normal normal 600 16px/22px var(--font-primary);
+  color: var(--header-color);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.headerActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ===== Pipeline List View ===== */
+.pipelineListContainer {
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  padding: 10px 30px;
+  padding-bottom: 0px;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--dashboard-bg);
+}
+
+.pipelineListHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.pipelineListHeader > div {
+  width: 100%;
+}
+
+.pipelineGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  row-gap: 24px;
+  column-gap: 24px;
+  overflow-y: auto;
+  height: calc(100vh - 135px);
+  width: 100%;
+  padding-right: 18px;
+  padding-bottom: 8px;
+}
+
+/* ===== Pipeline Card Container (for flip animation) ===== */
+.pipelineCardContainer {
+  perspective: 1000px;
+  position: relative;
+  width: 100%;
+  height: 140px;
+  min-height: 140px;
+  transition: transform 0.9s;
+  transform-style: preserve-3d;
+}
+
+.pipelineCardContainer.flipped {
+  transform: rotateY(180deg);
+  transition: transform 0.9s ease-in-out;
+}
+
+.pipelineCardContainer.flipped > .pipelineCard:not(.pipelineCardBack) {
+  pointer-events: none;
+}
+
+/* ===== Pipeline Card ===== */
+.pipelineCard {
+  transform-style: preserve-3d;
+  background: var(--card-bg);
+  box-shadow: var(--shadow, 0 1px 3px 0 rgba(0, 0, 0, 0.1));
+  border-radius: var(--radius);
+  min-height: 140px;
+  height: 100%;
+  padding: 14px;
+  color: var(--text-primary);
+  position: absolute;
+  top: 1px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid var(--border, #e5e7eb);
+  border-left: 5px solid var(--accent, #37acea);
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  width: 100%;
+  overflow: hidden;
+  word-break: break-word;
+  box-sizing: border-box;
+}
+
+.pipelineCard:hover:not(.pipelineCardBack) {
+  transform: translateY(-5px);
+  transition: all 0.2s ease;
+  border-color: #bfdbfe;
+}
+
+/* Prevent hover on front card when flipped */
+.pipelineCardContainer.flipped .pipelineCard:not(.pipelineCardBack) {
+  transform: rotateY(0deg) !important;
+  pointer-events: none;
+}
+
+.pipelineCardContainer.flipped .pipelineCard:not(.pipelineCardBack):hover {
+  transform: rotateY(0deg) !important;
+}
+
+/* Back side of card (delete confirmation) */
+.pipelineCardBack {
+  transform: rotateY(180deg) !important;
+  transition: transform 0.9s ease-in-out;
+  pointer-events: auto;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.pipelineCardBack:hover {
+  transform: rotateY(180deg) !important;
+  border-color: var(--border-color);
+}
+
+/* Delete confirmation content on back of card */
+.deleteConfirmContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.deleteWarningIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.deleteConfirmCardTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: 16px;
+  line-height: 1.2;
+  color: var(--header-color);
+  margin: 0;
+}
+
+.deleteConfirmCardMessage {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 400);
+  font-size: 14px;
+  line-height: 1.3;
+  color: #6b7280;
+  margin: 0;
+}
+
+.deleteConfirmCardActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  justify-content: center;
+}
+
+.deleteCancelBtn {
+  padding: 6px 20px;
+  background-color: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.deleteCancelBtn:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.deleteConfirmBtn {
+  padding: 6px 20px;
+  background-color: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.deleteConfirmBtn:hover {
+  background-color: #b91c1c;
+}
+
+/* Dark theme support for delete confirmation */
+:root[data-theme="dark"] .deleteConfirmCardMessage {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .deleteCancelBtn {
+  background-color: var(--card-bg);
+  color: var(--header-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .deleteCancelBtn:hover {
+  background-color: var(--hover-background);
+  background-color: #b91c1c;
+}
+
+.pipelineCard.selected {
+  border: 1px solid var(--app-primary-color);
+}
+
+/* ===== Create Card - Matching DisplayCard1 create-card styling ===== */
+.createCard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--card-bg);
+  box-shadow: var(--shadow, 0 1px 3px 0 rgba(0, 0, 0, 0.1));
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+  height: 140px;
+  min-height: 140px;
+}
+
+.createCard:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-md);
+  border-color: #bfdbfe;
+}
+
+.createCardContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.createCardIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  background: var(--accent-light, rgba(59, 130, 246, 0.1));
+  transition: transform 0.3s ease;
+}
+
+.createCard:hover .createCardIcon {
+  transform: scale(1.1);
+}
+
+.createCardLabel {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-bold, 700);
+  color: var(--header-color);
+  text-align: center;
+}
+
+.pipelineCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.pipelineCardTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-bold, 700);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--header-color);
+  transition: color 0.15s ease-in-out;
+  line-height: 1.4;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  margin: 0;
+}
+
+.pipelineCardDash {
+  width: 32px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--app-primary-color) 0%, var(--app-secondary-color) 100%);
+  border-radius: 2px;
+  margin-bottom: 10px;
+}
+
+.pipelineCardDescription {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 400);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color);
+  margin-bottom: auto;
+  line-height: 1.5;
+  letter-spacing: 0.2px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.pipelineCardMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding-top: 10px;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-top: 1px solid var(--color-border-subtle);
+  font-size: 12px;
+  margin-top: auto;
+}
+
+.pipelineCardMetaItem {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pipelineCardActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.deleteButton {
+  margin-left: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  opacity: 1;
+  color: #dc2626;
+}
+
+.deleteButton:hover {
+  background-color: rgba(220, 38, 38, 0.1);
+}
+
+/* ===== Empty State ===== */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+}
+
+.emptyStateIcon {
+  font-size: 64px;
+  color: var(--muted);
+  margin-bottom: 20px;
+  opacity: 0.4;
+}
+
+.emptyStateTitle {
+  font: normal normal 600 20px/28px var(--font-primary);
+  color: var(--header-color);
+  margin: 0 0 8px 0;
+}
+
+.emptyStateText {
+  font: normal normal 400 14px/22px var(--font-primary);
+  color: var(--muted);
+  margin: 0 0 24px 0;
+  max-width: 400px;
+}
+
+.createButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  font: normal normal 500 14px/18px var(--font-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow);
+}
+
+.createButton:hover {
+  opacity: 0.9;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* ===== Delete Modal Button Styles ===== */
+.buttonContainer {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.deleteBtns {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, var(--app-primary-color) 0%, var(--app-secondary-color) 100%);
+  color: var(--primary-button-color);
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.deleteBtns:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.cancelBtn {
+  padding: 6px 20px;
+  background-color: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cancelBtn:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* Dark theme support for cancelBtn */
+:root[data-theme="dark"] .cancelBtn {
+  background-color: var(--card-bg);
+  color: var(--header-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .cancelBtn:hover {
+  background-color: var(--hover-background);
+}
+
+/* ===== Canvas Area ===== */
+.canvasWrapper {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  gap: 0;
+}
+
+.canvasContainer {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--dashboard-bg);
+  background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--muted) 20%, transparent) 1px, transparent 0);
+  background-size: 20px 20px;
+}
+
+.canvasContent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  width: 5000px;
+  height: 5000px;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.connectionsSvg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10000px;
+  height: 10000px;
+  pointer-events: all;
+  z-index: 1;
+  overflow: visible;
+}
+
+.nodesContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5000px;
+  height: 5000px;
+  min-width: 100%;
+  min-height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* ===== Canvas Controls ===== */
+.canvasControls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
+}
+
+.controlBtn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.15s ease;
+  border: 1px solid var(--border-color);
+}
+
+.controlBtn:hover {
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border-color: var(--app-primary-color);
+}
+
+.controlBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.controlBtnActive {
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border-color: var(--app-primary-color);
+}
+
+.panModeActive {
+  cursor: grab;
+}
+
+.panModeActive:active {
+  cursor: grabbing;
+}
+
+/* ===== Node Palette (Sidebar) ===== */
+.nodePalette {
+  width: 200px;
+  background-color: var(--card-bg);
+  border-right: 1px solid var(--border-color);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.paletteTitle {
+  font: normal normal 500 11px/14px var(--font-primary);
+  color: var(--muted);
+  margin: 0 0 12px 4px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.paletteNode {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: normal normal 500 13px/16px var(--font-primary);
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.paletteNode::before {
+  display: none;
+}
+
+.paletteNode:hover {
+  transform: translateX(2px);
+}
+
+.paletteNode:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+.paletteNodeInput {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+}
+
+.paletteNodeInput:hover {
+  background-color: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.paletteNodeAgent {
+  background-color: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+}
+
+.paletteNodeAgent:hover {
+  background-color: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.paletteNodeCondition {
+  background-color: rgba(251, 146, 60, 0.1);
+  color: #ea580c;
+}
+
+.paletteNodeCondition:hover {
+  background-color: rgba(251, 146, 60, 0.18);
+  border-color: rgba(251, 146, 60, 0.4);
+}
+
+.paletteNodeOutput {
+  background-color: rgba(168, 85, 247, 0.1);
+  color: #9333ea;
+}
+
+.paletteNodeOutput:hover {
+  background-color: rgba(168, 85, 247, 0.18);
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.nodeIcon {
+  font-size: 14px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+}
+
+/* ===== Canvas Node ===== */
+.canvasNodeWrapper {
+  position: absolute;
+  cursor: move;
+  user-select: none;
+  pointer-events: all;
+}
+
+.canvasNode {
+  min-width: 180px;
+  max-width: 260px;
+  background-color: var(--card-bg);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border-color);
+  transition: all 0.15s ease;
+  overflow: hidden;
+}
+
+.canvasNode:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.1);
+  border-color: var(--border-color);
+}
+
+.canvasNode.selected {
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-primary-color) 30%, transparent), 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.nodeHeader {
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ffffff;
+  font: normal normal 600 11px/14px var(--font-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 9px 9px 0 0;
+}
+
+.nodeHeaderInput {
+  background-color: #22c55e;
+}
+
+.nodeHeaderAgent {
+  background-color: #6366f1;
+}
+
+.nodeHeaderCondition {
+  background-color: #f97316;
+}
+
+.nodeHeaderOutput {
+  background-color: #a855f7;
+}
+
+.nodeCloseBtn {
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.nodeCloseBtn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.nodeBody {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background-color: var(--card-bg);
+}
+
+.nodeName {
+  font: normal normal 600 13px/18px var(--font-primary);
+  color: var(--header-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nodeConfig {
+  font: normal normal 400 11px/16px var(--font-primary);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ===== Connection Points ===== */
+.connectionPointsWrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.connectionPoint {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--app-primary-color);
+  border: 2px solid var(--card-bg);
+  cursor: crosshair;
+  z-index: 5;
+  transition: all 0.15s ease;
+  pointer-events: all;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.connectionPoint:hover {
+  transform: scale(1.3);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-primary-color) 30%, transparent);
+}
+
+.connectionPointInput {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.connectionPointInput:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+.connectionPointOutput {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.connectionPointOutput:hover {
+  transform: translateY(-50%) scale(1.3);
+}
+
+/* ===== Properties Panel ===== */
+.propertiesPanel {
+  width: 320px;
+  min-width: 320px;
+  background-color: var(--card-bg);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.propertiesPanelHeader {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.propertiesPanelTitle {
+  font: normal normal 600 15px/20px var(--font-primary);
+  color: var(--header-color);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.propertiesPanelContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  padding-bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.propertyGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.propertyLabel {
+  font: normal normal 500 12px/14px var(--font-primary);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.propertyLabelWithAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.addKeyIconBtn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.addKeyIconBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  background-color: var(--disabled-bg);
+}
+
+.propertyInput {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: text;
+  transition: all 0.2s ease;
+}
+
+.propertyInput::placeholder {
+  color: var(--content-color);
+  font-weight: var(--font-weight-normal);
+}
+
+.propertyInput:hover:not(:disabled):not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.propertyInput:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: not-allowed !important;
+  background: var(--disabled-bg, #f1f1f1);
+  color: var(--muted);
+}
+
+.propertyInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+.propertySelect {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.propertySelect:hover:not(:disabled):not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.propertySelect:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+/* ===== Searchable Dropdown ===== */
+.searchableDropdown {
+  position: relative;
+  width: 100%;
+}
+
+.searchableDropdownTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.searchableDropdownTrigger:hover {
+  border-color: var(--app-primary-color);
+}
+
+.searchableDropdownTrigger:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+.selectedValue {
+  color: var(--text-primary);
+}
+
+.placeholderValue {
+  color: var(--muted);
+}
+
+.dropdownArrow {
+  transition: transform 0.2s ease;
+  color: var(--muted);
+}
+
+.dropdownArrow.open {
+  transform: rotate(180deg);
+}
+
+.searchableDropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  max-height: 300px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.searchInputWrapper {
+  position: relative;
+  padding: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.searchInput {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0.625rem 0.75rem;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: text;
+  transition: all 0.2s ease;
+}
+
+.searchInput::placeholder {
+  color: var(--content-color);
+  font-weight: var(--font-weight-normal);
+}
+
+.searchInput:hover:not(:disabled):not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+.dropdownOptionsList {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.dropdownOption {
+  padding: 12px 14px;
+  font: normal normal 400 13px/16px var(--font-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dropdownOption:hover {
+  background-color: var(--hover-background);
+}
+
+.dropdownOption.selected {
+  background-color: var(--accent-light);
+  color: var(--app-primary-color);
+  font-weight: 500;
+}
+
+.dropdownOption.highlighted {
+  background-color: var(--hover-background);
+  outline: 1px solid var(--app-primary-color);
+}
+
+.agentOptionName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentOptionAbbr {
+  font-size: 11px;
+  font-weight: 600;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.noResults {
+  padding: 16px;
+  text-align: center;
+  font: normal normal 400 13px/16px var(--font-primary);
+  color: var(--muted);
+}
+
+.propertyTextarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 80px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  line-height: 1.5;
+  resize: none;
+  cursor: text;
+  transition: all 0.2s ease;
+}
+
+.propertyTextarea::placeholder {
+  color: var(--content-color);
+}
+
+.propertyTextarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.propertyTextarea:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+.propertyTextarea:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: not-allowed !important;
+  background: var(--disabled-bg, #f1f1f1);
+  color: var(--muted);
+}
+
+.invalidInput {
+  border-color: var(--danger) !important;
+}
+
+.inputError {
+  font: normal normal 400 11px/14px var(--font-primary);
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.required {
+  color: var(--danger);
+  font-weight: bold;
+}
+
+.propertyInfo {
+  font: normal normal 400 11px/14px var(--font-primary);
+  color: var(--muted);
+  font-style: normal;
+}
+
+.typeInfoContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background-color: var(--input-bg);
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border-color);
+}
+
+.typeInfoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font: normal normal 600 12px/14px var(--font-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.typeBadgeInput {
+  background-color: #d4edda;
+  color: #28a745;
+  border: 1px solid #28a745;
+}
+
+.typeBadgeAgent {
+  background-color: #d6e9f8;
+  color: #4a90d9;
+  border: 1px solid #4a90d9;
+}
+
+.typeBadgeCondition {
+  background-color: #fadbd8;
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
+}
+
+.typeBadgeOutput {
+  background-color: #e2d9f3;
+  color: #6f42c1;
+  border: 1px solid #6f42c1;
+}
+
+.nodeIdLabel {
+  font: normal normal 400 11px/14px var(--font-primary);
+  color: var(--muted);
+}
+
+.nodeIdValue {
+  font: normal normal 500 11px/14px var(--font-mono);
+  color: var(--text-primary);
+  background-color: var(--menu-bg);
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.nodeDescription {
+  font: normal normal 400 12px/16px var(--font-primary);
+  color: var(--muted);
+  font-style: normal;
+}
+
+/* ===== Input Keys List ===== */
+.inputKeysList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inputKeyItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background-color: var(--menu-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.inputKeyLabel {
+  font: normal normal 500 12px/14px var(--font-primary);
+  color: var(--text-primary);
+}
+
+.inputKeyType {
+  font: normal normal 400 11px/12px var(--font-primary);
+  color: var(--muted);
+  background-color: var(--hover-background);
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+/* ===== Accessible Inputs ===== */
+.accessibleInputsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 14px;
+  background-color: var(--dashboard-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.accessibleInputItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.accessibleInputItem:hover {
+  background-color: var(--hover-background);
+}
+
+.accessibleInputItem input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--app-primary-color);
+  margin-top: 2px;
+}
+
+.accessibleInputItem label {
+  font: normal normal 400 12px/14px var(--font-primary);
+  color: var(--header-color);
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  word-break: break-word;
+}
+
+.inputLabel {
+  font-weight: 500;
+  color: var(--header-color);
+  word-break: break-word;
+}
+
+.inputSource {
+  font-size: 10px;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.accessibleInputType {
+  font: normal normal 600 8px/10px var(--font-primary);
+  color: var(--app-primary-color);
+  background-color: color-mix(in oklab, var(--app-primary-color) 15%, transparent);
+  border: 1px solid color-mix(in oklab, var(--app-primary-color) 30%, transparent);
+  padding: 3px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.agentInputItem {
+  border-left: 3px solid var(--app-primary-color);
+}
+
+.agentType {
+  background-color: var(--app-primary-color);
+  color: #ffffff;
+}
+
+.allInputsToggle {
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: transparent !important;
+  border: none;
+}
+
+.allInputsToggle label {
+  font-weight: 600;
+  flex-direction: row;
+}
+
+.noInputsMessage {
+  font: normal normal 400 11px/16px var(--font-primary);
+  color: var(--muted);
+  text-align: center;
+  padding: 16px 8px;
+  font-style: normal;
+}
+
+/* ===== Buttons ===== */
+.primaryBtn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  background: linear-gradient(135deg, var(--app-primary-color) 0%, var(--app-secondary-color) 100%);
+  color: var(--primary-button-color);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow);
+}
+
+.primaryBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.primaryBtn:disabled {
+  background: var(--disabled-bg);
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity);
+  box-shadow: none;
+  transform: none;
+}
+
+.closeBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  transition: all 0.2s ease;
+}
+
+.closeBtn:hover {
+  background: var(--hover-background);
+  color: var(--header-color);
+}
+
+.pipelineFooter {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 24px;
+  border-top: 1px solid var(--border-color);
+  background: var(--card-bg);
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+/* ===== Modal ===== */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--modal-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: var(--backdrop-blur);
+}
+
+.modalContent {
+  background-color: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 28px;
+  min-width: 420px;
+  max-width: 520px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.modalTitle {
+  font: normal normal 600 20px/28px var(--font-primary);
+  color: var(--header-color);
+  margin: 0;
+}
+
+.modalCloseBtn {
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+  font-size: 18px;
+}
+
+.modalCloseBtn:hover {
+  color: var(--header-color);
+}
+
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.validationError {
+  font: normal normal 400 12px/18px var(--font-primary);
+  color: var(--danger);
+  background-color: rgba(231, 76, 60, 0.1);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm, 8px);
+  border-left: 4px solid var(--danger);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+/* ===== Connection Lines ===== */
+.connectionLine {
+  stroke: var(--app-primary-color);
+  stroke-width: 2.5;
+  fill: none;
+  transition: stroke-width 0.2s ease, stroke 0.2s ease;
+}
+
+.connectionLine:hover {
+  stroke-width: 3.5;
+}
+
+.connectionLineSelected {
+  stroke: var(--danger);
+  stroke-width: 3.5;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    stroke-width: 3.5;
+  }
+  50% {
+    stroke-width: 4.5;
+  }
+}
+
+.connectionLineConditional {
+  stroke: var(--danger);
+  stroke-width: 2.5;
+  stroke-dasharray: 6, 4;
+  fill: none;
+}
+
+.connectionLineTemp {
+  stroke: var(--muted);
+  stroke-width: 2.5;
+  stroke-dasharray: 6, 4;
+  fill: none;
+}
+
+/* ===== Scrollbar Styles ===== */
+.pipelineGrid::-webkit-scrollbar,
+.propertiesPanelContent::-webkit-scrollbar,
+.accessibleInputsList::-webkit-scrollbar,
+.dropdownOptionsList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pipelineGrid::-webkit-scrollbar-track,
+.propertiesPanelContent::-webkit-scrollbar-track,
+.accessibleInputsList::-webkit-scrollbar-track,
+.dropdownOptionsList::-webkit-scrollbar-track {
+  background: var(--hover-background);
+  border-radius: 3px;
+}
+
+.pipelineGrid::-webkit-scrollbar-thumb,
+.propertiesPanelContent::-webkit-scrollbar-thumb,
+.accessibleInputsList::-webkit-scrollbar-thumb,
+.dropdownOptionsList::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+.pipelineGrid::-webkit-scrollbar-thumb:hover,
+.propertiesPanelContent::-webkit-scrollbar-thumb:hover,
+.accessibleInputsList::-webkit-scrollbar-thumb:hover,
+.dropdownOptionsList::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ===== Dark Theme Overrides ===== */
+:root[data-theme="dark"] .paletteNodeInput {
+  background-color: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+}
+
+:root[data-theme="dark"] .paletteNodeInput:hover {
+  background-color: rgba(34, 197, 94, 0.22);
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+:root[data-theme="dark"] .paletteNodeAgent {
+  background-color: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+}
+
+:root[data-theme="dark"] .paletteNodeAgent:hover {
+  background-color: rgba(99, 102, 241, 0.22);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+:root[data-theme="dark"] .paletteNodeCondition {
+  background-color: rgba(251, 146, 60, 0.12);
+  color: #fdba74;
+}
+
+:root[data-theme="dark"] .paletteNodeCondition:hover {
+  background-color: rgba(251, 146, 60, 0.22);
+  border-color: rgba(251, 146, 60, 0.5);
+}
+
+:root[data-theme="dark"] .paletteNodeOutput {
+  background-color: rgba(168, 85, 247, 0.12);
+  color: #d8b4fe;
+}
+
+:root[data-theme="dark"] .paletteNodeOutput:hover {
+  background-color: rgba(168, 85, 247, 0.22);
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+/* Dark Theme Canvas Nodes */
+:root[data-theme="dark"] .canvasNode {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="dark"] .canvasNode:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Dark Theme Overrides for Type Badges */
+:root[data-theme="dark"] .typeBadgeInput {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: #10b981;
+}
+
+:root[data-theme="dark"] .typeBadgeAgent {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border-color: #3b82f6;
+}
+
+:root[data-theme="dark"] .typeBadgeCondition {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border-color: #f59e0b;
+}
+
+:root[data-theme="dark"] .typeBadgeOutput {
+  background-color: rgba(111, 66, 193, 0.15);
+  color: #a78bfa;
+  border-color: #6f42c1;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 1200px) {
+  .propertiesPanel {
+    width: 280px;
+    min-width: 280px;
+  }
+
+  .nodePalette {
+    width: 160px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .pipelineGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .pipelineGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (max-width: 767px) {
+  .pipelineGrid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+/* ===== Delete Confirmation Modal (Chat Page Style) ===== */
+.deleteConfirmIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 50%;
+}
+
+.deleteConfirmTitle {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: var(--font-size-xl, 20px);
+  line-height: 28px;
+  color: var(--text-primary, #1a1a1a);
+  margin: 0 0 8px 0;
+  text-align: center;
+}
+
+.deleteConfirmMessage {
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-normal, 400);
+  font-size: var(--font-size-sm, 14px);
+  line-height: 20px;
+  color: var(--text-secondary, #6b7280);
+  margin: 0 0 24px 0;
+  text-align: center;
+}
+
+.deleteConfirmMessage strong {
+  color: var(--text-primary, #1a1a1a);
+  font-weight: var(--font-weight-medium, 500);
+  word-break: break-all;
+}
+
+.deleteConfirmActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.deleteConfirmCancelBtn {
+  padding: 6px 20px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db !important;
+  background-color: #f3f4f6 !important;
+  color: #374151 !important;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-medium, 500);
+  font-size: var(--font-size-sm, 14px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-block;
+  min-width: 80px;
+}
+
+.deleteConfirmCancelBtn:hover {
+  background-color: #e5e7eb !important;
+  border-color: #9ca3af !important;
+}
+
+.deleteConfirmDeleteBtn {
+  padding: 6px 20px;
+  border-radius: 8px;
+  border: none;
+  background-color: #dc2626;
+  color: white;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-medium, 500);
+  font-size: var(--font-size-sm, 14px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.deleteConfirmDeleteBtn:hover {
+  background-color: #b91c1c;
+}
+
+/* Dark theme adjustments */
+:root[data-theme="dark"] .deleteConfirmTitle {
+  color: var(--header-color);
+}
+
+:root[data-theme="dark"] .deleteConfirmMessage {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .deleteConfirmMessage strong {
+  color: var(--header-color);
+}
+
+:root[data-theme="dark"] .deleteConfirmCancelBtn {
+  background-color: var(--card-bg);
+  color: var(--header-color);
+  border-color: var(--border-color);
+}
+
+:root[data-theme="dark"] .deleteConfirmCancelBtn:hover {
+  background-color: var(--hover-background);
+  border-color: var(--border-color);
+}
+
+/* ===== FullModal Integration ===== */
+.pipelineModalContent {
+  padding: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* SVG hitbox for connection click detection */
+.connectionHitbox {
+  cursor: pointer;
+}
+
+/* Non-interactive path overlay */
+.connectionPathOverlay {
+  pointer-events: none;
+}
+
+/* Delete button on selected edges */
+.connectionDeleteBtn {
+  cursor: pointer;
+}
+
+/* Property info with spacing */
+.propertyInfoSpaced {
+  margin-bottom: 8px;
+}
+
+/* ===== DEPRECATED: Legacy Modal Styles ===== */
+/* 
+ * @deprecated These styles are replaced by FullModal component
+ * File: src/iafComponents/GlobalComponents/FullModal/
+ * 
+ * Styles deprecated:
+ * - .pipelineHeader (use FullModal title prop)
+ * - .pipelineFooter (use FullModal footer prop)
+ * - .headerActions (handled by FullModal close button)
+ * - .closeBtn (handled by FullModal showCloseButton prop)
+ */

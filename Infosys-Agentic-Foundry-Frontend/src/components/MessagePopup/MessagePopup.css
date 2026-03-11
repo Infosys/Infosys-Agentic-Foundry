@@ -1,84 +1,118 @@
 .popup-message-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.253);
+  top: 28px;
+  right: 20px;
+  z-index: 1100000;
   display: flex;
-  justify-content: center;
-  z-index: 1208;
+  justify-content: flex-end;
+  pointer-events: none;
 }
 
 .message-container {
-  width: 600px;
-  max-width: 100%;
-  padding: 60px;
-  box-sizing: border-box;
+  width: auto;
+  max-width: 400px;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-end;
+  pointer-events: auto;
 }
 
 .message-popup {
-  background: #ffffff 0% 0% no-repeat padding-box;
-  color: #333;
-  padding: 10px;
-  padding-left: 12.5px;
-  padding-right: 5px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background: #001f0f;
+  color: #59f3a6;
+  padding: 12px 16px;
+  box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.15);
   display: flex;
   font: normal normal normal 14px/19px Segoe UI;
-  letter-spacing: 0px;
+  letter-spacing: 0.3px;
   color: #343741;
-  text-transform: uppercase;
   opacity: 1;
   align-items: center;
   justify-content: space-between;
-  border-radius: 3px;
+  border-radius: 6px;
   width: 100%;
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .message-popup.success {
-  border: 1px solid #8eaa20;
+  color: #FFFFFF;
+  background: #001f0f;
 }
 
 .message-popup.error {
-  border: 1px solid #b32b2b;
+  color: #000000;
+  background: #fff2f0;
 }
 
 .icon-container {
+  position: relative;
+  top: -5px;
   display: flex;
   justify-content: center;
   align-items: center;
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background-color: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
 }
 
 .icon-container.error {
-  background-color: #b32b2b;
-  padding: 8.5px;
+  background-color: var(--danger, #ef4444);
+  padding: 4px;
 }
 
 .icon-container.success {
-  background-color: #8eaa20;
-  padding: 5px;
+  background-color: var(--success, #16a34a);
+  padding: 4px;
 }
 
 .close-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 28%;
   cursor: pointer;
-  padding: 0;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  margin-left: 8px;
+}
+
+.close-btn:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Error toast close button - dark icon on light background */
+.message-popup.error .close-btn svg {
+  color: var(--danger, #ef4444);
+  fill: var(--danger, #ef4444);
+}
+
+.message-popup.error .close-btn:hover {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+/* Success toast close button - keep white icon */
+.message-popup.success .close-btn svg {
+  color: #FFFFFF;
+  fill: #FFFFFF;
 }
 
 .icon-message {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  flex: 1;
+  font-weight: 500;
 }

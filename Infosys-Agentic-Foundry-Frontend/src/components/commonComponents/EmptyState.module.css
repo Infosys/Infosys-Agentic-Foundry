@@ -1,0 +1,254 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  width: 100%;
+  min-height: 300px;
+  height: 100%;
+  flex: 1 1 100%;
+  margin: auto;
+  animation: iafFadeInUp var(--transition-slow, 350ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.iconWrapper {
+  position: relative;
+  margin-bottom: 24px;
+  animation: iafBounceIn 0.6s var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.iconGlow {
+  position: absolute;
+  inset: -8px;
+  background: var(--accent, #ff6b35);
+  opacity: 0.15;
+  border-radius: 50%;
+  filter: blur(20px);
+  animation: iafPulseRing 2s ease-in-out infinite;
+}
+
+.iconCircle {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, rgba(234, 88, 12, 0.15) 0%, rgba(251, 146, 60, 0.1) 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(234, 88, 12, 0.2);
+  box-shadow: var(--shadow-soft, 0 4px 16px rgba(0, 0, 0, 0.05));
+  transition: transform var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.container:hover .iconCircle {
+  transform: scale(1.05) rotate(5deg);
+}
+
+.funnelIcon {
+  width: 32px;
+  height: 32px;
+  color: #ea580c;
+  stroke: #ea580c;
+  animation: iafPulse 2s ease-in-out infinite;
+}
+
+.heading {
+  margin-bottom: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--foreground, #1a1a1a) 0%, rgba(26, 26, 26, 0.7) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  /* -webkit-text-fill-color: transparent; */
+  color: var(--foreground, #1a1a1a);
+  letter-spacing: -0.02em;
+}
+
+.message {
+  font-size: 14px;
+  color: var(--content-color, #6b7280);
+  margin-bottom: 24px;
+  max-width: 28rem;
+  line-height: 1.6;
+}
+
+/* Container for all filter groups */
+.filtersContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 36rem;
+  margin-bottom: 24px;
+  width: fit-content;
+}
+
+/* Individual filter group row */
+.filterGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--secondary-bg, #fafafa);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+
+/* Label for each filter group */
+.filterGroupLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--content-color, #6b7280);
+  min-width: 70px;
+  text-align: left;
+}
+
+/* Legacy support - keeping old class names */
+.filtersSection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  max-width: 32rem;
+  margin-bottom: 24px;
+}
+
+.filtersLabel {
+  font-size: 12px;
+  color: var(--content-color, #6b7280);
+}
+
+.filterBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: var(--radius, 6px);
+  background: var(--secondary, #f3f4f6);
+  color: var(--secondary-foreground, #374151);
+}
+
+.actions {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
+}
+
+.clearButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  transition: 
+    transform var(--transition-fast, 150ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow var(--transition-fast, 150ms) ease,
+    background var(--transition-fast, 150ms) ease;
+  height: 40px;
+  padding-inline: 1.25rem;
+  border-radius: var(--radius, 12px);
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-foreground, #ffffff);
+  border: 1px solid #37acea;
+  cursor: pointer;
+  outline: none;
+}
+
+.clearButton:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow, 0 4px 16px rgba(55, 172, 234, 0.5));
+}
+
+.clearButton:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.clearButton:focus-visible {
+  box-shadow: 0 0 0 3px rgba(0, 115, 207, 0.3);
+}
+
+.clearButton:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.createButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  transition: 
+    transform var(--transition-fast, 150ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow var(--transition-fast, 150ms) ease,
+    background var(--transition-fast, 150ms) ease,
+    color var(--transition-fast, 150ms) ease,
+    border-color var(--transition-fast, 150ms) ease;
+  height: 40px;
+  padding-inline: 1.25rem;
+  border-radius: var(--radius, 12px);
+  border: 1.5px solid var(--content-border-color, #e5e7eb);
+  background: var(--secondary-bg, #ffffff);
+  color: var(--foreground, #1a1a1a);
+  cursor: pointer;
+  outline: none;
+}
+
+.createButton:hover {
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: #fff;
+  border-color: #37acea;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow, 0 4px 16px rgba(55, 172, 234, 0.5));
+}
+
+.createButton:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.createButton:focus-visible {
+  box-shadow: 0 0 0 3px rgba(0, 115, 207, 0.3);
+}
+
+.createButton:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .iconCircle {
+    background: rgba(234, 88, 12, 0.1);
+    border: 1px solid rgba(234, 88, 12, 0.3);
+  }
+
+  .createButton {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .createButton:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+}

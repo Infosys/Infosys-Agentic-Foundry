@@ -1,322 +1,684 @@
-.loginContainer {
-  background-color: #3d4359;
-  border: 0.5px solid #0071b3;
-  border-radius: 8px;
-  padding: 20px 20px 10px 20px;
+﻿/* Login Card - Uses .authCardDark from index.css for dark theme */
+.loginCard {
+  width: 448px;
+  min-height: auto;
+  padding: 33px 33px 24px 33px;
 }
 
-.title {
-  margin-bottom: 20px;
-  font: normal normal 300 24px/32px Segoe UI;
-  letter-spacing: 0px;
-  color: #ffffff;
-  text-transform: uppercase;
-  opacity: 1;
+.loginTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  margin: 0 0 24px 0;
 }
 
-.flexrow {
+/* Input Group - Matches SignUp pattern */
+.inputGroup {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
 }
 
-.loginPage-input {
-  width: 25.5rem;
-  height: 37px;
-  background-color: #2f3344;
-  color: #d9d9d9;
-  padding: 0px 10px 0 10px;
-  border: 1px solid #626677;
-  border-radius: 6px;
-  text-align: left;
-  display: inline-flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-/* Add focus style for input fields */
-.loginPage-input:focus {
-  border-color: #0071b3;
-  box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
-  outline: none;
-}
-
-.loginPage-input::placeholder {
-  color: #ffffff;
-  opacity: 1;
-}
-
-.error-style {
-  padding-top: 5px;
-  font-size: 12px;
-  color: red;
-}
-
-.space-devider {
-  height: 10px;
-}
-
-.dropdown {
+.inputWrapper {
   position: relative;
+  width: 382px;
 }
 
-.dropdown-toggle {
-  width: 388px;
-  height: 38px;
-  background-color: #2f3344;
-  color: #d9d9d9;
-  padding: 0px 10px 0 10px;
-  border: 1px solid #626677;
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  display: inline-flex;
-  justify-content: space-between;
-  align-items: center;
+/* Input with Icon */
+.inputWithIcon {
+  padding-left: 44px !important;
 }
 
-.downbox {
-  height: 19px;
-  background-color: #fff;
-  border-radius: 50%;
+.inputPassword {
+  padding-right: 44px !important;
 }
 
-.arrow-icon {
+.inputIcon {
   position: absolute;
-  right: 0;
-  margin-right: 10px;
-  opacity: 1;
-  /* Add some spacing between text and icon */
-}
-
-.dropdown-menu {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  padding: 0;
-  list-style: none;
-  border-radius: 6px;
-}
-
-.dropdown-menu li {
-  border-radius: 6px;
-  color: #3d4359;
-  padding: 10px 20px;
-  cursor: pointer;
-}
-
-.dropdown-menu li:hover {
-  background-color: #f0f0f0;
-}
-
-/* Make focus effect match hover effect */
-.dropdown-menu li:focus {
-  background-color: #f0f0f0; /* Same as hover */
-  outline: none; /* Remove default focus outline */
-}
-
-/* Add focus style to match input fields */
-.dropdown-toggle:focus {
-  outline: none;
-  border-color: #0071b3;
-  box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
-}
-
-.submit-style {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0 10px 0;
-}
-
-.submit-style span {
-  font: normal normal normal 12px/16px Segoe UI;
-  letter-spacing: 0px;
-  color: #ffffff;
-  opacity: 1;
-}
-
-.hyperlink {
-  text-decoration: underline;
-  font: normal normal normal 12px/16px Segoe UI;
-  letter-spacing: 0px;
-  color: #ffffff;
-  text-transform: uppercase;
-  opacity: 1;
-  padding-right: 10px;
-}
-
-.button-style {
-  padding: 5px 10px 5px 10px;
-
-  /* font-family: "Segoe UI";
-  text-transform: uppercase;
-  font-size: 12px; */
-  display: inline-flex;
-  align-items: center;
-  background: #ffffff 0% 0% no-repeat padding-box;
-  border-radius: 5px;
-  opacity: 1;
-  /* display:flex; */
-
-  /* justify-content:space-around; */
-}
-
-.signarrow {
-  background-color: #0071b3;
-  width: 23px;
-  height: 23px;
-  /* align-items: center;
- justify-content: center; */
-  margin-left: 10px;
-  padding-left: 2px;
-  padding-top: 2px;
-  border-radius: 50%;
-}
-
-.signIntext {
-  font: normal normal normal 12px/16px Segoe UI;
-  letter-spacing: 0px;
-  color: #343741;
-  text-transform: uppercase;
-}
-
-.signinlogo {
-  color: #fff;
-  font-weight: 100;
-  font-size: 6;
-}
-
-.chevron-right {
-  margin-left: 5px;
-  /* background: #0071B3 0% 0% no-repeat padding-box; */
-}
-
-.flexrow {
-  display: flex;
-  flex-direction: column;
-}
-
-.success-style {
-  padding-top: 10px;
-  font-size: 12px;
-  color: white;
-}
-
-.submit-error-style {
-  padding-top: 5px;
-  font-size: 12px;
-  color: red;
-}
-
-.remember-style {
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-}
-
-/* checkbox */
-.checkbox {
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  display: inline-block;
-  position: relative;
-  cursor: pointer;
-  /* background-color: #fff; */
-}
-
-/* Checked state */
-.checkbox:checked {
-  background-color: #fff;
-  border: 2px solid #fff;
-}
-
-/* Checkmark when checked */
-.checkbox:checked::before {
-  content: "✔";
-  font-size: 10px;
-  color: #3d4359;
-  position: absolute;
-  left: 50%;
+  left: 14px;
   top: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  pointer-events: none;
 }
 
-.validation-error {
-  color: #ff5252;
-  font-size: 0.875rem;
-  margin-top: 6px;
-  margin-bottom: 10px;
-  text-align: left;
-  width: 100%;
+.inputIcon svg {
+  color: var(--muted) !important;
 }
 
-/* Add a little extra spacing when validation error appears */
-.validation-error + .space-devider {
-  height: 5px;
+/* Hide browser's native password reveal button (Edge/Chrome) */
+.input::-ms-reveal,
+.input::-ms-clear,
+.input::-webkit-credentials-auto-fill-button {
+  display: none !important;
 }
 
-@media only screen and (max-width: 600px) {
-  .login-input {
-    max-width: 200px;
-  }
-
-  .dropdown-toggle {
-    max-width: 200px;
-  }
-
-  .submit-style {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .div-hyperstyle {
-    margin-top: 15px;
-    /* background-color: green; */
-    display: flex;
-    flex-direction: column-reverse;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .hyperlink {
-    padding-right: 0px;
-    margin-top: 5px;
-    text-align: center;
-  }
+/* Hide Edge's password reveal eye */
+input[type="password"]::-ms-reveal {
+  display: none;
 }
 
-.password-container {
-  position: relative;
-}
-
-.password-container .input-wrapper {
-  position: relative;
-  width: 100%;
-}
-
-.password-container .input-wrapper .eye-icon {
+/* Eye Icon for Password Toggle */
+.eyeIcon {
   position: absolute;
-  right: 10px;
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.2s ease;
 }
 
-input:is(:-webkit-autofill, :autofill) + .eye-icon svg * {
-  stroke: #7f7f7f;
+.eyeIcon svg {
+  color: var(--muted);
+  stroke: var(--muted);
 }
 
-/* Add this to ensure focus works properly on password field */
-.password-container .loginPage-input:focus {
-  border-color: #0071b3;
-  box-shadow: 0 0 0 2px rgba(0, 113, 179, 0.2);
+.eyeIcon:hover {
+  color: var(--muted);
+}
+
+.eyeIcon:hover svg {
+  color: var(--text-primary);
+  stroke: var(--text-primary);
+}
+
+/* Error and Success Text */
+.errorText {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.errorText svg {
+  color: var(--danger);
+}
+
+.successText {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--success);
+  margin-top: 4px;
+}
+
+/* Validation Banner */
+.validationBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-lg);
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+  margin-bottom: 16px;
+}
+
+/* REMOVED: Dropdown Styles - Now using NewCommonDropdown component */
+
+/* Custom Dropdown Styles for Login - Dark Theme */
+.dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.dropdownToggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background-color: var(--card-bg, #1e293b);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-lg, 12px);
+  color: var(--text-primary, #ffffff);
+  font-size: var(--font-size-sm, 14px);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+  text-align: left;
+}
+
+.dropdownToggle:hover,
+.dropdownToggle:focus {
+  border-color: var(--app-primary-color, #0073cf);
   outline: none;
+}
+
+.dropdownOpen .dropdownToggle {
+  border-color: var(--app-primary-color, #0073cf);
+}
+
+.dropdownIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted, #64748b);
+}
+
+.dropdownPlaceholder {
+  color: var(--muted, #64748b);
+}
+
+.dropdownArrow {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted, #64748b);
+  transition: transform 0.2s ease;
+}
+
+.dropdownOpen .dropdownArrow {
+  transform: rotate(180deg);
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background-color: var(--card-bg, #1e293b);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.dropdownSearchBox {
+  padding: 8px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+}
+
+.dropdownSearchInput {
+  width: 100%;
+  padding: 10px 12px;
+  background-color: var(--hover-background, #334155);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius, 8px);
+  color: var(--text-primary, #ffffff);
+  font-size: var(--font-size-sm, 14px);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.dropdownSearchInput::placeholder {
+  color: var(--muted, #64748b);
+}
+
+.dropdownSearchInput:focus {
+  border-color: var(--app-primary-color, #0073cf);
+}
+
+.dropdownList {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.dropdownItem {
+  padding: 10px 12px;
+  color: var(--text-primary, #ffffff);
+  font-size: var(--font-size-sm, 14px);
+  cursor: pointer;
+  border-radius: var(--radius, 8px);
+  transition: background-color 0.15s ease;
+}
+
+.dropdownItem:hover,
+.dropdownItem:focus {
+  background-color: var(--hover-background, #334155);
+  outline: none;
+}
+
+.dropdownLoading,
+.dropdownNoResults {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted, #64748b);
+  font-size: var(--font-size-sm, 14px);
+}
+
+/* Scrollbar styling for dropdown */
+.dropdownList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dropdownList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdownList::-webkit-scrollbar-thumb {
+  background-color: var(--muted, #64748b);
+  border-radius: 3px;
+}
+
+/* Form Footer */
+.formFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 8px;
+  gap: 12px;
+}
+
+.footerButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Secondary Button Style - Match IAFButton Primary */
+.secondaryBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-button-color, #ffffff);
+  border: 1px solid #37acea;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.secondaryBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(55, 172, 234, 0.5);
+}
+
+.secondaryBtn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(55, 172, 234, 0.35);
+}
+
+.signUpLink {
+  font-size: var(--font-size-xs);
+  color: var(--app-primary-color);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.signUpLink:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+/* Submit Button - Match IAFButton Primary */
+.submitBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-button-color, #ffffff);
+  border: 1px solid #37acea;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base, 16px);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.submitBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(55, 172, 234, 0.5);
+}
+
+.submitBtn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(55, 172, 234, 0.35);
+}
+
+.submitBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.conflictModalContent {
+  width: 100%;
+  max-width: 420px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* Modal Overlay for Conflict Modal */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.conflictModalTitle {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+}
+
+.conflictModalText {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+.conflictModalActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modalBtn {
+  padding: 10px 16px;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.modalBtnPrimary {
+  background-color: var(--app-primary-color);
+  color: #ffffff;
+}
+
+.modalBtnPrimary:hover {
+  background-color: var(--app-primary-color);
+}
+
+.modalBtnSecondary {
+  background-color: var(--hover-background);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.modalBtnSecondary:hover {
+  background-color: var(--border);
+}
+
+.modalBtnCancel {
+  background-color: transparent;
+  color: var(--muted);
+}
+
+.modalBtnCancel:hover {
+  color: var(--text-primary);
+}
+
+/* Responsive Styles */
+@media only screen and (max-width: 600px) {
+  .loginCard {
+    width: 100%;
+    max-width: 100%;
+    padding: 24px 20px;
+  }
+
+  .inputWrapper,
+  .input {
+    width: 100%;
+  }
+  
+  /* REMOVED: dropdown media query styles - using NewCommonDropdown */
+
+  .formFooter {
+    flex-direction: column-reverse;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .signUpLink {
+    text-align: center;
+  }
+
+  .submitBtn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .conflictModalContent {
+    margin: 16px;
+    max-width: calc(100% - 32px);
+  }
+
+  .conflictModalActions {
+    flex-direction: column;
+  }
+
+  .modalBtn {
+    width: 100%;
+  }
+}
+
+/* Contact Modal - Full screen overlay on login page (no sidebar) */
+body.login-modal-open [class*="fullModalOverlay"] {
+  left: 0 !important;
+  width: 100vw !important;
+  margin-left: 0 !important;
+}
+
+/* ==========================================
+   Change Password Modal Styles
+   ========================================== */
+
+.changePasswordOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.changePasswordModal {
+  width: 380px;
+  max-width: 90vw;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  box-shadow: var(--shadow-lg);
+}
+
+.changePasswordTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  margin: 0 0 24px 0;
+  text-align: center;
+}
+
+.changePasswordForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.changePasswordInputGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.changePasswordInputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.changePasswordInput {
+  width: 100%;
+  height: 44px;
+  padding: 0 44px 0 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.changePasswordInput:hover:not(:focus) {
+  border-color: var(--app-primary-color);
+}
+
+.changePasswordInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+:root[data-theme="dark"] .changePasswordInput {
+  background: rgba(4, 28, 41, 0.7);
+  border-color: rgba(55, 172, 234, 0.25);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 10px rgba(55, 172, 234, 0.03);
+}
+
+:root[data-theme="dark"] .changePasswordInput:hover:not(:focus) {
+  border-color: rgba(55, 172, 234, 0.4);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2),
+              0 0 16px rgba(55, 172, 234, 0.08);
+}
+
+:root[data-theme="dark"] .changePasswordInput:focus {
+  border-color: #37acea;
+  box-shadow: 0 0 0 3px rgba(55, 172, 234, 0.15),
+              0 0 20px rgba(55, 172, 234, 0.1);
+}
+
+.changePasswordInput::placeholder {
+  color: var(--muted);
+  font-weight: var(--font-weight-normal);
+  text-transform: capitalize;
+}
+
+.changePasswordEyeBtn {
+  position: absolute;
+  right: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+
+.changePasswordEyeBtn:hover {
+  color: var(--text-primary);
+}
+
+.changePasswordError {
+  font-size: var(--font-size-sm);
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.15);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.changePasswordSuccess {
+  font-size: var(--font-size-sm);
+  color: #22c55e;
+  background-color: rgba(34, 197, 94, 0.15);
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.changePasswordSubmitBtn {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-button-color, #ffffff);
+  border: 1px solid #37acea;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-base, 16px);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  margin-top: 8px;
+}
+
+.changePasswordSubmitBtn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(55, 172, 234, 0.5);
+}
+
+.changePasswordSubmitBtn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(55, 172, 234, 0.35);
+}
+
+.changePasswordSubmitBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── Password Validation Styles ── */
+.changePasswordFieldError {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--danger, #e74c3c);
+  margin-top: 4px;
+}
+
+.changePasswordFieldSuccess {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--success, #27ae60);
+  margin-top: 4px;
 }

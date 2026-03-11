@@ -4,9 +4,9 @@
   align-items: center;
   padding: 10px;
   font: normal normal normal 14px/19px Segoe UI;
-  letter-spacing: 0px;
+  letter-spacing: 0.3px;
   color: #343741;
-  text-transform: uppercase;
+  text-transform: capitalize;
   border: 1px solid green;
   gap: 15px;
   border-radius: 3px;
@@ -20,6 +20,7 @@
 
 .toast.error {
   border: 1px solid #b32b2b;
+  color: #000000;
 }
 .status-section {
   margin-top: 10px;
@@ -47,7 +48,7 @@
   padding: 5px;
 }
 
-.close-btn{
-    position: relative;
-    margin-left: auto;
+.close-btn {
+  position: relative;
+  margin-left: auto;
 }

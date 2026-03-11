@@ -2,20 +2,306 @@
 .codeEditorWrapper {
   position: relative;
   width: 100%;
-  height: 300px;
+  height: 100%;
+  border: 1px solid rgba(55, 172, 234, 0.3);
+  border-radius: 10px;
+  overflow: hidden;
+  z-index: 1;
+  background: linear-gradient(135deg, #0a1929 0%, #0d2137 100%);
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(55, 172, 234, 0.1);
+}
+
+/* Dark theme border for wrapper */
+:global([data-theme="dark"]) .codeEditorWrapper {
+  border-color: rgba(55, 172, 234, 0.3);
+  background: linear-gradient(135deg, #0a1929 0%, #0d2137 100%);
+}
+
+/* Light theme wrapper */
+:global([data-theme="light"]) .codeEditorWrapper {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(0, 0, 0, 0.03);
+}
+
+/* Code editor container with theme support */
+.editorContainer {
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  background-color: #0a1929;
+  position: relative;
+}
+
+/* Light theme editor container */
+:global([data-theme="light"]) .editorContainer {
+  background-color: #ffffff;
+}
+
+/* Fix gutter cell styling - remove any rounded corners from line numbers */
+.editorContainer :global(.ace_gutter) {
+  background: linear-gradient(180deg, #0d2137 0%, #0a1929 100%) !important;
+  border-right: 1px solid rgba(55, 172, 234, 0.2) !important;
+  border-radius: 0 !important;
+}
+
+/* Light theme gutter */
+:global([data-theme="light"]) .editorContainer :global(.ace_gutter) {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  border-right: 1px solid #e2e8f0 !important;
+}
+
+/* Dark theme gutter border */
+:global([data-theme="dark"]) .editorContainer :global(.ace_gutter) {
+  background: linear-gradient(180deg, #0d2137 0%, #0a1929 100%) !important;
+  border-right: 1px solid rgba(55, 172, 234, 0.2) !important;
+}
+
+.editorContainer :global(.ace_gutter-layer) {
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_gutter-layer) {
+  background: transparent !important;
+}
+
+.editorContainer :global(.ace_gutter-cell) {
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.editorContainer :global(.ace_gutter-active-line) {
+  background-color: var(--code-gutter-active-bg, #e8e8e8) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Ensure line numbers don't have backgrounds */
+.editorContainer :global(.ace_fold-widget) {
+  border-radius: 0 !important;
+}
+
+/* Remove border-radius from scroller and content */
+.editorContainer :global(.ace_scroller) {
+  border-radius: 0 !important;
+}
+
+.editorContainer :global(.ace_content) {
+  border-radius: 0 !important;
+}
+
+/* Fix the ace_editor itself */
+.editorContainer :global(.ace_editor) {
+  border-radius: 0 !important;
+}
+
+.editorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #0d2137 0%, #0a1929 100%);
+  border-bottom: 1px solid rgba(55, 172, 234, 0.2);
+  font-size: 12px;
+}
+
+/* Light theme header */
+:global([data-theme="light"]) .editorHeader {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom-color: rgba(2, 93, 138, 0.25);
+}
+
+/* Dark theme header border */
+:global([data-theme="dark"]) .editorHeader {
+  background: linear-gradient(135deg, #0d2137 0%, #0a1929 100%);
+  border-bottom-color: rgba(55, 172, 234, 0.2);
+}
+
+.languageBadge {
+  padding: 4px 10px;
+  border: 1px solid rgba(55, 172, 234, 0.3);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(55, 172, 234, 0.15), rgba(55, 172, 234, 0.05));
+  color: #37acea;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  display: inline-block;
+}
+
+/* Light theme override for language badge */
+:global([data-theme="light"]) .languageBadge {
+  background: linear-gradient(135deg, rgba(2, 93, 138, 0.12), rgba(2, 93, 138, 0.05));
+  color: #025d8a;
+  border-color: rgba(2, 93, 138, 0.25);
+}
+
+/* Dark theme override for language badge */
+:global([data-theme="dark"]) .languageBadge {
+  background: linear-gradient(135deg, rgba(55, 172, 234, 0.15), rgba(55, 172, 234, 0.05));
+  color: #37acea;
+  border-color: rgba(55, 172, 234, 0.3);
+}
+
+/* Ace Editor theme override - uses CSS variables */
+.aceEditor {
+  background-color: var(--code-bg) !important;
+}
+
+/* Override Ace Editor styles for dark theme via data-theme attribute */
+:global([data-theme="dark"]) .editorContainer :global(.ace_editor),
+:global([data-theme="dark"]) .editorContainer :global(.ace_gutter) {
+  background-color: #0a1929 !important;
+  color: #e0e6ed !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_gutter-active-line) {
+  background-color: rgba(55, 172, 234, 0.1) !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_gutter-cell) {
+  color: rgba(55, 172, 234, 0.5) !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_cursor) {
+  color: #37acea !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_marker-layer .ace_selection) {
+  background: rgba(55, 172, 234, 0.25) !important;
+}
+
+/* Light theme selection highlight - ensure visible on white background */
+:global([data-theme="light"]) .editorContainer :global(.ace_marker-layer .ace_selection) {
+  background: rgba(55, 172, 234, 0.35) !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_marker-layer .ace_active-line) {
+  background: rgba(55, 172, 234, 0.08) !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_keyword) {
+  color: #f472b6 !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_string) {
+  color: #a3e635 !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_comment) {
+  color: rgba(55, 172, 234, 0.5) !important;
+  font-style: normal;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_function) {
+  color: #22d3ee !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_variable) {
+  color: #e0e6ed !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_constant.ace_numeric) {
+  color: #c084fc !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_support.ace_function) {
+  color: #37acea !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_entity.ace_name.ace_function) {
+  color: #22d3ee !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_storage) {
+  color: #f472b6 !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_constant.ace_language) {
+  color: #c084fc !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_paren) {
+  color: #e0e6ed !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_operator) {
+  color: #37acea !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_scroller) {
+  background-color: #0a1929 !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_content) {
+  background-color: #0a1929 !important;
+}
+
+/* Additional dark theme overrides for complete coverage */
+:global([data-theme="dark"]) .editorContainer :global(.ace_text-layer) {
+  background-color: transparent !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_layer) {
+  background-color: transparent !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_print-margin) {
+  background: transparent !important;
+}
+
+:global([data-theme="dark"]) .editorContainer :global(.ace_text-input) {
+  background-color: transparent !important;
+}
+
+/* Dark theme wrapper background */
+:global([data-theme="dark"]) .codeEditorWrapper {
+  background-color: #0a1929 !important;
+}
+
+:global([data-theme="dark"]) .editorContainer {
+  background-color: #1e1e2e !important;
+}
+
+/* Light theme wrapper background */
+:global([data-theme="light"]) .codeEditorWrapper {
+  background-color: #ffffff !important;
+}
+
+:global([data-theme="light"]) .editorContainer {
+  background-color: #ffffff !important;
+}
+
+:global([data-theme="light"]) .editorContainer :global(.ace_gutter-cell) {
+  color: #94a3b8 !important;
+}
+
+/* Light theme: make text-layer and all layers transparent so selection markers show through */
+:global([data-theme="light"]) .editorContainer :global(.ace_text-layer) {
+  background-color: transparent !important;
+}
+
+:global([data-theme="light"]) .editorContainer :global(.ace_layer) {
+  background-color: transparent !important;
 }
 
 .loadingContainer {
   width: 100%;
   height: 300px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #f8f9fa;
-  color: #6c757d;
-  font-size: 14px;
+  background-color: var(--code-bg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 .loadingText {
@@ -23,7 +309,7 @@
 }
 
 .loadingSubtext {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   margin-top: 5px;
   opacity: 0.7;
 }
@@ -31,41 +317,334 @@
 .fallbackTextarea {
   width: 100%;
   height: 300px;
-  resize: vertical;
-  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  resize: none;
+  font-family: var(--font-mono);
   padding: 10px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  background-color: white;
-  color: black;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--code-bg);
+  color: var(--code-color);
 }
 
 .fallbackTextarea:read-only {
-  background-color: #f8f9fa;
-  color: #6c757d;
+  background-color: var(--muted-foreground);
+  color: var(--text-secondary);
   cursor: not-allowed;
 }
 
 .fallbackTextarea:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+  border-color: var(--accent-color);
+  box-shadow: var(--focus-ring);
 }
 
-/* Dark theme support */
-.darkTheme .fallbackTextarea {
-  background-color: #1e1e1e;
-  color: #d4d4d4;
-  border-color: #3e3e3e;
+/* Container wrapper for CodeEditor with action buttons */
+.codeEditorContainer {
+  scrollbar-width: thin;
+  scrollbar-color: var(--code-scrollbar-thumb, #555) var(--code-scrollbar-track, #2d2d2d);
+  position: relative;
+  background: var(--code-bg, #1e1e2e);
+  /* border-radius: 8px; */
 }
 
-.darkTheme .fallbackTextarea:read-only {
-  background-color: #2d2d30;
-  color: #969696;
+.codeEditorContainer::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
 }
 
-.darkTheme .loadingContainer {
-  background-color: #2d2d30;
-  color: #d4d4d4;
-  border-color: #3e3e3e;
+.codeEditorContainer::-webkit-scrollbar-track {
+  background: var(--code-scrollbar-track, #2d2d2d);
+  border-radius: 4px;
+}
+
+.codeEditorContainer::-webkit-scrollbar-thumb {
+  background: var(--code-scrollbar-thumb, #555);
+  border-radius: 4px;
+}
+
+.codeEditorContainer::-webkit-scrollbar-thumb:hover {
+  background: var(--code-scrollbar-thumb-hover, #777);
+}
+
+/* Copy icon button */
+.copyIcon {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  z-index: 10;
+}
+
+.copyIcon svg {
+  stroke: var(--content-color);
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+  fill: none;
+}
+
+.copyIcon:hover svg {
+  transform: scale(1.2);
+}
+
+/* Explain Popover Button - appears on text selection */
+.explainPopover {
+  position: absolute;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background-color: var(--card-bg, #ffffff);
+  color: var(--text-primary, #1a1a1a);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+  transform: translateX(-50%);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  animation: popoverFadeIn 0.12s ease-out;
+  backdrop-filter: blur(8px);
+}
+
+/* Light theme specific */
+:global([data-theme="light"]) .explainPopover {
+  background-color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+/* Dark theme specific */
+:global([data-theme="dark"]) .explainPopover {
+  background-color: rgba(45, 45, 55, 0.95);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f0f0f0;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.3),
+    0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.explainPopover:hover {
+  transform: translateX(-50%) translateY(-1px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.1);
+  border-color: var(--primary-color, #3b82f6);
+}
+
+:global([data-theme="dark"]) .explainPopover:hover {
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+  border-color: var(--primary-color, #60a5fa);
+}
+
+.explainPopover:active {
+  transform: translateX(-50%) scale(0.97);
+}
+
+/* Sparkle icon styling */
+.explainPopover::before {
+  content: "✨";
+  font-size: 10px;
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+/* ========================================
+   DRAG AND DROP FILE UPLOAD STYLES
+   ======================================== */
+
+/* Outer wrapper for label + editor */
+.codeEditorOuterWrapper {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 0px;
+}
+
+/* Label container with upload button and helper text */
+.labelContainer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  line-height: normal;
+}
+
+/* Upload button - properly centered + icon */
+.uploadBtn {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--small-btn-border, #ccc);
+  border-radius: 50%;
+  background: var(--small-btn-bg, #fff);
+  color: var(--small-btn-color, #666);
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  /* Grid for perfect centering */
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 300;
+  line-height: 0;
+}
+
+.uploadBtn:hover {
+  background: var(--small-btn-hover-bg, #f0f0f0);
+  color: var(--small-btn-hover-color, #333);
+  border-color: var(--small-btn-hover-border, #999);
+}
+
+.uploadBtn:active {
+  transform: scale(0.95);
+}
+
+.codeLabel {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.33;
+  letter-spacing: 0.05em;
+  color: #37acea;
+  cursor: pointer;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+:global(:root[data-theme="light"]) .codeLabel {
+  color: #025d8a;
+}
+
+.helperText {
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 20px;
+  color: var(--muted);
+  cursor: default;
+  pointer-events: none;
+  margin-left: 2px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Hidden file input */
+.hiddenFileInput {
+  display: none !important;
+}
+
+/* Code editor wrapper with drag-drop support */
+.codeEditorWrapper {
+  position: relative;
+  width: 100%;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.codeEditorWrapper.dragging {
+  border: 2px dashed var(--app-primary-color);
+  background-color: var(--accent-light);
+}
+
+/* Drag overlay */
+.dragOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 115, 207, 0.05);
+  backdrop-filter: blur(4px);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: dragFadeIn 0.2s ease;
+  pointer-events: none;
+}
+
+/* Dark theme drag overlay */
+:root[data-theme="dark"] .dragOverlay {
+  background: rgba(0, 102, 204, 0.1);
+}
+
+.dragOverlayContent {
+  background: var(--card-bg);
+  padding: 32px 48px;
+  border-radius: 12px;
+  border: 2px dashed var(--app-primary-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: var(--shadow-lg);
+  animation: dragContentScale 0.2s ease;
+}
+
+.dragOverlayText {
+  font-family: var(--font-primary);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.dragOverlaySubtext {
+  font-family: var(--font-primary);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--content-color);
+  margin: 0;
+}
+
+@keyframes dragFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dragContentScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }

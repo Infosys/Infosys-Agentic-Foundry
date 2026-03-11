@@ -1,0 +1,384 @@
+/* IAF Button Styles (global) */
+.iafButton {
+  flex-shrink: 0;
+  border-radius: var(--radius, 16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 16px;
+  gap: 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-base, 16px);
+  font-weight: var(--font-weight-medium, 500);
+  line-height: 24px;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: 
+    transform var(--transition-fast, 150ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow var(--transition-fast, 150ms) ease,
+    background-color var(--transition-fast, 150ms) ease,
+    border-color var(--transition-fast, 150ms) ease,
+    opacity var(--transition-fast, 150ms) ease;
+}
+
+.iafButton:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.iafButton:active:not(:disabled) {
+  transform: var(--active-scale, scale(0.98));
+}
+
+.iafButton:disabled,
+.iafButton.disabled {
+  opacity: var(--disabled-opacity, 0.6);
+  cursor: not-allowed;
+  background: var(--disabled-bg, #6b7280);
+  color: var(--disabled-text, #a0a0a0);
+  border: 1px solid var(--border);
+  transform: none;
+  box-shadow: none;
+}
+
+.iafButtonPrimary {
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  color: var(--primary-button-color);
+  border: 1px solid #37acea;
+}
+
+.iafButtonPrimary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow, 0 4px 16px rgba(55, 172, 234, 0.5));
+}
+
+.iafButtonPrimary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(55, 172, 234, 0.35);
+}
+
+/* Disabled state for primary button - must override primary styles */
+.iafButtonPrimary:disabled,
+.iafButtonPrimary.disabled {
+  background: var(--disabled-bg, #6b7280);
+  color: var(--disabled-text, #a0a0a0);
+  border: 1px solid var(--border);
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Dark theme primary button gradient */
+:root[data-theme="dark"] .iafButtonPrimary {
+  background: linear-gradient(135deg, var(--accent), var(--app-primary-color));
+  border-color: var(--accent);
+}
+
+:root[data-theme="dark"] .iafButtonPrimary:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(0, 196, 204, 0.3);
+}
+
+/* Dark theme disabled primary - override gradient */
+:root[data-theme="dark"] .iafButtonPrimary:disabled,
+:root[data-theme="dark"] .iafButtonPrimary.disabled {
+  background: var(--disabled-bg, #6b7280);
+  border-color: var(--border);
+}
+
+.iafButtonSecondary {
+  background: var(--hover-background, #f3f4f6);
+  color: var(--header-color, #1a1a1a);
+  border: 1.5px solid var(--border-color, #d1d5db);
+}
+
+.iafButtonSecondary:hover:not(:disabled) {
+  background: var(--muted, #6b7280);
+  color: #ffffff;
+  opacity: 1;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft, 0 4px 12px rgba(0, 0, 0, 0.1));
+}
+
+.iafButtonSecondary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+:root[data-theme="dark"] .iafButtonSecondary {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .iafButtonSecondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.iafButtonSecondary:hover:not(:disabled) svg {
+  color: var(--primary-button-color);
+  fill: var(--app-primary-color);
+}
+
+/* Warning/Danger Button */
+.iafWarningButton {
+  background: var(--danger, #ef4444);
+  color: #ffffff;
+  border: 1px solid var(--danger, #ef4444);
+}
+
+.iafWarningButton:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.iafWarningButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+:root[data-theme="dark"] .iafWarningButton {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-color: #ef4444;
+}
+
+:root[data-theme="dark"] .iafWarningButton:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+}
+
+/* Success Button */
+.iafSuccessButton {
+  background: var(--success, #16a34a);
+  color: #ffffff;
+  border: 1px solid var(--success, #16a34a);
+}
+
+.iafSuccessButton:hover:not(:disabled) {
+  background: #15803d;
+  border-color: #15803d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+}
+
+:root[data-theme="dark"] .iafSuccessButton {
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-color: #10b981;
+}
+
+:root[data-theme="dark"] .iafSuccessButton:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+}
+
+/* Accent/Sub Button */
+.iafSubButton {
+  background: var(--accent-color, #025d8a);
+  color: #ffffff;
+  border: 1px solid #37acea;
+}
+
+.iafSubButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(55, 172, 234, 0.45);
+}
+
+:root[data-theme="dark"] .iafSubButton {
+  background: linear-gradient(135deg, #025d8a, #041c29);
+  border-color: #37acea;
+}
+
+:root[data-theme="dark"] .iafSubButton:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(55, 172, 234, 0.55);
+}
+
+/* Ghost/Outline Button */
+.iafGhostButton {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.iafGhostButton:hover:not(:disabled) {
+  background: var(--hover-background);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+:root[data-theme="dark"] .iafGhostButton:hover:not(:disabled) {
+  background: rgba(0, 196, 204, 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Text-only Button (no border) */
+.iafTextButton {
+  background: transparent;
+  color: var(--app-primary-color);
+  border: none;
+  padding: 5px 12px;
+}
+
+.iafTextButton:hover:not(:disabled) {
+  background: var(--hover-background);
+  text-decoration: underline;
+}
+
+:root[data-theme="dark"] .iafTextButton {
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] .iafTextButton:hover:not(:disabled) {
+  background: rgba(0, 196, 204, 0.1);
+}
+
+/* Icon-only Button */
+.iconOnly {
+  padding: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  justify-content: center;
+  background: var(--card-bg, #fff);
+  color: var(--header-color);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.iconOnly:hover:not(:disabled) {
+  background: var(--hover-background);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+  transform: scale(1.05);
+}
+
+.iconOnly:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+:root[data-theme="dark"] .iconOnly {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .iconOnly:hover:not(:disabled) {
+  background: rgba(0, 196, 204, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Icon-only Primary variant */
+.iconOnlyPrimary {
+  padding: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  justify-content: center;
+  background: var(--app-primary-color);
+  color: #ffffff;
+  border: 1px solid var(--app-primary-color);
+  border-radius: 10px;
+}
+
+.iconOnlyPrimary:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(55, 172, 234, 0.45);
+}
+
+:root[data-theme="dark"] .iconOnlyPrimary {
+  background: linear-gradient(135deg, #025d8a, #041c29);
+  border-color: #37acea;
+}
+
+:root[data-theme="dark"] .iconOnlyPrimary:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(55, 172, 234, 0.55);
+}
+
+/* Icon-only Danger variant */
+.iconOnlyDanger {
+  padding: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  justify-content: center;
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.iconOnlyDanger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #ffffff;
+  border-color: var(--danger);
+  transform: scale(1.05);
+}
+
+/* Small Button Size */
+.iafButtonSmall {
+  padding: 4px 12px;
+  font-size: 13px;
+  line-height: 20px;
+  border-radius: 8px;
+}
+
+/* Large Button Size */
+.iafButtonLarge {
+  padding: 10px 24px;
+  font-size: 16px;
+  line-height: 28px;
+  border-radius: 12px;
+}
+
+/* Pill Button Shape */
+.iafButtonPill {
+  border-radius: 50px;
+}
+
+.iconWrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.iafButton:hover:not(:disabled) .iconWrapper {
+  transform: scale(1.1);
+}
+
+.loadingSpinner {
+  animation: spin 1s linear infinite;
+  margin-right: 0.5rem;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Button with icon - spacing adjustments */
+.iafButton svg {
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.iafButton:hover:not(:disabled) svg {
+  transform: scale(1.05);
+}
+
+/* Focus states for accessibility */
+.iafButton:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+:root[data-theme="dark"] .iafButton:focus-visible {
+  box-shadow: 0 0 0 3px rgba(0, 196, 204, 0.3);
+}

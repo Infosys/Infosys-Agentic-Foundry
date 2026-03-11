@@ -1,152 +1,231 @@
 /* Main Container */
 .container {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 6px 10px;
-  margin: 4px 0;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  background: linear-gradient(180deg, transparent 0%, var(--card-bg) 20%);
+  padding: 12px 20px 16px 20px;
+  margin: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
-  transition: box-shadow 0.2s;
-  width: 95%;
-  margin: 0 auto;
-  margin-bottom: 30px;
+  width: 100%;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  border-top: none;
+  box-sizing: border-box;
 }
 
-/* .container:focus-within {
-  box-shadow: 0 4px 16px rgba(0,123,193,0.10);
-  border-color: #007bc1;
-} */
-
-/* Top Controls Bar */
+/* Top Controls Bar - horizontal row of dropdowns */
 .topControls {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-wrap: nowrap;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  height: auto;
+  min-height: 40px;
+  margin-bottom: 12px;
+  padding: 0;
+  justify-content: flex-start;
 }
 
-/* Control Group */
+/* Selection Status Bar - matches Figma exactly */
+.selectionStatusBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-sizing: border-box;
+  margin-top: 0;
+}
+
+.selectionStatusLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: 21px;
+  color: var(--muted);
+}
+
+.selectionStatusIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--search-icon-color);
+}
+
+.selectionStatusRight {
+  color: var(--app-primary-color);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Small screens */
+@media (max-width: 900px) {
+  .topControls {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .topControls {
+    gap: 10px;
+  }
+}
+
+/* Control Group - fill entire grid cell */
 .controlGroup {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  min-width: 80px;
-  flex: 1;
+  min-width: 160px;
+  max-width: 220px;
+  flex: 0 1 auto;
 }
 
 .controlLabel {
-  font-size: 10px;
-  font-weight: 500;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.1px;
+  display: none;
 }
 
-/* Select Styling */
-.select {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 12px;
-  color: #334155;
-  height: 28px;
-  box-shadow: none;
-  font-weight: 500;
-}
-
-.select:focus,
-.actionButton:focus,
-.inputButton:focus {
+/* Select Styling - matching reference design */
+.chatInputSelect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--checkbox-bg);
+  border: 1px solid var(--checkbox-bg);
+  border-radius: var(--radius);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: nowrap;
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
 }
 
-.select:disabled {
-  background: #f5f5f5;
-  color: #999;
+.chatInputSelect:focus {
+  outline: none;
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.25);
+}
+
+.chatInputSelect:disabled {
+  background: var(--muted-foreground);
+  color: var(--search-icon-color);
   cursor: not-allowed;
 }
 
 /* Searchable Dropdown */
 .searchableDropdown {
   position: relative;
+  width: 100%;
+  min-width: 0;
+  flex: 1;
 }
 
 .dropdownTrigger {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
-  padding: 4px 8px;
-  padding-right: 0;
-  font-size: 12px;
-  color: #334155;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: all 0.2s ease;
-  height: 28px;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 20px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
 }
 
 .dropdownTrigger:hover {
-  border-color: #ccc;
+  background: var(--checkbox-bg);
+  border-color: var(--border);
 }
 
 .dropdownTrigger:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 2px rgba(0, 115, 207, 0.08);
 }
 
 .dropdownTrigger.active {
-  border-color: #007acc;
-  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
-  background: #ffffff;
+  background: var(--card-bg);
+  border-color: var(--app-primary-color);
 }
 
-.dropdownTrigger.disabled{
-  background: #f5f5f5;
-  color: #999;
+.dropdownTrigger.disabled {
+  background-color: var(--card-bg);
+  color: var(--search-icon-color);
   cursor: not-allowed;
+  border-color: var(--border);
 }
 
-.dropdownTrigger > span{
-  font-weight: 500;
+.dropdownTrigger > span {
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  text-align: left;
 }
 
 .chevronIcon {
   font-size: 10px;
-  color: #666;
+  color: var(--search-icon-color);
   transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
 
 .disabled .chevronIcon {
-  opacity: 0.6;
+  color: var(--search-icon-color);
 }
 
 .dropdownContent {
   position: absolute;
-  bottom: 30px;
+  bottom: 44px;
   left: 0;
-  right: 0;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  margin-top: 4px;
-  max-height: 250px;
-  overflow: hidden;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 1200;
+  min-width: 200px;
+  width: 240px;
+  padding: 6px;
+  overflow: visible;
 }
 
 .searchContainer {
   position: relative;
-  padding: 7px;
-  border-bottom: 1px solid #f1f5f9;
+  padding: 8px;
+  border-bottom: 1px solid var(--muted-foreground);
 }
 
 .searchIcon {
@@ -154,31 +233,35 @@
   left: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: #94a3b8;
+  color: var(--search-icon-color);
   font-size: 14px;
 }
 
 .searchInput {
   width: 100%;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  background: var(--checkbox-bg);
+  border: 1px solid var(--border);
+  border-radius: 15px;
   padding: 8px 12px 8px 32px;
   font-size: 13px;
-  color: #334155;
+  color: var(--text-primary);
+  font-family: var(--font-primary);
 }
 
 .searchInput:focus {
   outline: none;
-  border-color: #3b82f6;
-  background: #ffffff;
+  border-color: var(--app-primary-color);
+  background: var(--card-bg);
+  box-shadow: 0 0 0 2px rgba(0, 115, 207, 0.08);
 }
 
 .agentsList {
-  max-height: 320px;
+  min-height: 200px;
+  height: 200px;
+  max-height: 200px;
   overflow-y: auto;
   scroll-behavior: smooth;
-  padding: 4px 8px;
+  padding: 0;
 }
 
 .agentsList::-webkit-scrollbar {
@@ -186,152 +269,421 @@
 }
 
 .agentsList::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--muted-foreground);
 }
 
 .agentsList::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--content-border-color);
   border-radius: 3px;
 }
 
 .agentsList::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--search-icon-color);
 }
 
-.agentItem {
+.dropdownContent .agentItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   padding: 8px 12px;
   cursor: pointer;
-  border-bottom: 1px solid #f1f5f9;
-  transition: all 0.2s ease;
-  border-left: 3px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  line-height: 20px;
+  color: var(--text-primary);
+  background: transparent;
+  margin: 1px 0;
 }
 
-.agentItem:hover {
-  background: #f8fafc;
-  border-left-color: #e2e8f0;
+.dropdownContent .agentItem:hover {
+  background: var(--accent);
+  color: var(--primary-button-color);
 }
 
-.agentItem.highlighted {
-  background: #e0f2fe;
-  border-left-color: #007acc;
-  box-shadow: inset 0 0 0 1px rgba(0, 122, 204, 0.1);
+.dropdownContent .agentItem:last-child {
+  margin-bottom: 0;
+}
+
+/* Selected/highlighted item - blue background with checkmark */
+.agentItem.highlighted,
+.agentItem.selected {
+  background: var(--accent);
+  color: var(--primary-button-color);
+  border-radius: var(--radius);
+}
+
+.agentItem.highlighted:hover,
+.agentItem.selected:hover {
+  background: var(--app-secondary-color);
+  color: var(--primary-button-color);
 }
 
 .agentItem:focus {
   outline: none;
-  background: #e0f2fe;
-  border-left-color: #007acc;
-  box-shadow: inset 0 0 0 2px rgba(0, 122, 204, 0.2);
+  background: var(--accent-light);
 }
 
-.agentItem:last-child {
-  border-bottom: none;
+.agentItem.highlighted:focus,
+.agentItem.selected:focus {
+  background: var(--app-primary-color);
 }
 
 .agentName {
-  font-size: 14px;
-  color: #334155;
-  margin-bottom: 4px;
-  font-weight: 500;
-  transition: color 0.2s ease;
+  font-size: var(--font-size-sm);
+  color: inherit;
+  font-weight: var(--font-weight-medium);
+  margin: 0;
 }
 
-.agentItem.highlighted .agentName {
-  color: #1e40af;
-  font-weight: 600;
+.agentItem.highlighted .agentName,
+.agentItem.selected .agentName {
+  color: var(--primary-button-color);
+  font-weight: var(--font-weight-semibold);
 }
 
 .agentDescription {
-  font-size: 12px;
-  color: #64748b;
+  font-size: var(--font-size-xs);
+  color: var(--muted);
   line-height: 1.4;
 }
 
 .noAgents {
   padding: 20px;
   text-align: center;
-  color: #94a3b8;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
-/* Inputs row 2 wrapper */
-.inputsWrapperRow2{
+/* Inputs row 2 wrapper - main input area */
+.inputsWrapperRow2 {
   display: flex;
-  gap: 5px;
-  margin-top: 3px
+  gap: 12px;
+  margin-top: 0;
+  align-items: center;
+  width: 100%;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.promptLibraryAndTextArea{
+.inputsWrapperRow2:focus-within {
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 3px rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.1);
+}
+
+/* Disabled state for input row when options not selected */
+.inputsDisabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.promptLibraryAndTextArea {
   position: relative;
   width: 100%;
   display: flex;
+  align-items: center;
 }
 
-.promptSuggestionBtn{
+/* Auto-suggest dropdown styles */
+.autoSuggestDropdown {
   position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
   right: 0;
-  color: #007acc;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 1000;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.autoSuggestItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  transition: background 0.12s ease;
+}
+
+.autoSuggestItem:hover,
+.autoSuggestItem.highlighted {
+  background: var(--hover-background);
+}
+
+.autoSuggestItem svg {
+  color: var(--app-primary-color);
+  flex-shrink: 0;
+}
+
+.autoSuggestText {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Main input row card that holds upload/assistant, textarea and send */
+.inputRowCard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border-radius: 0;
   border: none;
+  background: transparent;
   box-shadow: none;
-  padding: 3px;
-  padding-left: 0;
+  width: 100%;
+}
+
+/* Left controls group: upload + @ Select Agent in one bordered pill */
+.leftControlsGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border-radius: 12px;
+  background: transparent;
+  border: none;
+  flex-shrink: 0;
+  height: auto;
+  box-sizing: border-box;
+}
+
+/* Wrapper for @ Agent dropdown inside left controls - no border since parent has border */
+.atAgentDropdownWrapper {
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+}
+
+/* Override dropdown input styles when inside leftControlsGroup */
+.leftControlsGroup .atAgentDropdownWrapper :global(.dropdownInput),
+.atAgentDropdownWrapper > div > div:first-child {
+  border: none !important;
+  background: transparent !important;
+  min-height: 38px !important;
+  height: 38px !important;
+  padding: 0 4px !important;
+  width: 80px !important;
+  max-width: 80px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Upload button inside left controls group */
+.leftControlsGroup .inputButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--app-primary-color);
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.leftControlsGroup .inputButton svg {
+  width: 18px;
+  height: 18px;
+  stroke: var(--app-primary-color);
+}
+
+.leftControlsGroup .inputButton:hover:not(:disabled) {
+  background: var(--accent-light);
+}
+
+.leftControlsGroup .inputButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Upload button - blue icon, transparent background */
+.leftControlsGroup .inputButton {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--app-primary-color);
+  transition: background 0.12s, color 0.12s;
+  flex: none;
+}
+
+.leftControlsGroup .inputButton svg {
   width: 16px;
   height: 16px;
-  margin: 6px;
-  transition: all 0.2s ease;
-  align-self: center;
+  stroke: var(--app-primary-color);
 }
 
-.promptSuggestionBtn:hover{
-  transform: scale(1.1);
+.leftControlsGroup .inputButton:hover:not(:disabled) {
+  background: var(--accent-light);
+  color: var(--app-secondary-color);
 }
 
-.promptSuggestionBtn:focus-within{
-  border: 1px solid #007acc;
-  border-radius: 3px;
+.leftControlsGroup .inputButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-/* Action Buttons */
-.actionButtons {
-  display: flex;
-  gap: 2px;
-  align-items: flex-end;
+/* @ Select Agent button - blue @ icon, with dropdown chevron */
+.assistantButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 8px;
+  height: 36px;
+  border-radius: 18px;
+  background: transparent;
+  border: none;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-brand-primary);
+  cursor: pointer;
+  transition: background 0.12s;
 }
 
-.actionButton {
-  background: #f8fafc;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  width: 26px;
-  height: 26px;
+.assistantButton svg {
+  color: var(--app-primary-color);
+  stroke: var(--app-primary-color);
+}
+
+.assistantButton:hover {
+  background: var(--accent-light);
+}
+
+.promptSuggestionBtn {
+  position: relative;
+  color: var(--search-icon-color);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  transition: all 0.12s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #64748b;
-  font-size: 13px;
+  border-radius: 10px;
   flex-shrink: 0;
-  box-shadow: none;
-  padding: 0;
+  align-self: center;
+}
+
+.promptSuggestionBtn:hover {
+  color: var(--app-primary-color);
+  background: var(--muted-foreground);
+}
+
+.promptSuggestionBtn:focus-within {
+  outline: none;
+}
+
+/* Action Buttons - Container with grouped icons - rounded pill */
+.actionButtons {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  gap: 6px;
+  height: 40px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  flex-shrink: 0;
+}
+
+/* Rounded icon buttons with circular border by default */
+.actionButton {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 32px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  flex: none;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.15s ease;
 }
 
 .actionButton:disabled:hover,
-.actionButton.disabled:hover{
+.actionButton.disabled:hover {
   cursor: not-allowed;
 }
 
 .actionButton:hover:not(:disabled) {
-  background: #e5e7eb;
-  color: #334155;
+  background: var(--checkbox-bg);
+  color: var(--color-brand-primary);
+  border-color: var(--border);
 }
 
 .actionButton.active {
-  background: #007acc;
-  color: white;
+  background: var(--accent-light);
+  color: var(--app-primary-color);
+  border-color: var(--app-primary-color);
 }
 
-.actionButton.disabled{
+.actionButton.disabled {
   cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Ensure SVG/icon sizes match the design */
+.actionButton svg,
+.inputButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Query area inside the input row: gives separate border around textarea and prompt suggestions */
+.promptLibraryAndTextArea {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border-radius: var(--radius, 16px);
+  border: none;
+  background: transparent;
+}
+
+.promptLibraryAndTextArea .promptSuggestionBtn {
+  right: 8px; /* ensure suggestion button sits inside the query border */
 }
 
 /* Settings Container */
@@ -341,53 +693,93 @@
 
 .settingsDropdown {
   position: absolute;
-  bottom: 32px;
-  right: 19px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  bottom: 48px;
+  right: 0;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px;
+  box-shadow: 0px 4px 6px 0px rgba(0, 0, 0, 0.05), 0px 10px 15px 0px rgba(0, 0, 0, 0.1);
   z-index: 1000;
-  min-width: 200px;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  pointer-events: auto;
 }
 
-.chatSettingsDropdown{
-  min-width: 145px;
-  right: -13px;
+.chatSettingsDropdown {
+  min-width: 192px;
+  width: 192px;
+  max-width: 192px;
+  right: 0;
+  padding: 5px 5px 1px 5px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  box-shadow: 0px 4px 6px 0px rgba(0, 0, 0, 0.05), 0px 10px 15px 0px rgba(0, 0, 0, 0.1);
+}
+
+/* Utility class to mimic Radix dropdown content defaults used in markup */
+.radixDropdownContent {
+  border-radius: var(--radius-card, 12px);
+  background: var(--card, #ffffff);
+  color: var(--foreground, #111827);
+  border-color: var(--border, #e5e7eb);
+  box-shadow: var(--elevation-lg, 0 8px 25px rgba(0, 0, 0, 0.15));
+  max-height: var(--radix-dropdown-menu-content-available-height, 320px);
+  min-width: 8rem;
+  width: 18rem; /* w-64 */
+  padding: 1rem; /* p-4 */
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .settingsHeader {
-  font-size: 14px;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 21px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-bottom: none;
 }
 
 .toggleGroup {
-  margin-bottom: 12px;
+  margin-bottom: 2px;
 }
 
 .toggleGroup:last-child {
   margin-bottom: 0;
 }
 
-.toggleGroup.chatOptions{
+.toggleGroup.chatOptions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  padding: 0;
 }
 
 .toggleLabel {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   cursor: pointer;
-  font-size: 13px;
-  color: #475569;
-  font-weight: 500;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: 21px;
+  color: var(--text-primary);
+  padding: 6px 8px;
+  height: auto;
+  border-radius: 14px;
+  transition: background 0.12s;
+}
+
+.toggleLabel:hover {
+  background: var(--muted-foreground);
 }
 
 .toggleInput {
@@ -396,51 +788,52 @@
 
 .toggleSlider {
   position: relative;
-  width: 40px;
+  width: 36px;
   height: 20px;
-  background: #cbd5e1;
-  border-radius: 20px;
-  transition: background-color 0.3s ease;
+  background: var(--border);
+  border-radius: 10px;
+  transition: background-color 0.2s ease;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .toggleSlider:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 2px rgba(0, 115, 207, 0.15);
 }
 
 .toggleSlider:hover {
-  background: #b4bcc9;
+  background: #c4c9d0;
 }
 
 .toggleSlider::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 2px;
   left: 2px;
   width: 16px;
   height: 16px;
-  background: white;
+  background: var(--card-bg);
   border-radius: 50%;
-  transition: transform 0.3s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .toggleInput:checked + .toggleSlider {
-  background: #3b82f6;
+  background: var(--app-primary-color);
 }
 
 .toggleInput:checked + .toggleSlider:hover {
-  background: #2563eb;
+  background: var(--app-secondary-color);
 }
 
 .toggleInput:checked + .toggleSlider:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 3px rgba(0, 115, 207, 0.15);
 }
 
 .toggleInput:checked + .toggleSlider::before {
-  transform: translateX(20px);
+  transform: translateX(16px);
 }
 
 .toggleText {
@@ -457,28 +850,50 @@
 
 .inputContainer {
   display: flex;
-  align-items: end;
-  gap: 6px;
-  border-radius: 6px;
-  padding: 4px 8px 0 0;
-  background: #fff;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  align-items: center;
+  gap: 8px;
+  border-radius: 24px;
+  padding: 4px 8px 4px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  flex: 1;
+  min-height: 38px;
+  height: auto;
+  position: relative;
+}
+
+.inputContainer:focus-within {
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 2px rgba(0, 115, 207, 0.08);
 }
 
 .inputButton {
-  background: none;
-  border: 1px solid #ccc;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: flex;
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #222;
-  font-size: 16px;
-  transition: background 0.18s, color 0.18s;
+  color: var(--muted);
+  font-size: var(--font-size-lg);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+}
 
+.inputButton:hover:not(:disabled) {
+  background: var(--muted-foreground);
+  color: var(--text-primary);
+}
+
+.inputButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* .inputButton:hover:not(:disabled), .inputButton:focus-visible {
@@ -487,39 +902,118 @@
 } */
 
 .inputButton:active {
-  background: #e6f2fa;
-  color: #007bc1;
+  background: var(--accent-light);
+  color: var(--app-primary-color);
 }
 
 .inputButton:disabled {
-  color: #b6beca;
+  color: var(--disabled-text);
   cursor: not-allowed;
-  background: #e6f2fa;
+  background: var(--accent-light);
 }
 
+/* Send button - disabled state (default gray circle) */
 .sendButton {
-  transition: background 0.18s;
-  border: 1px solid #007bc1;
-  color: #007bc1;
-  background: #fff;
-  transition: transform 0.6s;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 11px;
+  height: 10px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: var(--search-icon-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
 }
 
-.sendButton:hover:not(:disabled), .sendButton:focus-visible {
-  background: #007bc1;
-  color: #fff;
-  transform: scale(1.1);
-} 
+/* Send button - disabled state */
+.sendButton:disabled {
+  background: var(--card-bg);
+  color: var(--border);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
 
-.micHighlight{
-  color: #007bc1;
-  border: 1px solid #007bc1;
-  transition: color 0.18s;
+/* Send button - enabled state (blue filled circle) */
+.sendButton:not(:disabled) {
+  background: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+  color: var(--primary-button-color);
+}
+
+.sendButton:hover:not(:disabled) {
+  background: var(--app-secondary-color);
+  border-color: var(--app-secondary-color);
+  color: var(--primary-button-color);
+}
+
+/* Mic Button - Inside the unified input box */
+.micButton {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.micButton:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.micButton:disabled {
+  background: transparent;
+  color: var(--border);
+  border-color: var(--border);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Mic Button - Active/Recording state */
+.micButton.active {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--danger);
+  color: var(--danger);
+  animation: micPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes micPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
+.micHighlight {
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  transition: color 0.15s, background 0.15s;
 }
 
 .micHighlight:hover {
-    color: white;
-    background: #007bc1;
+  color: var(--text-primary);
+  background: var(--checkbox-bg);
 }
 
 .textInputWrapper {
@@ -527,16 +1021,21 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  border: 1px solid #e5e7eb;
-  padding-inline: 5px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  border-radius: 5px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  position: relative;
 }
 
+.textInputWrapper.transparent {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
 
 .textInputWrapper:focus-within {
-  border-color: #007bc1;
-  box-shadow: 0 2px 8px rgba(0,123,193,0.08);
+  border: none;
+  box-shadow: none;
 }
 
 .textInput {
@@ -544,50 +1043,137 @@
   background: none;
   border: none;
   outline: none;
-  font-size: 14px;
-  color: #222;
-  line-height: 1.3;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.4;
+  color: var(--text-primary);
   resize: none;
-  min-height: 28px;
-  max-height: 60px;
-  padding: 4px 0;
-  padding-left: 5px;
-  font-family: inherit;
-  transition: color 0.18s;
-  margin-right: 25px;
+  height: 24px;
+  min-height: 24px;
+  max-height: 200px;
+  padding: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: block;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.textInput::-webkit-scrollbar {
+  width: 4px;
+}
+
+.textInput::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.textInput::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.textInput::-webkit-scrollbar-thumb:hover {
+  background: var(--search-icon-color);
 }
 
 .textInput::placeholder {
-  color: #b6beca;
+  color: var(--search-icon-color);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
 }
 
 .textInput:disabled {
-  color: #b6beca;
+  color: var(--search-icon-color);
   cursor: not-allowed;
 }
 
 .rightButtons {
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
 }
 
-.rightButtons{
-    transform: translateY(0px);
-    /* box-shadow: rgba(0, 124, 195, 0.3) 0px 2px 4px 0px; */
-    border-radius: 5px;
-    transition: all 0.2s ease;
+/* Middle group: textarea + right buttons in a single pill */
+.middleInputGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius, 16px);
+  background: var(--card, #ffffff);
+  border: 1px solid var(--content-border-color, #e8eef2);
+  box-sizing: border-box;
 }
 
-.rightButtons:hover:not(:disabled)  {
-    /* background: linear-gradient(135deg, #0088db 0%, #006bb3 100%); */
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 124, 195, 0.4);
+/* Three-part input grouping */
+.threePartInput {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.inputLeftGroup,
+.inputMiddleGroup,
+.inputRightGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--radius, 12px);
+  background: var(--card, #fff);
+  border: 1px solid var(--content-border-color, #e8eef2);
+  box-sizing: border-box;
+}
+
+.inputLeftGroup {
+  flex: 0 0 auto; /* fit content */
+}
+
+.inputMiddleGroup {
+  flex: 1 1 0%; /* take remaining space */
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.inputRightGroup {
+  flex: 0 0 auto;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* On small screens stack vertically */
+@media (max-width: 640px) {
+  .threePartInput {
+    flex-direction: column-reverse;
+    gap: 6px;
+  }
+  .inputLeftGroup,
+  .inputMiddleGroup,
+  .inputRightGroup {
+    width: 100%;
+  }
+}
+
+.rightButtons:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Right icon group - grouped action buttons */
+.rightIconGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
 }
 
 /* Validation Message */
 .validationMessage {
   background: #fffbe6;
-  color: #b45309;
+  color: var(--warning);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 11px;
@@ -601,26 +1187,27 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #ef4444;
+  color: var(--danger);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   padding: 8px 12px;
   background: rgba(239, 68, 68, 0.1);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .recordingDot {
   width: 8px;
   height: 8px;
-  background: #ef4444;
+  background: var(--danger);
   border-radius: 50%;
   animation: pulse 1s infinite;
 }
 
 /* Animations */
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
@@ -633,50 +1220,49 @@
 /* Responsive Design */
 @media (max-width: 1024px) {
   .topControls {
-    gap: 12px;
+    gap: 8px;
   }
-  
+
   .controlGroup {
-    min-width: 120px;
+    min-width: 0;
   }
 }
 
 @media (max-width: 768px) {
   .container {
-    padding: 16px;
-    margin: 9px 0;
+    padding: 12px 16px;
   }
-  
+
   .topControls {
-    flex-direction: row;
-    gap: 12px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
   }
-  
-  .inputsWrapperRow2{
+
+  .inputsWrapperRow2 {
     flex-direction: column-reverse;
   }
 
   .controlGroup {
-    min-width: 30%;
-    width: 30%;
+    min-width: 0;
+    width: auto;
   }
-  
+
   .actionButtons {
     justify-content: space-around;
     margin-top: 8px;
   }
-  
+
   .inputContainer {
     padding: 6px;
     padding-bottom: 0;
   }
-  
+
   .inputButton {
     width: 32px;
     height: 32px;
     font-size: 14px;
   }
-  
+
   .textInput {
     font-size: 14px;
   }
@@ -685,7 +1271,7 @@
     left: -20px !important;
     bottom: 35px;
   }
-  .settingsDropdown{
+  .settingsDropdown {
     left: -25px;
     padding: 12px;
   }
@@ -697,22 +1283,22 @@
     margin: 12px 0;
     border-radius: 12px;
   }
-  
+
   .topControls {
     gap: 8px;
   }
-  
+
   .actionButtons {
     flex-wrap: wrap;
     gap: 6px;
   }
-  
+
   .actionButton {
     width: 38px;
     height: 38px;
     font-size: 14px;
   }
-  
+
   .settingsDropdown {
     right: -8px;
     left: -8px;
@@ -721,22 +1307,36 @@
 }
 
 /* Active/selected state for icons */
-.inputButton.selected, .inputButton.active {
-  color: #007bc1;
-  background: #e6f2fa;
+.inputButton.selected,
+.inputButton.active {
+  color: var(--app-primary-color);
+  background: var(--accent-light);
 }
 
 /* Mention button specific styles */
 .mentionButton {
-  border: 1px solid #ccc;
-  color: #222 !important;
-  transition: all 0.2s ease;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  padding: 6px 10px;
+  height: 36px;
+  color: var(--content-color);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
+.leftControlsGroup .mentionButton:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.02);
+}
 
 .mentionButton.active {
-  background: #e6f2fa;
-  color: #007bc1 !important;
+  background: transparent;
+  color: var(--app-primary-color);
 }
 
 /* Mentioned agent item at top of dropdown */
@@ -755,7 +1355,6 @@
   color: #0284c7;
   font-weight: 600;
   font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-right: 4px;
 }
@@ -783,9 +1382,9 @@
   bottom: 30px;
   left: 0;
   width: 250px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  background: var(--card-bg);
+  border: 2px solid var(--ai-avatar-color, #0073cf);
+  border-radius: var(--radius-sm);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   margin-top: 4px;
@@ -799,9 +1398,9 @@
   bottom: 30px;
   right: 0;
   left: auto;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  background: var(--checkbox-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   margin-top: 4px;
@@ -812,108 +1411,213 @@
   overflow: hidden;
 }
 
-/* Suggestion Popover Styles */
+/* Suggestion Popover Styles - Dark theme compatible */
 .suggestionPopover {
   position: absolute;
-  bottom: 35px;
-  left: 30px;
-  right: auto;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  bottom: 60px;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  box-shadow: var(--shadow-lg);
   z-index: 1100;
-  min-width: 28vw;
-  max-width: 70vw;
-  width: max-content;
-  max-height: 265px;
+  max-height: 400px;
+  max-width: 600px;
   overflow: hidden;
   animation: fadeInUp 0.18s ease-in;
   transition: opacity 0.18s, transform 0.18s;
 }
-.suggestionSection {
-  padding: 6px 12px 4px 12px;
+
+.suggestionCloseButton {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: none;
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--content-color);
+  transition: background 0.15s, color 0.15s;
+  z-index: 1;
 }
+
+.suggestionCloseButton:hover {
+  background: var(--hover-background);
+  color: var(--header-color);
+}
+
+.suggestionSection {
+  padding: 0;
+}
+
+.suggestionSection:not(:last-child) {
+  border-bottom: 1px solid var(--border-color);
+}
+
 .suggestionLabel {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #334155;
-  margin-bottom: 0;
-  border-bottom: 1px solid #ccc;
-  padding-bottom: 2px;
+  gap: 8px;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--header-color);
+  padding: 12px 16px;
+  margin: 0;
+  border-bottom: 1px solid var(--border-color);
+  height: 46px;
+  box-sizing: border-box;
 }
+
+.suggestionLabel svg {
+  color: var(--content-color);
+}
+
 .suggestionList {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 8px 8px 8px;
+  max-height: 180px;
+  overflow-y: auto;
 }
+
+.suggestionList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.suggestionList::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
 .suggestionItem {
-  padding: 6px 10px;
-  font-size: 13px;
-  color: #222;
+  padding: 10px 16px;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--header-color);
   cursor: pointer;
-  border-radius: 5px;
-  transition: background 0.18s, color 0.18s;
-  margin-bottom: 2px;
+  border-radius: 0;
+  transition: background 0.15s;
+  margin-bottom: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.suggestionItem:hover, .suggestionItem:focus {
-  background: #e0f2fe;
-  color: #007acc;
-  outline: none;
-}
-.suggestionItem:active {
-  background: #bae6fd;
-}
-
-.chatOptionsItems{
+  border-top: 1px solid var(--border-color);
+  min-height: 41px;
+  box-sizing: border-box;
   display: flex;
-  flex: 1;
   align-items: center;
-  gap: 6px;
-  padding-bottom: 2px;
-  border-bottom: 1px solid #e0e0e0;
 }
 
-.chatOptionsItems button{
+.suggestionItem:first-child {
+  border-top: none;
+}
+
+.suggestionItem:hover,
+.suggestionItem:focus {
+  background: var(--hover-background);
+  color: var(--header-color);
+  outline: none;
+}
+
+.suggestionItem.highlighted {
+  background: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+.suggestionItem:active {
+  background: var(--hover-background);
+}
+
+.chatOptionsItems {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border-bottom: none;
+  margin: 0;
+}
+
+.chatOptionsItems button {
   background: none;
   border: none;
   outline: none;
   box-shadow: none;
 }
 
-.chatOptionsItems .actionButton{
-  background: none;
+.chatOptionsItems .actionButton {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background: transparent;
   border: none;
   box-shadow: none;
-  width: 100%;
+  width: 182px;
+  height: 33px;
+  padding: 0 0 0 8px;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 16px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.12s;
 }
 
-.chatOptionsItems .actionButton svg{
-  margin-left: 4px;
+.chatOptionsItems .actionButton:hover:not(:disabled) {
+  background: var(--muted-foreground);
+}
+
+.chatOptionsItems .actionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chatOptionsItems .actionButton svg {
+  flex-shrink: 0;
+  color: var(--muted);
 }
 
 .chatOptionsItems:last-child {
-    padding-bottom: 0;
-    border-bottom: none;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
-.chatOptionsItems .actionButton:focus{
+.chatOptionsItems .actionButton:focus {
   border: none;
   outline: none;
   box-shadow: none;
 }
 
-.chatOptionName{
-  font-size: 13px;
-  margin-bottom: 2px;
+.chatOptionName {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: 21px;
+  letter-spacing: 0.3px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+/* Delete button - red color */
+.deleteButton {
+  color: var(--danger) !important;
+}
+
+.deleteButton svg {
+  color: var(--danger) !important;
+}
+
+.deleteButton:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+
+.deleteButton .chatOptionName {
+  color: var(--danger);
 }
 
 @keyframes fadeInUp {
@@ -933,9 +1637,9 @@
   bottom: 30px;
   left: 0;
   width: 250px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  background: var(--card-bg);
+  border: 2px solid var(--ai-avatar-color, #0073cf);
+  border-radius: var(--radius-sm);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   margin-top: 4px;
@@ -952,20 +1656,22 @@
   width: 100%;
   padding: 6px 8px;
   padding-left: 35px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   outline: none;
-  background: #f9fafb;
+  background: var(--checkbox-bg);
 }
 
 .mentionSearchInput:focus {
-  border-color: #007acc;
+  border-color: var(--app-primary-color);
   box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
-  background: #ffffff;
+  background: var(--card-bg);
 }
 
 .mentionList {
+  min-height: 180px;
+  height: 180px;
   max-height: 180px;
   overflow-y: auto;
   scroll-behavior: smooth;
@@ -977,16 +1683,16 @@
 }
 
 .mentionList::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--checkbox-bg);
 }
 
 .mentionList::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border);
   border-radius: 3px;
 }
 
 .mentionList::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--text-secondary);
 }
 
 .mentionItem {
@@ -997,20 +1703,20 @@
 }
 
 .mentionItem:hover {
-  background: #f8fafc;
-  border-left-color: #e2e8f0;
+  background: var(--checkbox-bg);
+  border-left-color: var(--border);
 }
 
 .mentionItem.highlighted {
-  background: #e0f2fe;
-  border-left-color: #007acc;
+  background: var(--accent-light);
+  border-left-color: var(--app-primary-color);
   box-shadow: inset 0 0 0 1px rgba(0, 122, 204, 0.1);
 }
 
 .mentionAgentName {
-  font-size: 14px;
-  color: #334155;
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  color: var(--color-brand-primary);
+  font-weight: var(--font-weight-medium);
 }
 
 /* Mentioned Agent Indicator */
@@ -1034,7 +1740,7 @@
 .removeMentionButton {
   background: none;
   border: none;
-  color:#222;
+  color: #222;
   /* color: #ef4444; */
   cursor: pointer;
   padding: 2px;
@@ -1051,12 +1757,12 @@
 /* Tool Selection Submenu */
 .toolSubmenu {
   position: absolute;
-  top: 0;
+  top: -9px;
   left: 100%;
   margin-left: 10px;
-  background: #ffffff;
+  background: var(--card-bg);
   border-radius: 6px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 9999;
   width: 150px;
@@ -1070,7 +1776,7 @@
   height: 0;
   border-top: 8px solid transparent;
   border-bottom: 8px solid transparent;
-  border-right: 8px solid #e0e0e0;
+  border-right: 8px solid var(--border);
 }
 
 .toolSubmenuArrowInner {
@@ -1081,7 +1787,7 @@
   height: 0;
   border-top: 8px solid transparent;
   border-bottom: 8px solid transparent;
-  border-right: 8px solid #ffffff;
+  border-right: 8px solid var(--card-bg);
 }
 
 .toolSubmenuHeader {
@@ -1089,13 +1795,13 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--border);
 }
 
 .toolSubmenuTitle {
   font-size: 13px;
-  font-weight: 600;
-  color: #333333;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
 .toolSubmenuCloseBtn {
@@ -1106,13 +1812,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666666;
-  font-size: 16px;
+  color: var(--muted);
+  font-size: var(--font-size-base);
   line-height: 1;
 }
 
 .toolSubmenuCloseBtn:hover {
-  color: #333333;
+  color: var(--text-primary);
 }
 
 .toolSubmenuSelectAll {
@@ -1135,17 +1841,373 @@
   padding: 8px 12px;
   cursor: pointer;
   font-size: 13px;
-  color: #333333;
+  color: var(--text-primary);
   transition: background-color 0.15s;
 }
 
 .toolSubmenuItem:hover {
-  background-color: #f5f5f5;
+  background-color: var(--checkbox-bg);
 }
 
 .toolSubmenuCheckbox {
   width: 14px;
   height: 14px;
   cursor: pointer;
-  accent-color: #007cc3;
+  accent-color: var(--app-primary-color);
+}
+
+.tool-verifier {
+  position: relative;
+}
+
+/* Auto-suggest dropdown styles */
+.autoSuggestDropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  padding: 4px;
+}
+
+.autoSuggestItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.autoSuggestItem:hover,
+.autoSuggestItem.highlighted {
+  background: var(--hover-background);
+}
+
+.autoSuggestItem svg {
+  color: var(--app-primary-color);
+  flex-shrink: 0;
+}
+
+.autoSuggestText {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Uploading indicator dot on upload button */
+.uploadingDot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  background: var(--app-primary-color);
+  border-radius: 50%;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+
+/* Make upload button position relative for the dot */
+.leftControlsGroup .inputButton {
+  position: relative;
+}
+
+/* Inline file chips for uploaded files */
+.filesPreviewInline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.fileChipCompact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--muted-foreground);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 11px;
+  color: var(--text-primary);
+  max-width: 160px;
+}
+
+.fileChipCompact svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.fileNameCompact {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: var(--font-weight-medium);
+}
+
+.deleteButtonCompact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.deleteButtonCompact:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.deleteButtonCompact:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   @Mention Agent Badge with Glow Effect
+   ========================================== */
+.mentionedAgentBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 8px;
+  background: var(--app-primary-color);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  max-width: 160px;
+  flex-shrink: 0;
+}
+
+.mentionedAgentBadge:hover {
+  background: var(--app-primary-hover, #2563eb);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.mentionedAgentAt {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.mentionedAgentName {
+  font-size: 12px;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.mentionedAgentClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid #ffffff;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  cursor: pointer;
+  color: #ffffff;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.mentionedAgentClose:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  transform: scale(1.15);
+}
+
+/* ==========================================
+   @Mention Dropdown
+   ========================================== */
+.mentionDropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 380px;
+  max-width: 90%;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.1);
+  z-index: 1001;
+  max-height: 320px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: mentionDropdownSlideUp 0.15s ease-out;
+}
+
+@keyframes mentionDropdownSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mentionDropdownHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--hover-background);
+  gap: 10px;
+}
+
+.mentionSearchWrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-width: 0;
+}
+
+.mentionSearchWrapper svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.mentionSearchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  min-width: 0;
+}
+
+.mentionSearchInput::placeholder {
+  color: var(--muted);
+}
+
+.mentionFilterSelect {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  min-width: 100px;
+  max-width: 150px;
+}
+
+.mentionFilterSelect:hover,
+.mentionFilterSelect:focus {
+  border-color: var(--app-primary-color);
+}
+
+.mentionFilterSelect option {
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.mentionDropdownList {
+  overflow-y: auto;
+  max-height: 250px;
+  padding: 8px;
+}
+
+.mentionDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.mentionDropdownItem:hover,
+.mentionDropdownItem.highlighted {
+  background: var(--hover-background);
+}
+
+.mentionDropdownItem.highlighted {
+  background: rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.1);
+  border: 1px solid rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.3);
+}
+
+.mentionDropdownItem svg {
+  color: var(--app-primary-color);
+  flex-shrink: 0;
+}
+
+.mentionDropdownItemName {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mentionDropdownItemType {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--muted-foreground);
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: capitalize;
+}
+
+.mentionDropdownEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-size: 13px;
+  color: var(--muted);
 }

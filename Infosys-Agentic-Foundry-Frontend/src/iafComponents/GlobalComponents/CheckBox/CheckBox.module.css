@@ -1,0 +1,64 @@
+/* Robust, accessible checkbox styles for all states */
+.checkboxRoot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid black;
+  background: #fff;
+  background: rgba(249, 250, 251, 1);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  box-shadow: 0px 1px 2px 0px rgba(0, 0, 0, 0.05);
+  position: relative;
+  outline: none;
+}
+.checkboxRoot.checked {
+  background: var(--app-primary-color, #1976d2);
+  border-color: var(--app-primary-color, #1976d2);
+}
+
+/* .checkboxRoot:focus {
+  box-shadow: 0 0 0 2px #90caf9;
+  border-color: #1976d2;
+} */
+
+.checkboxRoot.disabled {
+  background: #f3f3f3;
+  border-color: #e0e0e0;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.checkboxRoot.checked.disabled {
+  background: #e0e0e0;
+  border-color: #bdbdbd;
+}
+.checkboxInput {
+  display: none;
+}
+.checkboxTick {
+  display: none;
+}
+.checkboxRoot.checked .checkboxTick {
+  display: block;
+  width: 14px;
+  height: 15px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.checkboxRoot.checked .checkboxTick::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 3px;
+  height: 7px;
+  border-right: 1.5px solid #fff;
+  border-bottom: 1.5px solid #fff;
+  transform: rotate(45deg);
+}

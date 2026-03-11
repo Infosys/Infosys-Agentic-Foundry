@@ -1,12 +1,43 @@
 /* DataConnectors.module.css */
 .container {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-  min-height: 100vh;
-  /* background-color: #f8f9fa; */
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+  padding: 0 20px;
+  position: relative;
+  width: 100%;
+  overflow: auto;
+  background: var(--list-container-bg);
+  box-sizing: border-box;
+}
+
+/* Data Connector Header Styles */
+.dataConnectorHeader {
+  padding: 0 16px;
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+  margin-bottom: 12px;
+}
+
+.dataConnectorHeading {
+  font-family: var(--font-secondary);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-base);
+  line-height: 30px;
+  letter-spacing: 0.3px;
+  color: var(--header-color);
+  text-transform: none;
+  margin: 0;
+}
+
+/* Search field wrapper for TextField component */
+.searchFieldWrapper {
+  width: 220px;
 }
 
 .header {
@@ -20,36 +51,36 @@
 }
 
 .cardsContainer {
+  padding: 0px 16px;
   display: flex;
   flex-direction: row;
   gap: 20px;
   margin-top: 20px;
   align-items: stretch;
   justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .databaseCard {
-  background: #f5f6fa;
-  border-radius: 12px;
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
   padding: 16px;
   cursor: pointer;
   transition: all 0.3s ease;
-  border: 1px solid #e9ecef;
-  /* box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); */
+  border: 1px solid var(--border);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 200px;
-  width:200px;
+  width: 200px;
   flex: 1;
-  /* box-sizing: border-box; */
+  min-width: 200px;
 }
 
 .databaseCard:hover {
   transform: translateY(-2px);
-  /* box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); */
-  border-color: #007bff;
+  border-color: var(--app-primary-color);
 }
 
 .databaseCard:active {
@@ -66,7 +97,7 @@
 .cardIcon {
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -75,9 +106,11 @@
 }
 
 .cardTitle {
-  font-size: 1.1rem;
-  font-weight: 400;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
   margin: 0;
+  color: var(--header-color);
 }
 
 .cardTitleSection {
@@ -86,9 +119,22 @@
   gap: 4px;
 }
 
+.connectionBadge {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+  color: var(--content-color);
+  margin-left: 0;
+  background: var(--badge-bg);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+}
+
 .cardDescription {
-  color: #6c757d;
-  font-size: 0.85rem;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 450;
+  color: var(--content-color);
   line-height: 1.4;
   margin: 0 0 16px 0;
   flex-grow: 1;
@@ -96,26 +142,22 @@
   min-height: 1.4em;
 }
 
-.cardFooter {
-  margin-top: auto;
-  padding-top: 12px;
-}
-
 .cardButtons {
   display: flex;
-  gap: 4px;
-  justify-content: flex-end;
+  gap: 1rem;
+  justify-content: center;
   margin-left: auto;
 }
 
 .connectButton {
-  background-color: #007bff;
-  color: white;
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
   border: none;
   padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -126,21 +168,22 @@
 }
 
 .connectButton:hover {
-  background-color: #0056b3;
+  background-color: var(--accent-hover);
   transform: translateY(-1px);
 }
 
 .runButton,
-.manageButton{
- background-color: #007bff;
-  color: white;
+.manageButton {
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
   border: none;
   padding: 8px 18px;
   margin-right: 16px;
   margin-top: 8px;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -151,17 +194,17 @@
   justify-content: center;
 }
 
-
 .crudButton {
- background-color: #007bff;
-  color: white;
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
   border: none;
   padding: 8px 18px;
   margin-right: 16px;
   margin-top: 8px;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -170,13 +213,21 @@
   width: auto;
   min-width: 0;
   justify-content: center;
+}
+.runbutton {
+  padding-inline: 1.5rem;
+}
+
+/* Spacing for manage button when using IAFButton component */
+.manageButtonSpacing {
+  margin-left: 8px;
 }
 
 .noResults {
   width: 100%;
   text-align: center;
   padding: 60px 20px;
-  color: #6c757d;
+  color: var(--content-color);
 }
 
 .noResults p {
@@ -189,32 +240,32 @@
   .container {
     padding: 15px;
   }
-  
+
   .title {
     font-size: 2rem;
   }
-  
+
   .subtitle {
     font-size: 1rem;
   }
-  
+
   .cardsContainer {
     gap: 12px;
     justify-content: space-between;
   }
-  
+
   .databaseCard {
     padding: 12px;
     height: 240px;
     min-height: 240px;
     flex: 1;
   }
-  
+
   .cardIcon {
     width: 32px;
     height: 32px;
   }
-  
+
   .cardTitle {
     font-size: 1rem;
   }
@@ -224,50 +275,50 @@
   .container {
     padding: 10px;
   }
-  
+
   .header {
     margin-bottom: 20px;
   }
-  
+
   .title {
     font-size: 1.8rem;
   }
-  
+
   .searchContainer {
     margin-bottom: 30px;
   }
-  
+
   .searchInput {
     font-size: 14px;
     padding: 10px 12px 10px 40px;
   }
-  
+
   .cardsContainer {
     gap: 8px;
     justify-content: space-between;
   }
-  
+
   .databaseCard {
     padding: 8px;
     height: 220px;
     min-height: 220px;
     flex: 1;
   }
-  
+
   .cardHeader {
     margin-bottom: 12px;
   }
-  
+
   .cardIcon {
     width: 40px;
     height: 40px;
     margin-right: 12px;
   }
-  
+
   .cardTitle {
     font-size: 1.1rem;
   }
-  
+
   .cardDescription {
     font-size: 0.9rem;
   }
@@ -276,12 +327,13 @@
 
 /* Form Section Styles */
 .formSection {
-  background: #f8f9fa;
-  border-radius: 8px;
+  background: var(--input-bg);
+  border-radius: var(--radius-sm);
   padding: 24px;
   margin-bottom: 24px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow);
 }
+
 .connectionsSection {
   margin-top: 20px;
   padding: 0;
@@ -296,9 +348,10 @@
 }
 
 .connectionTypeTitle {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
   margin-bottom: 12px;
   padding-bottom: 8px;
 }
@@ -307,10 +360,10 @@
   list-style: none;
   padding: 0;
   margin: 0;
-  background: #f8f9fa;
-  border-radius: 8px;
+  background: var(--input-bg);
+  border-radius: var(--radius-sm);
   padding: 16px 20px;
-  border: 1px solid #e1e5e9;
+  border: 1px solid var(--border);
 }
 
 .connectionBulletItem {
@@ -325,25 +378,27 @@
 }
 
 .connectionIcon {
-  font-size: 16px;
-  color: #28a745;
+  font-size: var(--font-size-base);
+  color: var(--success);
   flex-shrink: 0;
 }
 
 .connectionName {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--header-color);
   flex-grow: 1;
 }
 
 .connectionType {
-  font-size: 12px;
-  color: #6c757d;
-  font-style: italic;
-  background-color: #e9ecef;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  color: var(--content-color);
+  font-style: normal;
+  background-color: var(--badge-bg);
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   margin-left: 8px;
 }
 
@@ -352,44 +407,103 @@
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  color: #6c757d;
-  font-style: italic;
-  font-size: 14px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--content-color);
+  font-style: normal;
   justify-content: center;
 }
 
 .loadingMessage {
   text-align: center;
   padding: 20px;
-  color: #6c757d;
-  font-style: italic;
+  font-family: var(--font-primary);
+  color: var(--content-color);
+  font-style: normal;
 }
 
 .errorMessage {
-  background-color: #f8d7da;
-  color: #721c24;
+  background-color: var(--accent-light);
+  color: var(--danger);
   padding: 12px 16px;
-  border-radius: 6px;
-  border: 1px solid #f5c6cb;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger);
   margin-bottom: 16px;
 }
 
 .errorMessage p {
   margin: 0;
-  font-size: 14px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
 }
 
 .codeExampleSection {
-  margin-left: 40px;
+  margin-left: 16px;
   margin-top: 20px;
+  font-family: var(--font-primary);
+  color: var(--header-color);
+  font-weight: var(--font-weight-medium);
 }
 
 .codeExampleTitle {
-  font-size: 1.2rem;
-  font-weight: 600;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
   margin-bottom: 16px;
-  color: #382261;
+  color: var(--header-color);
 }
-.codeSnippet{
-  margin-bottom: 66px;
+
+.codeSnippet {
+  margin-left: 16px;
+  margin-right: 16px;
+  margin-top: 20px;
+  padding-bottom: 20px;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.codeSnippet > div {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Responsive Design for Data Connector Cards */
+
+/* Tablet - 2 cards per row */
+@media (max-width: 1024px) {
+  .databaseCard {
+    flex: 1 1 calc(50% - 10px);
+    max-width: calc(50% - 10px);
+  }
+}
+
+/* Small tablets and large phones - 2 cards per row */
+@media (max-width: 768px) {
+  .cardsContainer {
+    padding: 0px 12px;
+    gap: 16px;
+  }
+
+  .databaseCard {
+    flex: 1 1 calc(50% - 8px);
+    max-width: calc(50% - 8px);
+    min-width: unset;
+    width: auto;
+  }
+}
+
+/* Mobile phones - 1 card per row */
+@media (max-width: 480px) {
+  .cardsContainer {
+    padding: 0px 8px;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .databaseCard {
+    flex: 1 1 100%;
+    max-width: 100%;
+    width: 100%;
+  }
 }

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import AceEditor from "react-ace";
 import styles from "./CodeEditor.module.css";
+import { useMessage } from "../../Hooks/MessageContext";
+import SVGIcons from "../../Icons/SVGIcons";
 
 // Pre-load ace modules immediately when this file is imported
 import ace from "ace-builds/src-noconflict/ace";
@@ -63,7 +65,6 @@ const CodeEditor = ({
   codeToDisplay = "",
   onChange,
   readOnly = false,
-  theme = "github",
   mode = "python",
   width = "100%",
   height = "250px",
@@ -71,29 +72,178 @@ const CodeEditor = ({
   placeholder = "Enter your Python code here...",
   style = {},
   onLoad,
-  isDarkTheme = false,
   /** Delay (ms) to debounce change propagation to parent. Helps prevent parent layout thrash that can cause scroll jumps. */
   debounceDelay = 60,
+  /** Callback when user clicks "Explain" button on selected text */
+  onExplainSelection,
+  /** Whether to show the language badge header (default: true) */
+  showLanguageBadge = true,
+  /** Enable drag-and-drop file upload functionality */
+  enableDragDrop = false,
+  /** Accepted file extensions for drag-drop (e.g., ['.py', '.txt']) */
+  acceptedFileTypes = ['.py'],
+  /** Callback when file is successfully loaded */
+  onFileLoad,
+  /** Show upload button in label */
+  showUploadButton = false,
+  /** Show helper text in label */
+  showHelperText = false,
+  /** Custom helper text */
+  helperText = "(drag & drop / upload .py file / type directly)",
+  /** Label text for the code editor */
+  label = "",
+  /** Callback when label is clicked (e.g., to focus editor) */
+  onLabelClick,
   ...props
 }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const editorRef = useRef(null);
   const retryTimeoutRef = useRef(null);
+  const containerRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const { addMessage } = useMessage();
+
+  // Detect current theme (dark or light)
+  const [currentTheme, setCurrentTheme] = useState(() => {
+    return document.documentElement.getAttribute("data-theme") || "light";
+  });
+
+  // Listen for theme changes
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === "data-theme") {
+          const newTheme = document.documentElement.getAttribute("data-theme") || "light";
+          setCurrentTheme(newTheme);
+        }
+      });
+    });
+
+    observer.observe(document.documentElement, { attributes: true });
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Get Ace theme based on current app theme
+  const aceTheme = currentTheme === "dark" ? "monokai" : "github";
+
+  // State for selection popover
+  const [selectionPopover, setSelectionPopover] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    selectedText: "",
+  });
   // Stable editor id prevents Ace from remounting each render (avoids scroll reset/jump)
   const editorIdRef = useRef(`ace-editor-${++editorIdCounter}`);
   const debounceTimerRef = useRef(null);
 
-  // Debounced onChange wrapper
+  // File reading function
+  const readFileContent = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  };
+
+  // Validate file type
+  const isValidFileType = (fileName) => {
+    return acceptedFileTypes.some(ext =>
+      fileName.toLowerCase().endsWith(ext.toLowerCase())
+    );
+  };
+
+  // Process selected/dropped file
+  const processFile = async (file) => {
+    if (!isValidFileType(file.name)) {
+      const extensions = acceptedFileTypes.join(', ');
+      addMessage(`Please upload a valid file type: ${extensions}`, 'error');
+      return;
+    }
+
+    try {
+      const content = await readFileContent(file);
+
+      // Call onChange to update parent component
+      if (onChange) {
+        onChange(content);
+      }
+
+      // Call optional callback
+      if (onFileLoad) {
+        onFileLoad(content, file);
+      }
+
+      addMessage(`File "${file.name}" loaded successfully`, 'success');
+    } catch (error) {
+      console.error('Error reading file:', error);
+      addMessage('Failed to read file content', 'error');
+    }
+  };
+
+  // Handle drag events
+  const handleDragEnter = useCallback((e) => {
+    if (!enableDragDrop || readOnly) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, [enableDragDrop, readOnly]);
+
+  const handleDragLeave = useCallback((e) => {
+    if (!enableDragDrop || readOnly) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) {
+      setIsDragging(false);
+    }
+  }, [enableDragDrop, readOnly]);
+
+  const handleDragOver = useCallback((e) => {
+    if (!enableDragDrop || readOnly) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, [enableDragDrop, readOnly]);
+
+  const handleDrop = useCallback(async (e) => {
+    if (!enableDragDrop || readOnly) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      await processFile(files[0]);
+    }
+  }, [enableDragDrop, readOnly, processFile]);
+
+  // Handle file picker selection
+  const handleFileSelect = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processFile(file);
+    // Reset input for re-selection
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [processFile]);
+
+  // Trigger file picker
+  const handleUploadClick = useCallback(() => {
+    if (!enableDragDrop || readOnly) return;
+    fileInputRef.current?.click();
+  }, [enableDragDrop, readOnly]);
+
+  // Direct onChange handler (removed debounce to fix cursor jumping issues)
   const handleChange = useCallback(
     (val) => {
       if (!onChange) return;
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = setTimeout(() => {
-        onChange(val);
-      }, debounceDelay);
+      onChange(val);
     },
-    [onChange, debounceDelay]
+    [onChange],
   );
 
   useEffect(() => {
@@ -134,7 +284,7 @@ const CodeEditor = ({
       const session = editor.getSession();
       if (session) {
         session.setUseWorker(false);
-        session.setUseWrapMode(false);
+        session.setUseWrapMode(true);
 
         // Force disable worker in the session
         session.$useWorker = false;
@@ -176,6 +326,36 @@ const CodeEditor = ({
       if (editor.commands && editor.commands.byName && editor.commands.byName.centerselection) {
         editor.commands.removeCommand("centerselection");
       }
+
+      // Add selection change listener for "Explain" popover feature
+      if (onExplainSelection) {
+        const selection = editor.getSelection();
+        selection.on("changeSelection", () => {
+          const selectedText = editor.getSelectedText();
+          if (selectedText && selectedText.trim().length > 0) {
+            // Get the cursor position to place the popover
+            const cursorPos = editor.getCursorPosition();
+            const screenPos = editor.renderer.textToScreenCoordinates(cursorPos.row, cursorPos.column);
+            const containerRect = containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+
+            setSelectionPopover({
+              visible: true,
+              x: screenPos.pageX - containerRect.left,
+              y: screenPos.pageY - containerRect.top - 35, // Position above the selection
+              selectedText: selectedText,
+            });
+          } else {
+            setSelectionPopover((prev) => ({ ...prev, visible: false }));
+          }
+        });
+
+        // Hide popover on editor blur or click outside
+        editor.on("blur", () => {
+          setTimeout(() => {
+            setSelectionPopover((prev) => ({ ...prev, visible: false }));
+          }, 150); // Delay to allow button click
+        });
+      }
     }
 
     if (onLoad) {
@@ -183,8 +363,8 @@ const CodeEditor = ({
     }
   };
   const defaultStyle = {
-    border: "1px solid #e0e0e0",
-    borderRadius: "8px",
+    border: "none",
+    borderRadius: "0",
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
     ...style,
   };
@@ -198,7 +378,7 @@ const CodeEditor = ({
           onChange={(e) => !readOnly && onChange && onChange(e.target.value)}
           readOnly={readOnly}
           placeholder={placeholder}
-          className={`${styles.fallbackTextarea} ${isDarkTheme ? styles.darkTheme : ""}`}
+          className={styles.fallbackTextarea}
           style={{
             ...defaultStyle,
             height,
@@ -209,7 +389,7 @@ const CodeEditor = ({
     }
 
     return (
-      <div className={`${styles.loadingContainer} ${isDarkTheme ? styles.darkTheme : ""}`} style={{ width, height }}>
+      <div className={styles.loadingContainer} style={{ width, height }}>
         <div className={styles.loadingText}>
           <div>Loading code editor...</div>
           <div className={styles.loadingSubtext}>Please wait while we initialize the editor</div>
@@ -218,96 +398,160 @@ const CodeEditor = ({
     );
   }
 
+  /**
+   * Handle "Explain" button click
+   */
+  const handleExplainClick = () => {
+    if (onExplainSelection && selectionPopover.selectedText) {
+      onExplainSelection(selectionPopover.selectedText);
+      setSelectionPopover((prev) => ({ ...prev, visible: false }));
+    }
+  };
+
   try {
     return (
-      <div className="codeEditorWrapper">
-        <div
-          style={{
-            border: "1px solid #e0e0e0",
-            borderRadius: "8px",
-            overflow: "hidden",
-            fontFamily: "Consolas, Monaco, monospace",
-            backgroundColor: "#1e1e1e",
-            position: "relative",
-            marginTop: "8px",
-          }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "8px 12px",
-              backgroundColor: "#2d2d30",
-              borderBottom: "1px solid #3e3e42",
-              fontSize: "12px",
-            }}>
-            <span
-              style={{
-                padding: "4px 8px",
-                border: "1px solid #d0d7de",
-                borderRadius: "4px",
-                backgroundColor: "#3c3c3c",
-                color: "#ffffff",
-                fontSize: "12px",
-                display: "inline-block",
-              }}>
-              Python
-            </span>
+      <div className={styles.codeEditorOuterWrapper}>
+        {/* Optional Label with Upload Button */}
+        {label && (
+          <div className={styles.labelContainer}>
+            <label
+              className={styles.codeLabel}
+              onClick={onLabelClick}
+            >
+              {label}
+            </label>
+            {showUploadButton && enableDragDrop && !readOnly && (
+              <button
+                type="button"
+                onClick={handleUploadClick}
+                className={styles.uploadBtn}
+                title="Upload File"
+                aria-label={`Upload ${acceptedFileTypes.join(', ')} file`}
+              >
+                +
+              </button>
+            )}
+            {showHelperText && (
+              <span className={styles.helperText}>
+                {helperText}
+              </span>
+            )}
           </div>
-          <AceEditor
-            ref={editorRef}
-            mode={mode}
-            theme={isDarkTheme ? "monokai" : theme}
-            name={editorIdRef.current}
-            onChange={readOnly ? undefined : handleChange}
-            value={codeToDisplay}
-            width={width}
-            height={height}
-            fontSize={fontSize}
-            showPrintMargin={false}
-            showGutter={true}
-            highlightActiveLine={false}
-            readOnly={readOnly}
-            setOptions={{
-              enableBasicAutocompletion: !readOnly,
-              enableLiveAutocompletion: !readOnly,
-              enableSnippets: !readOnly,
-              showLineNumbers: true,
-              tabSize: 4,
-              useWorker: false,
-              wrap: false,
-              animatedScroll: false,
-              cursorStyle: "ace",
-              mergeUndoDeltas: true,
-              behavioursEnabled: !readOnly,
-              wrapBehavioursEnabled: !readOnly,
-              autoScrollEditorIntoView: false,
-              copyWithEmptySelection: false,
-              scrollPastEnd: 0,
-              fixedWidthGutter: true,
-              ...props.setOptions,
-            }}
-            style={defaultStyle}
-            placeholder={placeholder}
-            onLoad={handleEditorLoad}
-            editorProps={{
-              $blockScrolling: Infinity,
-              $useWorker: false, // Additional worker prevention
-            }}
-            onBlur={() => {
-              // optional: disable active line highlight when blurred
-              const ed = editorRef.current?.editor;
-              if (ed) ed.setHighlightActiveLine(false); // On focus out remove the line highlight
-              editorRef.current.editor.renderer.$cursorLayer.element.style.visibility = "hidden"; // To remove the last cursor position highlight
-            }}
-            onFocus={() => {
-              const ed = editorRef.current?.editor;
-              if (ed) ed.setHighlightActiveLine(true); // On focus in enable the line highlight
-              editorRef.current.editor.renderer.$cursorLayer.element.style.visibility = "visible"; // To remove the last cursor position highlight
-            }}
-            commands={[]} // Prevent any commands that might trigger worker loading
-            {...props}
+        )}
+
+        {/* Hidden file input */}
+        {enableDragDrop && !readOnly && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={acceptedFileTypes.join(',')}
+            onChange={handleFileSelect}
+            className={styles.hiddenFileInput}
+            aria-label="Upload code file"
           />
+        )}
+
+        <div
+          className={`${styles.codeEditorWrapper} ${isDragging ? styles.dragging : ''}`}
+          ref={containerRef}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          {/* Drag overlay */}
+          {enableDragDrop && !readOnly && isDragging && (
+            <div className={styles.dragOverlay}>
+              <div className={styles.dragOverlayContent}>
+                <SVGIcons
+                  icon="fa-solid fa-file-code"
+                  width={48}
+                  height={48}
+                  fill="var(--app-primary-color)"
+                />
+                <p className={styles.dragOverlayText}>Drop file here</p>
+                <p className={styles.dragOverlaySubtext}>Content will replace current code</p>
+              </div>
+            </div>
+          )}
+
+          <div className={styles.editorContainer}>
+            {/* Explain Popover Button */}
+            {onExplainSelection && selectionPopover.visible && (
+              <button
+                type="button"
+                className={styles.explainPopover}
+                style={{
+                  left: `${selectionPopover.x}px`,
+                  top: `${selectionPopover.y}px`,
+                }}
+                onClick={handleExplainClick}
+                onMouseDown={(e) => e.preventDefault()} // Prevent blur before click
+              >
+                Explain
+              </button>
+            )}
+
+            {showLanguageBadge && (
+              <div className={styles.editorHeader}>
+                <span className={styles.languageBadge}>Python</span>
+              </div>
+            )}
+            <AceEditor
+              ref={editorRef}
+              mode={mode}
+              theme={aceTheme}
+              className={styles.aceEditor}
+              name={editorIdRef.current}
+              onChange={readOnly ? undefined : handleChange}
+              value={codeToDisplay}
+              width={width}
+              height={height}
+              fontSize={fontSize}
+              showPrintMargin={false}
+              showGutter={true}
+              highlightActiveLine={false}
+              readOnly={readOnly}
+              setOptions={{
+                enableBasicAutocompletion: !readOnly,
+                enableLiveAutocompletion: !readOnly,
+                enableSnippets: !readOnly,
+                showLineNumbers: true,
+                tabSize: 4,
+                useWorker: false,
+                wrap: true,
+                animatedScroll: false,
+                cursorStyle: "ace",
+                mergeUndoDeltas: true,
+                behavioursEnabled: !readOnly,
+                wrapBehavioursEnabled: !readOnly,
+                autoScrollEditorIntoView: false,
+                copyWithEmptySelection: false,
+                scrollPastEnd: 0,
+                fixedWidthGutter: true,
+                ...props.setOptions,
+              }}
+              style={defaultStyle}
+              placeholder={placeholder}
+              onLoad={handleEditorLoad}
+              editorProps={{
+                $blockScrolling: Infinity,
+                $useWorker: false, // Additional worker prevention
+              }}
+              onBlur={() => {
+                // optional: disable active line highlight when blurred
+                const ed = editorRef.current?.editor;
+                if (ed) ed.setHighlightActiveLine(false); // On focus out remove the line highlight
+                editorRef.current.editor.renderer.$cursorLayer.element.style.visibility = "hidden"; // To remove the last cursor position highlight
+              }}
+              onFocus={() => {
+                const ed = editorRef.current?.editor;
+                if (ed) ed.setHighlightActiveLine(true); // On focus in enable the line highlight
+                editorRef.current.editor.renderer.$cursorLayer.element.style.visibility = "visible"; // To remove the last cursor position highlight
+              }}
+              {...props}
+            />
+          </div>
         </div>
       </div>
     );
@@ -321,7 +565,7 @@ const CodeEditor = ({
         onChange={(e) => !readOnly && onChange && onChange(e.target.value)}
         readOnly={readOnly}
         placeholder={placeholder}
-        className={`${styles.fallbackTextarea} ${isDarkTheme ? styles.darkTheme : ""}`}
+        className={styles.fallbackTextarea}
         style={{
           ...defaultStyle,
           height,

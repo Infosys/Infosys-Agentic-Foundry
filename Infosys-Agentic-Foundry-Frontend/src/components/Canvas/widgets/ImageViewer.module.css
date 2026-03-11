@@ -3,7 +3,10 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #ffffff;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 /* Toolbar */
@@ -12,10 +15,11 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  background: var(--checkbox-bg);
   flex-shrink: 0;
   min-height: 44px;
+  border-radius: 16px 16px 0 0;
 }
 
 .toolbarLeft {
@@ -28,20 +32,20 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #e0f2fe;
-  color: #007acc;
+  background: var(--pill-bg);
+  color: var(--app-primary-color);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 13px;
   font-weight: 500;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.025em;
 }
 
 .imageTitle {
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-primary);
   max-width: 200px;
   overflow: visible; /* Allow full text to be displayed */
   text-overflow: unset; /* Remove ellipsis */
@@ -69,7 +73,7 @@
 }
 
 .toolbarButton:hover:not(:disabled) {
-  background: #f1f5f9;
+  background: var(--hover-background);
 }
 
 .toolbarButton:disabled {
@@ -79,7 +83,7 @@
 
 .zoomLevel {
   font-size: 13px;
-  color: #64748b;
+  color: var(--muted);
   font-weight: 500;
   min-width: 40px;
   text-align: center;
@@ -88,7 +92,7 @@
 .separator {
   width: 1px;
   height: 16px;
-  background: #e5e7eb;
+  background: var(--border);
   margin: 0 4px;
 }
 
@@ -100,14 +104,7 @@
   justify-content: center;
   overflow: hidden;
   position: relative;
-  background: #f8fafc;
-  background-image: 
-    linear-gradient(45deg, #e2e8f0 25%, transparent 25%), 
-    linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), 
-    linear-gradient(45deg, transparent 75%, #e2e8f0 75%), 
-    linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  background: var(--checkbox-bg);
 }
 
 .imageContainer.fullscreen {
@@ -144,21 +141,25 @@
   justify-content: center;
   gap: 16px;
   padding: 40px;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e5e7eb;
-  border-top: 3px solid #007acc;
+  border: 3px solid var(--border);
+  border-top: 3px solid var(--app-primary-color);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* Error State */
@@ -170,12 +171,12 @@
   height: 100%;
   padding: 40px 20px;
   text-align: center;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .errorMessage {
   margin-top: 12px;
-  color: #dc2626;
+  color: var(--danger);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -183,9 +184,10 @@
 /* Footer */
 .footer {
   padding: 8px 16px;
-  border-top: 1px solid #e5e7eb;
-  background: #f8fafc;
+  border-top: 1px solid var(--border);
+  background: var(--checkbox-bg);
   flex-shrink: 0;
+  border-radius: 0 0 16px 16px;
 }
 
 .imageInfo {
@@ -193,7 +195,7 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .imageInfo .separator {
@@ -201,7 +203,7 @@
   height: auto;
   background: none;
   margin: 0;
-  color: #cbd5e1;
+  color: var(--border);
 }
 
 /* Responsive Design */
@@ -209,94 +211,35 @@
   .toolbar {
     padding: 6px 12px;
   }
-  
+
   .toolbarLeft {
     gap: 8px;
   }
-  
+
   .imageTitle {
     max-width: 120px;
   }
-  
+
   .toolbarActions {
     gap: 2px;
   }
-  
+
   .toolbarButton {
     padding: 4px;
     min-width: 24px;
     min-height: 24px;
   }
-  
+
   .zoomLevel {
     min-width: 35px;
     font-size: 13px;
   }
-  
+
   .footer {
     padding: 6px 12px;
   }
-  
+
   .imageInfo {
     font-size: 13px;
-  }
-}
-
-/* Dark Mode Support */
-@media (prefers-color-scheme: dark) {
-  .imageViewer {
-    background: #1f2937;
-  }
-  
-  .toolbar {
-    background: #374151;
-    border-bottom-color: #4b5563;
-  }
-  
-  .contentTag {
-    background: #1e40af;
-    color: #93c5fd;
-  }
-  
-  .imageTitle {
-    color: #e5e7eb;
-  }
-  
-  .toolbarButton:hover:not(:disabled) {
-    background: #4b5563;
-  }
-  
-  .zoomLevel {
-    color: #9ca3af;
-  }
-  
-  .separator {
-    background: #4b5563;
-  }
-  
-  .imageContainer {
-    background: #111827;
-    background-image: 
-      linear-gradient(45deg, #374151 25%, transparent 25%), 
-      linear-gradient(-45deg, #374151 25%, transparent 25%), 
-      linear-gradient(45deg, transparent 75%, #374151 75%), 
-      linear-gradient(-45deg, transparent 75%, #374151 75%);
-  }
-  
-  .footer {
-    background: #374151;
-    border-top-color: #4b5563;
-  }
-  
-  .imageInfo {
-    color: #9ca3af;
-  }
-  
-  .loadingState {
-    color: #9ca3af;
-  }
-  
-  .errorState {
-    color: #9ca3af;
   }
 }

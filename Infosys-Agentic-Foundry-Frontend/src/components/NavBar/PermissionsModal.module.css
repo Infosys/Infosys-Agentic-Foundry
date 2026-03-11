@@ -1,0 +1,124 @@
+/* ============================================
+   PermissionsModal Content Styles
+   ============================================
+   Styles for the content inside FullModal
+============================================ */
+
+/* Content Container */
+.content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Info Note Banner */
+.infoNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--info-bg, rgba(0, 102, 204, 0.08));
+  border: 1px solid var(--app-primary-color-light, rgba(0, 102, 204, 0.2));
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary, #4b5563);
+  line-height: 1.5;
+}
+
+.infoNote svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Categories Grid */
+.categoriesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .categoriesGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Category Card */
+.categoryCard {
+  background: var(--card-bg-secondary, #f9fafb);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  padding: 16px;
+  transition: box-shadow 0.2s ease;
+}
+
+.categoryCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.categoryHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.categoryTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+}
+
+/* Permissions List */
+.permissionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.permissionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.permissionLabel {
+  font-size: 13px;
+  color: var(--text-secondary, #4b5563);
+}
+
+/* Permission Badge */
+.permissionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.permissionBadge.enabled {
+  background-color: var(--success-bg, rgba(34, 197, 94, 0.12));
+  color: var(--success-color, #16a34a);
+}
+
+.permissionBadge.disabled {
+  background-color: var(--error-bg, rgba(239, 68, 68, 0.12));
+  color: var(--error-color, #dc2626);
+}
+
+/* Dark theme adjustments */
+:root[data-theme="dark"] .categoryCard {
+  background: var(--card-bg-secondary, #1f2937);
+}
+
+:root[data-theme="dark"] .infoNote {
+  background: rgba(0, 102, 204, 0.15);
+  border-color: rgba(0, 102, 204, 0.3);
+}

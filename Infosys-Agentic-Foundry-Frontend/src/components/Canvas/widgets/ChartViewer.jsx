@@ -22,12 +22,20 @@ import styles from "./ChartViewer.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
 
 const ChartViewer = ({ content, messageId, chartType = "auto" }) => {
+    // Get theme variables from CSS
+    const rootStyle = typeof window !== "undefined" ? getComputedStyle(document.documentElement) : { getPropertyValue: () => undefined };
+    const cardBg = rootStyle.getPropertyValue('--card-bg')?.trim() || '#fff';
+    const border = rootStyle.getPropertyValue('--border')?.trim() || '#e2e8f0';
+    const textPrimary = rootStyle.getPropertyValue('--text-primary')?.trim() || '#374151';
+    const muted = rootStyle.getPropertyValue('--muted')?.trim() || '#64748b';
+    const accent = rootStyle.getPropertyValue('--app-primary-color')?.trim() || '#007acc';
+    const mutedForeground = rootStyle.getPropertyValue('--muted-foreground')?.trim() || '#f1f5f9';
   const [currentChartType, setCurrentChartType] = useState(chartType);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
   // Color palette for charts
   const COLORS = [
-    "#007acc", "#00d4aa", "#ff6b6b", "#4ecdc4", "#45b7d1",
+    accent, "#00d4aa", "#ff6b6b", "#4ecdc4", "#45b7d1",
     "#96ceb4", "#ffeaa7", "#dda0dd", "#98d8c8", "#f7dc6f"
   ];
 
@@ -195,22 +203,23 @@ const ChartViewer = ({ content, messageId, chartType = "auto" }) => {
         return (
           <ResponsiveContainer width="100%" height={400}>
             <LineChart {...chartProps}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke={border} />
               <XAxis 
                 dataKey={Object.keys(processedData[0])[0]} 
-                stroke="#64748b"
+                stroke={muted}
                 fontSize={12}
               />
-              <YAxis stroke="#64748b" fontSize={12} />
+              <YAxis stroke={muted} fontSize={12} />
               <Tooltip 
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: cardBg,
+                  border: `1px solid ${border}`,
                   borderRadius: "6px",
-                  fontSize: "12px"
+                  fontSize: "12px",
+                  color: textPrimary
                 }}
               />
-              <Legend />
+              <Legend wrapperStyle={{ color: textPrimary }} />
               {lineDataKeys.map((key, index) => (
                 <Line
                   key={key}
@@ -233,22 +242,23 @@ const ChartViewer = ({ content, messageId, chartType = "auto" }) => {
         return (
           <ResponsiveContainer width="100%" height={400}>
             <AreaChart {...chartProps}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke={border} />
               <XAxis 
                 dataKey={Object.keys(processedData[0])[0]} 
-                stroke="#64748b"
+                stroke={muted}
                 fontSize={12}
               />
-              <YAxis stroke="#64748b" fontSize={12} />
+              <YAxis stroke={muted} fontSize={12} />
               <Tooltip 
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: cardBg,
+                  border: `1px solid ${border}`,
                   borderRadius: "6px",
-                  fontSize: "12px"
+                  fontSize: "12px",
+                  color: textPrimary
                 }}
               />
-              <Legend />
+              <Legend wrapperStyle={{ color: textPrimary }} />
               {areaDataKeys.map((key, index) => (
                 <Area
                   key={key}
@@ -278,7 +288,7 @@ const ChartViewer = ({ content, messageId, chartType = "auto" }) => {
                 labelLine={false}
                 label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 outerRadius={120}
-                fill="#8884d8"
+                fill={accent}
                 dataKey={pieDataKey || "value"}
               >
                 {processedData.map((entry, index) => (
@@ -287,10 +297,11 @@ const ChartViewer = ({ content, messageId, chartType = "auto" }) => {
               </Pie>
               <Tooltip 
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: cardBg,
+                  border: `1px solid ${border}`,
                   borderRadius: "6px",
-                  fontSize: "12px"
+                  fontSize: "12px",
+                  color: textPrimary
                 }}
               />
             </PieChart>
@@ -306,23 +317,24 @@ const ChartViewer = ({ content, messageId, chartType = "auto" }) => {
         return (
           <ResponsiveContainer width="100%" height={400}>
             <ScatterChart {...chartProps}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke={border} />
               <XAxis 
                 dataKey={xKey} 
-                stroke="#64748b"
+                stroke={muted}
                 fontSize={12}
               />
               <YAxis 
                 dataKey={yKey} 
-                stroke="#64748b" 
+                stroke={muted} 
                 fontSize={12}
               />
               <Tooltip 
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: cardBg,
+                  border: `1px solid ${border}`,
                   borderRadius: "6px",
-                  fontSize: "12px"
+                  fontSize: "12px",
+                  color: textPrimary
                 }}
               />
               <Scatter 
@@ -342,22 +354,23 @@ const ChartViewer = ({ content, messageId, chartType = "auto" }) => {
         return (
           <ResponsiveContainer width="100%" height={400}>
             <BarChart {...chartProps}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke={border} />
               <XAxis 
                 dataKey={Object.keys(processedData[0])[0]} 
-                stroke="#64748b"
+                stroke={muted}
                 fontSize={12}
               />
-              <YAxis stroke="#64748b" fontSize={12} />
+              <YAxis stroke={muted} fontSize={12} />
               <Tooltip 
                 contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e2e8f0",
+                  backgroundColor: cardBg,
+                  border: `1px solid ${border}`,
                   borderRadius: "6px",
-                  fontSize: "12px"
+                  fontSize: "12px",
+                  color: textPrimary
                 }}
               />
-              <Legend />
+              <Legend wrapperStyle={{ color: textPrimary }} />
               {barDataKeys.map((key, index) => (
                 <Bar
                   key={key}

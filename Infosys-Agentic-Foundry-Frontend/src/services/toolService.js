@@ -45,15 +45,14 @@ export const useToolsAgentsService = () => {
   const getToolById = async (toolId) => {
     try {
       if (!toolId) throw new Error("toolId is required");
-      const apiUrl = APIs.GET_TOOLS_BY_ID.replace("{tool_id}", toolId);
-      const response = await fetchData(apiUrl);
+      const response = await fetchData(APIs.GET_TOOLS_BY_ID + toolId);
       return response;
     } catch (error) {
       return extractErrorMessage(error);
     }
   };
 
-  const getToolsAndValidatorsPaginated = async ({ search, page, limit, tags, created_by }) => {
+  const getToolsAndValidatorsPaginated = async ({ search, page, limit, tags, created_by, show_tools, show_validators }) => {
     try {
       const params = [];
       if (search && search.trim() && search.trim().length > 0) {
@@ -67,6 +66,16 @@ export const useToolsAgentsService = () => {
             params.push(`tag_names=${encodeURIComponent(tag)}`);
           }
         });
+      }
+      // Add show_tools and show_validators parameters for type filtering
+      if (typeof show_tools === "boolean") {
+        params.push(`show_tools=${show_tools}`);
+      }
+      if (typeof show_validators === "boolean") {
+        params.push(`show_validators=${show_validators}`);
+      }
+      if (created_by && created_by.trim()) {
+        params.push(`created_by=${encodeURIComponent(created_by)}`);
       }
       const apiUrl = `${APIs.GET_TOOLS_AND_VALIDATORS_SEARCH_PAGINATED}?${params.join("&")}`;
       const response = await fetchData(apiUrl);
@@ -87,6 +96,7 @@ export const useToolsAgentsService = () => {
       const page = paramsObj.page_number || paramsObj.page;
       const limit = paramsObj.page_size || paramsObj.limit;
       const tags = paramsObj.tags;
+      const created_by = paramsObj.created_by;
 
       // Only add agentic_application_type if valid
       if (agentType && agentType.trim() && agentType.trim().toLowerCase() !== "all") {
@@ -110,7 +120,10 @@ export const useToolsAgentsService = () => {
             params.push(`tag_names=${encodeURIComponent(tag)}`);
           }
         });
-      } else {
+      }
+      // Add created_by parameter for "Me" filter
+      if (created_by && created_by.trim()) {
+        params.push(`created_by=${encodeURIComponent(created_by)}`);
       }
       const apiUrl = `${APIs.GET_AGENTS_SEARCH_PAGINATED}?${params.join("&")}`;
       const response = await fetchData(apiUrl);
@@ -120,12 +133,44 @@ export const useToolsAgentsService = () => {
     }
   };
 
-  const addTool = async (toolData, toolHasFile = false) => {
+  // /tools/add -> JSON body with all fields
+  // /tools/add-message-queue -> form-urlencoded with is_validator as query param,
+  //   add_tool_request (JSON string), is_public, shared_with_departments as form fields
+  const addTool = async (toolData, useMessageQueue = false) => {
     try {
-      const apiUrl = toolHasFile ? APIs.ADD_TOOLS_WITH_FILE : APIs.ADD_TOOLS;
-      const response = await postData(apiUrl, toolData);
-      return response;
+      if (useMessageQueue) {
+        // Build query param for is_validator
+        const isValidator = toolData.is_validator ?? false;
+        const apiUrl = `${APIs.ADD_TOOLS_MESSAGE_QUEUE}?is_validator=${isValidator}`;
+
+        // Build the add_tool_request JSON object (excludes is_public & shared_with_departments)
+        const { is_public, shared_with_departments, ...requestBody } = toolData;
+        const addToolRequestJson = JSON.stringify(requestBody);
+
+        // Build form-urlencoded body
+        const formParams = new URLSearchParams();
+        formParams.append("add_tool_request", addToolRequestJson);
+        formParams.append("is_public", String(is_public ?? false));
+        if (Array.isArray(shared_with_departments)) {
+          shared_with_departments.forEach((dept) => formParams.append("shared_with_departments", dept));
+        }
+
+        const response = await postData(apiUrl, formParams, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+        return response;
+      } else {
+        // /tools/add -> plain JSON body
+        const apiUrl = APIs.ADD_TOOLS;
+        const response = await postData(apiUrl, toolData);
+        return response;
+      }
     } catch (error) {
+      // Preserve the full response body (e.g. error_on_screen, warnings, is_created)
+      // so callers can detect verification warnings and show the warning modal
+      if (error?.response?.data && typeof error.response.data === "object") {
+        return error.response.data;
+      }
       return extractErrorMessage(error);
     }
   };
@@ -236,7 +281,7 @@ export const useToolsAgentsService = () => {
   const checkToolEditable = async (tool, setShowForm, addMessage, setLoading) => {
     const userEmailId = Cookies.get("email") || "Guest";
     const role = Cookies.get("role");
-    const isAdmin = role && role?.toUpperCase() === "ADMIN";
+    const isAdmin = role && role?.toLowerCase() === "admin";
     const updatedTool = { ...tool, user_email_id: userEmailId, is_admin: isAdmin };
     if (setLoading) setLoading(true);
     const response = await updateTools(updatedTool, tool.tool_id, true);
@@ -279,17 +324,13 @@ export const useToolsAgentsService = () => {
     return totalDivs;
   };
 
-  const addServer = async (serverData, isValidator = true) => {
+  const addServer = async (serverData) => {
     try {
-      console.debug("[addServer] Step 1: Received serverData:", serverData);
-      // Extra: Log header value directly
-      console.debug("[addServer] Step 1.1: serverData.headers:", serverData.headers);
       // Backend expects is_validator as query param (mirror /tools/add pattern)
-      const apiUrl = isValidator ? `${APIs.MCP_ADD_TOOLS}?is_validator=true` : `${APIs.MCP_ADD_TOOLS}`;
+      const apiUrl = APIs.MCP_ADD_TOOLS;
 
       const normalizedTagIds = Array.isArray(serverData.tag_ids) ? serverData.tag_ids.map((id) => String(id)) : [];
       const dataToSend = new FormData();
-      console.debug("[addServer] Step 2: Created FormData instance");
       dataToSend.append("tool_name", serverData.tool_name || serverData.model_name || "");
       dataToSend.append("tool_description", serverData.tool_description || "");
       dataToSend.append("mcp_type", serverData.mcp_type || "");
@@ -320,16 +361,6 @@ export const useToolsAgentsService = () => {
       if (headersObj) {
         dataToSend.append("headers", JSON.stringify(headersObj));
       }
-      // DEBUG: Print payload before hitting endpoint
-      if (typeof window !== "undefined" && window && window.console && console.debug) {
-        console.debug("[addServer] Step 4: Final FormData payload before POST:");
-        for (const pair of dataToSend.entries()) {
-          const k = pair[0];
-          const v = pair[1];
-          if (v instanceof File) console.debug(k, `${v.name} (file)`);
-          else console.debug(k, v);
-        }
-      }
       try {
         if (serverData.mcp_file instanceof Blob && serverData.mcp_file.name) {
           dataToSend.append("mcp_file", serverData.mcp_file, serverData.mcp_file.name);
@@ -344,27 +375,16 @@ export const useToolsAgentsService = () => {
       normalizedTagIds.forEach((id) => {
         dataToSend.append("tag_ids", id);
       });
-      try {
-        if (typeof window !== "undefined" && window && window.console && console.debug) {
-          console.debug("[addServer] Step 6: FormData preview (keys/vals):");
-          for (const pair of dataToSend.entries()) {
-            const k = pair[0];
-            const v = pair[1];
-            if (v instanceof File) console.debug(k, `${v.name} (file)`);
-            else console.debug(k, v);
-          }
-        }
-      } catch (e) {}
-      // Extra: Log FormData as object for inspection
-      if (typeof window !== "undefined" && window && window.console && console.debug) {
-        const formObj = {};
-        for (const pair of dataToSend.entries()) {
-          formObj[pair[0]] = pair[1];
-        }
-        console.debug("[addServer] Step 7.1: FormData as object:", formObj);
+      // Add is_public and shared_with_departments fields
+      dataToSend.append("is_public", String(serverData.is_public ?? false));
+      if (Array.isArray(serverData.shared_with_departments) && serverData.shared_with_departments.length > 0) {
+        serverData.shared_with_departments.forEach((dept) => {
+          dataToSend.append("shared_with_departments", dept);
+        });
+      } else {
+        dataToSend.append("shared_with_departments", "");
       }
       const response = await postData(apiUrl, dataToSend);
-      console.debug("[addServer] Step 8: Response from backend:", response);
       return response || null;
     } catch (error) {
       try {

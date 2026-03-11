@@ -4,7 +4,9 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(8px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(8px));
   display: flex;
   justify-content: center;
   align-items: center;
@@ -12,27 +14,28 @@
 }
 
 .modalContent {
-  background: #fff;
+  background: var(--card-bg, #fff);
   padding: 20px;
   border-radius: 8px;
   width: 450px;
   max-width: 90%;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lg, 0 4px 15px rgba(0, 0, 0, 0.1));
   position: relative;
+  border: 1px solid var(--border-color, transparent);
 }
 
-.heading{
+.heading {
   font-size: 20px;
   font-weight: bold;
   margin-bottom: 10px;
-  color: #333;
+  color: var(--header-color, #333);
 }
 
 .subtitle {
   font-size: 14px;
-  color: #666;
+  color: var(--content-color, #666);
   margin-bottom: 20px;
-  font-style: italic;
+  font-style: normal;
 }
 
 .tagsContainer {
@@ -48,15 +51,22 @@
   display: flex;
   align-items: center;
   padding: 5px 10px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-color, #ccc);
   border-radius: 4px;
   cursor: pointer;
+  color: var(--header-color, #333);
+  background: var(--input-bg, transparent);
+  transition: all 0.2s ease;
+}
+
+.tag:hover {
+  background: var(--hover-background, #f5f5f5);
 }
 
 .selectedTag {
-  background-color: #007cc3;
-  color: #fff;
-  border-color: #007cc3;
+  background-color: var(--btn-color, #007cc3);
+  color: var(--primary-button-color, #fff);
+  border-color: var(--btn-color, #007cc3);
 }
 
 .tag input {
@@ -64,8 +74,8 @@
 }
 
 .applyButton {
-  background-color: #007cc3;
-  color: #fff;
+  background-color: var(--btn-color, #007cc3);
+  color: var(--primary-button-color, #fff);
   border: none;
   padding: 10px 20px;
   border-radius: 4px;
@@ -74,11 +84,12 @@
 }
 
 .applyButton:hover {
-  background-color: #005fa3;
+  background-color: var(--accent-hover, #041c29);
 }
+
 .clearButton {
-  background-color: #007cc3;
-  color: #fff;
+  background-color: var(--btn-color, #025d8a);
+  color: var(--primary-button-color, #fff);
   border: none;
   padding: 10px 20px;
   border-radius: 4px;
@@ -87,7 +98,7 @@
 }
 
 .clearButton:hover {
-  background-color: #005fa3;
+  background-color: var(--accent-hover, #041c29);
 }
 
 .closeButton {
@@ -97,10 +108,15 @@
   top: 10px;
   right: 10px;
   cursor: pointer;
+  color: var(--header-color, inherit);
+}
+
+.closeButton:hover {
+  color: var(--content-color, inherit);
 }
 
 .applyButton:disabled {
-  background-color: #ccc;
+  background-color: var(--disabled-bg, #ccc);
   cursor: not-allowed;
 }
 
@@ -113,7 +129,7 @@
 .sectionTitle {
   font-size: 16px;
   font-weight: 600;
-  color: #333;
+  color: var(--header-color, #333);
   margin-bottom: 10px;
 }
 

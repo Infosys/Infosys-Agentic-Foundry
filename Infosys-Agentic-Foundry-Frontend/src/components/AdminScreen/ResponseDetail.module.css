@@ -17,6 +17,7 @@
   margin: 0 0 20px 0;
   font-size: 24px;
   font-weight: 600;
+  color: var(--header-color);
 }
 
 .responseDetailHeader {
@@ -25,6 +26,7 @@
 
 .responseDetailHeader p {
   margin-bottom: 8px;
+  color: var(--text-primary);
 }
 
 .responseDetailContent {
@@ -37,13 +39,13 @@
   display: flex;
   flex-direction: column;
   gap: 15px;
-  background-color: white;
+  background-color: var(--card-bg);
   padding-right: 20px;
 }
 
 .label {
   font-weight: 500;
-  color: #333;
+  color: var(--text-primary);
   font-size: 14px;
   margin-bottom: 4px;
   display: block;
@@ -52,17 +54,18 @@
 .textarea {
   min-height: 60px;
   border-radius: 4px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   padding: 8px;
   font-size: 14px;
-  background-color: #ffffff;
+  background-color: var(--card-bg);
+  color: var(--text-primary);
   transition: border-color 0.2s;
-  resize: vertical;
+  resize: none;
   width: 100%;
 }
 
 .textarea:focus {
-  border-color: #0078d4;
+  border-color: var(--app-primary-color);
   outline: none;
 }
 
@@ -73,18 +76,19 @@
   gap: 8px;
   cursor: pointer;
   user-select: none;
+  color: var(--text-primary);
 }
 
 .checkbox {
   width: 16px;
   height: 16px;
-  accent-color: #0078d4;
+  accent-color: var(--app-primary-color);
   cursor: pointer;
 }
 
 .submitButton {
   padding: 8px 16px;
-  background-color: #0078d4;
+  background-color: var(--app-primary-color);
   color: white;
   border: none;
   border-radius: 4px;
@@ -94,14 +98,14 @@
 }
 
 .submitButton:hover {
-  background-color: #005a9e;
+  background-color: var(--app-secondary-color);
 }
 
 .backButton {
   padding: 8px 16px;
-  background-color: #f0f0f0;
-  color: #333;
-  border: 1px solid #ddd;
+  background-color: var(--hover-background);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 14px;
   cursor: pointer;
@@ -109,7 +113,7 @@
 }
 
 .backButton:hover {
-  background-color: #e5e5e5;
+  background-color: var(--border);
 }
 
 .buttonRow {
@@ -122,19 +126,19 @@
 
 /* Add field groups for better organization */
 .fieldGroup {
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 12px;
   margin-bottom: 10px;
-  background-color: #f9f9f9;
+  background-color: var(--hover-background);
 }
 
 .fieldGroupTitle {
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 10px;
   padding-bottom: 5px;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -147,7 +151,7 @@
   padding: 4px;
   display: flex;
   align-items: center;
-  color: #666;
+  color: var(--muted);
 }
 
 .cancelButton {
@@ -157,8 +161,150 @@
   padding: 4px;
   display: flex;
   align-items: center;
-  color: #d32f2f;
+  color: var(--danger);
 }
-.infoLabel{
+.infoLabel {
   font-weight: normal;
+}
+
+/* ===== Modal-specific styles ===== */
+
+.responseInfoBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--hover-background);
+  border-radius: 8px;
+}
+
+.responseInfoLabel {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.responseInfoValue {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.lessonHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lessonTextareaEditable {
+  background-color: var(--card-bg);
+  cursor: text;
+}
+
+.lessonTextareaDisabled {
+  background-color: var(--hover-background);
+  cursor: not-allowed;
+}
+
+.editIconBtn,
+.cancelIconBtn {
+  background: none;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  transition: background-color 0.2s;
+}
+
+.editIconBtn {
+  color: var(--muted);
+}
+
+.editIconBtn:hover {
+  background-color: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+.cancelIconBtn {
+  color: var(--danger);
+}
+
+.cancelIconBtn:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.toggleContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggleActive {
+  opacity: 1;
+  font-weight: var(--font-weight-semibold);
+}
+
+.toggleInActive {
+  opacity: 0.7;
+}
+
+.toggleLabel {
+  font-size: 14px;
+  color: var(--muted, #666);
+  font-weight: normal;
+  transition: all 0.2s;
+}
+
+.toggleLabelActive {
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.toggleSwitch {
+  width: 48px;
+  height: 24px;
+  background-color: var(--hover-background, #e0e0e0);
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px solid var(--border, #ccc);
+}
+
+.toggleSwitchActive {
+  background-color: var(--app-primary-color, #0078d4);
+  border-color: var(--app-primary-color, #0078d4);
+}
+
+.toggleKnob {
+  width: 20px;
+  height: 20px;
+  background-color: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggleKnobActive {
+  left: 26px;
+}
+
+.modifiedIndicator {
+  font-size: 12px;
+  color: var(--app-primary-color, #ff9800);
+  margin-top: 4px;
+  font-style: normal;
+}
+
+.responseDetailGroupHeader {
+  font-size: 16px;
+  margin-bottom: 8px;
 }

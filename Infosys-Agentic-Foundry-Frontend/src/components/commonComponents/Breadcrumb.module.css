@@ -1,0 +1,70 @@
+.breadcrumb {
+  display: flex;
+  align-items: center;
+}
+
+.breadcrumbList {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+.breadcrumbItem {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.breadcrumbLink {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xl);
+  line-height: 30px;
+  letter-spacing: 0.3px;
+  color: var(--accent-color, #0078d4);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.breadcrumbLink:hover {
+  color: var(--accent-color-hover, #005a9e);
+  text-decoration: underline;
+}
+
+.breadcrumbLink:focus {
+  outline: 2px solid var(--accent-color, #0078d4);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.breadcrumbText {
+  color: var(--text-muted, #666);
+  font-family: var(--font-secondary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xl);
+  line-height: 30px;
+  letter-spacing: 0.3px;
+}
+
+.breadcrumbCurrent {
+  font-weight: 600;
+  color: var(--header-color);
+}
+
+.breadcrumbSeparator {
+  display: flex;
+  align-items: center;
+  margin: 0 8px;
+  color: var(--text-muted, #999);
+  font-size: 12px;
+  user-select: none;
+}

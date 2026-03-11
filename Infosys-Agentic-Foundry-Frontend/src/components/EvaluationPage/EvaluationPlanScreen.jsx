@@ -25,7 +25,7 @@ const EvaluationPlanScreen = () => {
             onClick={() => setActiveTab("evaluation")}
             aria-label="LLM as Judge"
             title="LLM as Judge">
-            LLM as Judge
+            LLM As Judge
           </button>
           <p className={styles.navSeparator}></p>
           {/* Metrics Label (non-clickable) */}

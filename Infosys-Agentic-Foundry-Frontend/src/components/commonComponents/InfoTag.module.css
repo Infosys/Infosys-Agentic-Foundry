@@ -20,9 +20,11 @@
 }
 
 .info-icon {
-  margin-left: 6px;
-  width: 18px;
-  height: 18px;
+  position: relative;
+  top: 2px;
+  margin-left: 2px;
+  width: 16px;
+  height: 15px;
   transition: fill 0.3s ease;
 }
 

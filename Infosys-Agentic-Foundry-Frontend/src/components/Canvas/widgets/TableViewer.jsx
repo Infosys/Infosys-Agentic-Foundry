@@ -3,6 +3,7 @@ import { useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel,
 import * as XLSX from "xlsx";
 import styles from "./TableViewer.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
+import { copyToClipboard } from "../../../utils/clipboardUtils";
 
 const AdvancedTableViewer = ({ content, messageId }) => {
   const [globalFilter, setGlobalFilter] = useState("");
@@ -201,10 +202,10 @@ const AdvancedTableViewer = ({ content, messageId }) => {
   // Helper function to get clean data for export
   const getExportData = () => {
     const rows = table.getFilteredRowModel().rows;
-    
-    return rows.map(row => {
+
+    return rows.map((row) => {
       const cleanRow = {};
-      columns.forEach(col => {
+      columns.forEach((col) => {
         const cellValue = row.getValue(col.accessorKey);
         // Clean the data for export
         if (typeof cellValue === "boolean") {
@@ -223,47 +224,18 @@ const AdvancedTableViewer = ({ content, messageId }) => {
   const handleCopy = async () => {
     try {
       const exportData = getExportData();
-      const headers = columns.map(col => col.header);
-      
-      // Create tab-separated values
-      const tsvContent = [
-        headers.join('\t'),
-        ...exportData.map(row => headers.map(header => row[header] || '').join('\t'))
-      ].join('\n');
+      const headers = columns.map((col) => col.header);
 
-      // Try modern clipboard API first
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(tsvContent);
+      // Create tab-separated values
+      const tsvContent = [headers.join("\t"), ...exportData.map((row) => headers.map((header) => row[header] || "").join("\t"))].join("\n");
+
+      const success = await copyToClipboard(tsvContent);
+      if (success) {
         setCopySuccess(true);
         setTimeout(() => setCopySuccess(false), 2000);
-        return;
-      }
-      
-      // Fallback for environments where clipboard API is not available
-      const textArea = document.createElement('textarea');
-      textArea.value = tsvContent;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      
-      try {
-        const successful = document.execCommand('copy');
-        if (successful) {
-          setCopySuccess(true);
-          setTimeout(() => setCopySuccess(false), 2000);
-        } else {
-          throw new Error('execCommand copy failed');
-        }
-      } catch (execErr) {
-        console.error('Fallback copy failed:', execErr);
-      } finally {
-        document.body.removeChild(textArea);
       }
     } catch (err) {
-      console.error('Copy operation failed:', err);
+      console.error("Copy operation failed:", err);
     }
   };
 
@@ -271,7 +243,7 @@ const AdvancedTableViewer = ({ content, messageId }) => {
   const handleExcelDownload = () => {
     try {
       const exportData = getExportData();
-      
+
       if (exportData.length === 0) {
         return;
       }
@@ -279,38 +251,35 @@ const AdvancedTableViewer = ({ content, messageId }) => {
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(exportData);
-      
+
       // Auto-size columns
       const colWidths = [];
-      const headers = columns.map(col => col.header);
+      const headers = columns.map((col) => col.header);
       headers.forEach((header, index) => {
-        const maxLength = Math.max(
-          header.length,
-          ...exportData.map(row => String(row[header] || '').length)
-        );
+        const maxLength = Math.max(header.length, ...exportData.map((row) => String(row[header] || "").length));
         colWidths.push({ wch: Math.min(maxLength + 2, 50) }); // Cap at 50 characters
       });
-      ws['!cols'] = colWidths;
-      
+      ws["!cols"] = colWidths;
+
       // Add worksheet to workbook
-      const sheetName = tableTitle ? tableTitle.substring(0, 31) : 'Table Data'; // Excel sheet name limit
+      const sheetName = tableTitle ? tableTitle.substring(0, 31) : "Table Data"; // Excel sheet name limit
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      
+
       // Generate filename
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-      const filename = `${sheetName.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.xlsx`;
-      
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
+      const filename = `${sheetName.replace(/[^a-zA-Z0-9]/g, "_")}_${timestamp}.xlsx`;
+
       // Save file
       XLSX.writeFile(wb, filename);
     } catch (error) {
-      console.error('Excel export failed:', error);
+      console.error("Excel export failed:", error);
     }
   };
 
   if (data.length === 0) {
     return (
       <div className={styles.emptyState}>
-        <SVGIcons icon="fa-table" width={48} height={48} fill="#cbd5e1" />
+        <SVGIcons icon="fa-table" width={48} height={48} fill="currentColor" />
         <h3 className={styles.emptyTitle}>No Table Data Available</h3>
         <p className={styles.emptyMessage}>Supported formats: JSON array, CSV string, or object data</p>
       </div>
@@ -322,35 +291,22 @@ const AdvancedTableViewer = ({ content, messageId }) => {
       {/* Advanced Toolbar */}
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
-            <span className={styles.tableTitle} title={tableTitle}>{tableTitle}</span>
+          <span className={styles.tableTitle} title={tableTitle}>
+            {tableTitle}
+          </span>
         </div>
 
         <div className={styles.toolbarActions}>
           {/* Export Actions */}
           <div className={styles.exportActions}>
-            <button
-              className={styles.toolbarButton}
-              onClick={() => handleExcelDownload()}
-              title="Download as Excel"
-            >
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                <path d="M10 13V3M7 10L10 13L13 10M5 17H15" 
-                  stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+            {/* Download Excel Button */}
+            <button className={styles.toolbarButton} onClick={() => handleExcelDownload()} title="Download as Excel">
+              <SVGIcons icon="download-arrow" width={16} height={16} stroke="currentColor" />
             </button>
 
-            <button
-              className={`${styles.toolbarButton} ${copySuccess ? styles.copied : ''}`}
-              onClick={() => handleCopy()}
-              title="Copy to clipboard"
-            >
-              {copySuccess ? (
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                  <path d="M16 6L8.5 14.5L4 10" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              ) : (
-                <SVGIcons icon="fa-regular fa-copy" width={14} height={14} fill="#666" />
-              )}
+            {/* Copy Button */}
+            <button className={`${styles.toolbarButton} ${copySuccess ? styles.copied : ""}`} onClick={() => handleCopy()} title="Copy to clipboard">
+              {copySuccess ? <SVGIcons icon="check-success" width={16} height={16} stroke="#22c55e" /> : <SVGIcons icon="copy" width={14} height={14} stroke="currentColor" />}
             </button>
           </div>
 
@@ -359,7 +315,7 @@ const AdvancedTableViewer = ({ content, messageId }) => {
             <input type="text" placeholder="Search all rows..." value={globalFilter ?? ""} onChange={(e) => setGlobalFilter(e.target.value)} className={styles.searchInput} />
             {globalFilter && (
               <button onClick={() => setGlobalFilter("")} className={styles.clearButton}>
-                <SVGIcons icon="fa-times" width={12} height={12} fill="#64748b" />
+                <SVGIcons icon="fa-times" width={12} height={12} fill="currentColor" />
               </button>
             )}
           </div>
@@ -379,9 +335,9 @@ const AdvancedTableViewer = ({ content, messageId }) => {
                       {header.column.getCanSort() && (
                         <div className={styles.sortIcons}>
                           {{
-                            asc: <SVGIcons icon="fa-sort-up" width={12} height={12} fill="#007acc" />,
-                            desc: <SVGIcons icon="fa-sort-down" width={12} height={12} fill="#007acc" />,
-                          }[header.column.getIsSorted()] ?? <SVGIcons icon="fa-sort" width={12} height={12} fill="#94a3b8" />}
+                            asc: <SVGIcons icon="fa-sort-up" width={12} height={12} fill="currentColor" />,
+                            desc: <SVGIcons icon="fa-sort-down" width={12} height={12} fill="currentColor" />,
+                          }[header.column.getIsSorted()] ?? <SVGIcons icon="fa-sort" width={12} height={12} fill="currentColor" />}
                         </div>
                       )}
                     </div>

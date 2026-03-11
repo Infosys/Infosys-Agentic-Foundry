@@ -1,0 +1,1004 @@
+/**
+ * ResourceAllocationManagement Styles
+ * Uses global classes from Card.css and DisplayCard1.css
+ * Only contains unique styles not covered by global CSS
+ */
+
+/* ========================================
+   Container & Loading States
+   ======================================== */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  gap: 16px;
+}
+
+.container .listWrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+
+.loadingContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.loadingOverlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  width: 100%;
+}
+
+/* ========================================
+   Card Delete Button (unique to this page)
+   ======================================== */
+.cardDeleteBtn {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 500;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.cardDeleteBtn:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+/* ========================================
+   Detail Section (Users View)
+   ======================================== */
+.detailSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  padding-top: 16px;
+}
+
+/* Minimal Info Bar */
+.infoBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Search Field Wrapper - matches SubHeader styling */
+.searchFieldWrapper {
+  margin-right: 8px;
+}
+
+/* Selection Bar - Select All & Items Count */
+.selectionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px;
+  flex-shrink: 0;
+}
+
+.selectAllLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--content-color, #374151);
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.selectAllLabel:hover {
+  background: var(--hover-background, #f3f4f6);
+}
+
+.selectAllCheckbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--app-primary-color, #3b82f6);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.itemsCount {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--muted, #6b7280);
+  padding-right: 4px;
+}
+
+.infoBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--header-color, #111827);
+}
+
+.infoBarLeft svg {
+  width: 18px;
+  height: 18px;
+  color: var(--content-color, #6b7280);
+}
+
+.keyName {
+  font-family: var(--font-secondary);
+  font-size: var(--font-size-xl, 20px);
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: 30px;
+  letter-spacing: 0.3px;
+  color: var(--header-color);
+  margin: 0;
+}
+
+.userCount {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--muted, #6b7280);
+}
+
+.backBtn {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle, #e5e7eb);
+  border-radius: 6px;
+  color: var(--content-color, #6b7280);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.backBtn:hover {
+  background: var(--hover-background, #f9fafb);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.backBtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.actionButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.addUserBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background-color: var(--app-primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  transition: opacity 0.15s ease;
+}
+
+.addUserBtn:hover {
+  opacity: 0.9;
+}
+
+.addUserBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.assignValuesBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background-color: var(--app-primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  transition: opacity 0.15s ease;
+}
+
+.assignValuesBtn:hover {
+  opacity: 0.9;
+}
+
+.assignValuesBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.clearSelectionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--content-color, #6b7280);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius, 8px);
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  transition: all 0.15s ease;
+}
+
+.clearSelectionBtn:hover {
+  background: var(--hover-background, #f9fafb);
+  border-color: var(--muted, #9ca3af);
+}
+
+/* Legacy detail header - keep for compatibility */
+.detailHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 16px 0;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.headerIcon {
+  width: 32px;
+  height: 32px;
+  background: var(--accent-light);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-primary-color);
+  flex-shrink: 0;
+}
+
+.headerInfo {
+  min-width: 0;
+}
+
+.headerTitle {
+  margin: 0;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-base, 16px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--header-color);
+  line-height: 1.3;
+}
+
+.headerSubtitle {
+  margin: 2px 0 0 0;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--muted);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.userBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--badge-border, #6b72804d);
+  background: var(--badge-bg, #6b72801a);
+  color: var(--badge-color, #4b5563);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.userBadge svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ========================================
+   Buttons
+   ======================================== */
+.primaryBtn {
+  padding: 10px 20px;
+  background: var(--btn-color, var(--app-primary-color, #3b82f6));
+  color: var(--primary-button-color, #ffffff);
+  border: none;
+  border-radius: var(--radius, 4px);
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  transition: background-color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--accent-hover, #2563eb);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryBtn {
+  padding: 10px 20px;
+  background: var(--hover-background, #6b7280);
+  color: var(--header-color, #ffffff);
+  border: 1px solid var(--border-color, transparent);
+  border-radius: var(--radius, 4px);
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  transition: background-color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  background: var(--muted-foreground, #4b5563);
+}
+
+.secondaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ========================================
+   Bulk Actions Bar
+   ======================================== */
+.bulkActionsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--accent-light);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.bulkInfo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--content-color);
+}
+
+.bulkCount {
+  font-weight: var(--font-weight-semibold);
+  color: var(--app-primary-color);
+}
+
+.bulkActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulkActionBtn {
+  padding: 6px 12px;
+  background-color: var(--app-primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  transition: opacity 0.15s ease;
+}
+
+.bulkActionBtn:hover {
+  opacity: 0.9;
+}
+
+.bulkClearBtn {
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--content-color);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  transition: all 0.15s ease;
+}
+
+.bulkClearBtn:hover {
+  background: var(--hover-background);
+}
+
+/* ========================================
+   Users Grid (Detail View) - Uses global card classes
+   ======================================== */
+
+/* Values Row for User Cards */
+.valuesRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  margin-bottom: 8px;
+}
+
+.noValuesText {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  font-style: normal;
+}
+
+/* ========================================
+   Modal Styles - Matches Application Design
+   ======================================== */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(8px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(8px));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal,
+.modalContainer {
+  background: var(--card-bg, #ffffff);
+  border-radius: var(--radius-lg, 8px);
+  width: 100%;
+  max-width: 500px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg, 0 4px 15px rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--border-color, transparent);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.modalTitle {
+  margin: 0;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-lg, 18px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--header-color, #1a1a1a);
+}
+
+.modalSubtitle {
+  margin: 4px 0 0 0;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--content-color, #6b7280);
+}
+
+.modalCloseBtn {
+  background: transparent;
+  border: none;
+  color: var(--header-color, #1a1a1a);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 8px);
+  transition: background-color 0.2s ease;
+}
+
+.modalCloseBtn:hover {
+  background: var(--hover-background, #f3f4f6);
+}
+
+.modalCloseBtn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.modalBody {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+/* Toggle container for modal footer */
+.toggleContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggleText {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 13px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--content-color, #555);
+  white-space: nowrap;
+}
+
+.footerButtons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Form Fields */
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fieldLabel {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--header-color, #374151);
+}
+
+.required {
+  color: var(--danger, #dc2626);
+  font-weight: var(--font-weight-bold, 700);
+}
+
+.fieldHint {
+  margin: 0;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs, 12px);
+  color: var(--content-color, #6b7280);
+}
+
+.selectField,
+.textInput {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 10px 12px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base, 14px);
+  font-weight: var(--font-weight-normal, 400);
+  color: var(--text-primary, #111827);
+  background: var(--input-bg, transparent);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius-lg, 8px);
+  cursor: text;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.selectField:focus,
+.textInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.15);
+}
+
+.textInput::placeholder {
+  color: var(--muted, #9ca3af);
+}
+
+.selectField {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
+}
+
+/* Input with Button */
+.inputWithButton {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.inputWithButton .textInput {
+  flex: 1;
+}
+
+.addValueBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--app-primary-color, #3b82f6);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-lg, 8px);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.addValueBtn:hover:not(:disabled) {
+  background: var(--app-primary-color-hover, #2563eb);
+}
+
+.addValueBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.addValueBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Exclusion Add Button - Red variant */
+.addExclusionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: var(--danger, #dc2626);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-lg, 8px);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.addExclusionBtn:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.addExclusionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.addExclusionBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Chips - Match EditAccessKeyModal style */
+.chipContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--chip-background, #e0f2fe);
+  color: var(--chip-color, #0369a1);
+  border: 1px solid var(--chip-border, #bae6fd);
+  border-radius: 16px;
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: var(--font-weight-medium, 500);
+  transition: all 0.2s ease;
+}
+
+.chip:hover {
+  background: var(--chip-background-hover, #bae6fd);
+}
+
+/* Exclusion chip - Red variant */
+.chipExclusion {
+  background: var(--chip-remove-background, #fee2e2);
+  color: var(--chip-remove-color, #dc2626);
+  border-color: var(--chip-remove-border, #fecaca);
+}
+
+.chipExclusion:hover {
+  background: var(--chip-remove-background-hover, #fecaca);
+}
+
+.chipExclusion .chipRemove {
+  color: var(--chip-remove-color, #dc2626);
+}
+
+.chipRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--chip-color, #0369a1);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background-color 0.2s ease;
+}
+
+.chipRemove:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.emptyFieldText {
+  margin: 0;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--content-color, #6b7280);
+  font-style: normal;
+}
+
+/* Values Input */
+.valuesInputContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.valuesInputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.valuesInputRow .formInput {
+  flex: 1;
+}
+
+.addValueBtn:hover {
+  background: var(--app-primary-color);
+  color: #fff;
+}
+
+.valuesList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.valueTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--accent-light);
+  border: 1px solid var(--app-primary-color);
+  border-radius: 16px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  color: var(--app-primary-color);
+}
+
+.valueTagRemove {
+  background: transparent;
+  border: none;
+  color: var(--app-primary-color);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+
+.valueTagRemove:hover {
+  opacity: 1;
+}
+
+/* User List in Modal */
+.userListContainer {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.userListItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.userListItem:last-child {
+  border-bottom: none;
+}
+
+.userListItem:hover {
+  background: var(--hover-background);
+}
+
+.userListItem.selected {
+  background: var(--accent-light);
+}
+
+.userListAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--app-primary-color) 0%, #60a5fa 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: var(--font-weight-medium);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.userListInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.userListName {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--header-color);
+}
+
+.userListEmail {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emptyUserList {
+  padding: 40px 20px;
+  text-align: center;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+}
+
+/* ========================================
+   Scrollbar Styling
+   ======================================== */
+.usersGrid::-webkit-scrollbar,
+.userListContainer::-webkit-scrollbar,
+.modalBody::-webkit-scrollbar {
+  width: 6px;
+}
+
+.usersGrid::-webkit-scrollbar-track,
+.userListContainer::-webkit-scrollbar-track,
+.modalBody::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.usersGrid::-webkit-scrollbar-thumb,
+.userListContainer::-webkit-scrollbar-thumb,
+.modalBody::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.usersGrid::-webkit-scrollbar-thumb:hover,
+.userListContainer::-webkit-scrollbar-thumb:hover,
+.modalBody::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ========================================
+   Info Card (used in bulk assign modal)
+   ======================================== */
+.infoCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--accent-light, #eff6ff);
+  border: 1px solid var(--app-primary-color-light, #bfdbfe);
+  border-radius: var(--radius, 8px);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--content-color, #374151);
+}
+
+.infoIcon {
+  flex-shrink: 0;
+  font-size: 16px;
+}

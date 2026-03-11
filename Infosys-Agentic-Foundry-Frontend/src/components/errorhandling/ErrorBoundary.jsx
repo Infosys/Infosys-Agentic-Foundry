@@ -1,5 +1,7 @@
 import React from "react";
 import { useMessage } from "../../Hooks/MessageContext";
+import { lastApiError } from "../../config/axiosInterceptors";
+import { generateUUID } from "../../utils/uuidPolyfill";
 
 // Global error tracking to prevent API loops across all ErrorBoundary instances
 let globalErrorCount = 0;
@@ -21,7 +23,7 @@ const blockApiCalls = () => {
   window.dispatchEvent(
     new CustomEvent("errorLoopDetected", {
       detail: { blocked: true, timestamp: Date.now() },
-    })
+    }),
   );
 
   // Unblock after duration
@@ -31,7 +33,7 @@ const blockApiCalls = () => {
     window.dispatchEvent(
       new CustomEvent("errorLoopCleared", {
         detail: { blocked: false, timestamp: Date.now() },
-      })
+      }),
     );
   }, BLOCK_DURATION);
 };
@@ -62,17 +64,26 @@ class ErrorBoundary extends React.Component {
       errorCount: 0,
       lastErrorTime: null,
       errorId: null,
+      errorMessage: null,
     };
   }
 
   static getDerivedStateFromError(error) {
     // IMPORTANT: This static method cannot access the component instance (no 'this').
-    // Only derive minimal state needed to trigger fallback UI. All side effects &
-    // instance state updates (counters, timers, etc.) are handled in componentDidCatch.
+    // Only mark hasError as true to trigger componentDidCatch, but don't show fallback UI
+    // unless it's a critical rendering error. Most errors should just show as toast messages.
+    const now = Date.now();
+    const recentApiError = lastApiError && now - lastApiError.timestamp < 2000 ? lastApiError.message : null;
+
+    // Check if this is a critical rendering error (e.g., cannot render children at all)
+    const isCritical = error?.name === "ChunkLoadError" || error?.message?.includes("Loading chunk");
+
     return {
-      hasError: true,
-      // Provide an errorId early so the UI can show something deterministic on first render
-      errorId: `error_${Date.now()}_${crypto.randomUUID()}`,
+      hasError: isCritical, // Only show fallback UI for critical errors
+      errorCount: 0,
+      lastErrorTime: now,
+      errorId: `error_${Date.now()}_${generateUUID()}`,
+      errorMessage: recentApiError || error?.message || "An unexpected error occurred",
     };
   }
 
@@ -93,24 +104,34 @@ class ErrorBoundary extends React.Component {
     }
 
     // ----- Instance (component-level) tracking -----
-    this.setState((prev) => {
-      const isRapidError = prev.lastErrorTime && now - prev.lastErrorTime < 1000;
-      const nextCount = isRapidError ? (prev.errorCount || 0) + 1 : 1;
-      return {
+    const isRapidError = this.state.lastErrorTime && now - this.state.lastErrorTime < 1000;
+    const nextCount = isRapidError ? (this.state.errorCount || 0) + 1 : 1;
+    const recentApiError = lastApiError && now - lastApiError.timestamp < 2000 ? lastApiError.message : null;
+    const errorMessage = recentApiError || error?.standardizedMessage || error?.message || "An unexpected error occurred";
+
+    // Check if this is becoming a critical error loop
+    const isCriticalLoop = nextCount > ERROR_COUNT_LIMIT;
+
+    this.setState(
+      {
+        hasError: isCriticalLoop, // Only show fallback UI if error loop detected
         errorCount: nextCount,
         lastErrorTime: now,
-      };
-    });
+        errorMessage: errorMessage,
+      },
+      () => {
+        if (this.state.errorCount > 2) {
+          console.warn("🔄 Rapid error loop detected in component, showing fallback UI");
+        }
+      },
+    );
 
-    if (this.state.errorCount > 2) {
-      console.warn("🔄 Rapid error loop detected in component, preventing re-renders");
-    }
-
-    // ----- User messaging (avoid spamming) -----
+    // ----- User messaging (show toast for non-critical errors) -----
     try {
       const { addMessage } = this.props;
-      if (this.state.errorCount <= 2 && !apiCallsBlocked) {
-        addMessage && addMessage("Something went wrong rendering this page. Please refresh.", "error");
+      if (!isCriticalLoop && !apiCallsBlocked && addMessage) {
+        // Show a concise error message as toast
+        addMessage(errorMessage, "error");
       }
     } catch (_) {
       /* swallow */
@@ -164,6 +185,11 @@ class ErrorBoundary extends React.Component {
           }}>
           <h3>Something went wrong</h3>
           <p>Error ID: {this.state.errorId}</p>
+          {this.state.errorMessage && (
+            <p style={{ fontSize: "14px", color: "#636e72", marginBlock: "10px" }}>
+              <strong>Details:</strong> {this.state.errorMessage}
+            </p>
+          )}
           <button
             onClick={() => this.setState({ hasError: false, errorCount: 0 })}
             style={{

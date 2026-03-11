@@ -1,0 +1,203 @@
+/* Generate Server Modal Styles */
+.generateModalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--modal-overlay, rgba(0, 0, 0, 0.7));
+  backdrop-filter: var(--backdrop-blur, blur(8px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(8px));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1300;
+}
+
+.generateModalContainer {
+  background: var(--card-bg, white);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.15));
+  border: 1px solid var(--border-color, transparent);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.generateModalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px 16px 24px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.generateModalTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--header-color, #111827);
+  margin: 0;
+}
+
+.modalCloseBtn {
+  color: var(--header-color);
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm, 6px);
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.modalCloseBtn:hover {
+  background: var(--hover-background);
+}
+
+.modalCloseBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.generateModalForm {
+  display: flex;
+  flex-direction: column;
+}
+
+.generateModalContent {
+  padding: 20px 24px;
+}
+
+.generateModalInfo {
+  font-size: 14px;
+  color: var(--content-color, #4b5563);
+  margin-bottom: 20px;
+}
+
+.generateFormGroup {
+  margin-bottom: 16px;
+}
+
+.generateFormLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--header-color, #374151);
+  margin-bottom: 6px;
+}
+
+.generateFormInput {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--input-bg, #fff);
+  color: var(--header-color, #111827);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+}
+
+.generateFormInput::placeholder {
+  color: var(--content-color, #9ca3af);
+}
+
+.generateFormInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color, #007cc3);
+  box-shadow: 0 0 0 3px var(--focus-ring, rgba(0, 124, 195, 0.1));
+}
+
+.generateFormTextarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--input-bg, #fff);
+  color: var(--header-color, #111827);
+  resize: none;
+  min-height: 80px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.generateFormTextarea::placeholder {
+  color: var(--content-color, #9ca3af);
+}
+
+.generateFormTextarea:focus {
+  outline: none;
+  border-color: var(--app-primary-color, #007cc3);
+  box-shadow: 0 0 0 3px var(--focus-ring, rgba(0, 124, 195, 0.1));
+}
+
+.generateModalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  background-color: var(--card-bg, #f9fafb);
+  border-radius: 0 0 12px 12px;
+}
+
+.generateCancelBtn {
+  padding: 10px 20px;
+  background-color: var(--muted, #6b7280);
+  color: var(--primary-button-text, #ffffff);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.generateCancelBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.generateCancelBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.generateSubmitBtn {
+  padding: 10px 20px;
+  background-color: var(--app-primary-color, #007cc3);
+  color: var(--primary-button-text, #ffffff);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.generateSubmitBtn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.generateSubmitBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

@@ -1,0 +1,160 @@
+/**
+ * KnowledgeBaseForm Component-Specific Styles
+ * Uses global CSS classes from index.css for form layouts (.form, .formGroup, .formSection, etc.)
+ * Uses UploadBox component for file uploads
+ * Only component-specific styles defined here
+ */
+
+/* Footer Container */
+.footerContainer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+/* Footer Buttons */
+.footerButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Footer Toggle Item */
+.footerToggleItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Footer Toggle Label */
+.footerToggleLabel {
+  font-size: 13px;
+  color: var(--content-color, #555);
+  white-space: nowrap;
+}
+
+/* Half width form group */
+.halfWidth {
+  width: 50%;
+}
+
+/* Existing Documents Section */
+.existingDocuments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.existingDocsLabel {
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+}
+
+.documentsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.documentItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--secondary-bg, #f9fafb);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  min-width: 100%;
+}
+
+.documentInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.documentName {
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 500;
+  color: var(--text-primary, #1f2937);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.removeDocBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.removeDocBtn:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Inline Form Row - Name and Departments on same line */
+.inlineFormRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* Name Field Container - Inline Label and Textarea */
+.nameFieldContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.inlineLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--content-color, #555);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.nameTextarea {
+  flex: 1;
+  min-height: 36px;
+  max-height: 80px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text-primary, #1a1a1a);
+  background: var(--input-bg, #fff);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  resize: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nameTextarea:focus {
+  outline: none;
+  border-color: var(--accent, #37acea);
+  box-shadow: 0 0 0 3px rgba(55, 172, 234, 0.1);
+}
+
+.nameTextarea:disabled,
+.nameTextarea:read-only {
+  background: var(--disabled-bg, #f5f5f5);
+  cursor: not-allowed;
+  opacity: 0.7;
+}

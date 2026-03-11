@@ -4,7 +4,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12,167 +12,103 @@
 }
 
 .popupContent {
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.18);
-  padding: 32px 24px 24px 24px;
-  min-width: 320px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
+  padding: 20px;
+  position: absolute;
+  width: 280px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0px 10px 15px rgba(0, 0, 0, 0.1), 0px 4px 6px rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-lg);
+  z-index: 3000;
 }
 
-.slider {
-  width: 100%;
-  margin: 16px 0 8px 0;
-}
-
-.valueLabel {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 16px;
-}
-
-.closeButton {
-  background: #2563eb;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 20px;
-  font-size: 15px;
-  cursor: pointer;
-  margin-top: 8px;
-  transition: background 0.2s;
-}
-.closeButton:hover {
-  background: #1e40af;
-}
 .temperatureContainer {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  gap: 16px;
   width: 100%;
-  margin-top: 10px;
 }
 
-.sliderLabel {
+.tempHeader {
   display: flex;
+  flex-direction: row;
   justify-content: space-between;
-  margin-bottom: 2px;
-  font-size: 12px;
-  color: #334155;
-  font-weight: 500;
+  align-items: center;
+  width: 100%;
 }
 
-.sliderLabelDisabled {
-  color: #999 !important;
-  cursor: not-allowed;
-  opacity: 0.7;
+.tempTitle {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  color: var(--text-primary);
 }
 
-.sliderTrack {
-  border-radius: 2px;
-  position: relative;
-  margin-top: 6px;
+.tempValue {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  color: var(--accent);
+}
+
+.sliderRow {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.preciseLabel,
+.creativeLabel {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-xs);
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.rangeWrapper {
+  width: 100%;
+  height: 20px;
+  display: flex;
+  align-items: center;
 }
 
 .sliderInput {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, #2563eb 0%, #2563eb var(--progress, 50%), #e5e7eb var(--progress, 50%), #e5e7eb 100%);
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 50%), var(--border) var(--progress, 50%), var(--border) 100%);
   cursor: pointer;
   border: none;
-}
-
-.sliderInput:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.sliderInput:disabled::-webkit-slider-thumb {
-  background: #bdbdbd;
-  cursor: not-allowed;
-}
-
-.sliderInput:disabled::-webkit-slider-runnable-track {
-  cursor: not-allowed;
-}
-
-.sliderInput:disabled::-moz-range-thumb {
-  background: #bdbdbd;
-  cursor: not-allowed;
-}
-
-.sliderInput:disabled::-moz-range-track {
-  cursor: not-allowed;
-}
-
-.sliderInput:disabled::-ms-thumb {
-  background: #bdbdbd;
-  cursor: not-allowed;
-}
-
-.sliderInput:disabled::-ms-fill-lower,
-.sliderInput:disabled::-ms-fill-upper {
-  cursor: not-allowed;
 }
 
 .sliderInput::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #2563eb;
-  box-shadow: 0 0 2px #2563eb44;
+  background: var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 115, 207, 0.3);
   cursor: pointer;
-  border: 2px solid #fff;
-  margin-top: -6px; /* Align thumb vertically with 4px track */
-}
-
-.sliderInput::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #2563eb;
-  box-shadow: 0 0 2px #2563eb44;
-  cursor: pointer;
-  border: 2px solid #fff;
-}
-.sliderInput::-ms-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #2563eb;
-  box-shadow: 0 0 2px #2563eb44;
-  cursor: pointer;
-  border: 2px solid #fff;
-  margin-top: 0px;
-}
-.sliderInput::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: inherit;
-}
-
-.sliderInput::-ms-fill-lower {
-  background: #2563eb;
-  border-radius: 2px;
-}
-.sliderInput::-ms-fill-upper {
-  background: #e5e7eb;
-  border-radius: 2px;
-}
-
-.sliderInput:focus {
-  outline: none;
+  border: 2px solid var(--card-bg);
 }
 
 .sliderValue {
   margin-left: 8px;
   min-width: 30px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: #555;
 }

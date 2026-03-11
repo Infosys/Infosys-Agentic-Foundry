@@ -1,0 +1,146 @@
+/* 
+ * InferenceConfigSliders Styles
+ * Matches TemperatureSlider.module.css design for visual consistency
+ */
+
+/* Main container - matches temperatureContainer */
+.slidersContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  gap: 16px;
+  width: 100%;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Section title - matches tempTitle styling */
+.sectionHeader {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  color: var(--text-primary);
+}
+
+/* Individual slider group container */
+.sliderGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  gap: 16px;
+  width: 100%;
+}
+
+/* Slider header with label and value - matches tempHeader */
+.sliderHeader {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+/* Slider label - matches tempTitle */
+.sliderLabel {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  color: var(--text-primary);
+}
+
+/* Slider value display - matches tempValue */
+.sliderValue {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  color: var(--accent);
+}
+
+/* Row with range labels - matches sliderRow */
+.sliderRow {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+/* Range endpoint labels - matches preciseLabel/creativeLabel */
+.rangeLabel {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-xs);
+  line-height: 18px;
+  color: var(--muted);
+}
+
+/* Range input wrapper - matches rangeWrapper */
+.rangeWrapper {
+  width: 100%;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+/* Range slider input - matches sliderInput exactly */
+.sliderInput {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--progress, 50%), var(--border) var(--progress, 50%), var(--border) 100%);
+  cursor: pointer;
+  border: none;
+}
+
+.sliderInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Slider thumb - matches TemperatureSlider styling */
+.sliderInput::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 115, 207, 0.3);
+  cursor: pointer;
+  border: 2px solid var(--card-bg);
+}
+
+.sliderInput:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+}
+
+.sliderInput::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 115, 207, 0.3);
+  cursor: pointer;
+  border: 2px solid var(--card-bg);
+}
+
+.sliderInput:disabled::-moz-range-thumb {
+  cursor: not-allowed;
+}
+
+/* Focus styles for accessibility */
+.sliderInput:focus {
+  outline: none;
+}
+
+.sliderInput:focus-visible {
+  outline: none;
+}

@@ -2,12 +2,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes, faChevronUp, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import styles from './PromptSuggestions.module.css';
+import SVGIcons from "../../Icons/SVGIcons";
 
-const PromptSuggestions = ({ onClose, onSelectPrompt, isVisible, promptSuggestions = [] }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+const PromptSuggestions = React.forwardRef(({ onClose, onSelectPrompt, isVisible, promptSuggestions = [], filteredSuggestions = [], cachedSuggestions = {}, searchText = "", openedViaIcon = false, onFocusedIndexChange }, ref) => {
+  // no expand/collapse; keep a compact list
   const [isClosing, setIsClosing] = useState(false);
-  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [focusedIndex, setFocusedIndex] = useState(-1); // Start with no focus
   const promptRefs = useRef([]);
+
+  // Notify parent whenever focusedIndex changes so it knows if a suggestion is highlighted
+  useEffect(() => {
+    if (onFocusedIndexChange) {
+      onFocusedIndexChange(focusedIndex);
+    }
+  }, [focusedIndex, onFocusedIndexChange]);
+
+
 
   // Use promptSuggestions from props, fallback to default if empty
   const defaultPrompts = [
@@ -28,56 +38,101 @@ const PromptSuggestions = ({ onClose, onSelectPrompt, isVisible, promptSuggestio
     "Generate creative content ideas for marketing"
   ];
 
-  const promptsToShow = promptSuggestions.length > 0 ? promptSuggestions : [];
-  const visiblePrompts = isExpanded ? promptsToShow : promptsToShow.slice(0, 8);
+  // Get history from cached suggestions (user's past queries)
+  const historyPrompts = cachedSuggestions?.user_history || [];
+  
+  // Check if user is actively searching (typing 2+ characters)
+  const safeSearchText = searchText || "";
+  const isSearching = safeSearchText.trim().length >= 2;
+  const searchTerm = isSearching ? safeSearchText.toLowerCase().trim() : "";
+  
+  // Filter function for search - only filter when actively searching
+  const filterBySearch = (items) => {
+    if (!isSearching) return items;
+    return items.filter(item => item && item.toLowerCase().includes(searchTerm));
+  };
 
-  // Focus management
-  useEffect(() => {
-    if (isVisible && !isClosing && promptRefs.current[focusedIndex]) {
-      promptRefs.current[focusedIndex].focus();
-    }
-  }, [focusedIndex, isVisible, isClosing, promptsToShow.length]);
+  // Apply filtering to history and suggested prompts
+  const filteredHistory = filterBySearch(historyPrompts);
+  // Use default prompts if promptSuggestions is empty or undefined
+  const suggestedPrompts = (promptSuggestions && promptSuggestions.length > 0) ? promptSuggestions : defaultPrompts;
+  const filteredSuggestedPrompts = filterBySearch(suggestedPrompts);
+  
+  // Always show at least 5 suggested prompts when not searching
+  const visiblePrompts = isSearching ? filteredSuggestedPrompts.slice(0, 8) : suggestedPrompts.slice(0, 5);
+  
+  // Get user and agent history for the new layout
+  const userHistory = cachedSuggestions?.user_history || [];
+  const agentHistory = cachedSuggestions?.agent_history || [];
+  const filteredUserHistory = filterBySearch(userHistory);
+  const filteredAgentHistory = filterBySearch(agentHistory);
+  
+  // Determine which mode we're in
+  const showHistoryMode = !openedViaIcon && isSearching;
+  
+  // query_library suggestions for icon click mode
+  const suggestions = promptSuggestions && promptSuggestions.length > 0 ? promptSuggestions : [];
+  
+  // Combined list for keyboard navigation - depends on mode
+  const allVisibleItems = showHistoryMode 
+    ? [...filteredUserHistory.slice(0, 5), ...filteredAgentHistory.slice(0, 5)]
+    : suggestions;
+
+  // Focus management - only focus when using keyboard navigation
+  // Removed auto-focus on open to prevent unwanted highlight
 
   // Keyboard navigation
   useEffect(() => {
     if (!isVisible || isClosing) return;
     const handleKeyDown = (e) => {
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key)) {
-        e.preventDefault();
-      }
-      const numCols = 2; // Assume 2 columns for grid navigation
-      const numRows = Math.ceil(promptsToShow.length / numCols);
+      // Only handle navigation when we have items
+      if (allVisibleItems.length === 0) return;
+      
       let nextIndex = focusedIndex;
+      
       switch (e.key) {
         case 'ArrowUp':
-          nextIndex = focusedIndex - numCols;
+          e.preventDefault();
+          // Move up one item, stop at first item (no wrap)
+          if (focusedIndex > 0) {
+            nextIndex = focusedIndex - 1;
+          }
           break;
         case 'ArrowDown':
-          nextIndex = focusedIndex + numCols;
-          break;
-        case 'ArrowLeft':
-          nextIndex = focusedIndex - 1;
-          break;
-        case 'ArrowRight':
-          nextIndex = focusedIndex + 1;
+          e.preventDefault();
+          // Move down one item, stop at last item (no wrap)
+          if (focusedIndex === -1) {
+            nextIndex = 0;
+          } else if (focusedIndex < allVisibleItems.length - 1) {
+            nextIndex = focusedIndex + 1;
+          }
           break;
         case 'Enter':
-        case ' ': // Spacebar
-          handlePromptClick(promptsToShow[focusedIndex]);
+          // Select the focused item
+          if (focusedIndex >= 0 && focusedIndex < allVisibleItems.length && allVisibleItems[focusedIndex]) {
+            e.preventDefault();
+            handlePromptClick(allVisibleItems[focusedIndex]);
+          }
+          return;
+        case 'Escape':
+          e.preventDefault();
+          onClose();
           return;
         default:
           return;
       }
-      if (nextIndex < 0) nextIndex = 0;
-      if (nextIndex >= promptsToShow.length) nextIndex = promptsToShow.length - 1;
       setFocusedIndex(nextIndex);
+      // Scroll focused item into view
+      if (promptRefs.current[nextIndex]) {
+        promptRefs.current[nextIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isVisible, isClosing, focusedIndex, promptsToShow]);
+  }, [isVisible, isClosing, focusedIndex, allVisibleItems, onClose]);
 
   useEffect(() => {
-    if (!isVisible) setFocusedIndex(0);
+    if (!isVisible) setFocusedIndex(-1); // Reset to no focus when panel closes
   }, [isVisible]);
 
   const handlePromptClick = (prompt) => {
@@ -85,69 +140,137 @@ const PromptSuggestions = ({ onClose, onSelectPrompt, isVisible, promptSuggestio
     onClose();
   };
 
-  const toggleExpanded = () => {
-    setIsExpanded(!isExpanded);
-  };
+  // removed toggleExpanded; always show compact suggestions
 
   const handleClose = () => {
     setIsClosing(true);
-    toggleExpanded();
     setTimeout(() => {
         setIsClosing(false);
         onClose();
-    }, 300); // match animation duration
+    }, 200); // shorter fade
   };
 
   if (!isVisible && !isClosing) return null;
 
-  return (
-    <div className={`${styles.overlay} ${isClosing ? styles.closing : ''}`} onClick={(e) => e.target === e.currentTarget && handleClose()}>
-        <div className={`${styles.slider} ${isExpanded ? styles.expanded : ''} ${isClosing ? styles.closing : ''}`}>
-            {/* Header */}
-            <div className={styles.header}>
-                <div className={styles.headerContent}>
-                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={styles.headerIcon}>
-                    <path d="M10 2L12.09 6.26L17 7L13.5 10.74L14.18 15.74L10 13.77L5.82 15.74L6.5 10.74L3 7L7.91 6.26L10 2Z" 
-                    stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                    <path d="M6 3L7 5L9 4" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6"/>
-                    <path d="M15 4L16 6L18 5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6"/>
-                    <path d="M4 12L5 14L7 13" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6"/>
-                </svg>
-                <h3 className={styles.title}>Prompt Suggestions</h3>
-                </div>
-                <button className={styles.closeButton} onClick={handleClose}>
-                <FontAwesomeIcon icon={faTimes} />
-                </button>
-            </div>
+  // If in history mode and no matching results in both lists, hide the popup
+  if (showHistoryMode && filteredUserHistory.length === 0 && filteredAgentHistory.length === 0) {
+    return null;
+  }
 
-            {/* Prompts Grid */}
-            <div className={styles.promptsContainer}>
-                <div className={styles.promptsGrid}>
-                  {promptsToShow.map((prompt, index) => (
+  return (
+    <div ref={ref} className={`${styles.overlay} ${isClosing ? styles.closing : ""}`}> 
+
+      <div className={`${styles.slider} ${isClosing ? styles.closing : ""}`}>
+        {/* Fixed header with title and close button */}
+        <div className={styles.fixedHeader}>
+          <div className={styles.sectionHeading}>
+            {showHistoryMode ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.6"/>
+              </svg>
+            ) : (
+              <SVGIcons icon="sparkles" width={16} height={16} />
+            )}
+            <span>{showHistoryMode ? "History" : "Suggestions"}</span>
+          </div>
+          <button
+            className={styles.closeButton}
+            onClick={handleClose}
+            aria-label="Close"
+          >
+            <FontAwesomeIcon icon={faTimes} />
+          </button>
+        </div>
+
+        {/* Scrollable content area */}
+        <div className={styles.promptsContainer}>
+          {showHistoryMode ? (
+            // TYPING MODE: Show user_history as History, agent_history as Suggested
+            <>
+              {/* History Section (user_history) */}
+              <div className={styles.section}>
+                <div className={styles.sectionList}>
+                  {filteredUserHistory.length > 0 &&
+                    filteredUserHistory.slice(0, 5).map((prompt, idx) => (
                       <div
-                      key={index}
-                      ref={el => promptRefs.current[index] = el}
+                        key={`history-${idx}`}
+                        ref={(el) => (promptRefs.current[idx] = el)}
+                        tabIndex={0}
+                        className={`${styles.promptCard} ${focusedIndex === idx ? styles.promptCardFocused : ""}`}
+                        onClick={() => handlePromptClick(prompt)}
+                        onFocus={() => setFocusedIndex(idx)}
+                      >
+                        <span className={styles.promptText}>{prompt}</span>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+
+              {/* Suggested Section (agent_history) */}
+              <div className={styles.section}>
+                <div className={styles.sectionHeaderRow}>
+                  <div className={styles.sectionHeading}>
+                    <SVGIcons icon="sparkles" width={16} height={16} />
+                    <span>Suggested</span>
+                  </div>
+                </div>
+                <div className={styles.sectionDivider}></div>
+                <div className={styles.sectionList}>
+                  {filteredAgentHistory.length > 0 ? (
+                    filteredAgentHistory.slice(0, 5).map((prompt, index) => {
+                      const globalIndex = filteredUserHistory.slice(0, 5).length + index;
+                      return (
+                        <div
+                          key={`suggested-${index}`}
+                          ref={(el) => (promptRefs.current[globalIndex] = el)}
+                          tabIndex={0}
+                          className={`${styles.promptCard} ${focusedIndex === globalIndex ? styles.promptCardFocused : ""}`}
+                          onClick={() => handlePromptClick(prompt)}
+                          onFocus={() => setFocusedIndex(globalIndex)}
+                        >
+                          <span className={styles.promptText}>{prompt}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className={styles.emptyState}>
+                      <span className={styles.emptyText}>No matching suggestions</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            // ICON CLICK MODE: Show only query_library suggestions
+            <div className={styles.section}>
+              <div className={styles.sectionList}>
+                {suggestions.length > 0 ? (
+                  suggestions.map((prompt, index) => (
+                    <div
+                      key={`suggestion-${index}`}
+                      ref={(el) => (promptRefs.current[index] = el)}
                       tabIndex={0}
-                      className={`${styles.promptCard} ${focusedIndex === index ? styles.focusedPrompt : ''}`}
+                      className={`${styles.promptCard} ${focusedIndex === index ? styles.promptCardFocused : ""}`}
                       onClick={() => handlePromptClick(prompt)}
                       onFocus={() => setFocusedIndex(index)}
-                      >
+                    >
                       <span className={styles.promptText}>{prompt}</span>
-                      </div>
-                  ))}
-                </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className={styles.emptyState}>
+                    <span className={styles.emptyText}>No suggestions available</span>
+                  </div>
+                )}
+              </div>
             </div>
-
-            {/* Footer with expand/collapse button */}
-            <div className={styles.footer}>
-                <button className={styles.expandButton} onClick={toggleExpanded}>
-                <FontAwesomeIcon icon={isExpanded ? faChevronDown : faChevronUp} className={styles.expandIcon} />
-                <span>{isExpanded ? 'Show Less' : 'Show More'}</span>
-                </button>
-            </div>
+          )}
         </div>
+      </div>
     </div>
   );
-};
+});
 
 export default PromptSuggestions;

@@ -26,13 +26,13 @@ const setCookie = (name, value, options = {}) => {
       ...options,
     };
     Cookies.set(name, value, defaultOptions);
-  } catch (_) {}
+  } catch (_) { }
 };
 
 const deleteCookie = (name) => {
   try {
     Cookies.remove(name, { path: "/" });
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // Minimal localStorage helpers (guarding SSR)
@@ -48,16 +48,17 @@ const lsSet = (k, v) => {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(k, v);
-  } catch (_) {}
+  } catch (_) { }
 };
 const lsRemove = (k) => {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(k);
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // Core artifact checks (strict by default). If strict=false, only require userName + user_session.
+// Also checks localStorage as fallback since browsers may temporarily hide cookies on tab switch.
 const hasAuthArtifacts = (strict = true) => {
   const userName = getCookie("userName");
   const session = getCookie("user_session");
@@ -98,10 +99,10 @@ const AuthContext = createContext({
   sessionId: null,
   loading: true,
   // API
-  login: () => {},
-  logout: () => {},
-  forceReplaceLogin: () => {},
-  syncFromCookies: () => {},
+  login: () => { },
+  logout: () => { },
+  forceReplaceLogin: () => { },
+  syncFromCookies: () => { },
   // Helpers exposed (may be used externally e.g. LoginScreen / ProtectedRoute)
   hasAuthArtifacts,
   getActiveUser,
@@ -115,11 +116,10 @@ export const AuthProvider = ({ children }) => {
   const channelRef = useRef(null);
   const mountedRef = useRef(false);
 
-  const [userState, setUserState] = useState(null); // { name, role }
+  const [userState, setUserState] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Derived role for backward compatibility
   const role = userState?.role || getCookie("role") || null;
 
   // Hydration
@@ -140,7 +140,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, [syncFromCookies]);
 
-  // Broadcast helper (safe metadata only)
+  // Broadcast helper
   const broadcast = useCallback((type, payload = {}) => {
     const message = {
       type,
@@ -150,25 +150,21 @@ export const AuthProvider = ({ children }) => {
       sourceTabId: tabIdRef.current,
       ...payload,
     };
-    // Primary: BroadcastChannel
     try {
       if (channelRef.current) {
         channelRef.current.postMessage(message);
       }
-    } catch (_) {}
-    // Fallback: localStorage single-use event
+    } catch (_) { }
     try {
       window.localStorage.setItem(FALLBACK_STORAGE_KEY, JSON.stringify(message));
-      // Remove shortly to enable subsequent identical events
       setTimeout(() => {
         try {
           window.localStorage.removeItem(FALLBACK_STORAGE_KEY);
-        } catch (_) {}
+        } catch (_) { }
       }, 50);
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
-  // Internal logout (no redirect management here unless reason indicates)
   const performLogoutStateClear = useCallback(() => {
     setUserState(null);
     setSessionId(null);
@@ -176,11 +172,9 @@ export const AuthProvider = ({ children }) => {
 
   const internalLogout = useCallback(
     (reason = "internal") => {
-
       clearAuthArtifacts();
       performLogoutStateClear();
       broadcast("LOGOUT", { reason });
-      // Only navigate if currently not on /login to avoid loops
       if (window.location.pathname !== "/login") {
         navigate("/login", { replace: true });
       }
@@ -205,7 +199,6 @@ export const AuthProvider = ({ children }) => {
       }
       if (refresh_token) setCookie("refresh-token", refresh_token, { expires: 0.25 });
 
-      // Update state after artifacts to align with validator
       setUserState({ name: userName, role: newRole });
       broadcast("LOGIN");
     },
@@ -214,9 +207,7 @@ export const AuthProvider = ({ children }) => {
 
   const forceReplaceLogin = useCallback(
     (credentials) => {
-      // Notify others to logout immediately
       broadcast("REPLACE_SESSION", { targetUser: credentials?.userName });
-      // Proceed with normal login flow
       login(credentials);
     },
     [broadcast, login]
@@ -224,7 +215,6 @@ export const AuthProvider = ({ children }) => {
 
   const logout = useCallback(
     (reason = "manual", redirectPath = "/login") => {
-
       clearAuthArtifacts();
       performLogoutStateClear();
       broadcast("LOGOUT", { reason });
@@ -250,13 +240,11 @@ export const AuthProvider = ({ children }) => {
             if (window.location.pathname !== "/login") navigate("/login", { replace: true });
             break;
           case "REPLACE_SESSION":
-            // Another tab is replacing session; logout silently
             performLogoutStateClear();
             clearAuthArtifacts();
             if (window.location.pathname !== "/login") navigate("/login", { replace: true });
             break;
           case "LOGIN":
-            // Sync only if we are unauthenticated & artifacts exist
             if (!hasAuthArtifacts()) return;
             if (!userState?.name) syncFromCookies();
             break;
@@ -265,26 +253,22 @@ export const AuthProvider = ({ children }) => {
             break;
         }
       };
-    } catch (_) {
-      // BroadcastChannel unsupported
-    }
+    } catch (_) { }
 
-    // Fallback storage event
     const onStorage = (e) => {
       if (e.key !== FALLBACK_STORAGE_KEY || !e.newValue) return;
       try {
         const msg = JSON.parse(e.newValue);
         if (msg.sourceTabId === tabIdRef.current) return;
-        // Reuse same logic by simulating onmessage
         channelRef.current?.onmessage?.({ data: msg });
-      } catch (_) {}
+      } catch (_) { }
     };
     window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("storage", onStorage);
       try {
         channelRef.current && channelRef.current.close();
-      } catch (_) {}
+      } catch (_) { }
     };
   }, [navigate, performLogoutStateClear, syncFromCookies, userState]);
 
@@ -297,54 +281,6 @@ export const AuthProvider = ({ children }) => {
     }, 5000); // Check every 5 seconds
 
     return () => clearInterval(cookieMonitor);
-  }, [userState]);
-
-  // Track who is deleting cookies - Catch the culprit!
-  useEffect(() => {
-    if (!userState?.name) return;
-
-    // Wrap Cookies.remove to catch deletions
-    const originalRemove = Cookies.remove;
-    const originalSet = Cookies.set;
-
-    Cookies.remove = function (name, options) {
-      const stack = new Error().stack;
-      console.error("🚨 COOKIES.REMOVE CALLED!", {
-        cookieName: name,
-        timestamp: new Date().toISOString(),
-        callStack: stack,
-      });
-      return originalRemove.call(this, name, options);
-    };
-
-    Cookies.set = function (name, value, options) {
-      // Check if being set to expire immediately (deletion via set with maxAge=0 or expires in past)
-      if (options?.expires === 0 || options?.["max-age"] === 0 || options?.maxAge === 0) {
-        console.error("🚨 COOKIE BEING SET TO EXPIRE IMMEDIATELY (DELETION)!", {
-          cookieName: name,
-          value,
-          options,
-          timestamp: new Date().toISOString(),
-          callStack: new Error().stack,
-        });
-      }
-      // Log if setting empty value (another form of deletion)
-      if (value === "" || value === null || value === undefined) {
-        console.warn("⚠️ COOKIE BEING SET TO EMPTY VALUE!", {
-          cookieName: name,
-          value,
-          options,
-          timestamp: new Date().toISOString(),
-          callStack: new Error().stack,
-        });
-      }
-      return originalSet.call(this, name, value, options);
-    };
-
-    return () => {
-      Cookies.remove = originalRemove;
-      Cookies.set = originalSet;
-    };
   }, [userState]);
 
   // Monitor direct document.cookie modifications (bypassing js-cookie)
@@ -379,7 +315,7 @@ export const AuthProvider = ({ children }) => {
     return () => clearInterval(cookieWatcher);
   }, [userState]);
 
-  // Track last time all strict artifacts were present (for grace period if jwt temporarily missing during refresh)
+  // FIX #3: Track last good artifacts and add login grace period
   const lastGoodArtifactsRef = useRef(Date.now());
 
   // Validation triggers (focus, visibility, online, click, interval)
@@ -399,21 +335,22 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
-      // Grace period for missing jwt-token only (possible rotation window)
       if (!strictArtifactsPresent) {
-        const now = Date.now();
-        const graceMs = 10000; // 10 seconds tolerance
-        if (now - lastGoodArtifactsRef.current > graceMs) {
-          internalLogout("missing-jwt-token");
+        // JWT cookie is missing but userName + user_session still exist.
+        // Do NOT logout here — the axios 401 interceptor will attempt a
+        // token refresh using email + user_session when the next API call
+        // hits a 401.  If we called internalLogout now it would wipe
+        // email/user_session/refresh-token and make refresh impossible.
+        if (process.env.NODE_ENV === "development") {
+          // eslint-disable-next-line no-console
+          console.debug("[AuthContext] JWT cookie missing but core session intact — awaiting token refresh via interceptor.");
         }
-        return; // wait for next cycle
+        return;
       }
 
-      // Update last good timestamp
       lastGoodArtifactsRef.current = Date.now();
 
       if (userState?.name && activeUser && userState.name !== activeUser) {
-        // Special case: allow seamless upgrade from Guest -> real user without global logout
         if (userState.name === "Guest") {
           syncFromCookies();
           return;
@@ -425,51 +362,55 @@ export const AuthProvider = ({ children }) => {
       if (strictArtifactsPresent && !userState) syncFromCookies();
     };
 
-    // DEBOUNCED validator for click events to prevent excessive validation
     const debouncedValidate = () => {
       clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(validate, 300); // 300ms debounce
+      debounceTimer = setTimeout(validate, 300);
     };
 
-    window.addEventListener("focus", validate);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") validate();
-    });
-    window.addEventListener("online", validate);
+    // Debounce ALL event-driven validations, not just clicks.
+    // 1500ms gives enough time for an in-flight token refresh to land before we validate.
+    const debouncedFocusValidate = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(validate, 1500);
+    };
 
-    // Use debounced version for clicks to prevent false-positive logouts
+    // Use a single named handler for visibilitychange (fixes anonymous listener leak)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") debouncedFocusValidate();
+    };
+
+    // Only use visibilitychange (covers tab switch reliably).
+    // Removed duplicate "focus" listener — both fire on tab return, causing double validation.
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", debouncedFocusValidate);
     document.addEventListener("click", debouncedValidate, true);
 
     const interval = setInterval(validate, 60000);
 
     return () => {
       clearTimeout(debounceTimer);
-      window.removeEventListener("focus", validate);
-      window.removeEventListener("online", validate);
-      document.removeEventListener("visibilitychange", validate);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", debouncedFocusValidate);
       document.removeEventListener("click", debouncedValidate, true);
       clearInterval(interval);
     };
   }, [internalLogout, syncFromCookies, userState]);
 
-  // isAuthenticated: require core artifacts and alignment (not necessarily jwt-token to allow refresh grace)
   const isAuthenticated = !!(userState?.name && hasAuthArtifacts(false) && getActiveUser() === userState.name);
 
   const value = useMemo(
     () => ({
       isAuthenticated,
       user: userState ? { name: userState.name, role: userState.role } : null,
-      // Backwards compatibility
       userName: userState?.name || null,
       role,
       sessionId,
       loading,
       login,
       logout,
-      internalLogout, // optional external usage
+      internalLogout,
       forceReplaceLogin,
       syncFromCookies,
-      // helpers
       hasAuthArtifacts: (strict) => hasAuthArtifacts(strict),
       getActiveUser,
     }),

@@ -17,12 +17,16 @@ const MessagePopup = () => {
         <div key={id} className={`message-popup ${type}`}>
           <div className="icon-message">
             <div className={`icon-container ${type}`}>
-              {type === "success" ? <SVGIcons color="#333" icon="check" width={20} height={20} /> : <SVGIcons color="#333" icon="exclamation" width={20} height={20} />}
+              {type === "success" ? (
+                <SVGIcons color="#FFFFFF" icon="check" width={16} height={16} />
+              ) : (
+                <SVGIcons color="#FFFFFF" icon="exclamation" width={16} height={16} />
+              )}
             </div>
-            {messageText}
+            <span>{messageText}</span>
           </div>
           <div className="close-btn" onClick={() => removeMessage()}>
-            <SVGIcons color="#000000" icon="close-icon" opacity={"28%"} width={25} height={25} />
+            <SVGIcons color="#FFFFFF" icon="close-icon" width={20} height={20} />
           </div>
         </div>
       </div>

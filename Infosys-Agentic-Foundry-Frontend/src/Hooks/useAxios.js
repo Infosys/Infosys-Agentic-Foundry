@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { APIs, BASE_URL, env } from "../constant";
+import { APIs, BASE_URL } from "../constant";
 import Cookies from "js-cookie";
 import axios from "axios";
 import { registerAxiosInterceptors } from "../config/axiosInterceptors"; // ensure timing/error interceptors on custom instance
@@ -11,6 +11,7 @@ const postMethod = "POST";
 const getMethod = "GET";
 const deleteMethod = "DELETE";
 const putMethod = "PUT";
+const patchMethod = "PATCH";
 
 // JWT token storage
 let jwtToken = null;
@@ -32,7 +33,7 @@ const TIME_WINDOW = 10000; // 10 seconds
 export const setJwtToken = (token) => {
   if (token) {
     jwtToken = token;
-    Cookies.set("jwt-token", token);
+    Cookies.set("jwt-token", token, { path: "/", expires: 0.25, sameSite: "Lax" }); // 6h, all paths
     return true;
   }
   return false;
@@ -42,10 +43,10 @@ export const setJwtToken = (token) => {
 export const setRefreshToken = (token) => {
   if (token) {
     refreshToken = token;
-    Cookies.set("refresh-token", token, { path: "/" });
+    Cookies.set("refresh-token", token, { path: "/", expires: 0.25, sameSite: "Lax" }); // 6h
   } else {
     refreshToken = null;
-    Cookies.remove("refresh-token");
+    Cookies.remove("refresh-token", { path: "/" });
   }
 };
 export const getRefreshToken = () => {
@@ -56,7 +57,7 @@ export const getRefreshToken = () => {
 };
 export const clearRefreshToken = () => {
   refreshToken = null;
-  Cookies.remove("refresh-token");
+  Cookies.remove("refresh-token", { path: "/" });
 };
 
 // Function to get the current JWT token
@@ -135,7 +136,7 @@ export const getSessionId = () => {
   return sessionId;
 };
 
-const REQUEST_TIMEOUT_MS = Number(env.REACT_APP_API_TIMEOUT || process.env.REACT_APP_API_TIMEOUT) || (20 * 60 * 1000); // If not declared in ENV , it will be 20 minutes
+const REQUEST_TIMEOUT_MS = Number(process.env.REACT_APP_API_TIMEOUT ?? 20 * 60 * 1000); // If not declared in ENV , it will be 20 minutes
 
 const defaultConfig = {
   headers: {
@@ -175,6 +176,10 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Dedicated axios instance for the refresh call — no interceptors attached
+// so it cannot trigger globalAuth401 or create infinite retry loops.
+const refreshAxios = axios.create({ timeout: REQUEST_TIMEOUT_MS });
+
 // Perform refresh (deduplicated)
 const performTokenRefresh = async () => {
   if (isRefreshing && refreshPromise) return refreshPromise;
@@ -186,15 +191,16 @@ const performTokenRefresh = async () => {
     if (!email || !user_session) {
       throw new Error("Refresh prerequisites missing (email/session)");
     }
-    const isSessionStillActive = () => !!Cookies.get("user_session") && !!Cookies.get("email");
+    const isSessionStillActive = () => Boolean(Cookies.get("user_session")) && Boolean(Cookies.get("email"));
     try {
       if (process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console
-        console.debug("🔄 Attempting token refresh", { hasRefreshToken: !!rToken });
+        console.debug("🔄 Attempting token refresh", { hasRefreshToken: Boolean(rToken), email });
       }
       const payload = { email, user_session };
       if (rToken) payload.refresh_token = rToken; // include only if present
-      const response = await axios.post(`${BASE_URL}${APIs.REFRESH_TOKEN}`, payload);
+      // Use refreshAxios (no interceptors) to avoid globalAuth401 on failure
+      const response = await refreshAxios.post(`${BASE_URL}${APIs.REFRESH_TOKEN}`, payload);
       // If user logged out while we were refreshing, abort and mark invalidation
       if (!isSessionStillActive()) {
         sessionInvalidatedDuringRefresh = true;
@@ -205,13 +211,22 @@ const performTokenRefresh = async () => {
       if (!newAccess) throw new Error("No access token in refresh response");
       setJwtToken(newAccess);
       if (newRefresh) setRefreshToken(newRefresh);
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("✅ Token refresh succeeded — new JWT stored");
+      }
       return newAccess;
     } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.error("❌ Token refresh failed", e?.response?.status, e?.message);
+      }
       clearRefreshToken();
-      Cookies.remove("jwt-token");
+      Cookies.remove("jwt-token", { path: "/" });
       throw e;
     } finally {
       isRefreshing = false;
+      refreshPromise = null; // reset so next call creates a fresh promise
     }
   })();
   return refreshPromise;
@@ -479,15 +494,21 @@ const useFetch = () => {
     const isFn = typeof configOrCallback === "function";
     const onChunk = isFn ? configOrCallback : typeof maybeCallback === "function" ? maybeCallback : configOrCallback.onChunk;
     const cfg = isFn ? {} : configOrCallback || {};
-    const fullUrl = url.startsWith("http") ? url : `${BASE_URL}${url}`;
+    // Normalize URL: remove trailing slash from BASE_URL and ensure url has leading slash
+    const normalizedBase = BASE_URL.replace(/\/$/, "");
+    const normalizedPath = url.startsWith("/") ? url : `/${url}`;
+    const fullUrl = url.startsWith("http") ? url : `${normalizedBase}${normalizedPath}`;
     let contentType = "application/json";
     let dataToSend = postData;
+    let skipBody = postData === null || postData === undefined;
     if (postData instanceof FormData) {
       contentType = undefined; // let browser set boundary
     } else if (cfg.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
       contentType = "application/x-www-form-urlencoded";
-      dataToSend = serializeToUrlEncoded(postData);
-    } else {
+      dataToSend = postData instanceof URLSearchParams
+        ? postData.toString()
+        : serializeToUrlEncoded(postData);
+    } else if (!skipBody) {
       dataToSend = JSON.stringify(postData);
     }
     const headers = addConfigHeaders({
@@ -496,12 +517,12 @@ const useFetch = () => {
       "Cache-Control": "no-cache",
       Pragma: "no-cache",
       ...cfg.headers,
-      ...(contentType ? { "Content-Type": contentType } : {}),
+      ...(contentType && !skipBody ? { "Content-Type": contentType } : {}),
     });
     const response = await fetch(fullUrl, {
       method: postMethod,
       headers,
-      body: dataToSend,
+      ...(skipBody ? {} : { body: dataToSend }),
       signal: cfg.signal,
     });
 
@@ -661,7 +682,10 @@ const useFetch = () => {
           contentType = undefined;
         } else if (config.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
           contentType = "application/x-www-form-urlencoded";
-          dataToSend = serializeToUrlEncoded(postData);
+          // Support both URLSearchParams (already serializable) and plain objects
+          dataToSend = postData instanceof URLSearchParams
+            ? postData.toString()
+            : serializeToUrlEncoded(postData);
         } else {
           dataToSend = JSON.stringify(postData);
         }
@@ -725,7 +749,9 @@ const useFetch = () => {
           contentType = undefined;
         } else if (config.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
           contentType = "application/x-www-form-urlencoded";
-          dataToSend = serializeToUrlEncoded(putData);
+          dataToSend = putData instanceof URLSearchParams
+            ? putData.toString()
+            : serializeToUrlEncoded(putData);
         } else {
           dataToSend = JSON.stringify(putData);
         }
@@ -759,6 +785,63 @@ const useFetch = () => {
         throw err;
       } finally {
         setLoading((prevLoading) => ({ ...prevLoading, put: false }));
+      }
+    },
+    [handleApiError]
+  );
+
+  const patchData = useCallback(
+    async (url, patchPayload, config = {}) => {
+      // Check if this API call should be blocked
+      if (shouldBlockApiCall(url)) {
+        const error = new Error(`API call blocked: ${url}`);
+        error.isBlocked = true;
+        throw error;
+      }
+
+      setLoading((prevLoading) => ({ ...prevLoading, patch: true }));
+      try {
+        let contentType = "application/json";
+        let dataToSend = patchPayload;
+
+        if (patchPayload instanceof FormData) {
+          contentType = undefined;
+        } else if (config.headers?.["Content-Type"] === "application/x-www-form-urlencoded") {
+          contentType = "application/x-www-form-urlencoded";
+          dataToSend = serializeToUrlEncoded(patchPayload);
+        } else {
+          dataToSend = JSON.stringify(patchPayload);
+        }
+        const headers = addConfigHeaders({
+          ...defaultConfig.headers,
+          ...config.headers,
+          ...(contentType ? { "Content-Type": contentType } : {}),
+        });
+
+        const response = await axiosInstance.request({
+          url,
+          method: patchMethod,
+          data: dataToSend,
+          ...config,
+          headers,
+        });
+        const data = response.data;
+        setError((prevError) => ({ ...prevError, patch: null }));
+        return data;
+      } catch (err) {
+        // If this is a blocked call, don't treat it as a real error
+        if (err.isBlocked) {
+          console.warn("API call was blocked by error loop protection");
+          return { error: "API temporarily unavailable", blocked: true };
+        }
+
+        // Use existing error handler for consistent 401 handling and messaging
+        handleApiError(err, { context: `patchData: ${url}`, silent: false });
+
+        setError((prevError) => ({ ...prevError, patch: err }));
+        throw err;
+      } finally {
+        setLoading((prevLoading) => ({ ...prevLoading, patch: false }));
       }
     },
     [handleApiError]
@@ -820,15 +903,16 @@ const useFetch = () => {
   // Clear token (for logout)
   const clearJwtToken = useCallback(() => {
     jwtToken = null;
-    Cookies.remove("jwt-token");
+    Cookies.remove("jwt-token", { path: "/" });
   }, []);
 
   return {
-    loading: loading?.fetch || loading?.post || loading?.put || loading?.delete,
+    loading: loading?.fetch || loading?.post || loading?.put || loading?.patch || loading?.delete,
     error,
     fetchData,
     postData,
     putData,
+    patchData,
     deleteData,
     setJwtToken,
     clearJwtToken,

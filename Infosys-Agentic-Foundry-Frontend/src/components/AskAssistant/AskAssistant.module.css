@@ -1,107 +1,1130 @@
 /* Main Container */
 .askAssistantContainer {
-  height: Calc(100vh - 45px);
-  width: Calc(100% - 70px);
+  height: 100vh;
+  display: flex;
+  flex-direction: row;
+  background: var(--chat-area-bg, var(--menu-bg));
+  overflow: visible;
+  position: fixed;
+  left: var(--main-width, 90px);
+  right: 0;
+  border-radius: 0px;
+}
+
+/* ===============================
+   Right Sidebar Styles (Single Sidebar)
+   =============================== */
+
+.rightSidebar {
+  width: 280px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: white;
-  overflow: hidden;
+  gap: 0;
+  padding: 0;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border);
+  overflow: visible;
+  transition: width 0.3s ease;
+  position: relative;
+  max-height: 100vh;
+  /* Ensure right sidebar stays on the right */
+  order: 99;
+}
+
+/* Right Sidebar Collapsed State */
+.rightSidebarCollapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  flex-basis: 0 !important;
+  flex-shrink: 1 !important;
+  flex-grow: 0 !important;
+  border-left: none;
+  overflow: visible;
+  padding: 0 !important;
+}
+
+/* Sidebar Collapse Button - Expanded State */
+.sidebarCollapseBtn {
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  cursor: pointer;
+  z-index: 1000;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.sidebarCollapseBtn:hover {
+  background: var(--hover-background);
+  width: 24px;
+  left: -24px;
+  color: var(--text-primary);
+}
+
+/* Double arrow side by side >> pointing right (to collapse) */
+.sidebarCollapseBtn::before,
+.sidebarCollapseBtn::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.sidebarCollapseBtn::before {
+  margin-left: -2px;
+}
+
+.sidebarCollapseBtn::after {
+  margin-left: -3px;
+}
+
+.sidebarCollapseBtn svg {
+  display: none;
+}
+
+/* When sidebar is collapsed - Show expand button on right edge */
+.rightSidebarCollapsed .sidebarCollapseBtn {
   position: fixed;
+  right: 0;
+  left: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 48px;
+  border-radius: 8px 0 0 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-right: none;
+  flex-direction: row;
+}
+
+.rightSidebarCollapsed .sidebarCollapseBtn:hover {
+  background: var(--hover-background);
+  width: 24px;
+}
+
+/* Double arrow << pointing left (to expand) when collapsed */
+.rightSidebarCollapsed .sidebarCollapseBtn::before,
+.rightSidebarCollapsed .sidebarCollapseBtn::after {
+  transform: rotate(135deg);
+}
+
+.rightSidebarCollapsed .sidebarCollapseBtn::before {
+  margin-left: 0;
+  margin-right: -3px;
+}
+
+.rightSidebarCollapsed .sidebarCollapseBtn::after {
+  margin-left: 0;
+  margin-right: -2px;
+}
+
+/* Fixed Top Section - Agent Selection (non-scrolling) */
+.sidebarFixedTop {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 12px 16px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  overflow: visible;
+  z-index: 10;
+}
+
+/* Compact sidebar section for fixed area */
+.sidebarSectionCompact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.sidebarSectionCompact:hover,
+.sidebarSectionCompact:focus-within {
+  z-index: 100;
+}
+
+/* Scrollable Section - Settings & Actions */
+.sidebarScrollable {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.sidebarScrollable::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebarScrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebarScrollable::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+.sidebarScrollable::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Model + Temperature Row (horizontal layout) */
+.modelTempRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.modelSection {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Temperature Button with Popup */
+.tempButtonWrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tempButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  height: 36px;
+}
+
+.tempButton:hover {
+  border-color: var(--app-primary-color);
+  background: var(--hover-background);
+}
+
+.tempButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tempButtonValue {
+  color: var(--app-primary-color);
+  font-weight: 600;
+}
+
+.tempPopup {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 200px;
+  padding: 12px;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+.tempPopupHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tempPopupValue {
+  color: var(--app-primary-color);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tempPopupLabels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* Keep tempSection for backward compatibility */
+.tempSection {
+  width: 90px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Temperature header with value badge */
+.tempHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.temperatureValueBadge {
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  color: #fff;
+  background: var(--app-primary-color);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+/* Colorful temperature slider wrapper */
+.temperatureSliderWrapper {
+  position: relative;
+  padding: 4px 0;
+}
+
+.temperatureSliderColorful {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--app-primary-color);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  position: relative;
+}
+
+.temperatureSliderColorful::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: 2px solid #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.temperatureSliderColorful::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  border-color: #8b5cf6;
+}
+
+.temperatureSliderColorful::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: 2px solid #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.temperatureSliderColorful::-moz-range-track {
+  background: var(--app-primary-color);
+  height: 6px;
+  border-radius: 3px;
+}
+
+/* Compact temperature control - keeping for backward compatibility */
+.temperatureControlCompact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.temperatureSliderCompact {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.temperatureSliderCompact::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--app-primary-color);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.temperatureSliderCompact::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.temperatureSliderCompact::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--app-primary-color);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.temperatureValueCompact {
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  background: var(--hover-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Divider line */
+.sidebarDivider {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.sidebarSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure dropdown in sidebar section can overflow */
+.sidebarSection:hover,
+.sidebarSection:focus-within {
+  z-index: 100;
+}
+
+.sidebarSection:first-of-type {
+  margin-top: 8px;
+}
+
+.sidebarLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: 4px;
+}
+
+.sidebarLabel svg {
+  opacity: 0.6;
+}
+
+/* Agent Row with @Mention Button */
+.agentRow,
+.agentMentionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.agentDropdownWrapper {
+  flex: 1;
+  min-width: 0;
+  max-width: calc(100% - 40px); /* Reserve space for @ button */
+  overflow: hidden;
+}
+
+/* Wrapper for agent dropdown inside the row */
+.agentMentionRow > div:first-child {
+  flex: 1;
+  min-width: 0;
+  max-width: calc(100% - 40px);
+}
+
+.mentionButton {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.mentionButton:hover {
+  background: var(--hover-background);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.mentionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mentionActive {
+  background: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.mentionActive:hover {
+  background: var(--app-primary-hover);
+  border-color: var(--app-primary-hover);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
+}
+
+.mentionTrigger {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.mentionTrigger:hover {
+  background: var(--hover-background);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.mentionTriggerActive {
+  background: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.mentionTriggerActive:hover {
+  background: var(--app-primary-hover);
+  border-color: var(--app-primary-hover);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
+}
+
+.mentionDropdownWrapper {
+  margin-top: 8px;
+}
+
+/* Temperature Control */
+.temperatureControl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--input-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.temperatureSlider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--app-primary-color);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.temperatureSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.temperatureSlider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.temperatureSlider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.temperatureValue {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-primary-color);
+  min-width: 32px;
+  text-align: center;
+}
+
+/* Settings Toggles */
+.settingsToggles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebarToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--input-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sidebarToggle:hover {
+  background: var(--hover-background);
+  border-color: var(--border);
+}
+
+.toggleWithExpandable {
+  /* When toggle has expandable content - reserved for future styling */
+  position: relative;
+}
+
+.toggleRightSection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.expandCollapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--hover-background);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.expandCollapseBtn:hover {
+  background: var(--accent-light);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.toggleSwitchLabel {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.toggleLabelText {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.toggleCheckbox {
+  display: none;
+}
+
+.toggleSwitch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--muted);
+  border-radius: 20px;
+  transition: background 0.2s ease;
+}
+
+.toggleSwitch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggleCheckbox:checked + .toggleSwitch {
+  background: var(--app-primary-color);
+}
+
+.toggleCheckbox:checked + .toggleSwitch::after {
+  transform: translateX(16px);
+}
+
+.toggleCheckbox:disabled + .toggleSwitch {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.noSettings {
+  padding: 16px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  background: var(--input-bg);
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+}
+
+/* Toggle with expandable list (for Tool Verifier) */
+.toggleWithList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.toggleWithList .sidebarToggle {
+  border-radius: 8px;
+}
+
+.toggleWithList:has(.toolsListContainer) .sidebarToggle {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
+}
+
+/* Tools List Container */
+.toolsListContainer {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 10px;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 200px;
+  }
+}
+
+.toolsListHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolsListTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.selectAllBtn {
+  font-size: 11px;
+  color: var(--app-primary-color);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.selectAllBtn:hover:not(:disabled) {
+  background: var(--accent-light);
+}
+
+.selectAllBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tools Checkbox List */
+.toolsCheckboxList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.toolsCheckboxList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.toolsCheckboxList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.toolsCheckboxList::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.toolCheckboxItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.toolCheckboxItem:hover {
+  background: var(--hover-background);
+}
+
+.toolCheckbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--app-primary-color);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toolCheckboxLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolsLoading {
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+/* Quick Actions */
+.quickActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Compact Quick Actions - Icons only in a row */
+.quickActionsCompact {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.quickActionIconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quickActionIconBtn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+  transform: translateY(-2px);
+}
+
+.quickActionIconBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.quickActionIconBtn svg {
+  opacity: 0.8;
+}
+
+.quickActionIconBtn:hover:not(:disabled) svg {
+  opacity: 1;
+}
+
+/* Inline Actions Section - Label and buttons on same row */
+.actionsInlineSection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.actionsInlineButtons {
+  display: flex;
+  gap: 6px;
+}
+
+.actionInlineBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.actionInlineBtn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.actionInlineBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Full Width Actions - 3 buttons spread across full width */
+.actionsFullWidth {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.actionFullBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.actionFullBtn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.actionFullBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.deleteBtn {
+  color: var(--danger-color, #dc3545);
+}
+
+.deleteBtn:hover:not(:disabled) {
+  background: var(--danger-light, rgba(220, 53, 69, 0.1));
+  border-color: var(--danger-color, #dc3545);
+  color: var(--danger-color, #dc3545);
+}
+
+.quickActionBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quickActionBtn:hover:not(:disabled) {
+  background: var(--accent-light);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
+.quickActionBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.quickActionBtn svg {
+  opacity: 0.7;
+}
+
+.quickActionBtn:hover:not(:disabled) svg {
+  opacity: 1;
 }
 
 /* Chat Wrapper */
 .chatWrapper {
+  flex: 1 1 auto;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   height: 100%;
-  max-width: 100%;
-  margin: 0 auto;
   width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  scrollbar-width: thin;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0px;
+  box-sizing: border-box;
+  transition: flex 0.2s ease-out, width 0.2s ease-out;
+  /* Ensure chat stays on the left */
+  order: 1;
 }
 
+/* When Canvas is open, shrink chat wrapper */
+.chatWrapper.withCanvas {
+  flex: 1 1 auto;
+  min-width: 300px;
+  max-width: none;
+  overflow: hidden;
+}
+
+/* Stack messages area and input vertically and let messages grow */
 .bubbleAndInput {
   flex: 1;
   display: flex;
   flex-direction: column;
-  transition: width 0.3s ease-in-out;
-  min-width: 0; /* Prevents flex overflow */
-  overflow: hidden; /* Ensures content doesn't overflow */
-}
-
-/* Canvas Layout States */
-.bubbleAndInput.withCanvas {
-  width: 30%;
-  flex: none;
-}
-
-.bubbleAndInput.withoutCanvas {
-  width: 100%;
-  flex: 1;
-}
-
-.messagesWrapper {
-  flex: 1 1;
-  display: flex;
-  flex-direction: column-reverse;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  padding: 2px 0 2px 0;
   min-height: 0;
-  width: 100%;
-  margin: 0 auto;
-  margin-right: 0;
-  padding-right: 2%;
+  height: 100%;
+  overflow: hidden;
 }
 
-/* Chat Bubbles Wrapper */
 .chatBubblesWrapper {
   flex: 1;
   display: flex;
-  flex-direction: row;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  padding: 2px 0 2px 0;
+  flex-direction: column;
   min-height: 0;
-  width: 100%;
+  height: 100%;
+  overflow: visible;
+  background: transparent;
+}
+
+.messagesWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 20px;
+  scroll-behavior: smooth;
+  max-width: 100%;
   margin: 0 auto;
-  margin-right: 0;
-  padding-left: 2%;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Messages Container */
 .messagesContainer {
-  padding: 0 20px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   border-radius: 6px;
+  flex: 1;
+  min-height: min-content;
 }
 
 .messagesContainer::-webkit-scrollbar {
-  width: 4px;
-}
-
-.messagesContainer::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.messagesContainer::-webkit-scrollbar-thumb {
-  background: #e5e7eb;
-  border-radius: 2px;
-}
-
-.messagesContainer::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
+  display: none;
 }
 
 .accordionContainer {
-  border-radius: 5px;
-  margin-bottom: 5px;
+  border-radius: 12px;
+  margin-bottom: 1px;
   overflow: visible;
   max-width: 100%;
-  min-width: 225px;
-  width: fit-content;
+  min-width: 280px;
+  /* Children stretch to fill container width */
+  width: 100%;
   background: none;
+  /* Ensure all children have same width */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .accordionContainer:has(.toolCallWrapper) .toolcallArgItem:has(textarea) {
@@ -110,18 +1133,210 @@
 
 .planContainer {
   display: flex;
-  align-items: flex-start;
-  border: 1px solid #ccc;
-  min-width: 180px;
-  background: #eeeeee70;
   flex-direction: column;
-  border-radius: 5px;
-  line-height: 1.8;
-  letter-spacing: 0.5px;
-  font-size: 13px;
-  padding: 5px 10px;
-  margin-bottom: 8px;
+  align-items: stretch;
   width: 100%;
+  max-width: 720px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--app-primary-color);
+  background: var(--card-bg);
+  padding: 0;
+  margin-bottom: 12px;
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.planContainer:hover {
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.12),
+    0 4px 8px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.planContainer h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary, #111827);
+}
+
+.planContainer h3::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--app-primary-color);
+}
+
+.planContainer p,
+.stepsContent {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.stepsContent + .stepsContent {
+  margin-top: 4px;
+}
+.planHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 52px;
+  padding: 0 20px;
+  background: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+
+.planTitle {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-base);
+  line-height: 24px;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.planSubtitle {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  color: var(--text-primary);
+  margin: 8px 0 0 0;
+}
+
+.planSteps {
+  width: 100%;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+}
+
+/* Keep the steps list inside the plan scrollable so the overall layout stays stable */
+.planStepsInner {
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 8px;
+}
+
+.planContainer::-webkit-scrollbar,
+.planStepsInner::-webkit-scrollbar {
+  width: 8px;
+}
+
+.planContainer::-webkit-scrollbar-thumb,
+.planStepsInner::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.planStep {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 20px;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+.planStep:last-child {
+  border-bottom: none;
+}
+
+.planStepNumber {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 28px;
+  height: 28px;
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border-radius: 50%;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+}
+
+.planStepText {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  color: var(--text-primary);
+}
+
+.planFooter {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--card-bg);
+  border-top: 1px solid var(--border);
+}
+
+.approveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border: none;
+  padding: 12px 24px;
+  border-radius: 24px;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.approveBtn:hover {
+  background: var(--app-secondary-color);
+}
+
+.requestChangesBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 12px 24px;
+  border-radius: 24px;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  line-height: 21px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.requestChangesBtn:hover {
+  background: var(--muted-foreground);
+  border-color: var(--border);
 }
 
 /* Recording Indicator - In-place of textarea */
@@ -130,11 +1345,11 @@
   align-items: center;
   gap: 8px;
   padding-left: 12px;
-  background: white;
-  border-radius: 8px;
+  background: var(--card-bg);
+  border-radius: var(--radius-sm);
   animation: fadeIn 0.2s ease-out;
   position: relative;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   width: 100%;
   box-sizing: border-box;
   justify-content: flex-start;
@@ -160,24 +1375,80 @@
   background: rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   animation: pulseRing 1.5s ease-out infinite;
-  background: #ff4757;
+  background: var(--danger, #ff4757);
 }
 
 .recordingText {
   display: flex;
   align-items: center;
   gap: 3px;
-  color: #ffffff;
-  font-weight: 500;
-  font-size: 12px;
+  color: var(--primary-button-color);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-xs);
   letter-spacing: 0.3px;
   flex: 1;
   padding-left: 5px;
 }
 
 .recordingLabel {
-  font-weight: 600;
-  color: #ff4757;
+  font-weight: var(--font-weight-semibold);
+  color: var(--danger, #ff4757);
+}
+
+/* Transcribing Indicator - Shows while audio is being processed */
+.transcribingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  background: var(--card-bg);
+  border-radius: var(--radius-sm);
+  animation: fadeIn 0.2s ease-out;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  font-size: var(--font-size-xs);
+}
+
+.transcribingDots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.transcribingDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary-button-color, #4a90d9);
+  animation: transcribeBounce 1.4s ease-in-out infinite;
+}
+
+.transcribingDot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.transcribingDot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.transcribingLabel {
+  color: var(--primary-button-color, #4a90d9);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.3px;
+}
+
+@keyframes transcribeBounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* Audio Visualizer */
@@ -191,7 +1462,7 @@
 
 .audioBar {
   width: 2px;
-  background: #ff4757;
+  background: var(--danger, #ff4757);
   border-radius: 1px;
   animation: audioWave 1.2s ease-in-out infinite;
   min-height: 4px;
@@ -245,25 +1516,68 @@
 }
 
 .chatSection {
-  /* flex: 1; */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   transition: width 0.3s ease-in-out;
-  /* overflow: hidden; */
+  min-height: 0;
 }
 
 .messageBubble {
   letter-spacing: 0.5px;
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   margin: 5px 10px;
+  padding: 14px 18px;
+  border: 1px solid var(--border) !important;
+  border-left: 4px solid var(--app-primary-color) !important;
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: 
+    0 6px 20px rgba(0, 0, 0, 0.18),
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  transition: all 0.2s ease;
+}
+
+.messageBubble:hover {
+  box-shadow: 
+    0 10px 28px rgba(0, 0, 0, 0.22),
+    0 5px 10px rgba(0, 0, 0, 0.14),
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+/* Dark mode 3D shadow effect - subtle depth without glow */
+:root[data-theme="dark"] .messageBubble {
+  box-shadow: 
+    0 6px 16px rgba(0, 0, 0, 0.5),
+    0 3px 6px rgba(0, 0, 0, 0.35),
+    0 1px 3px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="dark"] .messageBubble:hover {
+  box-shadow: 
+    0 10px 24px rgba(0, 0, 0, 0.55),
+    0 5px 10px rgba(0, 0, 0, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  transform: translateY(-1px);
 }
 
 .loadingChat {
   border-radius: 5px;
   padding: 5px 10px;
   margin-bottom: 12px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 16px;
-  letter-spacing: 0px;
-  color: #4d4d4d;
+  letter-spacing: 0.3px;
+    color: var(--text-primary, #4d4d4d);
   width: max-content;
 }
 
@@ -272,9 +1586,9 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid transparent;
-  border-top: 2px solid #007cc3;
-  border-right: 2px solid #007cc3;
+    border: 2px solid transparent;
+    border-top: 2px solid var(--app-primary-color, #007cc3);
+    border-right: 2px solid var(--app-primary-color, #007cc3);
   animation: nodeSpin 0.8s linear infinite;
   display: inline-block;
   flex-shrink: 0;
@@ -295,10 +1609,10 @@
   flex-direction: column;
   gap: 4px;
   margin: 4px 0 8px 0;
-  padding: 4px 8px 6px 8px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+    padding: 4px 8px 6px 8px;
+    background: var(--node-bg, #f8fafc);
+    border: 1px solid var(--node-border, #e2e8f0);
+    border-radius: 6px;
 }
 
 .nodeItem {
@@ -306,30 +1620,30 @@
   flex-direction: column;
   gap: 2px;
   padding: 4px 6px;
-  background: #ffffff;
-  border: 1px solid #edf2f7;
-  border-radius: 4px;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.03);
+  background: var(--card-bg);
+    border: 1px solid var(--node-border, #edf2f7);
+    border-radius: 4px;
+    box-shadow: var(--node-shadow, 0 1px 0 rgba(0, 0, 0, 0.03));
 }
 
 .nodeItem:hover {
-  background: #f1f5f9;
+  background: var(--hover-background);
 }
 
 .nodeName {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #1e293b;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
 }
 
 .nodeStatus {
   font-size: 11px;
-  font-weight: 400;
-  color: #64748b;
-  background: #f1f5f9;
+  font-weight: var(--font-weight-normal);
+  color: var(--muted);
+  background: var(--hover-background);
   padding: 2px 6px;
   border-radius: 10px;
   text-transform: lowercase;
@@ -338,7 +1652,7 @@
 .nodeContent {
   font-size: 11px;
   line-height: 1.3;
-  color: #334155;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -356,65 +1670,153 @@
   }
 }
 
+/* Feedback section container - positions feedback icons on same row as View Details */
+.feedback-section {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: -8px;
+}
+
+/* Button container for feedback actions */
+.button-container {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+/* Feedback Section - fully theme based */
 .feedBackSection {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: #f9f9f9;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  max-width: 840px;
+  gap: 16px;
+  padding: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md, 0 1px 3px rgba(0,0,0,0.08));
+  width: 100%;
+  max-width: 720px;
+  align-self: flex-start;
+  color: var(--text-primary);
 }
+/* } */
 
 .cancel-btn {
-  position: absolute;
-  right: 8px;
-  top: 0;
+  display: none;
 }
 
+/* Feedback title text */
 .warning {
-  color: #1f1d1d;
-  font-size: 13px;
-  font-weight: 500;
-  margin-right: 18px;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-primary);
+  margin: 0;
 }
 
 .feedBackInput {
   display: flex;
-  flex-direction: row;
-  gap: 8px;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .feedbackSendBtn {
-  align-self: flex-end;
-  border: 1px solid #007cc3;
-  padding: 4px 3px 0 4px;
-  border-radius: 4px;
-  margin-bottom: 2px;
-  color: #007cc3;
+  display: none;
 }
 
-.feedbackSendBtn:disabled,
-.feedbackSendBtn[disabled],
-.feedbackSendBtn.disabled {
-  color: #b6beca;
-  cursor: not-allowed;
-  background: #e6f2fa;
-}
-
+/* Feedback textarea - theme based */
 .feedBackTextArea {
-  min-height: 25px;
-  height: fit-content;
-  max-height: 70px;
-  padding: 2px 5px;
-  line-height: 18px;
-  border: 1px solid #c9c9c9;
-  border-radius: 5px;
+  min-height: 100px;
+  padding: 12px 16px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   width: 100%;
-  margin-left: -1px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  background: var(--input-bg, var(--card-bg));
+  resize: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Placeholder color theme based */
+.feedBackTextArea::placeholder {
+  color: var(--muted, #9ca3af);
+}
+
+/* Focus state theme based */
+.feedBackTextArea:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 2px var(--focus-ring, rgba(0,123,255,0.15));
+}
+
+/* Feedback action buttons */
+.feedbackActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Submit Feedback Button - theme based */
+.submitFeedbackBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+  border: none;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+/* Button hover - theme based */
+.submitFeedbackBtn:hover:not(:disabled) {
+  background: var(--app-secondary-color);
+  color: var(--primary-button-color);
+}
+
+/* Disabled button - theme based */
+.submitFeedbackBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--app-primary-color);
+  color: var(--primary-button-color);
+}
+
+/* Cancel Feedback Button - theme based */
+.cancelFeedbackBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
+  background: var(--card-bg);
+  color: var(--muted, #9ca3af);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+/* Cancel button hover - theme based */
+.cancelFeedbackBtn:hover {
+  background: var(--muted-foreground, #f9fafb);
+  color: var(--text-primary);
+  border-color: var(--border);
 }
 
 /* Simplified Animations */
@@ -586,3 +1988,61 @@
     height: 3px;
   }
 }
+
+/* ===============================
+   Responsive Sidebar Styles
+   =============================== */
+
+@media (max-width: 1400px) {
+  .rightSidebar {
+    width: 260px;
+  }
+  
+  .sidebarFixedTop {
+    padding: 14px 12px 10px 12px;
+  }
+  
+  .sidebarScrollable {
+    padding: 14px 12px;
+  }
+  
+  .sidebarLabel {
+    font-size: 11px;
+  }
+  
+  .quickActionBtn span {
+    font-size: 12px;
+  }
+  
+  .tempSection {
+    width: 70px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .rightSidebar {
+    width: 240px;
+  }
+  
+  .modelTempRow {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .tempSection {
+    width: 100%;
+  }
+  
+  .temperatureControlCompact {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 1024px) {
+  .rightSidebar {
+    width: 220px;
+  }
+}
+
+/* Narrow screens: auto-collapse is handled via JS resize listener in AskAssistant.jsx */

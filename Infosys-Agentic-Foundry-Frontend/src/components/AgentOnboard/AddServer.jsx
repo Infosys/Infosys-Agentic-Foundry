@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
-import "../../css_modules/AddServer.css";
 import styles from "../../css_modules/ToolOnboarding.module.css";
-import InfoTag from "../commonComponents/InfoTag";
 import { useToolsAgentsService } from "../../services/toolService";
+import { copyToClipboard } from "../../utils/clipboardUtils";
 import Cookies from "js-cookie";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
-import groundTruthStyles from "../GroundTruth/GroundTruth.module.css";
 import { useMcpServerService } from "../../services/serverService";
 import { useMessage } from "../../Hooks/MessageContext";
-import Tag from "../Tag/Tag";
+import TagSelector from "../commonComponents/TagSelector/TagSelector.jsx";
+import DepartmentSelector from "../commonComponents/DepartmentSelector/DepartmentSelector.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 import { APIs } from "../../constant";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
@@ -19,14 +18,33 @@ import Loader from "../commonComponents/Loader.jsx";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import DeleteModal from "../commonComponents/DeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
+import UploadBox from "../commonComponents/UploadBox.jsx";
+import TextareaWithActions from "../commonComponents/TextareaWithActions";
+import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
+import Toggle from "../commonComponents/Toggle";
+import AccessControlGuide from "../commonComponents/AccessControlGuide";
 
-export default function AddServer({ editMode = false, serverData = null, onClose, setRefreshPaginated = () => {}, recycle = false, unused = false, setRestoreData = () => {}, selectedType = "" }) {
+export default function AddServer({ editMode = false, serverData = null, onClose, setRefreshPaginated = () => { }, recycle = false, setRestoreData = () => { }, readOnly: readOnlyProp = false }) {
   const { addServer } = useToolsAgentsService();
-  const { fetchData, postData, deleteData } = useFetch();
-  const { getAllServers, updateServer } = useMcpServerService();
+  const { postData, deleteData, fetchData } = useFetch();
+  const { getAllServers, updateServer, getServerById } = useMcpServerService();
   const user = { isAdmin: true, teams: ["dev", "ops"], team_ids: ["dev", "ops"] };
   const isAdmin = Boolean(user && (user.isAdmin || user.is_admin));
   const userTeams = user?.teams || user?.team_ids || [];
+
+  // Combine recycle and readOnly props into a single flag for disabling form fields
+  const isReadOnly = recycle || Boolean(readOnlyProp);
+
+  // ============ State for Dynamic Mode Management ============
+  const [currentMode, setCurrentMode] = useState(editMode ? "update" : "create");
+  const [currentServerData, setCurrentServerData] = useState(serverData);
+
+  // Derived state for mode checking (matching ToolOnBoarding pattern)
+  const isCreateMode = currentMode === "create";
+  const isUpdateMode = currentMode === "update";
+  // Derived server data: state first (updated after create), then prop (passed from parent on edit)
+  const effectiveServerData = currentServerData || serverData || {};
 
   const [serverType, setServerType] = useState("code");
   const [serverName, setServerName] = useState("");
@@ -38,67 +56,121 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   const [codeContent, setCodeContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [isDraggingCode, setIsDraggingCode] = useState(false);
-  const [isDraggingCapabilities, setIsDraggingCapabilities] = useState(false);
   const [showZoomPopup, setShowZoomPopup] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
   const [popupContent, setPopupContent] = useState("");
   const [copiedStates, setCopiedStates] = useState({});
-  const [isDarkTheme] = useState(true); // Use isDarkTheme for theme logic
+  const [showAccessControlInfo, setShowAccessControlInfo] = useState(false);
   const { addMessage, setShowPopup } = useMessage();
   const { handleApiError, handleError } = useErrorHandler();
   const userName = Cookies.get("userName");
   const creatorEmail =
-    (serverData &&
-      (serverData.created_by || serverData.user_email_id || serverData.createdBy || (serverData.raw && (serverData.raw.created_by || serverData.raw.user_email_id)))) ||
+    (effectiveServerData &&
+      (effectiveServerData.created_by || effectiveServerData.user_email_id || effectiveServerData.createdBy || (effectiveServerData.raw && (effectiveServerData.raw.created_by || effectiveServerData.raw.user_email_id)))) ||
     Cookies.get("email") ||
     Cookies.get("userName") ||
     "";
 
   const teamOptions = userTeams.map((t) => ({ label: t, value: t }));
 
-  const [tagList, setTagList] = useState([]);
-  const hasLoadedTagsOnce = useRef(false);
   const prefillDoneRef = useRef(false);
 
-  const [command, setCommand] = useState("python");
+  // TagSelector state (new pattern matching ToolOnBoarding)
+  const [selectedTagsForSelector, setSelectedTagsForSelector] = useState([]);
+  const [nonRemovableTags, setNonRemovableTags] = useState([]);
+  const generalTagRef = useRef(null);
+
+  const handleTagsChange = (newSelectedTags) => {
+    const general = generalTagRef.current;
+    if (!general) {
+      setSelectedTagsForSelector(newSelectedTags);
+      return;
+    }
+
+    // If no tags left, default back to General (non-removable)
+    if (newSelectedTags.length === 0) {
+      setSelectedTagsForSelector([general]);
+      setNonRemovableTags([general]);
+      return;
+    }
+
+    const nonGeneralCount = newSelectedTags.filter((tag) => tag.tag_name.toLowerCase() !== "general").length;
+
+    // General is removable only when other tags exist
+    setSelectedTagsForSelector(newSelectedTags);
+    setNonRemovableTags(nonGeneralCount > 0 ? [] : [general]);
+  };
+
+  const [command, setCommand] = useState("Python");
   const [externalArgs, setExternalArgs] = useState("");
 
   const [vaultValue, setVaultValue] = useState("");
   const [vaultOptions, setVaultOptions] = useState([]);
   const [updateModal, setUpdateModal] = useState(false);
   const [loadingEndpoints, setLoadingEndpoints] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [sharedDepartments, setSharedDepartments] = useState([]);
+  const [departmentsList, setDepartmentsList] = useState([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
+  // Store departments before clearing when toggling to public
+  const previousDepartmentsRef = React.useRef([]);
+  const loggedInDepartment = Cookies.get("department") || "";
   const { logout } = useAuth();
   const handleLoginButton = (e) => {
     e.preventDefault();
     logout("/login");
   };
 
-  const serverIdForPrefill = serverData ? serverData.id : null;
+  const serverIdForPrefill = effectiveServerData?.id || effectiveServerData?.tool_id || null;
   useEffect(() => {
     prefillDoneRef.current = false;
-  }, [editMode, serverIdForPrefill]);
-  useEffect(() => {
-    if (hasLoadedTagsOnce.current) return;
-    hasLoadedTagsOnce.current = true;
+    // Set General tag as default when in add mode
+    if (isCreateMode) {
+      (async () => {
+        try {
+          const tagsData = await fetchData(APIs.GET_TAGS);
+          if (tagsData && Array.isArray(tagsData)) {
+            const generalTag = tagsData.find((tag) => tag.tag_name.toLowerCase() === "general");
+            if (generalTag) {
+              generalTagRef.current = generalTag;
+              setNonRemovableTags([generalTag]);
+              setSelectedTagsForSelector([generalTag]);
+            } else {
+              setSelectedTagsForSelector([]);
+            }
+          } else {
+            setSelectedTagsForSelector([]);
+          }
+        } catch (err) {
+          console.error("Failed to fetch tags for default:", err);
+          setSelectedTagsForSelector([]);
+        }
+      })();
+    }
+  }, [isCreateMode, serverIdForPrefill, fetchData]);
 
-    const loadTags = async () => {
+  // Fetch departments for shared departments dropdown
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      setDepartmentsLoading(true);
       try {
-        setLoadingEndpoints(true);
-        const data = await fetchData(APIs.GET_TAGS);
-        const normalized = Array.isArray(data)
-          ? data.map((t) => ({ tag: t.tag_name || t.tag || t.name || "", tagId: t.tag_id || t.id || t.tagId || t.slug || "", selected: false }))
-          : [];
-        setTagList(normalized);
-      } catch (e) {
-        handleApiError(e, { context: "AddServer.fetchTags" });
+        const response = await fetchData(APIs.GET_DEPARTMENTS_LIST);
+        if (response && Array.isArray(response)) {
+          setDepartmentsList(response.map((dept) => dept.department_name || dept.name || dept));
+        } else if (response?.departments && Array.isArray(response.departments)) {
+          setDepartmentsList(response.departments.map((dept) => dept.department_name || dept.name || dept));
+        } else {
+          setDepartmentsList([]);
+        }
+      } catch {
+        console.error("Failed to fetch departments");
+        setDepartmentsList([]);
       } finally {
-        setLoadingEndpoints(false);
+        setDepartmentsLoading(false);
       }
     };
-
-    loadTags();
-  }, [fetchData, handleApiError]);
+    fetchDepartments();
+  }, [fetchData]);
 
   useEffect(() => {
     if (serverType !== "active") return;
@@ -138,9 +210,47 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     loadVaultOptions();
   }, [serverType]);
 
-  const toggleTagSelection = (index) => {
-    if (recycle || unused) return; // Disable tag selection in recycle/unused mode
-    setTagList((prev) => prev.map((tag, i) => (i === index ? { ...tag, selected: !tag.selected } : tag)));
+  // Recycle bin functions - Restore and Delete permanently
+  const restoreServer = async () => {
+    setSubmitting(true);
+    try {
+      const serverId = serverData?.tool_id || serverData?.id;
+      const url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(Cookies.get("email"))}`;
+      const response = await postData(url);
+      if (response?.is_restored) {
+        addMessage(response?.message || "Server restored successfully", "success");
+        setRestoreData(response);
+        onClose();
+      } else {
+        addMessage(response?.message || "Failed to restore server", "error");
+      }
+    } catch (error) {
+      handleApiError(error, { context: "AddServer.restoreServer" });
+      addMessage(error?.response?.data?.detail || "Failed to restore server", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const deleteServerPermanently = async () => {
+    setSubmitting(true);
+    try {
+      const serverId = serverData?.tool_id || serverData?.id;
+      const url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(Cookies.get("email"))}`;
+      const response = await deleteData(url);
+      if (response?.is_delete || response?.is_deleted) {
+        addMessage(response?.message || "Server deleted permanently", "success");
+        setRestoreData(response);
+        onClose();
+      } else {
+        addMessage(response?.message || "Failed to delete server", "error");
+      }
+    } catch (error) {
+      handleApiError(error, { context: "AddServer.deleteServerPermanently" });
+      addMessage(error?.response?.data?.detail || "Failed to delete server", "error");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const validateFile = (file, type) => {
@@ -179,37 +289,15 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     return true;
   };
 
-  const handleDragEnter = (type) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (type === "code") setIsDraggingCode(true);
-    if (type === "capabilities") setIsDraggingCapabilities(true);
-  };
-  const handleDragLeave = (type) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (type === "code") setIsDraggingCode(false);
-    if (type === "capabilities") setIsDraggingCapabilities(false);
-  };
-  const handleDragOver = (type) => (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (type === "code" && !isDraggingCode) setIsDraggingCode(true);
-    if (type === "capabilities" && !isDraggingCapabilities) setIsDraggingCapabilities(true);
-  };
-  const handleRemoveFile = (type) => {
-    if (type === "code") setCodeFile(null);
-    const fileInput = document.getElementById(type + "File");
-    if (fileInput) fileInput.value = "";
-  };
   const validate = () => {
-    if (!serverName.trim() || !description.trim()) return "Server Name and Description are required.";
+    if (!serverName.trim()) return "Server Name is required.";
+    if (!description.trim()) return "Description is required.";
     if (!isAdmin) {
       if (!selectedTeam.trim()) return "Team selection is required for non-admin users.";
     }
     if (serverType === "code") {
       // For Update Server mode, only validate code snippet (no file upload option)
-      if (editMode) {
+      if (isUpdateMode) {
         if (!codeContent.trim()) {
           return "Code snippet is required.";
         }
@@ -234,6 +322,104 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     if (!err) return addMessage("", "error");
     if (typeof err === "string") return addMessage(err, "error");
     addMessage(formatErrorMessage(err), "error");
+  };
+
+  // ============ Reusable: Refresh Server Data and Stay in Modal ============
+  const refreshServerDataAndStayOpen = async (serverId, operationType = "created") => {
+    try {
+      const successMsg = operationType === "created" ? "Server added successfully! Loading details..." : "Server updated successfully! Refreshing details...";
+      addMessage(successMsg, "success");
+
+      // Fetch fresh server data by ID (matching ToolOnBoarding's getToolById pattern)
+      const serverResponse = await getServerById(serverId);
+      const server = Array.isArray(serverResponse) ? serverResponse[0] : serverResponse;
+
+      if (server) {
+        // Switch to update mode with fresh data
+        setCurrentMode("update");
+        setCurrentServerData(server);
+        prefillDoneRef.current = false;
+
+        // Update form with fresh server data
+        const raw = server.raw || server || {};
+        const incomingType = (server.mcp_type || raw.mcp_type || server.type || raw.type || "code").toString().toLowerCase();
+        let mappedType = "code";
+        if (incomingType.includes("url") || incomingType.includes("remote") || incomingType === "active") mappedType = "active";
+        else if (incomingType.includes("module") || incomingType === "external") mappedType = "external";
+        else mappedType = "code";
+
+        setServerType(mappedType);
+        setServerName(server.name || server.tool_name || raw.tool_name || "");
+        setDescription(server.description || server.tool_description || raw.tool_description || "");
+        setSelectedTeam(server.team_id || raw.team_id || "");
+
+        // Update code content for code servers
+        if (mappedType === "code") {
+          const codeCandidates = [
+            raw.mcp_config && raw?.mcp_config?.args?.[1],
+            raw.mcp_file && raw.mcp_file.code_content,
+            raw.code_content,
+            server.codeContent,
+            server.code_content,
+          ];
+          const code = codeCandidates.find((c) => typeof c === "string" && c.trim().length > 0) || "";
+          setCodeContent(code);
+          setCodeFile(null);
+        } else if (mappedType === "active") {
+          const ep = raw.mcp_url || server.endpoint || "";
+          setEndpoint(ep);
+        } else if (mappedType === "external") {
+          setModuleName(
+            (server.mcp_config && Array.isArray(server.mcp_config.args) && server.mcp_config.args.length > 1 ? server.mcp_config.args[1] : "") || ""
+          );
+        }
+
+        // Update tags
+        const rawTags = server.tags || server.tag_ids || raw.tags || raw.tag_ids || [];
+        if (Array.isArray(rawTags) && rawTags.length > 0) {
+          const tagsForSelector = rawTags
+            .map((t) => {
+              if (typeof t === "object" && t !== null) {
+                return {
+                  tag_name: t.tag_name || t.tag || t.name || "",
+                  tag_id: t.tag_id || t.id || t.tagId || "",
+                  tagId: t.tag_id || t.id || t.tagId || "",
+                };
+              }
+              return null;
+            })
+            .filter(Boolean);
+          setSelectedTagsForSelector(tagsForSelector);
+
+          const generalInTags = tagsForSelector.find((tag) => tag.tag_name.toLowerCase() === "general");
+          if (generalInTags) {
+            generalTagRef.current = generalInTags;
+            setNonRemovableTags([generalInTags]);
+          }
+        }
+
+        setSubmitting(false);
+
+        // Refresh parent component's paginated list AFTER state updates
+        try {
+          if (typeof setRefreshPaginated === "function") {
+            await setRefreshPaginated();
+          }
+        } catch (e) {
+          console.debug("[AddServer] setRefreshPaginated failed", e);
+        }
+
+        const finalMsg = operationType === "created" ? "Server added and opened for editing!" : "Server updated and ready for further editing!";
+        addMessage(finalMsg, "success");
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error(`Failed to fetch ${operationType} server:`, error);
+      addMessage(`Server ${operationType} but failed to refresh details.`, "error");
+      setSubmitting(false);
+      return false;
+    }
   };
 
   // Patch all setError calls to use safeSetError
@@ -269,13 +455,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setSubmitting(true);
     try {
       const mcp_type = serverType === "active" ? "url" : serverType === "code" ? "file" : "module";
-      const selectedTagIds = tagList
-        .filter((t) => t.selected)
-        .map((t) => {
-          const raw = t.tagId;
-          const num = Number(raw);
-          return typeof raw === "string" && raw.trim() !== "" && !Number.isNaN(num) ? num : raw;
-        });
+      const selectedTagIds = selectedTagsForSelector.map((tag) => tag.tag_id || tag.tagId);
 
       const payload = {
         tool_name: serverName.trim(),
@@ -287,6 +467,8 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         code_content: mcp_type === "file" && !codeFile ? codeContent.trim() : "",
         mcp_file: mcp_type === "file" && codeFile ? codeFile : undefined,
         tag_ids: selectedTagIds,
+        is_public: isPublic,
+        shared_with_departments: isPublic ? [] : sharedDepartments,
         ...(serverType === "external" ? { command, externalArgs } : {}),
         ...(serverType === "active" && vaultValue ? { vault_id: vaultValue } : {}),
       };
@@ -302,16 +484,36 @@ export default function AddServer({ editMode = false, serverData = null, onClose
 
       const response = await addServer(payload); // addServer uses /tools/mcp/add
       const ok = response && (response?.is_created === true || response?.is_update === true || response?.status === "success");
+
       if (ok) {
-        // If response contains mcp_config.args[1], set moduleName in form
-        if (response?.mcp_config?.args && response.mcp_config.args.length > 1) {
-          setModuleName(response.mcp_config.args[1]); // This will set 'mcp_test' from your sample
+        // ============ AUTO-TRANSITION TO UPDATE MODE ============
+        // Try all possible locations for server ID
+        const serverId = response?.result?.tool_id || "";
+
+        console.log("[AddServer] Extracted serverId:", serverId); // Debug log
+
+        if (serverId) {
+          const success = await refreshServerDataAndStayOpen(serverId, "created");
+          if (success) {
+            return; // Stay in update mode - success!
+          }
         }
-        const msg = response?.result?.message;
+
+        // Fallback: If serverId not found or refresh fails, still refresh paginated list
+        console.log("[AddServer] Auto-transition failed, calling setRefreshPaginated in fallback");
+        const msg = response?.result?.message || response?.message || "Server added successfully!";
+        addMessage(msg, "success");
+
+        // ALWAYS refresh the paginated list even in fallback
         try {
-          addMessage(msg, "success");
-          setShowPopup(true);
-        } catch (e) {}
+          if (typeof setRefreshPaginated === "function") {
+            await setRefreshPaginated();
+          }
+        } catch (e) {
+          console.debug("[AddServer] setRefreshPaginated failed", e);
+        }
+
+        // Reset form
         setServerName("");
         setModuleName("");
         setDescription("");
@@ -319,43 +521,9 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         setEndpoint("");
         setCodeFile(null);
         setCodeContent("");
-        setTagList(tagList.map((tag) => ({ ...tag, selected: false })));
-        try {
-          if (typeof setRefreshPaginated === "function") {
-            try {
-              setRefreshPaginated();
-            } catch (e) {
-              try {
-                setRefreshPaginated(true);
-              } catch (e2) {
-                console.debug("[AddServer] setRefreshPaginated invocation failed", e, e2);
-              }
-            }
-          }
-        } catch (e) {
-          console.debug("[AddServer] setRefreshPaginated failed", e);
-        }
-        try {
-          window.dispatchEvent(new CustomEvent("AddServer:RefreshRequested"));
-        } catch (e) {
-          console.debug("[AddServer] dispatch refresh event failed", e);
-        }
-        // Use the existing cancel logic to reliably close regardless of prop availability
-        try {
-          handleCancel();
-          // retry shortly after in case DOM elements mount asynchronously
-          setTimeout(() => {
-            try {
-              handleCancel();
-            } catch (_) {}
-          }, 300);
-        } catch (e) {
-          try {
-            window.dispatchEvent(new CustomEvent("AddServer:CloseRequested"));
-          } catch (e2) {
-            console.debug("[AddServer] close fallback failed", e, e2);
-          }
-        }
+        setSelectedTagsForSelector([]);
+
+        onClose?.();
       } else {
         if (response?.message && response.message.includes("Verification failed:")) {
           safeSetError(response.message);
@@ -379,29 +547,30 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setError("");
     setSubmitting(true);
     try {
-      const is_admin = Cookies.get("role")?.toUpperCase() === "ADMIN";
+      const is_admin = Cookies.get("role")?.toLowerCase() === "admin";
       const mcp_type = serverType === "active" ? "url" : serverType === "code" ? "file" : "module";
-      const selectedTagIds = tagList
-        .filter((t) => t.selected)
-        .map((t) => {
-          const raw = t.tagId;
-          const num = Number(raw);
-          return typeof raw === "string" && raw.trim() !== "" && !Number.isNaN(num) ? num : raw;
-        });
-      // Defensive fallback for all required fields
-      const id = serverData?.id || serverData.tool_id || (serverData?.raw && serverData.raw.id) || "";
-      const tool_name = serverName?.trim() || serverData?.tool_name || serverData?.name || (serverData?.raw && (serverData.raw.tool_name || serverData.raw.name)) || "";
+      const selectedTagIds = selectedTagsForSelector.map((tag) => tag.tag_id || tag.tagId);
+      // Use derived effectiveServerData (state-first, then prop) — same pattern as ToolOnBoarding's editTool
+      const id = effectiveServerData?.id || effectiveServerData?.tool_id || (effectiveServerData?.raw && effectiveServerData.raw.id) || "";
+
+      if (!id) {
+        safeSetError("Server ID not found. Please close and reopen the server to update.");
+        setSubmitting(false);
+        return;
+      }
+
+      const tool_name = serverName?.trim() || effectiveServerData?.tool_name || effectiveServerData?.name || (effectiveServerData?.raw && (effectiveServerData.raw.tool_name || effectiveServerData.raw.name)) || "";
       const tool_description =
         description?.trim() ||
-        serverData?.tool_description ||
-        serverData?.description ||
-        (serverData?.raw && (serverData.raw.tool_description || serverData.raw.description)) ||
+        effectiveServerData?.tool_description ||
+        effectiveServerData?.description ||
+        (effectiveServerData?.raw && (effectiveServerData.raw.tool_description || effectiveServerData.raw.description)) ||
         "";
-      const mcp_url = mcp_type === "url" ? endpoint?.trim() || serverData?.endpoint || (serverData?.raw && serverData.raw.endpoint) || "" : "";
-      const mcp_module_name = mcp_type === "module" ? moduleName?.trim() || serverData?.mcp_module_name || (serverData?.raw && serverData.raw.mcp_module_name) || "" : "";
+      const mcp_url = mcp_type === "url" ? endpoint?.trim() || effectiveServerData?.endpoint || (effectiveServerData?.raw && effectiveServerData.raw.endpoint) || "" : "";
+      const mcp_module_name = mcp_type === "module" ? moduleName?.trim() || effectiveServerData?.mcp_module_name || (effectiveServerData?.raw && effectiveServerData.raw.mcp_module_name) || "" : "";
       const code_content =
         mcp_type === "file" && !codeFile
-          ? codeContent?.trim() || serverData?.codeContent || serverData?.code_content || (serverData?.raw && (serverData.raw.codeContent || serverData.raw.code_content)) || ""
+          ? codeContent?.trim() || effectiveServerData?.codeContent || effectiveServerData?.code_content || (effectiveServerData?.raw && (effectiveServerData.raw.codeContent || effectiveServerData.raw.code_content)) || ""
           : "";
       const payload = {
         is_admin,
@@ -416,6 +585,8 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         code_content,
         tag_ids: selectedTagIds,
         updated_tag_id_list: selectedTagIds,
+        is_public: isPublic,
+        shared_with_departments: isPublic ? [] : sharedDepartments,
         ...(serverType === "external" ? { command, externalArgs } : {}),
         ...(serverType === "active" && vaultValue ? { vault_id: vaultValue } : {}),
       };
@@ -456,56 +627,27 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       }
       const ok = response && (response?.status === "success" || response?.is_update === true || response?.is_updated === true);
       if (ok) {
-        const msg =response?.message;
-        try {
-          addMessage(msg, "success");
-          setShowPopup(true);
-        } catch (e) {}
+        // ============ STAY IN UPDATE MODE AFTER SUCCESSFUL UPDATE ============
+        const serverId = id || currentServerData?.id || currentServerData?.tool_id;
+
+        if (serverId) {
+          const success = await refreshServerDataAndStayOpen(serverId, "updated");
+          if (success) {
+            return; // Stay in update mode with refreshed data
+          }
+        }
+
+        // Fallback: Show success message
+        const msg = response?.message || "Server updated successfully!";
+        addMessage(msg, "success");
+
         try {
           if (typeof setRefreshPaginated === "function") setRefreshPaginated();
         } catch (e) {
           console.debug("[AddServer] setRefreshPaginated failed", e);
         }
-        // Patch: Fetch latest server data and update tags live
-        prefillDoneRef.current = false;
-        if (response?.updated_server) {
-          // If backend returns updated server, update tags live
-          setTimeout(() => {
-            // Update serverData and re-run prefill
-            if (typeof response.updated_server === "object") {
-              // This assumes you have a way to update serverData prop/state
-              // If serverData is a prop, you may need to lift state up or use a callback
-              // For now, just update tagList directly
-              const rawTags = response.updated_server.tags || response.updated_server.tag_ids || [];
-              const normalizedTagValues = Array.isArray(rawTags)
-                ? rawTags
-                    .flatMap((t) => {
-                      if (t === null || t === undefined) return [];
-                      if (typeof t === "string" || typeof t === "number") return [t.toString().toLowerCase()];
-                      if (typeof t === "object") {
-                        const candidates = [t.tag_name, t.tag, t.tagId, t.tag_id, t.name, t.slug, t.id];
-                        return candidates.filter(Boolean).map((c) => c.toString().toLowerCase());
-                      }
-                      return [];
-                    })
-                    .filter(Boolean)
-                : [];
-              const selectedSet = new Set(normalizedTagValues);
-              setTagList((prev) =>
-                prev.map((tag) => ({
-                  ...tag,
-                  selected: selectedSet.has((tag.tagId || "").toString().toLowerCase()) || selectedSet.has((tag.tag || "").toString().toLowerCase()),
-                }))
-              );
-            }
-          }, 100);
-        }
-        try {
-          window.dispatchEvent(new CustomEvent("AddServer:RefreshRequested"));
-        } catch (e) {
-          console.debug("[AddServer] dispatch refresh event failed", e);
-        }
-        if (onClose) onClose();
+
+        setSubmitting(false);
       } else {
         // Handle validation errors just like ToolOnBoarding
         const permissionDenied = /permission denied|only the admin|only the tool's creator/i.test(response?.detail || response?.message || "");
@@ -536,7 +678,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       try {
         e.preventDefault();
         e.stopPropagation();
-      } catch (err) {}
+      } catch (err) { }
     }
     try {
       if (typeof onClose === "function") {
@@ -581,81 +723,13 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     }
   };
 
-  // Recycle bin functions
-  const handleRestore = async () => {
-    if (!recycle || !serverData) return;
-    setSubmitting(true);
-    try {
-      const serverId = serverData?.tool_id || serverData?.id || serverData?.raw?.tool_id;
-      const url = `${APIs.MCP_RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
-      const response = await postData(url);
-      if (response?.is_restored) {
-        addMessage(response?.message || "Server restored successfully", "success");
-        setRestoreData(response);
-        handleCancel();
-      } else {
-        addMessage("Failed to restore server", "error");
-      }
-    } catch (err) {
-      addMessage( err?.response?.data?.detail || err?.message || "Failed to restore server", "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handlePermanentDelete = async () => {
-    if (!recycle || !serverData) return;
-    setSubmitting(true);
-    try {
-      const serverId = serverData?.tool_id || serverData?.id || serverData?.raw?.tool_id;
-      const url = `${APIs.MCP_DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
-      const response = await deleteData(url);
-      if (response?.is_deleted) {
-        addMessage(response?.message || "Server permanently deleted", "success");
-        setRestoreData(response);
-        handleCancel();
-      } else {
-        addMessage(response?.detail || "Failed to delete server", "error");
-      }
-    } catch (err) {
-      addMessage(err?.response?.data?.detail || err?.message || "Failed to delete server", "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Unused delete function - soft delete (moves to recycle bin)
-  const handleUnusedDelete = async () => {
-    if (!unused || !serverData) return;
-    setSubmitting(true);
-    try {
-      const serverId = serverData?.tool_id || serverData?.id || serverData?.raw?.tool_id;
-      const userEmail = Cookies.get("email");
-      const url = `${APIs.MCP_DELETE_TOOLS}${serverId}?user_email_id=${encodeURIComponent(userEmail)}`;
-      const response = await deleteData(url);
-      if (response?.is_delete) {
-        addMessage(response?.message || "Server deleted successfully", "success");
-        // Call the refresh function if it's a function, otherwise toggle state
-        if (typeof setRefreshPaginated === "function") {
-          setRefreshPaginated();
-        }
-        handleCancel();
-      } else {
-        addMessage(response?.message || "Failed to delete server", "error");
-      }
-    } catch (err) {
-      addMessage(err?.response?.data?.detail || err?.message || "Failed to delete server", "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   React.useEffect(() => {
-    if (!editMode || !serverData || tagList.length === 0) return;
+    if (!isUpdateMode || !currentServerData) return;
     if (prefillDoneRef.current) return;
 
     setLoadingEndpoints(true);
     prefillDoneRef.current = true;
+    const serverData = currentServerData;
     const raw = serverData.raw || serverData || {};
     const rawTags = serverData.tags || raw.tags || serverData.tag_ids || raw.tag_ids || [];
 
@@ -670,11 +744,18 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setServerName(serverData.name || serverData.tool_name || raw.tool_name || "");
     setModuleName(
       (serverData.mcp_config && Array.isArray(serverData.mcp_config.args) && serverData.mcp_config.args.length > 1 ? serverData.mcp_config.args[1] : "") ||
-        (raw.mcp_config && Array.isArray(raw.mcp_config.args) && raw.mcp_config.args.length > 1 ? raw.mcp_config.args[1] : "") ||
-        ""
+      (raw.mcp_config && Array.isArray(raw.mcp_config.args) && raw.mcp_config.args.length > 1 ? raw.mcp_config.args[1] : "") ||
+      "",
     );
     setDescription(serverData.description || serverData.tool_description || raw.tool_description || "");
     setSelectedTeam(serverData.team_id || raw.team_id || "");
+
+    // Prefill is_public and shared_with_departments
+    const serverIsPublic = serverData.is_public === true || raw.is_public === true;
+    setIsPublic(serverIsPublic);
+    const serverDepartments = serverData.shared_with_departments || raw.shared_with_departments || [];
+    setSharedDepartments(serverDepartments);
+    previousDepartmentsRef.current = serverDepartments;
 
     // small helper to normalize args[1] or other string candidates
     const normalizeCandidate = (c) => {
@@ -693,9 +774,9 @@ export default function AddServer({ editMode = false, serverData = null, onClose
             if (typeof parsed === "string") return parsed;
             if (typeof parsed === "object") return JSON.stringify(parsed, null, 2);
             return String(parsed);
-          } catch (e) {}
+          } catch (e) { }
         }
-      } catch (e) {}
+      } catch (e) { }
       return v;
     };
 
@@ -754,12 +835,12 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       setCommand(serverData.command || raw.command || "python");
       // Patch: Try all possible sources for externalArgs
       setExternalArgs(
-        serverData.externalArgs || raw.externalArgs || raw.args || (raw.mcp_config && raw.mcp_config.args && (raw.mcp_config.args[2] || raw.mcp_config.args[1])) || ""
+        serverData.externalArgs || raw.externalArgs || raw.args || (raw.mcp_config && raw.mcp_config.args && (raw.mcp_config.args[2] || raw.mcp_config.args[1])) || "",
       );
       setModuleName(
         (serverData.mcp_config && Array.isArray(serverData.mcp_config.args) && serverData.mcp_config.args.length > 1 ? serverData.mcp_config.args[1] : "") ||
-          (raw.mcp_config && Array.isArray(raw.mcp_config.args) && raw.mcp_config.args.length > 1 ? raw.mcp_config.args[1] : "") ||
-          ""
+        (raw.mcp_config && Array.isArray(raw.mcp_config.args) && raw.mcp_config.args.length > 1 ? raw.mcp_config.args[1] : "") ||
+        "",
       );
       setDescription(serverData.description || serverData.tool_description || raw.tool_description || "");
       setServerName(serverData.name || serverData.tool_name || raw.tool_name || "");
@@ -769,31 +850,35 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       setCodeContent(raw.code_content || serverData.codeContent || "");
     }
 
-    // Patch: normalize all possible tag formats
-    const normalizedTagValues = Array.isArray(rawTags)
-      ? rawTags
-          .flatMap((t) => {
-            if (t === null || t === undefined) return [];
-            if (typeof t === "string" || typeof t === "number") return [t.toString().toLowerCase()];
-            if (typeof t === "object") {
-              const candidates = [t.tag_name, t.tag, t.tagId, t.tag_id, t.name, t.slug, t.id];
-              return candidates.filter(Boolean).map((c) => c.toString().toLowerCase());
-            }
-            return [];
-          })
-          .filter(Boolean)
-      : [];
-    const selectedSet = new Set(normalizedTagValues);
-    setTagList((prev) =>
-      prev.map((tag) => ({
-        ...tag,
-        selected: selectedSet.has((tag.tagId || "").toString().toLowerCase()) || selectedSet.has((tag.tag || "").toString().toLowerCase()),
-      }))
-    );
+    // Initialize selectedTagsForSelector for edit mode
+    if (Array.isArray(rawTags) && rawTags.length > 0) {
+      const tagsForSelector = rawTags
+        .map((t) => {
+          if (typeof t === "object" && t !== null) {
+            return {
+              tag_name: t.tag_name || t.tag || t.name || "",
+              tag_id: t.tag_id || t.id || t.tagId || "",
+              tagId: t.tag_id || t.id || t.tagId || "",
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      setSelectedTagsForSelector(tagsForSelector);
+
+      // Cache the general tag for auto-add behavior
+      const generalInTags = tagsForSelector.find((tag) => tag.tag_name.toLowerCase() === "general");
+      if (generalInTags) {
+        generalTagRef.current = generalInTags;
+        setNonRemovableTags([generalInTags]);
+      }
+    } else {
+      console.log("[AddServer] No tags to set. rawTags:", rawTags);
+    }
 
     // Turn off loading state after all initialization is complete
     setLoadingEndpoints(false);
-  }, [editMode, serverData, tagList]);
+  }, [isUpdateMode, currentServerData]);
 
   const renderTeamSelector = () => {
     if (isAdmin) {
@@ -801,156 +886,114 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     }
     if (userTeams.length) {
       return (
-        <div className={styles["form-block"]}>
-          <label className={styles["label-desc"]} htmlFor="selectedTeam" style={{ fontWeight: 500, fontSize: "15px", marginBottom: "6px", color: "#222" }}>
-            Select Team ID
-          </label>
+        <div className="formGroup">
           <NewCommonDropdown
+            label="Select Team ID"
             options={teamOptions.map((opt) => opt.label)}
             selected={teamOptions.find((opt) => opt.value === selectedTeam)?.label || ""}
             onSelect={(label) => {
               const found = teamOptions.find((opt) => opt.label === label);
               setSelectedTeam(found ? found.value : "");
             }}
-            placeholder="-- choose --"
+            placeholder="-- Choose --"
             width={260}
+            disabled={isReadOnly}
           />
         </div>
       );
     }
     return (
-      <div className={styles["form-block"]}>
+      <div className="formGroup">
         <div className={styles["warn-msg"]}>No teams assigned. Contact an admin.</div>
       </div>
     );
   };
 
   const renderActiveSection = () => (
-    <>
-      <div className={styles["form-block"]}>
-        <label className={styles["label-desc"]} htmlFor="endpoint">
-          Endpoint URL
-        </label>
-        <input
-          id="endpoint"
-          className={styles["input-class"]}
-          value={endpoint}
-          onChange={(e) => setEndpoint(e.target.value)}
-          placeholder="http://localhost:5000/mcp"
-          aria-label="Endpoint URL"
-          style={commonInputStyle}
-          disabled={editMode || recycle || unused}
-        />
+    <div className="formSection">
+      <div className={styles.configRow}>
+        <div className="formGroup" style={{ flex: '0 0 30%' }}>
+          <NewCommonDropdown
+            label="Header"
+            options={vaultOptions.map((option) => option.label)}
+            selected={vaultValue ? vaultOptions.find((option) => option.value === vaultValue)?.label || vaultValue : ""}
+            onSelect={(label) => {
+              const found = vaultOptions.find((option) => option.label === label);
+              setVaultValue(found ? found.value : "");
+            }}
+            placeholder="Select Header"
+            style={{
+              ...dropdownCommonStyle,
+              background: isReadOnly ? "#f3f4f6" : "#fafbfc",
+              borderColor: isReadOnly ? "#e5e7eb" : "#1976d2",
+              color: isReadOnly ? "#6b7280" : "#222",
+              cursor: isReadOnly ? "not-allowed" : "pointer",
+            }}
+            disabled={isReadOnly}
+          />
+        </div>
+        <div className="formGroup" style={{ flex: 1 }}>
+          <label className={"label-desc"} htmlFor="endpoint">
+            Endpoint URL <span className="required">*</span>
+          </label>
+          <input
+            id="endpoint"
+            className="input"
+            value={endpoint}
+            onChange={(e) => setEndpoint(e.target.value)}
+            placeholder="Http://Localhost:5000/Mcp"
+            aria-label="Endpoint URL"
+            disabled={isReadOnly}
+            readOnly={isReadOnly}
+          />
+        </div>
       </div>
-      <div className={styles["controlGroup"]}>
-        <label className={styles["label-desc"]} htmlFor="endpoint">
-          Header
-        </label>
-        <NewCommonDropdown
-          options={vaultOptions.map((option) => option.label)}
-          selected={vaultValue ? vaultOptions.find((option) => option.value === vaultValue)?.label || vaultValue : ""}
-          onSelect={(label) => {
-            if (editMode || recycle || unused) return;
-            const found = vaultOptions.find((option) => option.label === label);
-            setVaultValue(found ? found.value : "");
-          }}
-          placeholder={editMode || recycle || unused ? "Select header" : "Select header"}
-          width={260}
-          style={{
-            ...dropdownCommonStyle,
-            background: (editMode || recycle || unused) ? "#f3f4f6" : "#fafbfc",
-            borderColor: (editMode || recycle || unused) ? "#e5e7eb" : "#1976d2",
-            color: (editMode || recycle || unused) ? "#6b7280" : "#222",
-            cursor: (editMode || recycle || unused) ? "not-allowed" : "pointer",
-          }}
-          disabled={editMode || recycle || unused}
-        />
-      </div>
-    </>
+    </div>
   );
 
   const renderExternalSection = () => (
-    <>
-      <div className={styles["form-block"]}>
-        <label className={styles["label-desc"]} htmlFor="command">
-          Command
-        </label>
-        <NewCommonDropdown 
-          options={["python"]} 
-          selected={command} 
-          onSelect={() => !recycle && setCommand("python")} 
-          placeholder="python" 
-          width={260} 
-          style={{
-            ...dropdownCommonStyle,
-            background: (recycle || unused) ? "#f3f4f6" : "#fafbfc",
-            borderColor: (recycle || unused) ? "#e5e7eb" : "#1976d2",
-            color: (recycle || unused) ? "#6b7280" : "#222",
-            cursor: (recycle || unused) ? "not-allowed" : "pointer",
-          }}
-          disabled={recycle || unused}
-        />
+    <div className="formSection">
+      <div className={styles.configRow}>
+        <div className="formGroup" style={{ flex: '0 0 30%' }}>
+          <NewCommonDropdown
+            label="Command"
+            options={["python"]}
+            selected={command}
+            onSelect={() => setCommand("python")}
+            placeholder="python"
+            style={dropdownCommonStyle}
+            disabled={isReadOnly}
+          />
+        </div>
+        <div className="formGroup" style={{ flex: 1 }}>
+          <label className={"label-desc"} htmlFor="moduleName">
+            Module Name <span className="required">*</span>
+          </label>
+          <input
+            id="moduleName"
+            className="input"
+            value={moduleName}
+            onChange={(e) => setModuleName(e.target.value)}
+            placeholder="Enter MCP Module Name"
+            aria-label="Module Name"
+            required
+            disabled={isReadOnly}
+            readOnly={isReadOnly}
+          />
+        </div>
       </div>
-      <div className={styles["form-block"]}>
-        <label className={styles["label-desc"]} htmlFor="moduleName">
-          Module Name *
-        </label>
-        <input
-          id="moduleName"
-          className={styles["input-class"]}
-          value={moduleName}
-          onChange={(e) => setModuleName(e.target.value)}
-          placeholder="Enter MCP module name"
-          aria-label="Module Name"
-          required
-          disabled={recycle || unused}
-          style={commonInputStyle}
-        />
-      </div>
-    </>
+    </div>
   );
 
-  const commonInputStyle = {
-    width: "100%",
-    maxWidth: "700px",
-    marginLeft: 0,
-    marginRight: 0,
-    boxSizing: "border-box",
-    display: "block",
-  };
-
-  const handleCopy = (key, text) => {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
-          setCopiedStates((prev) => ({ ...prev, [key]: true }));
-          setTimeout(() => {
-            setCopiedStates((prev) => ({ ...prev, [key]: false }));
-          }, 2000);
-        })
-        .catch(() => {
-          console.error("Failed to copy text, AddServer");
-        });
+  const handleCopy = async (key, text) => {
+    const success = await copyToClipboard(text);
+    if (success) {
+      setCopiedStates((prev) => ({ ...prev, [key]: true }));
+      setTimeout(() => {
+        setCopiedStates((prev) => ({ ...prev, [key]: false }));
+      }, 2000);
     } else {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      try {
-        document.execCommand("copy");
-        setCopiedStates((prev) => ({ ...prev, [key]: true }));
-        setTimeout(() => {
-          setCopiedStates((prev) => ({ ...prev, [key]: false }));
-        }, 2000);
-      } catch {
-        console.error("Fallback: Failed to copy text, AddServer");
-      } finally {
-        document.body.removeChild(textarea);
-      }
+      console.error("Failed to copy text to clipboard");
     }
   };
   const handleZoomClick = (title, content) => {
@@ -966,8 +1009,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         return;
       }
       setCodeContent(updatedContent);
-    } else if (popupTitle === "Description") {
-      setDescription(updatedContent);
     }
     setShowZoomPopup(false);
   };
@@ -1000,100 +1041,54 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   };
 
   const renderCodeSection = () => (
-    <div className={styles["snippet-container"]}>
-      <label className={styles["label-desc"]} htmlFor="codeContent">
-        CODE SNIPPET
-        <InfoTag message="Paste your code or upload a file." />
-      </label>
-      <div className={styles.codeEditorContainer}>
+    <div className="formGroup">
+      <div className={styles.codeEditorWrapper}>
         <CodeEditor
-          value={codeFile ? "" : codeContent}
-          onChange={codeFile || recycle || unused ? undefined : (value) => setCodeContent(value)}
-          readOnly={Boolean(codeFile) || recycle || unused ? true : !(editMode && serverType === "code") && false}
-          isDarkTheme={isDarkTheme}
+          codeToDisplay={codeContent}
+          onChange={(value) => setCodeContent(value)}
+          readOnly={isReadOnly}
+          enableDragDrop={isCreateMode && !isReadOnly}
+          acceptedFileTypes={['.py']}
+          showUploadButton={isCreateMode && !isReadOnly}
+          showHelperText={isCreateMode && !isReadOnly}
+          helperText="(drag & drop / upload .py file / type directly)"
+          label="Code Snippet"
+          onLabelClick={() => {
+            const editor = document.querySelector(".ace_editor .ace_text-input");
+            if (editor) editor.focus();
+          }}
+          onFileLoad={(content, file) => {
+            setCodeFile(file);
+            setCodeContent(content);
+            addMessage(`Loaded ${file.name} successfully`, "success");
+          }}
         />
-        <button type="button" className={styles.copyIcon} onClick={() => handleCopy("code-snippet", codeFile ? "" : codeContent)} title="Copy">
-          <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
-        </button>
-        {!recycle && !unused && (
-          <button type="button" className={styles.playIcon} onClick={handlePlayClick} title="Run Code">
-            <SVGIcons icon="play" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
+        {!isReadOnly && (
+          <button
+            type="button"
+            className={styles.copyIcon}
+            onClick={() => handleCopy("code-snippet", codeContent)}
+            title="Copy"
+            disabled={!codeContent || codeContent.trim() === ""}
+            style={{ opacity: !codeContent || codeContent.trim() === "" ? 0.4 : 1, cursor: !codeContent || codeContent.trim() === "" ? "not-allowed" : "pointer" }}>
+            <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill="var(--icon-color)" />
           </button>
         )}
-        <div className={styles.iconGroup}>
-          <button type="button" className={styles.expandIcon} onClick={() => handleZoomClick("Code Snippet", codeFile ? "" : codeContent)} title="Expand">
-            <SVGIcons icon="fa-solid fa-up-right-and-down-left-from-center" width={16} height={16} fill={isDarkTheme ? "#ffffff" : "#000000"} />
-          </button>
-        </div>
+        <button type="button" className={styles.playIcon} onClick={handlePlayClick} title="Run Code" style={{ display: isReadOnly ? "none" : undefined }}>
+          <SVGIcons icon="lucide-play" width={16} height={16} stroke="var(--icon-color)" fill="none" />
+        </button>
+        <button type="button" className={styles.infoIcon} onClick={(e) => { e.stopPropagation(); setShowAccessControlInfo(true); }} title="Access Control Guide" style={{ display: isReadOnly ? "none" : undefined }}>
+          <SVGIcons icon="info-modern" width={16} height={16} />
+        </button>
+        {!isReadOnly && (
+          <div className={styles.iconGroup}>
+            <button type="button" className={styles.expandIcon} onClick={() => handleZoomClick("Code Snippet", codeContent)} title="Expand">
+              <SVGIcons icon="fa-solid fa-up-right-and-down-left-from-center" width={16} height={16} fill="var(--icon-color)" />
+            </button>
+          </div>
+        )}
         <span className={`${styles.copiedText} ${copiedStates["code-snippet"] ? styles.visible : styles.hidden}`}>Text Copied!</span>
       </div>
-      {/* Function selector removed: ExecutorPanel handles parameter discovery */}
-      {/* File upload UI below, matching GroundTruth structure - Only show for Add Server mode */}
-      {!editMode && !recycle && (
-        <div className={styles["form-block"]}>
-          <label htmlFor="codeFile" className={styles["label-desc"]}>
-            Python File (.py)
-            <span style={{ fontWeight: 400, fontSize: "13px", marginLeft: "8px", color: "#888" }}>(Supported: .py)</span>
-          </label>
-          <input
-            type="file"
-            id="codeFile"
-            name="codeFile"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (validateFile(file, "code")) {
-                setCodeFile(file);
-                setCodeContent("");
-              }
-            }}
-            className={styles["input-class"]}
-            accept=".py"
-            style={{ display: "none" }}
-            disabled={submitting}
-          />
-          {!codeFile ? (
-            <div
-              className={groundTruthStyles.fileUploadContainer + (isDraggingCode ? " " + groundTruthStyles.dragging : "") + (submitting ? " " + groundTruthStyles.disabled : "")}
-              onDragEnter={handleDragEnter("code")}
-              onDragLeave={handleDragLeave("code")}
-              onDragOver={handleDragOver("code")}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsDraggingCode(false);
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  const file = e.dataTransfer.files[0];
-                  if (validateFile(file, "code")) {
-                    setCodeFile(file);
-                    setCodeContent("");
-                  }
-                }
-              }}
-              onClick={() => !submitting && document.getElementById("codeFile").click()}
-              tabIndex={0}
-              role="button"
-              aria-label="Upload Python File"
-              style={commonInputStyle}>
-              <div className={groundTruthStyles.uploadPrompt} style={{ width: "100%", textAlign: "left" }}>
-                <span>{isDraggingCode ? "Drop file here" : "Click to upload or drag and drop"}</span>
-                <span>
-                  <small>Supported: .py</small>
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className={groundTruthStyles.fileCard} style={commonInputStyle}>
-              <div className={groundTruthStyles.fileInfo} style={{ width: "100%", textAlign: "left" }}>
-                <span className={groundTruthStyles.fileName}>{codeFile.name}</span>
-                <button type="button" onClick={() => handleRemoveFile("code")} className={groundTruthStyles.removeFileButton} aria-label="Remove file">
-                  &times;
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {/* Validation inputs & output display removed; now delegated to ExecutorPanel */}
       <ZoomPopup
         show={showZoomPopup}
         onClose={() => setShowZoomPopup(false)}
@@ -1101,7 +1096,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         content={popupContent}
         onSave={handleZoomSave}
         type={popupTitle === "Code Snippet" ? "code" : "text"}
-        readOnly={popupTitle === "Code Snippet" && Boolean(codeFile)}
+        readOnly={isReadOnly || (popupTitle === "Code Snippet" && Boolean(codeFile))}
       />
     </div>
   );
@@ -1128,17 +1123,14 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     return String(err);
   };
 
-  // Utility: Title case for input labels
-  // const toTitleCase = (str) => str.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
-  // const toTitleCase = (str) => str.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
-
   // Utility: Render validation content (output/error)
-  const renderValidationContent = (data) => {
-    if (typeof data === "object") {
-      return <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{JSON.stringify(data, null, 2)}</pre>;
-    }
-    return <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{data}</pre>;
-  };
+  // Onclik of play button while validating the server code snippet the result might be in any form , hence below function will be needed
+  // const renderValidationContent = (data) => {
+  //   if (typeof data === "object") {
+  //     return <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{JSON.stringify(data, null, 2)}</pre>;
+  //   }
+  //   return <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{data}</pre>;
+  // };
 
   // Removed all legacy execution state (toolList, tool params, validation result etc.)
 
@@ -1157,6 +1149,111 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     marginTop: "6px",
   };
 
+  // ============ Get Header Info ============
+  const getHeaderInfo = () => {
+    const info = [];
+    if (isUpdateMode) {
+      info.push({
+        label: "Server Type",
+        value: serverType === "active" ? "Remote" : serverType === "code" ? "Local" : serverType === "external" ? "External" : "—",
+      });
+    }
+    info.push({
+      label: "Created By",
+      value: isUpdateMode ? (currentServerData?.created_by || userName) : userName,
+    });
+    return info;
+  };
+
+  // ============ Render Footer ============
+  const renderFooter = () => {
+    // Recycle mode - show Restore and Delete buttons
+    if (recycle) {
+      return (
+        <>
+          <IAFButton type="secondary" onClick={deleteServerPermanently} aria-label="Delete" disabled={submitting}>
+            {submitting ? "Deleting..." : "Delete"}
+          </IAFButton>
+          <IAFButton type="primary" onClick={restoreServer} aria-label="Restore Server" disabled={submitting}>
+            {submitting ? "Restoring..." : "Restore"}
+          </IAFButton>
+        </>
+      );
+    }
+
+    // Normal mode - show Cancel and Add/Update buttons
+    // ReadOnly mode - hide toggles and show only Close button
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "16px" }}>
+        {/* Left side: Toggle - On/Off style (hidden in readOnly mode) */}
+        {!readOnlyProp && (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0, overflowX: "auto", overflowY: "hidden", paddingBottom: "4px", scrollbarWidth: "thin" }}>
+          <span style={{ fontSize: "13px", color: "var(--content-color)", whiteSpace: "nowrap", flexShrink: 0 }}>
+            Share with All Departments
+          </span>
+          <Toggle
+            value={isPublic}
+            onChange={(e) => {
+              const newIsPublic = e.target.checked;
+              setIsPublic(newIsPublic);
+              if (newIsPublic) {
+                // When toggling to public, save current departments and clear
+                previousDepartmentsRef.current = sharedDepartments;
+                setSharedDepartments([]);
+              } else {
+                // When toggling back to private, restore previous departments
+                setSharedDepartments(previousDepartmentsRef.current);
+              }
+            }}
+            disabled={isReadOnly}
+          />
+          <span style={{
+            fontSize: "12px",
+            color: isPublic ? "#37acea" : "var(--muted)",
+            fontWeight: isPublic ? "600" : "400",
+            minWidth: "28px",
+            flexShrink: 0
+          }}>
+            {isPublic ? "ON" : "OFF"}
+          </span>
+        </div>
+        )}
+        {/* Right side: Buttons */}
+        <div style={{ display: "flex", gap: "12px", flexShrink: 0, marginLeft: readOnlyProp ? "auto" : undefined }}>
+          {readOnlyProp ? (
+            <IAFButton type="secondary" onClick={handleCancel} aria-label="Close">
+              Close
+            </IAFButton>
+          ) : (
+            <>
+              <IAFButton type="secondary" onClick={handleCancel} aria-label="Cancel" disabled={submitting}>
+                Cancel
+              </IAFButton>
+              <IAFButton
+                type="primary"
+                onClick={() => {
+                  const form = document.querySelector('form[class*="form-section"]');
+                  if (form) form.requestSubmit();
+                }}
+                aria-label={isUpdateMode ? "Update Server" : "Add Server"}
+                disabled={submitting}>
+                {isUpdateMode ? "Update Server" : "Add Server"}
+              </IAFButton>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ============ Render Side Panel (Executor) ============
+  const renderSidePanel = () => {
+    if (!(serverType === "code" && showExecutorPanel && !codeFile)) return null;
+    return <ExecutorPanel code={codeContent} autoExecute={true} executeTrigger={executeTrigger} onClose={() => setShowExecutorPanel(false)} mode="server" />;
+  };
+
+  const showSplitLayout = serverType === "code" && showExecutorPanel;
+
   return (
     <>
       <DeleteModal show={updateModal} onClose={() => setUpdateModal(false)}>
@@ -1170,257 +1267,131 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           </button>
         </div>
       </DeleteModal>{" "}
-      <div className={styles["modalOverlay"]} onClick={handleCancel}>
-        <div
-          className={styles["modal"]}
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
-          /*
-          Mirror ToolOnBoarding expansion behavior:
-          - When executor panel is open (code server), stretch modal nearly full-width (respecting side nav ~70px)
-          - Otherwise use compact widths similar to original
-          Added smoother easing and padding consistency.
-        */
-          style={{
-            width:
-              serverType === "code" && showExecutorPanel
-                ? "calc(100vw - 70px)" // full canvas minus side nav
-                : "790px",
-            maxWidth: serverType === "code" && showExecutorPanel ? "calc(100% - 40px)" : "900px",
-            minWidth: serverType === "code" && showExecutorPanel ? "min(1080px, calc(100% - 40px))" : "700px",
-            transition: "width 0.3s ease-in-out, min-width 0.3s ease-in-out, max-width 0.3s ease-in-out",
-            paddingTop: "6px",
-          }}>
-          <div className={styles["container"]}>
-            {(submitting || loadingEndpoints) && <Loader />}
-            <div className={styles["main"]}>
-              <div className={styles["nav"]}>
-                <div className={styles["header"]}>
-                  <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a", margin: 0 }}>{recycle ? "RESTORE SERVER" : unused ? "UNUSED SERVER" : editMode ? "UPDATE SERVER" : "ADD SERVER"}</h2>
-                </div>
-                <button className={styles["closeBtn"]} onClick={handleCancel} aria-label="Cancel">
-                  ×
-                </button>
-              </div>
-              <div className={styles["main-content-wrapper"] + (serverType === "code" && showExecutorPanel ? " " + styles["split-layout"] : "")}>
-                <form
-                  className={styles["form-section"] + (serverType === "code" && showExecutorPanel ? " " + styles["formSectionSplit"] : "")}
-                  aria-label={editMode ? "Update Server Form" : "Add Server Form"}
-                  onSubmit={editMode ? handleUpdate : handleSubmit}
-                  style={
-                    serverType === "code" && showExecutorPanel
-                      ? {
-                          minHeight: 0,
-                          width: "60%",
-                          maxWidth: "1000px",
-                          flex: "0 1 60%",
-                          transition: "width 0.3s ease-in-out, flex-basis 0.3s ease-in-out",
-                        }
-                      : { minHeight: 0, width: "100%", transition: "width 0.3s ease-in-out" }
-                  }>
-                  <div className={styles["form-content"]}>
-                    <div className={styles["form-fields"]}>
-                      {/* ...all left panel fields, use style for blocks... */}
-                      <div className={styles["form-block"]} style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-                          <label className={styles["label-desc"]} htmlFor="serverType" style={{ marginBottom: 0 }}>
-                            Server Type
-                          </label>
-                          <NewCommonDropdown
-                            options={["REMOTE", "LOCAL", "EXTERNAL"]}
-                            selected={
-                              editMode || recycle || unused
-                                ? serverType === "active"
-                                  ? "REMOTE"
-                                  : serverType === "code"
-                                  ? "LOCAL"
-                                  : serverType === "external"
-                                  ? "EXTERNAL"
-                                  : ""
-                                : serverType === "active"
-                                ? "REMOTE"
-                                : serverType === "code"
-                                ? "LOCAL"
-                                : serverType === "external"
-                                ? "EXTERNAL"
+      <FullModal
+        isOpen={true}
+        onClose={handleCancel}
+        title={isUpdateMode ? serverName : "Add Server"}
+        headerInfo={getHeaderInfo()}
+        footer={readOnlyProp ? null : renderFooter()}
+        loading={submitting || loadingEndpoints}
+        splitLayout={showSplitLayout}
+        sidePanel={renderSidePanel()}
+        splitHeaderLabels={showSplitLayout ? { left: "Configuration", right: "Execution" } : null}>
+        <form onSubmit={isUpdateMode ? handleUpdate : handleSubmit} className={"form-section"} aria-label={isUpdateMode ? "Update Server Form" : "Add Server Form"}>
+          <div className="formContent">
+            <div className="form">
+              {isCreateMode && (
+                <div className="gridTwoCol">
+                  <div className="formGroup">
+                    <NewCommonDropdown
+                      options={["External", "Local", "Remote"]}
+                      label="Server Type"
+                      required={true}
+                      selected={
+                        isUpdateMode
+                          ? serverType === "active"
+                            ? "Remote"
+                            : serverType === "code"
+                              ? "Local"
+                              : serverType === "external"
+                                ? "External"
                                 : ""
-                            }
-                            onSelect={(label) => {
-                              if (editMode || recycle || unused) return;
-                              let val = "code";
-                              if (label === "REMOTE") val = "active";
-                              else if (label === "EXTERNAL") val = "external";
-                              setServerType(val);
-                              setEndpoint("");
-                              setCodeFile(null);
-                              setCodeContent("");
-                              setError("");
-                            }}
-                            placeholder="-- select --"
-                            width={260}
-                            style={{
-                              ...dropdownCommonStyle,
-                              background: (editMode || recycle || unused) ? "#f3f4f6" : "#fafbfc",
-                              borderColor: (editMode || recycle || unused) ? "#e5e7eb" : "#1976d2",
-                              color: (editMode || recycle || unused) ? "#6b7280" : "#222",
-                              cursor: (editMode || recycle || unused) ? "not-allowed" : "pointer",
-                            }}
-                            disabled={editMode || recycle || unused}
-                          />
-                        </div>
-                        {(editMode || recycle || unused) && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 260 }}>
-                            <label className={styles["label-desc"]} style={{ marginBottom: 0, color: "#6b7280" }}>
-                              CREATED BY
-                            </label>
-                            <input
-                              value={creatorEmail}
-                              disabled
-                              readOnly
-                              className={styles["input-class"]}
-                              style={{
-                                width: "260px",
-                                background: "#f3f4f6",
-                                borderRadius: 6,
-                                padding: "8px 10px",
-                                border: "1px solid #e5e7eb",
-                                color: "#6b7280",
-                                cursor: "not-allowed",
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className={styles["form-block"]}>
-                        <label className={styles["label-desc"]} htmlFor="serverName">
-                          Server Name *
-                        </label>
-                        <input
-                          id="serverName"
-                          className={styles["input-class"]}
-                          value={serverName}
-                          onChange={(e) => setServerName(e.target.value)}
-                          disabled={editMode || recycle || unused}
-                          placeholder={serverType === "external" ? "Enter MCP module name" : "Enter server name"}
-                          aria-label={serverType === "external" ? "Module Name" : "Server Name"}
-                          required
-                          style={commonInputStyle}
-                        />
-                      </div>
-                      <div className={styles["form-block"]}>
-                        <label className={styles["label-desc"]} htmlFor="description">
-                          Description *
-                        </label>
-                        <textarea
-                          id="description"
-                          className={styles["input-class"]}
-                          rows={3}
-                          value={description}
-                          onChange={(e) => setDescription(e.target.value)}
-                          placeholder={serverType === "external" ? "Describe your module" : "Describe your server"}
-                          aria-label="Description"
-                          required
-                          disabled={recycle || unused}
-                          style={commonInputStyle}
-                        />
-                      </div>
-                      {renderTeamSelector()}
-                      {serverType === "code" && <div>{renderCodeSection()}</div>}
-                      {serverType === "active" && renderActiveSection()}
-                      {serverType === "external" && renderExternalSection()}
-                      <div className={styles["tagsMainContainer"]}>
-                        <label htmlFor="tags" className={styles["label-desc"]}>
-                          Select Tags
-                          <InfoTag message="Select the tags." />
-                        </label>
-                        <div className={styles["tagsContainer"]}>
-                          {tagList.map((tag, index) => (
-                            <Tag key={"li-<ulName>-" + index} index={index} tag={tag.tag} selected={tag.selected} toggleTagSelection={toggleTagSelection} />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                          : serverType === "active"
+                            ? "Remote"
+                            : serverType === "code"
+                              ? "Local"
+                              : serverType === "external"
+                                ? "External"
+                                : ""
+                      }
+                      onSelect={(label) => {
+                        if (isUpdateMode) return;
+                        let val = "code";
+                        if (label === "Remote") val = "active";
+                        else if (label === "External") val = "external";
+                        setServerType(val);
+                        setEndpoint("");
+                        setCodeFile(null);
+                        setCodeContent("");
+                        setError("");
+                      }}
+                      placeholder="-- Select --"
+                      style={{
+                        ...dropdownCommonStyle,
+                        background: isUpdateMode ? "#f3f4f6" : "#fafbfc",
+                        borderColor: isUpdateMode ? "#e5e7eb" : "#1976d2",
+                        color: isUpdateMode ? "#6b7280" : "#222",
+                        cursor: isUpdateMode ? "not-allowed" : "pointer",
+                      }}
+                      disabled={isUpdateMode || isReadOnly}
+                    />
                   </div>
-                  <div className={styles["modal-footer"]}>
-                    <div className={styles["button-class"]}>
-                      {recycle ? (
-                        <>
-                          <button 
-                            type="button" 
-                            className="iafButton iafButtonPrimary" 
-                            disabled={submitting} 
-                            onClick={handlePermanentDelete}
-                            aria-label="Delete Permanently"
-                          >
-                            DELETE
-                          </button>
-                          <button 
-                            type="submit" 
-                            className="iafButton iafButtonSecondary" 
-                            disabled={submitting} 
-                            onClick={handleRestore}
-                            aria-label="Restore Server"
-                          >
-                            RESTORE
-                          </button>
-                        </>
-                      ) : unused ? (
-                        <>
-                          <button 
-                            type="button" 
-                            className="iafButton iafButtonPrimary" 
-                            disabled={submitting} 
-                            onClick={handleUnusedDelete}
-                            aria-label="Delete Server"
-                          >
-                            DELETE
-                          </button>
-                          <button 
-                            type="button" 
-                            className="iafButton iafButtonSecondary" 
-                            onClick={handleCancel}
-                            aria-label="Cancel"
-                          >
-                            CANCEL
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button type="submit" className="iafButton iafButtonPrimary" disabled={submitting} aria-label={editMode ? "Update Server" : "Add Server"}>
-                            {/* {submitting ? (editMode ? "UPDATING..." : "ADDING...") : editMode ? "UPDATE" : "ADD SERVER"} */}
-                            {editMode ? "UPDATE" : "ADD SERVER"}
-                          </button>
-                          <button type="button" className="iafButton iafButtonSecondary" onClick={handleCancel} aria-label="Cancel">
-                            CANCEL
-                          </button>
-                        </>
-                      )}
-                    </div>
+
+                  <div className="formGroup">
+                    <label className={"label-desc"} htmlFor="serverName">
+                      Server Name <span className="required">*</span>
+                    </label>
+                    <input
+                      id="serverName"
+                      className="input"
+                      value={serverName}
+                      onChange={(e) => setServerName(e.target.value)}
+                      disabled={editMode || isReadOnly}
+                      readOnly={isReadOnly}
+                      placeholder={serverType === "external" ? "Enter MCP Module Name" : "Enter Server Name"}
+                      aria-label={serverType === "external" ? "Module Name" : "Server Name"}
+                      required
+                    />
                   </div>
-                </form>
-                {/* Output panel always rendered as sibling, never below form */}
-                {serverType === "code" && showExecutorPanel && !codeFile && (
-                  <ExecutorPanel
-                    code={codeContent}
-                    autoExecute={true}
-                    executeTrigger={executeTrigger}
-                    onClose={() => setShowExecutorPanel(false)}
-                    mode="server"
-                    style={{
-                      width: "40%",
-                      minWidth: "460px",
-                      maxWidth: "640px",
-                      flex: "0 1 40%",
-                      transition: "width 0.3s ease-in-out, flex-basis 0.3s ease-in-out",
-                    }}
-                  />
-                )}
+                </div>
+              )}
+              <div className="formGroup">
+                <TextareaWithActions
+                  name="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  label="Description"
+                  required={true}
+                  rows={3}
+                  placeholder={serverType === "external" ? "Describe Your Module" : "Describe Your Server"}
+                  onZoomSave={(updatedContent) => setDescription(updatedContent)}
+                  disabled={isReadOnly}
+                  readOnly={isReadOnly}
+                />
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
+              {renderTeamSelector()}
+              {serverType === "code" && <div>{renderCodeSection()}</div>}
+              {serverType === "active" && renderActiveSection()}
+              {serverType === "external" && renderExternalSection()}
+
+              {/* Configuration Section - Tags & Departments */}
+              <div className="formSection">
+                <div className={styles.configRow}>
+                  {/* Tags Section */}
+                  <TagSelector selectedTags={selectedTagsForSelector} onTagsChange={handleTagsChange} nonRemovableTags={nonRemovableTags} disabled={isReadOnly} />
+                  {/* Departments Section - Using DepartmentSelector component */}
+                  {!isPublic && (
+                    <DepartmentSelector
+                      selectedDepartments={sharedDepartments}
+                      onChange={setSharedDepartments}
+                      departmentsList={departmentsList.filter(dept => dept !== loggedInDepartment)}
+                      disabled={isReadOnly}
+                      loading={departmentsLoading}
+                    />
+                  )}
+                </div>
+              </div>
+            </div >
+          </div >
+        </form >
+      </FullModal >
+
+      {/* Access Control Guide Modal */}
+      < AccessControlGuide
+        isOpen={showAccessControlInfo}
+        onClose={() => setShowAccessControlInfo(false)
+        }
+      />
     </>
   );
 }

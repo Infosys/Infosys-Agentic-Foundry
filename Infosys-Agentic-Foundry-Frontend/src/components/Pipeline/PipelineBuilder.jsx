@@ -1,34 +1,31 @@
 /**
  * Pipeline Builder Component
  *
- * Main canvas component for building and editing pipelines.
- * Supports drag-drop nodes, connections, zoom/pan, and properties panel.
+ * Visual node-based pipeline builder with drag-and-drop canvas,
+ * node palette, and properties panel for configuration.
+ *
+ * Features:
+ * - Drag-and-drop nodes (Input, Agent, Condition, Output)
+ * - Visual connections between nodes with SVG paths
+ * - Properties panel for node configuration
+ * - Canvas controls: pan, zoom, fit view, clear
+ * - Save modal with validation
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import Button from "../../iafComponents/GlobalComponents/Buttons/Button";
+import FullModal from "../../iafComponents/GlobalComponents/FullModal";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faPlus,
-  faMinus,
-  faExpand,
-  faTrash,
-  faTimes,
-  faRobot,
-  faCodeBranch,
-  faFlag,
-  faComments,
-  faSignInAlt,
-  faCog,
-  faHand,
-  faCubes,
-} from "@fortawesome/free-solid-svg-icons";
+import { faPlus, faMinus, faExpand, faTrash, faTimes, faRobot, faCodeBranch, faFlag, faComments, faSignInAlt, faCog, faHand, faCubes } from "@fortawesome/free-solid-svg-icons";
 import { usePipelineService } from "../../services/pipelineService";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
-import styles from "../../css_modules/PipelineBuilder.module.css";
-import { getAgentTypeAbbreviation } from "./pipelineUtils";
+import styles from "../../css_modules/Pipeline.module.css";
+import { getAgentTypeAbbreviation, generateId } from "./pipelineUtils";
 import Cookies from "js-cookie";
 import DeleteModal from "../commonComponents/DeleteModal";
+import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
+import SVGIcons from "../../Icons/SVGIcons";
 
 // Node type constants
 const NODE_TYPES = {
@@ -50,8 +47,8 @@ const NODE_CONFIG = {
     canReceive: false,
     canSend: true,
     maxCount: 1,
-    maxIncoming: 0,  // Input node cannot receive connections
-    maxOutgoing: 1,  // Input node can only have ONE outgoing connection
+    maxIncoming: 0,
+    maxOutgoing: Infinity,
   },
   [NODE_TYPES.AGENT]: {
     label: "Agent",
@@ -61,8 +58,8 @@ const NODE_CONFIG = {
     canReceive: true,
     canSend: true,
     maxCount: Infinity,
-    maxIncoming: 1,  // Agent can have ONE incoming connection
-    maxOutgoing: 1,  // Agent can have ONE outgoing connection
+    maxIncoming: Infinity,
+    maxOutgoing: Infinity,
   },
   [NODE_TYPES.CONDITION]: {
     label: "Condition",
@@ -72,8 +69,8 @@ const NODE_CONFIG = {
     canReceive: true,
     canSend: true,
     maxCount: Infinity,
-    maxIncoming: 1,        // Condition can have ONE incoming connection
-    maxOutgoing: Infinity, // Condition can have MANY outgoing connections
+    maxIncoming: 1,
+    maxOutgoing: Infinity,
   },
   [NODE_TYPES.OUTPUT]: {
     label: "Output",
@@ -83,16 +80,9 @@ const NODE_CONFIG = {
     canReceive: true,
     canSend: false,
     maxCount: Infinity,
-    maxIncoming: 1,  // Output can have ONE incoming connection
-    maxOutgoing: 0,  // Output cannot send connections
+    maxIncoming: 1,
+    maxOutgoing: 0,
   },
-};
-
-/**
- * Generate unique ID for nodes/edges
- */
-const generateId = (prefix = "node") => {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
 /**
@@ -103,7 +93,6 @@ const OutputSchemaEditor = ({ value, onChange }) => {
   const [text, setText] = useState(value ? JSON.stringify(value, null, 2) : "");
   const [isValid, setIsValid] = useState(true);
 
-  // Sync with parent value when it changes externally
   useEffect(() => {
     const newText = value ? JSON.stringify(value, null, 2) : "";
     setText(newText);
@@ -140,12 +129,8 @@ const OutputSchemaEditor = ({ value, onChange }) => {
         onBlur={handleBlur}
         placeholder='{"result": "string"}'
       />
-      {!isValid && (
-        <div className={styles.inputError}>Invalid JSON format</div>
-      )}
-      <div className={styles.propertyInfo}>
-        Enter valid JSON schema. Leave empty for no schema validation.
-      </div>
+      {!isValid && <div className={styles.inputError}>Invalid JSON format</div>}
+      <div className={styles.propertyInfo}>Enter valid JSON schema. Leave empty for no schema validation.</div>
     </div>
   );
 };
@@ -157,12 +142,13 @@ const OutputSchemaEditor = ({ value, onChange }) => {
  * @param {Function} props.onBack - Handler to go back to list
  * @param {Function} props.onSave - Handler after successful save
  */
-const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
+const PipelineBuilder = ({ pipeline, onBack, onSave, readOnly = false }) => {
   // Canvas state
   const [nodes, setNodes] = useState(new Map());
   const [edges, setEdges] = useState(new Map());
   const [zoom, setZoom] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [renderKey, setRenderKey] = useState(0); // Force re-render after zoom
 
   // Interaction state
   const [selectedNode, setSelectedNode] = useState(null);
@@ -198,14 +184,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
 
   // Available agents
   const [availableAgents, setAvailableAgents] = useState([]);
-  const [loadingAgents, setLoadingAgents] = useState(false);
-
-  // Agent search state
-  const [agentSearchTerm, setAgentSearchTerm] = useState("");
-  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
-  const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(-1);
-  const agentDropdownRef = useRef(null);
-  const agentListRef = useRef(null);
 
   // Refs
   const canvasRef = useRef(null);
@@ -263,19 +241,26 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
   }, [pipeline]);
 
   /**
+   * Force re-render connections after zoom/pan changes
+   * This ensures connection paths are recalculated after CSS transforms are applied
+   */
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      setRenderKey((prev) => prev + 1);
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [zoom, panOffset]);
+
+  /**
    * Fetch available agents (only once on mount)
    */
   useEffect(() => {
     const fetchAgents = async () => {
-      setLoadingAgents(true);
       try {
         const response = await getAvailableAgents();
         setAvailableAgents(response?.agents || []);
       } catch (error) {
-        // Silently handle - agents dropdown will be empty
         console.error("Failed to fetch agents:", error);
-      } finally {
-        setLoadingAgents(false);
       }
     };
     fetchAgents();
@@ -283,90 +268,11 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
   }, []);
 
   /**
-   * Close agent dropdown when clicking outside
-   */
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target)) {
-        setShowAgentDropdown(false);
-        setAgentSearchTerm("");
-        setHighlightedAgentIndex(-1);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  /**
-   * Handle keyboard navigation for agent dropdown
-   */
-  useEffect(() => {
-    if (!showAgentDropdown) return;
-
-    const handleAgentDropdownKeyDown = (event) => {
-      // Get filtered agents list
-      const filteredAgents = availableAgents.filter(agent => 
-        agent.agent_name.toLowerCase().includes(agentSearchTerm.toLowerCase())
-      );
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setShowAgentDropdown(false);
-        setAgentSearchTerm("");
-        setHighlightedAgentIndex(-1);
-      } else if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setHighlightedAgentIndex(prev => 
-          prev < filteredAgents.length - 1 ? prev + 1 : prev
-        );
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setHighlightedAgentIndex(prev => (prev > 0 ? prev - 1 : -1));
-      } else if (event.key === "Enter" && highlightedAgentIndex >= 0) {
-        event.preventDefault();
-        const selectedAgent = filteredAgents[highlightedAgentIndex];
-        if (selectedAgent) {
-          updateNodeProperty(selectedNode, "config.agent_id", selectedAgent.agent_id);
-          setShowAgentDropdown(false);
-          setAgentSearchTerm("");
-          setHighlightedAgentIndex(-1);
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleAgentDropdownKeyDown);
-    return () => document.removeEventListener("keydown", handleAgentDropdownKeyDown);
-  }, [showAgentDropdown, highlightedAgentIndex, availableAgents, agentSearchTerm, selectedNode]);
-
-  /**
-   * Scroll highlighted agent into view
-   */
-  useEffect(() => {
-    if (showAgentDropdown && highlightedAgentIndex >= 0 && agentListRef.current) {
-      const highlightedElement = agentListRef.current.children[highlightedAgentIndex];
-      if (highlightedElement) {
-        highlightedElement.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-    }
-  }, [highlightedAgentIndex, showAgentDropdown]);
-
-  /**
-   * Reset highlighted index when search term changes
-   */
-  useEffect(() => {
-    if (showAgentDropdown) {
-      setHighlightedAgentIndex(-1);
-    }
-  }, [agentSearchTerm, showAgentDropdown]);
-
-  /**
    * Handle keyboard shortcuts (Delete key for edges)
    */
   useEffect(() => {
     const handleKeyDown = (event) => {
-      // Delete selected edge with Delete or Backspace key
       if ((event.key === "Delete" || event.key === "Backspace") && selectedEdge) {
-        // Don't delete if user is typing in an input/textarea
         const activeElement = document.activeElement;
         if (activeElement && (activeElement.tagName === "INPUT" || activeElement.tagName === "TEXTAREA")) {
           return;
@@ -399,16 +305,13 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
     const hasNodes = nodesArray.length > 0;
     const hasName = pipelineName.trim().length > 0;
     const hasDescription = pipelineDescription.trim().length > 0;
-
-    // Check if at least one output node exists
     const hasOutputNode = nodesArray.some((n) => n.node_type === NODE_TYPES.OUTPUT);
 
-    // Validate that all Agent and Output nodes have non-empty node_name
     const allRequiredFieldsFilled = nodesArray.every((node) => {
       if (node.node_type === NODE_TYPES.AGENT || node.node_type === NODE_TYPES.OUTPUT) {
         return node.node_name && node.node_name.trim().length > 0;
       }
-      return true; // Other node types don't require node_name
+      return true;
     });
 
     return hasNodes && hasName && hasDescription && hasOutputNode && allRequiredFieldsFilled;
@@ -438,39 +341,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
   }, []);
 
   /**
-   * Handle canvas drop
-   */
-  const handleCanvasDrop = useCallback(
-    (e) => {
-      e.preventDefault();
-      const nodeType = e.dataTransfer.getData("nodeType");
-      if (!nodeType || !NODE_CONFIG[nodeType]) return;
-
-      // Check max count for input nodes
-      if (nodeType === NODE_TYPES.INPUT) {
-        const inputCount = nodesArray.filter((n) => n.node_type === NODE_TYPES.INPUT).length;
-        if (inputCount >= 1) {
-          addMessage("Only one Input node is allowed per pipeline", "error");
-          return;
-        }
-      }
-
-      const coords = getCanvasCoords(e);
-      const newNode = {
-        node_id: generateId("node"),
-        node_name: (nodeType === NODE_TYPES.AGENT || nodeType === NODE_TYPES.OUTPUT) ? "" : NODE_CONFIG[nodeType].label,
-        node_type: nodeType,
-        position: { x: coords.x - 100, y: coords.y - 40 },
-        config: getDefaultConfig(nodeType),
-      };
-
-      setNodes((prev) => new Map(prev).set(newNode.node_id, newNode));
-      setSelectedNode(newNode.node_id);
-    },
-    [nodesArray, getCanvasCoords, addMessage]
-  );
-
-  /**
    * Get default config for node type
    */
   const getDefaultConfig = (nodeType) => {
@@ -494,6 +364,38 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
   };
 
   /**
+   * Handle canvas drop
+   */
+  const handleCanvasDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      const nodeType = e.dataTransfer.getData("nodeType");
+      if (!nodeType || !NODE_CONFIG[nodeType]) return;
+
+      if (nodeType === NODE_TYPES.INPUT) {
+        const inputCount = nodesArray.filter((n) => n.node_type === NODE_TYPES.INPUT).length;
+        if (inputCount >= 1) {
+          addMessage("Only one Input node is allowed per pipeline", "error");
+          return;
+        }
+      }
+
+      const coords = getCanvasCoords(e);
+      const newNode = {
+        node_id: generateId("node"),
+        node_name: nodeType === NODE_TYPES.AGENT || nodeType === NODE_TYPES.OUTPUT ? "" : NODE_CONFIG[nodeType].label,
+        node_type: nodeType,
+        position: { x: coords.x - 100, y: coords.y - 40 },
+        config: getDefaultConfig(nodeType),
+      };
+
+      setNodes((prev) => new Map(prev).set(newNode.node_id, newNode));
+      setSelectedNode(newNode.node_id);
+    },
+    [nodesArray, getCanvasCoords, addMessage]
+  );
+
+  /**
    * Handle canvas drag over
    */
   const handleCanvasDragOver = useCallback((e) => {
@@ -506,8 +408,9 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
    */
   const handleNodeDragStart = useCallback(
     (e, nodeId) => {
-      if (e.target.closest(`.${styles.connectionPoint}`)) return;
-      
+      // Check if clicked on connection point using data attribute
+      if (e.target.closest("[data-connection-point]")) return;
+
       const node = nodes.get(nodeId);
       if (!node) return;
 
@@ -528,7 +431,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
    */
   const handleMouseMove = useCallback(
     (e) => {
-      // Node dragging
       if (isDragging && draggedNode) {
         const coords = getCanvasCoords(e);
         setNodes((prev) => {
@@ -547,7 +449,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         });
       }
 
-      // Canvas panning
       if (isPanning) {
         setPanOffset({
           x: e.clientX - panStart.x,
@@ -555,7 +456,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         });
       }
 
-      // Connection drawing
       if (isConnecting && connectionStart) {
         const coords = getCanvasCoords(e);
         setTempConnection({
@@ -576,8 +476,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
     setIsDragging(false);
     setDraggedNode(null);
     setIsPanning(false);
-    
-    // Always clear connection state on mouse up if connecting
+
     if (isConnecting) {
       setIsConnecting(false);
       setConnectionStart(null);
@@ -592,7 +491,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
     (e) => {
       e.preventDefault();
       if (!canvasRef.current) return;
-      
+
       setIsPanning(true);
       setPanStart({
         x: e.clientX - panOffset.x,
@@ -608,25 +507,21 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
   const handleConnectionStart = useCallback(
     (e, nodeId, isOutput) => {
       e.stopPropagation();
-      
+
       const node = nodes.get(nodeId);
       if (!node) return;
 
-      // Check if this node type can send/receive
       const config = NODE_CONFIG[node.node_type];
       if (isOutput && !config.canSend) return;
       if (!isOutput && !config.canReceive) return;
 
-      // Get connection point position
       const nodeEl = document.getElementById(`node-${nodeId}`);
       if (!nodeEl) return;
 
       const rect = nodeEl.getBoundingClientRect();
       const canvasRect = canvasRef.current.getBoundingClientRect();
-      
-      const x = isOutput
-        ? (rect.right - canvasRect.left - panOffset.x) / zoom
-        : (rect.left - canvasRect.left - panOffset.x) / zoom;
+
+      const x = isOutput ? (rect.right - canvasRect.left - panOffset.x) / zoom : (rect.left - canvasRect.left - panOffset.x) / zoom;
       const y = (rect.top + rect.height / 2 - canvasRect.top - panOffset.y) / zoom;
 
       setIsConnecting(true);
@@ -650,7 +545,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
 
       if (!isConnecting || !connectionStart) return;
       if (!isInput || connectionStart.isOutput === false) {
-        // Invalid connection - must go from output to input
         setIsConnecting(false);
         setConnectionStart(null);
         setTempConnection(null);
@@ -667,7 +561,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         return;
       }
 
-      // Validate connection rules
       const sourceConfig = NODE_CONFIG[sourceNode.node_type];
       const targetConfig = NODE_CONFIG[targetNode.node_type];
 
@@ -679,10 +572,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         return;
       }
 
-      // Check if connection already exists
-      const existingEdge = edgesArray.find(
-        (e) => e.source_node_id === connectionStart.nodeId && e.target_node_id === nodeId
-      );
+      const existingEdge = edgesArray.find((e) => e.source_node_id === connectionStart.nodeId && e.target_node_id === nodeId);
       if (existingEdge) {
         addMessage("Connection already exists", "error");
         setIsConnecting(false);
@@ -691,10 +581,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         return;
       }
 
-      // Check outgoing connection limit for source node
-      const outgoingCount = edgesArray.filter(
-        (e) => e.source_node_id === connectionStart.nodeId
-      ).length;
+      const outgoingCount = edgesArray.filter((e) => e.source_node_id === connectionStart.nodeId).length;
       if (sourceConfig.maxOutgoing !== undefined && outgoingCount >= sourceConfig.maxOutgoing) {
         addMessage(`${sourceConfig.label} node can only have ${sourceConfig.maxOutgoing} outgoing connection(s)`, "error");
         setIsConnecting(false);
@@ -703,10 +590,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         return;
       }
 
-      // Check incoming connection limit for target node
-      const incomingCount = edgesArray.filter(
-        (e) => e.target_node_id === nodeId
-      ).length;
+      const incomingCount = edgesArray.filter((e) => e.target_node_id === nodeId).length;
       if (targetConfig.maxIncoming !== undefined && incomingCount >= targetConfig.maxIncoming) {
         addMessage(`${targetConfig.label} node can only have ${targetConfig.maxIncoming} incoming connection(s)`, "error");
         setIsConnecting(false);
@@ -715,7 +599,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         return;
       }
 
-      // If conditional connection, show modal
       if (isConditionalConnection) {
         setPendingConnection({
           source_node_id: connectionStart.nodeId,
@@ -723,7 +606,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         });
         setShowConditionModal(true);
       } else {
-        // Create normal connection
         const newEdge = {
           edge_id: generateId("edge"),
           source_node_id: connectionStart.nodeId,
@@ -769,7 +651,6 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         return newMap;
       });
 
-      // Remove connected edges
       setEdges((prev) => {
         const newMap = new Map(prev);
         prev.forEach((edge, edgeId) => {
@@ -813,81 +694,37 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
   }, []);
 
   /**
-   * Add input key
-   */
-  const handleAddInputKey = useCallback(() => {
-    if (!selectedNode || !newKeyLabel.trim()) return;
-
-    const node = nodes.get(selectedNode);
-    if (!node || node.node_type !== NODE_TYPES.INPUT) return;
-
-    const keyName = newKeyLabel.trim();
-    const currentSchema = node.config?.input_schema || {};
-    const currentDescription = node.config?.description || {};
-
-    // Add to input_schema
-    updateNodeProperty(selectedNode, "config.input_schema", {
-      ...currentSchema,
-      [keyName]: newKeyType,
-    });
-
-    // Add to description if provided
-    if (newKeyDescription.trim()) {
-      updateNodeProperty(selectedNode, "config.description", {
-        ...currentDescription,
-        [keyName]: newKeyDescription.trim(),
-      });
-    }
-
-    setShowAddKeyModal(false);
-    setNewKeyLabel("");
-    setNewKeyType("string");
-    setNewKeyDescription("");
-  }, [selectedNode, nodes, newKeyLabel, newKeyType, newKeyDescription, updateNodeProperty]);
-
-  /**
-   * Remove input key
-   */
-  const handleRemoveInputKey = useCallback(
-    (keyName) => {
-      if (!selectedNode) return;
-
-      const node = nodes.get(selectedNode);
-      if (!node || node.node_type !== NODE_TYPES.INPUT) return;
-
-      const currentSchema = { ...node.config?.input_schema } || {};
-      const currentDescription = { ...node.config?.description } || {};
-
-      delete currentSchema[keyName];
-      delete currentDescription[keyName];
-
-      updateNodeProperty(selectedNode, "config.input_schema", currentSchema);
-      updateNodeProperty(selectedNode, "config.description", currentDescription);
-    },
-    [selectedNode, nodes, updateNodeProperty]
-  );
-
-  /**
-   * Zoom controls
+   * Handle zoom in
    */
   const handleZoomIn = useCallback(() => {
-    setZoom((prev) => Math.min(prev + 0.1, 2.0));
+    setZoom((prev) => Math.min(prev + 0.1, 2));
   }, []);
 
+  /**
+   * Handle zoom out
+   */
   const handleZoomOut = useCallback(() => {
     setZoom((prev) => Math.max(prev - 0.1, 0.5));
   }, []);
 
+  /**
+   * Handle fit view
+   */
   const handleFitView = useCallback(() => {
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
   }, []);
 
+  /**
+   * Handle clear canvas
+   */
   const handleClearCanvas = useCallback(() => {
-    if (nodesArray.length === 0) return;
     setShowClearCanvasConfirm(true);
-  }, [nodesArray]);
+  }, []);
 
+  /**
+   * Confirm clear canvas
+   */
   const confirmClearCanvas = useCallback(() => {
     setNodes(new Map());
     setEdges(new Map());
@@ -897,81 +734,81 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
   }, []);
 
   /**
-   * Save pipeline
+   * Get connection path for SVG - uses actual DOM element positions
+   */
+  const getConnectionPath = useCallback(
+    (sourceNode, targetNode) => {
+      const sourceEl = document.getElementById(`node-${sourceNode.node_id}`);
+      const targetEl = document.getElementById(`node-${targetNode.node_id}`);
+      const canvasEl = canvasRef.current;
+
+      if (!sourceEl || !targetEl || !canvasEl) {
+        // Fallback to position-based calculation
+        const sourceX = sourceNode.position.x + 200;
+        const sourceY = sourceNode.position.y + 50;
+        const targetX = targetNode.position.x;
+        const targetY = targetNode.position.y + 50;
+        const controlOffset = Math.abs(targetX - sourceX) / 2;
+        return `M ${sourceX} ${sourceY} C ${sourceX + controlOffset} ${sourceY}, ${targetX - controlOffset} ${targetY}, ${targetX} ${targetY}`;
+      }
+
+      const canvasRect = canvasEl.getBoundingClientRect();
+      const sourceRect = sourceEl.getBoundingClientRect();
+      const targetRect = targetEl.getBoundingClientRect();
+
+      // Source: right edge, vertically centered
+      const sourceX = (sourceRect.right - canvasRect.left - panOffset.x) / zoom;
+      const sourceY = (sourceRect.top + sourceRect.height / 2 - canvasRect.top - panOffset.y) / zoom;
+
+      // Target: left edge, vertically centered
+      const targetX = (targetRect.left - canvasRect.left - panOffset.x) / zoom;
+      const targetY = (targetRect.top + targetRect.height / 2 - canvasRect.top - panOffset.y) / zoom;
+
+      const controlOffset = Math.abs(targetX - sourceX) / 2;
+      return `M ${sourceX} ${sourceY} C ${sourceX + controlOffset} ${sourceY}, ${targetX - controlOffset} ${targetY}, ${targetX} ${targetY}`;
+    },
+    [zoom, panOffset]
+  );
+
+  /**
+   * Handle save pipeline
    */
   const handleSave = useCallback(async () => {
-    if (!canSave) return;
-
-    const pipelineDefinition = {
-      nodes: nodesArray,
-      edges: edgesArray,
-    };
-
-    const payload = {
+    const pipelineData = {
       pipeline_name: pipelineName.trim(),
       pipeline_description: pipelineDescription.trim(),
-      pipeline_definition: pipelineDefinition,
-      created_by: Cookies.get("email") || "unknown",
+      pipeline_definition: {
+        nodes: nodesArray,
+        edges: edgesArray,
+      },
+      created_by: Cookies.get("email"),
     };
-
-    // Debug log to verify edge format
-    console.log("Saving pipeline with edges:", JSON.stringify(edgesArray, null, 2));
 
     try {
       if (pipeline?.pipeline_id) {
-      const response = await updatePipeline(pipeline.pipeline_id, payload);
-        addMessage(response?.result?.message, "success");
+        await updatePipeline(pipeline.pipeline_id, pipelineData);
+        addMessage("Pipeline updated successfully", "success");
       } else {
-         const response = await createPipeline(payload);
-        addMessage(response?.result?.message, "success");
+        await createPipeline(pipelineData);
+        addMessage("Pipeline created successfully", "success");
       }
       setShowSaveModal(false);
-      onSave?.();
+      onSave && onSave();
     } catch (error) {
-      addMessage(error?.response?.data?.detail,"error");
+      const errorMessage = error?.response?.data?.detail || "Failed to save pipeline";
+      handleError(error, { customMessage: errorMessage });
     }
-  }, [
-    canSave,
-    nodesArray,
-    edgesArray,
-    pipelineName,
-    pipelineDescription,
-    pipeline,
-    updatePipeline,
-    createPipeline,
-    addMessage,
-    handleError,
-    onSave,
-  ]);
+  }, [pipelineName, pipelineDescription, nodesArray, edgesArray, pipeline, createPipeline, updatePipeline, addMessage, handleError, onSave]);
 
   /**
-   * Calculate connection path
-   */
-  const getConnectionPath = useCallback((sourceNode, targetNode) => {
-    if (!sourceNode || !targetNode) return "";
-
-    const sourceX = sourceNode.position.x + 200; // Right side of node
-    const sourceY = sourceNode.position.y + 40; // Middle of node
-    const targetX = targetNode.position.x; // Left side of node
-    const targetY = targetNode.position.y + 40; // Middle of node
-
-    const controlPointOffset = Math.abs(targetX - sourceX) / 2;
-
-    return `M ${sourceX} ${sourceY} C ${sourceX + controlPointOffset} ${sourceY}, ${targetX - controlPointOffset} ${targetY}, ${targetX} ${targetY}`;
-  }, []);
-
-  /**
-   * Get all accessible inputs for agent nodes
-   * Returns input keys from Input node and outputs from other Agent nodes
+   * Get accessible inputs for agent nodes
    */
   const getAccessibleInputs = useCallback(() => {
     const inputs = [];
 
-    // Add input keys from Input node (using input_schema object)
     const inputNode = nodesArray.find((n) => n.node_type === NODE_TYPES.INPUT);
     if (inputNode?.config?.input_schema && Object.keys(inputNode.config.input_schema).length > 0) {
       Object.entries(inputNode.config.input_schema).forEach(([keyName, keyType]) => {
-        // Ensure type is always a string (handle object format {raw, type})
         const typeStr = typeof keyType === "string" ? keyType : keyType?.raw || keyType?.type || "string";
         inputs.push({
           id: `input.${keyName}`,
@@ -984,22 +821,21 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
       });
     }
 
-    // Add outputs from other agent nodes (agent outputs can be inputs for other agents)
     nodesArray
       .filter((n) => n.node_type === NODE_TYPES.AGENT && n.node_id !== selectedNode)
       .forEach((agent) => {
-        const agentName = agent.node_name || "Agent";
+        const nodeName = agent.node_name || "Agent";
         const agentId = agent.config?.agent_id;
-        const agentLabel = agentId 
-          ? availableAgents.find(a => a.agent_id === agentId)?.agent_name || agentName
-          : agentName;
-        
+        const selectedAgent = agentId ? availableAgents.find((a) => a.agent_id === agentId) : null;
+        const agentName = selectedAgent?.agent_name || "";
+
         inputs.push({
           id: `agent.${agent.node_id}`,
-          label: `${agentLabel} Output`,
+          label: nodeName,
+          agentName: agentName,
           type: "agent_output",
           source: "agent",
-          sourceLabel: agentLabel,
+          sourceLabel: agentName || nodeName,
           nodeId: agent.node_id,
         });
       });
@@ -1007,27 +843,41 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
     return inputs;
   }, [nodesArray, selectedNode, availableAgents]);
 
-  // Selected node data
   const selectedNodeData = selectedNode ? nodes.get(selectedNode) : null;
 
-  return (
-    <div className={styles.pipelineContainer}>
-      {/* Header */}
-      <div className={styles.pipelineHeader}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <h2>{pipeline ? "Edit Pipeline" : "New Pipeline"}</h2>
-        </div>
-        <div className={styles.headerActions}>
-          <button
-            className={styles.closeBtn}
-            onClick={onBack}
-            title="Close"
-          >
-            ×
-          </button>
-        </div>
-      </div>
+  /** Renders the footer buttons */
+  const renderFooter = () => (
+    <>
+      {readOnly ? (
+        <Button type="secondary" onClick={onBack}>
+          Close
+        </Button>
+      ) : (
+        <>
+          <Button type="secondary" onClick={onBack}>
+            Cancel
+          </Button>
+          <Button
+            type="primary"
+            onClick={() => setShowSaveModal(true)}
+            disabled={!canOpenSaveModal}
+            title={!canOpenSaveModal ? "Add at least one node to the canvas" : "Save Pipeline"}>
+            Save
+          </Button>
+        </>
+      )}
+    </>
+  );
 
+  return (
+    <FullModal
+      isOpen={true}
+      onClose={onBack}
+      title={readOnly ? "View Pipeline" : (pipeline ? "Edit Pipeline" : "New Pipeline")}
+      footer={readOnly ? null : renderFooter()}
+      closeOnOverlayClick={false}
+      fullHeight={true}
+      contentClassName={styles.pipelineModalContent}>
       {/* Main Content */}
       <div className={styles.canvasWrapper}>
         {/* Node Palette */}
@@ -1038,12 +888,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
           </h4>
 
           {Object.entries(NODE_CONFIG).map(([type, config]) => (
-            <div
-              key={type}
-              className={`${styles.paletteNode} ${styles[config.paletteClass]}`}
-              draggable
-              onDragStart={(e) => handlePaletteDragStart(e, type)}
-            >
+            <div key={type} className={`${styles.paletteNode} ${styles[config.paletteClass]}`} draggable={!readOnly} onDragStart={(e) => !readOnly && handlePaletteDragStart(e, type)} style={readOnly ? { opacity: 0.5, cursor: "not-allowed" } : {}}>
               <FontAwesomeIcon icon={config.paletteIcon || config.icon} className={styles.nodeIcon} />
               {config.label}
             </div>
@@ -1054,8 +899,8 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
         <div
           ref={canvasRef}
           className={`${styles.canvasContainer} ${panMode ? styles.panModeActive : ""}`}
-          onDrop={handleCanvasDrop}
-          onDragOver={handleCanvasDragOver}
+          onDrop={readOnly ? undefined : handleCanvasDrop}
+          onDragOver={readOnly ? undefined : handleCanvasDragOver}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
@@ -1075,16 +920,14 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
               setSelectedNode(null);
               setSelectedEdge(null);
             }
-          }}
-        >
+          }}>
           <div
             className={styles.canvasContent}
             style={{
               transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
-            }}
-          >
-            {/* SVG for connections */}
-            <svg ref={svgRef} className={styles.connectionsSvg}>
+            }}>
+            {/* SVG for connections - key forces re-render after zoom/pan */}
+            <svg ref={svgRef} className={styles.connectionsSvg} key={`connections-${renderKey}`}>
               {/* Existing connections */}
               {edgesArray.map((edge) => {
                 const sourceNode = nodes.get(edge.source_node_id);
@@ -1096,34 +939,30 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
 
                 return (
                   <g key={edge.edge_id}>
-                    {/* Invisible wider path for easier clicking */}
                     <path
                       d={pathData}
                       stroke="transparent"
                       strokeWidth="20"
                       fill="none"
-                      style={{ cursor: 'pointer' }}
+                      className={styles.connectionHitbox}
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedEdge(edge.edge_id);
                         setSelectedNode(null);
                       }}
                     />
-                    {/* Visible connection line */}
-                    <path
-                      d={pathData}
-                      className={`${styles.connectionLine} ${isSelected ? styles.connectionLineSelected : ''}`}
-                      style={{ pointerEvents: 'none' }}
-                    />
-                    {/* Delete button for selected edge */}
+                    <path d={pathData} className={`${styles.connectionLine} ${isSelected ? styles.connectionLineSelected : ""} ${styles.connectionPathOverlay}`} />
                     {isSelected && (
                       <g>
-                        {/* Calculate midpoint for delete button */}
                         {(() => {
-                          const sourceX = sourceNode.position.x + 200;
-                          const sourceY = sourceNode.position.y + 40;
-                          const targetX = targetNode.position.x;
-                          const targetY = targetNode.position.y + 40;
+                          // Parse the path to get start and end points for midpoint calculation
+                          const pathMatch = pathData.match(/^M\s+([\d.-]+)\s+([\d.-]+)\s+C\s+[\d.-]+\s+[\d.-]+,\s+[\d.-]+\s+[\d.-]+,\s+([\d.-]+)\s+([\d.-]+)$/);
+                          if (!pathMatch) return null;
+
+                          const sourceX = parseFloat(pathMatch[1]);
+                          const sourceY = parseFloat(pathMatch[2]);
+                          const targetX = parseFloat(pathMatch[3]);
+                          const targetY = parseFloat(pathMatch[4]);
                           const midX = (sourceX + targetX) / 2;
                           const midY = (sourceY + targetY) / 2;
 
@@ -1133,10 +972,10 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                                 cx={midX}
                                 cy={midY}
                                 r="12"
-                                fill="#e74c3c"
-                                stroke="white"
+                                fill="var(--danger, #e74c3c)"
+                                stroke="var(--card-bg, white)"
                                 strokeWidth="2"
-                                style={{ cursor: 'pointer' }}
+                                className={styles.connectionDeleteBtn}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteEdge(edge.edge_id);
@@ -1144,10 +983,10 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                               />
                               <path
                                 d={`M ${midX - 4} ${midY - 4} L ${midX + 4} ${midY + 4} M ${midX + 4} ${midY - 4} L ${midX - 4} ${midY + 4}`}
-                                stroke="white"
+                                stroke="var(--header-color, #fff)"
                                 strokeWidth="2"
                                 strokeLinecap="round"
-                                style={{ pointerEvents: 'none' }}
+                                className={styles.connectionPathOverlay}
                               />
                             </>
                           );
@@ -1161,7 +1000,8 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
               {/* Temporary connection while dragging */}
               {tempConnection && (
                 <path
-                  d={`M ${tempConnection.startX} ${tempConnection.startY} C ${tempConnection.startX + 50} ${tempConnection.startY}, ${tempConnection.endX - 50} ${tempConnection.endY}, ${tempConnection.endX} ${tempConnection.endY}`}
+                  d={`M ${tempConnection.startX} ${tempConnection.startY} C ${tempConnection.startX + 50} ${tempConnection.startY}, ${tempConnection.endX - 50} ${tempConnection.endY
+                    }, ${tempConnection.endX} ${tempConnection.endY}`}
                   className={styles.connectionLineTemp}
                 />
               )}
@@ -1175,9 +1015,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                   <div
                     key={node.node_id}
                     id={`node-${node.node_id}`}
-                    className={`${styles.canvasNode} ${
-                      selectedNode === node.node_id ? styles.selected : ""
-                    }`}
+                    className={styles.canvasNodeWrapper}
                     style={{
                       left: node.position.x,
                       top: node.position.y,
@@ -1186,69 +1024,50 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedNode(node.node_id);
-                    }}
-                  >
-                    {/* Node Header */}
-                    <div className={`${styles.nodeHeader} ${styles[config.headerClass]}`}>
-                      <span>{config.label} Node</span>
-                      <button
-                        className={styles.nodeCloseBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteNodeConfirm(node.node_id);
-                        }}
-                      >
-                        <FontAwesomeIcon icon={faTimes} size="sm" />
-                      </button>
+                    }}>
+                    {/* Connection Points - positioned relative to wrapper */}
+                    <div className={styles.connectionPointsWrapper}>
+                      {config.canReceive && (
+                        <div data-connection-point className={`${styles.connectionPoint} ${styles.connectionPointInput}`} onMouseUp={(e) => handleConnectionEnd(e, node.node_id, true)} />
+                      )}
+
+                      {config.canSend && (
+                        <div data-connection-point className={`${styles.connectionPoint} ${styles.connectionPointOutput}`} onMouseDown={(e) => handleConnectionStart(e, node.node_id, true)} />
+                      )}
                     </div>
 
-                    {/* Node Body */}
-                    <div className={styles.nodeBody}>
-                      <div className={styles.connectionPointsWrapper}>
-                        {/* Input connection point */}
-                        {config.canReceive && (
-                          <div
-                            className={`${styles.connectionPoint} ${styles.connectionPointInput}`}
-                            onMouseUp={(e) => handleConnectionEnd(e, node.node_id, true)}
-                          />
-                        )}
-
-                        {/* Output connection point */}
-                        {config.canSend && (
-                          <div
-                            className={`${styles.connectionPoint} ${styles.connectionPointOutput}`}
-                            onMouseDown={(e) => handleConnectionStart(e, node.node_id, true)}
-                          />
-                        )}
+                    {/* Node Card */}
+                    <div className={`${styles.canvasNode} ${selectedNode === node.node_id ? styles.selected : ""}`}>
+                      {/* Node Header */}
+                      <div className={`${styles.nodeHeader} ${styles[config.headerClass]}`}>
+                        <span>{config.label} Node</span>
+                        <button
+                          className={styles.nodeCloseBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteNodeConfirm(node.node_id);
+                          }}>
+                          <FontAwesomeIcon icon={faTimes} size="sm" />
+                        </button>
                       </div>
 
-                      <div className={styles.nodeName}>
-                        <FontAwesomeIcon icon={config.icon} />
-                        {node.node_type === NODE_TYPES.INPUT 
-                          ? NODE_CONFIG[NODE_TYPES.INPUT].description 
-                          : (node.node_name || NODE_CONFIG[node.node_type]?.label)}
+                      {/* Node Body */}
+                      <div className={styles.nodeBody}>
+                        <div className={styles.nodeName}>
+                          <FontAwesomeIcon icon={config.icon} />
+                          {node.node_type === NODE_TYPES.INPUT ? NODE_CONFIG[NODE_TYPES.INPUT].description : node.node_name || NODE_CONFIG[node.node_type]?.label}
+                        </div>
+
+                        {node.node_type === NODE_TYPES.INPUT && <div className={styles.nodeConfig}>Query: string</div>}
+
+                        {node.node_type === NODE_TYPES.AGENT && node.config?.agent_id && (
+                          <div className={styles.nodeConfig}>{availableAgents.find((a) => a.agent_id === node.config.agent_id)?.agent_name || node.config.agent_id}</div>
+                        )}
+
+                        {node.node_type === NODE_TYPES.CONDITION && node.config?.condition && (
+                          <div className={styles.nodeConfig}>{node.config.condition.length > 30 ? node.config.condition.substring(0, 30) + "..." : node.config.condition}</div>
+                        )}
                       </div>
-
-                      {/* Node-specific content */}
-                      {node.node_type === NODE_TYPES.INPUT && (
-                        <div className={styles.nodeConfig}>
-                          Query: string
-                        </div>
-                      )}
-
-                      {node.node_type === NODE_TYPES.AGENT && node.config?.agent_id && (
-                        <div className={styles.nodeConfig}>
-                          {availableAgents.find((a) => a.agent_id === node.config.agent_id)?.agent_name || node.config.agent_id}
-                        </div>
-                      )}
-
-                      {node.node_type === NODE_TYPES.CONDITION && node.config?.condition && (
-                        <div className={styles.nodeConfig}>
-                          {node.config.condition.length > 30
-                            ? node.config.condition.substring(0, 30) + "..."
-                            : node.config.condition}
-                        </div>
-                      )}
                     </div>
                   </div>
                 );
@@ -1261,8 +1080,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
             <button
               className={`${styles.controlBtn} ${panMode ? styles.controlBtnActive : ""}`}
               onClick={() => setPanMode(!panMode)}
-              title={panMode ? "Exit Pan Mode" : "Pan Mode (Move Graph)"}
-            >
+              title={panMode ? "Exit Pan Mode" : "Pan Mode (Move Graph)"}>
               <FontAwesomeIcon icon={faHand} />
             </button>
             <button className={styles.controlBtn} onClick={handleZoomIn} title="Zoom In">
@@ -1274,12 +1092,7 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
             <button className={styles.controlBtn} onClick={handleFitView} title="Fit View">
               <FontAwesomeIcon icon={faExpand} />
             </button>
-            <button
-              className={styles.controlBtn}
-              onClick={handleClearCanvas}
-              title="Clear Canvas"
-              disabled={nodesArray.length === 0}
-            >
+            <button className={styles.controlBtn} onClick={handleClearCanvas} title="Clear Canvas" disabled={readOnly || nodesArray.length === 0}>
               <FontAwesomeIcon icon={faTrash} />
             </button>
           </div>
@@ -1293,277 +1106,196 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                 <FontAwesomeIcon icon={faCog} />
                 Properties
               </h4>
-               <div className={styles.headerActions}>
-          <button
-            className={styles.closeBtn}
-            onClick={() => setSelectedNode(null)}
-            title="Close"
-          >
-            ×
-          </button>
-        </div>
+              <div className={styles.headerActions}>
+                <button className="closeBtn" onClick={() => setSelectedNode(null)} title="Close">
+                  ×
+                </button>
+              </div>
             </div>
 
-          <div className={styles.propertiesPanelContent}>
-            {/* Common Properties */}
-            <div className={styles.propertyGroup}>
-                  <label className={styles.propertyLabel}>
-                    Node Name
-                    {(selectedNodeData.node_type === NODE_TYPES.AGENT || selectedNodeData.node_type === NODE_TYPES.OUTPUT) && (
-                      <span className={styles.required}> *</span>
-                    )}
-                  </label>
-                  <input
-                    type="text"
-                    className={styles.propertyInput}
-                    value={selectedNodeData.node_name}
-                    onChange={(e) =>
-                      updateNodeProperty(selectedNode, "node_name", e.target.value)
-                    }
-                    disabled={selectedNodeData.node_type === NODE_TYPES.INPUT}
-                    placeholder={(selectedNodeData.node_type === NODE_TYPES.AGENT || selectedNodeData.node_type === NODE_TYPES.OUTPUT) ? `Enter ${NODE_CONFIG[selectedNodeData.node_type]?.label} name...` : ""}
-                  />
-                </div>
+            <div className={styles.propertiesPanelContent}>
+              {/* Common Properties */}
+              <div className={styles.propertyGroup}>
+                <label className={styles.propertyLabel}>
+                  Node Name
+                  {(selectedNodeData.node_type === NODE_TYPES.AGENT || selectedNodeData.node_type === NODE_TYPES.OUTPUT) && <span className={styles.required}> *</span>}
+                </label>
+                <input
+                  type="text"
+                  className={styles.propertyInput}
+                  value={selectedNodeData.node_name}
+                  onChange={(e) => updateNodeProperty(selectedNode, "node_name", e.target.value)}
+                  disabled={readOnly || selectedNodeData.node_type === NODE_TYPES.INPUT}
+                  placeholder={
+                    selectedNodeData.node_type === NODE_TYPES.AGENT || selectedNodeData.node_type === NODE_TYPES.OUTPUT
+                      ? `Enter ${NODE_CONFIG[selectedNodeData.node_type]?.label} name...`
+                      : ""
+                  }
+                />
+              </div>
 
+              <div className={styles.propertyGroup}>
+                <label className={styles.propertyLabel}>Type</label>
+                <div className={styles.typeInfoContainer}>
+                  <div className={styles.typeInfoRow}>
+                    <span className={`${styles.typeBadge} ${styles[`typeBadge${NODE_CONFIG[selectedNodeData.node_type]?.label}`]}`}>
+                      <FontAwesomeIcon icon={NODE_CONFIG[selectedNodeData.node_type]?.icon} />
+                      {NODE_CONFIG[selectedNodeData.node_type]?.label}
+                    </span>
+                  </div>
+                  {selectedNodeData.node_type === NODE_TYPES.INPUT && (
+                    <div className={styles.typeInfoRow}>
+                      <span className={styles.nodeDescription}>On every chat message pipeline will be triggered</span>
+                    </div>
+                  )}
+                  <div className={styles.typeInfoRow}>
+                    <span className={styles.nodeIdLabel}>ID:</span>
+                    <span className={styles.nodeIdValue}>{selectedNodeData.node_id.substring(0, 16)}...</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Input Node Properties */}
+              {selectedNodeData.node_type === NODE_TYPES.INPUT && (
                 <div className={styles.propertyGroup}>
-                  <label className={styles.propertyLabel}>Type</label>
-                  <div className={styles.typeInfoContainer}>
-                    <div className={styles.typeInfoRow}>
-                      <span className={`${styles.typeBadge} ${styles[`typeBadge${NODE_CONFIG[selectedNodeData.node_type]?.label}`]}`}>
-                        <FontAwesomeIcon icon={NODE_CONFIG[selectedNodeData.node_type]?.icon} />
-                        {NODE_CONFIG[selectedNodeData.node_type]?.label}
-                      </span>
-                    </div>
-                    {selectedNodeData.node_type === NODE_TYPES.INPUT && (
-                      <div className={styles.typeInfoRow}>
-                        <span className={styles.nodeDescription}>
-                          On every chat message pipeline will be triggered
-                        </span>
-                      </div>
-                    )}
-                    <div className={styles.typeInfoRow}>
-                      <span className={styles.nodeIdLabel}>ID:</span>
-                      <span className={styles.nodeIdValue}>{selectedNodeData.node_id.substring(0, 16)}...</span>
+                  <div className={styles.propertyLabelWithAction}>
+                    <label className={styles.propertyLabel}>Input Schema</label>
+                    <button className={styles.addKeyIconBtn} onClick={() => setShowAddKeyModal(true)} title="Add Key" disabled>
+                      <FontAwesomeIcon icon={faPlus} />
+                    </button>
+                  </div>
+                  <div className={styles.inputKeysList}>
+                    <div className={styles.inputKeyItem}>
+                      <span className={styles.inputKeyLabel}>Query</span>
+                      <span className={styles.inputKeyType}>string</span>
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* Input Node Properties */}
-                {selectedNodeData.node_type === NODE_TYPES.INPUT && (
+              {/* Agent Node Properties */}
+              {selectedNodeData.node_type === NODE_TYPES.AGENT && (
+                <>
                   <div className={styles.propertyGroup}>
-                    <div className={styles.propertyLabelWithAction}>
-                      <label className={styles.propertyLabel}>
-                        {/* Input Schema ({Object.keys(selectedNodeData.config?.input_schema || {}).length}) */}
-                        Input Schema
-                      </label>
-                      <button
-                        className={styles.addKeyIconBtn}
-                        onClick={() => setShowAddKeyModal(true)}
-                        title="Add Key"
-                        disabled
-                      >
-                        <FontAwesomeIcon icon={faPlus} />
-                      </button>
-                    </div>
-                    <div className={styles.inputKeysList}>
-                      <div className={styles.inputKeyItem}>
-                        <span className={styles.inputKeyLabel}>Query</span>
-                        <span className={styles.inputKeyType}>string</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Agent Node Properties */}
-                {selectedNodeData.node_type === NODE_TYPES.AGENT && (
-                  <>
-                    <div className={styles.propertyGroup}>
-                      <label className={styles.propertyLabel}>Agent</label>
-                      <div className={styles.searchableDropdown} ref={agentDropdownRef}>
-                        <div
-                          className={styles.searchableDropdownTrigger}
-                          onClick={() => setShowAgentDropdown(!showAgentDropdown)}
-                        >
-                          <span className={selectedNodeData.config?.agent_id ? styles.selectedValue : styles.placeholderValue}>
-                            {selectedNodeData.config?.agent_id
-                              ? (() => {
-                                  const agent = availableAgents.find(a => a.agent_id === selectedNodeData.config.agent_id);
-                                  const abbr = getAgentTypeAbbreviation(agent?.agent_type);
-                                  return agent ? `${agent.agent_name}${abbr ? ` [${abbr}]` : ""}` : "Select Agent...";
-                                })()
-                              : "Select Agent..."}
-                          </span>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" className={`${styles.dropdownArrow} ${showAgentDropdown ? styles.open : ""}`}>
-                            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </div>
-                        {showAgentDropdown && (
-                          <div className={styles.searchableDropdownMenu}>
-                            <div className={styles.searchInputWrapper}>
-                              <input
-                                type="text"
-                                className={styles.searchInput}
-                                placeholder="Search agents..."
-                                value={agentSearchTerm}
-                                onChange={(e) => setAgentSearchTerm(e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                                autoFocus
-                              />
-                            </div>
-                            <div className={styles.dropdownOptionsList} ref={agentListRef}>
-                              {availableAgents
-                                .filter(agent => agent.agent_name.toLowerCase().includes(agentSearchTerm.toLowerCase()))
-                                .map((agent, index) => {
-                                  const abbr = getAgentTypeAbbreviation(agent.agent_type);
-                                  return (
-                                    <div
-                                      key={agent.agent_id}
-                                      className={`${styles.dropdownOption} ${selectedNodeData.config?.agent_id === agent.agent_id ? styles.selected : ""} ${index === highlightedAgentIndex ? styles.highlighted : ""}`}
-                                      onClick={() => {
-                                        updateNodeProperty(selectedNode, "config.agent_id", agent.agent_id);
-                                        setShowAgentDropdown(false);
-                                        setAgentSearchTerm("");
-                                        setHighlightedAgentIndex(-1);
-                                      }}
-                                    >
-                                      <span className={styles.agentOptionName}>{agent.agent_name}</span>
-                                      {abbr && <span className={styles.agentOptionAbbr}>[{abbr}]</span>}
-                                    </div>
-                                  );
-                                })}
-                              {availableAgents.filter(agent => agent.agent_name.toLowerCase().includes(agentSearchTerm.toLowerCase())).length === 0 && (
-                                <div className={styles.noResults}>No agents found</div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className={styles.propertyGroup}>
-                      <label className={styles.propertyLabel}>Accessible Inputs</label>
-                      <div className={styles.propertyInfo} style={{ marginBottom: "8px" }}>
-                        Select which inputs this agent can access
-                      </div>
-                      <div className={styles.accessibleInputsList}>
-                        <div className={`${styles.accessibleInputItem} ${styles.allInputsToggle}`}>
-                          <input
-                            type="checkbox"
-                            id="all-inputs"
-                            checked={
-                              selectedNodeData.config?.accessible_inputs?.input_keys?.includes("all") ||
-                              false
-                            }
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                updateNodeProperty(selectedNode, "config.accessible_inputs", {
-                                  input_keys: ["all"],
-                                });
-                              } else {
-                                updateNodeProperty(selectedNode, "config.accessible_inputs", {
-                                  input_keys: [],
-                                });
-                              }
-                            }}
-                          />
-                          <label htmlFor="all-inputs">All Inputs</label>
-                        </div>
-
-                        {!selectedNodeData.config?.accessible_inputs?.input_keys?.includes("all") && (
-                          <>
-                            {getAccessibleInputs().length === 0 ? (
-                              <div className={styles.noInputsMessage}>
-                                No inputs available. Add input keys to the Input node or add other Agent nodes.
-                              </div>
-                            ) : (
-                              getAccessibleInputs().map((input) => (
-                                <div 
-                                  key={input.id} 
-                                  className={`${styles.accessibleInputItem} ${
-                                    input.source === "agent" ? styles.agentInputItem : ""
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    id={`input-${input.id}`}
-                                    checked={
-                                      selectedNodeData.config?.accessible_inputs?.input_keys?.includes(
-                                        input.id
-                                      ) || false
-                                    }
-                                    onChange={(e) => {
-                                      const currentKeys =
-                                        selectedNodeData.config?.accessible_inputs?.input_keys || [];
-                                      const newKeys = e.target.checked
-                                        ? [...currentKeys, input.id]
-                                        : currentKeys.filter((k) => k !== input.id);
-                                      updateNodeProperty(selectedNode, "config.accessible_inputs", {
-                                        input_keys: newKeys,
-                                      });
-                                    }}
-                                  />
-                                  <label htmlFor={`input-${input.id}`}>
-                                    <span className={styles.inputLabel}>{input.label}</span>
-                                    <span className={styles.inputSource}>({input.sourceLabel})</span>
-                                  </label>
-                                  <span className={`${styles.accessibleInputType} ${
-                                    input.source === "agent" ? styles.agentType : ""
-                                  }`}>
-                                    {input.type}
-                                  </span>
-                                </div>
-                              ))
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* Condition Node Properties */}
-                {selectedNodeData.node_type === NODE_TYPES.CONDITION && (
-                  <div className={styles.propertyGroup}>
-                    <label className={styles.propertyLabel}>Condition</label>
-                    <textarea
-                      className={styles.propertyTextarea}
-                      value={selectedNodeData.config?.condition || ""}
-                      onChange={(e) =>
-                        updateNodeProperty(selectedNode, "config.condition", e.target.value)
+                    <label className={styles.propertyLabel}>Agent</label>
+                    <NewCommonDropdown
+                      options={availableAgents.map((agent) => agent.agent_name)}
+                      optionMetadata={availableAgents.reduce((acc, agent) => {
+                        const abbr = getAgentTypeAbbreviation(agent.agent_type);
+                        if (abbr) {
+                          acc[agent.agent_name] = abbr;
+                        }
+                        return acc;
+                      }, {})}
+                      selected={
+                        selectedNodeData.config?.agent_id
+                          ? (() => {
+                            const agent = availableAgents.find((a) => a.agent_id === selectedNodeData.config.agent_id);
+                            return agent ? agent.agent_name : "";
+                          })()
+                          : ""
                       }
-                      placeholder="result.status == 'success'"
+                      onSelect={(value) => {
+                        const agent = availableAgents.find((a) => a.agent_name === value);
+                        if (agent) {
+                          updateNodeProperty(selectedNode, "config.agent_id", agent.agent_id);
+                        }
+                      }}
+                      placeholder="Select Agent..."
+                      showSearch={true}
+                      width="100%"
+                      dropdownWidth="280px"
+                      maxWidth="280px"
+                      disabled={readOnly}
                     />
                   </div>
-                )}
 
-                {/* Output Node Properties */}
-                {selectedNodeData.node_type === NODE_TYPES.OUTPUT && (
-                  <OutputSchemaEditor
-                    value={selectedNodeData.config?.output_schema}
-                    onChange={(value) => updateNodeProperty(selectedNode, "config.output_schema", value)}
+                  <div className={styles.propertyGroup}>
+                    <label className={styles.propertyLabel}>Accessible Inputs</label>
+                    <div className={`${styles.propertyInfo} ${styles.propertyInfoSpaced}`}>Select which inputs this agent can access</div>
+                    <div className={styles.accessibleInputsList}>
+                      <div className={`${styles.accessibleInputItem} ${styles.allInputsToggle}`}>
+                        <input
+                          type="checkbox"
+                          id="all-inputs"
+                          disabled={readOnly}
+                          checked={selectedNodeData.config?.accessible_inputs?.input_keys?.includes("all") || false}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              updateNodeProperty(selectedNode, "config.accessible_inputs", {
+                                input_keys: ["all"],
+                              });
+                            } else {
+                              updateNodeProperty(selectedNode, "config.accessible_inputs", {
+                                input_keys: [],
+                              });
+                            }
+                          }}
+                        />
+                        <label htmlFor="all-inputs">All Inputs</label>
+                      </div>
+
+                      {!selectedNodeData.config?.accessible_inputs?.input_keys?.includes("all") && (
+                        <>
+                          {getAccessibleInputs().length === 0 ? (
+                            <div className={styles.noInputsMessage}>No inputs available. Add input keys to the Input node or add other Agent nodes.</div>
+                          ) : (
+                            getAccessibleInputs().map((input) => (
+                              <div key={input.id} className={`${styles.accessibleInputItem} ${input.source === "agent" ? styles.agentInputItem : ""}`}>
+                                <input
+                                  type="checkbox"
+                                  id={`input-${input.id}`}
+                                  disabled={readOnly}
+                                  checked={selectedNodeData.config?.accessible_inputs?.input_keys?.includes(input.id) || false}
+                                  onChange={(e) => {
+                                    const currentKeys = selectedNodeData.config?.accessible_inputs?.input_keys || [];
+                                    const newKeys = e.target.checked ? [...currentKeys, input.id] : currentKeys.filter((k) => k !== input.id);
+                                    updateNodeProperty(selectedNode, "config.accessible_inputs", {
+                                      input_keys: newKeys,
+                                    });
+                                  }}
+                                />
+                                <label htmlFor={`input-${input.id}`}>
+                                  <span className={styles.inputLabel}>{input.label}</span>
+                                  {input.source === "agent" && input.agentName && (
+                                    <span className={styles.inputSource}>({input.agentName})</span>
+                                  )}
+                                  {input.source !== "agent" && (
+                                    <span className={styles.inputSource}>({input.sourceLabel})</span>
+                                  )}
+                                </label>
+                                <span className={`${styles.accessibleInputType} ${input.source === "agent" ? styles.agentType : ""}`}>{input.type}</span>
+                              </div>
+                            ))
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Condition Node Properties */}
+              {selectedNodeData.node_type === NODE_TYPES.CONDITION && (
+                <div className={styles.propertyGroup}>
+                  <label className={styles.propertyLabel}>Condition</label>
+                  <textarea
+                    className={styles.propertyTextarea}
+                    value={selectedNodeData.config?.condition || ""}
+                    onChange={(e) => updateNodeProperty(selectedNode, "config.condition", e.target.value)}
+                    placeholder="result.status == 'success'"
+                    disabled={readOnly}
                   />
-                )}
-          </div>
-        </div>
-        )}
-      </div>
+                </div>
+              )}
 
-      {/* Footer */}
-      <div className={styles.pipelineFooter}>
-        <button
-          className={styles.primaryBtn}
-          onClick={() => setShowSaveModal(true)}
-          disabled={!canOpenSaveModal}
-          title={!canOpenSaveModal ? "Add at least one node to the canvas" : "Save Pipeline"}
-        >
-          Save
-        </button>
-        <button
-          className={styles.cancelBtn}
-          onClick={onBack}
-        >
-          Cancel
-        </button>
+              {/* Output Node Properties */}
+              {selectedNodeData.node_type === NODE_TYPES.OUTPUT && (
+                <OutputSchemaEditor value={selectedNodeData.config?.output_schema} onChange={(value) => updateNodeProperty(selectedNode, "config.output_schema", value)} />
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Save Modal */}
@@ -1572,26 +1304,21 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3 className={styles.modalTitle}>Save Pipeline</h3>
-              <button
-                className={styles.modalCloseBtn}
-                onClick={() => setShowSaveModal(false)}
-              >
+              <button className={styles.modalCloseBtn} onClick={() => setShowSaveModal(false)}>
                 <FontAwesomeIcon icon={faTimes} />
               </button>
             </div>
             <div className={styles.modalBody}>
               <div className={styles.propertyGroup}>
-                <label className={styles.propertyLabel}>Pipeline Name <span className={styles.required}>*</span></label>
-                <input
-                  type="text"
-                  className={styles.propertyInput}
-                  value={pipelineName}
-                  onChange={(e) => setPipelineName(e.target.value)}
-                  placeholder="My Pipeline"
-                />
+                <label className={styles.propertyLabel}>
+                  Pipeline Name <span className={styles.required}>*</span>
+                </label>
+                <input type="text" className={styles.propertyInput} value={pipelineName} onChange={(e) => setPipelineName(e.target.value)} placeholder="My Pipeline" />
               </div>
               <div className={styles.propertyGroup}>
-                <label className={styles.propertyLabel}>Description <span className={styles.required}>*</span></label>
+                <label className={styles.propertyLabel}>
+                  Description <span className={styles.required}>*</span>
+                </label>
                 <textarea
                   className={styles.propertyTextarea}
                   value={pipelineDescription}
@@ -1599,40 +1326,23 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                   placeholder="Describe what this pipeline does..."
                 />
               </div>
-              {/* Validation messages */}
-              {nodesArray.length === 0 && (
-                <div className={styles.validationError}>
-                  ⚠️ Add at least one node to the canvas
-                </div>
-              )}
+              {nodesArray.length === 0 && <div className={styles.validationError}>⚠️ Add at least one node to the canvas</div>}
               {nodesArray.length > 0 && !nodesArray.some((n) => n.node_type === NODE_TYPES.OUTPUT) && (
-                <div className={styles.validationError}>
-                  ⚠️ Add at least one Output node to the pipeline
-                </div>
+                <div className={styles.validationError}>⚠️ Add at least one Output node to the pipeline</div>
               )}
-              {nodesArray.some((node) => 
-                (node.node_type === NODE_TYPES.AGENT || node.node_type === NODE_TYPES.OUTPUT) && 
-                (!node.node_name || node.node_name.trim().length === 0)
+              {nodesArray.some(
+                (node) => (node.node_type === NODE_TYPES.AGENT || node.node_type === NODE_TYPES.OUTPUT) && (!node.node_name || node.node_name.trim().length === 0)
               ) && (
-                <div className={styles.validationError}>
-                  ⚠️ All Agent and Output nodes must have a name. Please fill in the required "Node Name" field in the properties panel.
-                </div>
-              )}
+                  <div className={styles.validationError}>⚠️ All Agent and Output nodes must have a name. Please fill in the required "Node Name" field in the properties panel.</div>
+                )}
             </div>
             <div className={styles.modalActions}>
-              <button
-                className={styles.primaryBtn}
-                onClick={handleSave}
-                disabled={!canSave}
-              >
-                Save
-              </button>
-              <button
-                className={styles.cancelBtn}
-                onClick={() => setShowSaveModal(false)}
-              >
+              <Button type="secondary" onClick={() => setShowSaveModal(false)}>
                 Cancel
-              </button>
+              </Button>
+              <Button type="primary" onClick={handleSave} disabled={!canSave}>
+                Save
+              </Button>
             </div>
           </div>
         </div>
@@ -1650,20 +1360,14 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                   setShowConditionModal(false);
                   setPendingConnection(null);
                   setConditionText("");
-                }}
-              >
+                }}>
                 <FontAwesomeIcon icon={faTimes} />
               </button>
             </div>
             <div className={styles.modalBody}>
               <div className={styles.propertyGroup}>
                 <label className={styles.propertyLabel}>Condition Expression</label>
-                <textarea
-                  className={styles.propertyTextarea}
-                  value={conditionText}
-                  onChange={(e) => setConditionText(e.target.value)}
-                  placeholder="result.status == 'success'"
-                />
+                <textarea className={styles.propertyTextarea} value={conditionText} onChange={(e) => setConditionText(e.target.value)} placeholder="result.status == 'success'" />
               </div>
             </div>
             <div className={styles.modalActions}>
@@ -1673,15 +1377,10 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                   setShowConditionModal(false);
                   setPendingConnection(null);
                   setConditionText("");
-                }}
-              >
+                }}>
                 Cancel
               </button>
-              <button
-                className={styles.primaryBtn}
-                onClick={handleAddCondition}
-                disabled={!conditionText.trim()}
-              >
+              <button className={styles.primaryBtn} onClick={handleAddCondition} disabled={!conditionText.trim()}>
                 Add
               </button>
             </div>
@@ -1702,29 +1401,22 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                   setNewKeyLabel("");
                   setNewKeyType("string");
                   setNewKeyDescription("");
-                }}
-              >
+                }}>
                 <FontAwesomeIcon icon={faTimes} />
               </button>
             </div>
             <div className={styles.modalBody}>
               <div className={styles.propertyGroup}>
-                <label className={styles.propertyLabel}>Label <span className={styles.required}>*</span></label>
-                <input
-                  type="text"
-                  className={styles.propertyInput}
-                  value={newKeyLabel}
-                  onChange={(e) => setNewKeyLabel(e.target.value)}
-                  placeholder="query"
-                />
+                <label className={styles.propertyLabel}>
+                  Label <span className={styles.required}>*</span>
+                </label>
+                <input type="text" className={styles.propertyInput} value={newKeyLabel} onChange={(e) => setNewKeyLabel(e.target.value)} placeholder="query" />
               </div>
               <div className={styles.propertyGroup}>
-                <label className={styles.propertyLabel}>Type <span className={styles.required}>*</span></label>
-                <select
-                  className={styles.propertySelect}
-                  value={newKeyType}
-                  onChange={(e) => setNewKeyType(e.target.value)}
-                >
+                <label className={styles.propertyLabel}>
+                  Type <span className={styles.required}>*</span>
+                </label>
+                <select className={styles.propertySelect} value={newKeyType} onChange={(e) => setNewKeyType(e.target.value)}>
                   <option value="string">String</option>
                   <option value="integer">Integer</option>
                   <option value="json">JSON</option>
@@ -1749,15 +1441,19 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
                   setNewKeyLabel("");
                   setNewKeyType("string");
                   setNewKeyDescription("");
-                }}
-              >
+                }}>
                 Cancel
               </button>
               <button
                 className={styles.primaryBtn}
-                onClick={handleAddInputKey}
-                disabled={!newKeyLabel.trim()}
-              >
+                onClick={() => {
+                  // Add key logic here
+                  setShowAddKeyModal(false);
+                  setNewKeyLabel("");
+                  setNewKeyType("string");
+                  setNewKeyDescription("");
+                }}
+                disabled={!newKeyLabel.trim()}>
                 Add Key
               </button>
             </div>
@@ -1766,43 +1462,39 @@ const PipelineBuilder = ({ pipeline, onBack, onSave }) => {
       )}
 
       {/* Delete Node Confirmation Modal */}
-      <DeleteModal show={!!deleteNodeConfirm} onClose={() => setDeleteNodeConfirm(null)}>
-        <p>Are you sure you want to delete this node? This action cannot be undone.</p>
-        <div className={styles.buttonContainer}>
-          <button
-            className={styles.deleteBtns}
-            onClick={() => handleDeleteNode(deleteNodeConfirm)}
-          >
-            Delete
-          </button>
-          <button
-            className={styles.cancelBtn}
-            onClick={() => setDeleteNodeConfirm(null)}
-          >
+      <DeleteModal show={Boolean(deleteNodeConfirm)} onClose={() => setDeleteNodeConfirm(null)}>
+        <div className={styles.deleteConfirmIcon}>
+          <SVGIcons icon="warnings" width={48} height={48} color="#ef4444" />
+        </div>
+        <h3 className={styles.deleteConfirmTitle}>Delete Node?</h3>
+        <p className={styles.deleteConfirmMessage}>Are you sure you want to delete this node? This action cannot be undone.</p>
+        <div className={styles.deleteConfirmActions}>
+          <button className={styles.deleteConfirmCancelBtn} onClick={() => setDeleteNodeConfirm(null)}>
             Cancel
+          </button>
+          <button className={styles.deleteConfirmDeleteBtn} onClick={() => handleDeleteNode(deleteNodeConfirm)}>
+            Delete
           </button>
         </div>
       </DeleteModal>
 
       {/* Clear Canvas Confirmation Modal */}
       <DeleteModal show={showClearCanvasConfirm} onClose={() => setShowClearCanvasConfirm(false)}>
-        <p>Are you sure you want to clear the canvas? This action cannot be undone.</p>
-        <div className={styles.buttonContainer}>
-          <button
-            className={styles.deleteBtns}
-            onClick={confirmClearCanvas}
-          >
-            Clear
-          </button>
-          <button
-            className={styles.cancelBtn}
-            onClick={() => setShowClearCanvasConfirm(false)}
-          >
+        <div className={styles.deleteConfirmIcon}>
+          <SVGIcons icon="warnings" width={48} height={48} color="#ef4444" />
+        </div>
+        <h3 className={styles.deleteConfirmTitle}>Clear Canvas?</h3>
+        <p className={styles.deleteConfirmMessage}>Are you sure you want to clear the canvas? All nodes and connections will be removed.</p>
+        <div className={styles.deleteConfirmActions}>
+          <button className={styles.deleteConfirmCancelBtn} onClick={() => setShowClearCanvasConfirm(false)}>
             Cancel
+          </button>
+          <button className={styles.deleteConfirmDeleteBtn} onClick={confirmClearCanvas}>
+            Clear
           </button>
         </div>
       </DeleteModal>
-    </div>
+    </FullModal>
   );
 };
 

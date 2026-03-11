@@ -1,84 +1,169 @@
-/* ExecutionStepsList Component Styles - Timeline Design */
+/* ExecutionStepsList Component Styles - Clean Card Design */
 
 /* Container for the steps list */
-.stepsStreamingContainer ,
-.stepsDropdownContainer{
-  background: #eeeeee70;
-  border: 1px solid #cecfd0;
-  border-radius: 6px;
+.stepsStreamingContainer,
+.stepsDropdownContainer {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 10px;
+  margin-bottom: 0;
+  padding: 0;
+  /* Fill parent width for consistent sizing with response */
+  width: 100%;
+  min-width: 300px;
+  max-width: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.2s ease;
+}
+
+.stepsStreamingContainer:hover,
+.stepsDropdownContainer:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 /* Streaming mode container */
 .stepsContainerStreaming {
-  background: #f9fafb;
+  background: var(--card-bg);
 }
 
 /* Toggle button for expanding/collapsing steps */
 .stepsToggleButton {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: transparent;
+  justify-content: space-between;
+  gap: 10px;
   border: none;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-  line-height: 1.2;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 10px;
+  line-height: 1.5;
   letter-spacing: 0.2px;
   cursor: pointer;
-  color: #1f2937;
-  margin: 4px;
-  width: calc(100% - 8px);
-  min-width: 160px;
+  color: var(--text-primary);
+  width: 100%;
   box-sizing: border-box;
+  border-bottom: none;
+  background: var(--card-bg);
+  transition: background 0.15s ease;
 }
 
 .stepsToggleButton:hover {
-  background: #e5e7eb;
+  background: var(--hover-background);
+}
+
+.stepsToggleButtonExpanded {
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  background: rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.05);
+}
+
+/* Left side with icon and label */
+.stepsToggleLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Icon in toggle button - use primary color */
+.stepsToggleLeft svg {
+  color: var(--app-primary-color);
 }
 
 .toggleIcon {
-  transition: transform 0.2s;
-  font-size: 12px;
-  color: #6b7280;
+  transition: transform 0.2s ease;
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: auto;
 }
 
 .toggleIconExpanded {
   transform: rotate(180deg);
 }
 
+.stepsCheckIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--app-primary-color);
+  flex-shrink: 0;
+}
+
 .stepsLabel {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-weight: 500;
-  color: #374151;
+  gap: 6px;
+  font-size: 14px;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
 .stepsCount {
-  margin-left: auto;
-  opacity: 0.7;
-  font-size: 12px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  background: var(--hover-background);
+  padding: 2px 8px;
+  border-radius: 8px;
 }
 
 /* Timeline container */
 .timeline {
   display: flex;
   flex-direction: column;
-  padding: 8px 12px;
-  max-height: 220px;
+  padding: 8px 14px;
+  max-height: 200px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
 /* Streaming mode timeline */
 .timelineStreaming {
-  padding: 8px 12px;
+  padding: 8px 14px;
+}
+
+/* Compact card shown during streaming */
+.stepsStreamingContainer {
+  display: flex;
+  flex-direction: column;
+  /* Fill parent width for consistent sizing with response */
+  width: 100%;
+  min-width: 280px;
+  max-width: 100%;
+  max-height: 400px;
+  padding: 0;
+  border-radius: var(--radius);
+  align-items: stretch;
+  box-shadow: none;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  overflow: hidden;
+}
+
+.stepsStreamingContainer .timeline {
+  padding: 12px 14px;
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.stepsStreamingContainer .timelineStep {
+  padding-left: 0;
+  padding-bottom: 10px;
+}
+
+.stepsStreamingContainer .timelineConnector {
+  left: 12px;
+  top: 20px;
+}
+
+.stepsStreamingContainer .timelineCircle {
+  left: 0;
+  top: 3px;
 }
 
 .timeline::-webkit-scrollbar {
@@ -86,24 +171,24 @@
 }
 
 .timeline::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--checkbox-bg);
   border-radius: 6px;
 }
 
 .timeline::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border);
   border-radius: 6px;
 }
 
 .timeline::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--muted);
 }
 
-/* Individual timeline step */
+/* Individual timeline step (shared layout for streaming + dropdown) */
 .timelineStep {
   position: relative;
-  padding-left: 32px;
-  padding-bottom: 6px;
+  padding-left: 0;
+  padding-bottom: 16px;
 }
 
 .timelineStepLast {
@@ -113,39 +198,34 @@
 /* Vertical connector line */
 .timelineConnector {
   position: absolute;
-  left: 15px;
-  top: 15px;
-  bottom: -10px;
+  left: 12px;
+  top: 20px;
+  bottom: 0;
   width: 2px;
-  background: #007cc3;
+  background: var(--border);
   z-index: 0;
 }
 
 .timelineStepLast .timelineConnector {
-  bottom: -12px;
-}
-
-/* ensure the dot renders above the connector */
-.timelineCircle {
-  z-index: 2;
+  display: none;
 }
 
 /* Step header - always clickable */
 .timelineHeader {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 8px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 3px 5px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.12s ease;
-  background: #eeeeee70;
+  background: transparent;
+  transition: background 0.12s ease;
 }
 
 .timelineHeader:hover {
-  background: #a5daf9;
-  border-color: #d1d5db;
+  background: rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.05);
 }
 
 .timelineHeader:focus {
@@ -154,64 +234,71 @@
 
 /* Active streaming step */
 .timelineHeaderActive {
-  background: #eff6ff;
-  border-color: #93c5fd;
+  background: rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.08);
 }
 
-/* Circle with step number */
-.timelineCircle {
-  position: absolute;
-  left: -24px; 
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+/* Read-only mode - no interaction allowed */
+.timelineHeaderReadOnly {
+  cursor: default;
+  pointer-events: none;
+}
+
+.timelineHeaderReadOnly:hover {
   background: transparent;
+}
+
+/* Circle marker for each step */
+.timelineCircle {
+  position: relative;
+  left: 0;
+  top: 5px;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 3;
-  border: none;
+  z-index: 1;
 }
 
-/* Smaller circle variant used in compact mode */
 .timelineCircleSmall {
   width: 16px;
   height: 16px;
-  top: 50%;
-  left: -24px;
-  transform: translateY(-50%);
 }
 
 .timelineCircleActive {
-  background: #007cc3;
+  transform: scale(1.1);
 }
 
-/* Step number inside circle */
-.timelineNumber {
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/* Small centered dot instead of number */
+/* Completed step dot */
 .timelineDot {
-  width: 10px;
-  height: 10px;
-  background: #007cc3;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  display: inline-block;
+  background: var(--app-primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(var(--app-primary-color-rgb, 59, 130, 246), 0.25);
 }
 
-/* Spinner for active streaming step */
+.timelineDot::after {
+  content: "";
+  width: 7px;
+  height: 4px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+/* Spinner for loading state */
 .timelineSpinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--app-primary-color);
   border-radius: 50%;
-  animation: spin 0.7s linear infinite;
+  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
@@ -222,42 +309,62 @@
 
 /* Step info container */
 .timelineInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
 }
 
 /* Step name */
 .timelineName {
-  font-size: 13px;
-  font-weight: 400;
-  color: #111827;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Step status */
-.timelineStatus {
-  font-size: 11px;
-  color: #6b7280;
-  text-transform: capitalize;
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-/* Expand chevron - clickable indicator */
-.timelineChevron {
   font-size: 12px;
-  color: #6b7280;
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-  margin-left: 8px;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  line-height: 1.4;
 }
 
+/* Step description */
+.timelineDescription {
+  font-size: 9px;
+  font-weight: var(--font-weight-normal);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Right side container for status and chevron */
+.timelineRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Status badge */
+.timelineStatus {
+  font-size: 11Spx;
+  font-weight: var(--font-weight-medium);
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+.timelineStatus.statusCompleted {
+  color: var(--muted);
+}
+
+.timelineStatus.statusStarted {
+  color: var(--app-primary-color);
+}
+
+/* Chevron */
+.timelineChevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
 
 .timelineChevronExpanded {
   transform: rotate(180deg);
@@ -266,43 +373,78 @@
 /* Expanded content area */
 .timelineContent {
   margin-top: 8px;
-  margin-left: 0;
+  margin-left: 28px;
   padding: 10px 12px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 12px;
-  color: #374151;
-  white-space: pre-wrap;
-  word-break: break-word;
+  background: var(--checkbox-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.6;
   max-height: 200px;
-  overflow: auto;
+  overflow-y: auto;
 }
 
-/* Content item */
 .timelineContentItem {
   margin-bottom: 6px;
-  line-height: 1.5;
-  padding-left: 16px;
+  padding-left: 12px;
   position: relative;
 }
 
 .timelineContentItem::before {
-  content: "•";
+  content: "";
   position: absolute;
   left: 0;
-
-  font-weight: bold;
+  top: 7px;
+  width: 4px;
+  height: 4px;
+  background: var(--app-primary-color);
+  border-radius: 50%;
 }
 
 .timelineContentItem:last-child {
   margin-bottom: 0;
 }
 
-/* No content message */
 .noContent {
-  color: #9ca3af;
-  font-style: italic;
-  font-size: 12px;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 9px;
+  opacity: 0.7;
 }
 
+.timelineNoContent {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 9px;
+  text-align: center;
+  padding: 12px 8px;
+}
+
+/* Icon wrapper */
+.timelineIconWrapper {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Content scrollbar */
+.timelineContent::-webkit-scrollbar {
+  width: 5px;
+}
+
+.timelineContent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.timelineContent::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.timelineContent::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}

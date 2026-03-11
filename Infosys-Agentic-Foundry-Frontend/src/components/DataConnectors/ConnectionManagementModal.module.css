@@ -1,37 +1,12 @@
 /* ConnectionManagementModal.module.css */
-.modalOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
+/* Uses global classes from index.css: .form, .formGroup, .label-desc, .input, .required, .closeBtn */
+/* Overlay is handled by reusable Modal component */
 
-.modalContent {
-  background: white;
-  border-radius: 12px;
+.managementModal {
   width: 90%;
   max-width: 600px;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  animation: modalSlideIn 0.3s ease-out;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-30px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .modalHeader {
@@ -39,93 +14,70 @@
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--border);
 }
 
 .modalTitle {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #2c3e50;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
   margin: 0;
-}
-
-.closeButton {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 8px;
-  border-radius: 6px;
-  transition: background-color 0.2s ease;
-}
-
-.closeButton:hover {
-  background-color: #f8f9fa;
 }
 
 .modalBody {
   padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.activeConnectionsContainer {
+  margin-bottom: 1rem;
 }
 
 .formSection {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .sectionTitle {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0 0 15px 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  margin: 0;
 }
 
 .dropdownContainer {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .dropdownLabel {
-  display: block;
-  font-weight: 500;
-  color: #495057;
-  margin-bottom: 8px;
-}
-
-.connectionDropdown {
-  width: 100%;
-  padding: 12px;
-  border: 2px solid #e9ecef;
-  border-radius: 8px;
-  font-size: 14px;
-  background-color: white;
-  cursor: pointer;
-  transition: border-color 0.2s ease;
-}
-
-.connectionDropdown:focus {
-  outline: none;
-  border-color: #007bff;
-}
-
-.connectionDropdown:disabled {
-  background-color: #f8f9fa;
-  cursor: not-allowed;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--content-color);
 }
 
 .buttonGroup {
   display: flex;
   gap: 12px;
   margin-top: 20px;
+  flex-wrap: wrap;
 }
 
 .disconnectButton,
 .activateButton {
-  background-color: #007bff;
-  color: white;
+  background-color: var(--app-primary-color);
+  color: var(--primary-button-color);
   border: none;
   padding: 8px 18px;
   margin-right: 16px;
   margin-top: 8px;
-  border-radius: 14px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
@@ -136,29 +88,37 @@
   justify-content: center;
 }
 
-.disconnectButton{
-  background-color: #ff0019;
+.disconnectButton {
+  background-color: var(--danger);
+}
+
+.disconnectButton:hover {
+  opacity: 0.9;
+}
+
+.activateButton:hover {
+  background-color: var(--accent-hover);
 }
 
 .disabled {
-  opacity: 0.6;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed !important;
   transform: none !important;
-  background-color: gray !important;
+  background-color: var(--muted) !important;
 }
 
 .connectionInfo {
   margin-top: 20px;
   padding: 15px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
+  background-color: var(--input-bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
 }
 
 .connectionInfoTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #2c3e50;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
   margin: 0 0 10px 0;
 }
 
@@ -169,36 +129,36 @@
 
 .connectionDetails p {
   margin: 0;
-  font-size: 14px;
-  color: #495057;
+  font-size: var(--font-size-sm);
+  color: var(--content-color);
 }
 
 .connectionDetails strong {
-  color: #2c3e50;
-  font-weight: 600;
+  color: var(--header-color);
+  font-weight: var(--font-weight-semibold);
 }
 
 .status {
   padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
+  border-radius: var(--radius);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   margin-left: 8px;
 }
 
 .status.connected {
-  background-color: #d4edda;
-  color: #155724;
+  background-color: var(--accent-light);
+  color: var(--success);
 }
 
 .status.disconnected {
-  background-color: #f8d7da;
-  color: #721c24;
+  background-color: var(--accent-light);
+  color: var(--danger);
 }
 
 .status.active {
-  background-color: #d1ecf1;
-  color: #0c5460;
+  background-color: var(--accent-light);
+  color: var(--app-primary-color);
 }
 
 /* Responsive design */
@@ -207,7 +167,7 @@
     width: 95%;
     margin: 20px;
   }
-  
+
   .buttonGroup {
     flex-direction: column;
   }

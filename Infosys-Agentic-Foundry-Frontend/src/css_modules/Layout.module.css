@@ -7,16 +7,29 @@
 
 .container {
   display: flex;
-  margin-top: 43px;
-  height: Calc(100vh - 45px);
+  height: 100vh;
   overflow: hidden;
+  background: var(--dashboard-bg);
+}
+
+:global([data-theme="light"]) .container {
+  background: var(--layout-bg);
 }
 
 .dashboardContainer {
-  margin-left: 70px;
-  width: calc(100% - 70px);
-  /* transition: margin-left 0.3s ease; */
-  min-height: 100vh;
+  margin-left: var(--main-width, 56px);
+  width: calc(100% - var(--main-width, 56px));
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  z-index: 1; /* Lower than navbar */
+  transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust layout when navbar is collapsed - uses --main-width which updates on nav hover */
+:global([data-nav-collapsed="true"]) .dashboardContainer {
+  margin-left: var(--main-width, 90px);
+  width: calc(100% - var(--main-width, 90px));
 }
 
 .header {

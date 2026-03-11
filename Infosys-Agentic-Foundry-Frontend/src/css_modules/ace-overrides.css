@@ -7,6 +7,18 @@
   font-variant-ligatures: none !important; /* Disable ligatures to keep 1:1 glyph advance */
 }
 
+/* Remove ALL border-radius from ace editor elements */
+.ace_editor,
+.ace_gutter,
+.ace_gutter-layer,
+.ace_gutter-cell,
+.ace_gutter-active-line,
+.ace_scroller,
+.ace_content,
+.ace_layer {
+  border-radius: 0 !important;
+}
+
 /* Optional: ensure consistent line-height to reduce vertical drift. Adjust if needed. */
 .ace_editor .ace_line {
   line-height: 1.4 !important;
@@ -38,6 +50,16 @@
   flex: 0 0 auto;
 }
 
+/* Fix gutter cell styling - remove rounded corners from line numbers */
+.ace_gutter-cell {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.ace_scroller,
+.ace_content {
+}
+
 /* When selecting & dragging, avoid text selection outside editor causing jumps */
 .codeEditorWrapper {
   user-select: none;
@@ -46,4 +68,88 @@
 .codeEditorWrapper .ace_text-layer,
 .codeEditorWrapper .ace_line {
   user-select: text;
+}
+
+/* ========================================
+   DARK THEME ACE EDITOR OVERRIDES
+   ======================================== */
+[data-theme="dark"] .ace_editor {
+  background-color: #0a1929 !important;
+}
+
+[data-theme="dark"] .ace_editor .ace_scroller {
+  background-color: #0a1929 !important;
+}
+
+[data-theme="dark"] .ace_editor .ace_content {
+  background-color: #0a1929 !important;
+}
+
+[data-theme="dark"] .ace_editor .ace_text-layer {
+  background-color: transparent !important;
+}
+
+[data-theme="dark"] .ace_editor .ace_gutter {
+  background: linear-gradient(180deg, #0d2137 0%, #0a1929 100%) !important;
+  border-right: 1px solid rgba(55, 172, 234, 0.2) !important;
+}
+
+[data-theme="dark"] .ace_editor .ace_gutter-layer {
+  background-color: transparent !important;
+}
+
+[data-theme="dark"] .ace_editor .ace_gutter-cell {
+  color: rgba(55, 172, 234, 0.5) !important;
+}
+
+[data-theme="dark"] .ace_editor .ace_print-margin {
+  background: transparent !important;
+}
+
+/* ========================================
+   LIGHT THEME ACE EDITOR OVERRIDES
+   ======================================== */
+:root:not([data-theme="dark"]) .ace_editor {
+  background-color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_scroller {
+  background-color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_content {
+  background-color: #ffffff !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_text-layer {
+  background-color: transparent !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_gutter {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  border-right: 1px solid #e2e8f0 !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_gutter-layer {
+  background-color: transparent !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_gutter-cell {
+  color: #94a3b8 !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_print-margin {
+  background: transparent !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_cursor {
+  color: #1e293b !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_marker-layer .ace_active-line {
+  background: rgba(226, 232, 240, 0.5) !important;
+}
+
+:root:not([data-theme="dark"]) .ace_editor .ace_marker-layer .ace_selection {
+  background: rgba(55, 172, 234, 0.35) !important;
 }

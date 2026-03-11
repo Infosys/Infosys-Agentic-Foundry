@@ -62,7 +62,7 @@ function extractFromAxios(err) {
       message = data;
     } else if (typeof data === "object") {
       code = data.code || data.errorCode || data.error_code || null;
-      message = data.message || data.error || data.errorMessage || null;
+      message = data.detail || data.message || data.error || data.errorMessage || null;
       details = data.details || data.errors || data.data || undefined;
     }
   }
@@ -213,13 +213,16 @@ export const extractErrorMessage = (error) => {
   }
 
   const errorPaths = [
+    "response.data.detail.message",
     "response.data.detail",
     "response.data.message",
     "response.data.error",
     "response.data.errors[0].message",
+    "data.detail.message",
     "data.detail",
     "data.message",
     "data.error",
+    "detail.message",
     "detail",
     "message",
     "error",
@@ -310,7 +313,7 @@ export const extractErrorWithFriendlyMessage = (error, userFriendly = true) => {
   const extractedError = extractErrorMessage(error);
   if (!userFriendly) return extractedError;
   // If backend already supplied a specific detail/message we prefer that as primary
-  const hasBackendSpecific = !!extractedError.message && !/^(Invalid request|An error occurred)/i.test(extractedError.message);
+  const hasBackendSpecific = Boolean(extractedError.message) && !/^(Invalid request|An error occurred)/i.test(extractedError.message);
   const friendlyMessage = extractedError.statusCode ? getHttpErrorMessage(extractedError.statusCode) : null;
   // We expose both so UI can choose; keep existing shape for backwards compat
   return {

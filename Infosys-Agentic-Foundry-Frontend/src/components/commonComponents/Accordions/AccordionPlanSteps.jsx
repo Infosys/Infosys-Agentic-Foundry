@@ -3,18 +3,28 @@ import Cookies from "js-cookie";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useTheme } from "../../../Hooks/ThemeContext";
 import styles from "./AccordionPlan.module.css";
 import DebugStepsCss from "../../../css_modules/DebugSteps.module.css";
+import SVGIcons from "../../../Icons/SVGIcons";
+import { META_AGENT, PLANNER_META_AGENT } from "../../../constant";
 
 const AccordionPlanSteps = (props) => {
   const userRole = (Cookies.get("role") || "").toLowerCase();
   const [isOpen, setIsOpen] = useState(false);
-  const [canvasIsOpen, setCanvasIsOpen] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
+  const { theme } = useTheme();
+  const syntaxTheme = theme === "dark" ? oneDark : oneLight;
 
   const toggleAccordion = () => {
     setIsOpen(!isOpen);
   };
+
+  const toggleReasoning = () => {
+    setReasoningOpen(!reasoningOpen);
+  };
+
   const handleCanvasOpen = (e) => {
     const targetElement = e.currentTarget;
 
@@ -46,10 +56,19 @@ const AccordionPlanSteps = (props) => {
   };
 
   // Check if there's any content to display before rendering the entire component
-  const textContent = props.parts
+  // First try to get content from parts (for structured responses)
+  const partsTextContent = props.parts
     ?.filter((part) => part.type === "text" && part.data?.content)
     .map((part) => part.data.content)
     .join("\n\n");
+
+  // Use parts content if available, otherwise fall back to response prop (for tool/plan verifier final response)
+  const textContent =
+    partsTextContent && partsTextContent.trim() !== ""
+      ? partsTextContent
+      : props.response && typeof props.response === "string" && props.response.trim() !== ""
+        ? props.response
+        : "";
 
   const canvasParts = props.parts?.filter((part) => part.type !== "text") || [];
 
@@ -60,124 +79,74 @@ const AccordionPlanSteps = (props) => {
 
   return (
     <div className={styles.accordion}>
+      {/* Reasoning Steps Content */}
+      {userRole !== "user" && reasoningOpen && props?.debugExecutor?.length > 0 && (
+        <div className={styles.reasoningContent}>
+          {Array.isArray(props.debugExecutor) &&
+            props.debugExecutor
+              .slice()
+              .reverse()
+              .map((item, idx) => {
+                // Show content from each step as structured step item
+                if (item.content && item.type !== "tool") {
+                  // Parse the step title and description
+                  const content = item.content || "";
+                  const lines = content.split("\n").filter((line) => line.trim());
+                  const title = item.name || item.title || (lines[0] ? lines[0].substring(0, 50) : `Step ${idx + 1}`);
+                  const description = item.description || (lines.length > 1 ? lines.slice(1).join(" ").substring(0, 100) : "");
+
+                  return (
+                    <div key={idx} className={styles.reasoningStepItem}>
+                      <div className={styles.reasoningStepIcon}>
+                        <SVGIcons icon="step-checkmark" width={16} height={16} fill="#0073CF" stroke="white" />
+                      </div>
+                      <div className={styles.reasoningStepContent}>
+                        <div className={styles.reasoningStepTitle}>{title}</div>
+                        {description && <div className={styles.reasoningStepDescription}>{description}</div>}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+        </div>
+      )}
+
+      {/* Message Content Card */}
       <div className={styles["accordion-header"]}>
         {(() => {
           if (!props?.show_canvas) {
-            // Only render if there's actually content to display
-            if ((!textContent || textContent.trim() === "") && canvasParts.length === 0) {
+            if (!textContent || textContent.trim() === "") {
               return null;
             }
-
-            // Show all parts inline (both text and canvas parts) without canvas button
             return (
-              <div className={`${styles.messageBubble} textOnlyBubble`}>
-                {textContent && textContent.trim() !== "" && (
-                  <ReactMarkdown
-                    rehypePlugins={[remarkGfm]}
-                    components={{
-                      code({ node, inline, className, children, ...props }) {
-                        const match = /language-(\w+)/.exec(className || "");
-                        return !inline && match ? (
-                          <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                            {String(children).replace(/\n$/, "")}
-                          </SyntaxHighlighter>
-                        ) : (
-                          <code className={className} {...props}>
-                            {children}
-                          </code>
-                        );
-                      },
-                    }}>
-                    {textContent}
-                  </ReactMarkdown>
-                )}
-                {canvasParts.length > 0 && canvasParts.map((part, idx) => {
-                  // Render canvas parts inline
-                  if (part.type === "code" && part.data) {
-                    const codeContent = part.data.content || "";
-                    const language = part.data.language || "text";
-                    return (
-                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px" }}>
-                        <SyntaxHighlighter style={oneDark} language={language} PreTag="div">
-                          {codeContent}
+              <div className={`${styles.messageBubble} ${styles.textOnlyBubble}`}>
+                <ReactMarkdown
+                  rehypePlugins={[remarkGfm]}
+                  components={{
+                    code({ node, inline, className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || "");
+                      return !inline && match ? (
+                        <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div" {...props}>
+                          {String(children).replace(/\n$/, "")}
                         </SyntaxHighlighter>
-                      </div>
-                    );
-                  } else if (part.type === "json" && part.data) {
-                    // Handle JSON type - display formatted JSON or result field
-                    const jsonContent = JSON.stringify(part.data, null, 2);
-                    return (
-                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px" }}>
-                        <ReactMarkdown
-                          rehypePlugins={[remarkGfm]}
-                          components={{
-                            code({ node, inline, className, children, ...props }) {
-                              const match = /language-(\w+)/.exec(className || "");
-                              return !inline && match ? (
-                                <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                                  {String(children).replace(/\n$/, "")}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <code className={className} {...props}>
-                                  {children}
-                                </code>
-                              );
-                            },
-                          }}>
-                          {typeof jsonContent === "string" ? jsonContent : JSON.stringify(jsonContent, null, 2)}
-                        </ReactMarkdown>
-                      </div>
-                    );
-                  } else if (part.type === "email" && part.data) {
-                    return (
-                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px", padding: "12px", border: "1px solid #e5e7eb", borderRadius: "6px" }}>
-                        {part.data.to && <div><strong>To:</strong> {part.data.to}</div>}
-                        {part.data.subject && <div><strong>Subject:</strong> {part.data.subject}</div>}
-                        {part.data.body && (
-                          <div style={{ marginTop: "8px" }}>
-                            <ReactMarkdown rehypePlugins={[remarkGfm]}>{part.data.body}</ReactMarkdown>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  } else if (part.data && part.data.content) {
-                    // Generic content rendering
-                    return (
-                      <div key={`canvas-part-${idx}`} style={{ marginTop: "12px" }}>
-                        <ReactMarkdown
-                          rehypePlugins={[remarkGfm]}
-                          components={{
-                            code({ node, inline, className, children, ...props }) {
-                              const match = /language-(\w+)/.exec(className || "");
-                              return !inline && match ? (
-                                <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                                  {String(children).replace(/\n$/, "")}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <code className={className} {...props}>
-                                  {children}
-                                </code>
-                              );
-                            },
-                          }}>
-                          {part.data.content}
-                        </ReactMarkdown>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}>
+                  {textContent}
+                </ReactMarkdown>
               </div>
             );
           } else {
-            // Only render if there's text content or canvas parts
             if ((!textContent || textContent.trim() === "") && canvasParts.length === 0) {
               return null;
             }
-
-            // Multiple parts, show all text parts and canvas button
             return (
-              <div className={`${styles.messageBubble} showCanvasBtn`}>
+              <div className={`${styles.messageBubble} ${styles.showCanvasBtn}`}>
                 {textContent && textContent.trim() !== "" && (
                   <ReactMarkdown
                     rehypePlugins={[remarkGfm]}
@@ -185,7 +154,7 @@ const AccordionPlanSteps = (props) => {
                       code({ node, inline, className, children, ...props }) {
                         const match = /language-(\w+)/.exec(className || "");
                         return !inline && match ? (
-                          <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                          <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div" {...props}>
                             {String(children).replace(/\n$/, "")}
                           </SyntaxHighlighter>
                         ) : (
@@ -198,37 +167,47 @@ const AccordionPlanSteps = (props) => {
                     {textContent}
                   </ReactMarkdown>
                 )}
+                {/* View Details Button - Inside message bubble */}
                 {canvasParts.length > 0 && (
                   <div className={styles.viewDetailsBubble} tabIndex={0} role="button" aria-label="View details" onClick={handleCanvasOpen}>
+                    <SVGIcons icon="view-details-eye" width={18} height={18} color="currentColor" stroke="currentColor" />
                     <span className={styles.viewDetailsText}>View details</span>
-                    <span className={styles.viewDetailsArrow} aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                        <path d="M6 4L12 9L6 14" stroke="#007acc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </span>
+                    <SVGIcons icon="chevron-right" width={16} height={16} color="currentColor" stroke="currentColor" />
                   </div>
                 )}
               </div>
             );
           }
         })()}
-        {/* Hide Execution Steps accordion for USER role */}
-        {userRole !== "user" && (
-          <div className={styles.accordionButton} onClick={toggleAccordion}>
-            <span style={{ fontSize: "10px" }}>Execution Steps</span>
-            <span className={isOpen ? styles.arrow + " " + styles["open"] : styles.arrow}>
-              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M5 7 L10 13 L15 7 Z" fill="white" />
-              </svg>
-            </span>
-          </div>
-        )}
       </div>
-      {/* Hide Execution Steps content for USER role */}
+
+      {/* Execution Steps Button */}
+      {userRole !== "user" && (
+        <div className={styles.accordionButton} onClick={toggleAccordion}>
+          <div className={styles.accordionButtonLeft}>
+            <SVGIcons icon="execution-steps" width={20} height={20} color="currentColor" stroke="currentColor" />
+            <span>Execution Steps ({
+              // Count only the steps that will actually be rendered (exclude tool response items)
+              Array.isArray(props?.debugExecutor)
+                ? props.debugExecutor.filter(item => item.role || item.tool_calls?.length > 0 || (item.content && item.type !== "tool")).length
+                : 0
+            })</span>
+          </div>
+          <SVGIcons
+            icon="chevron-down-sm"
+            width={16}
+            height={16}
+            color="currentColor"
+            stroke="currentColor"
+            style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}
+          />
+        </div>
+      )}
+
+      {/* Execution Steps Content */}
       {userRole !== "user" && (
         <div className={`${styles["accordion-content"]} ${isOpen ? styles.open : ""}`}>
           <>
-            {/* Debug Steps UI Start */}
             {isOpen && props?.debugExecutor && (
               <>
                 <div className={DebugStepsCss.debugStepsWrapper}>
@@ -261,7 +240,7 @@ const AccordionPlanSteps = (props) => {
                               stepElement = (
                                 <div key={idx} className={DebugStepsCss.eachSteps + " " + DebugStepsCss.toolsCallStage}>
                                   <div className={DebugStepsCss.stepHeader}>
-                                    <span className={DebugStepsCss.stepCount}>{stepCounter}</span> Tool Calls
+                                    <span className={DebugStepsCss.stepCount}>{stepCounter}</span> {props?.agentType === META_AGENT || props?.agentType === PLANNER_META_AGENT ? "Agent Calls" : "Tool Calls"}
                                   </div>
                                   <div className={DebugStepsCss.stepsContent}>
                                     {item.tool_calls.map((call, tIdx) => {
@@ -308,7 +287,7 @@ const AccordionPlanSteps = (props) => {
                                         code({ node, inline, className, children, ...props }) {
                                           const match = /language-(\w+)/.exec(className || "");
                                           return !inline && match ? (
-                                            <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                                            <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div" {...props}>
                                               {String(children).replace(/\n$/, "")}
                                             </SyntaxHighlighter>
                                           ) : (

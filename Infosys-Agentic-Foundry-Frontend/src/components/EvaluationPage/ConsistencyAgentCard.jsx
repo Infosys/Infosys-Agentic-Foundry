@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import styles from "../../css_modules/ListOfAgents.module.css";
+import styles from "../../css_modules/AvailableAgents.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { APIs } from "../../constant";
 import useAxios from "../../Hooks/useAxios";

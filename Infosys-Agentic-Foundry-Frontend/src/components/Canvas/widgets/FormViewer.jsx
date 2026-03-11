@@ -1,28 +1,19 @@
-import React from 'react';
-import styles from './FormViewer.module.css';
+import React from "react";
+import styles from "./FormViewer.module.css";
 
 const FormViewer = ({ content, messageId }) => {
   // Simple form renderer for demo purposes
   const renderForm = () => {
-    if (typeof content === 'object' && content.fields) {
+    if (typeof content === "object" && content.fields) {
       return (
         <form className={styles.form}>
           {content.fields.map((field, index) => (
             <div key={index} className={styles.fieldGroup}>
               <label className={styles.label}>{field.label}</label>
-              {field.type === 'textarea' ? (
-                <textarea 
-                  className={styles.textarea}
-                  placeholder={field.placeholder}
-                  defaultValue={field.value}
-                />
+              {field.type === "textarea" ? (
+                <textarea className={styles.textarea} placeholder={field.placeholder} defaultValue={field.value} />
               ) : (
-                <input 
-                  type={field.type || 'text'}
-                  className={styles.input}
-                  placeholder={field.placeholder}
-                  defaultValue={field.value}
-                />
+                <input type={field.type || "text"} className={styles.input} placeholder={field.placeholder} defaultValue={field.value} />
               )}
             </div>
           ))}
@@ -32,12 +23,10 @@ const FormViewer = ({ content, messageId }) => {
         </form>
       );
     }
-    
+
     return (
       <div className={styles.fallback}>
-        <pre className={styles.fallbackContent}>
-          {typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
-        </pre>
+        <pre className={styles.fallbackContent}>{typeof content === "string" ? content : JSON.stringify(content, null, 2)}</pre>
       </div>
     );
   };
@@ -49,10 +38,10 @@ const FormViewer = ({ content, messageId }) => {
         <div className={styles.toolbarLeft}>
           <div className={styles.contentTag}>
             <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-              <rect x="3" y="4" width="14" height="12" rx="2" stroke="#007acc" strokeWidth="1.5" fill="none"/>
-              <line x1="6" y1="8" x2="14" y2="8" stroke="#007acc" strokeWidth="1.5"/>
-              <line x1="6" y1="10" x2="11" y2="10" stroke="#007acc" strokeWidth="1.5"/>
-              <line x1="6" y1="12" x2="14" y2="12" stroke="#007acc" strokeWidth="1.5"/>
+              <rect x="3" y="4" width="14" height="12" rx="2" stroke="#007acc" strokeWidth="1.5" fill="none" />
+              <line x1="6" y1="8" x2="14" y2="8" stroke="#007acc" strokeWidth="1.5" />
+              <line x1="6" y1="10" x2="11" y2="10" stroke="#007acc" strokeWidth="1.5" />
+              <line x1="6" y1="12" x2="14" y2="12" stroke="#007acc" strokeWidth="1.5" />
             </svg>
             <span>Form</span>
           </div>
@@ -60,9 +49,7 @@ const FormViewer = ({ content, messageId }) => {
       </div>
 
       {/* Form Content */}
-      <div className={styles.formContent}>
-        {renderForm()}
-      </div>
+      <div>{renderForm()}</div>
     </div>
   );
 };

@@ -1,0 +1,1643 @@
+/* WelcomeModal - Initial welcome popup styles */
+
+/* Overlay */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: var(--main-width, 200px);
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  animation: fadeIn 0.3s ease;
+  transition: left var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+/* Adjust left position when navbar is collapsed */
+:global([data-nav-collapsed="true"]) .modalOverlay {
+  left: var(--main-width, 90px);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal Content */
+.modalContent {
+  background: linear-gradient(145deg, #1e2330 0%, #141820 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 40px 48px;
+  max-width: 680px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 
+    0 32px 64px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Welcome Header */
+.welcomeHeader {
+  margin-bottom: 28px;
+}
+
+.welcomeTitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 12px 0;
+  letter-spacing: -0.3px;
+  line-height: 1.25;
+}
+
+.welcomeSubtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0 auto;
+  line-height: 1.6;
+  max-width: 500px;
+}
+
+/* Features Row */
+.featuresRow {
+  display: flex;
+  justify-content: center;
+  gap: 56px;
+  margin-bottom: 32px;
+  padding: 20px 0;
+}
+
+.featureItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.featureIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.featureIcon svg {
+  color: #ffffff !important;
+  fill: #ffffff;
+}
+
+.featureItem:hover .featureIcon {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.45);
+}
+
+.featureLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.2px;
+}
+
+/* Configuration Section */
+.configSection {
+  margin-bottom: 28px;
+}
+
+.configTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 20px 0;
+}
+
+/* Dropdown Row - Side by Side */
+.dropdownRow {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+/* Agent Select Wrapper - Single dropdown centered */
+.agentSelectWrapper {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* Dropdown Groups */
+.dropdownGroup {
+  flex: 1;
+  text-align: left;
+  position: relative;
+  min-width: 0; /* Prevent flex item from overflowing */
+  max-width: 280px; /* Constrain dropdown width */
+}
+
+.dropdownLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+}
+
+.dropdownLabel svg {
+  color: #3b82f6;
+  opacity: 0.9;
+}
+
+/* Native Select Dropdown */
+.selectDropdown {
+  width: 100%;
+  padding: 12px 40px 12px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+.selectDropdown:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.selectDropdown:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.selectDropdown:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selectDropdown option {
+  background: #1e2330;
+  color: #ffffff;
+  padding: 10px;
+}
+
+/* Light mode select */
+:root[data-theme="light"] .selectDropdown {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #1e293b;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%231e293b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+:root[data-theme="light"] .selectDropdown:hover {
+  background: #e2e8f0;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+:root[data-theme="light"] .selectDropdown option {
+  background: #ffffff;
+  color: #1e293b;
+}
+
+/* Start Button */
+.startButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 32px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.startButton:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+}
+
+.startButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.startButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Instruction Text (replaces button) */
+.instructionText {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 8px 0 0 0;
+  text-align: center;
+  font-style: normal;
+}
+
+:root[data-theme="light"] .instructionText {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+/* Light Mode Adjustments */
+:root[data-theme="light"] .modalContent {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 
+    0 32px 64px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="light"] .welcomeTitle {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .welcomeSubtitle {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .featureLabel {
+  color: #475569;
+}
+
+:root[data-theme="light"] .configTitle {
+  color: #334155;
+}
+
+:root[data-theme="light"] .dropdownLabel {
+  color: #64748b;
+}
+
+/* Welcome Dropdown Wrapper */
+.welcomeDropdown {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.welcomeDropdown > div:first-child {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px !important;
+  padding: 12px 14px !important;
+  min-height: 44px !important;
+}
+
+.welcomeDropdown > div:first-child:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(59, 130, 246, 0.5) !important;
+}
+
+:root[data-theme="light"] .welcomeDropdown > div:first-child {
+  background: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+:root[data-theme="light"] .welcomeDropdown > div:first-child:hover {
+  background: #e2e8f0 !important;
+  border-color: rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .modalContent {
+    padding: 28px 24px;
+    margin: 16px;
+    border-radius: 20px;
+  }
+
+  .welcomeTitle {
+    font-size: 22px;
+  }
+
+  .welcomeSubtitle {
+    font-size: 13px;
+  }
+
+  .featuresRow {
+    gap: 28px;
+  }
+
+  .featureIcon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .featureLabel {
+    font-size: 11px;
+  }
+
+  .dropdownRow {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+/* ============================================= */
+/* Custom Agent Dropdown Styles                  */
+/* ============================================= */
+
+.agentDropdown {
+  position: relative;
+  width: 100%;
+}
+
+.agentDropdownTrigger {
+  width: 100%;
+  padding: 12px 40px 12px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.agentDropdownTrigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.agentDropdownTrigger.open {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.agentDropdownTrigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.triggerContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.triggerContent span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.triggerArrow {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.6);
+  transition: transform 0.2s ease;
+}
+
+.agentDropdownTrigger.open .triggerArrow {
+  transform: rotate(180deg);
+}
+
+/* Agent Dropdown Menu */
+.agentDropdownMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #1e2330;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  overflow: hidden;
+  animation: dropdownSlide 0.2s ease;
+}
+
+@keyframes dropdownSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Search and Filter Header */
+.agentDropdownHeader {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agentSearchWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+}
+
+.agentSearchInput {
+  width: 100%;
+  padding: 8px 12px 8px 34px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.agentSearchInput::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.agentSearchInput:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Type Filter */
+.agentTypeFilter {
+  width: 100%;
+  padding: 8px 28px 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.agentTypeFilter option {
+  background: #1e2330;
+  color: #ffffff;
+}
+
+/* Agent List */
+.agentList {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.agentList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.agentList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agentList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.agentOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.agentOption:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.agentOption.selected {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+/* Agent Type Badge */
+.agentTypeBadge {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.agentTypeBadge.RA {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.agentTypeBadge.ME {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.agentTypeBadge.default {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.agentName {
+  flex: 1;
+  font-size: 13px;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* No Results */
+.noResults {
+  padding: 20px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+}
+
+/* Light Mode Agent Dropdown */
+:root[data-theme="light"] .agentDropdownTrigger {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .agentDropdownTrigger:hover {
+  background: #e2e8f0;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+:root[data-theme="light"] .triggerArrow {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .agentDropdownMenu {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+}
+
+:root[data-theme="light"] .agentDropdownHeader {
+  border-bottom-color: #e2e8f0;
+}
+
+:root[data-theme="light"] .agentSearchInput {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .agentSearchInput::placeholder {
+  color: #94a3b8;
+}
+
+:root[data-theme="light"] .searchIcon {
+  color: #94a3b8;
+}
+
+:root[data-theme="light"] .agentTypeFilter {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #1e293b;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%231e293b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+:root[data-theme="light"] .agentTypeFilter option {
+  background: #ffffff;
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .agentOption:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+:root[data-theme="light"] .agentOption.selected {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+:root[data-theme="light"] .agentName {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .noResults {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .agentList::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* ============================================= */
+/* Landing Page Modal - Two Panel Layout         */
+/* ============================================= */
+
+.landingModal {
+  display: flex;
+  max-width: 1100px;
+  width: 95%;
+  max-height: 90vh;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 
+    0 32px 64px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+/* Animated Border Light Effect */
+.landingModal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  padding: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 30%,
+    rgba(59, 130, 246, 0.6) 50%,
+    transparent 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: borderLight 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes borderLight {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Left Panel - Branding */
+.brandingPanel {
+  flex: 1;
+  background: linear-gradient(145deg, #0f1420 0%, #0a0e16 100%);
+  padding: 36px 36px 24px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.brandingPanel::before {
+  content: "";
+  position: absolute;
+  top: -30%;
+  left: -30%;
+  width: 160%;
+  height: 160%;
+  background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.04) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.brandingContent {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Logo Section */
+.logoSection {
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logoIcon {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.4);
+}
+
+.logoIcon svg {
+  color: #ffffff !important;
+  fill: #ffffff;
+}
+
+.brandTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 2px 0;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+.brandTagline {
+  font-size: 11px;
+  color: rgba(59, 130, 246, 0.9);
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* About Section */
+.aboutSection {
+  margin-bottom: 24px;
+}
+
+.aboutText {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* Capabilities Section */
+.capabilitiesSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.capabilityItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.capabilityIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.capabilityIcon svg {
+  color: #3b82f6 !important;
+}
+
+.capabilityText h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 4px 0;
+}
+
+.capabilityText p {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Branding Footer */
+.brandingFooter {
+  position: relative;
+  z-index: 1;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.poweredBy {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.5px;
+}
+
+/* Right Panel - Selection */
+.selectionPanel {
+  flex: 1;
+  background: linear-gradient(160deg, #021233 0%, #0b101a 50%, #020a1a 100%);
+  padding: 40px 40px 32px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.selectionPanel::before {
+  content: "";
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.selectionPanel::after {
+  content: "";
+  position: absolute;
+  bottom: -30px;
+  left: -30px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.selectionContent {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Welcome Section */
+.welcomeSection {
+  margin-bottom: 16px;
+}
+
+.welcomeTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.3px;
+}
+
+.welcomeSubtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Agent Selection Card */
+.agentSelectionCard {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agentSelectionCard::before {
+  display: none;
+}
+
+.agentCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.agentCardHeader svg {
+  color: #3b82f6 !important;
+}
+
+.agentDropdownWrapper {
+  margin-bottom: 14px;
+}
+
+.agentHint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+}
+
+.agentHint svg {
+  opacity: 0.7;
+}
+
+/* Feature Highlights - Top of Right Panel */
+.featureHighlights {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  margin-bottom: 20px;
+  justify-content: flex-start;
+}
+
+.highlightItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s ease;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.highlightItem:hover {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.highlightItem svg {
+  color: #3b82f6 !important;
+}
+
+/* Skip Button - Bottom Right */
+.skipButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 8px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 10px;
+  margin-right: 8px;
+  align-self: flex-end;
+}
+
+.skipButton:hover {
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.skipButton svg {
+  transition: transform 0.2s ease;
+}
+
+.skipButton:hover svg {
+  transform: translateX(3px);
+}
+
+/* ============================================= */
+/* Agent List Styles                             */
+/* ============================================= */
+
+/* Search and Filter Row */
+.searchFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.searchInputWrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.searchInputWrapper:focus-within {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.searchInput {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.searchInput::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.clearSearch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clearSearch:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.clearSearch svg {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Filter Toggle Button */
+.filterToggleBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.filterToggleBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.filterToggleBtn.active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+}
+
+.filterToggleBtn svg {
+  transition: transform 0.2s ease;
+}
+
+.filterBadge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 5px;
+  background: rgba(59, 130, 246, 0.2);
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Type Filter Buttons */
+.typeFilterWrapper {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.typeFilterBtn {
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.typeFilterBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.typeFilterBtn.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+}
+
+/* Agent List */
+.agentList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.agentList::-webkit-scrollbar {
+  width: 5px;
+}
+
+.agentList::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
+}
+
+.agentList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.agentList::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Agent List Item */
+.agentListItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.agentListItem:hover {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.2);
+  transform: translateX(4px);
+}
+
+.agentListItem.selected {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.agentItemIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.agentItemName {
+  font-size: 13px;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.agentItemType {
+  padding: 2px 6px;
+  background: rgba(59, 130, 246, 0.15);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #3b82f6;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+/* Loading and Empty States */
+.loadingState,
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 20px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.emptyState button {
+  padding: 6px 12px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 6px;
+  color: #3b82f6;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.emptyState button:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* ============================================= */
+/* Landing Modal - Light Mode                    */
+/* ============================================== */
+
+:root[data-theme="light"] .brandingPanel {
+  background: linear-gradient(145deg, #f1f5f9 0%, #e2e8f0 100%);
+}
+
+:root[data-theme="light"] .brandingPanel::before {
+  background: radial-gradient(circle at 30% 30%, rgba(59, 130, 246, 0.12) 0%, transparent 50%);
+}
+
+:root[data-theme="light"] .brandTitle {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .brandTagline {
+  color: #3b82f6;
+}
+
+:root[data-theme="light"] .aboutText {
+  color: #475569;
+}
+
+:root[data-theme="light"] .capabilityIcon {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+:root[data-theme="light"] .capabilityText h4 {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .capabilityText p {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .brandingFooter {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .poweredBy {
+  color: #94a3b8;
+}
+
+:root[data-theme="light"] .selectionPanel {
+  background: linear-gradient(160deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .selectionPanel::before {
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.04) 0%, transparent 60%);
+}
+
+:root[data-theme="light"] .selectionPanel::after {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.03) 0%, transparent 60%);
+}
+
+:root[data-theme="light"] .welcomeTitle {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .welcomeSubtitle {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .agentSelectionCard {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border-color: #e2e8f0;
+}
+
+:root[data-theme="light"] .agentCardHeader {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .agentHint {
+  color: #94a3b8;
+}
+
+:root[data-theme="light"] .highlightItem {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.12);
+  color: #475569;
+}
+
+:root[data-theme="light"] .highlightItem:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+:root[data-theme="light"] .skipButton {
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+:root[data-theme="light"] .skipButton:hover {
+  color: #475569;
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+
+/* Light Mode - Agent List */
+:root[data-theme="light"] .searchInputWrapper {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+:root[data-theme="light"] .searchInputWrapper:focus-within {
+  background: #ffffff;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+:root[data-theme="light"] .searchInput {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .searchInput::placeholder {
+  color: #94a3b8;
+}
+
+:root[data-theme="light"] .clearSearch {
+  background: #e2e8f0;
+}
+
+:root[data-theme="light"] .clearSearch:hover {
+  background: #cbd5e1;
+}
+
+:root[data-theme="light"] .clearSearch svg {
+  color: #64748b !important;
+}
+
+:root[data-theme="light"] .filterToggleBtn {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+:root[data-theme="light"] .filterToggleBtn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+:root[data-theme="light"] .filterToggleBtn.active {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+}
+
+:root[data-theme="light"] .filterBadge {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+}
+
+:root[data-theme="light"] .typeFilterBtn {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+:root[data-theme="light"] .typeFilterBtn:hover {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+:root[data-theme="light"] .typeFilterBtn.active {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+}
+
+:root[data-theme="light"] .agentList::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+:root[data-theme="light"] .agentList::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+:root[data-theme="light"] .agentList::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+:root[data-theme="light"] .agentListItem {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+:root[data-theme="light"] .agentListItem:hover {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+:root[data-theme="light"] .agentListItem.selected {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+:root[data-theme="light"] .agentItemIcon {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+:root[data-theme="light"] .agentItemName {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .agentItemType {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+:root[data-theme="light"] .loadingState,
+:root[data-theme="light"] .emptyState {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .emptyState button {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.15);
+}
+
+:root[data-theme="light"] .emptyState button:hover {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* ============================================= */
+/* Landing Modal - Responsive                    */
+/* ============================================= */
+
+@media (max-width: 900px) {
+  .landingModal {
+    flex-direction: column;
+    max-height: 95vh;
+    overflow-y: auto;
+  }
+
+  .brandingPanel {
+    padding: 32px 28px;
+  }
+
+  .selectionPanel {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 32px 28px;
+  }
+
+  .logoIcon {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+  }
+
+  .brandTitle {
+    font-size: 22px;
+  }
+
+  .capabilityItem {
+    gap: 12px;
+  }
+
+  .capabilityIcon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .welcomeTitle {
+    font-size: 22px;
+  }
+
+  .featureHighlights {
+    gap: 10px;
+  }
+
+  .highlightItem {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 600px) {
+  .landingModal {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 0;
+    max-height: 100vh;
+  }
+
+  .brandingPanel,
+  .selectionPanel {
+    padding: 24px 20px;
+  }
+
+  .capabilitiesSection {
+    gap: 14px;
+  }
+
+  .capabilityText p {
+    display: none;
+  }
+
+  .featureHighlights {
+    flex-direction: column;
+  }
+}

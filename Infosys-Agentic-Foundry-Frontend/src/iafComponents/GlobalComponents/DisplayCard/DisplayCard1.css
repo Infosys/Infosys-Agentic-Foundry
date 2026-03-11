@@ -1,0 +1,174 @@
+/* DisplayCard1 - Reusable Card Grid Layout Component */
+
+/* Main grid layout for cards */
+.display-cards-grid {
+  display: grid;
+  /* Auto-fill with fixed min width - consistent card sizes, auto-wraps when space is tight */
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+  padding: 0;
+  padding-right: 18px;
+  width: 100%;
+  padding-bottom: 10px;
+}
+
+/* Loading state - Modern skeleton shimmer */
+.display-card-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  font-size: 16px;
+  color: var(--content-color, #6c757d);
+  position: relative;
+  overflow: hidden;
+}
+
+.display-card-loading::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: var(--gradient-shimmer, linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%));
+  animation: iafShimmer var(--skeleton-animation-duration, 1.5s) infinite;
+}
+
+/* Empty state - Enhanced styling */
+.display-card-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  background: var(--glass-bg, rgba(255, 255, 255, 0.7));
+  backdrop-filter: var(--glass-blur, blur(8px));
+  -webkit-backdrop-filter: var(--glass-blur, blur(8px));
+  border: 2px dashed var(--color-border-subtle);
+  border-radius: var(--radius, 16px);
+  margin: 20px 0;
+  width: 100%;
+  transition: all var(--transition-normal, 250ms) ease;
+  animation: iafFadeIn var(--transition-slow, 350ms) ease;
+}
+
+.display-card-empty:hover {
+  border-color: var(--app-primary-color);
+  background: var(--card-bg);
+}
+
+.display-card-empty-message {
+  font-size: 16px;
+  color: var(--content-color, #6c757d);
+  text-align: center;
+}
+
+/* Create card icon styles */
+.create-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  background: var(--accent-light);
+  transition: 
+    transform var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)),
+    background var(--transition-fast, 150ms) ease;
+}
+
+/* Create card label styles */
+.create-card-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--header-color);
+  text-align: center;
+  transition: color var(--transition-fast, 150ms) ease;
+}
+
+/* Responsive breakpoints */
+
+/* For medium screens */
+@media (max-width: 1024px) {
+  .display-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 16px;
+  }
+}
+
+/* For small screens */
+@media (max-width: 767px) {
+  .display-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+}
+
+/* For very small screens - 1 card per row */
+@media (max-width: 480px) {
+  .display-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+/* Compact variant for tighter spacing */
+.display-cards-grid.compact {
+  gap: 12px;
+}
+
+/* Large variant for more spacing */
+.display-cards-grid.large {
+  gap: 24px;
+}
+
+/* Full width variant */
+.display-cards-grid.full-width {
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+}
+
+/* Custom spacing variants */
+.display-cards-grid.no-gap {
+  gap: 0;
+}
+
+.display-cards-grid.small-gap {
+  gap: 12px;
+}
+
+.display-cards-grid.large-gap {
+  gap: 40px;
+}
+
+/* Animation for smooth loading - Enhanced staggered fade */
+.display-cards-grid {
+  animation: iafFadeInUp var(--transition-slow, 350ms) var(--transition-smooth, ease-out);
+}
+
+/* Staggered animation delay is now handled in Card.css */
+
+/* List view styling */
+.display-cards-grid.listView {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.display-cards-grid.listView .card-container {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Recycle bin specific styling */
+.display-cards-grid.recycle-bin .card-container {
+  width: 280px;
+  max-width: 320px;
+}
+
+/* Resource cards - Show access_key as-is from API without text transform */
+.display-cards-grid.resource-cards .card-title,
+.display-cards-grid.resource-cards .header-text {
+  text-transform: none !important;
+}

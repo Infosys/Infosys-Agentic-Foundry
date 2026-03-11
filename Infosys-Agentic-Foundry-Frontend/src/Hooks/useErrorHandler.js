@@ -2,7 +2,6 @@ import { useCallback, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useMessage } from "./MessageContext"; // assumes MessageContext exports useMessage
 import { extractErrorMessage, extractErrorWithFriendlyMessage } from "../utils/errorUtils";
-import { env } from "../constant";
 
 // dynamic suppression support (module scoped) ---
 let suppressedStatusCodes = new Set();
@@ -50,24 +49,37 @@ export const useErrorHandler = () => {
   const { addMessage } = useMessage?.() || { addMessage: null };
   const { logout } = useAuth?.() || { logout: () => {} };
 
-  // Listen for global 401 events from axios interceptor
+  // Listen for global 401 events from axios interceptor (only fires AFTER refresh attempt fails)
   useEffect(() => {
+    let logoutPending = false;
+
     const handle401Event = (event) => {
-      const { error, url, method } = event.detail;
+      const { url, postRefresh } = event.detail || {};
+
+      // Prevent multiple rapid logout attempts
+      if (logoutPending) return;
+
+      // Skip logout-triggering for the refresh endpoint itself to avoid loops
+      if (/refresh-token/i.test(url || "")) {
+        // Refresh endpoint failed — this is the definitive "session is dead" signal
+      }
+
+      logoutPending = true;
 
       if (addMessage) {
         addMessage("Session expired. Logging out...", "error");
       }
 
-      // Clear all auth data and logout
+      // Small delay so the toast is visible before redirect
       setTimeout(() => {
         try {
-          logout && logout();
+          logout && logout("session-expired");
         } catch (_) {
-          // If logout fails, force redirect
           window.location.href = "/login";
+        } finally {
+          logoutPending = false;
         }
-      }, 100);
+      }, 300);
     };
 
     window.addEventListener("globalAuth401", handle401Event);
@@ -104,7 +116,7 @@ export const useErrorHandler = () => {
 
       // Suppression logic (generic errors that might carry status)
       const status = error?.response?.status || error?.statusCode || error?.status;
-      const suppress404Env = (env.REACT_APP_SUPPRESS_404_TOASTS || process.env.REACT_APP_SUPPRESS_404_TOASTS) === "true";
+      const suppress404Env = process.env.REACT_APP_SUPPRESS_404_TOASTS === "true";
       const isSuppressed = (status && suppressedStatusCodes.has(status)) || (suppress404Env && status === 404);
 
       if (logError && process.env.NODE_ENV === "development") {
@@ -175,7 +187,7 @@ export const useErrorHandler = () => {
         userMessage = customMessage || backendMessage || userMessage || "Authentication required";
       }
 
-      const suppress404Env = (env.REACT_APP_SUPPRESS_404_TOASTS || process.env.REACT_APP_SUPPRESS_404_TOASTS) === "true";
+      const suppress404Env = process.env.REACT_APP_SUPPRESS_404_TOASTS === "true";
       const isSuppressed = (statusCode && suppressedStatusCodes.has(statusCode)) || (suppress404Env && statusCode === 404);
 
       const finalErrorObject = {

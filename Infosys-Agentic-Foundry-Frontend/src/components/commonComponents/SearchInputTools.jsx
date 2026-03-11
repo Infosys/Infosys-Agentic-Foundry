@@ -11,25 +11,18 @@ const SearchInput = ({ inputProps, handleSearch, searchValue, clearSearch }) => 
   }, [searchValue]);
 
   const handleInputChange = (e) => {
-    const value = e.target.value;
-    setLocalSearchValue(value);
-
-    if (value.trim() === "") {
-      if (typeof clearSearch === "function") clearSearch();
-    }
+    setLocalSearchValue(e.target.value);
   };
 
   const handleSearchClick = () => {
-    const trimmedValue = localSearchValue?.trim();
-
-    if (trimmedValue) {
-      if (typeof handleSearch === "function") handleSearch(trimmedValue);
-    }
+    const trimmedValue = localSearchValue?.trim() || "";
+    if (typeof handleSearch === "function") handleSearch(trimmedValue);
   };
 
   const handleClearSearch = () => {
     setLocalSearchValue("");
     if (typeof clearSearch === "function") clearSearch();
+    if (typeof handleSearch === "function") handleSearch(""); // Fetch all data when cleared
   };
 
   const handleKeyDown = (e) => {

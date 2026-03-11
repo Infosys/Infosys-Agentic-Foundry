@@ -1,9 +1,13 @@
 .page-title {
   text-align: left;
-  font: normal normal 400 20px/27px Segoe UI;
-  letter-spacing: 0px;
-  color: #343741;
-  text-transform: uppercase;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.35;
+  letter-spacing: 0.3px;
+  color: var(--header-color);
+  text-transform: capitalize;
+
   margin-bottom: 52px;
 }
 .top-section {
@@ -14,27 +18,17 @@
 }
 
 .add-new-btn {
-  background: #f5f5f5 0% 0% no-repeat padding-box;
-  border: 0.10000000149011612px solid #c7c7c7;
-  border-radius: 3px;
-  color: #007cc3;
-  font-size: 20px;
+  background: var(--hover-background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--app-primary-color);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-lg);
   padding: 3px 8px;
+  cursor: pointer;
 }
 .available-tools-section {
   padding: 33px 37px;
-}
-
-.container {
-  display: flex;
-  flex-direction: column;
-  height: 90vh;
-  padding: 10px 30px;
-  padding-right: 0px;
-  padding-bottom: 0px;
-  position: relative;
-  width: 100%;
-  overflow: hidden;
 }
 
 .visibleToolsContainer {
@@ -43,21 +37,11 @@
   flex-wrap: wrap;
   gap: 40px;
   overflow-y: auto;
-  height: Calc(100vh - 135px);
-  width: 98%;
+  height: Calc(100vh - 68px);
+  width: 100%;
   padding-left: 0;
   padding-top: 0;
   padding-bottom: 8px;
-}
-
-.tagOrSerachIsOn .visibleToolsContainer {
-  height: Calc(100vh - 182px);
-}
-
-.subHeaderContainer {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 20px;
 }
 
 .card-section {
@@ -70,6 +54,7 @@
   background: #3d4359 0% 0% no-repeat padding-box;
   box-shadow: 5px 15px 6px #00000029;
   border-radius: 4px;
+  border-left: 5px solid var(--accent, #37acea);
   width: 200px;
   min-height: 140px;
   height: 140px;
@@ -112,7 +97,7 @@
   font-weight: 600;
   letter-spacing: -0.8px;
   word-wrap: break-word;
-  text-transform: uppercase;
+  text-transform: capitalize;
   margin-bottom: 4px;
   max-height: 35px;
 }
@@ -189,26 +174,32 @@
 }
 
 .card-title {
-  font-size: 16px;
-  line-height: 14px;
-  font-weight: 600;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  line-height: 1.1;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: -0.8px;
   word-wrap: break-word;
-  text-transform: uppercase;
+  text-transform: capitalize;
   margin-bottom: 4px;
   max-height: 35px;
 }
 
 .card-description {
-  font: normal normal 600 12px/16px Segoe UI;
-  letter-spacing: 0px;
-  text-transform: uppercase;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.33;
+  letter-spacing: 0.3px;
   opacity: 1;
   margin-top: 5px;
 }
 
 .card-description-title {
-  font: normal normal 400 12px/16px Segoe UI;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.33;
   letter-spacing: -0.24px;
   color: #ffffff;
   max-height: 32px;
@@ -256,7 +247,8 @@
   border: none;
   font-size: 15px;
   outline: none;
-  background-color: #c3c1cf;
+  background-color: var(--card-bg, #c3c1cf);
+  color: var(--text-primary);
   border-top-left-radius: 4px;
   border-bottom-left-radius: 4px;
 }
@@ -281,10 +273,13 @@
 }
 
 .delete-card {
-  background: #b0b3bc 0% 0% no-repeat padding-box;
-  color: black;
+  background: var(--hover-background);
+  color: var(--text-color);
   border: none;
-  font: normal normal normal 12px/14px Segoe UI;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.17;
   padding: 5px 14px 21px 14px;
 }
 
@@ -292,6 +287,7 @@
   border: none;
   background: transparent;
   float: right;
+  cursor: pointer;
 }
 
 .delete-btn-container {
@@ -302,16 +298,20 @@
 }
 
 .delete-btn-container button {
-  background-color: #6a2020;
+  background-color: var(--danger);
   color: white;
-  font: normal normal 600 12px/14px Segoe UI;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.17;
   border: none;
   padding: 6px 7px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   display: flex;
   align-items: center;
   text-align: center;
   gap: 6px;
+  cursor: pointer;
 }
 
 .email-id-input {
@@ -321,6 +321,8 @@
   outline: none;
   border: none;
   width: 100%;
+  background: var(--card-bg, #ffffff);
+  color: var(--text-primary);
 }
 
 .email-id-input::placeholder {
@@ -333,18 +335,22 @@
 }
 
 .plus {
-  background: #f5f5f5;
-  box-shadow: 0px 4px 4px #00000029;
-  border: 1px solid #c7c7c745;
-  border-radius: 3px;
+  background: var(--hover-background);
+  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.16);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 7px;
   display: flex;
+  cursor: pointer;
 }
 
 .error {
-  color: #721c24;
+  color: var(--danger);
   margin-top: 10px;
-  font: normal normal 600 12px/14px Segoe UI;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.17;
   text-align: center;
 }
 
@@ -358,11 +364,12 @@
   position: absolute;
   top: -5px;
   right: -5px;
-  background-color: #007cc3;
+  background-color: var(--app-primary-color);
   color: #fff;
-  font-size: 12px;
-  font-weight: bold;
-  border-radius: 50%;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  border-radius: 16px;
   width: 12px;
   height: 12px;
   display: flex;
@@ -427,8 +434,9 @@
 }
 
 .action-info {
-  font-size: 13px;
-  font-weight: 400;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
   margin-bottom: 10px;
   margin-left: 2px;
   margin-top: 2px;
@@ -451,50 +459,110 @@
 
 .loginBtn {
   padding: 8px 16px;
-  background-color: #007cc3;
+  background-color: var(--app-primary-color);
   color: #fff;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius);
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background-color 0.3s ease;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: opacity 0.15s ease;
 }
 
 .loginBtn:hover {
-  background-color: #005a99;
+  opacity: 0.9;
 }
 
 .cancelBtn {
   padding: 8px 16px;
-  background-color: #343741;
-  color: #fff;
+  background-color: var(--muted, #6b7280);
+  color: #ffffff !important;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius);
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background-color 0.3s ease;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: opacity 0.15s ease;
 }
 
 .cancelBtn:hover {
-  background-color: #2a2f42;
-}
-
-.summaryLine {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 0 0 5px 0;
+  opacity: 0.9;
 }
 
 /* Pill indicating whether the item is a normal TOOL or a VALIDATOR */
 .typePill {
   padding: 4px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius);
+  font-family: var(--font-primary);
   font-size: 11px;
-  font-weight: 600;
-  background: #6b7280; /* unified neutral tone */
+  font-weight: var(--font-weight-semibold);
+  background: var(--muted);
   color: #ffffff;
   letter-spacing: 0.5px;
   user-select: none;
+}
+
+/* New Tool Card Styles */
+.newToolCard {
+  position: relative;
+  width: 200px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  height: 140px;
+}
+
+.newToolCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+  border-color: var(--app-primary-color);
+}
+
+.newToolCardContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 14px;
+}
+
+.newToolIconWrapper {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  background: color-mix(in oklab, var(--app-primary-color) 10%, transparent);
+}
+
+.newToolLabel {
+  text-transform: capitalize;
+  color: var(--header-color);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.02em;
+}
+
+/* Loading more indicator for pagination */
+.loadingMore {
+  text-align: center;
+  padding: 12px;
+  color: var(--app-primary-color, #0073cf);
+  font-weight: 600;
+  font-style: normal;
+  background-color: rgba(0, 115, 207, 0.08);
+  border-top: 1px solid rgba(0, 115, 207, 0.2);
+  box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.05);
+  border-radius: 0 0 8px 8px;
+  width: 100%;
 }

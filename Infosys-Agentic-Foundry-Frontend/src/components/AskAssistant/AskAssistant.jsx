@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Cookies from "js-cookie";
 import {
   BOT,
@@ -19,6 +19,7 @@ import {
   PLANNER_EXECUTOR_AGENT,
   HYBRID_AGENT,
   PIPELINE_AGENT,
+  chat_screen_config,
 } from "../../constant";
 
 import { useChatServices } from "../../services/chatService";
@@ -26,7 +27,6 @@ import useFetch from "../../Hooks/useAxios";
 import { useGlobalComponent } from "../../Hooks/GlobalComponentContext.js";
 import SVGIcons from "../../Icons/SVGIcons";
 import { usePermissions } from "../../context/PermissionsContext";
-import { usePipelineService } from "../../services/pipelineService";
 import { useMessage } from "../../Hooks/MessageContext";
 
 // Components
@@ -37,11 +37,14 @@ import SuggestionPopover from "./SuggestionPopover";
 import Canvas from "../Canvas/Canvas";
 import TemperatureSliderPopup from "./TemperatureSliderPopup.jsx";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
+import DocViewerModal from "../DocViewerModal/DocViewerModal.jsx";
+import WelcomeModal from "./WelcomeModal.jsx";
+import dropdownStyles from "../../css_modules/NewCommonDropdown.module.css";
 
 // Styles
 import stylesNew from "./AskAssistant.module.css";
 import chatInputModule from "./ChatInput.module.css";
-import "./TemperatureSlider.css";
 
 // Constants
 const TEXTAREA_MAX_HEIGHT = 120; // Maximum height for textarea in pixels
@@ -50,27 +53,68 @@ const AUTO_HIDE_TIMEOUT = 5000; // Timeout for auto-hiding messages (5 seconds)
 const DEBOUNCE_DELAY = 100; // Delay for debounce operations
 const STATE_UPDATE_DELAY = 2000; // Delay for state updates
 
+// Add a helper function to generate agent type filter options from chat_screen_config
+const getAgentTypeFilterOptions = (framework) => {
+  // Get mentionAgentTypes from chat_screen_config based on current framework
+  const mentionAgentTypes = chat_screen_config[framework]?.mentionAgentTypes || [];
+
+  // Mapping of agent type values to display labels and short codes
+  const agentTypeLabels = {
+    hybrid_agent: { label: "Hybrid Agent", short: "HA" },
+    meta_agent: { label: "Meta Agent", short: "MA" },
+    planner_meta_agent: { label: "Meta Planner", short: "MP" },
+    planner_executor_agent: { label: "Planner Executor", short: "PE" },
+    multi_agent: { label: "Planner Executor Critic", short: "PEC" },
+    react_agent: { label: "React Agent", short: "RA" },
+    react_critic_agent: { label: "React Critic", short: "RC" },
+    pipeline: { label: "Pipeline", short: "PL" },
+  };
+
+  // Build options array starting with "All Types"
+  const options = [{ label: "All Types", value: "all" }];
+
+  // Add only the agent types allowed for this framework
+  mentionAgentTypes.forEach((agentType) => {
+    if (agentTypeLabels[agentType]) {
+      options.push({
+        label: agentTypeLabels[agentType].label,
+        value: agentType,
+        short: agentTypeLabels[agentType].short,
+      });
+    }
+  });
+
+  return options;
+};
+
+// Framework options for dropdown
+const FRAMEWORK_OPTIONS = [
+  { label: "LangGraph", value: "langgraph" },
+  { label: "Google ADK", value: "google_adk" },
+  { label: "Pure Python", value: "pure_python" },
+];
+
 const AskAssistant = () => {
-  const [pipelinesData, setPipelinesData] = useState([]);
-   const { getAllPipelines } = usePipelineService();
-  const { addMessage } = useMessage();
   const userRole = Cookies.get("role") ? Cookies.get("role")?.toLowerCase() : "";
   const loggedInUserEmail = Cookies.get("email");
   const user_session = Cookies.get("user_session");
-  const [messageData, setMessageData] = useState([]);
-  const [lastResponse, setLastResponse] = useState({});
-  const [userChat, setUserChat] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [isHuman, setIsHuman] = useState(false);
-  const [isTool, setIsTool] = useState(false);
-  const [isPlanVerifierOn, setIsPlanVerifierOn] = useState(false);
-  const [agentsListData, setAgentsListData] = useState([]);
-  const [agentListDropdown, setAgentListDropdown] = useState([]);
-  const [agentSelectValue, setAgentSelectValue] = useState("");
-  const [agentType, setAgentType] = useState("");
-  const [model, setModel] = useState("");
-  const [feedBack, setFeedback] = useState("");
-  const [fetching, setFetching] = useState(false);
+  const [messageData, setMessageData] = useState([]); // Holds the chat messages
+  const [lastResponse, setLastResponse] = useState({}); // Stores the last response from the bot
+  const [userChat, setUserChat] = useState(""); // User input for chat
+  useEffect(() => {
+    calculateHeight();
+  }, [userChat]);
+  const [generating, setGenerating] = useState(false); // Indicates if a response is being generated
+  const [isHuman, setIsHuman] = useState(false); // Indicates if human verification is enabled
+  const [isTool, setIsTool] = useState(false); // Indicates if tool verification is enabled
+  const [isPlanVerifierOn, setIsPlanVerifierOn] = useState(false); // Indicates if plan verification is enabled
+  const [agentsListData, setAgentsListData] = useState([]); // List of agents
+  const [agentListDropdown, setAgentListDropdown] = useState([]); // Dropdown options for agents
+  const [agentSelectValue, setAgentSelectValue] = useState(""); // Selected agent value
+  const [agentType, setAgentType] = useState(""); // Type of agent selected
+  const [model, setModel] = useState(""); // Model selected for chat
+  const [feedBack, setFeedback] = useState(""); // Feedback for the plan verifier
+  const [fetching, setFetching] = useState(false); // Indicates if data is being fetched
   const [showModelPopover, setShowModelPopover] = useState(false);
   const [toolData, setToolData] = useState(null);
   const [loadingAgents, setLoadingAgents] = useState(false);
@@ -90,20 +134,35 @@ const AskAssistant = () => {
   const [mappedTools, setMappedTools] = useState([]);
   const [selectedInterruptTools, setSelectedInterruptTools] = useState([]);
   const [showToolInterruptModal, setShowToolInterruptModal] = useState(false);
+  const [showToolsListExpanded, setShowToolsListExpanded] = useState(true); // Controls tools list collapse
   const [loadingMappedTools, setLoadingMappedTools] = useState(false);
   // Persist last seen plan verifier prompt from streaming chunks (backend only sends it transiently)
   const [planVerifierPrompt, setPlanVerifierPrompt] = useState("");
+  // File upload states
+  const [uploadedChatFiles, setUploadedChatFiles] = useState([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [showFileViewer, setShowFileViewer] = useState(false);
+  const [viewingFile, setViewingFile] = useState({ url: "", name: "" });
+  const fileInputRef = useRef(null);
   const bullseyeRef = useRef(null);
   const prevCanvasRef = useRef(null);
-  const { resetChat, getChatQueryResponse, getChatHistory, fetchOldChats, fetchNewChats, getQuerySuggestions, getToolsMappedByAgent } = useChatServices();
+  const abortControllerRef = useRef(null); // AbortController for SSE streaming requests
+  const { resetChat, getChatQueryResponse, getChatHistory, fetchOldChats, fetchNewChats, getQuerySuggestions, getToolsMappedByAgent, uploadChatFiles, deleteChatFile } = useChatServices();
+  const { addMessage } = useMessage();
 
   const { permissions, hasPermission } = usePermissions();
 
   // Determine chat-related permission booleans with fallbacks to legacy shape
-  const canExecutionSteps = typeof hasPermission === "function" ? hasPermission("execution_steps_access") : !(permissions && permissions.execution_steps_access === false);
-  const canToolVerifier = typeof hasPermission === "function" ? hasPermission("tool_verifier_flag_access") : !(permissions && permissions.tool_verifier_flag_access === false);
-  const canPlanVerifier = typeof hasPermission === "function" ? hasPermission("plan_verifier_flag_access") : !(permissions && permissions.plan_verifier_flag_access === false);
-  const canEvaluation = typeof hasPermission === "function" ? hasPermission("evaluation_flag_access") : !(permissions && permissions.evaluation_flag_access === false);
+  // Using hasPermission(key, true) - show features by default unless explicitly denied
+  const canExecutionSteps = typeof hasPermission === "function" ? hasPermission("execution_steps_access", true) : !(permissions && permissions.execution_steps_access === false);
+  const canToolVerifier = typeof hasPermission === "function" ? hasPermission("tool_verifier_flag_access", true) : !(permissions && permissions.tool_verifier_flag_access === false);
+  const canPlanVerifier = typeof hasPermission === "function" ? hasPermission("plan_verifier_flag_access", true) : !(permissions && permissions.plan_verifier_flag_access === false);
+  const canEvaluation = typeof hasPermission === "function" ? hasPermission("online_evaluation_flag_access", true) : !(permissions && permissions.online_evaluation_flag_access === false);
+  // New chat permissions
+  const canValidator = typeof hasPermission === "function" ? hasPermission("validator_access", true) : !(permissions && permissions.validator_access === false);
+  const canFileContext = typeof hasPermission === "function" ? hasPermission("file_context_access", true) : !(permissions && permissions.file_context_access === false);
+  const canCanvasView = typeof hasPermission === "function" ? hasPermission("canvas_view_access", true) : !(permissions && permissions.canvas_view_access === false);
+  const canContext = typeof hasPermission === "function" ? hasPermission("context_access", true) : !(permissions && permissions.context_access === false);
 
   const chatbotContainerRef = useRef(null);
 
@@ -117,8 +176,6 @@ const AskAssistant = () => {
   const [showVerifierSettings, setShowVerifierSettings] = useState(false);
   const [showChatSettings, setShowChatSettings] = useState(false);
 
-  const [agentSearchTerm, setAgentSearchTerm] = useState("");
-  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(-1);
   const [selectedAgent, setSelectedAgent] = useState("");
 
@@ -130,12 +187,16 @@ const AskAssistant = () => {
   const [mentionAgentTypeFilter, setMentionAgentTypeFilter] = useState("all");
   const [isHumanVerifierEnabled, setIsHumanVerifierEnabled] = useState(false);
   const [isToolVerifierEnabled, setIsToolVerifierEnabled] = useState(false);
-  const [isCanvasEnabled, setIsCanvasEnabled] = useState(false);
-  const [isContextEnabled, setIsContextEnabled] = useState(true);
+  const [isCanvasEnabled, setIsCanvasEnabled] = useState(true);
+  const [isContextEnabled, setIsContextEnabled] = useState(true); // context toggle - default true
+  const [isFileContextEnabled, setIsFileContextEnabled] = useState(false); // file context management toggle - default false
+  const [isMessageQueueEnabled, setIsMessageQueueEnabled] = useState(false); // message queue toggle - default false
   const [useValidator, setUseValidator] = useState(false); // validator toggle
+
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcription, setTranscription] = useState("");
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorder = useRef(null);
   const audioChunks = useRef([]);
   const mediaStream = useRef(null);
@@ -148,17 +209,64 @@ const AskAssistant = () => {
   const [canvasMessageId, setCanvasMessageId] = useState(null);
   const [canvasIsLast, setCanvasIsLast] = useState(false);
 
+  // Right sidebar collapsed state
+  const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false);
+
+  // Auto-collapse right sidebar on narrow screens
+  useEffect(() => {
+    const SIDEBAR_BREAKPOINT = 900;
+    const handleResize = () => {
+      if (window.innerWidth <= SIDEBAR_BREAKPOINT) {
+        setIsRightSidebarCollapsed(true);
+      }
+    };
+    // Check on mount
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [showPromptSuggestions, setShowPromptSuggestions] = useState(false);
   const [promptSuggestions, setPromptSuggestions] = useState([]);
+  const [openedViaIcon, setOpenedViaIcon] = useState(false);
+  const promptSuggestionsRef = useRef(null);
+  const promptSuggestionHasFocusRef = useRef(false);
+
+  // Auto-suggest state for typing suggestions
+  const [showAutoSuggest, setShowAutoSuggest] = useState(false);
+  const [filteredAutoSuggestions, setFilteredAutoSuggestions] = useState([]);
+  const [highlightedAutoSuggestIndex, setHighlightedAutoSuggestIndex] = useState(0);
+  const autoSuggestRef = useRef(null);
+
+  // Add framework state - defaults to "langgraph"
+  const [framework, setFramework] = useState("langgraph");
+
+  // Welcome modal state - show on first visit
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
+
+  // Close PromptSuggestions on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (showPromptSuggestions && promptSuggestionsRef.current && !promptSuggestionsRef.current.contains(event.target)) {
+        setShowPromptSuggestions(false);
+      }
+      // Close auto-suggest on outside click
+      if (showAutoSuggest && autoSuggestRef.current && !autoSuggestRef.current.contains(event.target)) {
+        setShowAutoSuggest(false);
+      }
+    }
+    if (showPromptSuggestions || showAutoSuggest) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showPromptSuggestions, showAutoSuggest]);
 
   const [highlightedKbIndex, setHighlightedKbIndex] = useState(-1);
 
   const verifierSettingsRef = useRef(null);
   const chatSettingsRef = useRef(null);
-  const agentTriggerRef = useRef(null);
-  const agentSearchInputRef = useRef(null);
-  const agentDropdownRef = useRef(null);
-  const agentListRef = useRef(null);
   const knowledgePopoverRef = useRef(null);
   const knowledgeSearchInputRef = useRef(null);
   const knowledgeListRef = useRef(null);
@@ -199,6 +307,10 @@ const AskAssistant = () => {
   // Close mention dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event) {
+      // Don't close if clicking the @ button itself
+      if (event.target.closest(`.${stylesNew.mentionButton}`)) {
+        return;
+      }
       if (mentionDropdownRef.current && !mentionDropdownRef.current.contains(event.target)) {
         setShowMentionDropdown(false);
         setMentionSearchTerm("");
@@ -211,6 +323,20 @@ const AskAssistant = () => {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
+  }, [showMentionDropdown]);
+
+  // Auto-open the @mention dropdown when showMentionDropdown becomes true
+  useEffect(() => {
+    if (showMentionDropdown && mentionDropdownRef.current) {
+      // Small delay to ensure the dropdown is rendered, then click to open it
+      const timer = setTimeout(() => {
+        const dropdownTrigger = mentionDropdownRef.current?.querySelector('[class*="dropdownTrigger"], [class*="trigger"], button, [role="combobox"]');
+        if (dropdownTrigger) {
+          dropdownTrigger.click();
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
   }, [showMentionDropdown]);
 
   // Check if verifier is awaiting user action (tool_verifier or plan_verifier active with pending input)
@@ -389,35 +515,119 @@ const AskAssistant = () => {
     const formData = new FormData();
     formData.append("file", audioBlob, "recording.webm");
 
+    setIsTranscribing(true);
     try {
       const data = await postData(APIs.TRANSCRIBE_AUDIO, formData);
 
-      // Update the chat input with transcription
+      // Update the chat input with transcription, adding space between existing and new text
       if (data && data.transcription) {
-        setUserChat((prev) => prev + data.transcription);
+        setUserChat((prev) => {
+          const trimmed = prev.trimEnd();
+          return trimmed ? `${trimmed} ${data.transcription}` : data.transcription;
+        });
         setTranscription(data.transcription);
       }
     } catch (error) {
       console.error("Transcription failed:", error);
       setTranscription("Error transcribing audio.");
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
   const handlePromptSuggestionsToggle = () => {
-    setShowPromptSuggestions(!showPromptSuggestions);
+    const isOpening = !showPromptSuggestions;
+    setShowPromptSuggestions(isOpening);
+    setShowAutoSuggest(false); // Close auto-suggest when opening full prompt library
+    // When opening via icon click, set flag and reset filtered suggestions
+    if (isOpening) {
+      setOpenedViaIcon(true); // Mark as opened via icon
+      setFilteredAutoSuggestions([]);
+      // Fetch suggestions if not already loaded
+      if (!promptSuggestions || promptSuggestions.length === 0) {
+        fetchPromptSuggestions();
+      }
+    } else {
+      setOpenedViaIcon(false);
+    }
+  };
+
+  // Filter suggestions based on typed text and show PromptSuggestions panel
+  const filterSuggestionsForAutoSuggest = useCallback(
+    (typedText) => {
+      if (!typedText || typedText.trim().length < 2) {
+        // Don't auto-close if user manually opened the panel
+        return;
+      }
+
+      const searchTerm = typedText.toLowerCase().trim();
+      const allSuggestions = promptSuggestions && promptSuggestions.length > 0 ? promptSuggestions : [];
+
+      // Also include cached suggestions from user and agent history
+      const combinedSuggestions = [...allSuggestions, ...(cachedSuggestions.user_history || []), ...(cachedSuggestions.agent_history || [])];
+
+      // Remove duplicates and filter by search term
+      const uniqueSuggestions = [...new Set(combinedSuggestions)];
+      const filtered = uniqueSuggestions.filter((suggestion) => suggestion && suggestion.toLowerCase().includes(searchTerm));
+
+      // If there are matching suggestions, show the PromptSuggestions panel
+      if (filtered.length > 0) {
+        setFilteredAutoSuggestions(filtered);
+        setOpenedViaIcon(false); // When typing, switch to history mode
+        setShowPromptSuggestions(true);
+      }
+    },
+    [promptSuggestions, cachedSuggestions],
+  );
+
+  // Handle auto-suggest selection
+  const handleAutoSuggestSelect = (suggestion) => {
+    setUserChat(suggestion);
+    setShowAutoSuggest(false);
+    setFilteredAutoSuggestions([]);
+    calculateHeight(suggestion);
+    // Focus textarea and place cursor at end
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.selectionStart = textareaRef.current.selectionEnd = suggestion.length;
+      }
+    }, 0);
   };
 
   const handlePromptSelect = (prompt) => {
     setUserChat(prompt);
+    setShowAutoSuggest(false);
+    setShowPromptSuggestions(false);
+    setOpenedViaIcon(false);
     calculateHeight();
+    // Focus textarea and place cursor at end after selecting prompt
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.selectionStart = textareaRef.current.selectionEnd = prompt.length;
+      }
+    }, 0);
   };
 
   // If an agent is mentioned via @, use its type for verifier settings
-  const effectiveAgentType = mentionedAgent && mentionedAgent.agentic_application_type ? mentionedAgent.agentic_application_type : agentType;
+  // Otherwise fall back to selected agent's type or the agentType filter
+  const effectiveAgentType =
+    mentionedAgent && mentionedAgent.agentic_application_type
+      ? mentionedAgent.agentic_application_type
+      : selectedAgent && selectedAgent.agentic_application_type
+        ? selectedAgent.agentic_application_type
+        : agentType;
 
   const shouldShowHumanVerifier = () => {
     if (!canPlanVerifier) return false;
-    return effectiveAgentType === MULTI_AGENT || effectiveAgentType === PLANNER_EXECUTOR_AGENT || effectiveAgentType === "multi_agent" || effectiveAgentType === HYBRID_AGENT || effectiveAgentType === PLANNER_META_AGENT;
+    return (
+      effectiveAgentType === MULTI_AGENT ||
+      effectiveAgentType === PLANNER_EXECUTOR_AGENT ||
+      effectiveAgentType === "multi_agent" ||
+      effectiveAgentType === HYBRID_AGENT ||
+      effectiveAgentType === PLANNER_META_AGENT
+    );
   };
 
   const handleLiveTracking = () => {
@@ -425,6 +635,10 @@ const AskAssistant = () => {
   };
 
   const selectAgent = (agent) => {
+    // Skip reset if selecting the same agent
+    if (selectedAgent?.agentic_application_id === agent?.agentic_application_id) {
+      return;
+    }
     closeCanvas(); // Close canvas on agent change
     setSelectedAgent(agent);
     // Reset mentioned agent when main agent changes
@@ -433,7 +647,6 @@ const AskAssistant = () => {
     setMentionAgentTypeFilter("all");
     // Reset mention search term
     setMentionSearchTerm("");
-    closeAgentDropdown();
   };
 
   const shouldShowToolVerifier = () => {
@@ -497,14 +710,37 @@ const AskAssistant = () => {
   const handleToolInterrupt = async (isEnabled) => {
     setToolInterrupt(isEnabled);
     setIsTool(isEnabled);
-    
-    // If enabling tool verifier and agent is selected (either main agent or @mentioned agent), show the pre-fetched tools modal
-    // Tools are already fetched when auto-suggestions endpoint is called
-    const hasAgent = agentSelectValue || (mentionedAgent && mentionedAgent.agentic_application_id);
-    if (isEnabled && hasAgent) {
-      // Use pre-fetched mapped tools (fetched along with auto-suggestions)
+
+    // Skip tool fetching for PIPELINE_AGENT - pipelines don't have mapped tools
+    if (agentType === PIPELINE_AGENT) {
+      setShowToolInterruptModal(false);
+      return;
+    }
+
+    // Determine which agent's tools to fetch - prioritize mentioned agent (@agent) over selected agent
+    const effectiveAgentId = mentionedAgent?.agentic_application_id || agentSelectValue;
+
+    // If enabling tool verifier and agent is selected
+    if (isEnabled && effectiveAgentId) {
+      // If tools are already loaded, just show the modal
       if (mappedTools && mappedTools.length > 0) {
         setShowToolInterruptModal(true);
+      } else {
+        // Fetch tools if not already loaded
+        setLoadingMappedTools(true);
+        try {
+          const tools = await getToolsMappedByAgent(effectiveAgentId);
+          if (tools && Array.isArray(tools)) {
+            setMappedTools(tools);
+            // Select all tools by default
+            setSelectedInterruptTools(tools);
+            setShowToolInterruptModal(true);
+          }
+        } catch (error) {
+          console.error("Error fetching mapped tools:", error);
+        } finally {
+          setLoadingMappedTools(false);
+        }
       }
     } else {
       setShowToolInterruptModal(false);
@@ -513,11 +749,7 @@ const AskAssistant = () => {
 
   // Handle toggle of individual interrupt tool
   const handleInterruptToolToggle = (toolName) => {
-    setSelectedInterruptTools((prev) =>
-      prev.includes(toolName)
-        ? prev.filter((t) => t !== toolName)
-        : [...prev, toolName]
-    );
+    setSelectedInterruptTools((prev) => (prev.includes(toolName) ? prev.filter((t) => t !== toolName) : [...prev, toolName]));
   };
 
   // Handle select all / unselect all interrupt tools
@@ -530,7 +762,7 @@ const AskAssistant = () => {
   };
 
   // Agent types eligible for validator execution assistance
-  const validatorEligibleTypes = [MULTI_AGENT, REACT_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT,META_AGENT, PLANNER_META_AGENT];
+  const validatorEligibleTypes = [MULTI_AGENT, REACT_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT, META_AGENT, PLANNER_META_AGENT];
   const showValidatorToggle = () => validatorEligibleTypes.includes(effectiveAgentType);
 
   const handleIconClick = () => {
@@ -577,7 +809,8 @@ const AskAssistant = () => {
   const msgContainerRef = useRef(null);
   const hasInitialized = useRef(false);
 
-  const isMissingRequiredOptions = agentType !== CUSTOM_TEMPLATE ? agentType === "" || model === "" || agentSelectValue === "" : agentType === "" || model === "";
+  // Require all 3 options: agentType, agent, and model
+  const isMissingRequiredOptions = !agentSelectValue;
 
   useEffect(() => {
     if (hasInitialized.current) return;
@@ -605,7 +838,8 @@ const AskAssistant = () => {
     setIsHuman(false);
     setIsPlanVerifierOn(false);
     setPlanVerifierPrompt("");
-    setSelectedAgent("");
+    // Note: Do NOT reset selectedAgent here as it causes the dropdown to clear
+    // immediately after selection. The agent is set via selectAgent() in onSelect.
     setMessageData([]);
     setShowInput(false);
     setFeedback("");
@@ -624,9 +858,12 @@ const AskAssistant = () => {
     };
   }, []);
 
-  const filteredAgents = agentListDropdown.filter((agent) => {
-    return agent.agentic_application_name?.toLowerCase().includes(agentSearchTerm.toLowerCase());
-  });
+  // filteredAgents is used by NewCommonDropdown - filters by selected agent type
+  // When "All Types" is selected (agentType is empty), exclude pipeline agents
+  // Pipelines only show when explicitly selected via the type filter
+  const filteredAgents = agentType
+    ? agentListDropdown.filter((agent) => agent.agentic_application_type === agentType)
+    : agentListDropdown.filter((agent) => agent.agentic_application_type !== PIPELINE_AGENT);
 
   useEffect(() => {
     // Reset highlighted index if it's out of bounds
@@ -636,76 +873,98 @@ const AskAssistant = () => {
   }, [filteredAgents.length, highlightedAgentIndex]);
 
   useEffect(() => {
-    if (showAgentDropdown && agentSearchInputRef.current) {
-      agentSearchInputRef.current.focus();
-    }
-  }, [showAgentDropdown]);
-
-  useEffect(() => {
     if (showKnowledgePopover && knowledgeSearchInputRef.current) {
       knowledgeSearchInputRef.current.focus();
     }
   }, [showKnowledgePopover]);
 
   useEffect(() => {
-    // Reset previously selected agent value any time agentType changes
+    // Reset previously selected agent value any time agentType or framework changes
+    // BUT only if the change is from user manually changing the type filter, not from agent selection
+    // Skip reset if we already have an agent selected with matching type
+    // Also skip reset if agentType is "all" (empty string) - user may be browsing without filtering
+    if (selectedAgent) {
+      const isTypeMatch = selectedAgent.agentic_application_type === agentType;
+      const isAllFilter = !agentType || agentType === "all" || agentType === "All agent type";
+      if (isTypeMatch || isAllFilter) {
+        // Agent type matches selected agent OR user is viewing all - don't reset
+        // Just update the dropdown list without resetting agent selection
+        if (!agentsListData || agentsListData.length === 0) {
+          setAgentListDropdown([]);
+          return;
+        }
+        // Update dropdown list based on filter
+        if (agentType === PIPELINE_AGENT) {
+          const pipelineAgents = agentsListData?.filter((agent) => agent.agentic_application_type === PIPELINE_AGENT) || [];
+          setAgentListDropdown(pipelineAgents);
+        } else if (isAllFilter) {
+          let allowedTypes = [];
+          if (chat_screen_config[framework] && Array.isArray(chat_screen_config[framework].mentionAgentTypes)) {
+            allowedTypes = chat_screen_config[framework].mentionAgentTypes;
+          }
+          let filteredTypes = allowedTypes;
+          if (["google_adk", "langgraph"].includes(framework)) {
+            filteredTypes = allowedTypes.filter((type) => type !== HYBRID_AGENT);
+          }
+          const tempList = agentsListData?.filter((list) => filteredTypes.length === 0 || filteredTypes.includes(list.agentic_application_type)) || [];
+          setAgentListDropdown(tempList);
+        } else {
+          const tempList = agentsListData?.filter((list) => list.agentic_application_type === agentType) || [];
+          setAgentListDropdown(tempList);
+        }
+        return;
+      }
+    }
+    // If we get here, user changed the type filter to a different type - reset agent selection
     setAgentSelectValue("");
     setSelectedAgent("");
-    setMentionedAgent(""); // reset mentionedAgent when the agent type changes.
-    setMentionAgentTypeFilter("all"); // reset mention agent type filter
-    setMentionSearchTerm(""); // reset mention search term
+    setMentionedAgent("");
+    setMentionAgentTypeFilter("all");
+    setMentionSearchTerm("");
     const cookieSessionId = Cookies.get("user_session");
     if (cookieSessionId) {
       setSessionId(cookieSessionId);
     }
-    // If agentType cleared, also clear the dropdown list so user can't pick stale agents
-    if (!agentType) {
+
+    // If no agents data, clear the dropdown list
+    if (!agentsListData || agentsListData.length === 0) {
       setAgentListDropdown([]);
       return;
     }
 
-    // Handle Pipeline type - fetch pipelines and extract agents from them
+    // Handle Pipeline type - filter pipelines from agentsListData
     if (agentType === PIPELINE_AGENT) {
-      const fetchPipelinesForDropdown = async () => {
-        try {
-          setLoadingAgents(true);
-          const response = await getAllPipelines();
-          const pipelines = response?.result || response?.pipelines || response || [];
-          setPipelinesData(pipelines);
-
-          // Transform pipelines to agent dropdown format
-          // Each pipeline shows as selectable item with its agents
-          const pipelineAgents = pipelines.map((pipeline) => {
-            // Extract agent names from pipeline definition
-            const agentNodes = pipeline.pipeline_definition?.nodes?.filter(
-              (node) => node.node_type === "agent"
-            ) || [];
-            const agentNames = agentNodes.map((node) => node.node_name || node.config?.agent_id).filter(Boolean);
-
-            return {
-              agentic_application_id: pipeline.pipeline_id,
-              agentic_application_name: pipeline.pipeline_name,
-              agentic_application_type: PIPELINE_AGENT,
-              pipeline_agents: agentNames,
-              pipeline_description: pipeline.pipeline_description,
-            };
-          });
-
-          setAgentListDropdown(pipelineAgents);
-        } catch (error) {
-          console.error("Error fetching pipelines:", error);
-          setAgentListDropdown([]);
-        } finally {
-          setLoadingAgents(false);
-        }
-      };
-      fetchPipelinesForDropdown();
+      const pipelineAgents = agentsListData?.filter((agent) => agent.agentic_application_type === PIPELINE_AGENT) || [];
+      setAgentListDropdown(pipelineAgents);
       return;
     }
 
-    const tempList = agentsListData?.filter((list) => list.agentic_application_type === agentType) || [];
-    setAgentListDropdown(tempList);
-  }, [agentType, agentsListData]);
+    // Framework-based filtering for "all" agent types
+    if (!agentType || agentType === "all" || agentType === "All agent type") {
+      let allowedTypes = [];
+
+      // Get allowed agent types based on framework from chat_screen_config
+      if (chat_screen_config[framework] && Array.isArray(chat_screen_config[framework].mentionAgentTypes)) {
+        allowedTypes = chat_screen_config[framework].mentionAgentTypes;
+      }
+
+      // Exclude hybrid_agent for google_adk and langgraph frameworks
+      let filteredTypes = allowedTypes;
+      if (["google_adk", "langgraph"].includes(framework)) {
+        filteredTypes = allowedTypes.filter((type) => type !== HYBRID_AGENT);
+      }
+
+      // Filter agents based on allowed types for the selected framework
+      const tempList = agentsListData?.filter((list) => filteredTypes.length === 0 || filteredTypes.includes(list.agentic_application_type)) || [];
+
+      setAgentListDropdown(tempList);
+    } else {
+      // Filter by specific agent type
+      const tempList = agentsListData?.filter((list) => list.agentic_application_type === agentType) || [];
+      setAgentListDropdown(tempList);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentType, agentsListData, framework]);
 
   useEffect(() => {
     // Only fetch history when agent changes or options are selected, not on model change
@@ -728,13 +987,20 @@ const AskAssistant = () => {
     }
   }, [messageData, generating, fetching, isStreaming]);
 
+  // Auto-focus textarea when agent response completes (streaming/generating ends)
+  useEffect(() => {
+    if (!generating && !isStreaming && !fetching && textareaRef.current) {
+      // Small delay to ensure UI is ready
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 100);
+    }
+  }, [generating, isStreaming, fetching]);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (bullseyeRef.current && !bullseyeRef.current.contains(event.target)) {
         setShowModelPopover(false);
-      }
-      if (agentDropdownRef.current && !agentDropdownRef.current.contains(event.target)) {
-        closeAgentDropdown();
       }
       if (verifierSettingsRef.current && !verifierSettingsRef.current.contains(event.target)) {
         setShowVerifierSettings(false);
@@ -777,21 +1043,19 @@ const AskAssistant = () => {
   useEffect(() => {
     // Skip for PIPELINE_AGENT
     if (agentType === PIPELINE_AGENT) return;
-    
     // Prioritize mentioned agent, fallback to selected agent
-    const targetAgentId = mentionedAgent && mentionedAgent.agentic_application_id 
-      ? mentionedAgent.agentic_application_id 
-      : agentSelectValue;
+    const targetAgentId = mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : agentSelectValue;
     fetchMappedTools(targetAgentId);
   }, [mentionedAgent]);
 
-  // Fetch tools when selected agent changes
+  // Fetch tools and prompt suggestions when selected agent changes
   useEffect(() => {
     // Skip for PIPELINE_AGENT
     if (agentType === PIPELINE_AGENT) return;
-    
+
     if (agentSelectValue) {
       fetchMappedTools(agentSelectValue);
+      fetchPromptSuggestions();
     }
   }, [agentSelectValue]);
 
@@ -870,26 +1134,6 @@ const AskAssistant = () => {
     }
   };
 
-  const closeAgentDropdown = () => {
-    setShowAgentDropdown(false);
-    setAgentSearchTerm("");
-    setHighlightedAgentIndex(-1);
-    if (agentTriggerRef.current) {
-      agentTriggerRef.current.focus();
-    }
-  };
-  const handleAgentDropdownToggle = () => {
-    if (showAgentDropdown) {
-      closeAgentDropdown();
-    } else {
-      setShowAgentDropdown(true);
-      // If opening via keyboard, highlight first item
-      if (filteredAgents.length > 0) {
-        setHighlightedAgentIndex(0);
-      }
-    }
-  };
-
   /**
    * Safely converts a value to a trimmed string.
    * Handles arrays, objects, null, undefined, and primitive types.
@@ -937,10 +1181,13 @@ const AskAssistant = () => {
       // used as a fallback for backward compatibility with older responses.
       // For the very first message, if neither field is present on the item,
       // we fall back to chatHistory.start_timestamp.
+      // Also check existing messageData for client-side timestamps that backend may not have.
+      const existingUserMsg = messageData.find((msg) => msg.type === USER && msg.message === item?.user_query && msg.start_timestamp);
       chats.push({
         type: USER,
         message: item?.user_query,
         start_timestamp:
+          existingUserMsg?.start_timestamp ||
           item?.start_timestamp ||
           item?.time_stamp ||
           (index === 0 ? chatHistory?.start_timestamp : null) ||
@@ -1027,7 +1274,7 @@ const AskAssistant = () => {
         //   !(toolInterrupt && Array.isArray(toolcallData?.additional_details) && toolcallData.additional_details.length > 0) && { plan: chatHistory?.plan }),
         parts: item?.parts || [],
         show_canvas: item?.show_canvas || false,
-        response_time: item?.response_time || null,
+        response_time: item?.response_time || chatHistory?.response_time || null,
         start_timestamp: item?.start_timestamp || null,
         end_timestamp: item?.end_timestamp || null,
       });
@@ -1043,6 +1290,7 @@ const AskAssistant = () => {
       const data = {
         session_id: sessionId,
         agent_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
+        framework_type: framework,
       };
       const chatHistory = await getChatHistory(data);
 
@@ -1076,6 +1324,7 @@ const AskAssistant = () => {
       agentic_application_id: targetAgentId,
       user_email: loggedInUserEmail,
     };
+
     const response = await getQuerySuggestions(payload);
     if (response) {
       setCachedSuggestions({
@@ -1092,13 +1341,12 @@ const AskAssistant = () => {
 
   // Fetch tools mapped by agent - called when agent or @mentioned agent changes
   const fetchMappedTools = async (agentId) => {
-    // Don't fetch tools for PIPELINE_AGENT
+    // Skip for PIPELINE_AGENT - pipelines don't have mapped tools
     if (agentType === PIPELINE_AGENT) {
       setMappedTools([]);
       setSelectedInterruptTools([]);
       return;
     }
-    
     if (!agentId) {
       setMappedTools([]);
       setSelectedInterruptTools([]);
@@ -1120,8 +1368,8 @@ const AskAssistant = () => {
     }
   };
 
-  const addMessageData = (type, message, steps, plan, userText, start_timestamp = null, end_timestamp = null) => {
-    setMessageData((prevProp) => [...prevProp, { type, message, steps, plan, userText, start_timestamp, end_timestamp }]);
+  const addMessageData = (type, message, steps, plan, userText, start_timestamp = null, end_timestamp = null, attachedFiles = null) => {
+    setMessageData((prevProp) => [...prevProp, { type, message, steps, plan, userText, start_timestamp, end_timestamp, attachedFiles }]);
   };
 
   const sendHumanInLoop = async (isApprove = "", feedBack = "", userText) => {
@@ -1131,6 +1379,7 @@ const AskAssistant = () => {
     setCurrentNodeIndex(-1);
     setPlanVerifierPrompt("");
     const payload = {
+      framework_type: framework,
       agentic_application_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
       query: userText,
       session_id: oldSessionId !== "" ? oldSessionId : session,
@@ -1143,23 +1392,32 @@ const AskAssistant = () => {
       plan_verifier_flag: canPlanVerifier ? Boolean(isHuman) : false,
       response_formatting_flag: Boolean(isCanvasEnabled),
       context_flag: Boolean(isContextEnabled),
+      file_context_management_flag: Boolean(isFileContextEnabled),
       evaluation_flag: Boolean(onlineEvaluatorFlag),
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
       enable_streaming_flag: true,
+      message_queue: Boolean(isMessageQueueEnabled),
       ...(toolInterrupt && { interrupt_items: selectedInterruptTools }),
     };
+
     if (selectedValues && selectedValues.length > 0) {
       const selectedString = selectedValues.join(",");
       payload.knowledgebase_name = JSON.stringify(selectedString);
     }
     try {
+      // Abort any existing stream before starting a new one
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
       // let nodeIndex = -1;
       let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
       const onStreamChunk = async (obj) => {
         if (!obj || typeof obj !== "object") return;
 
-         // Handle error events from SSE stream
+        // Handle error events from SSE stream
         if (obj.event_type === "error" || obj.error) {
           const errorMessage = obj.message || obj.error || "An error occurred during processing";
           addMessage(errorMessage, "error");
@@ -1168,16 +1426,32 @@ const AskAssistant = () => {
         const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
         const statusVal = obj.Status || obj.status || obj.state || null;
         const toolName = obj["Tool Name"] || obj.tool_name || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || null;
-        let contentVal = obj.content || (obj.raw && obj.raw.content) || null;
 
-        if (!contentVal && obj.raw && obj.raw.content && obj.content) {
-          const candidate = obj.raw.content || obj.content;
-          contentVal = typeof candidate === "string" ? candidate : JSON.stringify(candidate);
+        // Extract content from multiple possible fields
+        let contentVal = null;
+        if (obj.content && typeof obj.content === "string") {
+          contentVal = obj.content;
+        } else if (obj["Tool Output"]) {
+          const toolOutput = obj["Tool Output"];
+          contentVal = typeof toolOutput === "string" ? toolOutput : JSON.stringify(toolOutput);
+        } else if (obj.raw) {
+          if (obj.raw.content) {
+            contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
+          } else if (obj.raw["Tool Output"]) {
+            const rawToolOutput = obj.raw["Tool Output"];
+            contentVal = typeof rawToolOutput === "string" ? rawToolOutput : JSON.stringify(rawToolOutput);
+          }
         }
 
         if (nodeName && statusVal) {
           nodeIndex++;
-          const newNode = { "Node Name": nodeName, Status: statusVal, "Tool Name": toolName, ...(contentVal && { content: contentVal }) };
+          const newNode = {
+            "Node Name": nodeName,
+            Status: statusVal,
+            "Tool Name": toolName,
+            ...(obj["Tool Output"] && { "Tool Output": obj["Tool Output"] }),
+            ...(contentVal && { content: contentVal }),
+          };
           setNodes((prev) => [...prev, newNode]);
           setCurrentNodeIndex(nodeIndex);
         } else if (contentVal) {
@@ -1223,7 +1497,7 @@ const AskAssistant = () => {
         // }
         await new Promise((r) => setTimeout(r, 450));
       };
-      const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, {}, onStreamChunk);
+      const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, { signal: abortControllerRef.current.signal }, onStreamChunk);
       // Find response with executor_messages, or fallback to response with plan (for plan verifier)
       const chatObj = Array.isArray(responseObjects) ? responseObjects.find((obj) => obj && obj.executor_messages) : responseObjects;
       setLastResponse(chatObj);
@@ -1244,7 +1518,22 @@ const AskAssistant = () => {
         });
       } else {
         const chatData = chatObj ? converToChatFormat(chatObj) || [] : [];
-        setMessageData(chatData);
+        // Preserve client-side timestamps for USER messages that backend may not have returned
+        setMessageData((prev) => {
+          const userTimestampMap = new Map();
+          prev.forEach((msg) => {
+            if (msg.type === USER && msg.start_timestamp) {
+              userTimestampMap.set(msg.message, msg.start_timestamp);
+            }
+          });
+          // Merge existing user timestamps into new chat data
+          return chatData.map((item) => {
+            if (item.type === USER && !item.start_timestamp && userTimestampMap.has(item.message)) {
+              return { ...item, start_timestamp: userTimestampMap.get(item.message) };
+            }
+            return item;
+          });
+        });
       }
 
       // Canvas handling: prefer latest executor message to avoid showing stale canvas
@@ -1267,7 +1556,7 @@ const AskAssistant = () => {
             openCanvas(detected.content, detected.title, detected.type, null, false);
             try {
               prevCanvasRef.current = JSON.stringify(detected.content);
-            } catch {}
+            } catch { }
           }
         }
       }
@@ -1293,7 +1582,7 @@ const AskAssistant = () => {
         }
         return acc;
       },
-      { contents: [] }
+      { contents: [] },
     );
   };
 
@@ -1313,6 +1602,7 @@ const AskAssistant = () => {
     if (!messageToSend || generating) return;
 
     setFetching(true);
+    setFeedback(""); // Reset feedback state for new query so plan verifier buttons show
     resetHeight();
     // Always enable streaming to capture plan/tool verifier prompts and node progress
     setIsStreaming(true);
@@ -1320,15 +1610,21 @@ const AskAssistant = () => {
     setCurrentNodeIndex(-1);
     setStreamParsedContents([]); // Clear stream contents after completion
     setPlanVerifierPrompt("");
+    // Close prompt suggestions popup when sending a message
+    setShowPromptSuggestions(false);
+    setOpenedViaIcon(false);
     // Capture the start timestamp when user sends the message
     const userMessageTimestamp = new Date().toISOString();
-    addMessageData(USER, messageToSend, null, null, null, userMessageTimestamp);
+    // Pass uploaded files along with the message
+    const filesToAttach = uploadedChatFiles.length > 0 ? [...uploadedChatFiles] : null;
+    addMessageData(USER, messageToSend, null, null, null, userMessageTimestamp, null, filesToAttach);
     setUserChat("");
     setGenerating(true);
     setLikeIcon(false);
     setSuggestionVisible(false);
 
     const payload = {
+      framework_type: framework,
       agentic_application_id: agentType === CUSTOM_TEMPLATE ? customTemplatId : agentSelectValue,
       query: messageToSend,
       session_id: oldSessionId !== "" ? oldSessionId : session,
@@ -1339,11 +1635,14 @@ const AskAssistant = () => {
       plan_verifier_flag: canPlanVerifier ? Boolean(isHuman) : false,
       response_formatting_flag: typeof overrideText === "object" ? Boolean(responseFormattingFlag) : Boolean(isCanvasEnabled),
       context_flag: typeof overrideText === "object" ? Boolean(contextFlag) : Boolean(isContextEnabled),
+      file_context_management_flag: Boolean(isFileContextEnabled),
       evaluation_flag: canEvaluation ? Boolean(onlineEvaluatorFlag) : false,
       mentioned_agentic_application_id: mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : null,
       validator_flag: useValidator,
       enable_streaming_flag: true,
+      message_queue: Boolean(isMessageQueueEnabled),
       ...(toolInterrupt && { interrupt_items: selectedInterruptTools }),
+      ...(uploadedChatFiles.length > 0 && { uploaded_files: uploadedChatFiles.map((f) => f.path) }),
     };
 
     if (selectedValues && selectedValues.length > 0) {
@@ -1360,10 +1659,19 @@ const AskAssistant = () => {
     setCanvasContentType("");
     setCanvasMessageId(null);
 
+    // Clear uploaded files after sending message
+    const filesToClear = [...uploadedChatFiles];
+
     if (isHuman) {
       await sendHumanInLoop("", "", messageToSend);
     } else {
       try {
+        // Abort any existing stream before starting a new one
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+
         let nodeIndex = -1;
         const onStreamChunk = async (obj) => {
           if (!obj || typeof obj !== "object") return;
@@ -1381,23 +1689,39 @@ const AskAssistant = () => {
           const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
           const statusVal = obj.Status || obj.status || obj.state || null;
           const toolName = obj["Tool Name"] || obj.tool_name || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || null;
-          let contentVal = obj.content || (obj.raw && obj.raw.content) || null;
 
-          if (!contentVal && obj.raw && obj.raw.content && obj.content) {
-            const candidate = obj.raw.content || obj.content;
-            contentVal = typeof candidate === "string" ? candidate : JSON.stringify(candidate);
+          // Extract content from multiple possible fields
+          let contentVal = null;
+          if (obj.content && typeof obj.content === "string") {
+            contentVal = obj.content;
+          } else if (obj["Tool Output"]) {
+            const toolOutput = obj["Tool Output"];
+            contentVal = typeof toolOutput === "string" ? toolOutput : JSON.stringify(toolOutput);
+          } else if (obj.raw) {
+            if (obj.raw.content) {
+              contentVal = typeof obj.raw.content === "string" ? obj.raw.content : JSON.stringify(obj.raw.content);
+            } else if (obj.raw["Tool Output"]) {
+              const rawToolOutput = obj.raw["Tool Output"];
+              contentVal = typeof rawToolOutput === "string" ? rawToolOutput : JSON.stringify(rawToolOutput);
+            }
           }
 
           if (nodeName && statusVal) {
             nodeIndex++;
-            const newNode = { "Node Name": nodeName, Status: statusVal, "Tool Name": toolName, ...(contentVal && { content: contentVal }) };
+            const newNode = {
+              "Node Name": nodeName,
+              Status: statusVal,
+              "Tool Name": toolName,
+              ...(obj["Tool Output"] && { "Tool Output": obj["Tool Output"] }),
+              ...(contentVal && { content: contentVal }),
+            };
             setNodes((prev) => [...prev, newNode]);
             setCurrentNodeIndex(nodeIndex);
           } else if (contentVal) {
             // Orphan content chunk - add as content-only entry
             setNodes((prev) => [...prev, { content: contentVal }]);
           }
-          
+
           if (contentVal) {
             const source = nodeName || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || "raw" || obj.content;
             setStreamParsedContents((prev) => [...prev, { source, content: contentVal }]);
@@ -1438,8 +1762,8 @@ const AskAssistant = () => {
           await new Promise((resolve) => setTimeout(resolve, 150));
         };
 
-        // Call postDataStream with the callback
-        const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, {}, onStreamChunk);
+        // Call postDataStream with the callback and abort signal
+        const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, { signal: abortControllerRef.current.signal }, onStreamChunk);
 
         // Parse content from mixed response array
         if (Array.isArray(responseObjects)) {
@@ -1449,6 +1773,14 @@ const AskAssistant = () => {
 
         // Find response with executor_messages, or fallback to response with plan (for plan verifier)
         const chatObj = Array.isArray(responseObjects) ? responseObjects.find((obj) => obj && (obj.executor_messages || obj.plan)) : responseObjects;
+
+        // Ensure response_time is captured even if it arrived in a separate stream chunk
+        if (chatObj && !chatObj.response_time && Array.isArray(responseObjects)) {
+          const chunkWithTime = [...responseObjects].reverse().find((o) => o && o.response_time);
+          if (chunkWithTime) {
+            chatObj.response_time = chunkWithTime.response_time;
+          }
+        }
 
         setLastResponse(chatObj);
 
@@ -1477,7 +1809,22 @@ const AskAssistant = () => {
           });
         } else {
           const chatData = chatObj ? converToChatFormat(chatObj) || [] : [];
-          setMessageData(chatData);
+          // Preserve client-side timestamps for USER messages that backend may not have returned
+          setMessageData((prev) => {
+            const userTimestampMap = new Map();
+            prev.forEach((msg) => {
+              if (msg.type === USER && msg.start_timestamp) {
+                userTimestampMap.set(msg.message, msg.start_timestamp);
+              }
+            });
+            // Merge existing user timestamps into new chat data
+            return chatData.map((item) => {
+              if (item.type === USER && !item.start_timestamp && userTimestampMap.has(item.message)) {
+                return { ...item, start_timestamp: userTimestampMap.get(item.message) };
+              }
+              return item;
+            });
+          });
         }
 
         // Stop streaming; retain final nodes & contents for display until next user query
@@ -1506,28 +1853,108 @@ const AskAssistant = () => {
               openCanvas(detected.content, detected.title, detected.type, null, false);
               try {
                 prevCanvasRef.current = JSON.stringify(detected.content);
-              } catch {}
+              } catch { }
             }
           }
         }
       } catch (error) {
-        console.error("Error handling chat response:", error);
+        // Abort errors are expected when user cancels — ignore silently
+        if (error.name === "AbortError") {
+          console.debug("Chat request aborted by user");
+        } else {
+          console.error("Error handling chat response:", error);
+          const isNetworkError =
+            error instanceof TypeError && error.message === "Failed to fetch";
+          const friendlyMsg = isNetworkError
+            ? "Unable to reach the server. Please check your network connection and try again."
+            : error.message || "Something went wrong. Please try again.";
+          addMessage(friendlyMsg, "error");
+        }
         setIsStreaming(false);
       }
     }
     setGenerating(false);
     setFetching(false);
     setSelectedValues("");
+    // Clear uploaded files after message is sent
+    setUploadedChatFiles([]);
+    // Keep focus on chat input after sending message
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
   };
 
   const handleKeyDown = (event) => {
+    // Handle auto-suggest navigation
+    if (showAutoSuggest && filteredAutoSuggestions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setHighlightedAutoSuggestIndex((prev) => (prev < filteredAutoSuggestions.length - 1 ? prev + 1 : 0));
+        return;
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setHighlightedAutoSuggestIndex((prev) => (prev > 0 ? prev - 1 : filteredAutoSuggestions.length - 1));
+        return;
+      } else if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        handleAutoSuggestSelect(filteredAutoSuggestions[highlightedAutoSuggestIndex]);
+        return;
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        setShowAutoSuggest(false);
+        return;
+      }
+    }
+
+    // Default behavior
     if (event.key === "Enter" && !event.shiftKey) {
       sendUserMessage(event.target.value);
       resetHeight();
     } else if (event.shiftKey && event.key === "Enter") {
       event.preventDefault();
-      setUserChat((prev) => prev + "\n");
-      calculateHeight();
+      const textarea = event.target;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const value = textarea.value;
+      // Insert newline at cursor position
+      const newValue = value.substring(0, start) + "\n" + value.substring(end);
+      setUserChat(newValue);
+      calculateHeight(newValue);
+      // Set cursor position after the newline (need to do this after React updates the DOM)
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + 1;
+      }, 0);
+    }
+  };
+
+  const handleFrameworkChange = (selectedFramework) => {
+    closeCanvas();
+    setFramework(selectedFramework);
+    // Reset all states similar to handleTypeChange
+    setAgentType("");
+    // Keep model value when framework changes
+    setTemperature(0.0);
+    setSelectedAgent("");
+    setAgentSelectValue("");
+    setMessageData([]);
+    setMentionedAgent("");
+    setMentionAgentTypeFilter("all");
+    setMentionSearchTerm("");
+    setLikeIcon(false);
+    setFeedback("");
+    setShowInput(false);
+    setOldSessionId("");
+    setIsHuman(false);
+    setToolInterrupt(false);
+    setIsTool(false);
+    setUseValidator(false);
+    setIsCanvasEnabled(true);
+    setIsContextEnabled(false);
+    setOnlineEvaluatorFlag(false);
+    // Ensure we use cookie session ID when changing framework
+    const cookieSessionId = Cookies.get("user_session");
+    if (cookieSessionId) {
+      setSessionId(cookieSessionId);
     }
   };
 
@@ -1546,11 +1973,11 @@ const AskAssistant = () => {
     }
     setIsPlanVerifierOn(
       selectedOption === MULTI_AGENT ||
-        selectedOption === REACT_AGENT ||
-        selectedOption === REACT_CRITIC_AGENT ||
-        selectedOption === PLANNER_EXECUTOR_AGENT ||
-        selectedOption === "react_agent" ||
-        selectedOption === HYBRID_AGENT
+      selectedOption === REACT_AGENT ||
+      selectedOption === REACT_CRITIC_AGENT ||
+      selectedOption === PLANNER_EXECUTOR_AGENT ||
+      selectedOption === "react_agent" ||
+      selectedOption === HYBRID_AGENT,
     );
     if (selectedOption === CUSTOM_TEMPLATE) {
       setIsHuman(true);
@@ -1564,6 +1991,7 @@ const AskAssistant = () => {
     const data = {
       session_id: oldSessionId !== "" ? oldSessionId : session,
       agent_id: agentType !== CUSTOM_TEMPLATE ? agentSelectValue : customTemplatId,
+      framework_type: framework,
     };
     try {
       const response = await resetChat(data);
@@ -1600,6 +2028,14 @@ const AskAssistant = () => {
           value: model,
         }));
         setSelectedModels(formattedModels);
+
+        // Auto-select default model if no model is currently selected
+        if (!model) {
+          const modelToSelect = data.default_model_name || (formattedModels.length > 0 ? formattedModels.sort((a, b) => a.value.localeCompare(b.value))[0].value : null);
+          if (modelToSelect) {
+            setModel(modelToSelect);
+          }
+        }
       } else {
         setSelectedModels([]);
       }
@@ -1613,15 +2049,26 @@ const AskAssistant = () => {
     const data = {
       user_email: loggedInUserEmail,
       agent_id: agentSelectValue,
+      framework_type: framework,
     };
     const reseponse = await fetchOldChats(data);
     const oldChats = reseponse;
     const temp = [];
     for (const key in oldChats) {
+      const chatItem = oldChats[key][0];
       temp.push({
-        ...oldChats[key][0],
+        ...chatItem,
         session_id: key,
         messageCount: oldChats[key].length,
+        // Ensure timestamp_start is set for ChatHistorySlider compatibility
+        // The API may return timestamp_start, start_timestamp, or time_stamp
+        timestamp_start:
+          chatItem?.timestamp_start ||
+          chatItem?.start_timestamp ||
+          chatItem?.time_stamp ||
+          chatItem?.timestamp ||
+          chatItem?.created_at ||
+          null,
       });
     }
     setOldChats(temp);
@@ -1672,7 +2119,7 @@ const AskAssistant = () => {
   const [knowledgeResponse, serKnowledgeResponse] = useState([]);
   const knowledgeBaseData = async () => {
     try {
-      const response = await fetchData(APIs.GET_KB_LIST);
+      const response = await fetchData(APIs.KB_GET_LIST);
       serKnowledgeResponse(response?.knowledge_bases || []);
     } catch (error) {
       console.error("Error fetching knowledge base data:", error);
@@ -1681,6 +2128,23 @@ const AskAssistant = () => {
   };
 
   const handleNewChat = async () => {
+    // Abort any ongoing SSE stream
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    // Reset all streaming/loading states to enable input field
+    setGenerating(false);
+    setFetching(false);
+    setIsStreaming(false);
+    setNodes([]);
+    setCurrentNodeIndex(-1);
+    setStreamParsedContents([]);
+    setMessageData([]);
+    setFeedback("");
+    setUserChat("");
+
     setShowChatSettings(false);
     closeCanvas(); // Close canvas on new chat
     const sessionId = await fetchNewChats(loggedInUserEmail);
@@ -1688,65 +2152,6 @@ const AskAssistant = () => {
     setOldSessionId("");
     setSessionId(sessionId);
     fetchChatHistory(sessionId);
-  };
-
-  const handleAgentDropdownKeyDown = (e) => {
-    if (!showAgentDropdown) return;
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setHighlightedAgentIndex((prev) => {
-          const newIndex = prev < filteredAgents.length - 1 ? prev + 1 : 0;
-          scrollToHighlightedItem(newIndex);
-          return newIndex;
-        });
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setHighlightedAgentIndex((prev) => {
-          const newIndex = prev > 0 ? prev - 1 : filteredAgents.length - 1;
-          scrollToHighlightedItem(newIndex);
-          return newIndex;
-        });
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (highlightedAgentIndex >= 0 && filteredAgents[highlightedAgentIndex]) {
-          selectAgent(filteredAgents[highlightedAgentIndex]);
-          setAgentSelectValue(filteredAgents[highlightedAgentIndex].agentic_application_id);
-          setFeedback("");
-          setOldSessionId("");
-          setLikeIcon(false);
-        }
-        break;
-      case "Escape":
-        e.preventDefault();
-        closeAgentDropdown();
-        break;
-      case "Tab":
-        if (!e.shiftKey && highlightedAgentIndex >= 0 && filteredAgents[highlightedAgentIndex]) {
-          e.preventDefault();
-          selectAgent(filteredAgents[highlightedAgentIndex]);
-          setAgentSelectValue(filteredAgents[highlightedAgentIndex].agentic_application_id);
-          setFeedback("");
-          setOldSessionId("");
-          setLikeIcon(false);
-        }
-        break;
-    }
-  };
-
-  const scrollToHighlightedItem = (index) => {
-    if (agentListRef.current && index >= 0) {
-      const items = agentListRef.current.children;
-      if (items[index]) {
-        items[index].scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
-      }
-    }
   };
 
   const scrollToHighlightedKbItem = (index) => {
@@ -1822,14 +2227,22 @@ const AskAssistant = () => {
   const handleMentionDropdownKeyDown = (e) => {
     if (!showMentionDropdown) return;
 
+    // Get allowed agent types based on framework from chat_screen_config
+    const allowedMentionTypes = chat_screen_config[framework]?.mentionAgentTypes || [];
+
     const filteredAgents = Array.isArray(agentsListData)
       ? agentsListData.filter((agent) => {
-          const matchesSearch = agent.agentic_application_name.toLowerCase().includes(mentionSearchTerm.toLowerCase());
-          const matchesAgentType = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
-          const notCurrentlySelected = agent.agentic_application_id !== agentSelectValue;
-          const notMentioned = !mentionedAgent || agent.agentic_application_id !== mentionedAgent.agentic_application_id;
-          return matchesSearch && matchesAgentType && notCurrentlySelected && notMentioned;
-        })
+        const matchesSearch = agent.agentic_application_name.toLowerCase().includes(mentionSearchTerm.toLowerCase());
+        const matchesAgentType = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
+        const notCurrentlySelected = agent.agentic_application_id !== agentSelectValue;
+        const notMentioned = !mentionedAgent || agent.agentic_application_id !== mentionedAgent.agentic_application_id;
+        // Filter by framework-allowed agent types
+        const isAllowedForFramework = allowedMentionTypes.length === 0 || allowedMentionTypes.includes(agent.agentic_application_type);
+        // Exclude pipelines from "all" view - only show when explicitly filtered
+        const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
+        const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
+        return matchesSearch && matchesAgentType && notCurrentlySelected && notMentioned && isAllowedForFramework && pipelineAllowed;
+      })
       : [];
 
     if (filteredAgents.length === 0) return;
@@ -1875,30 +2288,240 @@ const AskAssistant = () => {
     }
   };
 
+  // Handle selecting an agent from @mention dropdown
+  const handleMentionAgentSelect = (agent) => {
+    setMentionedAgent(agent);
+    setShowMentionDropdown(false);
+    setMentionSearchTerm("");
+    setHighlightedMentionIndex(-1);
+    setUserChat(""); // Clear the @ text from input
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
+  // Handle clearing the mentioned agent
+  const handleClearMentionedAgent = () => {
+    setMentionedAgent("");
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
   const textareaRef = useRef(null);
   const resetHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
-      textarea.style.height = "40px";
+      textarea.style.height = "auto";
+      textarea.style.height = "24px";
     }
   };
 
-  const calculateHeight = () => {
+  const calculateHeight = (newValue) => {
     const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = "20px";
-      const maxHeight = 144;
-      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-      textarea.style.height = `${newHeight}px`;
+    if (!textarea) return;
+
+    const minHeight = 24;
+    const maxHeight = 200;
+
+    // Get the value to check
+    const value = newValue !== undefined ? newValue : textarea.value;
+
+    // If empty, reset to minimum
+    if (!value || value === "") {
+      textarea.style.height = `${minHeight}px`;
+      return;
     }
+
+    // Temporarily set to auto to get real scrollHeight
+    textarea.style.height = "auto";
+    const scrollHeight = textarea.scrollHeight;
+
+    // Calculate new height within bounds
+    const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
+    textarea.style.height = `${newHeight}px`;
   };
   const handleChange = (e) => {
     setUserChat(e.target.value);
-    calculateHeight();
+    calculateHeight(e.target.value);
   };
 
+  // File upload click handler - triggers hidden file input
   const handleFileClick = () => {
-    showComponent(<div>Your file content here</div>);
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  // Handle file selection and upload
+  const handleFileUpload = async (files) => {
+    if (!files || files.length === 0) return;
+
+    const currentSessionId = oldSessionId !== "" ? oldSessionId : session;
+    setIsUploadingFiles(true);
+
+    // Store original file names before upload
+    const originalFileNames = files.map((file) => file.name);
+
+    try {
+      const response = await uploadChatFiles(files, currentSessionId);
+      if (response && response.uploaded_files) {
+        // Match uploaded files with original names
+        // The API returns paths in the same order as uploaded files
+        const newFiles = response.uploaded_files.map((filePath, index) => ({
+          // Use original file name for display, fall back to extracting from path
+          name: originalFileNames[index] || filePath.split("/").pop() || filePath,
+          path: filePath,
+        }));
+        setUploadedChatFiles((prev) => [...prev, ...newFiles]);
+        // Use the message from API response for toast
+        addMessage(response.message || "Files uploaded successfully", "success");
+      } else if (response && response.message) {
+        addMessage(response.message, "success");
+      }
+    } catch (error) {
+      console.error("Error uploading files:", error);
+      addMessage("Error uploading files", "error");
+    } finally {
+      setIsUploadingFiles(false);
+    }
+  };
+
+  // Handle file deletion
+  const handleFileDelete = async (filePath) => {
+    try {
+      const response = await deleteChatFile(filePath);
+      if (response) {
+        setUploadedChatFiles((prev) => prev.filter((file) => file.path !== filePath));
+        addMessage("File deleted successfully", "success");
+      }
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      addMessage("Error deleting file", "error");
+    }
+  };
+
+  // Handle file view - fetches blob for proper preview (same as FilesPage)
+  const handleFileView = async (file) => {
+    // For chat-uploaded files, the path may contain directory prefix
+    // e.g., "user_uploads/Groundtruth_template (4)_admin12345@infosys.com_c3e6a720_7d7b_4f19_b229_fc88cee941b5.xlsx"
+    const fullPath = file.path || file.name;
+    const displayName = file.name || fullPath.split("/").pop();
+
+    // Extract only the filename (remove directory prefix like "user_uploads/")
+    const fileName = fullPath.includes("/") ? fullPath.split("/").pop() : fullPath;
+
+    // Build URL with only filename parameter
+    const url = `${APIs.DOWNLOAD_FILE}?filename=${encodeURIComponent(fileName)}`;
+
+    try {
+      const response = await fetchData(url, { responseType: "blob" });
+
+      // Handle both axios and fetch response formats
+      const isAxios = response && response.data !== undefined && response.headers !== undefined;
+      const dataBlob = isAxios ? response.data : response;
+      const headers = isAxios ? response.headers : response?.headers || {};
+      const getHeader = typeof headers.get === "function" ? (k) => headers.get(k) : (k) => headers[k.toLowerCase()];
+      const contentType = getHeader && getHeader("content-type");
+
+      // Check if response is JSON (error response) - check both content type and blob content
+      const isJsonContentType = contentType && contentType.includes("application/json");
+
+      // Also check if blob content starts with JSON error pattern
+      let blobText = null;
+      if (dataBlob instanceof Blob && dataBlob.size < 10000) {
+        // Only check small blobs (errors are typically small)
+        try {
+          blobText = await dataBlob.text();
+          if (blobText.startsWith('{"error"') || blobText.startsWith('{"message"') || blobText.startsWith('{"detail"')) {
+            const errorData = JSON.parse(blobText);
+            const errorMessage = errorData.error || errorData.message || errorData.detail || "Unable to view file";
+            addMessage(typeof errorMessage === "string" ? errorMessage : "Unable to view file", "error");
+            return;
+          }
+        } catch {
+          // Not JSON, continue with normal flow
+        }
+      }
+
+      if (isJsonContentType) {
+        // Try to parse error message from blob
+        try {
+          const text = blobText || await dataBlob.text();
+          const errorData = JSON.parse(text);
+          const errorMessage = errorData.error || errorData.message || "Unable to view file";
+          addMessage(errorMessage, "error");
+        } catch {
+          addMessage("Unable to view file", "error");
+        }
+        return;
+      }
+
+      // Determine the correct MIME type based on file extension
+      const getMimeType = (name) => {
+        const ext = name.split(".").pop()?.toLowerCase();
+        const mimeTypes = {
+          pdf: "application/pdf",
+          docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          xls: "application/vnd.ms-excel",
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          png: "image/png",
+          gif: "image/gif",
+          txt: "text/plain",
+          json: "application/json",
+          csv: "text/csv",
+          py: "text/plain",
+          js: "text/plain",
+        };
+        return mimeTypes[ext] || contentType || "application/octet-stream";
+      };
+
+      const mimeType = getMimeType(fileName);
+
+      // Create blob with correct MIME type - need to re-fetch if we already read the blob
+      let finalBlob;
+      if (blobText !== null) {
+        // We already read the blob, create new one from the text
+        finalBlob = new Blob([blobText], { type: mimeType });
+      } else if (dataBlob instanceof Blob) {
+        const arrayBuffer = await dataBlob.arrayBuffer();
+        finalBlob = new Blob([arrayBuffer], { type: mimeType });
+      } else {
+        finalBlob = new Blob([dataBlob], { type: mimeType });
+      }
+
+      // Create blob URL for preview
+      const blobUrl = URL.createObjectURL(finalBlob);
+
+      setViewingFile({ url: blobUrl, name: displayName });
+      setShowFileViewer(true);
+    } catch (err) {
+      console.error("View file failed:", err);
+      // Try to extract error message from response
+      const errorMessage = err?.response?.data?.error || err?.message || "Failed to load file for viewing";
+      addMessage(errorMessage, "error");
+    }
+  };
+
+  // Clean up blob URL when closing file viewer
+  const handleCloseFileViewer = () => {
+    if (viewingFile.url && viewingFile.url.startsWith("blob:")) {
+      URL.revokeObjectURL(viewingFile.url);
+    }
+    setViewingFile({ url: "", name: "" });
+    setShowFileViewer(false);
+  };
+
+  // Handle file input change
+  const handleFileInputChange = (event) => {
+    const selectedFiles = Array.from(event.target.files);
+    if (selectedFiles.length > 0) {
+      handleFileUpload(selectedFiles);
+    }
+    // Reset input to allow selecting the same file again
+    event.target.value = "";
   };
 
   const [selectedValues, setSelectedValues] = useState([]);
@@ -1933,12 +2556,12 @@ const AskAssistant = () => {
     const parts = text.split(new RegExp(`(${searchTerm})`, "gi"));
     return parts.map((part, index) =>
       part.toLowerCase() === searchTerm.toLowerCase() ? (
-        <span key={index} style={{ color: "#0078d4" }}>
+        <span key={index} style={{ color: "var(--app-primary-color)" }}>
           {part}
         </span>
       ) : (
         part
-      )
+      ),
     );
   };
   const [suggestionVisible, setSuggestionVisible] = useState(false);
@@ -1977,17 +2600,20 @@ const AskAssistant = () => {
       // If we have to trigger the chat immediately upon selection comment the above focus line and uncomment the below submit function
       sendUserMessage(text);
     } else {
-      if (textareaRef.current) textareaRef.current.focus();
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        // Place cursor at the end of the text
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = text.length;
+          }
+        }, 0);
+      }
     }
   };
 
   // Canvas helper functions
   const openCanvas = (content, title = "Code View", type = "code", messageId = null, forceOpen = false) => {
-    // Don't open canvas for PIPELINE_AGENT - always show content inline
-    if (agentType === PIPELINE_AGENT) {
-      return;
-    }
-    
     // Don't open canvas if it's disabled, unless it's a manual/forced open
     if (!isCanvasEnabled && !forceOpen) {
       return;
@@ -2007,6 +2633,8 @@ const AskAssistant = () => {
       setCanvasMessageId(messageId);
       setIsCanvasOpen(true);
       setCanvasIsLast(true);
+      // Auto-collapse right sidebar when canvas opens
+      setIsRightSidebarCollapsed(true);
     }, 0);
   };
 
@@ -2017,6 +2645,7 @@ const AskAssistant = () => {
     setCanvasContentType("");
     setCanvasMessageId(null);
     setCanvasIsLast(false);
+    // Keep right sidebar collapsed - user can manually expand if needed
   };
 
   // Auto-detect canvas content from AI responses - PARTS FORMAT ONLY
@@ -2079,20 +2708,72 @@ const AskAssistant = () => {
 
   return (
     <>
+      {/* Welcome Modal - shown on first visit */}
+      <WelcomeModal
+        isOpen={showWelcomeModal}
+        onClose={() => setShowWelcomeModal(false)}
+        frameworkOptions={FRAMEWORK_OPTIONS}
+        selectedFramework={framework}
+        onFrameworkChange={handleFrameworkChange}
+        agents={agentsListData}
+        selectedAgent={selectedAgent?.agentic_application_name || ""}
+        onAgentChange={(agentName) => {
+          const agent = agentsListData.find((a) => a.agentic_application_name === agentName);
+          if (agent) {
+            // Skip reset if selecting the same agent
+            if (selectedAgent?.agentic_application_id === agent.agentic_application_id) {
+              return;
+            }
+            // Auto-switch framework based on agent type
+            // Hybrid agents require pure_python framework, all others use langgraph
+            // Only set framework directly (don't use handleFrameworkChange which resets agent state)
+            if (agent.agentic_application_type === HYBRID_AGENT) {
+              setFramework("pure_python");
+            } else if (framework === "pure_python" && agent.agentic_application_type !== HYBRID_AGENT) {
+              // If switching from hybrid agent to non-hybrid, switch to langgraph
+              setFramework("langgraph");
+            }
+            selectAgent(agent);
+            setAgentSelectValue(agent.agentic_application_id);
+            // Set agent type to match the selected agent
+            setAgentType(agent.agentic_application_type || "");
+            // Set model from agent's model_name if available
+            if (agent.model_name) {
+              setModel(agent.model_name);
+            }
+            setFeedback("");
+            setOldSessionId("");
+            const cookieSessionId = Cookies.get("user_session");
+            if (cookieSessionId) {
+              setSessionId(cookieSessionId);
+            }
+            setLikeIcon(false);
+          }
+        }}
+        loadingAgents={loadingAgents}
+        disabled={fetching || generating}
+        getAgentTypeFilterOptions={getAgentTypeFilterOptions}
+        agentType={agentType}
+        onAgentTypeChange={(value) => setAgentType(value)}
+        focusChatInput={() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+        }}
+      />
+
       <div className={stylesNew.askAssistantContainer} ref={chatbotContainerRef}>
+        {/* Main Chat Area */}
         <div className={`${stylesNew.chatWrapper} ${isCanvasOpen ? stylesNew.withCanvas : ""}`}>
           <div className={stylesNew.bubbleAndInput}>
             <div className={stylesNew.chatBubblesWrapper}>
               <div className={stylesNew.messagesWrapper} ref={msgContainerRef}>
                 {/* message container */}
-                {/* {showToast && !showChatHistory && !isDeletingChat && lastResponse && (
-                  <ToastMessage message={lastResponse === null ? "Internal Server error" : likeMessage} onClose={() => setShowToast(false)} />
-                )} */}
                 <MsgBox
                   styles={stylesNew}
                   messageData={messageData}
                   generating={generating}
-                  agentType={agentType}
+                  agentType={effectiveAgentType}
                   isStreaming={isStreaming}
                   feedBack={feedBack}
                   setFeedback={setFeedback}
@@ -2152,949 +2833,377 @@ const AskAssistant = () => {
                   temperature={temperature}
                   selectedInterruptTools={selectedInterruptTools}
                   mappedTools={mappedTools}
+                  isFileContextEnabled={isFileContextEnabled}
+                  isMessageQueueEnabled={isMessageQueueEnabled}
+                  selectedAgent={selectedAgent}
+                  framework={framework}
+                  onViewFile={handleFileView}
+                  canExecutionSteps={canExecutionSteps}
                 />
               </div>
             </div>
             <div className={"chatSection"}>
               <div className={chatInputModule.container}>
-                <div className={chatInputModule.topControls}>
-                  <div className={chatInputModule.controlGroup}>
-                    <select
-                      className={chatInputModule.select}
-                      value={agentType}
-                      onChange={(e) => handleTypeChange(e.target.value)}
-                      disabled={generating || fetching || isEditable || messageDisable}>
-                      <option value="">Select Agent Type</option>
-                      {agentTypesDropdown.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                {/* Hidden file input for uploads */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileInputChange}
+                  style={{ display: "none" }}
+                  accept=".pdf,.docx,.ppt,.pptx,.txt,.xlsx,.json,.csv,.jpg,.png,.jpeg,.py,.js"
+                />
 
-                  <div className={chatInputModule.controlGroup}>
-                    <select
-                      className={chatInputModule.select}
-                      value={model}
-                      onChange={(selectedOption) => {
-                        // When changing model, preserve session IDs but update model
-                        const newModel = selectedOption.target.value;
-                        setModel(newModel);
-                        setLikeIcon(false);
-                      }}
-                      disabled={!agentType || generating || fetching || isEditable || messageDisable}
-                      aria-disabled={!agentType || generating || fetching || isEditable || messageDisable}>
-                      <option value="">Select Model</option>
-                      {selectedModels.map((modelOption) => (
-                        <option key={modelOption.value} value={modelOption.value}>
-                          {modelOption.value}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                {/* Input row */}
+                <div className={chatInputModule.inputsWrapperRow2}>
+                  {/* Left pill group: Upload + @ Agent */}
+                  <div className={chatInputModule.leftControlsGroup}>
+                    <button
+                      type="button"
+                      className={chatInputModule.inputButton}
+                      onClick={handleFileClick}
+                      disabled={messageDisable || fetching || generating || isEditable || isUploadingFiles}
+                      title="Upload Files"
+                      tabIndex={0}>
+                      <SVGIcons icon="upload" width={18} height={18} />
+                      {isUploadingFiles && <span className={chatInputModule.uploadingDot}></span>}
+                    </button>
 
-                  <div className={chatInputModule.controlGroup} ref={agentDropdownRef}>
-                    <div
-                      className={`${chatInputModule.searchableDropdown} ${!agentType || messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""}`}
-                      aria-disabled={!agentType || messageDisable || fetching || generating || isEditable}>
+                    {/* Uploaded files preview - compact inline display */}
+                    {uploadedChatFiles.length > 0 && (
+                      <div className={chatInputModule.filesPreviewInline}>
+                        {uploadedChatFiles.map((file, index) => {
+                          const truncateName = (name, maxLen = 15) => {
+                            if (name.length <= maxLen) return name;
+                            const ext = name.split(".").pop();
+                            const base = name.substring(0, name.lastIndexOf("."));
+                            return `${base.substring(0, maxLen - ext.length - 4)}...${ext}`;
+                          };
+                          return (
+                            <div key={file.path || index} className={chatInputModule.fileChipCompact} title={file.name}>
+                              <SVGIcons icon="file" width={14} height={14} />
+                              <span className={chatInputModule.fileNameCompact}>{truncateName(file.name)}</span>
+                              <button
+                                type="button"
+                                className={chatInputModule.deleteButtonCompact}
+                                onClick={() => handleFileDelete(file.path)}
+                                title="Remove file"
+                                disabled={messageDisable || fetching || generating || isUploadingFiles}
+                              >
+                                <SVGIcons icon="x" width={12} height={12} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* @Mentioned Agent Badge with glow */}
+                    {mentionedAgent && mentionedAgent.agentic_application_name && (
                       <div
-                        ref={agentTriggerRef}
-                        className={`${chatInputModule.dropdownTrigger} ${showAgentDropdown ? chatInputModule.active : ""} ${
-                          !agentType || messageDisable || fetching || generating || isEditable ? chatInputModule.disabled : ""
-                        }`}
-                        onClick={!(!agentType || messageDisable || fetching || generating || isEditable) ? handleAgentDropdownToggle : null}
-                        onKeyDown={(e) => {
-                          if (!agentType || messageDisable || fetching || generating || isEditable) return;
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            handleAgentDropdownToggle();
-                          } else if (e.key === "ArrowDown") {
-                            e.preventDefault();
-                            if (!showAgentDropdown) {
-                              setShowAgentDropdown(true);
-                              setHighlightedAgentIndex(0);
-                            } else {
-                              handleAgentDropdownKeyDown(e);
-                            }
-                          } else if (e.key === "ArrowUp") {
-                            e.preventDefault();
-                            if (showAgentDropdown) {
-                              handleAgentDropdownKeyDown(e);
-                            }
-                          } else if (showAgentDropdown) {
-                            handleAgentDropdownKeyDown(e);
-                          }
-                        }}
-                        tabIndex={!agentType || messageDisable || fetching || generating || isEditable ? -1 : 0}
-                        role="combobox"
-                        aria-expanded={showAgentDropdown}
-                        aria-controls="agent-dropdown-list"
-                        aria-haspopup="listbox"
-                        aria-label="Select Agent"
-                        aria-disabled={!agentType || messageDisable || fetching || generating || isEditable}>
-                        <span>{selectedAgent.agentic_application_name || "Select Agent"}</span>
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 20 20"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                          className={`${chatInputModule.chevronIcon} ${showAgentDropdown ? chatInputModule.rotated : ""}`}>
-                          <path d="M6 8L10 12L14 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </div>
-
-                      {showAgentDropdown && agentType && (
-                        <div className={chatInputModule.dropdownContent} role="listbox" aria-label="Agent options" onClick={(e) => e.stopPropagation()}>
-                          <div className={chatInputModule.searchContainer}>
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
-                              <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                              <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                            </svg>
-                            <input
-                              ref={agentSearchInputRef}
-                              type="text"
-                              placeholder="Search agents..."
-                              value={agentSearchTerm}
-                              onChange={(e) => {
-                                const newSearchTerm = e.target.value;
-                                setAgentSearchTerm(newSearchTerm);
-                                // Reset highlight when searching
-                                setHighlightedAgentIndex(newSearchTerm === "" ? -1 : 0);
-                              }}
-                              onKeyDown={handleAgentDropdownKeyDown}
-                              className={chatInputModule.searchInput}
-                              aria-label="Search agents"
-                              autoComplete="off"
-                            />
-                          </div>
-                          <div className={chatInputModule.agentsList} ref={agentListRef}>
-                            {filteredAgents.length > 0 ? (
-                              filteredAgents.map((agent, index) => (
-                                <div
-                                  key={agent.agentic_application_id}
-                                  className={`${chatInputModule.agentItem} ${index === highlightedAgentIndex ? chatInputModule.highlighted : ""}`}
-                                  onClick={() => {
-                                    selectAgent(agent);
-                                    setAgentSelectValue(agent.agentic_application_id);
-                                    setFeedback("");
-                                    setOldSessionId("");
-                                    const cookieSessionId = Cookies.get("user_session");
-                                    if (cookieSessionId) {
-                                      setSessionId(cookieSessionId);
-                                    }
-                                    setLikeIcon(false);
-                                  }}
-                                  onMouseEnter={() => setHighlightedAgentIndex(index)}
-                                  onMouseLeave={() => setHighlightedAgentIndex(-1)}
-                                  role="option"
-                                  aria-selected={index === highlightedAgentIndex}>
-                                  <div className={chatInputModule.agentName}>{agent.agentic_application_name}</div>
-                                </div>
-                              ))
-                            ) : (
-                              <div className={chatInputModule.noAgents}>No agents found</div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {!isMissingRequiredOptions && (
-                  <div className={chatInputModule.inputsWrapperRow2}>
-                    <div className={chatInputModule.inputForm}>
-                      <div className={chatInputModule.inputContainer}>
+                        className={chatInputModule.mentionedAgentBadge}
+                        title={mentionedAgent.agentic_application_name}
+                        onClick={handleClearMentionedAgent}
+                      >
+                        <span className={chatInputModule.mentionedAgentAt}>@</span>
+                        <span className={chatInputModule.mentionedAgentName}>{mentionedAgent.agentic_application_name}</span>
                         <button
                           type="button"
-                          className={chatInputModule.inputButton + " " + chatInputModule.actionButton}
-                          onClick={handleFileClick}
-                          disabled={messageDisable || fetching || generating || isEditable || isMissingRequiredOptions}
-                          title="Upload Files"
-                          tabIndex={0}>
-                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M10 13V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M7 6L10 3L13 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            <rect x="4" y="15" width="12" height="2" rx="1" stroke="currentColor" strokeWidth="1.5" />
-                          </svg>
-                        </button>
-
-                        {agentType !== PIPELINE_AGENT && (
-                        <div className={chatInputModule.relativeWrapper}>
-                          <button
-                            type="button"
-                            className={`${chatInputModule.inputButton} ${chatInputModule.actionButton} ${chatInputModule.mentionButton} ${
-                              mentionedAgent ? chatInputModule.active : ""
-                            }`}
-                            onClick={() => setShowMentionDropdown(!showMentionDropdown)}
-                            disabled={messageDisable || fetching || generating || isEditable || isMissingRequiredOptions}
-                            title={mentionedAgent ? ` ${mentionedAgent.agentic_application_name}` : "Mention Agent"}
-                            tabIndex={0}>
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <text x="10" y="15" fontSize="14" textAnchor="middle" stroke="currentColor">
-                                @
-                              </text>
-                            </svg>
-                          </button>
-
-                          {/* Mention Agent Dropdown */}
-                          {showMentionDropdown && (
-                            <div className={chatInputModule.mentionDropdown} ref={mentionDropdownRef}>
-                              {/* Agent Type Filter */}
-                              <div style={{ padding: "7px", backgroundColor: "#f9fafb" }}>
-                                <select
-                                  value={mentionAgentTypeFilter}
-                                  onChange={(e) => {
-                                    const newAgentType = e.target.value;
-                                    setMentionAgentTypeFilter(newAgentType);
-                                    setHighlightedMentionIndex(-1);
-
-                                    // Reset mentioned agent if it doesn't match the new filter
-                                    if (mentionedAgent && newAgentType !== "all" && mentionedAgent.agentic_application_type !== newAgentType) {
-                                      setMentionedAgent("");
-                                    }
-                                  }}
-                                  style={{
-                                    width: "100%",
-                                    padding: "4px 8px",
-                                    border: "1px solid #ddd",
-                                    borderRadius: "4px",
-                                    fontSize: "13px",
-                                    background: "white",
-                                  }}>
-                                  <option value="all">All Agent Types</option>
-                                  {agentTypesDropdown.filter(option => option.value !== PIPELINE_AGENT).map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className={chatInputModule.mentionHeader}>
-                                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
-                                  <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                                  <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                </svg>
-                                <input
-                                  type="text"
-                                  placeholder="Search agents..."
-                                  value={mentionSearchTerm}
-                                  onChange={(e) => setMentionSearchTerm(e.target.value)}
-                                  onKeyDown={handleMentionDropdownKeyDown}
-                                  className={chatInputModule.mentionSearchInput}
-                                  autoFocus
-                                />
-                              </div>
-                              <div className={chatInputModule.mentionList} ref={mentionListRef}>
-                                {/* Show mentioned agent at top with remove option */}
-                                {mentionedAgent && (
-                                  <div className={`${chatInputModule.mentionItem} ${chatInputModule.mentionedAgentItem}`}>
-                                    <span className={chatInputModule.mentionAgentName}>{mentionedAgent.agentic_application_name}</span>
-                                    <button
-                                      type="button"
-                                      className={chatInputModule.removeMentionButton}
-                                      onClick={() => {
-                                        setMentionedAgent("");
-                                        setMentionSearchTerm("");
-                                        setHighlightedMentionIndex(-1);
-                                      }}
-                                      title={`Remove ${mentionedAgent.agentic_application_name}`}>
-                                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M6 6L14 14M14 6L6 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                )}
-
-                                {Array.isArray(agentsListData) && agentsListData.length > 0 ? (
-                                  (() => {
-                                    // Filter agents based on search term, agent type filter, and exclude current/mentioned agents
-                                    const filteredAgents = agentsListData.filter((agent) => {
-                                      const matchesSearch = agent.agentic_application_name.toLowerCase().includes(mentionSearchTerm.toLowerCase());
-                                      const matchesAgentType = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
-                                      const notCurrentlySelected = agent.agentic_application_id !== agentSelectValue;
-                                      const notMentioned = !mentionedAgent || agent.agentic_application_id !== mentionedAgent.agentic_application_id;
-                                      return matchesSearch && matchesAgentType && notCurrentlySelected && notMentioned;
-                                    });
-
-                                    return filteredAgents.length > 0 ? (
-                                      filteredAgents.map((agent, idx) => (
-                                        <div
-                                          key={agent.agentic_application_id}
-                                          className={`${chatInputModule.mentionItem} ${idx === highlightedMentionIndex ? chatInputModule.highlighted : ""}`}
-                                          onMouseEnter={() => setHighlightedMentionIndex(idx)}
-                                          onMouseLeave={() => setHighlightedMentionIndex(-1)}
-                                          onClick={() => {
-                                            setMentionedAgent(agent);
-                                            setShowMentionDropdown(false);
-                                            setMentionSearchTerm("");
-                                            setHighlightedMentionIndex(-1);
-                                          }}>
-                                          <div className={chatInputModule.mentionAgentName}>{agent.agentic_application_name}</div>
-                                        </div>
-                                      ))
-                                    ) : (
-                                      <div className={chatInputModule.noAgents}>No available agents to mention</div>
-                                    );
-                                  })()
-                                ) : (
-                                  <div className={chatInputModule.noAgents}>No agents found</div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        )}
-
-                        <div className={chatInputModule.promptLibraryAndTextArea}>
-                          {promptSuggestions && promptSuggestions.length > 0 && (
-                            <button
-                              type="button"
-                              className={chatInputModule.promptSuggestionBtn}
-                              onClick={handlePromptSuggestionsToggle}
-                              disabled={messageDisable || fetching || generating || isEditable || isMissingRequiredOptions}
-                              title="Prompt Library"
-                              tabIndex={0}>
-                              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path
-                                  d="M10 2L12.09 6.26L17 7L13.5 10.74L14.18 15.74L10 13.77L5.82 15.74L6.5 10.74L3 7L7.91 6.26L10 2Z"
-                                  stroke="currentColor"
-                                  strokeWidth="1.5"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  fill="none"
-                                />
-                                <path d="M6 3L7 5L9 4" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
-                                <path d="M15 4L16 6L18 5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
-                                <path d="M4 12L5 14L7 13" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
-                              </svg>
-                            </button>
-                          )}
-                          <div className={chatInputModule.textInputWrapper}>
-                            {recording ? (
-                              <div className={stylesNew.recordingIndicator}>
-                                <div className={stylesNew.recordingAnimation}>
-                                  <div className={stylesNew.recordingDot}></div>
-                                  <div className={stylesNew.recordingPulse}></div>
-                                </div>
-                                <span className={stylesNew.recordingText}>
-                                  <span className={stylesNew.recordingLabel}>Recording</span>
-                                  <div className={stylesNew.audioVisualizer}>
-                                    <div className={stylesNew.audioBar}></div>
-                                    <div className={stylesNew.audioBar}></div>
-                                    <div className={stylesNew.audioBar}></div>
-                                    <div className={stylesNew.audioBar}></div>
-                                    <div className={stylesNew.audioBar}></div>
-                                  </div>
-                                </span>
-                              </div>
-                            ) : (
-                              <textarea
-                                ref={textareaRef}
-                                value={userChat}
-                                onChange={handleInputChangeForSuggestion}
-                                onKeyDown={handleKeyDown}
-                                placeholder={!isMissingRequiredOptions ? "Type your message..." : "Please select Agent Type, Model, and Agent to start chatting"}
-                                disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
-                                className={chatInputModule.textInput}
-                                rows={1}
-                                maxLength={2000}
-                                autoComplete="off"
-                                aria-autocomplete="list"
-                                aria-controls="suggestion-popover"
-                              />
-                            )}
-                          </div>
-                        </div>
-
-                        <div className={"rightButtons"}>
-                          <button
-                            type="submit"
-                            onClick={() => sendUserMessage(userChat)}
-                            className={`${chatInputModule.inputButton} ${chatInputModule.sendButton}`}
-                            disabled={isMissingRequiredOptions || generating || fetching || messageDisable || !userChat.trim()}
-                            title="Send Message"
-                            tabIndex={0}>
-                            {/* SVG icon for send */}
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
-                            </svg>
-                          </button>
-                        </div>
-                        {/* Do not remove the below code it is needed for microphone implementation */}
-                        {/* Voice/Send Button */}
-                        {/* <div className={"rightButtons"}>
-                      {userChat.trim() ? (
-                        <button
-                          type="submit"
-                          onClick={sendUserMessage}
-                          className={`${chatInputModule.inputButton} ${chatInputModule.sendButton}`}
-                          disabled={isMissingRequiredOptions || generating || !userChat.trim()}
-                          title="Send Message"
-                          tabIndex={0}
-                        >
-                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 17L17 10L3 3V8L13 10L3 12V17Z" fill="currentColor" />
-                          </svg>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className={`${chatInputModule.inputButton} ${!recording ? chatInputModule.micHighlight : ''} ${recording ? chatInputModule.selected : ''}`}
-                          onClick={recording ? stopRecording : startRecording}
-                          disabled={isMissingRequiredOptions || generating}
-                          title={recording ? "Stop Recording" : "Voice Input"}
-                          tabIndex={0}
-                        >
-                          {recording ? (
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" />
-                            </svg>
-                          ) : (
-                            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <rect x="8" y="3" width="4" height="10" rx="2" fill="currentColor" />
-                              <path d="M10 15V17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                              <path d="M7 17H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                            </svg>
-                          )}
-                        </button>
-                      )}
-                    </div> */}
-                      </div>
-                    </div>
-                    {/* Action Buttons */}
-                    <div className={chatInputModule.actionButtons}>
-                      <div className={chatInputModule.settingsContainer} ref={verifierSettingsRef}>
-                        <button
-                          className={`${chatInputModule.actionButton} ${showVerifierSettings ? chatInputModule.active : ""}`}
-                          onClick={() => setShowVerifierSettings(!showVerifierSettings)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setShowVerifierSettings(!showVerifierSettings);
-                            } else if (e.key === "ArrowDown" && !showVerifierSettings) {
-                              e.preventDefault();
-                              setShowVerifierSettings(true);
-                            }
+                          className={chatInputModule.mentionedAgentClose}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleClearMentionedAgent();
                           }}
-                          title="Settings"
-                          tabIndex={generating ? -1 : 0}
-                          disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
-                          aria-expanded={showVerifierSettings}
-                          aria-haspopup="menu"
-                          aria-label="Verifier Settings menu"
-                          aria-disabled={generating}>
-                          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="4" y="7" width="12" height="6" rx="3" stroke="currentColor" strokeWidth="1.5" />
-                            <circle cx="13" cy="10" r="2" fill="currentColor" />
-                          </svg>
+                        >
+                          <SVGIcons icon="x" width={10} height={10} />
                         </button>
-                        {showVerifierSettings && (
-                          <div className={chatInputModule.settingsDropdown} onKeyDown={handleSettingsKeyDown} role="menu" aria-label="Verifier Settings menu">
-                            <div className={chatInputModule.settingsHeader}>Toggle Settings</div>
-
-                            {shouldShowHumanVerifier() && (
-                              <div className={chatInputModule.toggleGroup + " plan-verifier"} role="menuitem">
-                                <label className={chatInputModule.toggleLabel}>
-                                  <span className={chatInputModule.toggleText} id="humanVerifierLabel">
-                                    Plan Verifier
-                                  </span>
-                                  <input
-                                    type="checkbox"
-                                    checked={isHuman}
-                                    onChange={(e) => handleHumanInLoop(e.target.checked)}
-                                    className={chatInputModule.toggleInput}
-                                    id="humanVerifierToggle"
-                                    disabled={messageDisable || generating || fetching || isEditable}
-                                  />
-                                  <span
-                                    className={chatInputModule.toggleSlider}
-                                    tabIndex={0}
-                                    role="switch"
-                                    aria-checked={isHuman}
-                                    aria-labelledby="humanVerifierLabel"
-                                    onKeyDown={(e) => handleToggleKeyDown(e, handleHumanInLoop, isHuman)}></span>
-                                </label>
-                              </div>
-                            )}
-
-                            {shouldShowToolVerifier() && (
-                              <div className={chatInputModule.toggleGroup + " tool-verifier"} role="menuitem" style={{ position: "relative" }}>
-                                <label className={chatInputModule.toggleLabel}>
-                                  <span className={chatInputModule.toggleText} id="toolVerifierLabel">
-                                    {effectiveAgentType === META_AGENT || effectiveAgentType === PLANNER_META_AGENT ? "Agent Verifier" : "Tool Verifier"}
-                                  </span>
-                                  <input
-                                    type="checkbox"
-                                    checked={toolInterrupt}
-                                    onChange={(e) => handleToolInterrupt(e.target.checked)}
-                                    className={chatInputModule.toggleInput}
-                                    id="toolVerifierToggle"
-                                    disabled={messageDisable || generating || fetching || isEditable}
-                                  />
-                                  <span
-                                    className={chatInputModule.toggleSlider}
-                                    tabIndex={0}
-                                    role="switch"
-                                    aria-checked={toolInterrupt}
-                                    aria-labelledby="toolVerifierLabel"
-                                    onKeyDown={(e) => handleToggleKeyDown(e, handleToolInterrupt, toolInterrupt)}></span>
-                                </label>
-                                
-                                {/* Tool Selection Submenu */}
-                                {showToolInterruptModal && toolInterrupt && mappedTools.length > 0 && (
-                                  <div className={chatInputModule.toolSubmenu}>
-                                    {/* Left arrow pointer */}
-                                    <div className={chatInputModule.toolSubmenuArrowOuter}></div>
-                                    <div className={chatInputModule.toolSubmenuArrowInner}></div>
-                                    {/* Header with select all, title and close icon */}
-                                    <div className={chatInputModule.toolSubmenuHeader}>
-                                      <label className={chatInputModule.toolSubmenuSelectAll}>
-                                        <input
-                                          type="checkbox"
-                                          checked={selectedInterruptTools.length === mappedTools.length}
-                                          onChange={(e) => handleSelectAllInterruptTools(e.target.checked)}
-                                          className={chatInputModule.toolSubmenuCheckbox}
-                                        />
-                                        <span className={chatInputModule.toolSubmenuTitle}>
-                                          {effectiveAgentType === META_AGENT || effectiveAgentType === PLANNER_META_AGENT ? "Select Agents" : "Select Tools"}
-                                        </span>
-                                      </label>
-                                      <button
-                                        onClick={() => setShowToolInterruptModal(false)}
-                                        className={chatInputModule.toolSubmenuCloseBtn}
-                                        aria-label="Close tool selection"
-                                      >
-                                        ×
-                                      </button>
-                                    </div>
-                                    {/* Tool list */}
-                                    <div className={chatInputModule.toolSubmenuList}>
-                                      {mappedTools.map((tool) => (
-                                        <label 
-                                          key={tool} 
-                                          className={chatInputModule.toolSubmenuItem}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={selectedInterruptTools.includes(tool)}
-                                            onChange={() => handleInterruptToolToggle(tool)}
-                                            className={chatInputModule.toolSubmenuCheckbox}
-                                          />
-                                          <span>{tool}</span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {showValidatorToggle() && (
-                              <div className={chatInputModule.toggleGroup + " validator-toggle"} role="menuitem">
-                                <label className={chatInputModule.toggleLabel}>
-                                  <span className={chatInputModule.toggleText} id="validatorToggleLabel">
-                                    Validator
-                                  </span>
-                                  <input
-                                    type="checkbox"
-                                    checked={useValidator}
-                                    onChange={(e) => setUseValidator(e.target.checked)}
-                                    className={chatInputModule.toggleInput}
-                                    id="validatorToggle"
-                                    disabled={messageDisable || generating || fetching || isEditable}
-                                  />
-                                  <span
-                                    className={chatInputModule.toggleSlider}
-                                    tabIndex={0}
-                                    role="switch"
-                                    aria-checked={useValidator}
-                                    aria-labelledby="validatorToggleLabel"
-                                    onKeyDown={(e) => handleToggleKeyDown(e, setUseValidator, useValidator)}></span>
-                                </label>
-                              </div>
-                            )}
-
-                            {/* Canvas Toggle - Available for all agent types except Pipeline */}
-                            {agentType !== PIPELINE_AGENT && (
-                            <div className={chatInputModule.toggleGroup + " canvas-toggle"} role="menuitem">
-                              <label className={chatInputModule.toggleLabel}>
-                                <span className={chatInputModule.toggleText} id="canvasToggleLabel">
-                                  Canvas View
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={isCanvasEnabled}
-                                  onChange={(e) => handleCanvasToggle(e.target.checked)}
-                                  className={chatInputModule.toggleInput}
-                                  id="canvasToggle"
-                                  disabled={messageDisable || generating || fetching || isEditable}
-                                />
-                                <span
-                                  className={chatInputModule.toggleSlider}
-                                  tabIndex={0}
-                                  role="switch"
-                                  aria-checked={isCanvasEnabled}
-                                  aria-labelledby="canvasToggleLabel"
-                                  onKeyDown={(e) => handleToggleKeyDown(e, handleCanvasToggle, isCanvasEnabled)}></span>
-                              </label>
-                            </div>
-                            )}
-
-                            {/* Context Toggle - Available for all agent types */}
-                            <div className={chatInputModule.toggleGroup + " context-toggle"} role="menuitem">
-                              <label className={chatInputModule.toggleLabel}>
-                                <span className={chatInputModule.toggleText} id="contextToggleLabel">
-                                  Context
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={isContextEnabled}
-                                  onChange={(e) => handleContextToggle(e.target.checked)}
-                                  className={chatInputModule.toggleInput}
-                                  id="contextToggle"
-                                  disabled={messageDisable || generating || fetching || isEditable}
-                                />
-                                <span
-                                  className={chatInputModule.toggleSlider}
-                                  tabIndex={0}
-                                  role="switch"
-                                  aria-checked={isContextEnabled}
-                                  aria-labelledby="contextToggleLabel"
-                                  onKeyDown={(e) => handleToggleKeyDown(e, handleContextToggle, isContextEnabled)}></span>
-                              </label>
-                            </div>
-                            {shouldShowOnlineEvaluator() && (
-                              <div className={chatInputModule.toggleGroup + " online-evaluator"} role="menuitem">
-                                <label className={chatInputModule.toggleLabel}>
-                                  <span className={chatInputModule.toggleText} id="onlineEvaluatorLabel">
-                                    {"Online Evaluator"}
-                                  </span>
-                                  <input
-                                    type="checkbox"
-                                    checked={onlineEvaluatorFlag}
-                                    onChange={(e) => handleOnlineEvaluatorToggle(e.target.checked)}
-                                    className={chatInputModule.toggleInput}
-                                    id="onlineEvaluatorToggle"
-                                    disabled={messageDisable || generating || fetching || isEditable}
-                                  />
-                                  <span
-                                    className={chatInputModule.toggleSlider}
-                                    tabIndex={0}
-                                    role="switch"
-                                    aria-checked={onlineEvaluatorFlag}
-                                    aria-labelledby="onlineEvaluatorLabel"
-                                    onKeyDown={(e) => handleToggleKeyDown(e, handleOnlineEvaluatorToggle, onlineEvaluatorFlag)}></span>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        )}
                       </div>
-                      <div className={chatInputModule.settingsContainer} style={{ position: "relative", display: "inline-block" }} ref={temperaturePopupRef}>
-                        <button
-                          className={`${chatInputModule.actionButton} ${showTemperaturePopup ? chatInputModule.active : ""}`}
-                          onClick={() => setShowTemperaturePopup((v) => !v)}
-                          title="Set Temperature"
-                          tabIndex={0}
-                          disabled={isMissingRequiredOptions || generating || fetching || isEditable || messageDisable}
-                          aria-expanded={showTemperaturePopup}
-                          aria-haspopup="menu"
-                          aria-label="Temperature Settings menu">
-                          <SVGIcons icon="thermometerIcon" width={18} height={18} fill="currentColor" color="none" />
-                        </button>
-                        {showTemperaturePopup && (
-                          <div
-                            className={`${chatInputModule.settingsDropdown} ${chatInputModule.chatSettingsDropdown}`}
-                            style={{ minWidth: 300, right: 0, left: "auto", bottom: 40, zIndex: 2001, position: "absolute" }}
-                            role="menu"
-                            aria-label="Temperature Settings menu">
-                            <div className={chatInputModule.settingsHeader}>Temperature</div>
-                            <TemperatureSliderPopup value={temperature} onChange={setTemperature} onClose={() => setShowTemperaturePopup(false)} hideOverlay />
+                    )}
+                  </div>
+
+                  {/* Input Container - Text area with prompt suggestion */}
+                  <div className={chatInputModule.inputContainer}>
+                    <div className={chatInputModule.promptLibraryAndTextArea}>
+                      <div className={chatInputModule.textInputWrapper}>
+                        {recording ? (
+                          <div className={stylesNew.recordingIndicator}>
+                            <div className={stylesNew.recordingAnimation}>
+                              <div className={stylesNew.recordingDot}></div>
+                              <div className={stylesNew.recordingPulse}></div>
+                            </div>
+                            <span className={stylesNew.recordingText}>
+                              <span className={stylesNew.recordingLabel}>Recording</span>
+                              <div className={stylesNew.audioVisualizer}>
+                                <div className={stylesNew.audioBar}></div>
+                                <div className={stylesNew.audioBar}></div>
+                                <div className={stylesNew.audioBar}></div>
+                                <div className={stylesNew.audioBar}></div>
+                                <div className={stylesNew.audioBar}></div>
+                              </div>
+                            </span>
                           </div>
-                        )}
-                      </div>
-                      {effectiveAgentType === REACT_AGENT && (
-                        <div className={chatInputModule.relativeWrapper} ref={knowledgePopoverRef}>
-                          <button
-                            className={chatInputModule.actionButton}
-                            onClick={async () => {
-                              const newState = !showKnowledgePopover;
-                              setShowKnowledgePopover(newState);
-                              if (newState && (!knowledgeResponse || knowledgeResponse.length === 0)) {
-                                await knowledgeBaseData();
+                        ) : isTranscribing ? (
+                          <div className={stylesNew.transcribingIndicator}>
+                            <div className={stylesNew.transcribingDots}>
+                              <span className={stylesNew.transcribingDot}></span>
+                              <span className={stylesNew.transcribingDot}></span>
+                              <span className={stylesNew.transcribingDot}></span>
+                            </div>
+                            <span className={stylesNew.transcribingLabel}>Transcribing...</span>
+                          </div>
+                        ) : (
+                          <textarea
+                            ref={textareaRef}
+                            value={userChat}
+                            rows={1}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setUserChat(value);
+                              calculateHeight(value);
+                              // Filter suggestions as user types and show PromptSuggestions panel
+                              filterSuggestionsForAutoSuggest(value);
+
+                              // Detect @ as first character to show agent mention dropdown
+                              if (value === "@" || (value.startsWith("@") && value.indexOf(" ") === -1)) {
+                                const searchTerm = value.substring(1).toLowerCase();
+                                setMentionSearchTerm(searchTerm);
+                                setShowMentionDropdown(true);
+                                setHighlightedMentionIndex(0);
+                              } else if (showMentionDropdown && !value.startsWith("@")) {
+                                // Close dropdown if user removed the @
+                                setShowMentionDropdown(false);
+                                setMentionSearchTerm("");
                               }
                             }}
-                            title="Knowledge Base"
-                            tabIndex={0}
-                            aria-haspopup="listbox"
-                            aria-expanded={showKnowledgePopover}
-                            disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}>
-                            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <circle cx="32" cy="18" r="5.5" fill="currentColor" />
-                              <path
-                                d="M16 32
-                              C16 28, 24 28, 32 32
-                              C40 28, 48 28, 48 32
-                              V48
-                              C48 44, 40 44, 32 48
-                              C24 44, 16 44, 16 48
-                              V32Z"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                fill="none"
-                              />
-
-                              <line x1="32" y1="32" x2="32" y2="48" stroke="currentColor" strokeWidth="1.5" />
-
-                              <line x1="19" y1="33" x2="19" y2="47" stroke="currentColor" strokeWidth="0.8" />
-                              <line x1="22" y1="34" x2="22" y2="46" stroke="currentColor" strokeWidth="0.8" />
-                              <line x1="25" y1="35" x2="25" y2="45" stroke="currentColor" strokeWidth="0.8" />
-                              <line x1="28" y1="36" x2="28" y2="44" stroke="currentColor" strokeWidth="0.8" />
-
-                              <line x1="36" y1="36" x2="36" y2="44" stroke="currentColor" strokeWidth="0.8" />
-                              <line x1="39" y1="35" x2="39" y2="45" stroke="currentColor" strokeWidth="0.8" />
-                              <line x1="42" y1="34" x2="42" y2="46" stroke="currentColor" strokeWidth="0.8" />
-                              <line x1="45" y1="33" x2="45" y2="47" stroke="currentColor" strokeWidth="0.8" />
-
-                              <path d="M19 33C19 33 25 31 32 33C39 31 45 33 45 33" stroke="currentColor" strokeWidth="1" />
-                            </svg>
-                          </button>
-                          {showKnowledgePopover && (
-                            <div className={chatInputModule.dropdownContent} role="listbox" aria-label="Knowledge Base options" style={{ minWidth: 220, maxWidth: 260 }}>
-                              <div className={chatInputModule.searchContainer} style={{ padding: "8px 8px 4px 8px" }}>
-                                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className={chatInputModule.searchIcon}>
-                                  <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                                  <path d="m15 15 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                </svg>
-                                <input
-                                  ref={knowledgeSearchInputRef}
-                                  type="text"
-                                  placeholder="Search knowledge base..."
-                                  value={searchTerm}
-                                  onChange={handleSearchChange}
-                                  onKeyDown={handleKnowledgeDropdownKeyDown}
-                                  className={chatInputModule.searchInput}
-                                  aria-label="Search knowledge base"
-                                  autoComplete="off"
-                                />
-                              </div>
-                              <div
-                                className={chatInputModule.agentsList}
-                                ref={knowledgeListRef}
-                                style={{
-                                  maxHeight: 200,
-                                  overflowY: "auto",
-                                  padding: "4px 8px",
-                                }}>
-                                {Array.isArray(knowledgeResponse) && knowledgeResponse.length > 0 ? (
-                                  (() => {
-                                    const filteredOptions = knowledgeResponse.filter((option) => option.toLowerCase().includes(searchTerm.toLowerCase()));
-                                    return filteredOptions.map((option, idx) => (
-                                      <div
-                                        key={idx}
-                                        className={`${chatInputModule.agentItem} ${idx === highlightedKbIndex ? chatInputModule.highlighted : ""}`}
-                                        style={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 8,
-                                        }}
-                                        onMouseEnter={() => setHighlightedKbIndex(idx)}
-                                        onMouseLeave={() => setHighlightedKbIndex(-1)}
-                                        onClick={() => {
-                                          const isChecked = selectedValues.includes(option);
-                                          if (isChecked) {
-                                            setSelectedValues((prev) => prev.filter((item) => item !== option));
-                                          } else {
-                                            setSelectedValues((prev) => [...prev, option]);
-                                          }
-                                        }}
-                                        role="option"
-                                        aria-selected={idx === highlightedKbIndex}>
-                                        <input
-                                          type="checkbox"
-                                          id={`kb-checkbox-${idx}`}
-                                          value={option}
-                                          checked={selectedValues.includes(option)}
-                                          onChange={handleCheckboxChange}
-                                          style={{ marginRight: 6 }}
-                                          tabIndex={-1}
-                                        />
-                                        <label
-                                          htmlFor={`kb-checkbox-${idx}`}
-                                          className={chatInputModule.agentName}
-                                          style={{
-                                            fontSize: 13,
-                                            fontWeight: 500,
-                                            cursor: "pointer",
-                                          }}>
-                                          {option}
-                                        </label>
-                                      </div>
-                                    ));
-                                  })()
-                                ) : (
-                                  <div className={chatInputModule.noAgents}>No knowledge base found</div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div className={chatInputModule.settingsContainer} ref={chatSettingsRef}>
-                        <button
-                          className={`${chatInputModule.actionButton} ${showChatSettings ? chatInputModule.active : ""}`}
-                          onClick={() => setShowChatSettings(!showChatSettings)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setShowChatSettings(!showChatSettings);
-                            } else if (e.key === "ArrowDown" && !showChatSettings) {
-                              e.preventDefault();
-                              setShowChatSettings(true);
-                            }
-                          }}
-                          title="ChatSettings"
-                          tabIndex={generating ? -1 : 0}
-                          // disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
-                          aria-expanded={showChatSettings}
-                          aria-haspopup="menu"
-                          aria-label="Chat Settings menu"
-                          aria-disabled={generating}>
-                          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            {/* <!-- Speech bubble outline with reduced height --> */}
-                            <path
-                              d="M2.5 2.5 C2.5 1.95 2.95 1.5 3.5 1.5 L14.5 1.5 C15.05 1.5 15.5 1.95 15.5 2.5 L15.5 11.5 C15.5 12.05 15.05 12.5 14.5 12.5 L6.5 12.5 L3.5 15.5 C3.2 15.8 2.5 15.6 2.5 15.2 L2.5 2.5 Z"
-                              stroke="currentColor"
-                              strokeWidth="1"
-                              fill="none"
-                              strokeLinejoin="round"
-                            />
-
-                            {/* <!-- Gear outline positioned higher --> */}
-                            <path
-                              d="M9 3.5 C8.7 3.5 8.5 3.7 8.5 4 L8.5 4.3 C8.3 4.4 8.2 4.5 8 4.6 L7.8 4.4 C7.6 4.2 7.3 4.2 7.1 4.4 L6.6 4.9 C6.4 5.1 6.4 5.4 6.6 5.6 L6.8 5.8 C6.7 6 6.6 6.1 6.5 6.3 L6.2 6.3 C5.9 6.3 5.7 6.5 5.7 6.8 L5.7 7.5 C5.7 7.8 5.9 8 6.2 8 L6.5 8 C6.6 8.2 6.7 8.3 6.8 8.5 L6.6 8.7 C6.4 8.9 6.4 9.2 6.6 9.4 L7.1 9.9 C7.3 10.1 7.6 10.1 7.8 9.9 L8 9.7 C8.2 9.8 8.3 9.9 8.5 10 L8.5 10.3 C8.5 10.6 8.7 10.8 9 10.8 L9.7 10.8 C10 10.8 10.2 10.6 10.2 10.3 L10.2 10 C10.4 9.9 10.5 9.8 10.7 9.7 L10.9 9.9 C11.1 10.1 11.4 10.1 11.6 9.9 L12.1 9.4 C12.3 9.2 12.3 8.9 12.1 8.7 L11.9 8.5 C12 8.3 12.1 8.2 12.2 8 L12.5 8 C12.8 8 13 7.8 13 7.5 L13 6.8 C13 6.5 12.8 6.3 12.5 6.3 L12.2 6.3 C12.1 6.1 12 6 11.9 5.8 L12.1 5.6 C12.3 5.4 12.3 5.1 12.1 4.9 L11.6 4.4 C11.4 4.2 11.1 4.2 10.9 4.4 L10.7 4.6 C10.5 4.5 10.4 4.4 10.2 4.3 L10.2 4 C10.2 3.7 10 3.5 9.7 3.5 L9 3.5 Z"
-                              stroke="currentColor"
-                              strokeWidth="0.8"
-                              fill="none"
-                            />
-
-                            {/* <!-- Gear center circle positioned higher --> */}
-                            <circle cx="9.35" cy="7.15" r="1.2" stroke="currentColor" strokeWidth="0.8" fill="none" />
-                          </svg>
-                        </button>
-                        {showChatSettings && (
-                          <div
-                            className={`${chatInputModule.settingsDropdown} ${chatInputModule.chatSettingsDropdown}`}
-                            onKeyDown={handleSettingsKeyDown}
-                            role="menu"
-                            aria-label="Chat Settings menu">
-                            <div className={chatInputModule.settingsHeader}>Chat Options</div>
-
-                            <div className={`${chatInputModule.toggleGroup} ${chatInputModule.chatOptions}`} role="menuitem">
-                              <div className={chatInputModule.chatOptionsItems}>
-                                <button className={chatInputModule.actionButton} onClick={handleNewChat} title="New Chat" tabIndex={0} disabled={isMissingRequiredOptions || generating || fetching || isStreaming}>
-                                  {" "}
-                                  {/* Removed the condition check 'messageData.length === 0' */}
-                                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path
-                                      d="M3 6C3 4.34315 4.34315 3 6 3H14C15.6569 3 17 4.34315 17 6V11C17 12.6569 15.6569 14 14 14H8L5 17V6Z"
-                                      stroke="currentColor"
-                                      strokeWidth="1.5"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                    <g transform="translate(11, 8.5)">
-                                      <path d="M0 -2.5V2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                      <path d="M-2.5 0H2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    </g>
-                                  </svg>
-                                  <p className={chatInputModule.chatOptionName}>New Chat</p>
-                                </button>
-                              </div>
-
-                              <div className={chatInputModule.chatOptionsItems}>
-                                <button
-                                  className={chatInputModule.actionButton}
-                                  onClick={() => {
-                                    setShowChatHistory(true);
-                                    setShowChatSettings(false);
-                                  }}
-                                  title="Chat History"
-                                  tabIndex={0}
-                                  disabled={isMissingRequiredOptions || generating || fetching || isEditable}>
-                                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="3" y="3" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                                    <path d="M6 7H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    <path d="M6 9H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    <path d="M6 11H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-
-                                    <g transform="translate(1.1, 0)">
-                                      <circle cx="14" cy="16" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                                      <path d="M14 14V16L15.5 17.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                    </g>
-                                  </svg>
-                                  <p className={chatInputModule.chatOptionName}>Chat History</p>
-                                </button>
-                              </div>
-
-                              <div className={chatInputModule.chatOptionsItems}>
-                                <button
-                                  className={chatInputModule.actionButton}
-                                  onClick={(e) => {
-                                    if (isMissingRequiredOptions || messageData.length === 0 || generating || fetching || isStreaming) {
-                                      e.preventDefault();
-                                      return;
-                                    }
-                                    setShowDeleteConfirmation(true);
-                                    setShowChatSettings(false);
-                                  }}
-                                  title="Delete Chat"
-                                  tabIndex={0}
-                                  disabled={isMissingRequiredOptions || messageData.length === 0 || generating || fetching || isStreaming}>
-                                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M7 4V3C7 2.44772 7.44772 2 8 2H12C12.5523 2 13 2.44772 13 3V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    <path d="M5 4H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    <path d="M6 4V16C6 17.1046 6.89543 18 8 18H12C13.1046 18 14 17.1046 14 16V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    <path d="M8 8V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                    <path d="M12 8V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                                  </svg>
-                                  <p className={chatInputModule.chatOptionName}>Delete Chat</p>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+                            onInput={(e) => calculateHeight(e.target.value)}
+                            onKeyDown={(e) => {
+                              // Handle prompt suggestions keyboard navigation
+                              // Arrow keys are intercepted here so they don't move the cursor.
+                              // The PromptSuggestions component's own window keydown listener
+                              // handles the actual navigation and selection.
+                              if (showPromptSuggestions) {
+                                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                                  e.preventDefault();
+                                  return;
+                                }
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  if (promptSuggestionHasFocusRef.current) {
+                                    // User has highlighted a suggestion with arrow keys,
+                                    // let PromptSuggestions handle the selection.
+                                    e.preventDefault();
+                                    return;
+                                  }
+                                  // No suggestion highlighted — close the panel and let
+                                  // Enter fall through to handleKeyDown to send the message.
+                                  setShowPromptSuggestions(false);
+                                  setOpenedViaIcon(false);
+                                }
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  setShowPromptSuggestions(false);
+                                  return;
+                                }
+                              }
+                              // Handle @mention dropdown navigation
+                              if (showMentionDropdown) {
+                                const filteredMentionAgents = agentListDropdown.filter(agent => {
+                                  const matchesSearch = agent.agentic_application_name?.toLowerCase().includes(mentionSearchTerm);
+                                  const notCurrentAgent = agent.agentic_application_id !== agentSelectValue;
+                                  const matchesTypeFilter = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
+                                  const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
+                                  const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
+                                  const isHybridAgent = agent.agentic_application_type === HYBRID_AGENT;
+                                  const typeAllowed = effectiveAgentType === HYBRID_AGENT ? isHybridAgent : !isHybridAgent;
+                                  return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && pipelineAllowed;
+                                });
+                                if (e.key === "ArrowDown") {
+                                  e.preventDefault();
+                                  setHighlightedMentionIndex(prev =>
+                                    prev < filteredMentionAgents.length - 1 ? prev + 1 : 0
+                                  );
+                                  return;
+                                }
+                                if (e.key === "ArrowUp") {
+                                  e.preventDefault();
+                                  setHighlightedMentionIndex(prev =>
+                                    prev > 0 ? prev - 1 : filteredMentionAgents.length - 1
+                                  );
+                                  return;
+                                }
+                                if (e.key === "Enter" && filteredMentionAgents.length > 0) {
+                                  e.preventDefault();
+                                  const selectedMentionAgent = filteredMentionAgents[highlightedMentionIndex] || filteredMentionAgents[0];
+                                  handleMentionAgentSelect(selectedMentionAgent);
+                                  return;
+                                }
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  setShowMentionDropdown(false);
+                                  setMentionSearchTerm("");
+                                  setUserChat("");
+                                  return;
+                                }
+                              }
+                              handleKeyDown(e);
+                            }}
+                            placeholder={!isMissingRequiredOptions ? (mentionedAgent ? "Ask anything..." : "Ask anything or type @ to mention agent...") : "Select options to start chatting"}
+                            disabled={generating || isMissingRequiredOptions || fetching || feedBack === dislike || isEditable || messageDisable}
+                            className={chatInputModule.textInput}
+                            style={{ height: "24px" }}
+                            maxLength={2000}
+                            autoComplete="off"
+                            aria-autocomplete="list"
+                            aria-controls="suggestion-popover"
+                          />
                         )}
                       </div>
+                      {/* Prompt Suggestion Button inside input */}
                       <button
-                        className={chatInputModule.actionButton}
-                        onClick={handleLiveTracking}
-                        title="Live Tracking"
-                        tabIndex={0}
-                        // disabled={isMissingRequiredOptions || generating || fetching || isEditable}
-                      >
-                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <circle cx="10" cy="6" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                          <circle cx="10" cy="6" r="1" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" />
-                          <path d="M10 9L10 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                          <path d="M6 15L10 13L14 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          <circle cx="4" cy="4" r="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.6" />
-                          <circle cx="16" cy="5" r="1" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4" />
-                          <circle cx="15" cy="15" r="1.5" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5" />
-                          <rect x="2" y="17" width="16" height="1.5" rx="0.75" fill="currentColor" opacity="0.3" />
-                        </svg>
+                        type="button"
+                        className={chatInputModule.promptSuggestionBtn}
+                        onClick={handlePromptSuggestionsToggle}
+                        disabled={isMissingRequiredOptions || generating || fetching || messageDisable}
+                        title="Prompt Library"
+                        tabIndex={0}>
+                        <SVGIcons icon="sparkles" width={16} height={16} />
                       </button>
+                    </div>
+                    {/* Send button */}
+                    <button
+                      type="submit"
+                      onClick={() => sendUserMessage(userChat)}
+                      className={chatInputModule.sendButton}
+                      disabled={generating || fetching || messageDisable || isTranscribing || !(userChat && userChat.trim())}
+                      title="Send Message"
+                      tabIndex={0}>
+                      <SVGIcons icon="send-message" width={16} height={16} />
+                    </button>
+
+                    {/* Mic Button - Inside the input box */}
+                    <button
+                      type="button"
+                      className={`${chatInputModule.micButton} ${recording ? chatInputModule.active : ""}`}
+                      onClick={recording ? stopRecording : startRecording}
+                      disabled={generating || fetching || messageDisable || isTranscribing}
+                      title={recording ? "Stop Recording" : isTranscribing ? "Processing audio..." : "Voice Input"}
+                      tabIndex={0}>
+                      {recording ? <SVGIcons icon="stop-recording" width={16} height={16} /> : <SVGIcons icon="mic" width={16} height={16} />}
+                    </button>
+                  </div>
+                </div>
+                <PromptSuggestions
+                  isVisible={showPromptSuggestions}
+                  onClose={() => {
+                    setShowPromptSuggestions(false);
+                    setOpenedViaIcon(false);
+                  }}
+                  onSelectPrompt={handlePromptSelect}
+                  promptSuggestions={promptSuggestions}
+                  filteredSuggestions={filteredAutoSuggestions}
+                  cachedSuggestions={cachedSuggestions}
+                  searchText={userChat}
+                  openedViaIcon={openedViaIcon}
+                  onFocusedIndexChange={(idx) => {
+                    promptSuggestionHasFocusRef.current = idx >= 0;
+                  }}
+                  ref={promptSuggestionsRef}
+                />
+
+                {/* @Mention Agent Dropdown */}
+                {showMentionDropdown && (
+                  <div className={chatInputModule.mentionDropdown} ref={mentionDropdownRef}>
+                    <div className={chatInputModule.mentionDropdownHeader}>
+                      <div className={chatInputModule.mentionSearchWrapper}>
+                        <SVGIcons icon="search" width={14} height={14} />
+                        <input
+                          type="text"
+                          className={chatInputModule.mentionSearchInput}
+                          placeholder="Search..."
+                          value={mentionSearchTerm}
+                          onChange={(e) => setMentionSearchTerm(e.target.value.toLowerCase())}
+                          autoFocus
+                        />
+                      </div>
+                      <select
+                        className={chatInputModule.mentionFilterSelect}
+                        value={mentionAgentTypeFilter}
+                        onChange={(e) => setMentionAgentTypeFilter(e.target.value)}
+                      >
+                        {getAgentTypeFilterOptions(framework).map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={chatInputModule.mentionDropdownList} ref={mentionListRef}>
+                      {agentListDropdown
+                        .filter(agent => {
+                          // Base filters: search term and exclude current agent
+                          const matchesSearch = agent.agentic_application_name?.toLowerCase().includes(mentionSearchTerm);
+                          const notCurrentAgent = agent.agentic_application_id !== agentSelectValue;
+                          const matchesTypeFilter = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
+
+                          // Exclude pipelines from "all" view - only show when explicitly filtered
+                          const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
+                          const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
+
+                          // Agent type filtering:
+                          // - For hybrid agents: show ONLY hybrid agents
+                          // - For non-hybrid agents: hide hybrid agents
+                          const isHybridAgent = agent.agentic_application_type === HYBRID_AGENT;
+                          const typeAllowed = effectiveAgentType === HYBRID_AGENT ? isHybridAgent : !isHybridAgent;
+
+                          return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && pipelineAllowed;
+                        })
+                        .map((agent, index) => {
+                          // Get short abbreviation for agent type
+                          const getTypeAbbr = (type) => {
+                            const abbrs = {
+                              react_agent: "RA",
+                              react_critic_agent: "RC",
+                              hybrid_agent: "HA",
+                              meta_agent: "MA",
+                              planner_meta_agent: "MP",
+                              planner_executor_agent: "PE",
+                              multi_agent: "PEC",
+                              pipeline: "PL",
+                              custom_template: "CT"
+                            };
+                            return abbrs[type] || type?.substring(0, 2).toUpperCase() || "";
+                          };
+                          return (
+                            <div
+                              key={agent.agentic_application_id}
+                              className={`${chatInputModule.mentionDropdownItem} ${index === highlightedMentionIndex ? chatInputModule.highlighted : ""}`}
+                              onClick={() => handleMentionAgentSelect(agent)}
+                              onMouseEnter={() => setHighlightedMentionIndex(index)}
+                            >
+                              <SVGIcons icon="fa-robot" width={16} height={16} />
+                              <span className={chatInputModule.mentionDropdownItemName}>{agent.agentic_application_name}</span>
+                              <span className={chatInputModule.mentionDropdownItemType}>{getTypeAbbr(agent.agentic_application_type)}</span>
+                            </div>
+                          );
+                        })
+                      }
+                      {agentListDropdown.filter(agent => {
+                        const matchesSearch = agent.agentic_application_name?.toLowerCase().includes(mentionSearchTerm);
+                        const notCurrentAgent = agent.agentic_application_id !== agentSelectValue;
+                        const matchesTypeFilter = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
+                        const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
+                        const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
+                        const isHybridAgent = agent.agentic_application_type === HYBRID_AGENT;
+                        const typeAllowed = effectiveAgentType === HYBRID_AGENT ? isHybridAgent : !isHybridAgent;
+                        return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && pipelineAllowed;
+                      }).length === 0 && (
+                          <div className={chatInputModule.mentionDropdownEmpty}>
+                            No agents found
+                          </div>
+                        )}
                     </div>
                   </div>
                 )}
-                <PromptSuggestions
-                  isVisible={showPromptSuggestions}
-                  onClose={() => setShowPromptSuggestions(false)}
-                  onSelectPrompt={handlePromptSelect}
-                  promptSuggestions={promptSuggestions}
-                />
+
                 {/* Autofill Suggestion Popover */}
                 <div style={{ position: "relative" }}>
                   <SuggestionPopover
@@ -3117,23 +3226,376 @@ const AskAssistant = () => {
                   customTemplatId={customTemplatId}
                   onChatDeleted={handleChatDeleted}
                   onSelectChat={handleChatSelected}
+                  framework_type={framework}
                 />
               )}
             </div>
           </div>
-          {/* Canvas Component */}
-          {isCanvasOpen && (
-            <Canvas
-              isOpen={isCanvasOpen}
-              onClose={closeCanvas}
-              content={canvasContent}
-              contentType={canvasContentType}
-              title={canvasTitle}
-              messageId={canvasMessageId}
-              is_last={canvasIsLast}
-              sendUserMessage={sendUserMessage}
-              selectedAgent={agentSelectValue}
+        </div>
+
+        {/* Canvas Component - opens between chat and right sidebar */}
+        {isCanvasOpen && (
+          <Canvas
+            isOpen={isCanvasOpen}
+            onClose={closeCanvas}
+            content={canvasContent}
+            contentType={canvasContentType}
+            title={canvasTitle}
+            messageId={canvasMessageId}
+            is_last={canvasIsLast}
+            sendUserMessage={sendUserMessage}
+            selectedAgent={agentSelectValue}
+          />
+        )}
+
+        {/* Right Sidebar - Model Selection & Settings */}
+        <div className={`${stylesNew.rightSidebar} ${isRightSidebarCollapsed ? stylesNew.rightSidebarCollapsed : ""}`}>
+          {/* Collapse Toggle Button */}
+          <button
+            className={stylesNew.sidebarCollapseBtn}
+            onClick={() => setIsRightSidebarCollapsed(!isRightSidebarCollapsed)}
+            title={isRightSidebarCollapsed ? "Expand Settings" : "Collapse Settings"}
+          >
+            <SVGIcons
+              icon={isRightSidebarCollapsed ? "chevron-left" : "chevron-right"}
+              width={14}
+              height={14}
             />
+          </button>
+
+          {/* Sidebar Content - Hidden when collapsed */}
+          {!isRightSidebarCollapsed && (
+            <>
+              {/* Fixed Top Section - Agent Selection */}
+              <div className={stylesNew.sidebarFixedTop}>
+                {/* Framework Selection */}
+                <div className={stylesNew.sidebarSectionCompact}>
+                  <div className={stylesNew.sidebarLabel}>
+                    <SVGIcons icon="layout-grid" width={14} height={14} />
+                    <span>Framework</span>
+                  </div>
+                  <NewCommonDropdown
+                    className={dropdownStyles.chatFrameworkDropdown}
+                    options={FRAMEWORK_OPTIONS.map((f) => f.label)}
+                    selected={FRAMEWORK_OPTIONS.find((f) => f.value === framework)?.label || "LangGraph"}
+                    onSelect={(label) => {
+                      const selected = FRAMEWORK_OPTIONS.find((f) => f.label === label);
+                      if (selected) {
+                        handleFrameworkChange(selected.value);
+                      }
+                    }}
+                    placeholder="Select Framework"
+                    showSearch={false}
+                    disabled={messageDisable || fetching || generating || isEditable}
+                    dropdownWidth="248px"
+                  />
+                </div>
+
+                {/* Agent Selection */}
+                <div className={stylesNew.sidebarSectionCompact}>
+                  <div className={stylesNew.sidebarLabel}>
+                    <SVGIcons icon="fa-robot" width={14} height={14} />
+                    <span>Agent</span>
+                  </div>
+                  <NewCommonDropdown
+                    className={dropdownStyles.chatAgentDropdown}
+                    options={(() => {
+                      const agentNames = filteredAgents.map((agent) => agent.agentic_application_name);
+                      if (selectedAgent?.agentic_application_name && !agentNames.includes(selectedAgent.agentic_application_name)) {
+                        agentNames.unshift(selectedAgent.agentic_application_name);
+                      }
+                      return agentNames;
+                    })()}
+                    selected={selectedAgent?.agentic_application_name || ""}
+                    onSelect={(name) => {
+                      if (!name) {
+                        setSelectedAgent("");
+                        setAgentSelectValue("");
+                        setFeedback("");
+                        return;
+                      }
+                      const agent = filteredAgents.find((a) => a.agentic_application_name === name) || agentsListData.find((a) => a.agentic_application_name === name);
+                      if (agent) {
+                        // Skip reset if selecting the same agent
+                        if (selectedAgent?.agentic_application_id === agent.agentic_application_id) {
+                          return;
+                        }
+                        selectAgent(agent);
+                        setAgentSelectValue(agent.agentic_application_id);
+                        setFeedback("");
+                        setOldSessionId("");
+                        const cookieSessionId = Cookies.get("user_session");
+                        if (cookieSessionId) {
+                          setSessionId(cookieSessionId);
+                        }
+                        setLikeIcon(false);
+                        // Auto-focus chat input after agent selection
+                        setTimeout(() => {
+                          if (textareaRef.current) {
+                            textareaRef.current.focus();
+                          }
+                        }, 100);
+                      }
+                    }}
+                    placeholder="Select Agent"
+                    showSearch={true}
+                    disabled={messageDisable || fetching || generating || isEditable}
+                    showClearIcon={false}
+                    showSelectedOnTop={false}
+                    dropdownWidth="248px"
+                    maxWidth="248px"
+                    showTypeFilter={framework !== "pure_python"}
+                    typeFilterOptions={getAgentTypeFilterOptions(framework)}
+                    selectedTypeFilter={agentType || "all"}
+                    onTypeFilterChange={(value) => {
+                      setAgentType(value === "all" ? "" : value);
+                    }}
+                    optionMetadata={(() => {
+                      const typeAbbreviations = {
+                        meta_agent: "MA",
+                        react_agent: "RA",
+                        planner_meta_agent: "PM",
+                        planner_executor_agent: "PE",
+                        multi_agent: "PC",
+                        react_critic_agent: "RC",
+                        hybrid_agent: "HA",
+                      };
+                      const metadata = Object.fromEntries(
+                        filteredAgents.map((agent) => [
+                          agent.agentic_application_name,
+                          typeAbbreviations[agent.agentic_application_type] || (agent.agentic_application_type ? agent.agentic_application_type.toUpperCase().slice(0, 2) : ""),
+                        ]),
+                      );
+                      if (selectedAgent?.agentic_application_name) {
+                        const type = selectedAgent.agentic_application_type || "";
+                        metadata[selectedAgent.agentic_application_name] = typeAbbreviations[type] || type.toUpperCase().slice(0, 2);
+                      }
+                      return metadata;
+                    })()}
+                    optionTooltips={(() => {
+                      const typeFullNames = Object.fromEntries(
+                        agentTypesDropdown.map((t) => [t.value, t.label]),
+                      );
+                      const tooltips = Object.fromEntries(
+                        filteredAgents.map((agent) => [
+                          agent.agentic_application_name,
+                          typeFullNames[agent.agentic_application_type] || (agent.agentic_application_type ? agent.agentic_application_type.replace(/_/g, " ") : ""),
+                        ]),
+                      );
+                      if (selectedAgent?.agentic_application_name) {
+                        const type = selectedAgent.agentic_application_type || "";
+                        tooltips[selectedAgent.agentic_application_name] = typeFullNames[type] || type.replace(/_/g, " ");
+                      }
+                      return tooltips;
+                    })()}
+                    fixedHeight={true}
+                  />
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className={stylesNew.sidebarDivider}></div>
+
+              {/* Scrollable Section - Settings & Actions */}
+              <div className={stylesNew.sidebarScrollable}>
+                {/* Model + Temperature in same row */}
+                <div className={stylesNew.modelTempRow}>
+                  <div className={stylesNew.modelSection}>
+                    <div className={stylesNew.sidebarLabel}>
+                      <SVGIcons icon="hardware-chip" width={14} height={14} />
+                      <span>Model</span>
+                    </div>
+                    <NewCommonDropdown
+                      className={dropdownStyles.chatModelDropdown}
+                      options={selectedModels.map((m) => m.value)}
+                      selected={model || ""}
+                      onSelect={(name) => {
+                        setModel(name || "");
+                      }}
+                      placeholder="Select Model"
+                      showSearch={true}
+                      disabled={messageDisable || fetching || generating || isEditable}
+                      showClearIcon={false}
+                      dropdownWidth="180px"
+                      fixedHeight={true}
+                    />
+                  </div>
+
+                  {/* Temperature Button with Popup */}
+                  <div className={stylesNew.tempButtonWrapper} ref={temperaturePopupRef}>
+                    <button
+                      className={stylesNew.tempButton}
+                      onClick={() => setShowTemperaturePopup(!showTemperaturePopup)}
+                      disabled={messageDisable || fetching || generating || isEditable}
+                      title={`Temperature: ${temperature.toFixed(1)}`}
+                    >
+                      <SVGIcons icon="thermometer" width={14} height={14} />
+                      <span className={stylesNew.tempButtonValue}>{temperature.toFixed(1)}</span>
+                    </button>
+
+                    {showTemperaturePopup && (
+                      <div className={stylesNew.tempPopup}>
+                        <div className={stylesNew.tempPopupHeader}>
+                          <span>Temperature</span>
+                          <span className={stylesNew.tempPopupValue}>{temperature.toFixed(1)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={temperature}
+                          onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                          className={stylesNew.temperatureSliderColorful}
+                          ref={temperatureSliderRef}
+                        />
+                        <div className={stylesNew.tempPopupLabels}>
+                          <span>Precise</span>
+                          <span>Creative</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Verifier Settings - hidden when no toggles are allowed by permissions */}
+                {(() => {
+                  const config = chat_screen_config[framework]?.[effectiveAgentType] || {};
+                  const toggles = [
+                    { key: "plan-verifier", show: config.planVerifier && canPlanVerifier, label: "Plan Verifier", checked: isHuman, onChange: handleHumanInLoop },
+                    { key: "tool-verifier", show: config.toolVerifier && canToolVerifier, label: effectiveAgentType === META_AGENT || effectiveAgentType === PLANNER_META_AGENT ? "Agent Verifier" : "Tool Verifier", checked: toolInterrupt, onChange: handleToolInterrupt, showToolsList: true },
+                    { key: "validator", show: config.validator && canValidator, label: "Validator", checked: useValidator, onChange: setUseValidator },
+                    { key: "file-context", show: config.fileContext && canFileContext, label: "File Context", checked: isFileContextEnabled, onChange: setIsFileContextEnabled },
+                    { key: "canvas", show: config.canvasView && canCanvasView, label: "Canvas View", checked: isCanvasEnabled, onChange: handleCanvasToggle },
+                    { key: "context", show: config.context && canContext, label: "Context", checked: isContextEnabled, onChange: handleContextToggle },
+                    { key: "online-evaluator", show: config.onlineEvaluator && canEvaluation, label: "Online Evaluator", checked: onlineEvaluatorFlag, onChange: handleOnlineEvaluatorToggle },
+                  ];
+                  const visibleToggles = toggles.filter((t) => t.show);
+                  if (visibleToggles.length === 0) return null;
+                  return (
+                    <div className={stylesNew.sidebarSection}>
+                      <div className={stylesNew.sidebarLabel}>
+                        <SVGIcons icon="sliders-vertical" width={14} height={14} />
+                        <span>Settings</span>
+                      </div>
+                      <div className={stylesNew.settingsToggles}>
+                        {visibleToggles.map((t) => (
+                          <div key={t.key} className={stylesNew.toggleWithList}>
+                            <div className={`${stylesNew.sidebarToggle} ${t.showToolsList && t.checked ? stylesNew.toggleWithExpandable : ""}`}>
+                              <span className={stylesNew.toggleLabelText}>{t.label}</span>
+                              <div className={stylesNew.toggleRightSection}>
+                                {/* Expand/Collapse button for tools list */}
+                                {t.showToolsList && t.checked && mappedTools && mappedTools.length > 0 && (
+                                  <button
+                                    className={stylesNew.expandCollapseBtn}
+                                    onClick={() => setShowToolsListExpanded(!showToolsListExpanded)}
+                                    title={showToolsListExpanded ? "Collapse tools" : "Expand tools"}
+                                    type="button"
+                                  >
+                                    <SVGIcons icon={showToolsListExpanded ? "drop_arrow_up" : "drop_arrow_down"} width={12} height={12} />
+                                  </button>
+                                )}
+                                <label className={stylesNew.toggleSwitchLabel}>
+                                  <input
+                                    type="checkbox"
+                                    checked={t.checked}
+                                    onChange={(e) => {
+                                      t.onChange(e.target.checked);
+                                      if (t.showToolsList && e.target.checked) setShowToolsListExpanded(true);
+                                    }}
+                                    disabled={messageDisable || generating || fetching || isEditable}
+                                    className={stylesNew.toggleCheckbox}
+                                  />
+                                  <span className={stylesNew.toggleSwitch}></span>
+                                </label>
+                              </div>
+                            </div>
+
+                            {/* Show tools list when Tool Verifier is enabled and expanded */}
+                            {t.showToolsList && t.checked && showToolsListExpanded && mappedTools && mappedTools.length > 0 && (
+                              <div className={stylesNew.toolsListContainer}>
+                                <div className={stylesNew.toolsListHeader}>
+                                  <span className={stylesNew.toolsListTitle}>Select Tools ({selectedInterruptTools.length}/{mappedTools.length})</span>
+                                  <button
+                                    className={stylesNew.selectAllBtn}
+                                    onClick={() => handleSelectAllInterruptTools(selectedInterruptTools.length !== mappedTools.length)}
+                                    disabled={messageDisable || generating || fetching || isEditable}
+                                  >
+                                    {selectedInterruptTools.length === mappedTools.length ? "Deselect All" : "Select All"}
+                                  </button>
+                                </div>
+                                <div className={stylesNew.toolsCheckboxList}>
+                                  {mappedTools.map((tool) => (
+                                    <label key={tool} className={stylesNew.toolCheckboxItem}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedInterruptTools.includes(tool)}
+                                        onChange={() => handleInterruptToolToggle(tool)}
+                                        disabled={messageDisable || generating || fetching || isEditable}
+                                        className={stylesNew.toolCheckbox}
+                                      />
+                                      <span className={stylesNew.toolCheckboxLabel}>{tool}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Show loading state when fetching tools */}
+                            {t.showToolsList && t.checked && loadingMappedTools && (
+                              <div className={stylesNew.toolsLoading}>
+                                <span>Loading tools...</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Quick Actions - full width buttons */}
+                <div className={stylesNew.sidebarSection}>
+                  <div className={stylesNew.sidebarLabel}>
+                    <SVGIcons icon="bolt" width={14} height={14} />
+                    <span>Actions</span>
+                  </div>
+                  <div className={stylesNew.actionsFullWidth}>
+                    <button
+                      className={stylesNew.actionFullBtn}
+                      onClick={handleNewChat}
+                      disabled={isMissingRequiredOptions}
+                      title="New Chat"
+                    >
+                      <SVGIcons icon="circle-plus" width={18} height={18} />
+                    </button>
+                    <button
+                      className={stylesNew.actionFullBtn}
+                      onClick={() => setShowChatHistory(true)}
+                      disabled={isMissingRequiredOptions || generating || fetching || isEditable}
+                      title="History"
+                    >
+                      <SVGIcons icon="history" width={18} height={18} />
+                    </button>
+                    <button
+                      className={stylesNew.actionFullBtn}
+                      onClick={handleLiveTracking}
+                      title="Tracking"
+                    >
+                      <SVGIcons icon="activity" width={18} height={18} />
+                    </button>
+                    <button
+                      className={`${stylesNew.actionFullBtn} ${stylesNew.deleteBtn}`}
+                      onClick={() => setShowDeleteConfirmation(true)}
+                      disabled={messageData.length === 0 || generating || fetching}
+                      title="Delete Chat"
+                    >
+                      <SVGIcons icon="trash" width={18} height={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -3142,6 +3604,14 @@ const AskAssistant = () => {
           message="Are you sure you want to delete this chat? This action cannot be undone."
           onConfirm={handleResetChat}
           setShowConfirmation={setShowDeleteConfirmation}
+        />
+      )}
+      {/* File Viewer Modal */}
+      {showFileViewer && (
+        <DocViewerModal
+          url={viewingFile.url}
+          fileName={viewingFile.name}
+          onClose={handleCloseFileViewer}
         />
       )}
     </>

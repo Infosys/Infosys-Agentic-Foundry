@@ -54,6 +54,13 @@ export const useChatServices = () => {
       const streamArray = await postDataStream(url, chatData, {}, typeof onChunk === "function" ? onChunk : undefined);
       if (!Array.isArray(streamArray) || streamArray.length === 0) return null;
       const finalObj = [...streamArray].reverse().find(o => o && (o.executor_messages || o.response || o.raw || o.tool_verifier || o.plan_verifier)) || streamArray[streamArray.length - 1];
+      // Ensure response_time is captured even if it arrived in a separate stream chunk
+      if (finalObj && !finalObj.response_time) {
+        const chunkWithTime = [...streamArray].reverse().find((o) => o && o.response_time);
+        if (chunkWithTime) {
+          finalObj.response_time = chunkWithTime.response_time;
+        }
+      }
       try { Object.defineProperty(finalObj, '__raw_chunks', { value: streamArray, enumerable: false }); } catch (_) {}
       return finalObj;
     } catch (error) {
@@ -168,6 +175,38 @@ export const useChatServices = () => {
     }
   };
 
+  // Upload files for chat
+  const uploadChatFiles = async (files, sessionId) => {
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("files", file));
+      formData.append("session_id", sessionId);
+      const response = await postData(APIs.CHAT_FILES_UPLOAD, formData);
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  };
+
+  // Delete uploaded chat file
+  const deleteChatFile = async (filePath) => {
+    try {
+      const apiUrl = `${APIs.DELETE_FILE}?file_path=${encodeURIComponent(filePath)}`;
+      const response = await deleteData(apiUrl);
+      if (response) {
+        return response;
+      } else {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  };
+
   return {
     resetChat,
     getChatQueryResponse,
@@ -178,5 +217,7 @@ export const useChatServices = () => {
     getQuerySuggestions,
     storeMemoryExample,
     getToolsMappedByAgent,
+    uploadChatFiles,
+    deleteChatFile,
   };
 };

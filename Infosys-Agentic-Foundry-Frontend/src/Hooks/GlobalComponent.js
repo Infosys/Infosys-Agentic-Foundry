@@ -1,7 +1,7 @@
 import { React, useEffect } from "react";
 import { useGlobalComponent } from "./GlobalComponentContext";
 import "./GlobalComponent.css";
-import MessageUpdateform from "../components/AskAssistant/MsgUpdateform";
+import MessageUpdateform from "../components/AskAssistant/FilesPage";
 
 const GlobalComponent = () => {
   const { isVisible, hideComponent } = useGlobalComponent();
@@ -19,9 +19,7 @@ const GlobalComponent = () => {
 
   if (!isVisible) return null;
 
-  return (
-    <MessageUpdateform isVisible={isVisible} hideComponent={hideComponent} />
-  );
+  return <MessageUpdateform isVisible={isVisible} hideComponent={hideComponent} />;
 };
 
 export default GlobalComponent;

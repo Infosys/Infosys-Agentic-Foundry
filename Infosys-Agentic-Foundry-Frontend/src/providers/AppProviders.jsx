@@ -8,31 +8,38 @@
  * 1. MessageProvider - Used by all other providers for notifications
  * 2. ErrorBoundary - Catches all errors (can now use MessageContext)
  * 3. AuthProvider - Authentication state (depends on MessageProvider)
- * 4. VersionProvider - App version info
- * 5. ApiUrlProvider - API configuration
- * 6. GlobalComponentProvider - Global UI components
+ * 4. PermissionsProvider - Role-based permissions (depends on AuthProvider)
+ * 5. VersionProvider - App version info
+ * 6. ApiUrlProvider - API configuration
+ * 7. GlobalComponentProvider - Global UI components
  */
 
 import { MessageProvider } from "../Hooks/MessageContext";
 import { AuthProvider } from "../context/AuthContext";
+import { PermissionsProvider } from "../context/PermissionsContext";
 import { VersionProvider } from "../context/VersionContext";
 import { ApiUrlProvider } from "../context/ApiUrlContext";
 import { GlobalComponentProvider } from "../Hooks/GlobalComponentContext";
 import { ErrorBoundaryWrapper } from "../components/errorhandling/ErrorBoundary";
+import { ThemeProvider } from "../Hooks/ThemeContext";
 
 export const AppProviders = ({ children }) => {
   return (
-    <MessageProvider>
-      <ErrorBoundaryWrapper>
-        <AuthProvider>
-          <VersionProvider>
-            <ApiUrlProvider>
-              <GlobalComponentProvider>{children}</GlobalComponentProvider>
-            </ApiUrlProvider>
-          </VersionProvider>
-        </AuthProvider>
-      </ErrorBoundaryWrapper>
-    </MessageProvider>
+    <ThemeProvider>
+      <MessageProvider>
+        <ErrorBoundaryWrapper>
+          <AuthProvider>
+            <PermissionsProvider>
+              <VersionProvider>
+                <ApiUrlProvider>
+                  <GlobalComponentProvider>{children}</GlobalComponentProvider>
+                </ApiUrlProvider>
+              </VersionProvider>
+            </PermissionsProvider>
+          </AuthProvider>
+        </ErrorBoundaryWrapper>
+      </MessageProvider>
+    </ThemeProvider>
   );
 };
 

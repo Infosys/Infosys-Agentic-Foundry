@@ -1,0 +1,173 @@
+/* EditAccessKeyModal Styles */
+
+/* Compact form layout */
+.compactForm {
+  gap: 8px !important;
+}
+
+.compactForm :global(.formGroup) {
+  margin-bottom: 0;
+}
+
+.compactForm :global(.label-desc) {
+  margin-bottom: 2px;
+}
+
+/* Read-only input styling to match textarea */
+.readOnlyInput {
+  background: var(--card-bg, #1e293b) !important;
+  border: 1px solid var(--border, #334155) !important;
+  color: var(--text-color, #e2e8f0) !important;
+  border-radius: var(--radius-lg, 8px);
+  padding: 6px 10px;
+  width: 100%;
+  font-size: 14px;
+}
+
+/* Input with add button layout */
+.inputWithButton {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* Add button styling */
+.addButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--app-primary-color, #3b82f6);
+  border: none;
+  border-radius: var(--radius-lg, 8px);
+  cursor: pointer;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.addButton:hover:not(:disabled) {
+  background: var(--app-primary-color-hover, #2563eb);
+}
+
+.addButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Chip Styles */
+.chipContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  max-height: 56px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+/* Custom scrollbar for chip container */
+.chipContainer::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chipContainer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chipContainer::-webkit-scrollbar-thumb {
+  background: var(--border-color, #ccc);
+  border-radius: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--primary-color, #0284c7);
+  border-radius: 12px;
+  border: 1px solid var(--primary-color, #0284c7);
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chip:hover {
+  background: var(--primary-light, rgba(2, 132, 199, 0.1));
+}
+
+/* New type chip - same styling as default */
+.chipNewType {
+  background: transparent;
+  color: var(--primary-color, #0284c7);
+  border: 1px solid var(--primary-color, #0284c7);
+}
+
+.chipNewType:hover {
+  background: var(--primary-light, rgba(2, 132, 199, 0.1));
+}
+
+/* Remove type chip - same styling as default */
+.chipRemoveType {
+  background: transparent;
+  color: var(--primary-color, #0284c7);
+  border: 1px solid var(--primary-color, #0284c7);
+}
+
+.chipRemoveType:hover {
+  background: var(--primary-light, rgba(2, 132, 199, 0.1));
+}
+
+/* Chip remove button */
+.chipRemoveBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.chipRemoveBtn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.chipRemoveBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Excluded type chip - same styling as default */
+.chipExcludedType {
+  background: transparent;
+  color: var(--primary-color, #0284c7);
+  border: 1px solid var(--primary-color, #0284c7);
+}
+
+.chipExcludedType:hover {
+  background: var(--primary-light, rgba(2, 132, 199, 0.1));
+}
+
+/* New exclusion type chip - same styling as default */
+.chipNewExclusionType {
+  background: transparent;
+  color: var(--primary-color, #0284c7);
+  border: 1px solid var(--primary-color, #0284c7);
+}
+
+.chipNewExclusionType:hover {
+  background: var(--primary-light, rgba(2, 132, 199, 0.1));
+}

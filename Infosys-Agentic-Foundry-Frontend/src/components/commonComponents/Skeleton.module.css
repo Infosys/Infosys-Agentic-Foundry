@@ -1,0 +1,156 @@
+/* Skeleton.module.css - Modern skeleton loading styles */
+
+/* Base skeleton element */
+.skeleton {
+  background: var(--skeleton-base, #e5e7eb);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm, 8px);
+}
+
+/* Shimmer animation overlay */
+.skeleton.animated::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--gradient-shimmer, linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%));
+  background-size: 200% 100%;
+  animation: iafShimmer var(--skeleton-animation-duration, 1.5s) infinite linear;
+}
+
+/* Variant: Text */
+.skeleton.text {
+  border-radius: 4px;
+}
+
+/* Variant: Circular */
+.skeleton.circular {
+  border-radius: 50%;
+}
+
+/* Variant: Rectangular */
+.skeleton.rectangular {
+  border-radius: var(--radius-sm, 8px);
+}
+
+/* Variant: Card */
+.skeleton.card {
+  border-radius: var(--radius, 16px);
+}
+
+/* Skeleton group for multiple elements */
+.skeletonGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Pre-built: Skeleton Card */
+.skeletonCard {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius, 16px);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 140px;
+  animation: iafFadeIn var(--transition-normal, 250ms) ease;
+}
+
+.skeletonCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.skeletonCardHeaderText {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeletonCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.skeletonCardActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Pre-built: Skeleton List */
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skeletonListItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.skeletonListContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Pre-built: Skeleton Grid */
+.skeletonGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+/* Staggered animation for grid items */
+.skeletonGrid .skeletonCard:nth-child(1) { animation-delay: 0ms; }
+.skeletonGrid .skeletonCard:nth-child(2) { animation-delay: 50ms; }
+.skeletonGrid .skeletonCard:nth-child(3) { animation-delay: 100ms; }
+.skeletonGrid .skeletonCard:nth-child(4) { animation-delay: 150ms; }
+.skeletonGrid .skeletonCard:nth-child(5) { animation-delay: 200ms; }
+.skeletonGrid .skeletonCard:nth-child(6) { animation-delay: 250ms; }
+
+/* Dark theme adjustments */
+:global([data-theme="dark"]) .skeleton {
+  background: var(--skeleton-base, #334155);
+}
+
+:global([data-theme="dark"]) .skeleton.animated::after {
+  background: var(--gradient-shimmer, linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.08) 50%, transparent 100%));
+}
+
+/* Pulse animation variant (alternative to shimmer) */
+.skeleton.pulse {
+  animation: iafPulse 1.5s ease-in-out infinite;
+}
+
+.skeleton.pulse::after {
+  display: none;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton.animated::after {
+    animation: none;
+    background: transparent;
+  }
+  
+  .skeleton.pulse {
+    animation: none;
+    opacity: 0.6;
+  }
+}

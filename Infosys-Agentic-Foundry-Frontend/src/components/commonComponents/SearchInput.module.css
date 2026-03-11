@@ -24,11 +24,11 @@
 }
 
 .searchInput {
-  background-color: #c3c1cf;
+  background-color: var(--card-bg, #c3c1cf);
   padding: 7px;
   font: normal normal 400 12px/16px Segoe UI;
-  letter-spacing: 0px;
-  color: #3d4359;
+  letter-spacing: 0.3px;
+  color: var(--text-primary, #3d4359);
   border-radius: 4px;
   width: 0px;
   transition-duration: 500ms;

@@ -3,25 +3,45 @@
   display: flex;
   position: relative;
   flex-direction: column;
-  height: 100%;
-  background: #ffffff;
+  height: auto;
+  min-height: 200px;
+  background: var(--card-bg);
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
   transition: background 0.2s ease;
+  box-sizing: border-box;
 }
 
-.codeViewer.dark {
-  background: #1a1a1a;
+/* Section Header - JSON style */
+.sectionHeader {
+  padding: 12px 16px;
+  background: var(--checkbox-bg);
+  border-bottom: none;
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }
 
 /* Toolbar */
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px;
-  position: absolute;
+  justify-content: flex-end;
+  padding: 8px 12px;
   background: transparent;
-  align-self: end;
-  z-index: 1;
+  border: none;
+  border-radius: 16px 16px 0 0;
+  z-index: 2;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+:global([data-theme="dark"]) .toolbar {
+  background: transparent;
+  border: none;
 }
 
 .toolbarLeft {
@@ -31,38 +51,27 @@
 }
 
 .languageTag {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #e0f2fe;
-  color: #007acc;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  text-transform: uppercase;
+  background: var(--pill-bg);
+  color: var(--app-primary-color);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.025em;
-}
-
-.dark .languageTag {
-  background: rgba(0, 122, 204, 0.2);
-  color: #60a5fa;
 }
 
 .modifiedIndicator {
   display: flex;
   align-items: center;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--warning);
+  color: var(--primary-button-color);
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.dark .modifiedIndicator {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fbbf24;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .toolbarActions {
@@ -72,34 +81,32 @@
 }
 
 .toolbarButton {
-  width: 23px;
-  height: 23px;
+  width: 28px;
+  height: 28px;
   border: none;
-  background: #ffffff;
+  background: var(--hover-background);
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  color: var(--text-secondary, #64748b);
 }
 
 .toolbarButton:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  transform: translateY(-1px);
+  background: var(--checkbox-bg);
+  color: var(--text-primary);
 }
 
 .toolbarButton:active {
-  transform: translateY(0);
+  background: var(--border);
 }
 
 .toolbarButton.copied {
-  background: #dcfce7;
-  border-color: #22c55e;
+  background: var(--success);
+  color: var(--primary-button-color);
 }
-
-
 
 /* Code Content */
 .codeContent {
@@ -107,6 +114,13 @@
   overflow: auto;
   min-height: 0;
   position: relative;
+  padding-top: 0;
+  border: none;
+}
+
+.codeContent pre {
+  border: none !important;
+  margin: 0 !important;
 }
 
 .codeContent::-webkit-scrollbar {
@@ -115,28 +129,16 @@
 }
 
 .codeContent::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--scrollbar-track);
 }
 
 .codeContent::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 .codeContent::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-.dark .codeContent::-webkit-scrollbar-track {
-  background: #374151;
-}
-
-.dark .codeContent::-webkit-scrollbar-thumb {
-  background: #6b7280;
-}
-
-.dark .codeContent::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* Code Editor (Textarea) */
@@ -147,7 +149,7 @@
   border: none;
   outline: none;
   background: transparent;
-  color: #1f2937;
+  color: var(--text-primary);
   /* font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace; */
   font-size: 13px;
   line-height: 1.5;
@@ -158,26 +160,18 @@
   overflow-x: auto;
 }
 
-.dark .codeEditor {
-  color: #f9fafb;
-}
-
 .codeEditor:focus {
-  outline: 2px solid rgba(0, 122, 204, 0.3);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
 /* Footer */
 .footer {
   padding: 8px 16px;
-  border-top: 1px solid #e5e7eb;
-  background: #f8fafc;
+  border-top: none;
+  background: transparent;
   flex-shrink: 0;
-}
-
-.dark .footer {
-  background: #2d2d2d;
-  border-top-color: #404040;
+  border-radius: 0 0 16px 16px;
 }
 
 .stats {
@@ -188,12 +182,8 @@
 
 .stat {
   font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.dark .stat {
-  color: #9ca3af;
+  color: var(--muted);
+  font-weight: var(--font-weight-medium);
 }
 
 /* Empty State */
@@ -205,39 +195,43 @@
   height: 100%;
   padding: 40px 20px;
   text-align: center;
+  color: var(--muted);
 }
 
 .emptyMessage {
   margin-top: 12px;
-  color: #64748b;
+  color: var(--text-secondary, #64748b);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.dark .emptyMessage {
-  color: #9ca3af;
+:global([data-theme="dark"]) .emptyState {
+  color: var(--text-secondary);
 }
 
-Syntax Highlighter Overrides
-.codeViewer :global(.language-javascript),
+:global([data-theme="dark"]) .emptyMessage {
+  color: var(--muted);
+}
+
+Syntax Highlighter Overrides .codeViewer :global(.language-javascript),
 .codeViewer :global(.language-typescript),
 .codeViewer :global(.language-python),
 .codeViewer :global(.language-html),
 .codeViewer :global(.language-css),
 .codeViewer :global(.language-sql) {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace !important;
+  font-family: var(--font-mono) !important;
 }
 
 /* Line Numbers Styling */
 .codeViewer :global(.linenumber) {
-  color: #9ca3af !important;
+  color: var(--muted) !important;
   font-size: 13px !important;
   user-select: none;
   min-width: 40px !important;
 }
 
-.dark .codeViewer :global(.linenumber) {
-  color: #6b7280 !important;
+:global([data-theme="dark"]) .codeViewer :global(.linenumber) {
+  color: var(--muted) !important;
 }
 
 /* Responsive Design */
@@ -247,34 +241,100 @@ Syntax Highlighter Overrides
     flex-wrap: wrap;
     min-height: auto;
   }
-  
+
   .toolbarLeft {
     order: 1;
     flex: 1;
   }
-  
+
   .toolbarActions {
     order: 2;
     margin-top: 8px;
     width: 100%;
     justify-content: flex-end;
   }
-  
+
   .toolbarButton {
     width: 28px;
     height: 28px;
   }
-  
+
   .codeEditor {
     padding: 12px;
     font-size: 13px;
   }
-  
+
   .footer {
     padding: 6px 12px;
   }
-  
+
   .stats {
     gap: 12px;
   }
+}
+
+/* SyntaxHighlighter Dark Theme Overrides */
+:global([data-theme="dark"]) .codeViewer :global(pre[class*="language-"]) {
+  background: var(--card-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(code[class*="language-"]) {
+  color: var(--text-primary) !important;
+}
+
+/* Syntax highlighting colors for dark mode */
+:global([data-theme="dark"]) .codeViewer :global(.token.comment),
+:global([data-theme="dark"]) .codeViewer :global(.token.prolog),
+:global([data-theme="dark"]) .codeViewer :global(.token.doctype),
+:global([data-theme="dark"]) .codeViewer :global(.token.cdata) {
+  color: var(--muted) !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(.token.punctuation) {
+  color: var(--text-secondary) !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(.token.property),
+:global([data-theme="dark"]) .codeViewer :global(.token.tag),
+:global([data-theme="dark"]) .codeViewer :global(.token.boolean),
+:global([data-theme="dark"]) .codeViewer :global(.token.number),
+:global([data-theme="dark"]) .codeViewer :global(.token.constant),
+:global([data-theme="dark"]) .codeViewer :global(.token.symbol),
+:global([data-theme="dark"]) .codeViewer :global(.token.deleted) {
+  color: #f472b6 !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(.token.selector),
+:global([data-theme="dark"]) .codeViewer :global(.token.attr-name),
+:global([data-theme="dark"]) .codeViewer :global(.token.string),
+:global([data-theme="dark"]) .codeViewer :global(.token.char),
+:global([data-theme="dark"]) .codeViewer :global(.token.builtin),
+:global([data-theme="dark"]) .codeViewer :global(.token.inserted) {
+  color: #a5f3fc !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(.token.operator),
+:global([data-theme="dark"]) .codeViewer :global(.token.entity),
+:global([data-theme="dark"]) .codeViewer :global(.token.url),
+:global([data-theme="dark"]) .codeViewer :global(.language-css .token.string),
+:global([data-theme="dark"]) .codeViewer :global(.style .token.string) {
+  color: #fbbf24 !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(.token.atrule),
+:global([data-theme="dark"]) .codeViewer :global(.token.attr-value),
+:global([data-theme="dark"]) .codeViewer :global(.token.keyword) {
+  color: #c4b5fd !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(.token.function),
+:global([data-theme="dark"]) .codeViewer :global(.token.class-name) {
+  color: #93c5fd !important;
+}
+
+:global([data-theme="dark"]) .codeViewer :global(.token.regex),
+:global([data-theme="dark"]) .codeViewer :global(.token.important),
+:global([data-theme="dark"]) .codeViewer :global(.token.variable) {
+  color: #fca5a5 !important;
 }

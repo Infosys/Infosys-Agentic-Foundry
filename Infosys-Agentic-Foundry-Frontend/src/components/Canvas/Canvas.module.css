@@ -1,36 +1,60 @@
 /* Canvas Container Styles */
 .canvasContainer {
-  width: 70%;
-  background: #ffffff;
-  border-left: 1px solid #e5e7eb;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
+  position: relative;
+  width: 50%;
+  min-width: 350px;
+  max-width: calc(100% - 300px);
+  height: 100%;
+  background: var(--card-bg);
+  border-left: 2px solid var(--accent);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+  z-index: 100;
   display: flex;
   flex-direction: column;
-  transform: translateX(0);
-  transition: width 0.1s ease-out;
-  animation: slideInFromRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  flex-grow: 0;
+  overflow: hidden;
+  animation: slideInFromRight 0.2s ease-out;
+  box-sizing: border-box;
+  /* Ensure canvas appears between chat and right sidebar */
+  order: 50;
 }
 
 .canvasContainer.fullscreen {
-  width: 100%;
+  width: calc(100vw - var(--main-width, 180px));
+  height: 100vh;
+  position: fixed;
   top: 0;
-  left: 0;
+  left: var(--main-width, 180px);
   right: 0;
-  border-left: none;
+  bottom: 0;
+  border-left: 2px solid var(--accent);
   box-shadow: none;
-  z-index: 2000;
+  z-index: 1000;
+  margin: 0;
+  padding: 0;
+  max-width: none;
+  min-width: 0;
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust fullscreen when nav is collapsed */
+:global([data-nav-collapsed="true"]) .canvasContainer.fullscreen {
+  left: var(--main-width, 90px);
+  width: calc(100vw - var(--main-width, 90px));
 }
 
 .canvasContainer.minimized {
   width: 300px;
   height: 50px;
+  position: fixed;
   bottom: 20px;
   top: auto;
   right: 20px;
-  border-radius: 8px;
+  border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
 }
 
 /* Canvas Header */
@@ -38,24 +62,30 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f8fafc;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--muted-foreground);
+  background: var(--card-bg);
   flex-shrink: 0;
-  min-height: 30px;
 }
 
 .headerLeft {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+
+.headerIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
 }
 
 .canvasTitle {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
-  line-height: 1.4;
+  font-family: var(--font-primary);
+  font-size: 15px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 20px;
+  color: var(--text-primary);
 }
 
 .headerActions {
@@ -65,56 +95,102 @@
 }
 
 .actionButton {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  background: transparent;
+  color: var(--muted);
+  transition: all 0.15s ease;
 }
 
 .actionButton:hover {
-  transform: translateY(-1px);
+  background: var(--hover-background);
+  color: var(--text-primary);
 }
 
 .actionButton:active {
-  transform: translateY(0);
-  background: #e2e8f0;
+  background: var(--border);
 }
 
-/* Canvas Content */
+/* Canvas Content - Single scroll container */
 .canvasContent {
   flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+  padding: 16px 24px 16px 16px;
+  box-sizing: border-box;
+  display: block;
+}
+
+.canvasContent > * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.canvasContent::-webkit-scrollbar {
+  width: 6px;
+}
+
+.canvasContent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.canvasContent::-webkit-scrollbar-thumb {
+  background: var(--border, #d1d5db);
+  border-radius: 3px;
+}
+
+.canvasContent::-webkit-scrollbar-thumb:hover {
+  background: var(--muted, #9ca3af);
 }
 
 /* Resize Handle */
 .resizeHandle {
   position: absolute;
-  left: 0;
+  left: -6px;
   top: 50%;
   transform: translateY(-50%);
-  width: 6px;
-  height: 60px;
-  cursor: col-resize;
+  width: 12px;
+  height: 48px;
+  cursor: col-resize !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 122, 204, 0.3);
-  border-radius: 0 3px 3px 0;
-  opacity: 1;
-  transition: all 0.2s ease;
+  background: var(--accent, #0073cf);
+  border-radius: 4px 0 0 4px;
+  opacity: 0.8;
+  transition: background 0.2s ease, opacity 0.2s ease;
+  z-index: 101;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .resizeHandle:hover {
-  background: rgba(0, 122, 204, 0.5);
+  background: var(--app-primary-color, #007acc);
   opacity: 1;
+}
+
+/* Active resize state - applies to entire canvas during drag */
+.isResizing {
+  cursor: col-resize !important;
+}
+
+.isResizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.isResizing .resizeHandle {
+  opacity: 1;
+  background: var(--app-primary-color, #007acc);
 }
 
 .resizeIndicator {
@@ -122,13 +198,15 @@
   flex-direction: column;
   gap: 2px;
   align-items: center;
+  pointer-events: none;
 }
 
 .resizeDot {
-  width: 2px;
-  height: 2px;
-  background: #007acc;
+  width: 3px;
+  height: 3px;
+  background: #ffffff;
   border-radius: 50%;
+  pointer-events: none;
 }
 
 /* Animations */
@@ -159,9 +237,13 @@
   .canvasContainer {
     width: 80%;
   }
-  
+
   .canvasContainer.fullscreen {
-    width: 100%;
+    width: calc(100vw - var(--main-width, 180px));
+  }
+
+  :global([data-nav-collapsed="true"]) .canvasContainer.fullscreen {
+    width: calc(100vw - var(--main-width, 90px));
   }
 }
 
@@ -169,18 +251,25 @@
   .canvasContainer {
     width: 100%;
     border-left: none;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--border);
     top: 50%;
     height: 50%;
     border-radius: 12px 12px 0 0;
     animation: slideInFromBottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  
+
   .canvasContainer.fullscreen {
     top: 0;
+    left: 0;
+    width: 100vw;
     border-radius: 0;
   }
-  
+
+  :global([data-nav-collapsed="true"]) .canvasContainer.fullscreen {
+    left: 0;
+    width: 100vw;
+  }
+
   .canvasContainer.minimized {
     width: calc(100% - 40px);
     left: 20px;
@@ -209,7 +298,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #64748b;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -224,30 +313,30 @@
 }
 
 .errorIcon {
-  color: #ef4444;
+  color: var(--danger, #ef4444);
   font-size: 13px;
   margin-bottom: 12px;
 }
 
 .errorMessage {
-  color: #64748b;
+  color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
   margin-bottom: 16px;
 }
 
 .errorAction {
-  background: #007acc;
+  background: var(--accent, #007acc);
   color: white;
   border: none;
   border-radius: 6px;
   padding: 8px 16px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: background 0.2s ease;
 }
 
 .errorAction:hover {
-  background: #0066a3;
+  background: var(--accent-hover, #0066a3);
 }

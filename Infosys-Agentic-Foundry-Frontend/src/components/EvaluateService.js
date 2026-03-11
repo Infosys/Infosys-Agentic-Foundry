@@ -5,7 +5,7 @@ import useFetch from "../Hooks/useAxios";
 export const useEndpointsService = () => {
     const { fetchData } = useFetch();
 
-const getEvaluationData = async (agentNames,page = 1,limit = 10) => {
+const getEvaluationData = async (agentNames, page = 1, limit = 10, agentTypes) => {
   try {
     let apiUrl = `${APIs.GET_EVALUATION_DATA}?page=${page}&limit=${limit}`;
     if (agentNames) {
@@ -18,6 +18,17 @@ const getEvaluationData = async (agentNames,page = 1,limit = 10) => {
         apiUrl += `&agent_names=${encodeURIComponent(agentNames)}`;
       }
     }
+    // Add agent_types filter if provided
+    if (agentTypes) {
+      if (Array.isArray(agentTypes)) {
+        if (agentTypes.length > 0) {
+          const typesParam = agentTypes.map(encodeURIComponent).join(",");
+          apiUrl += `&agent_types=${typesParam}`;
+        }
+      } else if (typeof agentTypes === "string" && agentTypes.trim() !== "") {
+        apiUrl += `&agent_types=${encodeURIComponent(agentTypes)}`;
+      }
+    }
     const response = await fetchData(apiUrl);
     return response
   } catch (error) {
@@ -26,7 +37,7 @@ const getEvaluationData = async (agentNames,page = 1,limit = 10) => {
   }
 }
 
-const getAgentMetricsData = async (agentNames, page = 1, limit = 10) => {
+const getAgentMetricsData = async (agentNames, page = 1, limit = 10, agentTypes) => {
   try {
     let apiUrl = `${APIs.GET_AGENT_METRICS}?page=${page}&limit=${limit}`;
     if (agentNames) {
@@ -39,6 +50,17 @@ const getAgentMetricsData = async (agentNames, page = 1, limit = 10) => {
         apiUrl += `&agent_names=${encodeURIComponent(agentNames)}`;
       }
     }
+    // Add agent_types filter if provided
+    if (agentTypes) {
+      if (Array.isArray(agentTypes)) {
+        if (agentTypes.length > 0) {
+          const typesParam = agentTypes.map(encodeURIComponent).join(",");
+          apiUrl += `&agent_types=${typesParam}`;
+        }
+      } else if (typeof agentTypes === "string" && agentTypes.trim() !== "") {
+        apiUrl += `&agent_types=${encodeURIComponent(agentTypes)}`;
+      }
+    }
     const response = await fetchData(apiUrl);
     return response;
   } catch (error) {
@@ -47,7 +69,7 @@ const getAgentMetricsData = async (agentNames, page = 1, limit = 10) => {
   }
 }
 
-const getToolMetricsData = async (agentNames, page = 1, limit = 10) => {
+const getToolMetricsData = async (agentNames, page = 1, limit = 10, agentTypes) => {
   try {
     let apiUrl = `${APIs.GET_TOOL_METRICS}?page=${page}&limit=${limit}`;
     if (agentNames) {
@@ -58,6 +80,17 @@ const getToolMetricsData = async (agentNames, page = 1, limit = 10) => {
         }
       } else if (typeof agentNames === "string" && agentNames.trim() !== "") {
         apiUrl += `&agent_names=${encodeURIComponent(agentNames)}`;
+      }
+    }
+    // Add agent_types filter if provided
+    if (agentTypes) {
+      if (Array.isArray(agentTypes)) {
+        if (agentTypes.length > 0) {
+          const typesParam = agentTypes.map(encodeURIComponent).join(",");
+          apiUrl += `&agent_types=${typesParam}`;
+        }
+      } else if (typeof agentTypes === "string" && agentTypes.trim() !== "") {
+        apiUrl += `&agent_types=${encodeURIComponent(agentTypes)}`;
       }
     }
     const response = await fetchData(apiUrl);
@@ -81,6 +114,7 @@ const getToolMetricsData = async (agentNames, page = 1, limit = 10) => {
  * @param {Function} setIsLoading - Function to update loading state
  * @param {Boolean} hasMore - Whether more data is available (from parent state)
  * @param {Function} setHasMore - Setter to update hasMore in parent
+ * @param {String|Array} agentTypes - Optional agent types to filter by
  * @returns {Function} - Scroll event handler function
  */
 const createLazyLoadHandler = (
@@ -94,7 +128,8 @@ const createLazyLoadHandler = (
   agentNames,
   setIsLoading,
   hasMore = true,
-  setHasMore = () => {}
+  setHasMore = () => {},
+  agentTypes = null
 ) => {
   // Flag to prevent multiple simultaneous fetch calls
   let isFetching = false;
@@ -126,11 +161,11 @@ const createLazyLoadHandler = (
         let response;
         // Choose the appropriate API based on tab
         if (tabName === "toolMetric") {
-          response = await getToolMetricsData(agentNames, nextPage, limit);
+          response = await getToolMetricsData(agentNames, nextPage, limit, agentTypes);
         } else if (tabName === "agentMetric") {
-          response = await getAgentMetricsData(agentNames, nextPage, limit);
+          response = await getAgentMetricsData(agentNames, nextPage, limit, agentTypes);
         } else {
-          response = await getEvaluationData(agentNames, nextPage, limit);
+          response = await getEvaluationData(agentNames, nextPage, limit, agentTypes);
         }
 
         // Handle the response based on different possible formats

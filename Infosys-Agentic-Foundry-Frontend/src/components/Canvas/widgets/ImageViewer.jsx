@@ -299,9 +299,10 @@ const ImageViewer = ({ content, messageId }) => {
             onClick={handleResetZoom}
             title="Reset Zoom"
           >
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <path d="M4 12v4h4M16 8V4h-4M4 16l6-6M20 4l-6 6" 
-                stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C9.69494 21 7.59227 20.1334 6 18.7083" 
+                stroke="#666" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M3 4V9H8" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
           

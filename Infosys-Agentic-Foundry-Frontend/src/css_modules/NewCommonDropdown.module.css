@@ -1,80 +1,481 @@
+/* Sidebar @Agent (Mention) Dropdown Styles */
+.chatMentionDropdown {
+  width: 100%;
+  position: relative;
+}
+
+.chatMentionDropdown .dropdownList {
+  z-index: 1000 !important;
+  width: 248px !important;
+  min-width: 248px !important;
+  max-width: 248px !important;
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-lg) !important;
+  padding: 6px !important;
+}
+
+.chatMentionDropdown .dropdownTrigger {
+  background: var(--input-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  padding: 10px 12px !important;
+  color: var(--text-primary) !important;
+  font-size: 13px !important;
+  min-height: 40px !important;
+}
+
+.chatMentionDropdown .dropdownTrigger:hover {
+  border-color: var(--app-primary-color) !important;
+  background: var(--hover-background) !important;
+}
+
+.chatMentionDropdown .dropdownOption {
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+  margin: 2px 0 !important;
+  color: var(--text-secondary) !important;
+}
+
+.chatMentionDropdown .dropdownOption:hover,
+.chatMentionDropdown .dropdownOption.highlighted {
+  background: var(--accent-light) !important;
+  color: var(--app-primary-color) !important;
+}
+
+.chatMentionDropdown input {
+  background: var(--input-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px !important;
+  color: var(--text-primary) !important;
+  padding: 8px 10px !important;
+}
+
+/* Sidebar Dropdown Styles */
+.chatFrameworkDropdown,
+.chatAgentDropdown,
+.chatModelDropdown {
+  width: 100%;
+  max-width: 248px;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.chatFrameworkDropdown .dropdownList {
+  z-index: 1000 !important;
+  min-width: 100%;
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Model dropdown list - constrain width to sidebar */
+.chatModelDropdown .dropdownList {
+  z-index: 1000 !important;
+  width: 248px !important;
+  min-width: 200px !important;
+  max-width: 248px !important;
+  right: 0 !important;
+  left: auto !important;
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Agent dropdown list - constrain width */
+.chatAgentDropdown .dropdownList {
+  z-index: 1000 !important;
+  width: 248px !important;
+  min-width: 248px !important;
+  max-width: 248px !important;
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.chatFrameworkDropdown .dropdownTrigger,
+.chatAgentDropdown .dropdownTrigger,
+.chatModelDropdown .dropdownTrigger {
+  background: var(--input-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  padding: 10px 12px !important;
+  color: var(--text-primary) !important;
+  font-size: 13px !important;
+  transition: all 0.2s ease !important;
+  min-height: 40px !important;
+}
+
+.chatFrameworkDropdown .dropdownTrigger:hover,
+.chatAgentDropdown .dropdownTrigger:hover,
+.chatModelDropdown .dropdownTrigger:hover {
+  border-color: var(--app-primary-color) !important;
+  background: var(--hover-background) !important;
+}
+
+.chatFrameworkDropdown .dropdownTrigger:focus,
+.chatAgentDropdown .dropdownTrigger:focus,
+.chatModelDropdown .dropdownTrigger:focus {
+  border-color: var(--app-primary-color) !important;
+  box-shadow: var(--focus-ring) !important;
+}
+
+/* Dropdown options in sidebar */
+.chatFrameworkDropdown .dropdownOption,
+.chatAgentDropdown .dropdownOption,
+.chatModelDropdown .dropdownOption {
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+  margin: 2px 4px !important;
+  color: var(--text-secondary) !important;
+  transition: all 0.15s ease !important;
+}
+
+.chatFrameworkDropdown .dropdownOption:hover,
+.chatAgentDropdown .dropdownOption:hover,
+.chatModelDropdown .dropdownOption:hover,
+.chatFrameworkDropdown .dropdownOption.highlighted,
+.chatAgentDropdown .dropdownOption.highlighted,
+.chatModelDropdown .dropdownOption.highlighted {
+  background: var(--accent-light) !important;
+  color: var(--app-primary-color) !important;
+}
+
+.chatFrameworkDropdown .dropdownOption.selected,
+.chatAgentDropdown .dropdownOption.selected,
+.chatModelDropdown .dropdownOption.selected {
+  background: var(--accent-light) !important;
+  color: var(--app-primary-color) !important;
+}
+
+/* Search input in sidebar dropdowns */
+.chatFrameworkDropdown input,
+.chatAgentDropdown input,
+.chatModelDropdown input {
+  background: var(--input-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px !important;
+  color: var(--text-primary) !important;
+}
+
+.chatFrameworkDropdown input::placeholder,
+.chatAgentDropdown input::placeholder,
+.chatModelDropdown input::placeholder {
+  color: var(--muted) !important;
+}
+
+/* Custom Checkbox Styles */
+.customCheckbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--app-primary-color);
+  background: var(--input-bg);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: 0 0 8px rgba(55, 172, 234, 0.1);
+  position: relative;
+}
+
+.customCheckbox:hover {
+  border-color: #37acea;
+  box-shadow: 0 0 12px rgba(55, 172, 234, 0.3);
+}
+
+.customCheckbox.checked {
+  background: linear-gradient(135deg, #025d8a, #37acea);
+  border-color: #37acea;
+  box-shadow: 0 0 15px rgba(55, 172, 234, 0.4);
+}
+
+.customCheckbox input[type="checkbox"] {
+  display: none;
+}
+
+.customCheckbox .tick {
+  display: none;
+}
+.customCheckbox.checked .tick {
+  display: block;
+  width: 14px;
+  height: 14px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.customCheckbox.checked .tick::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border-right: 2.5px solid #fff;
+  border-bottom: 2.5px solid #fff;
+  transform: rotate(45deg);
+}
+
+.customCheckboxChecked {
+  background: transparent;
+  border: none;
+}
+
+.customCheckbox:active {
+  outline: none;
+}
+
+.dropdownLabelMarginTop {
+  margin-top: -1px;
+}
+
+/* Label wrapper styles */
+.dropdownWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dropdownWithLabelTop {
+  flex-direction: column;
+}
+
+.dropdownWithLabelLeft {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.dropdownWithLabelLeft .dropdownLabel {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Truncate selected value with ellipsis */
+.selectedValueTruncate {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 85%;
+  max-width: 100%;
+}
+
+/* Badge shown in selected value (next to truncated name) */
+.selectedMetadataBadge {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--app-primary-color);
+  background: var(--accent-light);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+}
+
+.dropdownPlaceholder {
+  color: var(--muted);
+  font-size: var(--font-size-base, 16px);
+  text-transform: capitalize;
+  font-weight: var(--font-weight-normal, 400);
+  font-style: normal;
+}
+
+/* Prefix icon for dropdown input - matches inputIcon styling */
+.prefixIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 1.5px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.prefixIcon svg {
+  color: var(--muted);
+}
+
+/* Content wrapper to group prefix icon and text */
+.dropdownInputContent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .dropdownContainer {
   position: relative;
-  width: 240px;
-  /* top: 40px;
-    left: 20px; */
-  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-primary);
 }
 
 .dropdownLabel {
   display: block;
-  font-weight: 600;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xs);
   margin-bottom: 4px;
-  color: #1976d2;
-  font-size: 15px;
+  color: var(--app-primary-color);
 }
 
 .dropdownInput {
   width: 100%;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #6c757d;
-  margin-bottom: 6px;
-  font-size: 15px;
-  background: #fff;
-  color: #222;
+  padding: 10px 16px;
+  min-height: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-bottom: 0px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  line-height: 24px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-.dropdownInput.disabled {
-  background-color: #f3f4f6;
-  border-color: #e5e7eb;
-  color: #6b7280;
-  pointer-events: none;
+.dropdownInput:hover:not(.dropdownDisabled) {
+  border-color: var(--app-primary-color);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05),
+              0 0 12px var(--accent-light);
 }
 
-.dropdownSearchInput {
-  width: 96%;
-  margin: 8px 2%;
-  padding: 18px 12px; /* Increased vertical padding for more height */
-  border-radius: 6px;
-  border: 1.5px solid #b0b0b0;
-  font-size: 17px;
-  background: #f9f9f9;
-  color: #222;
-  box-sizing: border-box;
+.dropdownInput:focus:not(.dropdownDisabled),
+.dropdownInput:focus-visible:not(.dropdownDisabled) {
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 3px var(--accent-light),
+              0 0 15px var(--accent-light);
   outline: none;
-  transition: border 0.2s;
-  /* min-height: 48px;  */
-  /* Ensures a minimum height */
-  height: 20px;
 }
-.dropdownSearchInput:focus {
-  border: 1.5px solid #1976d2;
-  background: #fff;
+
+.dropdownDisabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+  background-color: var(--disabled-bg, #f3f4f6);
+}
+
+.countBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  background: var(--app-primary-color);
+  color: #fff;
+  border-radius: 10px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  min-width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+}
+
+.dropdownSelectedValue {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.dropdownArrow {
+  color: var(--app-primary-color);
+  transition:
+    transform 0.25s ease,
+    color 0.2s ease;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.dropdownArrow.rotated {
+  transform: rotate(180deg);
+  color: var(--app-primary-color);
+}
+
+.dropdownSearchWrapper {
+  padding: 10px;
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--hover-background);
+}
+
+/* Ensure TextField fits properly inside dropdown */
+.dropdownSearchWrapper > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.dropdownSearchWrapper > div:first-child > div {
+  max-width: 100%;
 }
 
 .dropdownList {
-  position: absolute;
-  top: 44px;
-  left: 0;
-  width: 100%;
-  min-width: 220px;
-  max-width: 320px;
-  background: #fff;
-  border: 1px solid #1976d2;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(25,118,210,0.08);
-  z-index: 10;
-  max-height: 320px;
+  background: var(--menu-bg);
+  z-index: 1000010;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 8px;
+  max-height: 280px;
+  display: flex;
+  flex-direction: column;
+  animation: iafSlideDown var(--transition-fast, 150ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  transform-origin: top center;
+  min-width: 210px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.dropdownOptionsContainer {
+  top: 6px;
+  position: relative;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.dropdownListDown {
+  top: 39px;
+}
+
+.dropdownListUp {
+  bottom: 33px;
 }
 
 .dropdownHeader {
-  padding: 8px 10px;
-  color: #1976d2;
-  font-weight: 600;
-  border-bottom: 1px solid #eee;
-  background: #f5faff;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  padding: 10px 14px;
+  color: var(--app-primary-color);
+  border-bottom: 1px solid var(--border);
+  background: var(--hover-background);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .dropdownScrollArea {
@@ -83,131 +484,531 @@
 }
 
 .dropdownOption {
-  padding: 8px 10px;
-  background: #fff;
-  color: #222;
+  padding: 10px 14px;
+  color: var(--text-primary);
   cursor: pointer;
-  font-weight: normal;
-  border-bottom: 1px solid #f0f0f0;
-  transition: background 0.15s;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-sm);
+  border-bottom: none;
+  border-left: none;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  word-wrap: normal;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  user-select: none;
+  margin: 2px 0;
+}
+
+.dropdownOption:last-child {
+  margin-bottom: 4px;
+}
+
+.dropdownOption:hover {
+  background: var(--accent-light);
+  transform: translateX(2px);
+}
+
+.dropdownOption:active {
+  transform: translateX(2px) scale(0.99);
 }
 
 .dropdownOption.selected {
-  background: #d9e8f4;
-  font-weight: bold;
+  background-color: transparent;
 }
 
 .dropdownOption.highlighted {
-  background: rgb(235, 235, 245) 
+  background-color: color-mix(in oklab, var(--accent) 20%, transparent);
+  border-radius: var(--radius);
+  font-weight: var(--font-weight-normal);
+  outline: none;
 }
 
 .dropdownNoOption {
-  padding: 10px;
-  color: #888;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  padding: 6px 8px;
+  color: var(--muted);
 }
 
-.dropdownInputUnified {
-  font-size: 16px;
-  font-weight: 500;
-  border-radius: 8px;
-  padding: 10px 14px;
-  border: 1px solid #e0e0e0;
-  background: #fff;
-  color: #222;
-  margin-bottom: 8px;
-  font-family: inherit;
+.dropdownFooter {
+  margin-top: 8px;
+  padding: 4px 0px 2px 0px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.dropdownListUnified {
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-  border: 1px solid #e0e0e0;
-  background: #fff;
-  max-height: 220px;
-  /* overflow-y: auto; */
-  font-family: inherit;
-}
-
-.dropdownHeaderUnified {
-  font-weight: 700;
-  font-size: 16px;
-  color: #222;
-  padding: 10px 0 10px 12px;
-  background: #f7f7f7;
-  border-bottom: 1px solid #e0e0e0;
-  font-family: inherit;
-}
-
-.dropdownScrollAreaUnified {
-  max-height: 180px;
-  /* overflow-y: auto; */
-  padding-bottom: 4px;
-}
-
-.dropdownOptionUnified {
-  font-size: 15px;
-  font-weight: 500;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: #fff;
-  color: #222;
-  margin-bottom: 2px;
+.clearButton {
+  border-radius: var(--radius);
+  display: flex;
+  gap: 8px;
+  padding: 2px 7px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--danger);
+  background-color: transparent;
   cursor: pointer;
-  font-family: inherit;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  min-width: 80px;
+  box-sizing: border-box;
+  border: none;
 }
 
-.dropdownOptionUnified.selected {
-  background: #0071b3;
-  color: #fff;
+.clearButton:hover {
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  color: var(--danger);
 }
 
-.dropdownOptionUnified.highlighted {
-  background: rgb(226 226 238);
-  color: #222;
+.clearIconSpan {
+  display: flex;
 }
 
-.dropdownNoOptionUnified {
-  font-size: 15px;
-  color: #888;
-  padding: 10px;
-  font-family: inherit;
-}
-
-.codeSnippetPreviewUnified {
-  margin-top: 18px;
-}
-
-.codeSnippetHeaderUnified {
+.applyButton {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-medium);
+  font-style: normal;
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.3px;
+  text-align: center;
+  color: var(--primary-button-color, #fff);
+  background: var(--gradient-primary, linear-gradient(135deg, var(--app-primary-color) 0%, color-mix(in oklab, var(--app-primary-color) 80%, #000) 100%));
+  border: none;
+  border-radius: var(--radius, 12px);
+  cursor: pointer;
+  transition: 
+    transform var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
-.codeSnippetTitleUnified {
-  font-size: 14px;
-  font-weight: 700;
-  color: #0071b3;
-  margin-right: 8px;
+.applyButton:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow-primary, 0 4px 12px rgba(0, 124, 195, 0.3));
 }
 
-.codeSnippetInfoIconUnified {
-  font-size: 16px;
-  color: #888;
+.applyButton:active {
+  transform: translateY(0) scale(0.98);
 }
 
-.codeSnippetEditorWrapperUnified {
-  border-radius: 12px;
-  background: #23272f;
-  padding: 0;
+.applyIconSvg {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px;
+  min-height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  display: inline-block;
+  vertical-align: middle;
 }
 
-.codeSnippetEditorUnified {
-  background: #23272f;
-  color: #fff;
-  border-radius: 12px;
-  padding: 18px 20px;
-  font-size: 16px;
-  font-family: "Fira Mono", Menlo, Monaco, Consolas, monospace;
+.applyIconSvg path,
+.applyIconSvg circle {
+  stroke: #fff !important;
+  fill: #fff !important;
+}
+
+.applyTick {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  position: relative;
+}
+
+.applyTick::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 6px;
+  height: 10px;
+  border-right: 2.5px solid #fff;
+  border-bottom: 2.5px solid #fff;
+  transform: rotate(45deg);
+  box-sizing: border-box;
+}
+
+.clearButton svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.dropdownDivider {
+  width: 100%;
+  border-bottom: 1px solid var(--border);
   margin: 0;
-  overflow-x: auto;
+}
+
+.dropdownInputSelected {
+  border-color: var(--app-primary-color);
+}
+.dropdownDisabled {
+  cursor: not-allowed !important;
+  opacity: 0.6;
+}
+
+.dropdownFooterFlex {
+  flex-direction: row;
+  align-items: center;
+}
+
+/* Clear selection icon for single-select mode */
+.clearSelectionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  color: var(--muted, #6b7280);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.clearSelectionIcon:hover {
+  background: var(--danger-light, rgba(239, 68, 68, 0.15));
+  color: var(--danger, #ef4444);
+}
+
+.clearSelectionIcon:focus {
+  outline: none;
+}
+
+/* Option label and metadata layout */
+.optionLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Right section wrapper for badge + close icon alignment */
+.optionRightSection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.optionMetadata {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--app-primary-color);
+  background: var(--accent-light);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+  min-width: 24px;
+  text-align: center;
+}
+
+/* Close icon in dropdown option (for selected item) */
+.optionClearIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.optionClearIcon:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ff6b6b;
+}
+
+/* Placeholder to maintain alignment when close icon is not shown */
+.optionClearIconPlaceholder {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* Delete icon in dropdown option */
+.optionDeleteIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.optionDeleteIcon:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ff6b6b;
+  opacity: 1;
+}
+
+.dropdownOption:hover .optionDeleteIcon {
+  opacity: 1;
+}
+
+/* Type Filter Styles */
+.typeFilterContainer {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.typeFilterIconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.typeFilterIconButton:hover {
+  border-color: var(--app-primary-color);
+  background: var(--accent-light);
+  color: var(--app-primary-color);
+}
+
+.typeFilterIconActive {
+  border-color: var(--app-primary-color);
+  background: var(--accent-light);
+  color: var(--app-primary-color);
+}
+
+.typeFilterWrapper {
+  position: relative;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.typeFilterButton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  color: var(--text-color);
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+
+.typeFilterButton:hover {
+  border-color: var(--app-primary-color);
+  background: var(--accent-light);
+}
+
+.typeFilterLabel {
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.typeFilterDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 180px;
+  min-width: 180px;
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.typeFilterOption {
+  padding: 8px 12px;
+  font-size: var(--font-size-xs);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.typeFilterOption:hover {
+  background: var(--accent-light);
+}
+
+.typeFilterOption:first-child {
+  border-radius: 7px 7px 0 0;
+}
+
+.typeFilterOption:last-child {
+  border-radius: 0 0 7px 7px;
+}
+
+.typeFilterOptionSelected {
+  background: var(--accent-light);
+  color: var(--app-primary-color);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Selected on Top Styles */
+.selectedOnTopWrapper {
+  padding: 6px 6px 0 6px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--navbar-background);
+}
+
+.selectedOnTopItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--hover-background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-primary);
+  transition: background 0.15s ease;
+}
+
+.selectedOnTopItem:hover {
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+}
+
+.selectedOnTopLabel {
+  flex: 1;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.selectedOnTopRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.selectedOnTopClear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.selectedOnTopClear:hover {
+  background: var(--hover-background);
+  color: var(--danger, #ef4444);
+}
+
+.selectedOnTopDivider {
+  display: none;
+}
+
+/* ============================================
+   DARK THEME VARIANT
+   Applied when theme="dark" is passed
+   ============================================ */
+.darkTheme {
+  --card-bg: #1e293b;
+  --navbar-background: #1e293b;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --header-color: #ffffff;
+  --text-primary: #ffffff;
+  --muted: #64748b;
+  --hover-background: #334155;
+  --muted-foreground: #334155;
+}
+
+.dropdownList.darkTheme {
+  background-color: #1e293b;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dropdownList.darkTheme .dropdownOption,
+.dropdownList.darkTheme .optionLabel {
+  color: #ffffff;
+}
+
+.dropdownList.darkTheme .dropdownOption:hover,
+.dropdownList.darkTheme .dropdownOption.highlighted {
+  background-color: #334155;
+}
+
+.dropdownList.darkTheme .dropdownSearchWrapper {
+  background-color: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Style the TextField/input inside dark theme dropdown */
+.dropdownList.darkTheme .dropdownSearchWrapper input,
+.dropdownList.darkTheme .dropdownSearchWrapper [class*="textField"] {
+  background-color: transparent;
+  border: 1px solid var(--app-primary-color);
+  border-radius: var(--radius-lg);
+  color: #ffffff;
+}
+
+.dropdownList.darkTheme .dropdownSearchWrapper input::placeholder {
+  color: #94a3b8;
+}
+
+.dropdownList.darkTheme .dropdownNoOption {
+  color: #64748b;
 }

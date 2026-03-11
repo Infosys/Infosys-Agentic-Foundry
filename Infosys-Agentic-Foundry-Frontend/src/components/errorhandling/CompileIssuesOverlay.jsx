@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { generateUUID } from "../../utils/uuidPolyfill";
 
 // Global parser & buffer helpers (must exist before early suppression block to avoid ReferenceError on fast refresh)
 if (typeof window !== "undefined") {
@@ -143,7 +144,7 @@ export const CompileIssuesOverlay = () => {
 
     setEntries((prev) => {
       if (prev.some((e) => e.text === text && e.type === type)) return prev; // dedupe
-      const next = [{ id: `${Date.now()}_${crypto.randomUUID()}`, type, text, time }, ...prev];
+      const next = [{ id: `${Date.now()}_${generateUUID()}`, type, text, time }, ...prev];
       return next.slice(0, MAX_ENTRIES);
     });
   }, []); // Empty dependency array since it doesn't depend on any props/state

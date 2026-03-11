@@ -6,7 +6,7 @@
   border-radius: 10px;
   margin-bottom: 20px;
   display: block;
-  background: #f6f8fa;
+  background: var(--checkbox-bg, #f6f8fa);
 }
 .mainButton {
   background: #cc0011;
@@ -18,7 +18,7 @@
   width: 100%;
   margin-top: 18px;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: background 0.2s;
   text-align: center;
   text-transform: capitalize;
@@ -35,17 +35,18 @@
   height: 48px;
   object-fit: cover;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
 }
 
 .location {
-  color: #1e293b;
+  color: var(--text-primary);
   font-weight: 500;
 }
 .card {
-  background: #fff;
+  background: var(--card-bg);
   border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  border-left: 5px solid var(--accent, #37acea);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   padding: 24px;
   margin: 0 12px;
   width: 350px;
@@ -62,7 +63,6 @@
   font-size: 15px;
   font-weight: 400;
   line-height: 1.4;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
 }
 .titleRow {
   display: flex;
@@ -71,7 +71,7 @@
   margin-top: -24px;
 }
 
- .toggleRow {
+.toggleRow {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -80,13 +80,13 @@
   gap: 2px;
   margin-bottom: 8px;
 }
-.priceRow{
+.priceRow {
   text-align: center;
   margin-top: 12px;
   width: 100%;
   font-weight: bold;
-  border-top: 1px solid #f0f0f0;
-  padding:32px;
+  border-top: 1px solid var(--border);
+  padding: 32px;
   font-size: 20px;
 }
 .title {
@@ -95,7 +95,6 @@
   font-size: 20px;
   text-transform: capitalize;
   white-space: pre-line;
-
 }
 .toggleContainer {
   display: flex;
@@ -104,18 +103,18 @@
 }
 .toggleLabel {
   font-weight: 700;
-  color: #222;
+  color: var(--text-primary);
   margin-right: 2px;
   font-size: 16px;
   text-transform: capitalize;
-  min-width:100px;
+  min-width: 100px;
   max-width: 250px;
   white-space: pre-line;
 }
 .toggleSwitch {
   width: 32px;
   height: 18px;
-  background: #eee;
+  background: var(--hover-background, #eee);
   border-radius: 12px;
   position: relative;
   display: flex;
@@ -133,27 +132,27 @@
 .toggleOn {
   width: 16px;
   height: 16px;
-  background: #3bb77e;
+  background: var(--success, #3bb77e);
   border-radius: 50%;
   position: absolute;
   right: 2px;
   top: 1px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   transition: right 0.2s;
 }
 .toggleOff {
   width: 16px;
   height: 16px;
-  background: #ccc;
+  background: var(--muted, #ccc);
   border-radius: 50%;
   position: absolute;
   left: 2px;
   top: 1px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   transition: left 0.2s;
 }
 .tvDetailsBelow {
-  color: #444;
+  color: var(--text-secondary);
   margin-bottom: 20px;
   margin-top: 2px;
   margin-left: 0;
@@ -165,7 +164,7 @@
   overflow: hidden;
 }
 .description {
-  color: #666;
+  color: var(--muted);
   margin-bottom: 25px;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -182,7 +181,7 @@
   margin-right: 8px;
 }
 .benefitsBox {
-  background: #f6f8fa;
+  background: var(--checkbox-bg, #f6f8fa);
   border-radius: 12px;
   padding: 16px;
   margin-top: 20px;
@@ -204,7 +203,7 @@
   font-size: 15px;
 }
 .check {
-  color: #3bb77e;
+  color: var(--success, #3bb77e);
   margin-right: 8px;
 }
 .cardListMinimized,
@@ -219,7 +218,7 @@
   align-items: stretch;
   height: 100%;
 }
-.benifitsContent{
+.benifitsContent {
   word-break: break-word;
   overflow-wrap: anywhere;
   white-space: pre-line;

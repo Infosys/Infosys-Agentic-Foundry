@@ -1,17 +1,14 @@
 import Cookies from "js-cookie";
-
+import { patchCookiesForPortScoping } from "./utils/cookieUtils";
 import pkg from "../package.json";
 
-// Runtime environment config injected by nginx (from runtime-config.js)
-// Falls back to process.env for local development
-export const env = window._env_ || {};
+// Ensure cookie scoping is applied before any Cookies.get() at module level
+patchCookiesForPortScoping();
 
 export const APP_VERSION = pkg.version;
 
 export const BOT = "bot";
 export const USER = "user";
-
-//   { label: "Custom Template", value: "custom_template" }
 
 export const agentTypesDropdown = [
   { label: "Hybrid Agent", value: "hybrid_agent" },
@@ -19,7 +16,6 @@ export const agentTypesDropdown = [
   { label: "Meta Planner ", value: "planner_meta_agent" },
   { label: "Planner Executor", value: "planner_executor_agent" },
   { label: "Planner Executor Critic", value: "multi_agent" },
-  { label: "Pipeline", value: "pipeline" },
   { label: "React", value: "react_agent" },
   { label: "React Critic", value: "react_critic_agent" },
 ];
@@ -40,54 +36,71 @@ export const dislike = "submit_feedback";
 
 export const CHAT_BOT_DATA = "CHAT_BOT_DATA";
 
-export const BASE_URL = env.REACT_APP_BASE_URL || process.env.REACT_APP_BASE_URL ;
+export const BASE_URL = process.env.REACT_APP_BASE_URL;
 
-export const mkDocs_baseURL = env.REACT_APP_MKDOCS_BASE_URL || process.env.REACT_APP_MKDOCS_BASE_URL;
+export const mkDocs_baseURL = process.env.REACT_APP_MKDOCS_BASE_URL;
 
-export const liveTrackingUrl = env.REACT_APP_LIVE_TRACKING_URL || process.env.REACT_APP_LIVE_TRACKING_URL;
+export const liveTrackingUrl = process.env.REACT_APP_LIVE_TRACKING_URL;
 
-export const grafanaDashboardUrl = env.REACT_APP_GRAFANA_DASHBOARD_URL || process.env.REACT_APP_GRAFANA_DASHBOARD_URL;
+export const grafanaDashboardUrl = process.env.REACT_APP_GRAFANA_DASHBOARD_URL;
+
+export const TOOL_CHAT_PIPELINE_ID = process.env.REACT_APP_TOOL_CHAT_PIPELINE_ID || "ppl_3d53da95-ec3d-4fc4-bbc7-b1e3250ca96f";
 
 export const APIs = {
+  RESTART_SERVER: "/utility/vm/restart-server",
+  INSTALL_DEPENDENCIES: "/utility/vm/install-dependencies",
+
+  // Inference Config APIs
+  GET_INFERENCE_CONFIG_LIMITS: "/admin/config/limits",
+  UPDATE_INFERENCE_CONFIG_LIMITS: "/admin/config/limits",
+  RESET_INFERENCE_CONFIG_LIMITS: "/admin/config/limits/reset",
+
   //Feedback Learning APIs
   GET_APPROVALS_LIST: "/feedback-learning/get/approvals-list",
   GET_APPROVALS_BY_ID: "/feedback-learning/get/approvals-by-agent/",
   UPDATE_APPROVAL_RESPONSE: "/feedback-learning/update/approval-response",
   GET_RESPONSES_DATA: "/feedback-learning/get/responses-data/",
+  GET_ALL_FEEDBACKS: "/feedback-learning/get/all-feedbacks",
+  GET_FEEDBACK_STATS: "/feedback-learning/get/feedback-stats",
 
   //Unused Items APIs
   AGENTS_UNUSED: "/agents/unused/get",
   TOOLS_UNUSED: "/tools/unused/get",
-  MCP_SERVERS_UNUSED: "/tools/mcp/unused/get",
+  SERVERS_UNUSED: "/tools/mcp/unused/get",
 
   // Default APIs
   LOGIN: "/auth/login",
   LOGOUT: "/auth/logout",
   REGISTER: "/auth/register",
+  ASSIGN_ROLE_DEPARTMENT: "/auth/assign-role-department",
   UPDATE_PASSWORD_ROLE: "/auth/update-password",
+  CHANGE_PASSWORD: "/auth/change-password",
   GUEST_LOGIN: "/auth/guest-login",
   REFRESH_TOKEN: "/auth/refresh-token",
-
-  ADD_TOOLS_WITH_FILE: "/tools/add-with-file",
+  GET_ADMIN_CONTACTS: "/auth/admin-contacts",
 
   //Utility APIs
   GET_VERSION: "/utility/get/version",
   GET_MODELS: "/utility/get/models",
+  GET_INSTALLED_PACKAGES: "/utility/get/installed-packages",
+  GET_MISSING_DEPENDENCIES: "/utility/get-missing-dependencies",
+  GET_PENDING_MODULES: "/tools/pending-modules",
   UPLOAD_FILES: "/utility/files/user-uploads/upload/",
   GET_ALLUPLOADFILELIST: "/utility/files/user-uploads/get-file-structure/",
   DOWNLOAD_FILE: "/utility/files/user-uploads/download",
   DELETE_FILE: "/utility/files/user-uploads/delete/",
-  UPLOAD_KB_DOCUMENT: "/utility/knowledge-base/documents/upload",
-  GET_KB_LIST: "/utility/knowledge-base/list",
+  // Knowledge Base APIs
+  KB_UPLOAD_DOCUMENTS: "/utility/knowledge-base/documents/upload",
+  KB_GET_LIST: "/utility/knowledge-base/list",
+  KB_GET_BY_ID: "/utility/knowledge-base/get/",
+  KB_GET_BY_LIST: "/utility/knowledge-base/get/by-list",
+  KB_GET_BY_LIST_FOR_AGENT: "/utility/knowledge-base/get/by-list-for-agent",
+  KB_DELETE: "/utility/remove-knowledgebases",
+  KB_UPDATE_SHARING: "/utility/knowledge-base/",
+  
   TRANSCRIBE_AUDIO: "/utility/transcribe/",
   LIST_ALL_MARKDOWN_FILES: "/utility/docs/list-all-markdown-files",
   LIST_MARKDOWN_FILES_IN_DIRECTORY: "/utility/docs/list-markdown-files-in-directory/{dir_name}",
-
-  // Installation/VM APIs
-  GET_MISSING_DEPENDENCIES: "/utility/get-missing-dependencies",
-  GET_INSTALLED_PACKAGES: "/utility/get/installed-packages",
-  INSTALL_DEPENDENCIES: "/utility/vm/install-dependencies",
-  RESTART_SERVER: "/utility/vm/restart-server",
 
   //Tags APIs
   GET_TAGS: "/tags/get",
@@ -113,6 +126,7 @@ export const APIs = {
 
   // Chat APIs
   CHAT_INFERENCE: "/chat/inference",
+  CHAT_FILES_UPLOAD: "/chat/files/upload",
   GET_FEEDBACK_RESPONSE: "/chat/get/feedback-response/",
   GET_CHAT_HISTORY: "/chat/get/history",
   CLEAR_CHAT_HISTORY: "/chat/clear-history",
@@ -126,6 +140,7 @@ export const APIs = {
   GET_TOOLS_SEARCH_PAGINATED: "/tools/get/search-paginated/",
   GET_TOOLS_AND_VALIDATORS_SEARCH_PAGINATED: "/tools/get/tools-and-validators-search-paginated/",
   ADD_TOOLS: "/tools/add",
+  ADD_TOOLS_MESSAGE_QUEUE: "/tools/add-message-queue",
   GET_TOOLS_BY_LIST: "/tools/get/by-list",
   UPDATE_TOOLS: "/tools/update/",
   DELETE_TOOLS: "/tools/delete/",
@@ -134,13 +149,12 @@ export const APIs = {
   // New endpoints explicitly differentiate validator tools so UI can fetch them for validation patterns.
   GET_VALIDATOR_TOOLS: "/tools/validators/get",
   TOOLS_BY_TAGS: "/tools/get/by-tags",
-  GET_TOOLS_BY_ID: "/tools/get/{tool_id}",
+  GET_TOOLS_BY_ID: "/tools/get/",
   TOOLS_RECYCLE_BIN: "/tools/recycle-bin/get",
   RESTORE_TOOLS: "/tools/recycle-bin/restore/",
   DELETE_TOOLS_PERMANENTLY: "/tools/recycle-bin/permanent-delete/",
   EXECUTE_CODE: "/tools/execute",
   INLINE_MCP_RUN: "/tools/inline-mcp/run",
-  PENDING_MODULES: "/tools/pending-modules",
 
   // Agents APIs
   ONBOARD_AGENTS: "/agents/onboard",
@@ -157,14 +171,40 @@ export const APIs = {
   EXPORT_AGENTS: "/agents/export",
   GET_TOOLS_MAPPED_BY_AGENT: "/agents/tools-mapped/",
 
+  // MCP Server Recycle Bin APIs
+  SERVERS_RECYCLE_BIN: "/tools/mcp/recycle-bin/get",
+  RESTORE_SERVERS: "/tools/mcp/recycle-bin/restore/",
+  DELETE_SERVERS_PERMANENTLY: "/tools/mcp/recycle-bin/permanent-delete/",
+
   // Agent Assignment APIs
   GET_USERS: "/user-agent-access/all",
   GRANT_USER_AGENT_ACCESS: "/user-agent-access/grant",
   REVOKE_USER_AGENT_ACCESS: "/user-agent-access/revoke",
   GET_USER_AGENT_ACCESS: "/user-agent-access/user/",
-  GET_GROUPS: "/groups/get/list",
+  
+  // Group Management APIs
+  GET_GROUPS: "/groups/get-all-groups",
+  GET_GROUP_BY_NAME: "/groups/get-group-by-name/",
+  GET_GROUPS_SEARCH_PAGINATED: "/groups/get/search-paginated/",
+  GET_GROUPS_BY_USER: "/groups/by-user/",
+  GET_GROUPS_BY_AGENT: "/groups/by-agent/",
+  CREATE_GROUP: "/groups/create-group",
+  UPDATE_GROUP: "/groups/update-group/",
+  DELETE_GROUP: "/groups/delete-group/",
+  ADD_USERS_TO_GROUP: "/groups/{group_name}/add-users",
+  REMOVE_USERS_FROM_GROUP: "/groups/{group_name}/users",
+  ADD_AGENTS_TO_GROUP: "/groups/{group_name}/agents",
+  REMOVE_AGENTS_FROM_GROUP: "/groups/{group_name}/agents",
+  GROUP_ADD_SECRET: "/groups/{group_name}/secrets",
+  GROUP_UPDATE_SECRET: "/groups/{group_name}/secrets/{key_name}",
+  GROUP_DELETE_SECRET: "/groups/{group_name}/secrets/{key_name}",
+  GET_GROUP_SECRETS: "/groups/{group_name}/secrets",
+  GROUP_SECRETS_GET: "/groups/{group_name}/secrets/{key_name}",
+
+  // Domain Management APIs (legacy)
   GET_DOMAINS: "/domains/get-all-domains",
   GET_DOMAINS_BY_USER: "/domains/by-user/",
+  GET_DOMAINS_SEARCH_PAGINATED: "/domains/get/search-paginated/",
   CREATE_DOMAIN: "/domains/create-domain",
   GET_AGENT_ASSIGNMENTS: "/agents/assignments/get",
   CREATE_AGENT_ASSIGNMENT: "/agents/assignments/create",
@@ -173,10 +213,42 @@ export const APIs = {
   DELETE_DOMAIN: "/domains/delete-domain/{domain_name}",
   DELETE_AGENT_ASSIGNMENT: "/agents/assignments/delete",
 
+
+  RD_GET_ACCESS_KEYS: "/resource-dashboard/access-keys",
+  RD_CREATE_ACCESS_KEY: "/resource-dashboard/access-keys",
+  RD_GET_ACCESS_KEY_DETAILS: "/resource-dashboard/access-keys/",
+  RD_DELETE_ACCESS_KEY: "/resource-dashboard/access-keys/",
+  RD_GET_ACCESS_KEY_TOOLS: "/resource-dashboard/access-keys/", // {access_key}/tools
+  RD_UPDATE_MY_ACCESS: "/resource-dashboard/access-keys/", // PUT {access_key}/my-access
+  RD_GET_MY_FULL_ACCESS: "/resource-dashboard/access-keys/", // GET {access_key}/my-access/full
+  RD_GET_MY_ACCESS_KEYS: "/resource-dashboard/my-access-keys",
+  RD_GET_MY_ACCESS_KEYS_FULL: "/resource-dashboard/my-access-keys/full",
+
+  GET_ACCESS_KEYS: "/resource-allocation/access-keys",
+  DELETE_ACCESS_KEY: "/resource-allocation/access-keys/",
+  GET_ACCESS_KEY_USERS: "/resource-allocation/access-keys/",
+  UPDATE_ACCESS_KEY_USERS: "/resource-allocation/access-keys/",
+  GET_USER_VALUES: "/resource-allocation/access-keys/",
+  REMOVE_USER_FROM_ACCESS_KEY: "/resource-allocation/access-keys/",
+  UPDATE_USER_ACCESS: "/resource-allocation/access-keys/",
+  BULK_ASSIGN_VALUES: "/resource-allocation/access-keys/",
+
+  // Department Management APIs
+  GET_DEPARTMENTS: "/auth/departments",
+  GET_DEPARTMENTS_LIST: "/departments/list",
+  GET_DEPARTMENT_USERS: "/departments/{department_name}/users",
+  SET_USER_ACTIVE_STATUS: "/auth/users/set-active-status",
+  ADD_DEPARTMENT: "/departments/add",
+  DELETE_DEPARTMENT: "/departments/",
+  GET_DEPARTMENT_ROLES: "/departments/",
+  ADD_DEPARTMENT_ROLE: "/departments/",
+  DELETE_DEPARTMENT_ROLE: "/departments/",
+
   // Role Management APIs
   GET_ROLES: "/roles/list",
   ADD_ROLE: "/roles/add",
-  DELETE_ROLE: "/roles",
+  DELETE_ROLE: "/departments",
+  UPDATE_USER_ROLE: "/auth/users/update-role",
 
   // Role Assignment APIs
   GET_ROLE_ASSIGNMENTS: "/role-agent-access/get/assignments",
@@ -185,7 +257,7 @@ export const APIs = {
   ASSIGN_USER_ROLE: "/roles/users/assign",
 
   // Role Permissions APIs
-  GET_ROLE_PERMISSIONS: "/roles/permissions",
+  GET_ROLE_PERMISSIONS: "/roles/permissions/get",
   CREATE_ROLE_PERMISSIONS: "/roles/permissions/create",
   UPDATE_ROLE_PERMISSIONS: "/roles/permissions/update",
   DELETE_ROLE_PERMISSIONS: "/roles/permissions/delete",
@@ -196,10 +268,10 @@ export const APIs = {
   MCP_DELETE_TOOLS: "/tools/mcp/delete/",
   MCP_GET_ALL_SERVERS: "/tools/mcp/get/search-paginated/",
   MCP_UPDATE_SERVER: "/tools/mcp/update/",
+  MCP_SERVERS_UNUSED: "/tools/mcp/unused/get",
   MCP_LIVE_TOOL_DETAIL: "/tools/mcp/get/live-tool-details/",
-  MCP_SERVERS_RECYCLE_BIN: "/tools/mcp/recycle-bin/get",
-  MCP_RESTORE_SERVERS: "/tools/mcp/recycle-bin/restore/",
-  MCP_DELETE_SERVERS_PERMANENTLY: "/tools/mcp/recycle-bin/permanent-delete/",
+  MCP_GET_SERVER_BY_ID: "/tools/mcp/get/",
+   MCP_CONVERSION_GENERATE_SERVER: "/mcp-conversion/generate-server-from-all",
 
   //Data Connector APIs
   GET_ACTIVE_CONNECTIONS: "/data-connector/get/active-connection-names",
@@ -229,6 +301,9 @@ export const APIs = {
   // Pipeline APIs
   PIPELINE_CREATE: "/pipelines/create",
   PIPELINE_GET_ALL: "/pipelines/get",
+  PIPELINE_CHAT: "/tools/generate/pipeline/chat",
+  CONVERSATION_HISTORY: "/tools/generate/conversation/history/",
+  DELETE_TOOL_BOT_CONVERSATION: "/tools/generate/conversation/clear/{session_id}",
   PIPELINE_GET_PAGINATED: "/pipelines/get/search-paginated/",
   PIPELINE_GET_BY_ID: "/pipelines/get/",
   PIPELINE_UPDATE: "/pipelines/update/",
@@ -239,6 +314,7 @@ export const APIs = {
   PIPELINE_EXECUTION_STATUS: "/pipelines/executions/{execution_id}/status",
   PIPELINE_GET_EXECUTIONS: "/pipelines/{pipeline_id}/executions",
   PIPELINE_AVAILABLE_AGENTS: "/pipelines/available-agents",
+  PIPELINE_GET_BY_NAME: "/pipelines/get-by-name",
 };
 
 // export const sessionId = "test_101";
@@ -323,3 +399,317 @@ export const systemPromptPlannerExecutorAgents = [
     value: "SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT",
   },
 ];
+
+// Card Footer Buttons Configuration
+// Maps context type to default footer button configurations
+// Buttons are displayed from right to left in the order specified
+export const card_config = {
+  agent: {
+    footerButtons: [{ type: "delete", visible: true }],
+  },
+  tool: {
+    footerButtons: [{ type: "delete", visible: true }],
+  },
+  server: {
+    footerButtons: [
+      { type: "delete", visible: true },
+      { type: "view", visible: true },
+    ],
+  },
+  group: {
+    footerButtons: [{ type: "delete", visible: true }],
+  },
+  role: {
+    footerButtons: [{ type: "delete", visible: true }],
+  },
+  department: {
+    footerButtons: [{ type: "delete", visible: true }],
+  },
+  recycleAgents: {
+    footerButtons: [], // No buttons for recycled agents
+  },
+  recycleTools: {
+    footerButtons: [], // No buttons for recycled tools
+  },
+  default: {
+    footerButtons: [
+      { type: "chat", visible: true },
+      { type: "view", visible: true },
+      { type: "info", visible: true },
+      { type: "delete", visible: true },
+    ],
+  },
+};
+
+// Verifier Settings Configuration
+// Maps framework + agent type to visibility of each toggle
+// true = Show, false = Hidden
+export const chat_screen_config = {
+  google_adk: {
+    mentionAgentTypes: ["meta_agent", "planner_meta_agent", "planner_executor_agent", "multi_agent", "react_agent", "react_critic_agent"],
+    meta_agent: {
+      planVerifier: false,
+      toolVerifier: true,
+      validator: true,
+      fileContext: false,
+      canvasView: true,
+      context: false,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    planner_meta_agent: {
+      planVerifier: true,
+      toolVerifier: true,
+      validator: true,
+      fileContext: false,
+      canvasView: true,
+      context: false,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    planner_executor_agent: {
+      planVerifier: true,
+      toolVerifier: true,
+      validator: true,
+      fileContext: false,
+      canvasView: true,
+      context: false,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    multi_agent: {
+      planVerifier: true,
+      toolVerifier: true,
+      validator: true,
+      fileContext: false,
+      canvasView: true,
+      context: false,
+      onlineEvaluator: true,
+      showMentionButton: true,
+      criticSliders: true,
+    },
+    react_agent: {
+      planVerifier: false,
+      toolVerifier: true,
+      validator: true,
+      fileContext: false,
+      canvasView: true,
+      context: false,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    react_critic_agent: {
+      planVerifier: false,
+      toolVerifier: true,
+      validator: true,
+      fileContext: false,
+      canvasView: true,
+      context: false,
+      onlineEvaluator: true,
+      showMentionButton: true,
+      criticSliders: true,
+    },
+  },
+  langgraph: {
+    mentionAgentTypes: ["meta_agent", "pipeline", "planner_meta_agent", "planner_executor_agent", "multi_agent", "react_agent", "react_critic_agent"],
+    meta_agent: {
+      planVerifier: false,
+      toolVerifier: true,
+      validator: true,
+      fileContext: true,
+      canvasView: true,
+      context: true,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    planner_meta_agent: {
+      planVerifier: true,
+      toolVerifier: true,
+      validator: true,
+      fileContext: true,
+      canvasView: true,
+      context: true,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    planner_executor_agent: {
+      planVerifier: true,
+      toolVerifier: true,
+      validator: true,
+      fileContext: true,
+      canvasView: true,
+      context: true,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    multi_agent: {
+      planVerifier: true,
+      toolVerifier: true,
+      validator: true,
+      fileContext: true,
+      canvasView: true,
+      context: true,
+      onlineEvaluator: true,
+      showMentionButton: true,
+      criticSliders: true,
+    },
+    react_agent: {
+      planVerifier: false,
+      toolVerifier: true,
+      validator: true,
+      fileContext: true,
+      canvasView: true,
+      context: true,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+    react_critic_agent: {
+      planVerifier: false,
+      toolVerifier: true,
+      validator: true,
+      fileContext: true,
+      canvasView: true,
+      context: true,
+      onlineEvaluator: true,
+      showMentionButton: true,
+      criticSliders: true,
+    },
+    pipeline: {
+      planVerifier: false,
+      toolVerifier: false,
+      validator: false,
+      fileContext: false,
+      canvasView: false,
+      context: true,
+      onlineEvaluator: false,
+      showMentionButton: false,
+    },
+  },
+  pure_python: {
+    mentionAgentTypes: ["hybrid_agent"],
+    hybrid_agent: {
+      planVerifier: true,
+      toolVerifier: true,
+      validator: true,
+      fileContext: false,
+      canvasView: true,
+      context: true,
+      onlineEvaluator: true,
+      showMentionButton: true,
+    },
+  },
+};
+
+export const threshold_epoch_config = {
+  critic_score_threshold: 0.7,
+  max_critic_epochs: 3,
+  evaluation_score_threshold: 0.7,
+  max_evaluation_epochs: 3,
+  validation_score_threshold: 0.7,
+  max_validation_epochs: 3,
+  langgraph_recursion_limit: 25,
+  chat_summary_interval: 10,
+};
+
+/**
+ * Inference Config UI Configuration
+ * Defines sections and sliders for the InferenceConfig component.
+ * Each section contains a title, description, and array of sliders.
+ * Adding/removing sliders is as simple as modifying this config.
+ */
+export const inference_config_ui = {
+  sections: [
+    {
+      id: "critic",
+      title: "Critic Settings",
+      description: "Configure score threshold and epochs for critic evaluation in multi-agent and react-critic workflows.",
+      sliders: [
+        {
+          key: "critic_score_threshold",
+          label: "Score Threshold",
+          min: 0,
+          max: 1,
+          step: 0.05,
+          isFloat: true,
+        },
+        {
+          key: "max_critic_epochs",
+          label: "Max Epochs",
+          min: 1,
+          max: 5,
+          step: 1,
+          isFloat: false,
+        },
+      ],
+    },
+    {
+      id: "evaluation",
+      title: "Evaluation Settings",
+      description: "Configure score threshold and epochs for online evaluator responses.",
+      sliders: [
+        {
+          key: "evaluation_score_threshold",
+          label: "Score Threshold",
+          min: 0,
+          max: 1,
+          step: 0.05,
+          isFloat: true,
+        },
+        {
+          key: "max_evaluation_epochs",
+          label: "Max Epochs",
+          min: 1,
+          max: 5,
+          step: 1,
+          isFloat: false,
+        },
+      ],
+    },
+    {
+      id: "validation",
+      title: "Validation Settings",
+      description: "Configure score threshold and epochs for validator checks.",
+      sliders: [
+        {
+          key: "validation_score_threshold",
+          label: "Score Threshold",
+          min: 0,
+          max: 1,
+          step: 0.05,
+          isFloat: true,
+        },
+        {
+          key: "max_validation_epochs",
+          label: "Max Epochs",
+          min: 1,
+          max: 5,
+          step: 1,
+          isFloat: false,
+        },
+      ],
+    },
+    {
+      id: "execution",
+      title: "Execution Limits",
+      description: "Configure limits for LangGraph recursion and chat summarization intervals.",
+      sliders: [
+        {
+          key: "langgraph_recursion_limit",
+          label: "LangGraph Recursion Limit",
+          min: 1,
+          max: 100,
+          step: 1,
+          isFloat: false,
+        },
+        {
+          key: "chat_summary_interval",
+          label: "Chat Summary Interval",
+          min: 1,
+          max: 50,
+          step: 1,
+          isFloat: false,
+        },
+      ],
+    },
+  ],
+};

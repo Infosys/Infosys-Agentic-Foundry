@@ -1,0 +1,198 @@
+/* TextField.module.css */
+.textFieldWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.label {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--content-color, #6b7280);
+  margin-bottom: 0.25rem;
+  transition: color var(--transition-fast, 150ms) ease;
+}
+.inputContainer:focus-within + .label,
+.textFieldWrapper:focus-within .label {
+  color: var(--app-primary-color, #0073cf);
+}
+.inputBase {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  width: 100%;
+  min-width: 0;
+  border: 1.5px solid var(--border, #d1d5db);
+  padding: 0.5rem 0.875rem;
+  font-size: 14px;
+  background: var(--menu-bg, #fff);
+  color: var(--header-color, #111827);
+  border-radius: var(--radius, 0.5rem);
+  transition: 
+    border-color var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease,
+    background-color var(--transition-fast, 150ms) ease;
+  outline: none;
+  box-sizing: border-box;
+}
+.inputBase:hover:not(:disabled):not(:focus) {
+  border-color: var(--content-color, #9ca3af);
+}
+.inputBase:focus {
+  border-color: #37acea;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(55, 172, 234, 0.25));
+}
+.inputBase::placeholder {
+  color: var(--content-color, #9ca3af);
+  opacity: 1;
+  transition: opacity var(--transition-fast, 150ms) ease;
+}
+.inputBase:focus::placeholder {
+  opacity: 0.6;
+}
+.inputWithIcon {
+  padding-left: 2.25rem;
+}
+.inputWithRightContent {
+  padding-right: 2rem;
+}
+.inputDisabled {
+  pointer-events: none;
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity, 0.5);
+  background: var(--disabled-bg, #f3f4f6);
+}
+.icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--content-color, #6b7280);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.inputContainer {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* Right side content container */
+.rightContent {
+  position: absolute;
+  right: 4px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* Clear button */
+.clearButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--content-color, #6b7280);
+  transition: 
+    color var(--transition-fast, 150ms) ease,
+    transform var(--transition-fast, 150ms) var(--transition-bounce, cubic-bezier(0.68, -0.55, 0.265, 1.55));
+}
+.clearButton:hover {
+  color: var(--danger, #ef4444);
+  transform: scale(1.15);
+}
+.clearButton:active {
+  transform: scale(0.9);
+}
+.clearButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Search icon/button on right (clickable) */
+.searchIcon {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--gradient-primary, linear-gradient(135deg, #025d8a, #041c29));
+  border: 1px solid #37acea;
+  border-radius: calc(var(--radius, 0.5rem) - 2px);
+  cursor: pointer;
+  color: #fff;
+  transition: 
+    transform var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease,
+    opacity var(--transition-fast, 150ms) ease;
+}
+.searchIcon:hover {
+  transform: translateY(-50%) scale(1.05);
+  box-shadow: var(--shadow-glow, 0 0 12px rgba(55, 172, 234, 0.45));
+}
+.searchIcon:active {
+  transform: translateY(-50%) scale(0.95);
+}
+.searchIcon:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Input with search button on right needs padding */
+.inputWithSearchButton {
+  padding-right: 2.5rem;
+}
+
+/* Input with both search button and clear button */
+.inputWithSearchAndClear {
+  padding-right: 4.5rem;
+}
+
+/* Clear button positioned left of the search button */
+.clearButtonWithSearch {
+  position: absolute;
+  right: 36px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  color: var(--content-color, #6b7280);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.clearButtonWithSearch:hover {
+  color: var(--header-color, #111827);
+  background: var(--hover-bg, rgba(0, 0, 0, 0.05));
+}
+.clearButtonWithSearch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sectionLabel {
+  font-size: 12px;
+  color: var(--content-color, #6b7280);
+  margin-bottom: 6px;
+}

@@ -1,168 +1,313 @@
+/* ===========================================
+   TOOL CALL FINAL RESPONSE - Clean Card Design
+   =========================================== */
+
+/* Container wrapper */
 .toolCallWrapper {
   position: relative;
-  min-width: 260px;
-  width: 98%;
+  width: 100%;
   max-width: 100%;
+  margin: 8px 0 16px;
 }
 
+/* Main Card - Clean border */
 .toolcallBox {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  margin: 0 0 10px 0;
-  min-width: 260px;
-  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-family: var(--font-primary);
+  /* Fill parent width for consistent sizing with response */
+  width: 100%;
+  max-width: 100%;
+  box-shadow: none;
 }
 
+/* Header - Subtle background */
 .toolcallHeader {
-  background: #e9e9eb40;
-  border-radius: 7px 7px 0 0;
-  padding: 8px 12px;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid #e5e7eb;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--hover-background);
+  border-bottom: 1px solid var(--border);
 }
 
 .toolcallHeaderTitle {
-  font-size: 15px;
-  font-weight: 600;
-  color: #007acc;
-  display: flex;
-  align-items: center;
-  letter-spacing: 0.2px;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  line-height: 1.6;
 }
 
+/* Steps Row - Clickable accordion header */
+.toolcallStepsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.toolcallStepsRow:hover {
+  background: var(--hover-background);
+}
+
+.toolcallStepsInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolcallStepsLabel {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.toolcallStepsCount {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--muted);
+}
+
+.toolcallStepsChevron {
+  color: var(--muted);
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+/* Steps Expanded Content */
+.toolcallStepsContent {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px;
+  background: var(--hover-background);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolcallStepItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.toolcallStepNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-family: var(--font-primary);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+
+.toolcallStepCheck {
+  font-size: 10px;
+  color: white;
+}
+
+.toolcallStepText {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* Content area */
 .toolcallContent {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 13px;
+  padding: 10px 16px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
 }
 
+/* Tool Calls Label */
+.toolCallsLabel {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+/* Row layout */
 .toolcallRow {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
   margin-bottom: 2px;
 }
 
+/* Labels */
 .toolcallLabel {
-  font-weight: 500;
-  color: #374151;
-  font-size: 13px;
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+  display: inline;
 }
 
+/* Values */
 .toolcallValue {
-  color: #222;
-  font-size: 13px;
-  flex: 1;
-  word-break: break-word;
-  width: 100%;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--text-primary);
+  margin-left: 4px;
+  line-height: 1.6;
 }
 
-.toolcallArguments {
-  align-items: flex-start;
-  flex-direction: column;
-}
-
-.toolcallNoargs {
-  color: #888;
-  font-style: italic;
-  font-size: 13px;
-}
-
+/* Arguments List */
 .toolcallArgsList {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
+  margin-top: 8px;
 }
 
+/* Argument item */
 .toolcallArgItem {
   display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 2px;
+  flex-direction: column;
+  gap: 4px;
 }
 
+/* Argument key label - Blue */
 .toolcallArgKey {
-  color: #007acc;
-  font-weight: 500;
-  min-width: 60px;
+  font-family: var(--font-primary);
   font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  color: var(--accent);
 }
 
-.toolcallArgValue {
-  color: #222;
-  font-size: 13px;
-  background: #f1f5f9;
-  border-radius: 5px;
-  padding: 2px 7px;
-}
-
+/* Argument input - textarea */
 .toolcallArgInput {
-  font-size: 13px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  padding: 3px 7px;
-  background: #fff;
-  color: #222;
-  min-width: 80px;
-  width: 100%; /* new code */
-  /* max-width: 180px; */
-  margin-left: 0;
-  margin-right: 0;
-  resize: both;
-}
-
-textarea.toolcallArgInput {
-  width: 60vw;
+  font-family: var(--font-primary);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--input-bg, var(--card-bg));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  width: 100%;
+  min-height: 40px;
+  line-height: 1.4;
+  resize: none;
+  box-sizing: border-box;
 }
 
 .toolcallArgInput:focus {
-  border-color: #007acc;
   outline: none;
-  background: #f8fafc;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 115, 207, 0.1);
 }
+
+.toolcallArgInput:disabled {
+  background: var(--checkbox-bg, var(--card-bg));
+  color: var(--text-primary);
+  cursor: default;
+  border-color: var(--border);
+  opacity: 0.8;
+}
+
+.toolcallNoargs {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 13px;
+}
+
+/* ===========================================
+   ACTION BUTTONS - Footer
+   =========================================== */
 
 .toolcallActions {
   display: flex;
-  justify-content: flex-start;
-  margin-top: 10px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--muted-foreground);
 }
 
+/* Approve Button - Blue filled, rounded pill */
 .toolcallUpdateBtn {
-  background: #007acc;
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: var(--accent);
+  color: var(--card-bg);
   border: none;
-  border-radius: 7px;
-  padding: 6px 18px;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 124, 195, 0.1);
-  transition: background 0.18s, box-shadow 0.18s;
+  transition: background 0.15s ease;
 }
 
 .toolcallUpdateBtn:hover {
-  background: #005fa3;
-  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.16);
+  background: var(--accent-hover);
 }
 
+.toolcallUpdateBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Request Changes Button - White with border, rounded pill */
 .toolcallCancelBtn {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #e5e7eb;
-  border-radius: 7px;
-  padding: 6px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  margin-left: 8px;
-  transition: background 0.18s, box-shadow 0.18s;
+  transition: all 0.15s ease;
 }
 
 .toolcallCancelBtn:hover {
-  background: #e5e7eb;
-  color: #222;
+  background: var(--checkbox-bg);
+  border-color: #d1d5db;
+}
+
+.toolcallBtnLabel {
+  display: inline-block;
+}
+
+/* ===========================================
+   RESPONSIVE
+   =========================================== */
+
+@media (max-width: 768px) {
+  .toolCallWrapper {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .toolcallBox {
+    max-width: 100%;
+  }
 }

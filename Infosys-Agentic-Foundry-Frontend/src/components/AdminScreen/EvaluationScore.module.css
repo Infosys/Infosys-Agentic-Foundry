@@ -1,158 +1,33 @@
 .metricsContainer {
-  padding: 24px;
-}
-
-.buttonContainer {
   display: flex;
-  justify-content: center;
-  width: 100%;
-}
-
-.agentsFilterContainer {
-  background-color: #fff;
-  border-radius: 5px;
-  /* box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); */
-  width: 55%;
-  margin: 0;
-  margin-bottom: 5px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-}
-
-.filterLabel {
-  display: block;
-  color: #333;
-  width: 115px;
-  font-weight: bold;
-  font-size: 14px;
-}
-
-.filterControls {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  width: 70%;
-  margin: 0;
-}
-
-.filterButton {
-  background: #007cc3;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 0 5px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  height: 30px;
-  margin-top: 0;
-  white-space: nowrap;
-}
-
-.filterButton:hover {
-  background: #0069a7;
-}
-
-.filterButton:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
-}
-
-.metricsTitle {
-  font-size: 24px;
-  font-weight: 600;
-  color: #1a237e;
-  margin: 0;
-}
-
-.tableOrAccordionSwitch {
-  cursor: pointer;
-  margin-left: 15px;
-}
-
-.tableOrAccordion {
-  display: flex;
-  align-self: center;
-  margin-bottom: -2px;
-  cursor: pointer;
+  flex-direction: column;
+  min-height: 0;
+  height: calc(100vh - 60px);
 }
 
 .tabsContainer {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 100px);
-}
-
-.horizontalTabs {
-  display: flex;
-  border-bottom: 1px solid #e0e0e0;
-  padding-bottom: 0;
-  margin-bottom: 5px;
-  margin-top: 10px;
-  width: 100%;
-  justify-content: space-between;
-}
-
-.filterAndTabs {
-  display: flex;
-}
-
-.horizontalTab {
-  padding: 12px 5px;
-  margin-right: 10px;
-  border-radius: 5px 5px 0 0;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 16px;
-  color: #333;
-  border: 1px solid transparent;
-  border-bottom: none;
-  min-width: 120px;
-  text-align: center;
-}
-
-.horizontalTab:hover {
-  background-color: #f5f5f5;
-}
-
-.horizontalTab.activeTab {
-  background: #007cc3;
-  color: white;
-  border-bottom: 2px solid #007cc3;
-  font-weight: 500;
-}
-
-.horizontalTab.groundTruthTab {
-  background: #f5f7fa;
-  color: #007cc3;
-}
-
-.horizontalTab.consistencyTab {
-  background: #f5f7fa;
-  color: #28a745;
+  flex: 1;
+  min-height: 0;
 }
 
 .tabContentContainer {
   width: 100%;
-  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
   flex: 1;
-  overflow: hidden;
 }
 
 .tabContent {
-  background-color: #fff;
-  border-radius: 5px;
-  height: 100%;
+  background-color: var(--card-bg, #ffffff);
+  border-radius: var(--radius-sm, 8px);
   min-height: 0;
   display: flex;
   flex-direction: column;
   flex: 1;
   padding: 0;
-  overflow: auto;
 }
 
 /* Table styles for evaluation data */
@@ -163,44 +38,118 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: auto;
   position: relative;
+  overflow: auto;
+}
+
+.tableWrapper {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* Custom scrollbar for table wrapper */
+.tableWrapper::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tableWrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tableWrapper::-webkit-scrollbar-thumb {
+  background: var(--border-color, #e5e7eb);
+  border-radius: 4px;
+}
+
+.tableWrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--content-color, #6b7280);
 }
 
 .evaluationTable {
   width: 100%;
-  border-collapse: separate;
+  border-collapse: collapse;
   border-spacing: 0;
-  margin-top: 10px;
-  font-size: 14px;
+  margin-top: 0;
+  font-size: var(--font-size-sm, 14px);
   table-layout: fixed;
-  font-size: 13px;
 }
 
-.evaluationTable th,
-.evaluationTable td {
-  border: 1px solid #e0e0e0;
-  padding: 6px;
-  text-align: left;
-  word-wrap: break-word;
-}
-
-.evaluationTable th {
-  background-color: #f5f5f5;
-  font-weight: 600;
-  color: #333;
+.evaluationTable thead {
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
 }
 
-.evaluationTable tr:nth-child(even) {
-  background-color: #f9f9f9;
+.evaluationTable thead tr {
+  background-color: var(--table-header-bg, #f8f9fa);
+  color: var(--text-primary, #1a1a1a);
 }
 
-.evaluationTable tr:hover {
-  background-color: #f0f7ff;
+/* Internal borders only - no external table borders */
+.evaluationTable th,
+.evaluationTable td {
+  padding: 12px 16px;
+  text-align: left;
+  word-wrap: break-word;
+  border: none;
+}
+
+/* Add right border to all cells except last column - bluish 3D effect */
+.evaluationTable th:not(:last-child),
+.evaluationTable td:not(:last-child) {
+  border-right: 2px solid rgba(0, 115, 207, 0.2);
+  box-shadow: inset -2px 0 4px rgba(0, 115, 207, 0.08);
+}
+
+/* Add bottom border to header row - stronger blue accent */
+.evaluationTable thead tr {
+  border-bottom: 3px solid rgba(0, 115, 207, 0.4);
+  box-shadow: 0 3px 6px rgba(0, 115, 207, 0.15);
+}
+
+/* Animation and styling for all body rows - prominent blue 3D line */
+.evaluationTable tbody tr {
+  animation: rowSlideIn 0.4s ease-out forwards;
+  opacity: 0;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  border-bottom: 2px solid rgba(0, 115, 207, 0.25);
+  box-shadow: 0 2px 4px rgba(0, 115, 207, 0.12);
+}
+
+/* Staggered animation delays for rows */
+.evaluationTable tbody tr:nth-child(1) { animation-delay: 0.05s; }
+.evaluationTable tbody tr:nth-child(2) { animation-delay: 0.1s; }
+.evaluationTable tbody tr:nth-child(3) { animation-delay: 0.15s; }
+.evaluationTable tbody tr:nth-child(4) { animation-delay: 0.2s; }
+.evaluationTable tbody tr:nth-child(5) { animation-delay: 0.25s; }
+.evaluationTable tbody tr:nth-child(6) { animation-delay: 0.3s; }
+.evaluationTable tbody tr:nth-child(7) { animation-delay: 0.35s; }
+.evaluationTable tbody tr:nth-child(8) { animation-delay: 0.4s; }
+.evaluationTable tbody tr:nth-child(n+9) { animation-delay: 0.45s; }
+
+.evaluationTable th {
+  background: linear-gradient(135deg, rgba(0, 115, 207, 0.15) 0%, rgba(0, 115, 207, 0.08) 100%);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--app-primary-color, #0073cf);
+  font-size: var(--font-size-sm, 14px);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: none;
+}
+
+.evaluationTable td {
+  color: var(--text-primary, #1a1a1a);
+  font-size: var(--font-size-sm, 14px);
+  vertical-align: top;
+  background-color: var(--card-bg, #ffffff);
+}
+
+.evaluationTable tbody tr:hover {
+  background-color: rgba(0, 115, 207, 0.06);
+  box-shadow: 0 2px 6px rgba(0, 115, 207, 0.15);
+  border-bottom: 2px solid rgba(0, 115, 207, 0.4);
 }
 
 .responseCell {
@@ -212,290 +161,222 @@
 .noData {
   text-align: center;
   padding: 20px;
-  color: #757575;
-  font-size: 16px;
-}
-
-.tabsNav {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.tab {
-  padding: 10px 28px;
-  border: none;
-  border-radius: 6px 6px 0 0;
-  background: #eaeaea;
-  color: #333;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background 0.2s;
+  color: var(--muted, #6b7280);
+  font-size: var(--font-size-base, 16px);
 }
 
 .loadingMore {
   text-align: center;
   padding: 10px;
-  color: #007cc3;
-  font-weight: bold;
-  font-style: italic;
-  background-color: rgba(0, 124, 195, 0.1);
-  position: sticky;
-  bottom: 0;
+  color: var(--app-primary-color, #0073cf);
+  font-weight: var(--font-weight-bold, 700);
+  font-style: normal;
+  background-color: rgba(0, 115, 207, 0.1);
+  flex-shrink: 0;
   width: 100%;
-  border-top: 1px solid rgba(0, 124, 195, 0.2);
+  border-top: 1px solid rgba(0, 115, 207, 0.2);
   box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.05);
 }
 
-/* Accordion styles */
-.accordionContainer {
-  width: 100%;
-  margin-top: 10px;
-  overflow-y: auto;
-  height: 100%;
-  min-height: 0;
-  flex: 1;
-}
+/* ============================================
+   NEW CARD-BASED EVALUATION RECORDS DESIGN
+   ============================================ */
 
-.accordionItem {
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
-  margin-bottom: 4px;
-  overflow: hidden;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  transition: box-shadow 0.2s ease;
-}
-
-.accordionItem:hover {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.accordionItem summary {
+/* Main records container - Card wrapper */
+.recordsContainer {
+  padding: 24px;
+  border-radius: var(--radius-lg, 20px);
+  background: var(--card, var(--card-bg, #ffffff));
+  border: 1px solid var(--border, var(--border-color, #e5e7eb));
   display: flex;
-  /* align-items: center; */
-  padding: 8px 12px;
-  cursor: pointer;
-  background: linear-gradient(135deg, #f8f9fa 0%, #f1f3f4 100%);
-  border: none;
-  outline: none;
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: #2c3e50;
-  transition: background 0.2s ease;
-  gap: 8px;
-}
-
-.accordionItem summary:hover {
-  background: linear-gradient(135deg, #f1f3f4 0%, #e8eaed 100%);
-}
-
-.accordionItem[open] summary {
-  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-  border-bottom: 1px solid #e1e1e1;
-}
-
-.accordionItem summary::marker {
-  font-size: 12px;
-  color: #007cc3;
-}
-
-.accordionItem summary span:first-child {
-  flex: 2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #1a237e;
-  font-weight: 600;
-}
-
-.accordionItem summary span:not(:first-child) {
+  flex-direction: column;
   flex: 1;
-  text-align: right;
-  color: #666;
-  font-size: 12px;
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-height: 0;
 }
 
-.accordionItem .responseCell {
-  padding: 12px 15px;
-  font-size: 13px;
-  background: #ffffff;
-  border-top: 1px solid #f0f0f0;
+/* Records header with title and toggle buttons */
+.recordsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.recordsTitle {
+  font-family: var(--font-primary, Inter, sans-serif);
+  font-size: var(--text-lg, 18px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--foreground, var(--text-primary, #1a1a1a));
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+/* View toggle buttons container */
+.viewToggleGroup {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.viewToggleBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--border, var(--border-color, #e5e7eb));
+  background: transparent;
+  color: var(--foreground, var(--text-primary, #1a1a1a));
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.viewToggleBtn:hover {
+  background: var(--hover-background, #f3f4f6);
+}
+
+.viewToggleBtn.active {
+  color: var(--app-primary-color, #0073cf);
+  background: var(--primary-container, rgba(0, 115, 207, 0.1));
+}
+
+.viewToggleBtn svg {
+  color: inherit;
+}
+
+/* Records list container */
+.recordsList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 16px;
+}
+
+/* Individual record card */
+.recordCard {
+  padding: 6px 12px;
+  border-radius: var(--radius-lg, 8px);
+  background: var(--card, var(--card-bg, #ffffff));
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-left: 3px solid var(--app-primary-color, #0073cf);
+  border-bottom: 3px solid var(--app-primary-color, #0073cf);
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 4px rgba(0, 115, 207, 0.08);
+}
+
+.recordCard:hover {
+  transform: translateY(-3px) translateX(2px);
+  box-shadow: 
+    0 6px 16px rgba(0, 115, 207, 0.15),
+    -3px 3px 0 rgba(0, 115, 207, 0.3);
+  border-color: var(--app-primary-color, #0073cf);
+}
+
+/* Record card header - title, agent type, status */
+.recordCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 7px;
+}
+
+.recordCardInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.recordCardTitle {
+  font-size: var(--text-sm, 14px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recordCardAgentType {
+  font-family: var(--font-primary, Inter, sans-serif);
+  font-size: var(--text-xs, 12px);
+  color: var(--muted);
+  margin: 0;
+}
+
+.recordCardStatus {
+  font-family: var(--font-primary, Inter, sans-serif);
+  font-size: var(--text-sm, 14px);
+  color: var(--foreground, var(--text-primary, #1a1a1a));
+}
+
+/* Record card body - query and response */
+.recordCardBody {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Grid layout for metrics in Tools/Agents Efficiency cards */
+.recordCardMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 24px;
+  margin-bottom: 8px;
+}
+
+.recordCardText {
+  font-family: var(--font-primary, Inter, sans-serif);
+  font-size: var(--text-sm, 14px);
+  color: var(--foreground, var(--text-primary, #1a1a1a));
   margin: 0;
   line-height: 1.5;
-  color: #333;
-  max-height: 150px;
-  overflow-y: auto;
 }
 
-.accordionItem .responseCell::-webkit-scrollbar {
-  width: 4px;
-}
-
-.accordionItem .responseCell::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 2px;
-}
-
-.accordionItem .responseCell::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 2px;
-}
-
-.accordionItem .responseCell::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
-}
-
-/* Tools Efficiency specific accordion styles */
-.toolAccordionItem {
-  margin-bottom: 6px;
-}
-
-.toolAccordionSummary {
-  display: flex;
-  flex-direction: column;
-  padding: 10px 12px !important;
-  gap: 6px;
-}
-
-.toolHeaderRow1 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.toolHeaderRow2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.toolQuery {
-  flex: 3;
-  color: #1a237e !important;
-  font-weight: 600 !important;
-  font-size: 14px !important;
-  white-space: nowrap;
+/* Truncate long responses */
+.recordCardResponse {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.toolModel {
-  flex: 1.5;
-  color: #666 !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  text-align: right;
+/* See more button styles */
+.seeMoreBtn {
+  background: none;
+  border: none;
+  color: var(--accent, #007cc3);
+  cursor: pointer;
+  font-size: var(--text-sm, 14px);
+  font-weight: 500;
+  padding: 0;
+  margin-left: 4px;
+  text-decoration: none;
+  transition: color 0.2s ease;
 }
 
-.toolMetric {
-  flex: 1;
-  text-align: center !important;
-  color: #007cc3 !important;
-  font-weight: 600 !important;
-  font-size: 10px !important;
-  background: rgba(0, 124, 195, 0.1);
-  padding: 2px 4px;
-  border-radius: 3px;
-  min-width: 45px;
+.seeMoreBtn:hover {
+  color: var(--accent-hover, #005a8c);
+  text-decoration: underline;
 }
 
-.toolCategory {
-  flex: 1.2;
-  text-align: center !important;
-  color: #28a745 !important;
-  font-weight: 600 !important;
-  font-size: 11px !important;
-  background: rgba(40, 167, 69, 0.1);
-  padding: 2px 6px;
-  border-radius: 3px;
+/* Expanded text state */
+.expandedText {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.toolEvalModel {
-  flex: 1.5;
-  text-align: right !important;
-  color: #666 !important;
-  font-size: 10px !important;
-  font-weight: 400 !important;
-}
-
-/* Agents Efficiency specific accordion styles */
-.agentAccordionItem {
-  margin-bottom: 6px;
-}
-
-.agentAccordionSummary {
-  display: flex;
-  flex-direction: column;
-  padding: 10px 12px !important;
-  gap: 6px;
-}
-
-.agentHeaderRow1 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.agentHeaderRow2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.agentQuery {
-  flex: 3;
-  color: #1a237e !important;
-  font-weight: 600 !important;
-  font-size: 14px !important;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.agentModel {
-  flex: 1.5;
-  color: #666 !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  text-align: right;
-}
-
-.agentMetric {
-  flex: 1;
-  text-align: center !important;
-  color: #007cc3 !important;
-  font-weight: 600 !important;
-  font-size: 10px !important;
-  background: rgba(0, 124, 195, 0.1);
-  padding: 2px 4px;
-  border-radius: 3px;
-  min-width: 45px;
-}
-
-.agentCategory {
-  flex: 1.2;
-  text-align: center !important;
-  color: #28a745 !important;
-  font-weight: 600 !important;
-  font-size: 11px !important;
-  background: rgba(40, 167, 69, 0.1);
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.agentEvalModel {
-  flex: 1.5;
-  text-align: right !important;
-  color: #666 !important;
-  font-size: 10px !important;
-  font-weight: 400 !important;
+/* Row slide-in animation with blue line effect */
+@keyframes rowSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-15px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }

@@ -1,27 +1,12 @@
 /* CrudModal.module.css */
-.modalOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  animation: fadeIn 0.2s ease-out;
-}
+/* Uses global classes from index.css: .form, .formGroup, .label-desc, .input, .textarea, .required, .closeBtn */
+/* Overlay is handled by reusable Modal component */
 
-.modalContent {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+.crudModal {
   width: 90%;
   max-width: 800px;
   max-height: 90vh;
   overflow-y: auto;
-  animation: slideIn 0.3s ease-out;
 }
 
 .modalHeader {
@@ -29,7 +14,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 24px 24px 16px 24px;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--border);
 }
 
 .headerLeft {
@@ -41,7 +26,7 @@
 .databaseIcon {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -49,106 +34,38 @@
 }
 
 .modalTitle {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #2c3e50;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
   margin: 0 0 4px 0;
 }
 
 .modalSubtitle {
-  font-size: 0.9rem;
-  color: #6c757d;
+  font-size: var(--font-size-sm);
+  color: var(--content-color);
   margin: 0;
-}
-
-.closeButton {
-  background: none;
-  border: none;
-  padding: 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.closeButton:hover {
-  background-color: #f8f9fa;
 }
 
 .modalBody {
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
+/* Use global .formGroup class instead */
 .formGroup {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.label {
-  display: block;
-  font-weight: 500;
-  color: #2c3e50;
-  margin-bottom: 8px;
-  font-size: 14px;
-}
+/* Use global .label-desc class instead */
 
+/* Use global .required class instead */
 .required {
-  color: #dc3545;
-}
-
-.select {
-  width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e9ecef;
-  border-radius: 8px;
-  font-size: 14px;
-  background-color: white;
-  transition: border-color 0.2s ease;
-}
-
-.select:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-}
-
-.select:disabled {
-  background-color: #f8f9fa;
-  cursor: not-allowed;
-}
-
-.input {
-  width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e9ecef;
-  border-radius: 8px;
-  font-size: 14px;
-  transition: border-color 0.2s ease;
-}
-
-.input:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-}
-
-.textarea {
-  width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e9ecef;
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: 'Courier New', monospace;
-  resize: vertical;
-  min-height: 120px;
-  transition: border-color 0.2s ease;
-}
-
-.textarea:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+  color: var(--danger);
+  font-weight: var(--font-weight-bold);
 }
 
 .buttonGroup {
@@ -158,72 +75,47 @@
   margin-top: 24px;
 }
 
-.executeButton {
-  background-color: #17a2b8;
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.executeButton:hover:not(:disabled) {
-  background-color: #138496;
-  transform: translateY(-1px);
-}
-
-.executeButton:disabled {
-  background-color: #6c757d;
-  cursor: not-allowed;
-  transform: none;
-}
-
 .errorMessage {
-  background-color: #f8d7da;
-  border: 1px solid #f5c6cb;
-  border-radius: 8px;
+  background-color: var(--accent-light);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
   padding: 12px;
   margin-top: 16px;
-  color: #721c24;
+  color: var(--danger);
 }
 
 .errorMessage p {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-size-sm);
 }
 
 .resultContainer {
   margin-top: 24px;
   padding: 16px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
+  background-color: var(--input-bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
 }
 
 .resultContainer h4 {
   margin: 0 0 12px 0;
-  color: #2c3e50;
-  font-size: 16px;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
 }
 
 .result {
-  background-color: #ffffff;
-  border: 1px solid #e9ecef;
-  border-radius: 6px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 12px;
   margin: 0;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   line-height: 1.4;
-  color: #2c3e50;
+  color: var(--header-color);
   overflow-x: auto;
   white-space: pre-wrap;
-  font-family: 'Courier New', monospace;
 }
 
 /* Animations */
@@ -253,34 +145,29 @@
     width: 95%;
     max-height: 95vh;
   }
-  
+
   .modalHeader {
     padding: 16px 16px 12px 16px;
   }
-  
+
   .headerLeft {
     gap: 12px;
   }
-  
+
   .databaseIcon {
     width: 40px;
     height: 40px;
   }
-  
+
   .modalTitle {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
   }
-  
+
   .modalBody {
     padding: 16px;
   }
-  
+
   .buttonGroup {
     flex-direction: column;
-  }
-  
-  .executeButton {
-    width: 100%;
-    justify-content: center;
   }
 }

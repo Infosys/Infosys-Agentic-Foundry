@@ -1,19 +1,24 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import styles from "../GroundTruth/GroundTruth.module.css";
-import { APIs, agentTypesDropdown, PIPELINE_AGENT } from "../../constant";
+import sliderStyles from "../commonComponents/ResourceSlider/ResourceSlider.module.css";
+import { APIs, agentTypesDropdown } from "../../constant";
 import Loader from "../commonComponents/Loader";
 import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useConsistencyApi } from "./consistencyApi";
-import LeftNavPanel from "../commonComponents/LeftNavPanel";
 import RightResultsPanel from "../commonComponents/RightResultsPanel";
-import ConsistencyAgentCard from "./ConsistencyAgentCard";
-import listStyles from "../../css_modules/ListOfAgents.module.css";
+import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.jsx";
 import consistencyStyles from "./ConsistencyTab.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import useErrorHandler from "../../Hooks/useErrorHandler";
+import UploadBox from "../commonComponents/UploadBox";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
+import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
+import EmptyState from "../commonComponents/EmptyState";
+import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
+import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
 
-const ConsistencyTab = () => {
+const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch, selectedAgentTypes = [] }) => {
   // --- State setup for dropdowns and form ---
   const [formData, setFormData] = useState({
     model_name: "",
@@ -21,13 +26,11 @@ const ConsistencyTab = () => {
     agent_name: "",
     uploaded_file: null,
   });
-  
-// Filter out pipeline from agent types dropdown
-const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value !== PIPELINE_AGENT);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [models, setModels] = useState([]);
   const [agentsListData, setAgentsListData] = useState([]);
-  const [agentType, setAgentType] = useState(filteredAgentTypesDropdown[0].value);
+  const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
   const [agentSearchTerm, setAgentSearchTerm] = useState("");
   const [filteredAgents, setFilteredAgents] = useState([]);
@@ -60,6 +63,10 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
   const [editQueries, setEditQueries] = useState([]);
   const [forceUpdate, setForceUpdate] = useState(0);
   const [globalLoading, setGlobalLoading] = useState(false);
+
+  // --- Slider state for Preview Results ---
+  const [isResultsSliderCollapsed, setIsResultsSliderCollapsed] = useState(false);
+  const [isRobustnessSliderCollapsed, setIsRobustnessSliderCollapsed] = useState(false);
 
   // --- New: Manual query input ---
   const [manualQuery, setManualQuery] = useState("");
@@ -165,6 +172,9 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
   const [robustnessResults, setRobustnessResults] = useState(null);
   const [robustnessActive, setRobustnessActive] = useState(false);
 
+  // Track which specific action button is loading
+  const [actionLoading, setActionLoading] = useState(null);
+
   // --- Add state for plus button ---
   const [plusBtnClicked, setPlusBtnClicked] = useState(false);
 
@@ -190,7 +200,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
     setManualQuery("");
     setAddModeQueries([""]); // Reset to one empty query
     setModelSearchTerm("");
-    setAgentType(filteredAgentTypesDropdown[0].value);
+    setAgentType(agentTypesDropdown[0].value);
     setAgentTypeSearchTerm("");
     setAgentSearchTerm("");
     setSelectedModelIndex(-1);
@@ -203,6 +213,15 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
     setRobustnessQueries([]); // <-- Reset robustness queries
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  // Track previous plusClickTrigger to detect external clicks from SubHeader
+  const prevPlusClickTriggerRef = useRef(plusClickTrigger);
+  useEffect(() => {
+    if (prevPlusClickTriggerRef.current !== plusClickTrigger && plusClickTrigger > 0) {
+      prevPlusClickTriggerRef.current = plusClickTrigger;
+      handlePlusClick();
+    }
+  }, [plusClickTrigger]);
 
   // --- Add: Edit icon handler for agent card ---
   const handleEditAgent = (agent) => {
@@ -224,7 +243,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
     });
     setManualQuery("");
     setModelSearchTerm(agent.model_name || "");
-    setAgentType(agent.agent_type || agent.agentic_application_type || filteredAgentTypesDropdown[0].value);
+    setAgentType(agent.agent_type || agent.agentic_application_type || agentTypesDropdown[0].value);
     setAgentTypeSearchTerm(agent.agent_type || agent.agentic_application_type || "");
     setAgentSearchTerm(agentName);
     setSelectedModelIndex(-1);
@@ -480,6 +499,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       return;
     }
 
+    setActionLoading("update");
     startApiCall();
     try {
       // Always use agent_id as canonical
@@ -571,6 +591,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       });
     } finally {
       endApiCall();
+      setActionLoading(null);
     }
   };
 
@@ -588,7 +609,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
         a.id === formData.agent_id ||
         a.id === formData.agentic_application_id ||
         a.agent_name === formData.agent_name ||
-        a.agentic_application_name === formData.agent_name
+        a.agentic_application_name === formData.agent_name,
     );
     if (agentFromList) return agentFromList.agentic_application_id || agentFromList.id;
     // Try from agentsListData
@@ -599,7 +620,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
         a.id === formData.agent_id ||
         a.id === formData.agentic_application_id ||
         a.agent_name === formData.agent_name ||
-        a.agentic_application_name === formData.agent_name
+        a.agentic_application_name === formData.agent_name,
     );
     if (agentFromList2) return agentFromList2.agentic_application_id || agentFromList2.id;
     // Try from agentListDropdown
@@ -610,7 +631,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
         a.id === formData.agent_id ||
         a.id === formData.agentic_application_id ||
         a.agent_name === formData.agent_name ||
-        a.agentic_application_name === formData.agent_name
+        a.agentic_application_name === formData.agent_name,
     );
     if (agentFromList3) return agentFromList3.agentic_application_id || agentFromList3.id;
     return null;
@@ -622,6 +643,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       addMessage("Agent ID is required for rerun.", "error");
       return;
     }
+    setActionLoading("rerun");
     setGlobalLoading(true);
     startApiCall();
     try {
@@ -651,6 +673,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
     } finally {
       endApiCall();
       setGlobalLoading(false);
+      setActionLoading(null);
     }
   };
 
@@ -665,6 +688,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       addMessage("Application ID is required for approval.", "error");
       return;
     }
+    setActionLoading("approve");
     startApiCall();
     try {
       const payload = new URLSearchParams();
@@ -711,6 +735,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       });
     } finally {
       endApiCall();
+      setActionLoading(null);
     }
   };
 
@@ -770,6 +795,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       setAvailableAgents([]);
     } finally {
       endApiCall();
+      setInitialLoading(false);
     }
   };
 
@@ -787,10 +813,16 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
             value: model,
           }));
           setModels(formattedModels);
+
+          // Auto-select default model if no model is currently selected
+          // Priority: existing modelSearchTerm > default_model_name
+          if (data.default_model_name && !modelSearchTerm) {
+            setModelSearchTerm(data.default_model_name);
+          }
         } else {
           setModels([]);
         }
-      } catch(error){
+      } catch (error) {
         handleApiError(error, {
           context: "fetch_models",
           customMessage: "Failed to fetch models",
@@ -805,7 +837,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       try {
         const data = await fetchData(APIs.GET_AGENTS_BY_DETAILS);
         setAgentsListData(data);
-      } catch(error) {
+      } catch (error) {
         handleApiError(error, {
           context: "fetch_agents",
           customMessage: "Failed to fetch agents",
@@ -830,7 +862,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
 
   // --- Dropdown filtering logic ---
   useEffect(() => {
-    setFilteredAgentTypes(filteredAgentTypesDropdown);
+    setFilteredAgentTypes(agentTypesDropdown);
   }, []);
   useEffect(() => {
     setFilteredModels(models);
@@ -866,9 +898,9 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
   }, [agentSearchTerm, agentListDropdown]);
   useEffect(() => {
     if (!agentTypeSearchTerm) {
-      setFilteredAgentTypes(filteredAgentTypesDropdown);
+      setFilteredAgentTypes(agentTypesDropdown);
     } else {
-      const filtered = filteredAgentTypesDropdown.filter((type) => type.label.toLowerCase().includes(agentTypeSearchTerm.toLowerCase()));
+      const filtered = agentTypesDropdown.filter((type) => type.label.toLowerCase().includes(agentTypeSearchTerm.toLowerCase()));
       setFilteredAgentTypes(filtered);
     }
     setSelectedAgentTypeIndex(-1);
@@ -1253,6 +1285,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       return;
     }
 
+    setActionLoading("execute");
     startApiCall();
     try {
       // Prepare payload for preview
@@ -1298,7 +1331,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
         setManualQuery("");
         setAddModeQueries([""]); // Reset to one empty query
         setModelSearchTerm("");
-        setAgentType(filteredAgentTypesDropdown[0].value);
+        setAgentType(agentTypesDropdown[0].value);
         setAgentTypeSearchTerm("");
         setAgentSearchTerm("");
         setSelectedModelIndex(-1);
@@ -1323,7 +1356,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
           });
 
           setModelSearchTerm(data.model_name || payload.model_name || "");
-          setAgentType(data.agent_type || payload.agent_type || filteredAgentTypesDropdown[0].value);
+          setAgentType(data.agent_type || payload.agent_type || agentTypesDropdown[0].value);
           setAgentTypeSearchTerm(data.agent_type || payload.agent_type || "");
           setAgentSearchTerm(data.agent_name || payload.agent_name || "");
           setEditQueries(data.queries || []);
@@ -1360,6 +1393,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       });
     } finally {
       endApiCall();
+      setActionLoading(null);
     }
   };
 
@@ -1368,6 +1402,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       addMessage("Agentic Application ID is required for robustness rerun.", "error");
       return;
     }
+    setActionLoading("rerun");
     setRobustnessLoading(true);
     startApiCall();
     try {
@@ -1393,6 +1428,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
     } finally {
       endApiCall();
       setRobustnessLoading(false);
+      setActionLoading(null);
     }
   };
 
@@ -1402,6 +1438,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
       addMessage("Agentic Application ID is required for robustness approve.", "error");
       return;
     }
+    setActionLoading("approve");
     setRobustnessLoading(true);
     startApiCall();
     try {
@@ -1431,6 +1468,7 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
     } finally {
       endApiCall();
       setRobustnessLoading(false);
+      setActionLoading(null);
     }
   };
 
@@ -1567,15 +1605,35 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
     setSelectedAgentIndex(-1);
   };
 
+  // Client-side filtering of agents based on search value and agent type filter
+  const filteredAvailableAgents = availableAgents.filter((agent) => {
+    const agentName = agent.agentic_application_name || agent.agent_name || "";
+    const agentDescription = agent.agentic_application_description || agent.description || "";
+    const agentType = agent.agentic_application_type || agent.agent_type || agent.type || "";
+
+    // Agent type filter
+    if (selectedAgentTypes.length > 0 && !selectedAgentTypes.includes(agentType)) {
+      return false;
+    }
+
+    // Text search filter
+    if (searchValue && searchValue.trim()) {
+      const searchLower = searchValue.toLowerCase();
+      return agentName.toLowerCase().includes(searchLower) || agentDescription.toLowerCase().includes(searchLower) || agentType.toLowerCase().includes(searchLower);
+    }
+
+    return true;
+  });
+
   return (
-    <div className={`${styles.container} consistencyContainer`}>
+    <div className={`consistencyContainer`}>
       {loading && <Loader />}
       <div className={consistencyStyles.agentsPageContainer}>
         {/* Score View Modal */}
         {isScoreView && (
           <div className={consistencyStyles.scoreViewContainer}>
-            <button className={`${listStyles.closeBtn} ${consistencyStyles.scoreViewCloseBtn}`} onClick={handleCloseScoreView} aria-label="Close score view">
-              ✖
+            <button className={`${consistencyStyles.scoreViewCloseBtn} closeBtn`} onClick={handleCloseScoreView} aria-label="Close score view">
+              <SVGIcons icon="x" width={16} height={16} color="var(--text-primary)" />
             </button>
 
             {/* Agent Name Header */}
@@ -1669,9 +1727,8 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
                                           <div className={consistencyStyles.scoreItemLeft}>
                                             <span className={consistencyStyles.scoreItemScore}>Score {index}</span>
                                             <span
-                                              className={`${consistencyStyles.scoreItemScoreValue} ${
-                                                scoreItem[scoreKey] === 1 ? consistencyStyles.scoreValueSuccess : consistencyStyles.scoreValueError
-                                              }`}>
+                                              className={`${consistencyStyles.scoreItemScoreValue} ${scoreItem[scoreKey] === 1 ? consistencyStyles.scoreValueSuccess : consistencyStyles.scoreValueError
+                                                }`}>
                                               {scoreItem[scoreKey]}
                                             </span>
                                           </div>
@@ -1784,9 +1841,8 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
                                           <div className={consistencyStyles.scoreItemLeft}>
                                             <span className={consistencyStyles.scoreItemScore}>Score {index}</span>
                                             <span
-                                              className={`${consistencyStyles.scoreItemScoreValue} ${
-                                                scoreItem[scoreKey] === 1 ? consistencyStyles.scoreValueSuccess : consistencyStyles.scoreValueError
-                                              }`}>
+                                              className={`${consistencyStyles.scoreItemScoreValue} ${scoreItem[scoreKey] === 1 ? consistencyStyles.scoreValueSuccess : consistencyStyles.scoreValueError
+                                                }`}>
                                               {scoreItem[scoreKey]}
                                             </span>
                                           </div>
@@ -1825,858 +1881,652 @@ const filteredAgentTypesDropdown = agentTypesDropdown.filter(type => type.value 
 
         {/* Always show the agents list */}
         {!isEditMode && !isScoreView && (
-          <div className={listStyles.visibleAgentsContainer} ref={agentsListRef} style={{ gap: "16px" }}>
-            <div className={listStyles.subHeaderContainer} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-              <div className="iafPageSubHeader">
-                <h6>Consistency</h6>
-              </div>
-              <button
-                type="button"
-                onClick={handlePlusClick}
-                className="plus addConssitencyAgent"
-                style={{ background: "#f5f5f5", boxShadow: "0px 4px 4px #00000029", border: "1px solid #c7c7c745", borderRadius: "3px", padding: "7px", display: "flex" }}>
-                <SVGIcons icon="fa-plus" fill="#007CC3" width={16} height={16} />
-              </button>
-            </div>
-            <div className={listStyles.agentsList} style={{ maxHeight: "Calc(100vh - 135px)", overflowY: "auto" }}>
-              {availableAgents.length === 0 ? (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: "10px 0",
-                    textAlign: "center",
-                    color: "#666",
-                  }}>
-                  <p
-                    style={{
-                      fontSize: "16px",
-                      marginBottom: "8px",
-                      fontWeight: "500",
-                    }}>
-                    No Available Agents Found
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "14px",
-                      color: "#999",
-                      maxWidth: "400px",
-                    }}>
-                    Get started by clicking the + button above to add your first consistency evaluation agent.
-                  </p>
+          <>
+            <SummaryLine visibleCount={filteredAvailableAgents.length} totalCount={availableAgents.length} itemLabel="agents" />
+            <div className={`listWrapper ${consistencyStyles.listWrapper}`}>
+              {initialLoading ? (
+                <div className={consistencyStyles.loaderWrapper}>
+                  <Loader />
                 </div>
+              ) : filteredAvailableAgents.length === 0 && (searchValue.trim() || selectedAgentTypes.length > 0) ? (
+                <EmptyState
+                  filters={[
+                    ...(searchValue.trim() ? [`Search: ${searchValue}`] : []),
+                    ...(selectedAgentTypes.length > 0 ? [`Type: ${selectedAgentTypes.join(", ")}`] : []),
+                  ]}
+                  onClearFilters={onClearSearch}
+                  onCreateClick={handlePlusClick}
+                  createButtonLabel="New Consistency"
+                  showClearFilter={true}
+                />
+              ) : filteredAvailableAgents.length === 0 && !searchValue.trim() && selectedAgentTypes.length === 0 ? (
+                <EmptyState
+                  message="No consistency evaluations found"
+                  subMessage="Create your first consistency evaluation to test your agents"
+                  onCreateClick={handlePlusClick}
+                  createButtonLabel="New Consistency"
+                  showClearFilter={false}
+                />
               ) : (
-                availableAgents.map((agent, idx) => (
-                  <ConsistencyAgentCard
-                    key={agent.agentic_application_id || agent.id || idx}
-                    agent={{
-                      ...agent,
-                      agentic_application_id: agent.agentic_application_id || agent.id,
-                    }}
-                    onDelete={handleDeleteAgent}
-                    onEdit={handleEditAgent}
-                    onScore={handleScoreAgent}
-                    isLoading={deleteLoading}
-                  />
-                ))
+                <DisplayCard1
+                  data={filteredAvailableAgents.map((agent) => ({
+                    ...agent,
+                    agentic_application_id: agent.agentic_application_id || agent.id,
+                    name: agent.agentic_application_name || agent.agent_name || "Unnamed Agent",
+                    description: agent.agentic_application_description || agent.description || "Consistency evaluation agent",
+                    type: agent.agentic_application_type || agent.agent_type || agent.type || "agent",
+                  }))}
+                  onCardClick={(cardName, item) => handleEditAgent(item)}
+                  showButton={true}
+                  onButtonClick={(cardName, item) => handleScoreAgent(item)}
+                  showDeleteButton={true}
+                  onDeleteClick={(cardName, item) => handleDeleteAgent(item)}
+                  cardNameKey="name"
+                  cardDescriptionKey="description"
+                  cardCategoryKey="type"
+                  contextType="consistency"
+                  showCreateCard={false}
+                  onCreateClick={handlePlusClick}
+                  idKey="agentic_application_id"
+                />
               )}
             </div>
-          </div>
+          </>
         )}
 
         {/* Show this update section as soon as Adding a new consistency agent is successfull
         Also show this section if user clicks on the pencil icon of each agent */}
         {isEditMode && (
-          <div
-            className="editMode"
-            style={{
-              width: "100%",
-              height: "Calc(100vh - 70px)",
-              display: "flex",
-              flexDirection: "row",
-              gap: "24px",
-              alignItems: "flex-start",
-              minHeight: "80vh",
-              position: "relative",
-              overflow: "hidden",
-            }}>
-            <button
-              className={listStyles.closeBtn}
-              onClick={handleClosePlusPanel}
-              aria-label="Close update panel"
-              style={{ position: "absolute", top: "-4px", right: 16, zIndex: 2 }}>
-              ✖
-            </button>
-            {/* Left: Edit Form Panel */}
-            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "stretch", height: "100%", overflow: "auto" }}>
-              <LeftNavPanel styles={consistencyStyles} title={formData.agent_name || formData.agentic_application_name || "Edit Agent"}>
-                <div className={consistencyStyles.formGroup}>
-                  <p className="spacer" style={{ marginTop: "8px" }}></p>
-                  <label htmlFor="model_name" className="label">
-                    Model Name <span className="required">*</span>
-                  </label>
-                  <div className={styles.searchableDropdown} ref={modelDropdownRef}>
-                    <input
-                      type="text"
-                      id="model_name"
-                      placeholder="select model"
-                      value={modelSearchTerm}
-                      onChange={(e) => {
-                        setModelSearchTerm(e.target.value);
-                        setIsModelDropdownOpen(true);
-                        setSelectedModelIndex(-1);
-                      }}
-                      onFocus={() => setIsModelDropdownOpen(true)}
-                      className={styles.searchInput}
-                      disabled={loading}
-                      onKeyDown={handleModelKeyDown}
-                    />
-                    {isModelDropdownOpen && (
-                      <div className={styles.dropdownList}>
-                        {filteredModels.length > 0 ? (
-                          filteredModels.map((model, index) => (
-                            <div
-                              key={index}
-                              className={[styles.dropdownItem, formData.model_name === model.value ? styles.selected : "", selectedModelIndex === index ? styles.highlighted : ""]
-                                .filter(Boolean)
-                                .join(" ")}
-                              onClick={() => {
-                                setFormData((prev) => ({ ...prev, model_name: model.value }));
-                                setModelSearchTerm(model.label);
-                                setIsModelDropdownOpen(false);
-                                setSelectedModelIndex(-1);
-                              }}>
-                              {model.label}
-                            </div>
-                          ))
-                        ) : (
-                          <div className={styles.dropdownItem}>{modelSearchTerm ? "No models found" : "Loading models..."}</div>
-                        )}
+          <FullModal
+            isOpen={true}
+            onClose={handleClosePlusPanel}
+            title={formData.agent_name || formData.agentic_application_name || "Edit Agent"}
+            headerInfo={[]}
+            footer={
+              <div className={consistencyStyles.modalFooterButtons}>
+                <IAFButton type="primary" onClick={handleUpdate} disabled={loading || !enableUpdate} loading={actionLoading === "update"}>
+                  Update
+                </IAFButton>
+              </div>
+            }>
+            <div className={consistencyStyles.splitLayout}>
+              {/* Left: Edit Form Panel */}
+              <div className={consistencyStyles.splitLeftPanel}>
+                <form onSubmit={(e) => e.preventDefault()} className="form-section">
+                  <div className="formContent">
+                    <div className="form">
+                      <div className="formGroup">
+                        <label htmlFor="model_name" className="label-desc">
+                          Model Name <span className="required">*</span>
+                        </label>
+                        <NewCommonDropdown
+                          options={models.map((model) => model.label)}
+                          selected={modelSearchTerm}
+                          onSelect={(value) => {
+                            const selectedModel = models.find((m) => m.label === value);
+                            if (selectedModel) {
+                              setFormData((prev) => ({ ...prev, model_name: selectedModel.value }));
+                              setModelSearchTerm(selectedModel.label);
+                            }
+                          }}
+                          placeholder="Select Model"
+                          disabled={loading}
+                          showSearch={true}
+                        />
                       </div>
-                    )}
-                  </div>
-                </div>
 
-                {/* Dynamic Queries Section - Hidden when file is uploaded */}
-                {!showOnlyEditQueries && (
-                  <div className={`${consistencyStyles.formGroup} dynamicQuery`}>
-                    <label className={consistencyStyles.label}>
-                      Queries <span className={consistencyStyles.required}>*</span>
-                    </label>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                      {editQueries.map((query, idx) => (
-                        <div key={idx} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {/* Dynamic Queries Section - Hidden when file is uploaded */}
+                      {!showOnlyEditQueries && (
+                        <div className="formGroup dynamicQuery">
+                          <label className="label-desc">
+                            Queries <span className="required">*</span>
+                          </label>
+                          <div className={consistencyStyles.queryInputsWrapper}>
+                            {editQueries.map((query, idx) => (
+                              <div key={idx} className={consistencyStyles.queryInputRow}>
+                                <input
+                                  type="text"
+                                  ref={(el) => (editModeQueryRefs.current[idx] = el)}
+                                  value={query}
+                                  onChange={(e) => {
+                                    const newQueries = [...editQueries];
+                                    newQueries[idx] = e.target.value;
+                                    setEditQueries(newQueries);
+                                    // Clear file when user starts typing
+                                    if (e.target.value.trim() !== "" && editModeFile) {
+                                      setEditModeFile(null);
+                                      setEditFileQueries([]);
+                                      if (editFileInputRef.current) editFileInputRef.current.value = "";
+                                    }
+                                  }}
+                                  placeholder={`Enter query ${idx + 1}`}
+                                  className={`input ${consistencyStyles.queryInputFlex}`}
+                                  disabled={loading || editModeFile}
+                                />
+                                {!(editQueries.length === 1 && !query?.trim()) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (editQueries.length === 1) {
+                                        // Clear the input value if only one query exists
+                                        const newQueries = [""];
+                                        setEditQueries(newQueries);
+                                      } else {
+                                        // Remove the query if multiple queries exist
+                                        const newQueries = editQueries.filter((_, i) => i !== idx);
+                                        setEditQueries(newQueries);
+                                      }
+                                    }}
+                                    className="closeBtn"
+                                    aria-label="Remove query"
+                                    disabled={editModeFile}>
+                                    &times;
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            {editQueries.length > 0 && editQueries[editQueries.length - 1] !== undefined && (
+                              <IAFButton
+                                type="primary"
+                                onClick={() => {
+                                  setEditQueries([...editQueries, ""]);
+                                  // Focus on the newly added input after state updates
+                                  setTimeout(() => {
+                                    const newIndex = editQueries.length;
+                                    if (editModeQueryRefs.current[newIndex]) {
+                                      editModeQueryRefs.current[newIndex].focus();
+                                    }
+                                  }, 0);
+                                }}
+                                className={`iafSubButton ${consistencyStyles.addQuerryButton}`}
+                                disabled={loading || editModeFile}>
+                                + Add Another Query
+                              </IAFButton>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Show "or" text only when both sections are visible */}
+                      {showAllEditSections && <p className={`queriesOrText ${consistencyStyles.queriesOrSeparator}`}>(or)</p>}
+
+                      {/* File Upload Section - Hidden when queries are entered */}
+                      {!showOnlyEditFileUpload && (
+                        <div className="formGroup queryAddUpload">
+                          <div className={styles.labelWithInfo}>
+                            <div className={consistencyStyles.labelInfoWrapper}>
+                              <label htmlFor="edit_uploaded_file" className="label-desc">
+                                Upload a Query File {!hasEditQueries && <span className="required">*</span>}
+                                <span className={styles.instructionText}>
+                                  (File must have exactly one column named 'queries'. Use either queries above OR file upload, not both)
+                                </span>
+                              </label>
+                              <div className={styles.templateDownloadContainer}>
+                                <span
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleTemplateDownload();
+                                  }}
+                                  className={styles.templateDownloadLink}>
+                                  Download template
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                           <input
-                            type="text"
-                            ref={(el) => (editModeQueryRefs.current[idx] = el)}
-                            value={query}
-                            onChange={(e) => {
-                              const newQueries = [...editQueries];
-                              newQueries[idx] = e.target.value;
-                              setEditQueries(newQueries);
-                              // Clear file when user starts typing
-                              if (e.target.value.trim() !== "" && editModeFile) {
-                                setEditModeFile(null);
-                                setEditFileQueries([]);
-                                if (editFileInputRef.current) editFileInputRef.current.value = "";
+                            type="file"
+                            id="edit_uploaded_file"
+                            name="edit_uploaded_file"
+                            ref={editFileInputRef}
+                            accept=".csv,.xlsx"
+                            onChange={handleEditFileInputChange}
+                            className={`${styles.fileInput} ${consistencyStyles.fileInputHidden}`}
+                            disabled={loading || hasEditQueries}
+                          />
+                          <UploadBox
+                            file={editModeFile}
+                            isDragging={editIsDragging}
+                            onDragEnter={!loading && !hasEditQueries ? handleEditDragEnter : null}
+                            onDragLeave={!loading && !hasEditQueries ? handleEditDragLeave : null}
+                            onDragOver={!loading && !hasEditQueries ? handleEditDragOver : null}
+                            onDrop={(e) => {
+                              if (!loading && !hasEditQueries) {
+                                handleEditDrop(e);
                               }
                             }}
-                            placeholder={`Enter query ${idx + 1}`}
-                            className={styles.searchInput}
-                            style={{ flex: 1 }}
-                            disabled={loading || editModeFile}
+                            onClick={() => !loading && !hasEditQueries && !editModeFile && editFileInputRef.current && editFileInputRef.current.click()}
+                            onRemoveFile={handleEditRemoveFile}
+                            loading={loading}
+                            fileInputId="edit_uploaded_file"
+                            acceptedFileTypes=".csv,.xlsx"
+                            supportedText="Supported: .csv, .xlsx"
+                            dragText={hasEditQueries ? "Queries provided - file upload disabled" : "Drop file here"}
+                            disabled={loading || hasEditQueries}
                           />
-                          {!(editQueries.length === 1 && !query?.trim()) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (editQueries.length === 1) {
-                                  // Clear the input value if only one query exists
-                                  const newQueries = [""];
-                                  setEditQueries(newQueries);
-                                } else {
-                                  // Remove the query if multiple queries exist
-                                  const newQueries = editQueries.filter((_, i) => i !== idx);
-                                  setEditQueries(newQueries);
-                                }
-                              }}
-                              className={styles.removeFileButton}
-                              style={{ padding: "8px 12px", fontSize: "18px" }}
-                              aria-label="Remove query"
-                              disabled={editModeFile}>
-                              &times;
-                            </button>
+                          {/* Display queries from uploaded file */}
+                          {editModeFile && editFileQueries.length > 0 && (
+                            <div className={consistencyStyles.fileQueriesPreviewContainer}>
+                              <label className={`label-desc ${consistencyStyles.fileQueriesLabel}`}>Queries from file ({editFileQueries.length})</label>
+                              <div className={consistencyStyles.fileQueriesScrollContainer}>
+                                {editFileQueries.map((query, idx) => (
+                                  <div key={idx} className={consistencyStyles.fileQueryItem}>
+                                    <span className={consistencyStyles.fileQueryIndex}>{idx + 1}.</span>
+                                    {query}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           )}
                         </div>
-                      ))}
-                      {editQueries.length > 0 && editQueries[editQueries.length - 1] !== undefined && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditQueries([...editQueries, ""]);
-                            // Focus on the newly added input after state updates
-                            setTimeout(() => {
-                              const newIndex = editQueries.length;
-                              if (editModeQueryRefs.current[newIndex]) {
-                                editModeQueryRefs.current[newIndex].focus();
-                              }
-                            }, 0);
-                          }}
-                          className="iafButton iafSubButton"
-                          style={{ alignSelf: "flex-start", padding: "3px 6px", fontSize: "12px" }}
-                          disabled={loading || editModeFile}>
-                          + Add Another Query
-                        </button>
                       )}
                     </div>
                   </div>
-                )}
-
-                {/* Show "or" text only when both sections are visible */}
-                {showAllEditSections && (
-                  <p className="queriesOrText" style={{ width: "100%", textAlign: "center", fontSize: "14px", color: "#ccc" }}>
-                    (or)
-                  </p>
-                )}
-
-                {/* File Upload Section - Hidden when queries are entered */}
-                {!showOnlyEditFileUpload && (
-                  <div className={`${consistencyStyles.formGroup} queryAddUpload`}>
-                    <div className={styles.labelWithInfo}>
-                      <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                        <label htmlFor="edit_uploaded_file" className={consistencyStyles.label}>
-                          Upload a Query File {!hasEditQueries && <span className={styles.required}>*</span>}
-                          <span className={styles.instructionText}>(File must have exactly one column named 'queries'. Use either queries above OR file upload, not both)</span>
-                        </label>
-                        <div className={styles.templateDownloadContainer}>
-                          <span
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleTemplateDownload();
-                            }}
-                            className={styles.templateDownloadLink}>
-                            Download template
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <input
-                      type="file"
-                      id="edit_uploaded_file"
-                      name="edit_uploaded_file"
-                      ref={editFileInputRef}
-                      accept=".csv,.xlsx"
-                      onChange={handleEditFileInputChange}
-                      className={styles.fileInput}
-                      disabled={loading || hasEditQueries}
-                      style={{ display: "none" }}
-                    />
-                    {!editModeFile ? (
-                      <div
-                        className={[styles.fileUploadContainer, editIsDragging ? styles.dragging : "", loading || hasEditQueries ? styles.disabled : ""].filter(Boolean).join(" ")}
-                        onDragEnter={!loading && !hasEditQueries ? handleEditDragEnter : undefined}
-                        onDragLeave={!loading && !hasEditQueries ? handleEditDragLeave : undefined}
-                        onDragOver={!loading && !hasEditQueries ? handleEditDragOver : undefined}
-                        onDrop={(e) => {
-                          if (!loading && !hasEditQueries) {
-                            handleEditDrop(e);
-                          }
-                        }}
-                        onClick={() => !loading && !hasEditQueries && !editModeFile && editFileInputRef.current && editFileInputRef.current.click()}>
-                        <div className={styles.uploadPrompt}>
-                          <span>{editIsDragging ? "Drop file here" : hasEditQueries ? "Queries provided - file upload disabled" : "Click to upload or drag and drop"}</span>
-                          <span>
-                            <small>Supported Extensions csv & xlsx</small>
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className={styles.fileCard}>
-                          <div className={consistencyStyles.fileInfo}>
-                            <span className={styles.fileName}>{editModeFile.name}</span>
-                            <button type="button" onClick={handleEditRemoveFile} className={styles.removeFileButton} aria-label="Remove file">
-                              &times;
-                            </button>
-                          </div>
-                        </div>
-                        {/* Display queries from uploaded file */}
-                        {editFileQueries.length > 0 && (
-                          <div style={{ marginTop: "12px" }}>
-                            <label className={styles.label} style={{ marginBottom: "8px", display: "block" }}>
-                              Queries from file ({editFileQueries.length})
-                            </label>
-                            <div
-                              style={{
-                                // maxHeight: "200px",
-                                overflowY: "auto",
-                                border: "1px solid #e0e0e0",
-                                borderRadius: "4px",
-                                padding: "8px",
-                                backgroundColor: "#f9f9f9",
-                              }}>
-                              {editFileQueries.map((query, idx) => (
-                                <div
-                                  key={idx}
-                                  style={{
-                                    padding: "6px 8px",
-                                    marginBottom: "4px",
-                                    backgroundColor: "#fff",
-                                    borderRadius: "3px",
-                                    border: "1px solid #e8e8e8",
-                                    fontSize: "13px",
-                                    color: "#333",
-                                  }}>
-                                  <span style={{ fontWeight: "500", color: "#666", marginRight: "8px" }}>{idx + 1}.</span>
-                                  {query}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <div className={consistencyStyles.buttonGroupSticky}>
-                  <button type="button" onClick={handleUpdate} className="iafButton iafButtonPrimary" disabled={loading || !enableUpdate}>
-                    Update
-                  </button>
-                </div>
-              </LeftNavPanel>
+                </form>
+              </div>
             </div>
-            {/* Right: Results Panels - Consistency and Robustness */}
+
+            {/* Results Slider for Edit Mode - Consistency (inside FullModal so it shares the portal stacking context) */}
             {results && !robustnessActive && (
-              <div
-                style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", alignItems: "stretch", position: "relative" }}
-                key={forceUpdate}>
-                <div className="rightResult1" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <>
+                {!isResultsSliderCollapsed && (
+                  <div
+                    className={`${sliderStyles.sliderBackdrop} ${sliderStyles.visible}`}
+                    onClick={() => setResults(null)}
+                    aria-hidden="true"
+                  />
+                )}
+                <div className={`${sliderStyles.sliderOverlay} ${consistencyStyles.previewSlider} ${isResultsSliderCollapsed ? sliderStyles.collapsed : ""}`}>
+                  {/* Collapse/Expand Toggle */}
+                  <button
+                    className={`${sliderStyles.sliderToggle} ${isResultsSliderCollapsed ? sliderStyles.toggleCollapsed : ""}`}
+                    onClick={() => setIsResultsSliderCollapsed(!isResultsSliderCollapsed)}
+                    aria-label={isResultsSliderCollapsed ? "Expand panel" : "Collapse panel"}>
+                    <SVGIcons icon="chevronRight" width={16} height={16} />
+                  </button>
+
+                  {/* Slider Header */}
+                  <div className={sliderStyles.sliderHeader}>
+                    <h2 className={sliderStyles.sliderTitle}>Preview Results</h2>
+                    <button className="closeBtn" onClick={() => setResults(null)} aria-label="Close panel">
+                      <SVGIcons icon="x" width={16} height={16} />
+                    </button>
+                  </div>
+
+                  {/* Slider Content + Footer */}
                   <RightResultsPanel
                     styles={consistencyStyles}
+                    sliderStyles={sliderStyles}
                     results={results}
                     loading={loading}
+                    actionLoading={actionLoading}
                     handleRerun={handleRerun}
                     handleApprove={handleApprove}
                     scrollCardsOnly={true}
                   />
                 </div>
-              </div>
+              </>
             )}
-            {/* Robustness Panel in Edit Mode */}
+
+            {/* Results Slider for Edit Mode - Robustness (inside FullModal so it shares the portal stacking context) */}
             {robustnessActive && (
-              <div style={{ flex: 1, minWidth: 0, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", alignItems: "stretch", position: "relative" }}>
-                <div className="rightResultRobustness" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <>
+                {!isRobustnessSliderCollapsed && (
+                  <div
+                    className={`${sliderStyles.sliderBackdrop} ${sliderStyles.visible}`}
+                    onClick={() => setRobustnessResults(null)}
+                    aria-hidden="true"
+                  />
+                )}
+                <div className={`${sliderStyles.sliderOverlay} ${consistencyStyles.previewSlider} ${isRobustnessSliderCollapsed ? sliderStyles.collapsed : ""}`}>
+                  {/* Collapse/Expand Toggle */}
+                  <button
+                    className={`${sliderStyles.sliderToggle} ${isRobustnessSliderCollapsed ? sliderStyles.toggleCollapsed : ""}`}
+                    onClick={() => setIsRobustnessSliderCollapsed(!isRobustnessSliderCollapsed)}
+                    aria-label={isRobustnessSliderCollapsed ? "Expand panel" : "Collapse panel"}>
+                    <SVGIcons icon="chevronRight" width={16} height={16} />
+                  </button>
+
+                  {/* Slider Header */}
+                  <div className={sliderStyles.sliderHeader}>
+                    <h2 className={sliderStyles.sliderTitle}>Preview Results - Robustness</h2>
+                    <button className="closeBtn" onClick={() => setRobustnessResults(null)} aria-label="Close panel">
+                      <SVGIcons icon="x" width={16} height={16} />
+                    </button>
+                  </div>
+
+                  {/* Slider Content + Footer */}
                   <RightResultsPanel
                     styles={consistencyStyles}
+                    sliderStyles={sliderStyles}
                     results={robustnessResults || { queries: [], responses: [], agentic_application_id: null }}
                     loading={robustnessLoading}
+                    actionLoading={actionLoading}
                     handleRerun={() => handleRobustnessRerun(robustnessResults?.agentic_application_id)}
                     handleApprove={handleRobustnessApprove}
                     scrollCardsOnly={true}
                   />
                 </div>
-              </div>
+              </>
             )}
-          </div>
+          </FullModal>
         )}
 
         {/* Modal overlay for add mode */}
         {plusBtnClicked && !isEditMode && (
-          <div className={consistencyStyles.modalOverlay} onClick={handleClosePlusPanel}>
-            {loading && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <Loader />
+          <FullModal
+            isOpen={true}
+            onClose={handleClosePlusPanel}
+            title="ADD CONSISTENCY EVALUATION"
+            headerInfo={[]}
+            loading={loading}
+            footer={
+              <div className={consistencyStyles.modalFooterButtons}>
+                {downloadableResponse && (
+                  <IAFButton type="secondary" onClick={handleDownload}>
+                    Download
+                  </IAFButton>
+                )}
+                <IAFButton type="primary" onClick={handleExecute} disabled={loading || !enableExecute} loading={loading}>
+                  Execute
+                </IAFButton>
               </div>
-            )}
-            <div className={consistencyStyles.modal} onClick={(e) => e.stopPropagation()}>
-              <div className={consistencyStyles.modalContent}>
-                <div className={consistencyStyles.modalHeader}>
-                  <h2 className={consistencyStyles.modalTitle}>ADD CONSISTENCY EVALUATION</h2>
-                  <button className={consistencyStyles.closeBtn} onClick={handleClosePlusPanel}>
-                    ×
-                  </button>
-                </div>
-                {/* <div style={{ width: "100%", display: "flex", flexDirection: "row", gap: "24px", alignItems: "flex-start", minHeight: "80vh", overflow: "hidden" }}> */}
-                <div style={{ width: "100%", display: "flex", flexDirection: "row", gap: "24px", alignItems: "flex-start", minHeight: "80vh" }}>
-                  {/* Left: Form Panel */}
-                  <div style={{ flex: 1, minWidth: 0, minHeight: 0, height: "92vh", display: "flex", flexDirection: "column", alignItems: "stretch", position: "relative" }}>
-                    <LeftNavPanel styles={consistencyStyles} title="">
-                      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}>
-                        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", gap: "12px", display: "flex", flexDirection: "column" }}>
-                          {/* ...existing form fields... */}
-                          <div className={consistencyStyles.formGroup}>
-                            <label htmlFor="model_name" className={styles.label}>
-                              Model Name <span className={styles.required}>*</span>
-                            </label>
-                            <div className={styles.searchableDropdown} ref={modelDropdownRef}>
-                              <input
-                                type="text"
-                                id="model_name"
-                                placeholder="Select model"
-                                value={modelSearchTerm}
-                                onChange={(e) => {
-                                  setModelSearchTerm(e.target.value);
-                                  setIsModelDropdownOpen(true);
-                                  setSelectedModelIndex(-1);
-                                }}
-                                // autoFocus
-                                onFocus={() => setIsModelDropdownOpen(true)}
-                                className={styles.searchInput}
-                                onKeyDown={handleModelKeyDown}
-                              />
-                              {isModelDropdownOpen && (
-                                <div className={styles.dropdownList}>
-                                  {filteredModels.length > 0 ? (
-                                    filteredModels.map((model, index) => (
-                                      <div
-                                        key={index}
-                                        className={[
-                                          styles.dropdownItem,
-                                          formData.model_name === model.value ? styles.selected : "",
-                                          selectedModelIndex === index ? styles.highlighted : "",
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" ")}
-                                        onClick={() => {
-                                          setFormData((prev) => ({ ...prev, model_name: model.value, agent_type: "", agent_name: "", uploaded_file: null }));
-                                          setModelSearchTerm(model.label);
-                                          setIsModelDropdownOpen(false);
-                                          setSelectedModelIndex(-1);
-                                          setAgentType(filteredAgentTypesDropdown[0].value);
-                                          setAgentSearchTerm("");
-                                          setIsAgentDropdownOpen(false);
-                                          setSelectedAgentIndex(-1);
-                                          if (fileInputRef.current) fileInputRef.current.value = "";
-                                        }}>
-                                        {model.label}
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className={styles.dropdownItem}>{modelSearchTerm ? "No models found" : "Loading models..."}</div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div className={consistencyStyles.formGroup}>
-                            <label htmlFor="agent_type" className={styles.label}>
-                              Agent Type <span className={styles.required}>*</span>
-                            </label>
-                            <div className={styles.searchableDropdown} ref={agentTypeDropdownRef}>
-                              <input
-                                type="text"
-                                id="agent_type"
-                                placeholder="select agent type"
-                                value={agentTypeSearchTerm}
-                                onChange={(e) => {
-                                  setAgentTypeSearchTerm(e.target.value);
-                                  setIsAgentTypeDropdownOpen(true);
-                                  setSelectedAgentTypeIndex(-1);
-                                }}
-                                onFocus={() => setIsAgentTypeDropdownOpen(true)}
-                                className={styles.searchInput}
-                                disabled={!formData.model_name}
-                                onKeyDown={handleAgentTypeKeyDown}
-                              />
-                              {isAgentTypeDropdownOpen && (
-                                <div className={styles.dropdownList}>
-                                  {filteredAgentTypes.length > 0 ? (
-                                    filteredAgentTypes.map((agentType, index) => (
-                                      <div
-                                        key={index}
-                                        className={[
-                                          styles.dropdownItem,
-                                          formData.agent_type === agentType.value ? styles.selected : "",
-                                          selectedAgentTypeIndex === index ? styles.highlighted : "",
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" ")}
-                                        onClick={() => {
-                                          setFormData((prev) => ({ ...prev, agent_type: agentType.value, agent_name: "" }));
-                                          setAgentTypeSearchTerm(agentType.label);
-                                          setAgentType(agentType.value);
-                                          setIsAgentTypeDropdownOpen(false);
-                                          setSelectedAgentTypeIndex(-1);
-                                          setAgentSearchTerm("");
-                                          setIsAgentDropdownOpen(false);
-                                          setSelectedAgentIndex(-1);
-                                        }}>
-                                        {agentType.label}
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className={styles.dropdownItem}>No agent types found</div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div className={consistencyStyles.formGroup}>
-                            <label htmlFor="agent_name" className={consistencyStyles.label}>
-                              Agent Name <span className={consistencyStyles.required}>*</span>
-                            </label>
-                            <div className={styles.searchableDropdown} ref={agentDropdownRef}>
-                              <input
-                                type="text"
-                                id="agent_name"
-                                placeholder="select agent name"
-                                value={formData.agent_name || agentSearchTerm}
-                                onChange={(e) => {
-                                  setAgentSearchTerm(e.target.value);
-                                  setIsAgentDropdownOpen(true);
-                                  setSelectedAgentIndex(-1);
-                                  setFormData((prev) => ({ ...prev, agent_name: e.target.value }));
-                                }}
-                                onFocus={() => setIsAgentDropdownOpen(true)}
-                                className={styles.searchInput}
-                                disabled={!formData.model_name || !formData.agent_type}
-                                onKeyDown={handleAgentKeyDown}
-                              />
-                              {isAgentDropdownOpen && (
-                                <div className={styles.dropdownList}>
-                                  {filteredAgents.length > 0 ? (
-                                    filteredAgents.map((agent, index) => (
-                                      <div
-                                        key={agent.agentic_application_id || agent.id}
-                                        className={[
-                                          styles.dropdownItem,
-                                          formData.agent_name === agent.agentic_application_name || agentSearchTerm === agent.agentic_application_name ? styles.selected : "",
-                                          selectedAgentIndex === index ? styles.highlighted : "",
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" ")}
-                                        onClick={() => {
-                                          handleAgentDropdownSelect(agent);
-                                          setFormData((prev) => ({ ...prev, agent_name: agent.agentic_application_name }));
-                                          setAgentSearchTerm(agent.agentic_application_name);
-                                        }}>
-                                        {agent.agentic_application_name}
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className={styles.dropdownItem}>No agents found</div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Dynamic Queries Section - Hidden when file is uploaded */}
-                          {!showOnlyQueries && (
-                            <div className={`${consistencyStyles.formGroup} dynamicQuery`}>
-                              <label className={consistencyStyles.label}>
-                                Queries <span className={consistencyStyles.required}>*</span>
-                              </label>
-                              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                                {addModeQueries.map((query, idx) => (
-                                  <div key={idx} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                                    <input
-                                      type="text"
-                                      ref={(el) => (addModeQueryRefs.current[idx] = el)}
-                                      value={query}
-                                      onChange={(e) => {
-                                        const newQueries = [...addModeQueries];
-                                        newQueries[idx] = e.target.value;
-                                        setAddModeQueries(newQueries);
-                                        // Clear file when user starts typing
-                                        if (e.target.value.trim() !== "" && formData.uploaded_file) {
-                                          setFormData((prev) => ({ ...prev, uploaded_file: null }));
-                                          if (fileInputRef.current) fileInputRef.current.value = "";
-                                        }
-                                      }}
-                                      placeholder={`Enter query ${idx + 1}`}
-                                      className={styles.searchInput}
-                                      style={{ flex: 1 }}
-                                      disabled={!formData.model_name || formData.uploaded_file}
-                                    />
-                                    {!(addModeQueries.length === 1 && !query?.trim()) && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (addModeQueries.length === 1) {
-                                            // Clear the input value if only one query exists
-                                            const newQueries = [""];
-                                            setAddModeQueries(newQueries);
-                                          } else {
-                                            // Remove the query if multiple queries exist
-                                            const newQueries = addModeQueries.filter((_, i) => i !== idx);
-                                            setAddModeQueries(newQueries);
-                                          }
-                                        }}
-                                        className={styles.removeFileButton}
-                                        style={{ padding: "8px 12px", fontSize: "18px" }}
-                                        aria-label="Remove query"
-                                        disabled={formData.uploaded_file}>
-                                        &times;
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                                {addModeQueries[addModeQueries.length - 1] && (
+            }>
+            <div className={consistencyStyles.splitLayout}>
+              {/* Left: Form Panel */}
+              <div className={consistencyStyles.splitLeftPanel}>
+                <form onSubmit={(e) => e.preventDefault()} className="form-section">
+                  <div className="formContent">
+                    <div className="form">
+                      <div className="gridThreeCol">
+                        <div className="formGroup">
+                          <label htmlFor="model_name" className="label-desc">
+                            Model Name <span className="required">*</span>
+                          </label>
+                          <NewCommonDropdown
+                            options={models.map((model) => model.label)}
+                            selected={modelSearchTerm}
+                            onSelect={(value) => {
+                              const selectedModel = models.find((m) => m.label === value);
+                              if (selectedModel) {
+                                setFormData((prev) => ({ ...prev, model_name: selectedModel.value }));
+                                setModelSearchTerm(selectedModel.label);
+                              }
+                            }}
+                            placeholder="Select model"
+                            showSearch={true}
+                          />
+                        </div>
+                        <div className="formGroup">
+                          <label htmlFor="agent_type" className="label-desc">
+                            Agent Type <span className="required">*</span>
+                          </label>
+                          <NewCommonDropdown
+                            options={agentTypesDropdown.map((type) => type.label)}
+                            selected={agentTypeSearchTerm}
+                            onSelect={(value) => {
+                              const selectedType = agentTypesDropdown.find((t) => t.label === value);
+                              if (selectedType) {
+                                setFormData((prev) => ({ ...prev, agent_type: selectedType.value, agent_name: "" }));
+                                setAgentTypeSearchTerm(selectedType.label);
+                                setAgentType(selectedType.value);
+                                setAgentSearchTerm("");
+                              }
+                            }}
+                            placeholder="Select agent type"
+                            showSearch={true}
+                          />
+                        </div>
+                        <div className="formGroup">
+                          <label htmlFor="agent_name" className="label-desc">
+                            Agent Name <span className="required">*</span>
+                          </label>
+                          <NewCommonDropdown
+                            options={agentListDropdown.map((agent) => agent.agentic_application_name)}
+                            selected={agentSearchTerm}
+                            onSelect={(value) => {
+                              const selectedAgent = agentListDropdown.find((a) => a.agentic_application_name === value);
+                              if (selectedAgent) {
+                                handleAgentDropdownSelect(selectedAgent);
+                                setFormData((prev) => ({ ...prev, agent_name: selectedAgent.agentic_application_name }));
+                                setAgentSearchTerm(selectedAgent.agentic_application_name);
+                              }
+                            }}
+                            placeholder="Select Agent Name"
+                            showSearch={true}
+                          />
+                        </div>
+                      </div>
+                      {/* Dynamic Queries Section - Hidden when file is uploaded */}
+                      {!showOnlyQueries && (
+                        <div className="formGroup dynamicQuery">
+                          <label className="label-desc">
+                            Queries <span className="required">*</span>
+                          </label>
+                          <div className={consistencyStyles.queryContainer}>
+                            {addModeQueries.map((query, idx) => (
+                              <div key={idx} className={consistencyStyles.queryRow}>
+                                <input
+                                  type="text"
+                                  ref={(el) => (addModeQueryRefs.current[idx] = el)}
+                                  value={query}
+                                  onChange={(e) => {
+                                    const newQueries = [...addModeQueries];
+                                    newQueries[idx] = e.target.value;
+                                    setAddModeQueries(newQueries);
+                                    // Clear file when user starts typing
+                                    if (e.target.value.trim() !== "" && formData.uploaded_file) {
+                                      setFormData((prev) => ({ ...prev, uploaded_file: null }));
+                                      if (fileInputRef.current) fileInputRef.current.value = "";
+                                    }
+                                  }}
+                                  placeholder={`Enter Query ${idx + 1}`}
+                                  className={`input ${consistencyStyles.queryInput}`}
+                                  disabled={formData.uploaded_file}
+                                />
+                                {!(addModeQueries.length === 1 && !query?.trim()) && (
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setAddModeQueries([...addModeQueries, ""]);
-                                      // Focus on the newly added input after state updates
-                                      setTimeout(() => {
-                                        const newIndex = addModeQueries.length;
-                                        if (addModeQueryRefs.current[newIndex]) {
-                                          addModeQueryRefs.current[newIndex].focus();
-                                        }
-                                      }, 0);
+                                      if (addModeQueries.length === 1) {
+                                        // Clear the input value if only one query exists
+                                        const newQueries = [""];
+                                        setAddModeQueries(newQueries);
+                                      } else {
+                                        // Remove the query if multiple queries exist
+                                        const newQueries = addModeQueries.filter((_, i) => i !== idx);
+                                        setAddModeQueries(newQueries);
+                                      }
                                     }}
-                                    className="iafButton iafSubButton"
-                                    style={{ alignSelf: "flex-start", padding: "3px 6px", fontSize: "12px" }}
-                                    disabled={!formData.model_name || formData.uploaded_file}>
-                                    + Add Another Query
+                                    className="closeBtn"
+                                    aria-label="Remove query"
+                                    disabled={formData.uploaded_file}>
+                                    &times;
                                   </button>
                                 )}
                               </div>
-                            </div>
-                          )}
-                          {/* Show "or" text only when both sections are visible */}
-                          {showAllSections && (
-                            <p className="queriesOrText" style={{ width: "100%", textAlign: "center", fontSize: "14px", color: "#ccc" }}>
-                              (or)
-                            </p>
-                          )}
-                          {/* File Upload Section - Hidden when queries are entered */}
-                          {!showOnlyFileUpload && (
-                            <div className={`${consistencyStyles.formGroup} queryAddUpload`}>
-                              <div className={styles.labelWithInfo}>
-                                <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                                  <label htmlFor="uploaded_file" className={consistencyStyles.label}>
-                                    Upload a Query File {!hasNonEmptyQueries && <span className={styles.required}>*</span>}
-                                    <span className={styles.instructionText}>
-                                      (File must have exactly one column named 'queries'. Use either queries above OR file upload, not both)
-                                    </span>
-                                  </label>
-                                  <div className={styles.templateDownloadContainer}>
-                                    <span
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        handleTemplateDownload();
-                                      }}
-                                      className={styles.templateDownloadLink}>
-                                      Download template
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                              <input
-                                type="file"
-                                id="uploaded_file"
-                                name="uploaded_file"
-                                ref={fileInputRef}
-                                accept=".csv,.xlsx"
-                                onChange={(e) => {
-                                  handleInputChange(e);
-                                  // Clear queries when file is uploaded
-                                  if (e.target.files && e.target.files.length > 0) {
-                                    setAddModeQueries([""]);
-                                  }
-                                }}
-                                className={styles.fileInput}
-                                disabled={!formData.model_name || hasNonEmptyQueries}
-                                style={{ display: "none" }}
-                                required
-                              />
-                              {!formData.uploaded_file ? (
-                                <div
-                                  className={[styles.fileUploadContainer, isDragging ? styles.dragging : "", !formData.model_name || hasNonEmptyQueries ? styles.disabled : ""]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                  onDragEnter={formData.model_name && !hasNonEmptyQueries ? handleDragEnter : undefined}
-                                  onDragLeave={formData.model_name && !hasNonEmptyQueries ? handleDragLeave : undefined}
-                                  onDragOver={formData.model_name && !hasNonEmptyQueries ? handleDragOver : undefined}
-                                  onDrop={(e) => {
-                                    if (formData.model_name && !hasNonEmptyQueries) {
-                                      handleDrop(e);
-                                      // Clear queries when file is dropped
-                                      setAddModeQueries([""]);
+                            ))}
+                            {addModeQueries[addModeQueries.length - 1] && (
+                              <IAFButton
+                                type="primary"
+                                onClick={() => {
+                                  setAddModeQueries([...addModeQueries, ""]);
+                                  // Focus on the newly added input after state updates
+                                  setTimeout(() => {
+                                    const newIndex = addModeQueries.length;
+                                    if (addModeQueryRefs.current[newIndex]) {
+                                      addModeQueryRefs.current[newIndex].focus();
                                     }
-                                  }}
-                                  onClick={() => formData.model_name && !hasNonEmptyQueries && !formData.uploaded_file && fileInputRef.current && fileInputRef.current.click()}>
-                                  <div className={styles.uploadPrompt}>
-                                    <span>
-                                      {isDragging ? "Drop file here" : hasNonEmptyQueries ? "Queries provided - file upload disabled" : "Click to upload or drag and drop"}
-                                    </span>
-                                    <span>
-                                      <small>Supported Extensions csv & xlsx</small>
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className={styles.fileCard}>
-                                    <div className={consistencyStyles.fileInfo}>
-                                      <span className={styles.fileName}>{formData.uploaded_file.name}</span>
-                                      <button type="button" onClick={handleRemoveFile} className={styles.removeFileButton} aria-label="Remove file">
-                                        &times;
-                                      </button>
-                                    </div>
-                                  </div>
-                                  {/* Display queries from uploaded file */}
-                                  {fileQueries.length > 0 && (
-                                    <div style={{ marginTop: "12px" }}>
-                                      <label className={styles.label} style={{ marginBottom: "8px", display: "block" }}>
-                                        Queries from file ({fileQueries.length})
-                                      </label>
-                                      <div
-                                        style={{
-                                          maxHeight: "200px",
-                                          overflowY: "auto",
-                                          border: "1px solid #e0e0e0",
-                                          borderRadius: "4px",
-                                          padding: "8px",
-                                          backgroundColor: "#f9f9f9",
-                                        }}>
-                                        {fileQueries.map((query, idx) => (
-                                          <div
-                                            key={idx}
-                                            style={{
-                                              padding: "6px 8px",
-                                              marginBottom: "4px",
-                                              backgroundColor: "#fff",
-                                              borderRadius: "3px",
-                                              border: "1px solid #e8e8e8",
-                                              fontSize: "13px",
-                                              color: "#333",
-                                            }}>
-                                            <span style={{ fontWeight: "500", color: "#666", marginRight: "8px" }}>{idx + 1}.</span>
-                                            {query}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {/* position: "sticky" */}
-                          <div style={{ bottom: 0, left: 0, right: 0, background: "#fff", marginTop: "12px" }}>
-                            {/* <div className={styles.buttonGroup}> */}
-                            <button type="button" onClick={handleExecute} className="iafButton iafButtonPrimary" disabled={loading || !enableExecute}>
-                              Execute
-                            </button>
-                            {downloadableResponse && (
-                              <button type="button" onClick={handleDownload} className="iafButton iafButtonSecondary">
-                                Download
-                              </button>
+                                  }, 0);
+                                }}
+                                className={`iafSubButton ${consistencyStyles.addQuerryButton}`}
+                                disabled={formData.uploaded_file}>
+                                + Add Another Query
+                              </IAFButton>
                             )}
-                            {/* </div> */}
                           </div>
                         </div>
-                      </div>
-                    </LeftNavPanel>
+                      )}
+                      {/* Show "or" text only when both sections are visible */}
+                      {showAllSections && (
+                        <p className={consistencyStyles.queriesOrText}>
+                          (or)
+                        </p>
+                      )}
+                      {/* File Upload Section - Hidden when queries are entered */}
+                      {!showOnlyFileUpload && (
+                        <div className="formGroup queryAddUpload">
+                          <div className={styles.labelWithInfo}>
+                            <div className={consistencyStyles.fileUploadHeader}>
+                              <label htmlFor="uploaded_file" className="label-desc">
+                                Upload a Query File {!hasNonEmptyQueries && <span className="required">*</span>}
+                                <span className={styles.instructionText}>
+                                  (File must have exactly one column named 'queries'. Use either queries above OR file upload, not both)
+                                </span>
+                              </label>
+                              <div className={styles.templateDownloadContainer}>
+                                <span
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleTemplateDownload();
+                                  }}
+                                  className={styles.templateDownloadLink}>
+                                  Download template
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <input
+                            type="file"
+                            id="uploaded_file"
+                            name="uploaded_file"
+                            ref={fileInputRef}
+                            accept=".csv,.xlsx"
+                            onChange={handleInputChange}
+                            className={`${styles.fileInput} ${consistencyStyles.hiddenInput}`}
+                          />
+                          <UploadBox
+                            file={formData.uploaded_file}
+                            isDragging={isDragging}
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                            onDragOver={handleDragOver}
+                            onDrop={handleDrop}
+                            onClick={() => !formData.uploaded_file && fileInputRef.current && fileInputRef.current.click()}
+                            onRemoveFile={handleRemoveFile}
+                            loading={loading}
+                            fileInputId="uploaded_file"
+                            acceptedFileTypes=".csv,.xlsx"
+                            supportedText="Supported: .csv, .xlsx"
+                            dragText={"Drop file here"}
+                          />
+                          {/* Display queries from uploaded file */}
+                          {formData.uploaded_file && fileQueries.length > 0 && (
+                            <div className={consistencyStyles.fileQueriesContainer}>
+                              <label className={`label-desc ${consistencyStyles.fileQueriesLabel}`}>
+                                Queries from file ({fileQueries.length})
+                              </label>
+                              <div className={consistencyStyles.fileQueriesList}>
+                                {fileQueries.map((query, idx) => (
+                                  <div key={idx} className={consistencyStyles.fileQueryItem}>
+                                    <span className={consistencyStyles.queryItemNumber}>{idx + 1}.</span>
+                                    {query}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {/* --- Panel width/height logic for 3 panels --- */}
-                  {(() => {
-                    // Count how many panels are visible (excluding left nav)
-                    let rightPanels = 0;
-                    if (results) rightPanels++;
-                    if (robustnessActive) rightPanels++;
-                    // If there are exactly 2 right panels (total 3 including left nav), apply equal width/height
-                    if (rightPanels === 2) {
-                      return (
-                        <>
-                          {results && (
-                            <div
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                minHeight: 0,
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "stretch",
-                                maxWidth: "50%",
-                                position: "relative",
-                              }}>
-                              <div className="rightResult2" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                                <RightResultsPanel
-                                  styles={styles}
-                                  results={results}
-                                  loading={loading}
-                                  handleRerun={handleRerun}
-                                  handleApprove={handleApprove}
-                                  scrollCardsOnly={true}
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {robustnessActive && (
-                            <div
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                minHeight: 0,
-                                height: "80vh",
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "stretch",
-                                maxWidth: "50%",
-                                position: "relative",
-                              }}>
-                              <div className="rightResult3" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                                <RightResultsPanel
-                                  styles={styles}
-                                  results={robustnessResults || { queries: [], responses: [], agentic_application_id: null }}
-                                  loading={robustnessLoading}
-                                  handleRerun={() => handleRobustnessRerun(robustnessResults?.agentic_application_id)}
-                                  handleApprove={handleRobustnessApprove}
-                                  scrollCardsOnly={true}
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      );
-                    }
-                    // Otherwise, use original layout
-                    return (
-                      <>
-                        {results && (
-                          <div
-                            style={{ flex: 1, minWidth: 0, minHeight: 0, height: "80vh", display: "flex", flexDirection: "column", alignItems: "stretch", position: "relative" }}>
-                            <div className="rightResult4" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                              <RightResultsPanel
-                                styles={styles}
-                                results={results}
-                                loading={loading}
-                                handleRerun={handleRerun}
-                                handleApprove={handleApprove}
-                                scrollCardsOnly={true}
-                              />
-                            </div>
-                          </div>
-                        )}
-                        {robustnessActive && (
-                          <div
-                            style={{ flex: 1, minWidth: 0, minHeight: 0, height: "80vh", display: "flex", flexDirection: "column", alignItems: "stretch", position: "relative" }}>
-                            <div className="rightResult5" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                              <RightResultsPanel
-                                styles={styles}
-                                results={robustnessResults || { queries: [], responses: [], agentic_application_id: null }}
-                                loading={robustnessLoading}
-                                handleRerun={() => handleRobustnessRerun(robustnessResults?.agentic_application_id)}
-                                handleApprove={handleRobustnessApprove}
-                                scrollCardsOnly={true}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
+                </form>
               </div>
             </div>
-          </div>
+
+            {/* Results Slider for Add Mode - Consistency (inside FullModal so it shares the portal stacking context) */}
+            {results && !robustnessActive && (
+              <>
+                {!isResultsSliderCollapsed && (
+                  <div
+                    className={`${sliderStyles.sliderBackdrop} ${sliderStyles.visible}`}
+                    onClick={() => setResults(null)}
+                    aria-hidden="true"
+                  />
+                )}
+                <div className={`${sliderStyles.sliderOverlay} ${consistencyStyles.previewSlider} ${isResultsSliderCollapsed ? sliderStyles.collapsed : ""}`}>
+                  {/* Collapse/Expand Toggle */}
+                  <button
+                    className={`${sliderStyles.sliderToggle} ${isResultsSliderCollapsed ? sliderStyles.toggleCollapsed : ""}`}
+                    onClick={() => setIsResultsSliderCollapsed(!isResultsSliderCollapsed)}
+                    aria-label={isResultsSliderCollapsed ? "Expand panel" : "Collapse panel"}>
+                    <SVGIcons icon="chevronRight" width={16} height={16} />
+                  </button>
+
+                  {/* Slider Header */}
+                  <div className={sliderStyles.sliderHeader}>
+                    <h2 className={sliderStyles.sliderTitle}>Preview Results</h2>
+                    <button className="closeBtn" onClick={() => setResults(null)} aria-label="Close panel">
+                      <SVGIcons icon="x" width={16} height={16} />
+                    </button>
+                  </div>
+
+                  {/* Slider Content + Footer */}
+                  <RightResultsPanel
+                    styles={consistencyStyles}
+                    sliderStyles={sliderStyles}
+                    results={results}
+                    loading={loading}
+                    actionLoading={actionLoading}
+                    handleRerun={handleRerun}
+                    handleApprove={handleApprove}
+                    scrollCardsOnly={true}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Results Slider for Add Mode - Robustness (inside FullModal so it shares the portal stacking context) */}
+            {robustnessActive && (
+              <>
+                {!isRobustnessSliderCollapsed && (
+                  <div
+                    className={`${sliderStyles.sliderBackdrop} ${sliderStyles.visible}`}
+                    onClick={() => setRobustnessResults(null)}
+                    aria-hidden="true"
+                  />
+                )}
+                <div className={`${sliderStyles.sliderOverlay} ${consistencyStyles.previewSlider} ${isRobustnessSliderCollapsed ? sliderStyles.collapsed : ""}`}>
+                  {/* Collapse/Expand Toggle */}
+                  <button
+                    className={`${sliderStyles.sliderToggle} ${isRobustnessSliderCollapsed ? sliderStyles.toggleCollapsed : ""}`}
+                    onClick={() => setIsRobustnessSliderCollapsed(!isRobustnessSliderCollapsed)}
+                    aria-label={isRobustnessSliderCollapsed ? "Expand panel" : "Collapse panel"}>
+                    <SVGIcons icon="chevronRight" width={16} height={16} />
+                  </button>
+
+                  {/* Slider Header */}
+                  <div className={sliderStyles.sliderHeader}>
+                    <h2 className={sliderStyles.sliderTitle}>Preview Results - Robustness</h2>
+                    <button className="closeBtn" onClick={() => setRobustnessResults(null)} aria-label="Close panel">
+                      <SVGIcons icon="x" width={16} height={16} />
+                    </button>
+                  </div>
+
+                  {/* Slider Content + Footer */}
+                  <RightResultsPanel
+                    styles={consistencyStyles}
+                    sliderStyles={sliderStyles}
+                    results={robustnessResults || { queries: [], responses: [], agentic_application_id: null }}
+                    loading={robustnessLoading}
+                    actionLoading={actionLoading}
+                    handleRerun={() => handleRobustnessRerun(robustnessResults?.agentic_application_id)}
+                    handleApprove={handleRobustnessApprove}
+                    scrollCardsOnly={true}
+                  />
+                </div>
+              </>
+            )}
+          </FullModal>
         )}
       </div>
     </div>

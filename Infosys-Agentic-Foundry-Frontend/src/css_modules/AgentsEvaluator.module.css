@@ -1,74 +1,288 @@
 /* filepath: AgentsEvaluator.module.css */
-.container {
-  padding: 24px;
-  background: #fff;
-  border-radius: 16px;
+
+/* ========== Main Layout ========== */
+.evaluationLanding {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px;
+  position: relative;
+  min-height: 0;
+  flex: 1;
 }
 
-.heading {
-  text-align: center;
-  color: #1a237e;
-  margin-bottom: 28px;
-  letter-spacing: 1px;
+/* ========== Page Header ========== */
+.pageHeader {
+  margin-bottom: 24px;
 }
 
-.form {
+.pageTitle {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  margin: 0;
+  background: linear-gradient(135deg, #ffffff 0%, #37acea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.pageDescription {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  color: var(--content-color);
+  margin: 4px 0 0 0;
+}
+
+.evaluationLayout {
   display: flex;
   flex-direction: column;
+  gap: 24px;
+}
+
+/* ========== Card Styles ========== */
+.inputCard,
+.resultsCard {
+  padding: 28px;
+  border-radius: var(--radius-lg, 12px);
+  background: linear-gradient(135deg, 
+    var(--card-bg) 0%, 
+    rgba(55, 172, 234, 0.03) 100%);
+  border: 1px solid rgba(55, 172, 234, 0.15);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.inputCard::before,
+.resultsCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #37acea, #025d8a, #37acea);
+  background-size: 200% 100%;
+  animation: shimmerGradient 4s ease infinite;
+}
+
+@keyframes shimmerGradient {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.inputCard:hover,
+.resultsCard:hover {
+  border-color: rgba(55, 172, 234, 0.3);
+  box-shadow: 0 8px 32px rgba(55, 172, 234, 0.1);
+}
+
+.resultsCard {
+  max-width: 720px;
+}
+
+.cardTitle {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  margin: 0 0 24px 0;
+  background: linear-gradient(135deg, #ffffff 0%, #37acea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
 
-.row {
+.cardTitle::before {
+  content: "";
+  width: 4px;
+  height: 20px;
+  background: linear-gradient(180deg, #37acea, #025d8a);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ========== Form Content ========== */
+
+.modelGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.modelField {
   display: flex;
-  gap: 16px;
   flex-direction: column;
-  padding-top: 16px;
+  gap: 8px;
 }
 
-.label {
-  min-width: 80px;
-  font-weight: 500;
-  color: #333;
-  margin-right: 8px;
-}
-
-.select {
-  flex: 1;
-  padding: 8px;
-  border-radius: 6px;
-  border: 1px solid #bdbdbd;
-  font-size: 16px;
-}
-
-.button {
-  font-size: 15px;
-  background: #007cc3 0% 0% no-repeat padding-box;
-  opacity: 1;
-  color: white;
-  margin-right: 2px;
-  border-radius: 4px;
-  padding: 8px;
-  border: none;
-  cursor: pointer;
-}
-
-.button:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.response {
+/* ========== Button Styles ========== */
+.buttonRow {
   margin-top: 24px;
-  background: #f4f7fa;
-  padding: 16px;
-  border-radius: 8px;
-  font-size: 15px;
-  color: #263238;
-  overflow-x: auto;
-  border: 1px solid #e3e3e3;
+  display: flex;
+  flex-direction: row-reverse;
 }
 
-.buttonContainer {
+/* ========== Results Grid ========== */
+.resultsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.resultItem {
   display: flex;
-  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--menu-bg, rgba(255, 255, 255, 0.5));
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid rgba(55, 172, 234, 0.1);
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.resultItem::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(180deg, #37acea, #025d8a);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.resultItem:hover {
+  border-color: rgba(55, 172, 234, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(55, 172, 234, 0.12);
+}
+
+.resultItem:hover::before {
+  opacity: 1;
+}
+
+.resultLabel {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--accent, #37acea);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.resultValue {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--header-color);
+  margin: 0;
+}
+
+/* Status indicator styling */
+.resultItem:nth-child(2) .resultValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.resultItem:nth-child(2) .resultValue::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #37acea;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+/* Processed/Remaining special styling */
+.resultItem:nth-child(5) .resultValue,
+.resultItem:nth-child(6) .resultValue {
+  font-size: 24px;
+  font-weight: var(--font-weight-bold, 700);
+  background: linear-gradient(135deg, #025d8a 0%, #37acea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========== Light Mode Overrides ========== */
+:global([data-theme="light"]) .pageTitle,
+:global([data-theme="light"]) .cardTitle {
+  background: linear-gradient(135deg, #025d8a 0%, #37acea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+:global([data-theme="light"]) .inputCard,
+:global([data-theme="light"]) .resultsCard {
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.95) 0%, 
+    rgba(2, 93, 138, 0.04) 100%);
+  border-color: rgba(2, 93, 138, 0.15);
+}
+
+:global([data-theme="light"]) .inputCard:hover,
+:global([data-theme="light"]) .resultsCard:hover {
+  border-color: rgba(2, 93, 138, 0.25);
+  box-shadow: 0 8px 32px rgba(2, 93, 138, 0.08);
+}
+
+:global([data-theme="light"]) .resultItem {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(2, 93, 138, 0.1);
+}
+
+:global([data-theme="light"]) .resultItem:hover {
+  border-color: rgba(2, 93, 138, 0.2);
+  box-shadow: 0 6px 20px rgba(2, 93, 138, 0.1);
+}
+
+:global([data-theme="light"]) .resultLabel {
+  color: #025d8a;
+}
+
+:global([data-theme="light"]) .cardTitle::before,
+:global([data-theme="light"]) .resultItem::before {
+  background: linear-gradient(180deg, #025d8a, #0891b2);
+}
+
+:global([data-theme="light"]) .resultItem:nth-child(2) .resultValue::before {
+  background: #025d8a;
+}
+
+:global([data-theme="light"]) .resultItem:nth-child(5) .resultValue,
+:global([data-theme="light"]) .resultItem:nth-child(6) .resultValue {
+  background: linear-gradient(135deg, #025d8a 0%, #0891b2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========== Responsive ========== */
+@media (max-width: 640px) {
+  .modelGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .resultsGrid {
+    grid-template-columns: 1fr;
+  }
+  
+  .inputCard,
+  .resultsCard {
+    padding: 20px;
+  }
 }

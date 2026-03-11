@@ -1,16 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
 import styles from "./Canvas.module.css";
-import SVGIcons from "../../Icons/SVGIcons";
 import DynamicWidget from "./DynamicWidget";
+import SVGIcons from "../../Icons/SVGIcons";
 
-const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canvas", messageId = null, is_last,
-  sendUserMessage,selectedAgent}) => {
+const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canvas", messageId = null, is_last, sendUserMessage, selectedAgent }) => {
   const canvasRef = useRef(null);
   const resizeRef = useRef(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const [canvasWidth, setCanvasWidth] = useState(600); // Default width
+  const [canvasWidth, setCanvasWidth] = useState(null); // null means use CSS default
 
   // Close canvas when clicking outside
   useEffect(() => {
@@ -46,15 +45,25 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
 
   // Resize functionality
   useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isResizing || !canvasRef.current) return;
+    if (!isResizing) return;
 
-      const canvasRect = canvasRef.current.getBoundingClientRect();
+    const handleMouseMove = (e) => {
+      if (!canvasRef.current) return;
+
+      // Get the navbar width from CSS variable or use default
+      const navWidth = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--main-width') || '180');
+      const isNavCollapsed = document.documentElement.getAttribute('data-nav-collapsed') === 'true';
+      const effectiveNavWidth = isNavCollapsed ? 50 : navWidth;
+
+      // Calculate available width (viewport - navbar)
+      const availableWidth = window.innerWidth - effectiveNavWidth;
+
+      // Calculate new width based on mouse position from right edge
       const newWidth = window.innerWidth - e.clientX;
 
       // Set minimum and maximum width constraints
-      const minWidth = 300;
-      const maxWidth = window.innerWidth * 0.8;
+      const minWidth = 350;
+      const maxWidth = availableWidth * 0.85;
 
       if (newWidth >= minWidth && newWidth <= maxWidth) {
         setCanvasWidth(newWidth);
@@ -63,18 +72,16 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
 
     const handleMouseUp = () => {
       setIsResizing(false);
-      document.body.style.cursor = "default";
-      document.body.style.userSelect = "auto";
     };
 
-    if (isResizing) {
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    }
+    // Add class to body for global cursor control
+    document.body.classList.add("resizing");
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
+      document.body.classList.remove("resizing");
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
@@ -82,6 +89,7 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
 
   const handleResizeStart = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsResizing(true);
   };
 
@@ -103,52 +111,31 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
   };
 
   if (!isOpen) return null;
+
   return (
     <div
-      className={`${styles.canvasContainer} ${isFullscreen ? styles.fullscreen : ""} ${isMinimized ? styles.minimized : ""}`}
+      className={`${styles.canvasContainer} ${isFullscreen ? styles.fullscreen : ""} ${isMinimized ? styles.minimized : ""} ${isResizing ? styles.isResizing : ""}`}
       ref={canvasRef}
       style={{
-        width: isFullscreen ? "100vw" : isMinimized ? "300px" : `${canvasWidth}px`,
+        width: isFullscreen ? undefined : isMinimized ? "300px" : canvasWidth ? `${canvasWidth}px` : undefined,
       }}>
       {/* Canvas Header */}
       <div className={styles.canvasHeader}>
         <div className={styles.headerLeft}>
-          <SVGIcons icon="hardware-chip" width={18} height={18} fill="#007acc" />
+          <SVGIcons icon="canvas-grid" width={18} height={18} stroke="#0073CF" />
           <span className={styles.canvasTitle}>{title}</span>
         </div>
 
         <div className={styles.headerActions}>
-          {/* <button
-            className={styles.actionButton}
-            onClick={handleMinimize}
-            title={isMinimized ? "Expand" : "Minimize"}
-          >
-            {isMinimized ? (
-              <SVGIcons icon="fa-plus" width={12} height={12} fill="#666" />
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <line x1="2" y1="6" x2="10" y2="6" stroke="#666" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            )}
-          </button> */}
-
           <button className={styles.actionButton} onClick={handleFullscreen} title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
             {isFullscreen ? (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M8 4L4 4L4 8" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M4 4L8 8" stroke="#666" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+              <SVGIcons icon="fullscreen-collapse" width={14} height={14} stroke="currentColor" />
             ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 4L2 2L4 2" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M10 4L10 2L8 2" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M10 8L10 10L8 10" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M2 8L2 10L4 10" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <SVGIcons icon="fullscreen-expand" width={14} height={14} stroke="currentColor" />
             )}
           </button>
           <button className={styles.actionButton} onClick={handleClose} title="Close Canvas">
-            <SVGIcons icon="fa-xmark" width={12} height={12} fill="#666" />
+            <SVGIcons icon="close-canvas" width={14} height={14} stroke="currentColor" />
           </button>
         </div>
       </div>
@@ -166,7 +153,8 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
             selectedAgent={selectedAgent}
           />
         </div>
-      )}{""}
+      )}
+      {""}
       {/* Resize Handle */}
       {!isFullscreen && !isMinimized && (
         <div className={styles.resizeHandle} ref={resizeRef} onMouseDown={handleResizeStart}>
@@ -179,6 +167,6 @@ const Canvas = ({ isOpen, onClose, content, contentType = "code", title = "Canva
       )}
     </div>
   );
-}
+};
 
 export default Canvas;

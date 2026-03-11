@@ -1,9 +1,11 @@
 import axios from "axios";
 import { extractErrorMessage } from "../utils/errorUtils";
-import {env} from "../constant";
 
 // Module-level counter for request IDs
 let requestIdCounter = 0;
+
+// Global last API error for ErrorBoundary
+export let lastApiError = null;
 
 // Exported registration function so we can attach timing + standardization logic to any axios instance (global or custom)
 export function registerAxiosInterceptors(instance = axios) {
@@ -16,7 +18,7 @@ export function registerAxiosInterceptors(instance = axios) {
 
   const canPerf = typeof performance !== "undefined" && typeof performance.now === "function" && typeof performance.getEntriesByType === "function";
   const mkId = () => `req-${++requestIdCounter}`;
-  const VERBOSE = (env.REACT_APP_API_TIMING_VERBOSE || process.env.REACT_APP_API_TIMING_VERBOSE ) === "true";
+  const VERBOSE = process.env.REACT_APP_API_TIMING_VERBOSE === "true";
   const DRIFT_WARN_THRESHOLD_MS = 80;
 
   const findResourceTiming = (url, startNow, prevResCount, reqId) => {
@@ -159,27 +161,40 @@ export function registerAxiosInterceptors(instance = axios) {
         const standardized = extractErrorMessage(error);
         error.standardizedMessage = standardized.message;
         error.statusCode = standardized.statusCode;
+        // Store last API error for ErrorBoundary
+        lastApiError = { message: standardized.message, timestamp: Date.now() };
         // Avoid double global dispatch if a retry flag exists (e.g., refresh logic) to reduce event noise
         if (status === 401) {
           const supportsRefresh = !!error.config?.__supportsTokenRefresh;
           const isRefreshEndpoint = /refresh-token/i.test(url || "");
           const isRetry = !!error.config?._retry;
-          // Fire global logout ONLY when:
-          // 1) Request does NOT support refresh (legacy direct axios usage), OR
-          // 2) It is the refresh endpoint itself failing, OR
-          // 3) The original request already retried (_retry true) and still 401.
-          if (!supportsRefresh || isRefreshEndpoint || isRetry) {
+
+          // For direct axios calls (legacy) that don't go through useAxios interceptor:
+          // Do NOT immediately fire globalAuth401. Instead, suppress and let the
+          // useAxios response interceptor (which IS on the global instance via
+          // registerAxiosInterceptors) handle refresh. Only fire if it's the
+          // refresh endpoint failing or a retry that still got 401.
+          if (isRefreshEndpoint || isRetry) {
             const now = Date.now();
             if (now - lastGlobal401Ts > GLOBAL401_DEBOUNCE_MS) {
               lastGlobal401Ts = now;
               try {
-                // eslint-disable-next-line no-console
                 window.dispatchEvent(
                   new CustomEvent("globalAuth401", {
-                    detail: { error: standardized, url, method, timestamp: now, postRefresh: isRetry || isRefreshEndpoint },
+                    detail: { error: standardized, url, method, timestamp: now, postRefresh: true },
                   })
                 );
               } catch (_) {}
+            }
+          } else if (!supportsRefresh) {
+            // Legacy direct axios call got 401 — log it but don't force logout.
+            // The token may still be valid or refreshable; let the user's next
+            // axiosInstance-based call handle the refresh properly.
+            if (process.env.NODE_ENV === "development") {
+              // eslint-disable-next-line no-console
+              console.warn("⚠️ 401 on direct axios call (no refresh support) — suppressing immediate logout.", { url, method });
+              // eslint-disable-next-line no-console
+              console.warn("   Consider migrating this call to useFetch() for automatic token refresh.");
             }
           } else {
             if (process.env.NODE_ENV === "development") {

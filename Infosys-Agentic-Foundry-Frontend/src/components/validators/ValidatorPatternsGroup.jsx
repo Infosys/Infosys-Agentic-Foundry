@@ -1,9 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useToolsAgentsService } from "../../services/toolService";
 import { useMessage } from "../../Hooks/MessageContext";
-import styles from "../../css_modules/AgentOnboard.module.css";
-import InfoTag from "../commonComponents/InfoTag";
-
+import styles from "./ValidatorPatternsGroup.module.css";
+import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 
 export default function ValidatorPatternsGroup({ value = [], onChange, disabled = false }) {
   const { getValidatorTools } = useToolsAgentsService();
@@ -34,27 +33,28 @@ export default function ValidatorPatternsGroup({ value = [], onChange, disabled 
       if (Array.isArray(cur)) {
         if (cur.length) collected.push(cur);
       } else {
-        Object.values(cur).forEach(v => {
+        Object.values(cur).forEach((v) => {
           if (Array.isArray(v)) collected.push(v);
           else if (v && typeof v === "object") q.push(v);
         });
       }
     }
     // Choose best candidate: one containing tool-like shape
-    const toolLike = collected.find(arr => arr.some(o => o && typeof o === "object" && (o.tool_id || o.validator_id || o.id || Object.keys(o).some(k => k.endsWith("_id")))));
+    const toolLike = collected.find((arr) => arr.some((o) => o && typeof o === "object" && (o.tool_id || o.validator_id || o.id || Object.keys(o).some((k) => k.endsWith("_id")))));
     return toolLike || collected[0] || [];
   };
 
-  const standardize = (list) => list
-    .map(v => {
-      if (!v || typeof v !== "object") return null;
-      const dynamicIdKey = Object.keys(v).find(k => k.endsWith("_id"));
-      const id = v.tool_id || v.validator_id || v.id || v.server_id || v.mcp_id || (dynamicIdKey ? v[dynamicIdKey] : null);
-      const name = v.tool_name || v.validator_name || v.name || v.server_name || v.display_name || id;
-      if (!id) return null;
-      return { ...v, tool_id: id, tool_name: name };
-    })
-    .filter(Boolean);
+  const standardize = (list) =>
+    list
+      .map((v) => {
+        if (!v || typeof v !== "object") return null;
+        const dynamicIdKey = Object.keys(v).find((k) => k.endsWith("_id"));
+        const id = v.tool_id || v.validator_id || v.id || v.server_id || v.mcp_id || (dynamicIdKey ? v[dynamicIdKey] : null);
+        const name = v.tool_name || v.validator_name || v.name || v.server_name || v.display_name || id;
+        if (!id) return null;
+        return { ...v, tool_id: id, tool_name: name };
+      })
+      .filter(Boolean);
 
   const fetchedRef = useRef(false);
   // Safe dev detection (no direct process reference that could throw in some bundlers)
@@ -72,7 +72,7 @@ export default function ValidatorPatternsGroup({ value = [], onChange, disabled 
       setValidators(arr);
     } catch (e) {
       setFetchError(e?.message || "Failed to load validators");
-       addMessage("Failed to load validator tools", "error");
+      addMessage("Failed to load validator tools", "error");
     } finally {
       setLoadingValidators(false);
     }
@@ -92,38 +92,43 @@ export default function ValidatorPatternsGroup({ value = [], onChange, disabled 
     // Sync incoming prop only if user hasn't started editing AND it's actually different.
     if (userEditedRef.current) return;
     if (Array.isArray(value) && value.length > 0) {
-      const normalized = value.map(v => ({
+      const normalized = value.map((v) => ({
         query: v.query || "",
         expected_answer: v.expected_answer || "",
         validator: v.validator || null,
       }));
       // Shallow equality check to avoid redundant setState.
-      const isSame = normalized.length === rows.length && normalized.every((nv, i) => {
-        const rv = rows[i];
-        return nv.query === rv.query && nv.expected_answer === rv.expected_answer && nv.validator === rv.validator;
-      });
+      const isSame =
+        normalized.length === rows.length &&
+        normalized.every((nv, i) => {
+          const rv = rows[i];
+          return nv.query === rv.query && nv.expected_answer === rv.expected_answer && nv.validator === rv.validator;
+        });
       if (!isSame) {
         setRows(normalized);
       }
     }
   }, [value, rows]);
 
-  const notifyParent = useCallback((next) => {
-    if (!onChange) return;
-    onChange(next);
-  }, [onChange]);
+  const notifyParent = useCallback(
+    (next) => {
+      if (!onChange) return;
+      onChange(next);
+    },
+    [onChange],
+  );
 
   const addRow = () => {
     userEditedRef.current = true;
     // Only allow one empty row at a time
     if (rows.length === 0 || (rows[rows.length - 1].query && rows[rows.length - 1].expected_answer && rows[rows.length - 1].expected_answer.toLowerCase() !== "none")) {
-      setRows(r => [...r, { query: "", expected_answer: "", validator: null }]);
+      setRows((r) => [...r, { query: "", expected_answer: "", validator: null }]);
       notifyParent([...rows, { query: "", expected_answer: "", validator: null }]);
     }
   };
   const updateRow = (i, patch) => {
     userEditedRef.current = true;
-    setRows(r => {
+    setRows((r) => {
       const next = r.map((row, idx) => (idx === i ? { ...row, ...patch } : row));
       notifyParent(next);
       return next;
@@ -131,33 +136,28 @@ export default function ValidatorPatternsGroup({ value = [], onChange, disabled 
   };
   const removeRow = (i) => {
     userEditedRef.current = true;
-    setRows(r => r.filter((_, idx) => idx !== i));
+    setRows((r) => r.filter((_, idx) => idx !== i));
     notifyParent(rows.filter((_, idx) => idx !== i));
   };
 
   return (
     <div className={styles.validatorGroup} aria-disabled={disabled}>
       <div className={styles.validatorHeader}>
-        <h3>Validation Patterns (Optional) 
-          <InfoTag message="Provide validator for the agent" />
-        </h3>
+        <p className="label-desc">Validation Patterns (Optional)</p>
         {!disabled && (
           <button
             type="button"
             onClick={addRow}
-            className={styles.addBtn}
+            className="smallAddBtn"
             disabled={
               disabled ||
-              (rows.length > 0 && (
-                !rows[rows.length - 1].query.trim() ||
-                !rows[rows.length - 1].expected_answer.trim() ||
-                rows[rows.length - 1].expected_answer.trim().toLowerCase() === "none" ||
-                rows.filter(row => !row.query.trim() && (!row.expected_answer.trim() || row.expected_answer.trim().toLowerCase() === "none")).length > 0
-              ))
+              (rows.length > 0 &&
+                (!rows[rows.length - 1].query.trim() ||
+                  !rows[rows.length - 1].expected_answer.trim() ||
+                  rows[rows.length - 1].expected_answer.trim().toLowerCase() === "none" ||
+                  rows.filter((row) => !row.query.trim() && (!row.expected_answer.trim() || row.expected_answer.trim().toLowerCase() === "none")).length > 0))
             }
-            aria-label="Add validation pattern"
-            style={{ alignSelf: "flex-start" }}
-          >
+            aria-label="Add validation pattern">
             +
           </button>
         )}
@@ -165,9 +165,14 @@ export default function ValidatorPatternsGroup({ value = [], onChange, disabled 
       {rows.map((row, idx) => (
         <div className={styles.validatorRow} key={idx}>
           <div className={styles.col}>
-            <label>Query<span style={{color: "#b91c1c"}}>*</span></label>
+            <label htmlFor={`validator-query-${idx}`}>
+              Query<span style={{ color: "#b91c1c" }}>*</span>
+            </label>
             <input
               type="text"
+              id={`validator-query-${idx}`}
+              name={`validator-query-${idx}`}
+              className="input"
               value={row.query}
               onChange={(e) => updateRow(idx, { query: e.target.value })}
               disabled={disabled}
@@ -176,9 +181,14 @@ export default function ValidatorPatternsGroup({ value = [], onChange, disabled 
             />
           </div>
           <div className={styles.col}>
-            <label>Expected Answer<span style={{color: "#b91c1c"}}>*</span></label>
+            <label htmlFor={`validator-expected-answer-${idx}`}>
+              Expected Answer<span style={{ color: "#b91c1c" }}>*</span>
+            </label>
             <input
               type="text"
+              id={`validator-expected-answer-${idx}`}
+              name={`validator-expected-answer-${idx}`}
+              className="input"
               value={row.expected_answer}
               onChange={(e) => updateRow(idx, { expected_answer: e.target.value })}
               disabled={disabled}
@@ -187,32 +197,25 @@ export default function ValidatorPatternsGroup({ value = [], onChange, disabled 
             />
           </div>
           <div className={styles.col}>
-            <label>Validator (Optional)</label>
-            <select
-              value={row.validator || ""}
-              onChange={(e) => updateRow(idx, { validator: e.target.value || null })}
+            <label id={`validator-select-label-${idx}`}>Validator (Optional)</label>
+            <NewCommonDropdown
+              options={loadingValidators ? ["Loading..."] : validators.length === 0 ? ["No validators"] : validators.map((v) => v.tool_name)}
+              selected={row.validator ? validators.find((v) => v.tool_id === row.validator)?.tool_name || "" : ""}
+              onSelect={(value) => {
+                if (value === "Loading..." || value === "No validators") return;
+                const found = validators.find((v) => v.tool_name === value);
+                updateRow(idx, { validator: found ? found.tool_id : null });
+              }}
+              placeholder="Select validator"
               disabled={disabled || loadingValidators}
-              title={loadingValidators ? "Loading validators" : validators.length === 0 ? (fetchError ? fetchError : "No validators found") : "Select validator"}
-            >
-              <option value="">{loadingValidators ? "Loading..." : validators.length === 0 ? "No validators" : "None"}</option>
-              {validators.map(v => (
-                <option key={v.tool_id} value={v.tool_id}>{v.tool_name}</option>
-              ))}
-            </select>
-            {fetchError && !loadingValidators && validators.length === 0 && (
-              <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 4 }}>{fetchError}</div>
-            )}
+              showSearch={false}
+            />
+            {fetchError && !loadingValidators && validators.length === 0 && <div className={styles.errorText}>{fetchError}</div>}
           </div>
-          <div className={styles.colSmall} style={{ display: "flex", alignItems: "flex-end" }}>
+          <div className={`${styles.colSmall} ${styles.validatorCloseBtnWrapper}`}>
             {!disabled && (
-              <button
-                type="button"
-                onClick={() => removeRow(idx)}
-                className={styles.removeBtn}
-                aria-label="Remove validation pattern"
-                style={{ height: 32 }}
-              >
-                ✕
+              <button type="button" onClick={() => removeRow(idx)} className={`closeBtn ${styles.ValidatorcloseBtn}`} aria-label="Remove validation pattern">
+                &times;
               </button>
             )}
           </div>

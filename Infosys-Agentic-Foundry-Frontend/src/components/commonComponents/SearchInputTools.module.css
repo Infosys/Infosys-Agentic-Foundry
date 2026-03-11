@@ -5,8 +5,8 @@
     width: 100%;
     max-width: 400px;
     margin: 0 auto;
-    background-color: #f9f9f9;
-    border: 1px solid #ddd;
+    background-color: var(--card-bg, #f9f9f9);
+    border: 1px solid var(--border-color, #ddd);
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     overflow: hidden;
@@ -18,7 +18,7 @@
     border: none;
     outline: none;
     font-size: 14px;
-    color: #333;
+    color: var(--text-primary, #333);
     background-color: transparent;
   }
   

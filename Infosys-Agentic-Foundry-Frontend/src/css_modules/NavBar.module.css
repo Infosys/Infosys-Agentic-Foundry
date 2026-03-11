@@ -1,33 +1,478 @@
+/* Theme Switch Button Row */
+.themeSwitchRow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-bottom: 8px;
+}
+
+.themeSwitchButton {
+  background: var(--hover-background);
+  color: var(--header-color);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+.themeSwitchButton:hover {
+  background: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+/* Theme switch labels - show/hide based on data-theme */
+.lightLabel {
+  display: inline;
+}
+.darkLabel {
+  display: none;
+}
+
+:global([data-theme="dark"]) .lightLabel {
+  display: none;
+}
+:global([data-theme="dark"]) .darkLabel {
+  display: inline;
+}
+
 .navSection {
-  width: 70px;
-  height: calc(100vh - 43px);
+  width: 200px;
+  height: 100vh;
   position: fixed;
   left: 0;
-  transition: width 0.3s ease-in-out;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  transition: 
+    width var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow var(--transition-normal, 250ms) ease;
+  overflow: visible;
+  z-index: 10000;
+  background-color: var(--menu-bg);
+  border-right: 1px solid var(--content-border-color);
+  pointer-events: auto; /* Ensure navbar receives click events */
+  isolation: isolate; /* Create new stacking context */
+}
+
+/* Use data attribute to control nav width instead of CSS variables */
+:global([data-nav-collapsed="true"]) .navSection {
+  width: var(--nav-collapsed-width);
+}
+
+/* Inner scrollable container */
+.navInner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   overflow-y: auto;
-  overflow-x: hidden;
-  z-index: 10000; /* Increased to ensure navigation is always accessible, even above loaders and modals */
-  top: 43px;
-  background-color: white;
-  box-shadow: inset 0px 2px 3px #00000029;
+  overflow-x: visible;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* Internet Explorer 10+ */
 }
 
-/* Hide scrollbar for Chrome, Safari and Opera */
+.navInner::-webkit-scrollbar {
+  display: none;
+}
+
+/* Collapsed state - show icons only */
+.navCollapsed {
+  width: var(--nav-collapsed-width);
+  overflow: visible;
+  transition: 
+    width var(--transition-normal, 250ms) var(--transition-smooth, cubic-bezier(0.4, 0, 0.2, 1)),
+    box-shadow var(--transition-normal, 250ms) ease;
+}
+
+/* Expand nav on hover - push content mode */
+.navCollapsed:hover {
+  width: 200px;
+  box-shadow: var(--shadow-elevated, 4px 0 24px rgba(0, 0, 0, 0.12));
+  z-index: 99999;
+  background-color: var(--menu-bg);
+  overflow: visible;
+}
+
+/* Ensure navInner has solid background when hovered */
+.navCollapsed:hover .navInner {
+  background-color: var(--menu-bg);
+  overflow-y: auto;
+  overflow-x: visible;
+}
+
+/* Ensure nav has solid background when hovered */
+.navCollapsed:hover .nav {
+  background-color: var(--menu-bg);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE */
+}
+
+.navCollapsed:hover .nav::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
+.navCollapsed:hover .nav ul {
+  overflow: visible;
+}
+
+/* Show elements on nav hover */
+.navCollapsed:hover .logoSection {
+  display: flex;
+  visibility: visible;
+  height: auto;
+  padding: 12px 10px;
+}
+
+.navCollapsed:hover .logoSection .logo {
+  display: block;
+  width: 100%;
+  max-width: 160px;
+}
+
+.navCollapsed:hover .logoSection .versionInfo {
+  display: block;
+}
+
+.navCollapsed:hover .nav a span,
+.navCollapsed:hover .nav button span,
+.navCollapsed:hover .bottomSection .userInfo,
+.navCollapsed:hover .versionInfo {
+  display: inline !important;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+/* Collapsed inner container - allow overflow for popover */
+.navCollapsed .navInner {
+  overflow: visible;
+}
+
+/* Hide logo section but show cropped logo when collapsed */
+.navCollapsed .logoSection {
+  display: flex;
+  padding: 12px 6px;
+  height: auto;
+  overflow: hidden;
+}
+
+/* Hide the full logo when collapsed, show IAF text instead */
+.navCollapsed .logoSection .logo {
+  display: none;
+}
+
+/* IAF text shown when collapsed */
+.collapsedLogoText {
+  display: none;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--app-primary-color);
+  letter-spacing: 1px;
+  text-align: center;
+  width: 100%;
+}
+
+.navCollapsed .collapsedLogoText {
+  display: block;
+}
+
+/* Hide IAF text when nav is hovered/expanded */
+.navCollapsed:hover .collapsedLogoText {
+  display: none;
+}
+
+.navCollapsed .logoSection .versionInfo {
+  display: block;
+  font-size: 9px;
+  white-space: nowrap;
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* Collapsed logo section - not used anymore */
+.collapsedLogoSection {
+  display: none;
+}
+
+.navCollapsed .collapsedLogoSection {
+  display: none;
+}
+
+/* Hide collapsed logo when nav is hovered/expanded */
+.navCollapsed:hover .collapsedLogoSection {
+  display: none;
+}
+
+/* Show full logo when nav is hovered */
+.navCollapsed:hover .logoSection {
+  display: flex;
+}
+
+/* Hide text labels and other elements when collapsed */
+.navCollapsed .nav a span,
+.navCollapsed .nav button span,
+.navCollapsed .bottomSection .userInfo {
+  display: none;
+}
+
+/* Nav container in collapsed - hidden overflow since whole nav expands */
+.navCollapsed .nav {
+  overflow: hidden;
+}
+
+.navCollapsed .nav ul {
+  overflow: hidden;
+}
+
+/* Adjust nav items when collapsed - match expanded state height */
+.navCollapsed .nav a,
+.navCollapsed .nav button {
+  justify-content: center;
+  padding: 6px 8px;
+  margin: 0 6px;
+  border-radius: var(--radius);
+  transition: all 0.15s ease;
+}
+
+/* When nav is hovered, restore normal layout for nav items */
+.navCollapsed:hover .nav a,
+.navCollapsed:hover .nav button {
+  justify-content: flex-start;
+  padding: 6px 14px;
+  margin: 0 8px;
+  gap: 12px;
+  width: calc(100% - 16px);
+  white-space: nowrap;
+  overflow: visible;
+}
+
+/* Nav item container in collapsed state - fixed height to prevent collapse */
+.navCollapsed .nav li {
+  position: relative;
+  overflow: hidden;
+  height: 32px;
+  min-height: 32px;
+}
+
+/* When nav is hovered, nav items should be normal */
+.navCollapsed:hover .nav li {
+  overflow: visible;
+  height: auto;
+  min-height: 32px;
+}
+
+/* Remove individual item expand on hover since whole nav expands */
+.navCollapsed:hover .nav li a,
+.navCollapsed:hover .nav li button {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: calc(100% - 16px);
+  min-width: auto;
+  background-color: var(--menu-bg);
+  border: none;
+  box-shadow: none;
+  z-index: auto;
+}
+
+/* Hover effect for nav items when nav is expanded */
+.navCollapsed:hover .nav li a:hover,
+.navCollapsed:hover .nav li button:hover {
+  background-color: var(--hover-background);
+}
+
+/* Preserve active state when nav is hovered */
+.navCollapsed:hover .nav li a.active,
+.navCollapsed:hover .nav li button.active {
+  background: var(--app-primary-color);
+  color: white;
+}
+
+.navCollapsed:hover .nav li a.active svg,
+.navCollapsed:hover .nav li button.active svg {
+  stroke: white;
+  color: white;
+}
+
+/* Expanded hover state for individual nav items - DISABLED since whole nav expands on hover */
+/* These styles are kept but commented out for reference
+.navCollapsed .nav li:hover a,
+.navCollapsed .nav li:hover button {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: auto;
+  min-width: 180px;
+  background-color: var(--menu-bg);
+  border: 1px solid var(--content-border-color);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10002;
+  justify-content: flex-start;
+  padding: 6px 14px;
+  margin: 0;
+  gap: 12px;
+}
+*/
+
+/* Active item should keep blue background on hover in collapsed state */
+.navCollapsed .nav li:hover a.active,
+.navCollapsed .nav li:hover button.active {
+  background-color: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+}
+
+/* Show text on hover in collapsed state */
+.navCollapsed .nav li:hover a span,
+.navCollapsed .nav li:hover button span {
+  display: inline;
+  white-space: nowrap;
+}
+
+/* Adjust bottom section when collapsed */
+.navCollapsed .bottomSection {
+  padding: 8px;
+  justify-content: center;
+  overflow: visible;
+  position: relative;
+  z-index: 100002;
+}
+
+/* Center user menu button when collapsed */
+.navCollapsed .topRow {
+  justify-content: center;
+  overflow: visible;
+}
+
+/* User actions container in collapsed state */
+.navCollapsed .userActionsContainer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* User menu container in collapsed state - allow overflow */
+.navCollapsed .userMenuContainer {
+  position: relative;
+  overflow: visible;
+}
+
+/* User menu popover positioning in collapsed state - show above button */
+.navCollapsed .userMenuPopover {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto;
+  margin-bottom: 8px;
+  min-width: 160px;
+  z-index: 999999;
+  background-color: var(--card-bg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+/* When nav is hovered/expanded, keep popover above */
+.navCollapsed:hover .userMenuPopover {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* Invisible bridge for collapsed state */
+.navCollapsed .userMenuPopover::before {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  width: 100%;
+  height: 10px;
+}
+
+/* Toggle button for collapse/expand - HIDDEN (hover expand is used instead) */
+.navToggle {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translate(100%, -50%);
+  border-top-right-radius: var(--radius-lg, 8px);
+  border-bottom-right-radius: var(--radius-lg, 8px);
+  padding: 9px 6px 4px 6px;
+  background: var(--menu-bg);
+  border: 1px solid var(--content-border-color);
+  border-left: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 10001;
+}
+
+.navToggle:hover {
+  background: var(--hover-background);
+}
+
+.navToggle svg {
+  width: 16px;
+  height: 16px;
+  color: var(--content-color) !important;
+  transition: transform 0.3s ease;
+  transform: rotate(180deg);
+}
+
+/* Rotate toggle arrow when nav is collapsed */
+.navToggleCollapsed svg {
+  transform: rotate(0deg);
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera - legacy */
 .navSection::-webkit-scrollbar {
   display: none;
 }
 
-/* .navSection:hover {
-  width: 200px;
-} */
-
-.nav {
+/* Logo Section */
+.logoSection {
+  padding: 12px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 5px; /* Reduced from 10px to fit more items */
+  gap: 4px;
+  background-color: var(--menu-bg);
+}
+
+.logo {
+  width: 100%;
+  max-width: 160px;
+}
+
+.versionInfo {
+  font-size: 11px;
+  color: var(--version-number);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.appName {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  text-align: center;
+}
+
+/* Main Navigation */
+.nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  overflow-y: auto;
+  background-color: var(--menu-bg);
 }
 
 .nav ul {
@@ -37,93 +482,268 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px; /* Reduced from 8px to fit more items */
+  gap: 4px;
 }
 
 .nav li {
   display: flex;
   align-items: center;
-  padding: 6px 5px; /* Reduced from 8px to fit more items */
   cursor: pointer;
-  min-height: 50px; /* Reduced from 60px to fit more items */
-  justify-content: center;
+  width: 100%;
 }
 
 .nav a,
 .nav button {
   display: flex;
-  flex-direction: column;
-  gap: 3px; /* Reduced from 2px for even tighter spacing */
+  flex-direction: row;
+  gap: 12px;
   align-items: center;
   text-decoration: none;
-  font-size: 11px; /* Reduced from 12px */
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
   width: 100%;
+  padding: 6px 8px;
   border: none;
   background: none;
-  text-align: center;
-  color: #343741;
-  transition: transform 0.2s ease;
-  will-change: transform;
+  text-align: left;
+  color: var(--navbar-icon-color);
+  transition: 
+    background-color var(--transition-fast, 150ms) ease,
+    color var(--transition-fast, 150ms) ease,
+    transform var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  margin: 0 10px;
+  border-radius: var(--radius);
+  pointer-events: auto; /* Ensure nav links can receive clicks */
+  overflow: hidden;
+}
+
+/* Truncate long nav labels with ellipsis */
+.nav a span,
+.nav button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.nav a.active,
+.nav a.active:hover,
+.nav button.active {
+  background: var(--gradient-primary, var(--app-primary-color));
+  color: white;
+  cursor: default;
+  box-shadow: var(--shadow-soft, 0 2px 8px rgba(0, 0, 0, 0.1));
 }
 
 .nav a svg,
 .nav button svg {
-  width: 40%; /* Reduced from 45% to save space */
-  height: auto;
-  max-width: 20px; /* Reduced from 24px */
-  max-height: 20px; /* Reduced from 24px */
+  flex-shrink: 0;
+  /* Ensure consistent icon color for all navbar icons */
+  stroke: var(--navbar-icon-color);
+  color: var(--navbar-icon-color);
+  transition: transform var(--transition-fast, 150ms) ease;
 }
 
 /* FontAwesome icon styling */
 .nav a .fa-icon,
-.nav button .fa-icon {
-  font-size: 18px; /* Reduced from 20px */
-  margin-bottom: 2px;
+.nav button .fa-icon,
+.nav a [data-icon],
+.nav button [data-icon] {
+  font-size: 20px;
+  color: var(--navbar-icon-color);
+  flex-shrink: 0;
+  transition: transform var(--transition-fast, 150ms) ease;
 }
 
 .nav a:hover,
 .nav button:hover {
+  background-color: var(--hover-background);
+  transform: translateX(2px);
+}
+
+.nav a:hover svg,
+.nav button:hover svg {
   transform: scale(1.1);
 }
 
-.nav ul li a.active {
-  color: #007bc1;
+.nav a:active,
+.nav button:active {
+  transform: translateX(0) scale(0.98);
 }
 
-.nav ul li a[class="active"] {
+/* Active nav item icon - stroke and color white for both themes */
+.nav a.active svg,
+.nav button.active svg {
+  stroke: white !important;
+  color: white !important;
+  fill: none;
+}
+
+/* Active FontAwesome icons */
+.nav a.active .fa-icon,
+.nav button.active .fa-icon,
+.nav a.active [data-icon],
+.nav button.active [data-icon] {
+  color: white !important;
+}
+
+.nav a span,
+.nav button span {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.3;
+  text-align: left;
+  color: var(--header-color);
+  /* Multi-line ellipsis - wrap up to 2 lines then ellipsis */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+/* Active nav item span should have light color to contrast with blue background */
+.nav a.active span,
+.nav button.active span {
+  color: var(--primary-button-color) !important;
+}
+
+/* Bottom Section */
+.bottomSection {
+  padding: 12px;
+  /* background-color: white; */
+  border-top: 1px solid var(--content-border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Theme toggle button - always visible */
+.themeToggleBtn {
+  padding: 6px;
+  border: 1px solid var(--border);
+  background-color: var(--card-bg);
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.themeToggleBtn:hover {
+  background-color: var(--hover-background);
+  border-color: var(--app-primary-color);
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.userName {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userRole {
+  font-family: var(--font-primary);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.userDepartment {
+  font-family: var(--font-primary);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+/* User Actions Container - holds theme toggle and user menu */
+.userActionsContainer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* User Menu Container */
+.userMenuContainer {
   position: relative;
+  flex-shrink: 0;
+  z-index: 100002;
 }
 
-.nav ul li a[class="active"] svg {
-  fill: #007bc1;
+.userMenuButton {
+  padding: 6px;
+  border: 1px solid var(--border);
+  background-color: var(--card-bg);
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
 }
 
-.nav ul li a[class="active"] svg,
-.nav ul li a.active span,
-.nav ul li a[class="active"] span,
-.nav ul li button.active span {
-  color: #007bc1;
-  fill: #007bc1;
+.userMenuButton:hover {
+  background-color: var(--hover-background);
+  border-color: var(--app-primary-color);
 }
 
-/* .nav ul li a[class="active"]::before {
+/* User Menu Popover - Compact Design */
+.userMenuPopover {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  min-width: 160px;
+  z-index: 999999;
+  padding: 4px;
+  animation: fadeInUp 0.15s ease;
+}
+
+/* Invisible bridge to keep popover open when moving from button to popover */
+.userMenuPopover::before {
   content: "";
   position: absolute;
-  transform: translateY(-50%);
-  top: 50%;
-  left: 52px;
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 5px solid #007bc1;
-  z-index: 100;
-} */
+  bottom: -10px;
+  left: 0;
+  width: 100%;
+  height: 10px;
+}
 
 /* Icon styling */
 .icon {
   font-size: 20px;
   margin-right: 10px;
+  color: var(--navbar-icon-color, #69707d);
 }
 
 /* FontAwesome icon specific styling */
@@ -131,18 +751,149 @@
 .nav button .fa-icon,
 .nav a [data-icon],
 .nav button [data-icon] {
-  font-size: 18px;
-  margin-bottom: 2px;
-  color: #343741;
+  font-size: 20px;
+  color: var(--navbar-icon-color, #69707d);
+  flex-shrink: 0;
 }
 
-/* Ensure span text is visible */
-.nav a span,
-.nav button span {
-  font-size: 11px; /* Reduced from 10px to save space */
-  font-weight: 400;
-  line-height: 1.1; /* Reduced from 1.2 for tighter spacing */
-  text-align: center;
-  word-wrap: break-word;
-  max-width: 60px;
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  color: var(--text-color);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+  border-radius: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.menuItem:last-child {
+  border-bottom: none;
+}
+
+.menuItem svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: fill 0.2s ease;
+}
+
+.menuItem:hover {
+  background-color: var(--hover-background);
+  color: var(--app-primary-color);
+}
+
+.menuItem:hover svg {
+  fill: var(--app-primary-color);
+}
+
+.darkLightThemeToggle svg path {
+  transition: stroke 0.2s ease;
+}
+.darkLightThemeToggle:hover svg path {
+  stroke: var(--app-primary-color);
+}
+
+.menuItem:focus {
+  outline: 2px solid var(--app-primary-color);
+  outline-offset: -2px;
+}
+
+.menuItem:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.menuItem:focus-visible {
+  outline: 2px solid var(--app-primary-color);
+  outline-offset: -2px;
+}
+
+.menuItem span {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  flex: 1;
+}
+
+/* Logout menu item with danger styling */
+.logoutMenuItem {
+  color: var(--text-color);
+}
+
+.logoutMenuItem:hover {
+  background-color: rgba(220, 53, 69, 0.1);
+  color: var(--danger);
+}
+
+.logoutMenuItem:hover svg {
+  fill: transparent;
+}
+
+/* Legacy logout button styles - keeping for backward compatibility if needed */
+.logoutButton {
+  padding: 8px;
+  border: 1px solid var(--border);
+  background-color: var(--card-bg);
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.logoutButton:hover {
+  background-color: var(--hover-background);
+  border-color: var(--app-primary-color);
+}
+
+.bottomRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.helpLink {
+  font-size: var(--font-size-xs);
+  color: var(--app-primary-color);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.helpLink:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.versionInfo {
+  font-size: 9px;
+  color: var(--version-number);
+  text-align: end;
+  width: 100%;
+  padding: 2px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

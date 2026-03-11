@@ -1,5 +1,7 @@
 import React, { useRef, useEffect } from "react";
+import ReactDOM from "react-dom";
 import style from "./ConfirmationPopup.module.css";
+import IAFButton from "../../../iafComponents/GlobalComponents/Buttons/Button";
 
 const ConfirmationModal = ({ message, onConfirm, setShowConfirmation }) => {
   const modalRef = useRef(null);
@@ -8,20 +10,21 @@ const ConfirmationModal = ({ message, onConfirm, setShowConfirmation }) => {
     setShowConfirmation(false);
   };
 
-  return (
-    <div className={style.backdrop}>
-      <div ref={modalRef} className={style.modal}>
+  return ReactDOM.createPortal(
+    <div className={style.backdrop} onClick={hanleClose}>
+      <div ref={modalRef} className={style.modal} onClick={(e) => e.stopPropagation()}>
         <p>{message}</p>
         <div className={style.buttons}>
-          <button className={style.confirm} onClick={onConfirm}>
-            Confirm
-          </button>
-          <button className={style.cancel} onClick={hanleClose}>
+          <IAFButton type="danger" onClick={hanleClose} aria-label="Confirm">
             Cancel
-          </button>
+          </IAFButton>
+          <IAFButton type="primary" onClick={onConfirm} aria-label="Cancel">
+            Confirm
+          </IAFButton>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
