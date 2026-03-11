@@ -3,9 +3,11 @@ import os
 from typing import Any, Dict, List, Union, Tuple
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
+from google.adk.models.lite_llm import LiteLlm
 
 from src.models.azure_ai_model_service import AzureAIModelService
 from src.database.repositories import ChatStateHistoryManagerRepository
+from src.config.constants import ModelNames
 from telemetry_wrapper import logger as log
 
 
@@ -62,9 +64,24 @@ class ModelService:
 
         self.azure_ai_model_service, self.azure_ai_model_service_gpt_5 = self.get_azure_ai_model_service()
 
+        # Get all available models
+        default_model_name = os.getenv("DEFAULT_MODEL_NAME", ModelNames.GPT_4O.value)
         self.available_models = self.azure_openai_models + self.azure_openai_gpt_5_models + self.google_genai_models + self.gpt_oss_models + self.openai_models
-        self.available_models.sort()
+        # self.available_models.sort()
+        if default_model_name in self.available_models:
+            self.available_models.remove(default_model_name)
+            self.available_models.insert(0, default_model_name)
 
+
+    @property
+    def default_model_name(self) -> str:
+        """
+        Returns the default model name.
+        """
+        if not self.available_models:
+            log.error("No models available. Please check your environment configuration.")
+            raise ValueError("No models available. Ensure model environment variables are configured.")
+        return self.available_models[0]
 
     @staticmethod
     def convert_string_to_list(models_string: str) -> List[str]:
@@ -122,11 +139,12 @@ class ModelService:
                 openai_api_version=self.__azure_api_version,
                 azure_deployment=model_name,
                 temperature=temperature,
+                max_retries=10,
                 max_tokens=None,
             )
 
         if model_name in self.azure_openai_gpt_5_models:
-            if model_name != "gpt-5-chat":
+            if model_name != ModelNames.GPT_5_CHAT.value:
                 temperature = 1
             if not self.__azure_gpt_5_api_key or not self.__azure_gpt_5_api_base or not self.__azure_gpt_5_api_version:
                 log.error("Azure GPT-5 model's environment variable is not set.")
@@ -139,6 +157,7 @@ class ModelService:
                 openai_api_version=self.__azure_gpt_5_api_version,
                 azure_deployment=model_name,
                 temperature=temperature,
+                max_retries=10,
                 max_tokens=None,
             )
         
@@ -155,6 +174,7 @@ class ModelService:
                 openai_api_base=base_url,
                 model=model_name,
                 temperature=temperature,
+                max_retries=10
             )
 
         if model_name in self.google_genai_models:
@@ -167,6 +187,7 @@ class ModelService:
                 api_key=self.__gemini_api_key,
                 model=model_name,
                 temperature=temperature,
+                max_retries=10
             )
 
         if model_name in self.gpt_oss_models:
@@ -180,6 +201,7 @@ class ModelService:
                 openai_api_base=self.__gpt_oss_base_url,
                 model=model_name,
                 temperature=temperature,
+                max_retries=10
             )
 
         log.error(f"Invalid model name: {model_name}")
@@ -220,12 +242,63 @@ class ModelService:
             return self.azure_ai_model_service.create_agent(model=model_name, temperature=temperature)
 
         if model_name in self.azure_openai_gpt_5_models:
+            if model_name != ModelNames.GPT_5_CHAT.value:
+                temperature = 1
             log.info(f"Creating llm model using python for model: {model_name}")
             return self.azure_ai_model_service_gpt_5.create_agent(model=model_name, temperature=temperature)
 
         log.error(f"Invalid model name: {model_name}")
         raise ValueError(f"Invalid model name: {model_name}")
 
+    async def get_llm_model_using_google_adk(self, model_name: str, temperature: float = 0) -> LiteLlm:
+        """
+        Creates and returns an LiteLLM model instance using Google ADK.
+        """
+        if model_name in self.azure_openai_models:
+            if not self.__azure_api_key or not self.__azure_api_base or not self.__azure_api_version:
+                log.error("Azure model's environment variable is not set.")
+                raise ValueError("Azure model's is not set in environment variables.")
+
+            log.info(f"Loading OpenAI model using Google ADK: {model_name}")
+            return LiteLlm(
+                model=f"azure/{model_name}",
+                api_key=self.__azure_api_key,
+                api_base=self.__azure_api_base,
+                api_version=self.__azure_api_version,
+                temperature=temperature,
+            )
+
+        if model_name in self.azure_openai_gpt_5_models:
+            if model_name != ModelNames.GPT_5_CHAT.value:
+                temperature = 1
+            if not self.__azure_gpt_5_api_key or not self.__azure_gpt_5_api_base or not self.__azure_gpt_5_api_version:
+                log.error("Azure GPT-5 model's environment variable is not set.")
+                raise ValueError("Azure GPT-5 model's is not set in environment variables.")
+
+            log.info(f"Loading OpenAI model using Google ADK: {model_name}")
+            return LiteLlm(
+                model=f"azure/{model_name}",
+                api_key=self.__azure_gpt_5_api_key,
+                api_base=self.__azure_gpt_5_api_base,
+                api_version=self.__azure_gpt_5_api_version,
+                temperature=1,
+            )
+
+        if model_name in self.gpt_oss_models:
+            if not self.__gpt_oss_base_url:
+                log.error("GPT_OSS_BASE_URL_ENDPOINT environment variable is not set.")
+                raise ValueError("GPT_OSS_BASE_URL_ENDPOINT is not set in environment variables.")
+
+            log.info(f"Loading GPT-OSS model using Google ADK: {model_name}")
+            return LiteLlm(
+                model=f"openai/{model_name}",
+                api_key=self.__gpt_oss_api_key,
+                api_base=self.__gpt_oss_base_url,
+                temperature=temperature,
+            )
+
+        log.error(f"Invalid model name: {model_name}")
+        raise ValueError("Invalid model name specified")
 
     async def get_all_available_model_names(self) -> List[str]:
         """
@@ -246,9 +319,9 @@ class ModelService:
                             including a list of successfully loaded and failed models.
         """
         log.info("Starting to load all models from database into cache.")
-        
+
         all_model_names = self.available_models
-        
+
         loaded_count = 0
         failed_models = []
 
@@ -275,4 +348,6 @@ class ModelService:
             "message": f"Loaded {loaded_count} models into cache. {len(failed_models)} models failed to load."
         }
 
+
+global_model_service = ModelService()
 

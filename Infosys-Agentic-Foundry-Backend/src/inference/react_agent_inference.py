@@ -1,4 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import os
 import re
 import json
 from typing import Dict, List, Optional
@@ -10,8 +11,11 @@ from langgraph.types import StreamWriter
 from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
+from src.schemas import AdminConfigLimits
+from src.config.constants import Limits
 from telemetry_wrapper import logger as log
 from src.prompts.prompts import online_agent_evaluation_prompt, feedback_lesson_generation_prompt
+from src.database.kafka_handler import listen_for_tool_response
 
 
 
@@ -30,7 +34,12 @@ class ReactWorkflowState(BaseWorkflowState):
     validation_score: float = None
     validation_feedback: str = None
     workflow_description: str = None
-    user_update_events: list = [] 
+    tool_result:str=None
+    user_update_events: list = []
+    episodic_memory_messages: list = []  # Pre-fetched episodic memory for tracing
+    # Filesystem memory fields (Manus pattern)
+    use_filesystem_memory: bool = False
+    fs_memory_context: str = None  # Context built from filesystem
 
 
 
@@ -43,22 +52,59 @@ class ReactAgentInference(BaseAgentInference):
         super().__init__(inference_utils)
 
 
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False):
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False, message_queue: bool = False, session_id: str = None, use_shell_memory: bool = True, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False):
         """
         Builds the agent and chains for the React workflow.
+        
+        Args:
+            use_shell_memory: If True, use AgentShell single-tool interface (DEFAULT).
+            agent_id: Agent ID for memory isolation.
+            context_flag: If False, no memory tools will be added.
+            file_context_management_flag: If True, use file-based context management (AgentShell) instead of old conversation fetching.
         """
         tool_ids = agent_config["TOOLS_INFO"]
-        system_prompt = agent_config["SYSTEM_PROMPT"]
-        react_agent, _ = await self._get_react_agent_as_executor_agent(
+        agent_id = agent_id if agent_id else agent_config.get("AGENT_ID", None)
+        agent_name = agent_config.get("AGENT_NAME", "")
+        system_prompt_config = agent_config["SYSTEM_PROMPT"]
+        knowledgebase_names = agent_config.get("KNOWLEDGEBASE_NAMES", None)
+        
+        # Determine which system prompt to use based on file_context_management_flag
+        if file_context_management_flag:
+            # Try to load file-context prompt from file (using agent_name, same as onboard)
+            safe_agent_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in agent_name)
+            file_context_prompt_path = os.path.join(
+                "agent_workspaces", "file_context_prompts", f"{safe_agent_name}_file_context_prompt.md"
+            )
+            if os.path.exists(file_context_prompt_path):
+                with open(file_context_prompt_path, "r", encoding="utf-8") as f:
+                    system_prompt = f.read()
+                log.info(f"📄 Loaded file-context prompt from: {file_context_prompt_path}")
+            else:
+                # Fallback to DB prompt if file doesn't exist
+                system_prompt = system_prompt_config.get("SYSTEM_PROMPT_REACT_AGENT", "")
+                log.warning(f"⚠️ File-context prompt not found at {file_context_prompt_path}, using DB prompt")
+        else:
+            # Use regular DB prompt
+            system_prompt = system_prompt_config.get("SYSTEM_PROMPT_REACT_AGENT", "")
+        
+        react_agent, _, memory_instance = await self._get_react_agent_as_executor_agent(
                                         llm,
-                                        system_prompt=system_prompt.get("SYSTEM_PROMPT_REACT_AGENT", ""),
+                                        system_prompt=system_prompt,
                                         checkpointer=checkpointer,
                                         tool_ids=tool_ids,
-                                        interrupt_tool=tool_interrupt_flag
+                                        interrupt_tool=tool_interrupt_flag,
+                                        knowledgebase_names=knowledgebase_names,
+                                        message_queue=message_queue,
+                                        session_id=session_id,
+                                        use_shell_memory=use_shell_memory,
+                                        agent_id=agent_id,
+                                        context_flag=context_flag,
+                                        file_context_management_flag=file_context_management_flag
                                     )
         chains = {
             "llm": llm,
-            "react_agent": react_agent
+            "react_agent": react_agent,
+            "memory_instance": memory_instance  # AgentShell instance
         }
         return chains
 
@@ -69,12 +115,21 @@ class ReactAgentInference(BaseAgentInference):
         tool_interrupt_flag = flags.get("tool_interrupt_flag", False)
         evaluation_flag = flags.get("evaluation_flag", False)
         validator_flag = flags.get("validator_flag", False)
+        message_queue = flags.get("message_queue", False)
         
+
+        inference_config: AdminConfigLimits = flags.get("inference_config", AdminConfigLimits())
+
         llm = chains.get("llm", None)
         react_agent = chains.get("react_agent", None)
+        memory_instance = chains.get("memory_instance", None)  # AgentShell or AgentMemory
 
         if not llm or not react_agent:
             raise ValueError("Required chains (llm, react_agent) are missing.")
+        
+        # AgentShell handles memory via run_shell_command tool
+        if memory_instance and hasattr(memory_instance, 'run'):
+            log.info(f"AgentShell memory enabled - agent uses run_shell_command for all memory ops")
 
         # Nodes
 
@@ -114,10 +169,12 @@ class ReactAgentInference(BaseAgentInference):
                     log.info(f"Conversation history for session {state['session_id']} has been reset.")
                 else:
                     if state["context_flag"]==False:
-                        log.info(f"Context flag is set to False, skipping past conversation summary generation for session {state['session_id']}.")
-            
+                        # Context flag is False - memory is managed within the agent itself
+                        # No need for external context retrieval
+                        log.info(f"Context flag is set to False for session {state['session_id']}. Memory managed within agent.")
+                        
                         return{
-                            'past_conversation_summary': "No past conversation summary available.",
+                            'past_conversation_summary': "",
                             'query': current_state_query.content,
                             'ongoing_conversation': current_state_query,
                             'executor_messages': current_state_query,
@@ -133,8 +190,37 @@ class ReactAgentInference(BaseAgentInference):
                             'epoch': 0,
                             'validation_attempts': 0,
                             'evaluation_attempts': 0,
-                            'user_update_events': []
+                            'user_update_events': [],
+                            'tool_result': None
                         }
+                    
+                    # Check file_context_management_flag - if True, use file-based memory tool instead of conversation fetching
+                    if state.get("file_context_management_flag", False):
+                        # File context management flag is True - agent uses shell-based memory tool
+                        # Skip fetching past conversation summary
+                        log.info(f"File context management flag is set to True for session {state['session_id']}. Using file-based memory tool.")
+                        
+                        return{
+                            'past_conversation_summary': "",
+                            'query': current_state_query.content,
+                            'ongoing_conversation': [],  # Don't pass ongoing conversation when using file-based memory
+                            'executor_messages': current_state_query,
+                            'preference': "No specific preferences provided.",
+                            'response': None,
+                            'start_timestamp': strt_tmstp,
+                            'errors': errors,
+                            'evaluation_score': None,
+                            'evaluation_feedback': None,
+                            'validation_score': None,
+                            'validation_feedback': None,
+                            'workflow_description': workflow_description,
+                            'epoch': 0,
+                            'validation_attempts': 0,
+                            'evaluation_attempts': 0,
+                            'user_update_events': [],
+                            'tool_result': None
+                        }
+                    
                     # Get summary via ChatService
                     log.debug("Fetching chat summary")
                     writer({"Node Name": "Generating Context", "Status": "Started"})
@@ -163,7 +249,7 @@ class ReactAgentInference(BaseAgentInference):
 
             log.info(f"Generated past conversation summary for session {state['session_id']}.")
             return {
-                'past_conversation_summary': conv_summary,
+                'past_conversation_summary': f"past_conversation_summary : {conv_summary}",
                 'query': current_state_query.content,
                 'ongoing_conversation': current_state_query,
                 'executor_messages': current_state_query,
@@ -179,8 +265,34 @@ class ReactAgentInference(BaseAgentInference):
                 'epoch': 0,
                 'user_update_events': [],
                 'validation_attempts': 0,
-                'evaluation_attempts': 0
+                'evaluation_attempts': 0,
+                'tool_result': None,
+                'episodic_memory_messages': []
             }
+        
+        async def prepare_episodic_memory_node(state: ReactWorkflowState, writer: StreamWriter):
+            """Prepares episodic memory context - traced as a separate node by Phoenix."""
+            writer({"Node Name": "Preparing Episodic Memory", "Status": "Started"})
+            
+            try:
+                query = await self.inference_utils.add_prompt_for_feedback(state["query"])
+                query = query.content
+                agent_id = state['agentic_application_id']
+                
+                # Fetch episodic memory context
+                log.info(f"[{state['session_id']}] Fetching episodic memory context...")
+                messages = await InferenceUtils.prepare_episodic_memory_context(
+                    state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, 
+                    query
+                )
+                log.info(f"[{state['session_id']}] Episodic memory context prepared: {len(messages)} messages")
+                
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Completed"})
+                return {"episodic_memory_messages": messages}
+            except Exception as e:
+                log.error(f"Error preparing episodic memory: {e}", exc_info=True)
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Failed"})
+                return {"episodic_memory_messages": [], "errors": state["errors"] + [f"Episodic memory error: {e}"]}
             
         async def executor_agent(state: ReactWorkflowState, writer: StreamWriter):
             """Handles query execution and returns the agent's response."""
@@ -192,8 +304,9 @@ class ReactAgentInference(BaseAgentInference):
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
             errors = state["errors"]
             
-            # Use the standard episodic memory function
-            messages = await InferenceUtils.prepare_episodic_memory_context(state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, query)
+            # Use pre-fetched episodic memory from state (already prepared in separate traced node)
+            messages = state.get("episodic_memory_messages", [])
+            log.info(f"[{state['session_id']}] Using {len(messages)} pre-fetched episodic memory messages")
             
             try:
                 log.info("Fetching feedback learning data")
@@ -228,13 +341,13 @@ class ReactAgentInference(BaseAgentInference):
     """
                     log.info(f"Executor agent incorporating validation feedback for epoch {state['epoch']}.")
                 # --- MODIFICATION END ---
-                formatted_query = f'''\
-Past Conversation Summary:
+                if state['tool_result']:
+                    formatted_query=f"Previous tool result={state['tool_result']}"
+                else:
+                    formatted_query = f'''
 {state["past_conversation_summary"]}
 
-Ongoing Conversation:
-{await self.chat_service.get_formatted_messages(state["ongoing_conversation"])if state["context_flag"] else "No ongoing conversation."} 
-
+{await self.chat_service.get_formatted_messages(state["ongoing_conversation"]) if state["context_flag"] and not state["file_context_management_flag"] else ""}
 
 Follow these preferences for every step:
 Preferences:
@@ -255,7 +368,6 @@ User Query:
 
                 
                 stream_source = None
-                
                 if state["is_tool_interrupted"]:
                     final_content_parts = []
                     stream_source = react_agent.astream(None, internal_thread)
@@ -296,8 +408,11 @@ User Query:
                                 else:
                                     tool_call = message.tool_calls[0]
                                     writer({"Node Name": "Tool Call", "Status": "Started", "Tool Name": tool_call['name'], "Tool Arguments": tool_call['args']})
+                                  
                                     tool_name = tool_call["name"]
                                     tool_args = tool_call["args"]
+                                    print('tool name:', tool_name)
+                                    print('tool args:', tool_args)
 
                                     if tool_args:   # Non-empty dict means arguments exist
                                         if isinstance(tool_args, dict):
@@ -316,6 +431,7 @@ User Query:
                         
                         for tool_message in tool_messages["messages"]:
                             writer({"raw": {"Tool Name": tool_message.name, "Tool Output": tool_message.content}, "content": f"Tool {tool_message.name} returned: {tool_message.content}"})
+                            # print('tool message:', tool_message)
                             if hasattr(tool_message, "name"):
                                 writer({"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_message.name})
                         
@@ -393,7 +509,8 @@ User Query:
             # Check if we're coming from evaluator (evaluation_attempts > 0 means evaluator has run)
             evaluation_attempts = state.get("evaluation_attempts", 0)
             
-            if tool_interrupt_flag and has_active_tasks:
+            # Fixed operator precedence: use parentheses for clarity
+            if (tool_interrupt_flag or message_queue) and has_active_tasks:
                 log.info(f"[{state['session_id']}] Agent planning tool with interruption enabled, routing to tool_interrupt_node.")
                 return "tool_interrupt_node"
             elif validator_flag and evaluation_attempts == 0:
@@ -408,42 +525,95 @@ User Query:
                 return "final_response"
                         
         async def tool_interrupt_node(state: ReactWorkflowState, writer: StreamWriter):
+            """
+            Handles tool interrupt/message queue flow.
+            - If message_queue is enabled: waits for async tool execution result from Kafka
+            - If tool_interrupt_flag is enabled: asks for human approval before tool execution
+            """
+            import time as time_module
+            
+            writer({"Node Name": "Tool Interrupt", "Status": "Started"})
+            
+            tool_result = None
+            is_approved = "yes"  # Default approval
+            
+            # Get the tool name from the agent state for message queue filtering
+            current_tool_name = None
+            try:
+                thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
+                internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
+                agent_state = await react_agent.aget_state(internal_thread)
+                
+                # Get the last message which should contain the tool call
+                if agent_state.values and "messages" in agent_state.values:
+                    last_message = agent_state.values["messages"][-1]
+                    current_tool_name = last_message.name
+                    if current_tool_name.endswith('_message_queue'):
+                        current_tool_name = current_tool_name[:-14]  # Remove '_message_queue' suffix
+                        log.info(f"[{state['session_id']}] Extracted tool name for Kafka filtering: {current_tool_name}")
+            except Exception as e:
+                log.warning(f"[{state['session_id']}] Could not extract tool name from agent state: {e}")
+            
+            # Message Queue Flow: Tool was sent to Kafka, wait for result
 
-            """Asks the human if the plan is ok or not"""
-
-            thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
-            internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
-
-            agent_state = await react_agent.aget_state(internal_thread)
-
-            # Extract tool name from agent_state to check against interrupt_items
-            tool_name_in_task = None
-            last_message = agent_state.values.get("messages", [])[-1] if agent_state.values.get("messages") else None
-            if last_message and hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-                tool_name_in_task = last_message.tool_calls[0].get('name')
-
-            # Check if we should interrupt: tool_interrupt_flag AND (no interrupt_items OR tool_name is in interrupt_items)
-            interrupt_items = state.get("interrupt_items") or []
-            should_interrupt = tool_interrupt_flag and (not interrupt_items or (tool_name_in_task and tool_name_in_task in interrupt_items))
-
-            if should_interrupt:
-                log.info(f"[{state['session_id']}] Interrupting for tool: {tool_name_in_task}")
+            if message_queue:
+                writer({"raw": {"tool_verifier": "Waiting for tool execution result from message queue..."}, "content": "Tool sent to message queue. Waiting for execution result..."})
+                log.info(f"[{state['session_id']}] Listening for tool response from Kafka for tool: {current_tool_name}...")
+                
+                # Use the request start_timestamp from state to filter out old messages
+                # This ensures we only get the response for THIS specific request
+                request_start_time = state.get('start_timestamp')
+                if request_start_time:
+                    # Convert to unix timestamp if it's a datetime string
+                    if isinstance(request_start_time, str):
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(request_start_time.replace('Z', '+00:00'))
+                            request_start_time = dt.timestamp()
+                        except:
+                            request_start_time = time_module.time() - 60  # Fallback: last 60 seconds
+                else:
+                    request_start_time = time_module.time() - 60  # Fallback: last 60 seconds
+                
+                tool_result = await listen_for_tool_response(state['session_id'], current_tool_name, request_start_time=request_start_time)
+                
+                if tool_result:
+                    writer({"raw": {"tool_result": tool_result}, "content": f"Tool execution completed. Result received."})
+                    log.info(f"[{state['session_id']}] Tool result received: {tool_result[:100]}...")
+                    writer({"Node Name": "Tool Interrupt", "Status": "Completed"})
+                    return {"tool_result": tool_result}
+                else:
+                    writer({"raw": {"tool_verifier": "Timeout waiting for tool result"}, "content": "Timeout waiting for tool execution result."})
+                    log.warning(f"[{state['session_id']}] Timeout waiting for tool response from Kafka")
+            
+            # Human-in-the-loop Flow: Ask for approval (only if not message_queue or if both are enabled)
+            elif tool_interrupt_flag:
+                writer({"raw": {"tool_verifier": "Please Confirm me for executing the tool"}, "content": "Tool execution requires confirmation. Please approve to proceed."})
                 is_approved = interrupt("approved?(yes/feedback)")
                 writer({"raw": {"tool_verifier": "Please confirm to execute the tool"}, "content": "Tool execution requires confirmation. Please approve to proceed."})
+                
                 if is_approved == "yes":
                     writer({"raw": {"tool_verifier": "User approved the tool execution by clicking the thumbs up button"}, "content": "User approved the tool execution by clicking the thumbs up button"})
-
-                log.info(f"is_approved {is_approved}")
+                
+                log.info(f"[{state['session_id']}] Tool interrupt - is_approved: {is_approved}")
             else:
-                log.info(f"[{state['session_id']}] Tool '{tool_name_in_task}' not in interrupt_items {interrupt_items}, auto-approving.")
-                is_approved = "yes"
-            return {"tool_feedback": is_approved, "is_tool_interrupted": True}
+                log.info(f"[{state['session_id']}] Neither message_queue nor tool_interrupt enabled, auto-approving.")
+            
+            writer({"Node Name": "Tool Interrupt", "Status": "Completed"})
+            return {"tool_feedback": is_approved,"tool_result": None, "is_tool_interrupted": True}
 
         async def tool_interrupt_node_decision(state: ReactWorkflowState):
-            if state["tool_feedback"] == 'yes':
+            # If we have a tool result from message queue, proceed to executor
+            if state.get('tool_result'):
                 return "executor_agent"
+            # If user approved (or auto-approved), proceed to executor
+            elif state.get("tool_feedback") == 'yes':
+                return "executor_agent"
+            # Otherwise, user wants to update arguments
             else:
                 return "tool_interrupt_update_argument"
+            
+       
 
         async def tool_interrupt_update_argument(state: ReactWorkflowState, writer: StreamWriter):
             writer({"raw": {"tool_interrupt_update_argument": "User updated the tool arguments"}, "content": "User updated the tool arguments, updating the agent state accordingly."})
@@ -599,6 +769,7 @@ User Query:
             errors = []
             end_timestamp = get_timestamp()
             try:
+                # Save to database
                 asyncio.create_task(self.chat_service.save_chat_message(
                                         agentic_application_id=state["agentic_application_id"],
                                         session_id=state["session_id"],
@@ -607,9 +778,22 @@ User Query:
                                         human_message=state["query"],
                                         ai_message=state["response"]
                                     ))
+                
+                # Save to file (using ChatService method)
+                await self.chat_service.save_chat_to_file(
+                    agentic_application_id=state["agentic_application_id"],
+                    session_id=state["session_id"],
+                    start_timestamp=state["start_timestamp"],
+                    end_timestamp=end_timestamp,
+                    human_message=state["query"],
+                    ai_message=state["response"],
+                    llm=llm
+                )
+                
                 # asyncio.create_task(self.chat_service.update_preferences(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
                 asyncio.create_task(self.chat_service.update_preferences_and_analyze_conversation(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
-                if (len(state["ongoing_conversation"])+1)%8 == 0:
+                config_limits = await self.admin_config_service.get_limits()
+                if (len(state["ongoing_conversation"])+1) % (2*config_limits.chat_summary_interval) == 0:
                     log.debug("Storing chat summary")
                     asyncio.create_task(self.chat_service.get_chat_summary(
                         agentic_application_id=state["agentic_application_id"],
@@ -738,13 +922,14 @@ User Query:
                     ),
                     "is_tool_interrupted": False  # Reset to allow fresh execution
                 }
+
         async def evaluator_decision(state: ReactWorkflowState):
             """
             Decides the next step and saves evaluation feedback for learning ONLY if it fails.
             """
-            evaluation_threshold = 0.7
-            max_evaluation_epochs = 3
-            
+            evaluation_threshold = inference_config.evaluation_score_threshold
+            max_evaluation_epochs = inference_config.max_evaluation_epochs
+
             current_epoch = state.get("evaluation_attempts", 0)
             evaluation_score = state.get("evaluation_score", 0.0)
             evaluation_feedback = state.get("evaluation_feedback", "No evaluation feedback available")
@@ -774,7 +959,8 @@ User Query:
                         new_final_response=status,
                         feedback=f"[EVALUATOR] Score: {evaluation_score:.2f} - {evaluation_feedback}", 
                         new_steps=status,
-                        lesson=lesson
+                        lesson=lesson,
+                        department_name=state.get("department_name")
                     )
                     
                     if feedback_result.get("is_saved") and feedback_result.get("response_id"):
@@ -795,7 +981,6 @@ User Query:
                 state["epoch"] = current_epoch + 1
                 return "executor_agent"
 
-    
         
         async def validator_agent_node(state: ReactWorkflowState, writer: StreamWriter):
             """
@@ -876,7 +1061,7 @@ User Query:
                         validation_criteria = []
 
                 if not validation_criteria:
-                    log.info("No validation criteria found, falling back to general relevancy validation")
+                    log.info("No validation criteria found, falling back to general relevancy validation.")
                     result = await self.inference_utils.validate_general_relevancy(effective_query_for_validation, state["response"], llm)
                     log.info(f"General relevancy result: {result}")
                     writer({"raw": {"Validation Score": result.get("validation_score", 0.0)}, "content": f"Validation score: {result.get('validation_score', 0.0)}"})
@@ -984,9 +1169,9 @@ User Query:
             Decides the next step based on validation results. 
             Saves feedback ONLY if validation fails the threshold.
             """
-            validation_threshold = 0.7
-            max_validation_attempts = 3
-            
+            validation_threshold = inference_config.validation_score_threshold
+            max_validation_attempts = inference_config.max_validation_epochs
+
             current_attempts = state.get("validation_attempts", 0)
             validation_score = state.get("validation_score", 0.0)
             validation_feedback = state.get("validation_feedback", "No validation feedback available")
@@ -1022,7 +1207,8 @@ User Query:
                             new_final_response=status,
                             feedback=f"[VALIDATOR] Score: {validation_score:.2f} - {validation_feedback}", 
                             new_steps=status,
-                            lesson=lesson_response.content
+                            lesson=lesson_response.content,
+                            department_name=state.get("department_name")
                         )
                         
                         if feedback_result.get("is_saved") and feedback_result.get("response_id"):
@@ -1046,6 +1232,7 @@ User Query:
         workflow = StateGraph(ReactWorkflowState)
 
         workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
+        workflow.add_node("prepare_episodic_memory", prepare_episodic_memory_node)
         workflow.add_node("executor_agent", executor_agent)
         workflow.add_node("tool_interrupt_node", tool_interrupt_node)
         workflow.add_node("tool_interrupt_update_argument", tool_interrupt_update_argument)
@@ -1060,7 +1247,8 @@ User Query:
         
         # Define the workflow sequence
         workflow.add_edge(START, "generate_past_conversation_summary")
-        workflow.add_edge("generate_past_conversation_summary", "executor_agent") 
+        workflow.add_edge("generate_past_conversation_summary", "prepare_episodic_memory")
+        workflow.add_edge("prepare_episodic_memory", "executor_agent") 
  
         workflow.add_conditional_edges(
             "executor_agent",
@@ -1110,4 +1298,3 @@ User Query:
         log.info("Executor Agent workflow built successfully")
         return workflow
     
-

@@ -4,7 +4,16 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 import asyncpg
+from io import BytesIO
+from src.utils.file_manager import FileManager
+from src.config.constants import TableNames
 from telemetry_wrapper import logger as log
+from dotenv import load_dotenv
+
+load_dotenv()
+
+STORAGE_PROVIDER=os.getenv("STORAGE_PROVIDER","")
+
 
 class ToolFileManager:
     """
@@ -20,6 +29,7 @@ class ToolFileManager:
             self.base_directory = Path(base_directory)
         self.base_directory.mkdir(parents=True, exist_ok=True)
         self.pool = pool
+        self.file_manager = FileManager()
         log.info(f"ToolFileManager initialized with base directory: {self.base_directory}")
     
     def _sanitize_filename(self, tool_name: str) -> str:
@@ -58,6 +68,25 @@ class ToolFileManager:
             filename = self._sanitize_filename(tool_name)
             file_path = self.base_directory / filename
             file_content = self._generate_file_content(tool_data)
+
+            if STORAGE_PROVIDER!="":
+                file_bytes=BytesIO(file_content.encode('utf-8'))
+
+                class MockUploadFile:
+                    def __init__(self,file_obj:BytesIO,filename:str):
+                        self.file=file_obj
+                        self.filename=filename
+                mock_file=MockUploadFile(file_bytes,filename)        
+                status=await self.file_manager.upload_file_to_storage(mock_file,storage_provider=STORAGE_PROVIDER)
+                if status['message']=="File uploaded successfully!":
+                    log.info(f"Successfully uploaded tool file to {STORAGE_PROVIDER}: {filename}")
+                    location=status['location']
+                    status={
+                        "success": True,
+                        "file_path": status['location'],
+                        "message": f"Tool file created successfully at {location}"
+                    }
+
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(file_content)
             log.info(f"Successfully created tool file: {file_path}")
@@ -94,16 +123,30 @@ class ToolFileManager:
                 "file_path": "",
                 "message": "tool_name is required to update tool file"
             }
+        
+        filename = self._sanitize_filename(tool_name)
+
         file_exists = await self.tool_file_exists(tool_name)
+
+        if not file_exists and STORAGE_PROVIDER!='':
+            file_exists= await self.file_manager.cloud_file_search(filename,storage_provider=STORAGE_PROVIDER)
+        
         result = await self.create_tool_file(tool_data)
+        
         if result.get("success"):
             if not file_exists:
                 log.info(f"Created file for tool '{tool_name}' during update")
-                result["message"] = f"Tool file created for tool during update at {result.get('file_path')}"
+                if STORAGE_PROVIDER!='':
+                    result["message"] = f"Tool file created in {STORAGE_PROVIDER} for tool during update at {result.get('upload_identifier')}"
+                else:
+                    result["message"] = f"Tool file created for tool during update at {result.get('file_path')}"
             else:
                 log.info(f"Updated existing file for tool '{tool_name}'")
-                result["message"] = f"Tool file updated successfully at {result.get('file_path')}"
-        
+                if STORAGE_PROVIDER!="":
+                    result["message"] = f"Tool file updated successfully in {STORAGE_PROVIDER} at {result.get('upload_identifier')}"
+                else:
+                    result["message"] = f"Tool file updated successfully at {result.get('file_path')}"
+
         return result
     
     async def delete_tool_file(self, tool_name: str) -> Dict[str, Any]:
@@ -114,6 +157,15 @@ class ToolFileManager:
             filename = self._sanitize_filename(tool_name)
             file_path = self.base_directory / filename
             if file_path.exists():
+                if STORAGE_PROVIDER!="":
+                    try:
+                        result=await self.file_manager.delete_file_from_storage(filename,storage_provider=STORAGE_PROVIDER)
+                        if result['info']==f"File '{filename}' deleted successfully from {STORAGE_PROVIDER} storage.":
+                            log.info(f"Successfully deleted tool file from {STORAGE_PROVIDER}: {result}")
+                        else:
+                            log.info(f"Failed to delete tool file from {STORAGE_PROVIDER}: {result}")
+                    except Exception as e:
+                        log.error(f"Error deleting tool file from {STORAGE_PROVIDER}: {e}")
                 file_path.unlink()
                 log.info(f"Successfully deleted tool file: {file_path}")
                 return {
@@ -122,8 +174,35 @@ class ToolFileManager:
                     "message": f"Tool file deleted successfully"
                 }
             else:
-                log.warning(f"Tool file not found: {file_path}")
-                return {
+                if STORAGE_PROVIDER!="":
+                    res=await self.file_manager.cloud_file_search(filename,storage_provider=STORAGE_PROVIDER)
+                    if res:
+                        try:
+                            result=await self.file_manager.delete_file_from_storage(filename,storage_provider=STORAGE_PROVIDER)
+                            if result['info']==f"File '{filename}' deleted successfully from {STORAGE_PROVIDER} storage.":
+                                log.info(f"Successfully deleted tool file from {STORAGE_PROVIDER}: {result}")
+                                return {
+                                    "success": True,
+                                    "message": f"Tool file deleted successfully from {STORAGE_PROVIDER}"
+                                }
+                            else:
+                                log.info(f"Failed to delete tool file from {STORAGE_PROVIDER}: {result}")
+                                return {
+                                    "success": False,
+                                    "message": f"Failed to delete tool file from {STORAGE_PROVIDER}"
+                                }
+                        except Exception as e:
+                            log.error(f"Error deleting tool file from {STORAGE_PROVIDER}: {e}")
+                    else:
+                        log.warning(f"Tool file not found: {file_path}")
+                        return {
+                        "success": False,
+                        "file_path": str(file_path),
+                        "message": f"Tool file not found"
+                        }
+                else:
+                    log.warning(f"Tool file not found: {file_path}")
+                    return {
                     "success": False,
                     "file_path": str(file_path),
                     "message": f"Tool file not found"
@@ -197,9 +276,9 @@ class ToolFileManager:
             return {"success": False, "error": "Database pool not initialized"}
         
         try:
-            query = """
+            query = f"""
                 SELECT tool_name, code_snippet
-                FROM tool_table
+                FROM {TableNames.TOOL.value}
             """
             
             async with self.pool.acquire() as conn:

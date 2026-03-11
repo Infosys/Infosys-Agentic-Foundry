@@ -17,8 +17,9 @@ from src.api.dependencies import ServiceProvider # The dependency provider
 from src.database.services import ModelService # For generate_query endpoint
 from telemetry_wrapper import logger as log, update_session_context # Your custom logger and context updater
 from src.auth.authorization_service import AuthorizationService
-from src.auth.models import User
+from src.auth.auth_service import AuthService
 from src.auth.dependencies import get_current_user
+from src.auth.models import User, UserRole
 
 from typing import Union
 
@@ -40,7 +41,9 @@ async def _build_connection_string_helper(config: dict) -> str:
     if db_type == "azuresql":
         return f"mssql+pyodbc://{config['username']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}?driver=ODBC+Driver+17+for+SQL+Server"
     if db_type == "sqlite":
-        return f"sqlite:///{UPLOAD_DIR}/{config['database']}"
+        # Check if department_name is available in config for department-specific path
+        department_name = config.get("department_name", None)
+        return f"sqlite:///{UPLOAD_DIR}/{department_name}/{config['database']}"
     if db_type == "mongodb":
         host = config["host"]
         port = config["port"]
@@ -60,11 +63,18 @@ async def _create_database_if_not_exists_helper(config: dict):
     
     # SQLite DB creation not needed
     if db_type == "sqlite":
+        # Get department name from config, default to "General" if not provided
+        department_name = config.get("department_name", None)
+        
+        # Create department-specific directory if it doesn't exist
+        department_dir = os.path.join(UPLOAD_DIR, department_name)
+        os.makedirs(department_dir, exist_ok=True)
+        
         # Connect to the database file (creates it if it doesn't exist)
-        db_path = os.path.join(UPLOAD_DIR, db_name)
+        db_path = os.path.join(department_dir, db_name)
 
         if os.path.exists(db_path):
-            raise HTTPException(status_code=400, detail=f"Database file '{db_name}' already exists")
+            raise HTTPException(status_code=400, detail=f"Database file '{db_name}' already exists in department '{department_name}'")
         try:
             # File doesn't exist, so this will create it
             conn = sqlite3.connect(db_path)
@@ -160,10 +170,13 @@ async def connect_to_database_endpoint(
     """
     if isinstance(sql_file, str):
         sql_file = None
-    # Check permissions first - data connectors require tools permission
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools"):
-        raise HTTPException(status_code=403, detail="You don't have permission to create data connections. Only admins and developers can perform this action")
     
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -180,7 +193,7 @@ async def connect_to_database_endpoint(
     manager = get_connection_manager()
 
     if flag_for_insert_into_db_connections_table == "1":
-        name_exists = await db_connection_manager.check_connection_name_exists(name)
+        name_exists = await db_connection_manager.check_connection_name_exists(name, department_name=user_department)
         if name_exists:
             raise HTTPException(status_code=400, detail=f"Connection name '{name}' already exists.")
 
@@ -194,7 +207,8 @@ async def connect_to_database_endpoint(
             password=password,
             database=database,
             flag_for_insert_into_db_connections_table=flag_for_insert_into_db_connections_table,
-            created_by=created_by
+            created_by=created_by,
+            department_name=user_department  # Add department name to config
         )
 
         # Adjust config based on DB type:
@@ -204,13 +218,19 @@ async def connect_to_database_endpoint(
             config["port"] = 0
             config["username"] = None
             config["password"] = None
+            
+            # Create department-specific directory for SQLite files
+            department_dir = os.path.join(UPLOAD_DIR, user_department)
+            os.makedirs(department_dir, exist_ok=True)
+            
             if sql_file is not None and flag_for_insert_into_db_connections_table == "1":
                 config["database"] = sql_file.filename
                 filename = os.path.basename(sql_file.filename)
                 if not (filename.endswith(".db") or filename.endswith(".sqlite")):
                     raise HTTPException(status_code=400, detail="Only .db or .sqlite files are allowed")
                 
-                file_path = os.path.join(UPLOAD_DIR, filename)
+                # Store file in department-specific directory
+                file_path = os.path.join(department_dir, filename)
                 if os.path.exists(file_path):
                     raise HTTPException(status_code=400, detail="File with this name already exists")
                 
@@ -258,7 +278,8 @@ async def connect_to_database_endpoint(
                 "connection_username": config.get("username", ""),
                 "connection_password": config.get("password", ""),
                 "connection_database_name": config.get("database", ""),
-                "connection_created_by": config.get("created_by", "")
+                "connection_created_by": config.get("created_by", ""),
+                "department_name": user_data.department_name
             }
             result = await db_connection_manager.insert_into_db_connections_table(connection_data)
             if result.get("is_created"):
@@ -328,21 +349,38 @@ async def disconnect_database_endpoint(
     Returns:
     - Dict[str, str]: Status message.
     """
-    # Check permissions first - data connectors require tools permission
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "delete", "tools"):
-        raise HTTPException(status_code=403, detail="You don't have permission to delete data connections. Only admins and developers can perform this action")
-   
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
  
-    name = disconnect_request.name
+    name = disconnect_request.name 
+    name_with_dept = disconnect_request.name + "_" + user_department
     db_type = disconnect_request.db_type.lower()
     manager = get_connection_manager()
  
     # Get current active connections
     active_sql_connections = list(manager.sql_engines.keys())
     active_mongo_connections = list(manager.mongo_clients.keys())
+    
+    def strip_department_suffix(conn_name: str, dept: str) -> str:
+        if not conn_name:
+            return conn_name
+        if dept:
+            suffix = f"_{dept}"
+            if conn_name.lower().endswith(suffix.lower()):
+                return conn_name[: -len(suffix)]
+        # fallback: remove last underscore segment if present
+        if "_" in conn_name:
+            return conn_name.rsplit("_", 1)[0]
+        return conn_name
+    
+    
  
     try:
         # If flag is "1", we need to delete from database
@@ -350,7 +388,7 @@ async def disconnect_database_endpoint(
             # First check if connection exists in database and get creator info
             creator_email = None
             try:
-                creator_info = await db_connection_manager.get_user_email(name)
+                creator_info = await db_connection_manager.get_user_email(name, department_name= user_department)
                 creator_email = creator_info.get("created_by") if creator_info else None
                
                 # Clean up creator_email (strip whitespace and handle empty strings)
@@ -392,7 +430,7 @@ async def disconnect_database_endpoint(
             # Delete from database (only if it exists)
             if creator_email is not None or creator_email is None:
                 try:
-                    delete_result = await db_connection_manager.delete_connection_by_name(name)
+                    delete_result = await db_connection_manager.delete_connection_by_name(name, department_name = user_department)
                     log.info(f"Deleted connection '{name}' from database")
                 except Exception as delete_error:
                     log.warning(f"Failed to delete connection '{name}' from database: {str(delete_error)}")
@@ -400,7 +438,7 @@ async def disconnect_database_endpoint(
         # ==================== CLOSE ACTIVE CONNECTIONS ====================
         # Close active connections (whether deleting from DB or just deactivating)
         if db_type == "mongodb":
-            if name in active_mongo_connections:
+            if name_with_dept in active_mongo_connections:
                 await manager.close_mongo_client(name)
                 if disconnect_request.flag == "1":
                     return {"message": f"Disconnected MongoDB connection '{name}' successfully"}
@@ -413,7 +451,7 @@ async def disconnect_database_endpoint(
                     return {"message": f"MongoDB connection '{name}' was not active"}
  
         else:  # SQL
-            if name in active_sql_connections:
+            if name_with_dept in active_sql_connections:
                 manager.dispose_sql_engine(name)
                 if disconnect_request.flag == "1":
                     return {"message": f"Disconnected SQL connection '{name}' successfully"}
@@ -450,16 +488,19 @@ async def generate_query_endpoint(
     Returns:
     - Dict[str, str]: The generated database query.
     """
-    # Check permissions first - query generation requires tools permission
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "execute", "tools"):
-        raise HTTPException(status_code=403, detail="You don't have permission to generate queries. Only admins and developers can perform this action")
-    
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
     try:
-        llm = await model_service.get_llm_model(model_name="gpt-4o", temperature=query_request.temperature or 0.0)
+        model_name = model_service.default_model_name
+        llm = await model_service.get_llm_model(model_name=model_name, temperature=query_request.temperature or 0.0)
         
         prompt = f"""
         Prompt Template:
@@ -509,113 +550,6 @@ async def generate_query_endpoint(
         raise HTTPException(status_code=500, detail=f"Query generation failed: {e}")
 
 
-# @router.post("/run-query")
-# async def run_query_endpoint(
-#     request: Request, 
-#     query_execution_request: QueryExecutionRequest, 
-#     db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
-#     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-#     user_data: User = Depends(get_current_user)
-# ):
-#     """
-#     API endpoint to run a database query on a connected database.
-
-#     Parameters:
-#     - request: The FastAPI Request object.
-#     - query_execution_request: Pydantic model containing connection name and query.
-#     - db_connection_manager: Dependency-injected MultiDBConnectionRepository.
-
-#     Returns:
-#     - Dict[str, Any]: Query results or status message.
-#     """
-#     # Check permissions first - query execution requires tools permission
-#     if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "execute", "tools"):
-#         raise HTTPException(status_code=403, detail="You don't have permission to execute queries. Only admins and developers can perform this action")
-    
-#     user_id = request.cookies.get("user_id")
-#     user_session = request.cookies.get("user_session")
-#     update_session_context(user_session=user_session, user_id=user_id)
-
-#     manager = get_connection_manager()
- 
-#     config = await db_connection_manager.get_connection_config(query_execution_request.name)
-
-   
-#     # Log the query for debugging purposes (sanitize or remove sensitive information before logging in production)
-#     log.debug(f"Running query: {query_execution_request.data}")
-#     session = None
- 
-#     try:
-#         # Get the engine for the specific database connection
-#         # engine = get_engine(config)
-#         manager.add_sql_database(query_execution_request.name, await _build_connection_string_helper(config))
-#         session = manager.get_sql_session(query_execution_request.name)
-
-#         # with engine.connect() as conn:
-#         # Log query execution start
-
-#         creator_info = await db_connection_manager.get_user_email(query_execution_request.name)
-#         creator_email = creator_info.get("created_by", "").strip()  # Extract email string
-#         current_user_email = query_execution_request.created_by
-#         log.debug(f"Executing query on connection {query_execution_request.name}")
-        
-#         # Check if it's a DDL query (CREATE, ALTER, DROP)
-#         if any(word in query_execution_request.data.upper() for word in ["CREATE", "ALTER", "DROP"]):
-#             # Check if current user is the creator
-#             if creator_email.lower() != current_user_email.lower():
-#                 raise HTTPException(
-#                     status_code=403,
-#                     detail=f"You don't have permission to execute DDL query (CREATE, ALTER, DROP) queries on this connection."
-#                 )
-#             log.debug("Executing DDL Query")
-#             session.execute(text(query_execution_request.data))  # Execute DDL queries directly
-#             session.commit()  # Commit after DDL queries
-#             return {"message": "DDL Query executed successfully."}
-
-#         # Handle SELECT queries
-#         if query_execution_request.data.strip().upper().startswith("SELECT"):
-#             log.debug("Executing SELECT Query")
-#             result = session.execute(text(query_execution_request.data))  # Execute SELECT query
-            
-#             # Fetch the column names
-#             columns = list(result.keys()) # This gives us the column names
-#             rows = result.fetchall()  # Get all rows
-
-#             # Convert rows into dictionaries with column names as keys
-#             rows_dict = [{columns[i]: row[i] for i in range(len(columns))} for row in rows]
-
-#             return {"columns": columns, "rows": rows_dict}
-
-        
-#         # Check if current user is the creator
-#         if creator_email.lower() != current_user_email.lower():
-#             raise HTTPException(
-#                 status_code=403,
-#                 detail=f"You don't have permission to execute DDL query (CREATE, ALTER, DROP) queries on this connection."
-#             )
-#         # Handle DML queries (INSERT, UPDATE, DELETE)
-#         log.debug("Executing DML Query")
-#         result = session.execute(text(query_execution_request.data))  # Execute DML query
-#         session.commit()  # Commit the transaction
-
-#         # Log how many rows were affected
-#         log.debug(f"Rows affected: {result.rowcount}")
-        
-#         return {"message": f"Query executed successfully, {result.rowcount} rows affected."}
- 
-#     except SQLAlchemyError as e:
-#         # Log the exception for debugging
-#         log.debug(f"Query failed: {e}")
-#         raise HTTPException(status_code=400, detail=f"Query failed")
- 
-#     except Exception as e:
-#         # Catch all other exceptions (e.g., connection issues, etc.)
-#         log.debug(f"Unexpected error: {e}")
-#         raise HTTPException(status_code=500, detail=f"Unexpected error in conenction")
-    
-#     finally:
-#         if session:
-#             session.close()
 import re
 
 @router.post("/run-query")
@@ -637,10 +571,12 @@ async def run_query_endpoint(
     Returns:
     - Dict[str, Any]: Query results or status message.
     """
-    # Check permissions first - query execution requires tools permission
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "execute", "tools"):
-        raise HTTPException(status_code=403, detail="You don't have permission to execute queries. Only admins and developers can perform this action")
-    
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -907,43 +843,18 @@ async def get_connections_endpoint(
     Returns:
     - Dict[str, Any]: A dictionary containing all saved connections.
     """
-    # Check permissions first - viewing connections requires tools permission
-    # if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
-    #     raise HTTPException(status_code=403, detail="You don't have permission to view connections. Only admins and developers can perform this action")
-    
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    return await db_connection_manager.get_connections()
+
+    return await db_connection_manager.get_connections(user_data.department_name)
     
-
-# @router.get("/connection/{connection_name}")
-# async def get_connection_config_endpoint(
-#     request: Request, 
-#     connection_name: str, 
-#     db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
-#     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
-#     user_data: User = Depends(get_current_user)
-# ):
-#     """
-#     API endpoint to retrieve the configuration of a specific database connection.
-
-#     Parameters:
-#     - request: The FastAPI Request object.
-#     - connection_name: The name of the connection.
-#     - db_connection_manager: Dependency-injected MultiDBConnectionRepository.
-
-#     Returns:
-#     - Dict[str, Any]: The connection configuration.
-#     """
-#     # Check permissions first - viewing connection config requires tools permission
-#     if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
-#         raise HTTPException(status_code=403, detail="You don't have permission to view connection configuration. Only admins and developers can perform this action")
-    
-#     user_id = request.cookies.get("user_id")
-#     user_session = request.cookies.get("user_session")
-#     update_session_context(user_session=user_session, user_id=user_id)
-#     return await db_connection_manager.get_connection_config(connection_name)
 
 
 @router.get("/connections/sql")
@@ -963,14 +874,17 @@ async def get_sql_connections_endpoint(
     Returns:
     - Dict[str, Any]: A dictionary containing all saved SQL connections.
     """
-    # Check permissions first - viewing SQL connections requires tools permission
-    # if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
-    #     raise HTTPException(status_code=403, detail="You don't have permission to view SQL connections. Only admins and developers can perform this action")
-    
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    return await db_connection_manager.get_connections_sql()
+
+    return await db_connection_manager.get_connections_sql(user_data.department_name)
 
 
 @router.get("/connections/mongodb")
@@ -990,14 +904,17 @@ async def get_mongodb_connections_endpoint(
     Returns:
     - Dict[str, Any]: A dictionary containing all saved MongoDB connections.
     """
-    # Check permissions first - viewing MongoDB connections requires tools permission
-    # if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
-    #     raise HTTPException(status_code=403, detail="You don't have permission to view MongoDB connections. Only admins and developers can perform this action")
-    
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    return await db_connection_manager.get_connections_mongodb()
+
+    return await db_connection_manager.get_connections_mongodb(user_data.department_name)
 
 
 @router.post("/mongodb-operation/")
@@ -1019,10 +936,12 @@ async def mongodb_operation_endpoint(
     Returns:
     - Dict[str, Any]: Operation results.
     """
-    # Check permissions first - MongoDB operations require tools permission
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "execute", "tools"):
-        raise HTTPException(status_code=403, detail="You don't have permission to perform MongoDB operations. Only admins and developers can perform this action")
-    
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -1096,10 +1015,12 @@ async def get_active_connection_names_endpoint(
     Returns:
     - Dict[str, List[str]]: A dictionary categorizing active connection names by type.
     """
-    # Check permissions first - viewing active connections requires tools permission
-    # if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools"):
-    #     raise HTTPException(status_code=403, detail="You don't have permission to view active connections. Only admins and developers can perform this action")
-    
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -1107,26 +1028,59 @@ async def get_active_connection_names_endpoint(
     manager = get_connection_manager()
  
     active_sql_connections = list(manager.sql_engines.keys())
-    active_mongo_connections = list(manager.mongo_clients.keys())
+
+    active_mongo_connections_raw = list(manager.mongo_clients.keys())
  
-    db_info_list = await db_connection_manager.get_connections_sql()
+    db_info_list = await db_connection_manager.get_connections_sql(department_name=user_department)
  
     connections = db_info_list.get("connections", [])
-    db_type_map = {item["connection_name"]: item["connection_database_type"].lower() for item in connections}
+
+    db_type_map = {item["connection_name"]+"_"+item["department_name"]: item["connection_database_type"].lower() for item in connections}
  
     active_mysql_connections = []
     active_postgres_connections = []
     active_sqlite_connections = []
+    active_mongo_connections = []
+    
+    def strip_department_suffix(conn_name: str, dept: str) -> str:
+        if not conn_name:
+            return conn_name
+        if dept:
+            suffix = f"_{dept}"
+            if conn_name.lower().endswith(suffix.lower()):
+                return conn_name[: -len(suffix)]
+        # fallback: remove last underscore segment if present
+        if "_" in conn_name:
+            return conn_name.rsplit("_", 1)[0]
+        return conn_name
+
+    # Process MongoDB connections and strip department suffix similarly
+    for conn_name in active_mongo_connections_raw:
+        display_name = strip_department_suffix(conn_name, user_department)
+        active_mongo_connections.append(display_name)
+    
  
     for conn_name in active_sql_connections:
         db_type = db_type_map.get(conn_name)
+        display_name = conn_name
+
+        # If we have the current user's department, strip that exact suffix (case-insensitive)
+        if user_department:
+            suffix = "_" + user_department
+            if conn_name.lower().endswith(suffix.lower()):
+                display_name = conn_name[: -len(suffix)]
+        else:
+            # Fallback: remove only the last underscore part
+            if "_" in conn_name:
+                display_name = conn_name.rsplit("_", 1)[0]
+
         if db_type == "mysql":
-            active_mysql_connections.append(conn_name)
+            active_mysql_connections.append(display_name)
         elif db_type in ("postgres", "postgresql"):
-            active_postgres_connections.append(conn_name)
+            active_postgres_connections.append(display_name)
         elif db_type == "sqlite":
-            active_sqlite_connections.append(conn_name)
- 
+            active_sqlite_connections.append(display_name)
+
     return {
         "active_mysql_connections": active_mysql_connections,
         "active_postgres_connections": active_postgres_connections,
@@ -1163,6 +1117,12 @@ async def connect_by_connection_name(
     #         detail="You don't have permission to connect to databases. Only admins and developers can perform this action"
     #     )
     
+    # Check data connector access permission with department context
+    user_department = user_data.department_name 
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access data connector endpoints.")
+    
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -1171,7 +1131,7 @@ async def connect_by_connection_name(
     
     try:
         # Fetch connection configuration from database
-        config = await db_connection_manager.get_connection_config(connection_name)
+        config = await db_connection_manager.get_connection_config(connection_name, department_name=user_department)
         
         if not config:
             raise HTTPException(

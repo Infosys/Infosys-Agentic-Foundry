@@ -10,6 +10,7 @@ import requests
 from urllib.parse import quote
 import time
 import dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -24,6 +25,8 @@ from src.utils.analyze_dependencies import (
     DependencyAnalyzer,
     RequirementsComparator
 )
+from src.config.constants import TableNames
+from telemetry_wrapper import logger as log
 
 try:
     from importlib.metadata import distributions, distribution, PackageNotFoundError
@@ -32,22 +35,14 @@ except ImportError:
 
 
 class ToolCodeDependencyExtractor:
-    """
-    Extract and analyze dependencies from tool code snippets stored in database.
-    
-    This class connects to a database to retrieve tool code snippets, analyzes their
-    import statements, validates them against PyPI and remote VM environments, and
-    identifies missing packages that need installation.
-    """
+    """Extract and analyze dependencies from tool code snippets stored in database."""
     
     def __init__(self, db_config: dict, requirements_file: str):
-        """
-        Initialize the dependency extractor.
-        """
+        """Initialize the dependency extractor."""
         self.db_config = db_config
         self.requirements_file = Path(requirements_file)
-        temp_analyzer = DependencyAnalyzer(".")
-        self.stdlib_modules = temp_analyzer.stdlib_modules
+        self._dependency_analyzer = DependencyAnalyzer(".")
+        self.stdlib_modules = self._dependency_analyzer.stdlib_modules
         self.import_to_package_cache = {}
         self.pypi_cache = {}
         self.pypi_import_mapping_cache = {}
@@ -62,16 +57,29 @@ class ToolCodeDependencyExtractor:
             'final_packages': []
         }
     
-    async def _get_llm_model(self, model_name: str):
+    @staticmethod
+    def reset_cache():
+        """Reset all caches."""
+        DependencyAnalyzer.reset_cache()
+    
+    @property
+    def distributions_cache(self):
+        """Access DependencyAnalyzer's distribution cache."""
+        return DependencyAnalyzer._distributions_cache
+    
+    @property
+    def top_level_to_package_cache(self):
+        """Access DependencyAnalyzer's top_level_to_package cache."""
+        return DependencyAnalyzer._top_level_to_package_cache
+    
+    async def get_llm_model(self, model_name: str):
         """Initialize LLM using ModelService."""
         from src.api.dependencies import ServiceProvider
         model_service = ServiceProvider.get_model_service()
         return await model_service.get_llm_model(model_name=model_name, temperature=0.0) 
     
     def get_code_snippets_from_db(self) -> List[str]:
-        """
-        Retrieve tool code snippets from PostgreSQL database.
-        """
+        """Retrieve tool code snippets from PostgreSQL database."""
         code_snippets = []
         connection = None
         cursor = None
@@ -85,7 +93,7 @@ class ToolCodeDependencyExtractor:
                 port=self.db_config['port']
             )
             cursor = connection.cursor()
-            cursor.execute("SELECT code_snippet FROM tool_table;")
+            cursor.execute(f"SELECT code_snippet FROM {TableNames.TOOL.value};")
             records = cursor.fetchall()
             
             for row in records:
@@ -93,7 +101,7 @@ class ToolCodeDependencyExtractor:
                     code_snippets.append(row[0])
                     
         except (Exception, psycopg2.Error) as error:
-            print(f"Database error: {error}")
+            log.error(f"Database error: {error}")
         finally:
             if cursor:
                 cursor.close()
@@ -102,25 +110,99 @@ class ToolCodeDependencyExtractor:
         
         return code_snippets
     
-    def _check_pypi_package_exists(self, package_name: str) -> bool:
-        """
-        Check if package exists on PyPI using JSON API.
-        """
+    def check_pypi_package_exists(self, package_name: str) -> bool:
+        """Check if package exists on PyPI with caching."""
         if package_name in self.pypi_cache:
             return self.pypi_cache[package_name]
+        
+        normalized = self.requirements_comparator.normalize_package_name(package_name)
+        if normalized in self.requirements_comparator.requirements:
+            self.pypi_cache[package_name] = True
+            return True
+        
+        pkg_lower = package_name.lower().replace('_', '-')
+        if pkg_lower in self.distributions_cache:
+            self.pypi_cache[package_name] = True
+            return True
         
         try:
             url = f"https://pypi.org/pypi/{quote(package_name)}/json"
             response = requests.get(url, timeout=5)
             exists = response.status_code == 200
             self.pypi_cache[package_name] = exists
-            time.sleep(0.05)
             return exists
         except Exception as e:
+            self.pypi_cache[package_name] = False
             return False
     
-    def _verify_package_provides_module(self, package_name: str, module_name: str) -> bool:
-        """Verify that a PyPI package actually provides the specified module."""
+    def batch_check_pypi_packages(self, package_names: List[str], max_workers: int = 20) -> Dict[str, bool]:
+        """Check multiple packages on PyPI in parallel using thread pool."""
+        results = {}
+        packages_to_check = []
+        
+        for pkg in package_names:
+            if pkg in self.pypi_cache:
+                results[pkg] = self.pypi_cache[pkg]
+            else:
+                normalized = self.requirements_comparator.normalize_package_name(pkg)
+                if normalized in self.requirements_comparator.requirements:
+                    self.pypi_cache[pkg] = True
+                    results[pkg] = True
+                elif pkg.lower().replace('_', '-') in self.distributions_cache:
+                    self.pypi_cache[pkg] = True
+                    results[pkg] = True
+                else:
+                    packages_to_check.append(pkg)
+        
+        if not packages_to_check:
+            return results
+        
+        def check_single_package(pkg_name: str) -> tuple:
+            try:
+                url = f"https://pypi.org/pypi/{quote(pkg_name)}/json"
+                response = requests.get(url, timeout=5)
+                exists = response.status_code == 200
+                return (pkg_name, exists)
+            except Exception:
+                return (pkg_name, False)
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(check_single_package, pkg): pkg for pkg in packages_to_check}
+            for future in as_completed(futures):
+                pkg_name, exists = future.result()
+                self.pypi_cache[pkg_name] = exists
+                results[pkg_name] = exists
+        
+        return results
+    
+    def verify_package_provides_module(self, package_name: str, module_name: str) -> bool:
+        """Verify that a PyPI package provides the specified module."""
+        pkg_normalized = package_name.lower().replace('_', '-')
+        if module_name in self.top_level_to_package_cache:
+            cached_pkg = self.top_level_to_package_cache[module_name]
+            if cached_pkg == pkg_normalized:
+                return True
+        if module_name.lower() in self.top_level_to_package_cache:
+            cached_pkg = self.top_level_to_package_cache[module_name.lower()]
+            if cached_pkg == pkg_normalized:
+                return True
+        
+        if pkg_normalized in self.distributions_cache:
+            dist = self.distributions_cache[pkg_normalized]
+            try:
+                top_level_txt = dist.read_text('top_level.txt')
+                if top_level_txt:
+                    top_level_modules = top_level_txt.split()
+                    if module_name in top_level_modules:
+                        return True
+            except Exception:
+                pass
+        
+        mod_normalized = module_name.lower().replace('-', '').replace('_', '')
+        pkg_check = package_name.lower().replace('-', '').replace('_', '')
+        if pkg_check == mod_normalized:
+            return True
+        
         try:
             dist = distribution(package_name)
             try:
@@ -141,108 +223,67 @@ class ToolCodeDependencyExtractor:
         except Exception:
             pass
         
-        pkg_normalized = package_name.lower().replace('-', '').replace('_', '')
-        mod_normalized = module_name.lower().replace('-', '').replace('_', '')
-        
-        if pkg_normalized == mod_normalized:
-            return True
-        
-        try:
-            req_dist = distribution(package_name)
-            top_level_txt = req_dist.read_text('top_level.txt')
-            if top_level_txt and module_name in top_level_txt.split():
-                return True
-        except Exception:
-            pass
-        
         return False
     
-    def _find_pypi_package_for_import(self, import_name: str) -> Optional[str]:
-        """
-        find the correct PyPI package name for an import.
-        """
+    def find_pypi_package_for_import(self, import_name: str) -> Optional[str]:
+        """Find the correct PyPI package name for an import."""
         if import_name in self.pypi_import_mapping_cache:
             return self.pypi_import_mapping_cache[import_name]
         
         top_level = import_name.split('.')[0]
-        if self._check_pypi_package_exists(top_level):
-            if self._verify_package_provides_module(top_level, top_level):
-                self.pypi_import_mapping_cache[import_name] = top_level
-                return top_level
         
-        variations = [
-            top_level.replace('_', '-'),
-            f"python-{top_level}",
-            f"{top_level}-python",  
-        ]
+        cached = self.lookup_in_cache(top_level)
+        if cached:
+            self.pypi_import_mapping_cache[import_name] = cached
+            return cached
         
-        if top_level.isalpha() and len(top_level) <= 4:
-            variations.extend([
-                f"py{top_level}", 
-                f"{top_level}lib",  
-            ])
+        req_pkg = self.lookup_in_requirements(top_level)
+        if req_pkg:
+            self.pypi_import_mapping_cache[import_name] = req_pkg
+            return req_pkg
         
-        for variant in variations:
-            if self._check_pypi_package_exists(variant):
-                if self._verify_package_provides_module(variant, top_level):
-                    self.pypi_import_mapping_cache[import_name] = variant
-                    return variant
-        try:
-            for dist in distributions():
-                try:
-                    top_level_txt = dist.read_text('top_level.txt')
-                    if top_level_txt:
-                        top_level_modules = top_level_txt.split()
-                        if top_level in top_level_modules:
-                            pkg_name = dist.name
-                            # Verify this package exists on PyPI
-                            if self._check_pypi_package_exists(pkg_name):
-                                self.pypi_import_mapping_cache[import_name] = pkg_name
-                                return pkg_name
-                except (FileNotFoundError, KeyError, AttributeError):
-                    continue
-        except Exception:
-            pass
+        if self.check_pypi_package_exists(top_level):
+            self.pypi_import_mapping_cache[import_name] = top_level
+            return top_level
         
-        req_lower = top_level.lower()
-        for req_name in self.requirements_comparator.requirements.keys():
-            req_name_lower = req_name.lower()
-            if req_lower in req_name_lower or req_name_lower in req_lower:
-                if self._check_pypi_package_exists(req_name):
-                    if self._verify_package_provides_module(req_name, top_level):
-                        self.pypi_import_mapping_cache[import_name] = req_name
-                        return req_name
         self.pypi_import_mapping_cache[import_name] = None
         return None
     
+    def parse_single_code(self, code_string: str, idx: int) -> Set[str]:
+        """Parse a single code snippet and return its imports."""
+        imports = set()
+        if not code_string or not code_string.strip():
+            return imports
+        try:
+            tree = ast.parse(code_string, filename=f'<tool_code_{idx}>')
+            analyzer = ImportAnalyzer(f'<tool_code_{idx}>')
+            analyzer.visit(tree)
+            imports.update(analyzer.imports)
+            imports.update(analyzer.conditional_imports)
+            imports.update(analyzer.dynamic_imports)
+            imports.update(analyzer.indirect_imports)
+            string_imports = StringImportExtractor.extract_from_content(code_string)
+            imports.update(string_imports)
+        except (SyntaxError, Exception):
+            pass
+        return imports
+    
     def parse_tool_codes(self, code_snippets: List[str]) -> Set[str]:
-        """
-        Parse tool code snippets using AST to extract all imports.
-        """
+        """Parse tool code snippets using AST to extract all imports in parallel."""
         all_imports = set()
-        for idx, code_string in enumerate(code_snippets):
-            if not code_string or not code_string.strip():
-                continue
-            try:
-                tree = ast.parse(code_string, filename=f'<tool_code_{idx}>')
-                analyzer = ImportAnalyzer(f'<tool_code_{idx}>')
-                analyzer.visit(tree)
-                all_imports.update(analyzer.imports)
-                all_imports.update(analyzer.conditional_imports)
-                all_imports.update(analyzer.dynamic_imports)
-                all_imports.update(analyzer.indirect_imports)
-                string_imports = StringImportExtractor.extract_from_content(code_string)
-                all_imports.update(string_imports)
-            except (SyntaxError, Exception):
-                continue
+        
+        with ThreadPoolExecutor(max_workers=min(32, len(code_snippets) or 1)) as executor:
+            futures = [executor.submit(self.parse_single_code, code, idx) 
+                      for idx, code in enumerate(code_snippets)]
+            for future in as_completed(futures):
+                all_imports.update(future.result())
         
         return all_imports
     
     def validate_imports(self, raw_imports: Set[str]) -> Set[str]:
-        """
-        Validate imports to filter out user-defined modules and keep only real packages.
-        """
+        """Validate imports to filter out user-defined modules and keep only real packages."""
         validated = set()
+        needs_pypi_check = []
         skipped = []
         
         for imp in raw_imports:
@@ -256,24 +297,43 @@ class ToolCodeDependencyExtractor:
             if top_level in self.stdlib_modules or imp in self.stdlib_modules:
                 skipped.append((imp, "stdlib"))
                 continue
-            if not self._is_valid_import_name(top_level):
+            if len(top_level) < 2 or not top_level[0].isalpha() or top_level.startswith('_'):
                 skipped.append((imp, "invalid format"))
                 continue
-            if self._is_generic_or_custom_module(top_level):
+            if self.is_generic_or_custom_module(top_level):
                 skipped.append((imp, "generic/custom module"))
                 continue
-            if self._is_real_package(top_level, imp):
+            
+            if self.is_locally_known_package(top_level):
                 validated.add(imp)
             else:
-                skipped.append((imp, "not a real package"))
+                needs_pypi_check.append((imp, top_level))
+        
+        if needs_pypi_check:
+            unique_top_levels = list(set(tl for _, tl in needs_pypi_check))
+            pypi_results = self.batch_check_pypi_packages(unique_top_levels)
+            
+            for imp, top_level in needs_pypi_check:
+                if pypi_results.get(top_level, False):
+                    validated.add(imp)
+                    self.import_to_package_cache[top_level] = top_level
+                else:
+                    skipped.append((imp, "not a real package"))
         
         return validated
     
-    def _is_generic_or_custom_module(self, name: str) -> bool:
-        """
-        Check if a module name is obviously generic, project-specific, or custom.
-        Returns True for names that are likely NOT real PyPI packages.
-        """
+    def is_locally_known_package(self, top_level: str) -> bool:
+        """Check if a package is known locally without HTTP calls."""
+        if self.lookup_in_cache(top_level):
+            return True
+        if self.lookup_in_requirements(top_level):
+            return True
+        if self.lookup_local_distribution(top_level):
+            return True
+        return False
+    
+    def is_generic_or_custom_module(self, name: str) -> bool:
+        """Check if a module name is generic or project-specific."""
         name_lower = name.lower()
         generic_names = {
             'agents', 'tools', 'database', 'databases', 'db', 'drivers', 'driver',
@@ -297,175 +357,108 @@ class ToolCodeDependencyExtractor:
         
         return False
     
-    def _is_valid_import_name(self, name: str) -> bool:
-        """Validate import name format."""
-        if len(name) < 2:
-            return False
-        if not name[0].isalpha():
-            return False
-        if name.startswith('_'):
-            return False
-        return True
-    
-    def _is_real_package(self, top_level: str, full_import: str) -> bool:
-        """
-        Check if an import is a real installable package.
-        """
+    def lookup_in_cache(self, top_level: str) -> Optional[str]:
+        """Unified cache lookup for package name resolution."""
         if top_level in self.import_to_package_cache:
-            return True
+            return self.import_to_package_cache[top_level]
+        
+        if top_level in self.top_level_to_package_cache:
+            pkg_name = self.top_level_to_package_cache[top_level]
+            self.import_to_package_cache[top_level] = pkg_name
+            return pkg_name
+        
+        top_lower = top_level.lower()
+        if top_lower in self.top_level_to_package_cache:
+            pkg_name = self.top_level_to_package_cache[top_lower]
+            self.import_to_package_cache[top_level] = pkg_name
+            return pkg_name
+        
+        if top_level in self.pypi_import_mapping_cache and self.pypi_import_mapping_cache[top_level]:
+            return self.pypi_import_mapping_cache[top_level]
+        
+        alt_names = [
+            top_level.replace('_', '-'),
+            top_lower.replace('_', '-'),
+            top_level.replace('-', '_'),
+            top_lower.replace('-', '_')
+        ]
+        for alt_name in alt_names:
+            if alt_name in self.top_level_to_package_cache:
+                pkg_name = self.top_level_to_package_cache[alt_name]
+                self.import_to_package_cache[top_level] = pkg_name
+                return pkg_name
+        
+        return None
+    
+    def lookup_in_requirements(self, top_level: str) -> Optional[str]:
+        """Check if package exists in requirements.txt."""
+        normalized = self.requirements_comparator.normalize_package_name(top_level)
+        if normalized in self.requirements_comparator.requirements:
+            self.import_to_package_cache[top_level] = normalized
+            return normalized
+        
+        top_lower = top_level.lower()
+        variations = [
+            top_level.replace('_', '-'),
+            top_lower.replace('_', '-'),
+        ]
+        for variant in variations:
+            normalized_var = self.requirements_comparator.normalize_package_name(variant)
+            if normalized_var in self.requirements_comparator.requirements:
+                self.import_to_package_cache[top_level] = normalized_var
+                return normalized_var
+        
+        for req_name in self.requirements_comparator.requirements.keys():
+            req_lower = req_name.lower()
+            if req_lower == top_lower:
+                self.import_to_package_cache[top_level] = req_name
+                return req_name
+            if top_lower in req_lower or req_lower in top_lower:
+                if req_lower.startswith(top_lower) or req_lower.endswith(top_lower):
+                    self.import_to_package_cache[top_level] = req_name
+                    return req_name
+                if '-' + top_lower in req_lower or top_lower + '-' in req_lower:
+                    self.import_to_package_cache[top_level] = req_name
+                    return req_name
+        
+        return None
+    
+    def lookup_local_distribution(self, top_level: str) -> Optional[str]:
+        """Check if package is locally installed via importlib."""
         try:
             dist = distribution(top_level)
-            if self._check_pypi_package_exists(dist.name):
-                if self._verify_package_provides_module(dist.name, top_level):
-                    self.import_to_package_cache[top_level] = dist.name
-                    return True
+            self.import_to_package_cache[top_level] = dist.name
+            return dist.name
         except PackageNotFoundError:
             pass
         except Exception:
             pass
-        
-        normalized = self.requirements_comparator.normalize_package_name(top_level)
-        if normalized in self.requirements_comparator.requirements:
-            for req_name in self.requirements_comparator.requirements.keys():
-                if self.requirements_comparator.normalize_package_name(req_name) == normalized:
-                    if self._check_pypi_package_exists(req_name):
-                        if self._verify_package_provides_module(req_name, top_level):
-                            self.import_to_package_cache[top_level] = req_name
-                            return True
-        
-        alt_names = [
-            top_level.replace('_', '-'),
-            top_level.lower(),
-            top_level.lower().replace('_', '-')
-        ]
-        
-        for alt_name in alt_names:
-            normalized_alt = self.requirements_comparator.normalize_package_name(alt_name)
-            if normalized_alt in self.requirements_comparator.requirements:
-                for req_name in self.requirements_comparator.requirements.keys():
-                    if self.requirements_comparator.normalize_package_name(req_name) == normalized_alt:
-                        if self._check_pypi_package_exists(req_name):
-                            if self._verify_package_provides_module(req_name, top_level):
-                                self.import_to_package_cache[top_level] = req_name
-                                return True
-        try:
-            for dist in distributions():
-                try:
-                    top_level_txt = dist.read_text('top_level.txt')
-                    if top_level_txt:
-                        top_level_modules = top_level_txt.split()
-                        if top_level in top_level_modules:
-                            if self._check_pypi_package_exists(dist.name):
-                                self.import_to_package_cache[top_level] = dist.name
-                                return True
-                except (FileNotFoundError, KeyError, AttributeError):
-                    continue
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        
-        pypi_package = self._find_pypi_package_for_import(top_level)
-        if pypi_package:
-            self.import_to_package_cache[top_level] = pypi_package
-            return True
-        return False
-    
-    def map_import_to_package(self, import_name: str) -> str:
-        """
-        Map an import name to its corresponding package name.
-        """
-        top_level = import_name.split('.')[0]
-        if top_level in self.import_to_package_cache:
-            return self.import_to_package_cache[top_level]
-        
-        if top_level in self.pypi_import_mapping_cache and self.pypi_import_mapping_cache[top_level]:
-            return self.pypi_import_mapping_cache[top_level]
-        try:
-            for dist in distributions():
-                try:
-                    top_level_txt = dist.read_text('top_level.txt')
-                    if top_level_txt:
-                        top_level_modules = top_level_txt.split()
-                        if top_level in top_level_modules:
-                            pkg_name = dist.name
-                            # Verify on PyPI
-                            if self._check_pypi_package_exists(pkg_name):
-                                self.import_to_package_cache[top_level] = pkg_name
-                                return pkg_name
-                except (FileNotFoundError, KeyError, AttributeError, TypeError):
-                    pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        try:
-            for req_name in self.requirements_comparator.requirements.keys():
-                try:
-                    dist = distribution(req_name)
-                    top_level_txt = dist.read_text('top_level.txt')
-                    if top_level_txt:
-                        top_level_modules = top_level_txt.split()
-                        if top_level in top_level_modules:
-                            if self._check_pypi_package_exists(req_name):
-                                self.import_to_package_cache[top_level] = req_name
-                                return req_name
-                except (PackageNotFoundError, FileNotFoundError, KeyError, AttributeError):
-                    continue
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        return None
 
-        for req_name in self.requirements_comparator.requirements.keys():
-            req_lower = req_name.lower()
-            import_lower = top_level.lower()
-            if req_lower == import_lower:
-                if self._check_pypi_package_exists(req_name):
-                    if self._verify_package_provides_module(req_name, top_level):
-                        self.import_to_package_cache[top_level] = req_name
-                        return req_name
-            if import_lower in req_lower or req_lower in import_lower:
-                if req_lower.startswith(import_lower) or req_lower.endswith(import_lower):
-                    if self._check_pypi_package_exists(req_name):
-                        if self._verify_package_provides_module(req_name, top_level):
-                            self.import_to_package_cache[top_level] = req_name
-                            return req_name
-                if '-' + import_lower in req_lower or import_lower + '-' in req_lower:
-                    if self._check_pypi_package_exists(req_name):
-                        if self._verify_package_provides_module(req_name, top_level):
-                            self.import_to_package_cache[top_level] = req_name
-                            return req_name
+    def map_import_to_package(self, import_name: str) -> str:
+        """Map an import name to its corresponding package name."""
+        top_level = import_name.split('.')[0]
         
-        try:
-            for dist in distributions():
-                try:
-                    if dist.files:
-                        for file in dist.files:
-                            file_str = str(file).replace('\\', '/')
-                            if file_str == f'{top_level}/__init__.py':
-                                pkg_name = dist.name
-                                # Verify on PyPI
-                                if self._check_pypi_package_exists(pkg_name):
-                                    self.import_to_package_cache[top_level] = pkg_name
-                                    return pkg_name
-                except (AttributeError, TypeError):
-                    pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        cached = self.lookup_in_cache(top_level)
+        if cached:
+            return cached
         
-        pypi_package = self._find_pypi_package_for_import(top_level)
+        req_pkg = self.lookup_in_requirements(top_level)
+        if req_pkg:
+            return req_pkg
+        
+        local_pkg = self.lookup_local_distribution(top_level)
+        if local_pkg:
+            return local_pkg
+        
+        pypi_package = self.find_pypi_package_for_import(top_level)
         if pypi_package:
             return pypi_package
         
         return top_level
     
     def match_with_requirements(self, validated_imports: Set[str]) -> Dict[str, Dict[str, str]]:
-        """
-        Match validated imports with requirements_original.txt.
-        """
+        """Match validated imports with requirements.txt."""
         matched_packages = {}
         new_packages = {}
         import_to_package_map = {}
@@ -485,7 +478,7 @@ class ToolCodeDependencyExtractor:
             if match:
                 package_name = match.group(1)
                 version_spec = match.group(2).strip()
-                if self._check_pypi_package_exists(package_name):
+                if self.check_pypi_package_exists(package_name):
                     matched_packages[package_name] = version_spec
         
         
@@ -497,9 +490,9 @@ class ToolCodeDependencyExtractor:
             normalized = self.requirements_comparator.normalize_package_name(pkg_name)
 
             if normalized not in matched_pkg_names_lower:
-                if self._check_pypi_package_exists(pkg_name):
+                if self.check_pypi_package_exists(pkg_name):
                     top_level_import = import_name.split('.')[0]
-                    if self._verify_package_provides_module(pkg_name, top_level_import):
+                    if self.verify_package_provides_module(pkg_name, top_level_import):
                         new_packages[pkg_name] = ""
         
         return {
@@ -507,12 +500,10 @@ class ToolCodeDependencyExtractor:
             'new': new_packages
         }
     
-    async def _correct_package_names_with_llm(self, package_names: List[str], model_name: str) -> List[str]:
-        """
-        Use LLM to correct package names from import names to PyPI package names.
-        """
+    async def correct_package_names_with_llm(self, package_names: List[str], model_name: str) -> List[str]:
+        """Use LLM to correct package names from import names to PyPI package names."""
         try:
-            llm = await self._get_llm_model(model_name)
+            llm = await self.get_llm_model(model_name)
             prompt_template = ChatPromptTemplate.from_messages([
                 ("system",
                 """You are an expert in Python packages. Map import module names to PyPI package names.
@@ -542,16 +533,17 @@ class ToolCodeDependencyExtractor:
             corrected_names = json.loads(response_clean)
             
             if not isinstance(corrected_names, list) or len(corrected_names) != len(package_names):
-                print("Warning: LLM returned invalid response format, using original names")
+                log.warning("Warning: LLM returned invalid response format, using original names")
                 return package_names
             
             return corrected_names
             
         except Exception as e:
-            print(f"Warning: LLM correction failed: {e}")
+            log.warning(f"Warning: LLM correction failed: {e}")
             return package_names
         
-    def _format_package_list_display(self, packages, max_display=3, use_parentheses=True):
+    def format_package_list_display(self, packages, max_display=3, use_parentheses=True):
+        """Format package list for display output."""
         if not packages:
             return ""
         pkg_list = sorted(list(packages)[:max_display])
@@ -559,12 +551,8 @@ class ToolCodeDependencyExtractor:
         formatted = f"{', '.join(pkg_list)}{ellipsis}"
         return f" ({formatted})" if use_parentheses else formatted
     
-    def _run_sync(self, model_name: str = None) -> List[str]:
-        """
-        Synchronous version of the dependency analysis workflow.
-        Called by run() via asyncio.to_thread to avoid blocking the event loop.
-        """
-        
+    def run_sync(self, model_name: str = None) -> List[str]:
+        """Synchronous version of the dependency analysis workflow."""
         if model_name is None:
             try:
                 from src.api.dependencies import ServiceProvider
@@ -575,37 +563,37 @@ class ToolCodeDependencyExtractor:
         
         code_snippets = self.get_code_snippets_from_db()
         self.stats['total_tools'] = len(code_snippets)
-        print(f"Retrieved code from {self.stats['total_tools']} tools")
+        log.info(f"Retrieved code from {self.stats['total_tools']} tools")
         
         if not code_snippets:
-            print("No code snippets found in database")
+            log.info("No code snippets found in database")
             return []
 
         raw_imports = self.parse_tool_codes(code_snippets)
         self.stats['raw_imports'] = sorted(raw_imports)
-        print(f"Extracted {len(raw_imports)} raw imports: {self._format_package_list_display(raw_imports, max_display=5, use_parentheses=False)}{'...' if len(raw_imports) > 5 else ''}")
+        log.info(f"Extracted {len(raw_imports)} raw imports: {self.format_package_list_display(raw_imports, max_display=5, use_parentheses=False)}{'...' if len(raw_imports) > 5 else ''}")
 
         if not raw_imports:
-            print("No imports found in code snippets")
+            log.info("No imports found in code snippets")
             return []
 
         validated_imports = self.validate_imports(raw_imports)
         self.stats['after_stdlib_filter'] = sorted(validated_imports)
         filtered_count = len(raw_imports) - len(validated_imports)
-        print(f"After filtering: {len(validated_imports)} third-party imports: {self._format_package_list_display(validated_imports, max_display=5, use_parentheses=False)}{'...' if len(validated_imports) > 5 else ''} (filtered out {filtered_count} stdlib/user modules)")
+        log.info(f"After filtering: {len(validated_imports)} third-party imports: {self.format_package_list_display(validated_imports, max_display=5, use_parentheses=False)}{'...' if len(validated_imports) > 5 else ''} (filtered out {filtered_count} stdlib/user modules)")
         
         if not validated_imports:
-            print("No third-party imports found after filtering")
+            log.info("No third-party imports found after filtering")
             return []
         
         package_names = list(set([self.map_import_to_package(imp) for imp in validated_imports]))
-        print(f"Mapped to {len(package_names)} unique packages: {', '.join(sorted(package_names[:5]))}{'...' if len(package_names) > 5 else ''}")
+        log.info(f"Mapped to {len(package_names)} unique packages: {', '.join(sorted(package_names[:5]))}{'...' if len(package_names) > 5 else ''}")
         
         if model_name:
             try:
                 loop = asyncio.new_event_loop()
                 try:
-                    corrected_packages = loop.run_until_complete(self._correct_package_names_with_llm(package_names, model_name))
+                    corrected_packages = loop.run_until_complete(self.correct_package_names_with_llm(package_names, model_name))
                 finally:
                     loop.close()
                 corrections_made = []
@@ -614,14 +602,14 @@ class ToolCodeDependencyExtractor:
                         corrections_made.append(f"{orig} -> {corrected}")
                 
                 if corrections_made:
-                    print(f"LLM corrected {len(corrections_made)} package names")
+                    log.info(f"LLM corrected {len(corrections_made)} package names")
                 
                 package_names_corrected = corrected_packages
             except Exception as e:
-                print(f"Warning: LLM correction failed, using original names: {e}")
+                log.warning(f"Warning: LLM correction failed, using original names: {e}")
                 package_names_corrected = package_names
         else:
-            print("No model available, skipping LLM correction")
+            log.info("No model available, skipping LLM correction")
             package_names_corrected = package_names
 
         packages_in_requirements = set()
@@ -634,25 +622,24 @@ class ToolCodeDependencyExtractor:
             else:
                 packages_not_in_requirements.append(pkg)
         
-        print(f"Requirements check: {len(packages_in_requirements)} already in requirements.txt{self._format_package_list_display(packages_in_requirements)}, {len(packages_not_in_requirements)} missing{self._format_package_list_display(packages_not_in_requirements)}")
+        log.info(f"Requirements check: {len(packages_in_requirements)} already in requirements.txt{self.format_package_list_display(packages_in_requirements)}, {len(packages_not_in_requirements)} missing{self.format_package_list_display(packages_not_in_requirements)}")
         packages_installed_not_in_req = set()
         packages_need_installation = []
         
         try:
-            local_packages = {dist.metadata['name'].lower() for dist in distributions()}
+            local_packages = set(self.distributions_cache.keys())
             
             for pkg in packages_not_in_requirements:
-                pkg_lower = pkg.lower().replace('-', '_')
-                if any(pkg_lower == local_pkg.replace('-', '_') or pkg.lower() == local_pkg 
-                      for local_pkg in local_packages):
+                pkg_lower = pkg.lower().replace('_', '-')
+                if pkg_lower in local_packages:
                     packages_installed_not_in_req.add(pkg)
                 else:
                     packages_need_installation.append(pkg)
             
-            print(f"Local check: {len(packages_installed_not_in_req)} already installed{self._format_package_list_display(packages_installed_not_in_req)}, {len(packages_need_installation)} need installation{self._format_package_list_display(packages_need_installation)}")
+            log.info(f"Local check: {len(packages_installed_not_in_req)} already installed{self.format_package_list_display(packages_installed_not_in_req)}, {len(packages_need_installation)} need installation{self.format_package_list_display(packages_need_installation)}")
             
         except Exception as e:
-            print(f"Warning: Could not check local packages, assuming all need installation")
+            log.warning(f"Warning: Could not check local packages, assuming all need installation")
             packages_installed_not_in_req = set()
             packages_need_installation = packages_not_in_requirements
 
@@ -662,14 +649,10 @@ class ToolCodeDependencyExtractor:
         self.stats['final_packages'] = sorted(packages_need_installation)
         
         if not packages_need_installation:
-            print("\nAll required packages are already available!")
+            log.info("\nAll required packages are already available!")
     
         return packages_need_installation
 
     async def run(self, model_name: str = None) -> List[str]:
-        """
-        Execute the complete dependency analysis workflow.
-        Returns:
-            List of package names that need installation
-        """
-        return await asyncio.to_thread(self._run_sync, model_name)
+        """Execute the complete dependency analysis workflow."""
+        return await asyncio.to_thread(self.run_sync, model_name)

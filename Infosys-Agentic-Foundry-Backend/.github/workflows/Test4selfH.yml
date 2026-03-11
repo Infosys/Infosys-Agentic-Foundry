@@ -2,7 +2,7 @@ name: Build and Deploy New Version to AKS ##
  
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "dev" ]
     paths:
       - .github/workflows/Test4selfH.yml
  

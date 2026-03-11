@@ -1,0 +1,77 @@
+name: Backend Deploy (Production Only)
+ 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+ 
+jobs:
+  backend-deploy:
+    runs-on: [self-hosted, Windows, X64, windows2]
+ 
+    steps:
+      # 1. Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+ 
+      # # 4. Copy files (Local Copy)
+      # - name: Copy files locally
+      #   env:
+      #     ENV_FILE_CONTENT: ${{ secrets.APP_ENV_FILE_DEV_VM }}  # .env content from GitHub Secrets
+      #   run: |
+      #     echo "Deploying files locally..."
+      #     New-Item -ItemType Directory -Force -Path "C:\GitHub_Runners\CICD\Infyagentframework\"
+      #     Copy-Item -Path .\* -Destination "C:\GitHub_Runners\CICD\Infyagentframework\" -Recurse -Force
+      #     # Write the secret content into the destination .env file
+      #     Set-Content -Path "C:\GitHub_Runners\CICD\Infyagentframework\.env" -Value "$ENV_FILE_CONTENT"
+
+
+      # 4. Copy files (Local Copy)
+      - name: Copy files locally
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.APP_ENV_FILE_DEV_VM }}  # .env content from GitHub Secrets
+        run: |
+          echo "Deploying files locally..."
+          New-Item -ItemType Directory -Force -Path "C:\GitHub_Runners\CICD\Infyagentframework\"
+          Copy-Item -Path .\* -Destination "C:\GitHub_Runners\CICD\Infyagentframework\" -Recurse -Force
+          if ($env:ENV_FILE_CONTENT) {
+              Write-Host "Writing .env file..."
+              Set-Content -Path "C:\GitHub_Runners\CICD\Infyagentframework\.env" -Value $env:ENV_FILE_CONTENT
+          } else {
+              Write-Host "ERROR: ENV_FILE_CONTENT is empty. Check GitHub Secrets."
+              exit 1
+          }
+ 
+      # 5. Install Python Packages (in venv)
+      - name: Install Python Requirements
+        run: |
+          $VENV_PATH = "C:\GitHub_Runners\CICD\Infyagentframework\venv"
+          $REQ_FILE = "C:\GitHub_Runners\CICD\Infyagentframework\requirements.txt"
+
+          # Create venv with Python 3.13
+          if (-Not (Test-Path $VENV_PATH)) {
+              Write-Host "Creating virtual environment with Python 3.13..."
+              python -m venv $VENV_PATH
+          }
+
+          # Activate & Install
+          & "$VENV_PATH\Scripts\Activate.ps1"
+          # Install uv and requirements
+          pip install uv
+          uv pip install -r requirements.txt
+          # Write-Host "Upgrading pip..."
+          # pip install --upgrade pip
+
+          if (Test-Path $REQ_FILE) {
+              Write-Host "Installing requirements..."
+              pip install -r requirements.txt
+          } else {
+              Write-Host "WARNING: requirements.txt not found"
+          }
+
+      # - name: Restart CTL service
+      #   run: |
+      #     sudo systemctl restart CICD-fastapi.service

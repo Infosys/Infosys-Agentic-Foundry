@@ -30,7 +30,7 @@ class BaseAIModelService(ABC):
         api_base: Optional[str] = None,
         api_version: Optional[str] = None,
         model: Optional[str] = None,
-        temperature: float = 0.0,
+        temperature: Optional[float] = None,
         chat_history_manager: Optional[ChatStateHistoryManagerRepository] = None
     ):
         """
@@ -219,6 +219,8 @@ class BaseAIModelService(ABC):
         # Reuse same underlying client (no deepcopy)
         if hasattr(self, "_client"):
             new_obj._client = self._client
+        if hasattr(self, "_async_client"):
+            new_obj._async_client = self._async_client
         return new_obj
 
     def create_agent(
@@ -226,7 +228,7 @@ class BaseAIModelService(ABC):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Union[Callable, MCPToolAdapter]]] = None,
         model: str = None,
-        temperature: float = 0.0,
+        temperature: Optional[float] = None,
         **agent_config_kwargs: Any
     ) -> "BaseAIModelService":
         """
@@ -249,7 +251,8 @@ class BaseAIModelService(ABC):
             raise ValueError("Model must be specified when creating an agent.")
 
         new_agent._system_prompt = system_prompt
-        new_agent._temperature = temperature
+        if temperature is not None:
+            new_agent._temperature = temperature
         new_agent._agent_config_kwargs = agent_config_kwargs
 
         new_agent._tools_json_schema = []
@@ -303,6 +306,50 @@ class BaseAIModelService(ABC):
             return {"error": f"Error executing tool '{function_name}': {str(e)}"}
 
     @abstractmethod
+    async def astream(
+            self,
+            messages: Optional[List[Dict[str, str]]] = None,
+            config: Optional[Dict[str, Any]] = None,
+        ) -> Dict[str, Any]:
+        """
+        Invokes the Azure agent with a list of messages, handling multi-turn conversations,
+        parallel tool calls, chat history, and tool interruption.
+
+        Args:
+            messages: A list of message dictionaries (e.g., [{"role": "user", "content": "..."}]).
+                      If None, the agent attempts to resume an interrupted chat.
+            config: Optional dictionary for configurable parameters:
+                - "configurable":
+                    - "thread_id": (str) Unique ID for the conversation thread. If not provided,
+                                   chat history will not be stored or retrieved.
+                    - "history_lookback": (int) Number of previous 'agent_steps' entries to consider
+                                          for context. If None, all available history is used.
+                    - "resume_previous_chat": (bool) If True, attempts to resume the most recent
+                                              chat entry for the thread_id, updating it instead
+                                              of creating a new one.
+                    - "store_response_custom_metadata": (bool) If True, stores custom metadata
+                                              from the final LLM response in the chat history. Default is False.
+                - "tool_choice": (str) Strategy for tool selection by the LLM. Default is "auto".
+                - "tool_interrupt": (bool) If True, the agent will pause and return tool calls
+                                    for user approval/modification before execution.
+                - "tools_to_interrupt": (Optional[List[str]]) A list of tool names that should trigger
+                                        an interrupt when called. If tool_interrupt is True and this is None,
+                                        all tool calls will be interrupted. If tool_interrupt is True and this
+                                        is a list, only tool calls with names in this list will be interrupted.
+                                        If tool_interrupt is False, this parameter is ignored.
+                - "parallel_tool_calls": (bool) If True, allows the LLM to request multiple tool calls
+                                             in a single response. Default is False.
+                - "updated_tool_calls": (Union[List[Dict], Dict])
+                    - If a list, each item should be a dictionary with keys:
+                        - "id": (str) The tool_call_id of the tool to update.
+                        - "updated_arguments": (Dict) The new arguments for the tool.
+                    This is used when resuming an interrupted chat to modify tool arguments for multiple tool calls.
+                    - If a dict, it should be the argument dictionary for the first tool call only.
+                    This is typically used when parallel tool calls are disabled and only the first tool call's arguments need to be updated.
+        """
+        pass
+
+    @abstractmethod
     async def ainvoke(
             self,
             messages: Optional[List[Dict[str, str]]] = None,
@@ -329,9 +376,14 @@ class BaseAIModelService(ABC):
                 - "tool_choice": (str) Strategy for tool selection by the LLM. Default is "auto".
                 - "tool_interrupt": (bool) If True, the agent will pause and return tool calls
                                     for user approval/modification before execution.
+                - "tools_to_interrupt": (Optional[List[str]]) A list of tool names that should trigger
+                                        an interrupt when called. If tool_interrupt is True and this is None,
+                                        all tool calls will be interrupted. If tool_interrupt is True and this
+                                        is a list, only tool calls with names in this list will be interrupted.
+                                        If tool_interrupt is False, this parameter is ignored.
                 - "parallel_tool_calls": (bool) If True, allows the LLM to request multiple tool calls
                                              in a single response. Default is False.
-                - "updated_tool_calls": (Union[List[Dict], Dict]) 
+                - "updated_tool_calls": (Union[List[Dict], Dict])
                     - If a list, each item should be a dictionary with keys:
                         - "id": (str) The tool_call_id of the tool to update.
                         - "updated_arguments": (Dict) The new arguments for the tool.

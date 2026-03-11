@@ -5,31 +5,32 @@ import uuid
 import time
 import json
 import asyncio
-import json
 import tempfile
 import pandas as pd
 from pathlib import Path
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, UploadFile, File, Form , Form
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
-from typing import List, Dict, Optional, Callable,Awaitable, Union
+from typing import List, Dict, Optional, Callable, Awaitable, Union
 from datetime import datetime
 from pytz import timezone
 
-from src.schemas import GroundTruthEvaluationRequest
-from src.database.services import EvaluationService
-from src.database.core_evaluation_service import CoreEvaluationService
-from src.api.dependencies import ServiceProvider # Dependency provider
 from src.schemas import GroundTruthEvaluationRequest, AgentInferenceRequest
 from src.database.services import EvaluationService, ConsistencyService
 from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
+from src.models.model_service import ModelService
 from src.inference import CentralizedAgentInference
+from src.api.dependencies import ServiceProvider # Dependency provider
 
 from groundtruth import evaluate_ground_truth_file
 from phoenix.otel import register
 from telemetry_wrapper import logger as log, update_session_context
 from src.utils.phoenix_manager import ensure_project_registered, traced_project_context
-from src.auth.dependencies import get_user_info_from_request
+
+# Authorization imports
+from src.auth.dependencies import get_user_info_from_request, get_current_user
+from src.auth.authorization_service import AuthorizationService
+from src.auth.models import User, UserRole
 
 router = APIRouter(prefix="/evaluation", tags=["Evaluation"])
 ist = timezone("Asia/Kolkata")
@@ -62,6 +63,11 @@ def get_temp_paths(agentic_application_id: str):
 def get_robustness_preview_path(agentic_id: str) -> Path:
     """Returns the path for a temporary robustness preview file."""
     return PREVIEW_DIR / f"robustness_preview_{agentic_id}.json"
+
+# Authorization helper functions
+def get_authorization_service(request: Request) -> AuthorizationService:
+    """Dependency to get AuthorizationService instance"""
+    return ServiceProvider.get_authorization_service()
 
 async def _parse_agent_names(agent_input: Optional[List[str]]) -> Optional[List[str]]:
     if not agent_input:
@@ -217,7 +223,9 @@ async def process_unprocessed_evaluations_endpoint(
     fastapi_request: Request,
     evaluating_model1: str = Query(..., description="Model name for comparison (e.g., 'gpt-4o')"),
     evaluating_model2: str = Query(..., description="Another model name for comparison (e.g., 'gpt-35-turbo')"),
-    core_evaluation_service: CoreEvaluationService = Depends(ServiceProvider.get_core_evaluation_service)
+    core_evaluation_service: CoreEvaluationService = Depends(ServiceProvider.get_core_evaluation_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     API endpoint to stream progress of unprocessed evaluation records.
@@ -227,13 +235,21 @@ async def process_unprocessed_evaluations_endpoint(
     - evaluating_model1: First model name for evaluation comparison.
     - evaluating_model2: Second model name for evaluation comparison.
     - core_evaluation_service: Dependency-injected CoreEvaluationService instance.
+    - authorization_service: Dependency-injected AuthorizationService instance.
+    - current_user: Current authenticated user.
 
     Returns:
     - Dict[str, str]: A message indicating the status of the processing.
     """
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
-    user = await get_user_info_from_request(fastapi_request)
+    user = current_user  # Use current_user instead of get_user_info_from_request for consistency
     update_session_context(user_session=user_session, user_id=user_id)
 
     register(
@@ -248,7 +264,7 @@ async def process_unprocessed_evaluations_endpoint(
             async for update in core_evaluation_service.process_unprocessed_evaluations(
                 model1=evaluating_model1,
                 model2=evaluating_model2,
-                user=user
+                user=current_user
             ):
                 yield f"data: {json.dumps(update)}\n\n"
 
@@ -260,9 +276,12 @@ async def process_unprocessed_evaluations_endpoint(
 async def get_evaluation_data_endpoint(
         fastapi_request: Request,
         agent_names: Optional[List[str]] = Query(default=None),
+        agent_types: Optional[List[str]] = Query(default=None),
         page: int = Query(default=1, ge=1),
         limit: int = Query(default=10, ge=1, le=100),
-        evaluation_service: EvaluationService = Depends(ServiceProvider.get_evaluation_service)
+        evaluation_service: EvaluationService = Depends(ServiceProvider.get_evaluation_service),
+        authorization_service: AuthorizationService = Depends(get_authorization_service),
+        current_user: User = Depends(get_current_user)
     ):
     """
     API endpoint to retrieve raw evaluation data records.
@@ -270,21 +289,30 @@ async def get_evaluation_data_endpoint(
     Parameters:
     - fastapi_request: The FastAPI Request object.
     - agent_names: Optional list of agent names to filter by.
+    - agent_types: Optional list of agent types to filter by.
     - page: Page number for pagination.
     - limit: Number of records per page.
     - evaluation_service: Dependency-injected EvaluationService instance.
+    - authorization_service: Dependency-injected AuthorizationService instance.
+    - current_user: Current authenticated user.
 
     Returns:
     - List[Dict[str, Any]]: A list of evaluation data records.
     """
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    user = await get_user_info_from_request(fastapi_request)
 
     # Use InferenceUtils to parse agent names
     parsed_names = await _parse_agent_names(agent_names)
-    data = await evaluation_service.get_evaluation_data(user,parsed_names, page, limit)
+    parsed_types = await _parse_agent_names(agent_types)
+    data = await evaluation_service.get_evaluation_data(current_user,  parsed_names, parsed_types, page, limit)
     if not data:
         raise HTTPException(status_code=404, detail="No evaluation data found")
     return data
@@ -294,9 +322,12 @@ async def get_evaluation_data_endpoint(
 async def get_tool_metrics_endpoint(
         fastapi_request: Request,
         agent_names: Optional[List[str]] = Query(default=None),
+        agent_types: Optional[List[str]] = Query(default=None),
         page: int = Query(default=1, ge=1, description="Page number (starts from 1)"),
         limit: int = Query(default=10, ge=1, le=100, description="Number of records per page (max 100)"),
         evaluation_service: EvaluationService = Depends(ServiceProvider.get_evaluation_service),
+        authorization_service: AuthorizationService = Depends(get_authorization_service),
+        current_user: User = Depends(get_current_user)
     ):
     """
     API endpoint to retrieve tool evaluation metrics.
@@ -304,20 +335,29 @@ async def get_tool_metrics_endpoint(
     Parameters:
     - fastapi_request: The FastAPI Request object.
     - agent_names: Optional list of agent names to filter by.
+    - agent_types: Optional list of agent types to filter by.
     - page: Page number for pagination.
     - limit: Number of records per page.
     - evaluation_service: Dependency-injected EvaluationService instance.
+    - authorization_service: Dependency-injected AuthorizationService instance.
+    - current_user: Current authenticated user.
 
     Returns:
     - List[Dict[str, Any]]: A list of tool metrics records.
     """
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    user = await get_user_info_from_request(fastapi_request)
 
     parsed_names = await _parse_agent_names(agent_names)
-    data = await evaluation_service.get_tool_metrics(user,parsed_names, page, limit)
+    parsed_types = await _parse_agent_names(agent_types)
+    data = await evaluation_service.get_tool_metrics(current_user, parsed_names, parsed_types, page, limit)
     if not data:
         raise HTTPException(status_code=404, detail="No tool metrics found")
     return data
@@ -327,9 +367,12 @@ async def get_tool_metrics_endpoint(
 async def get_agent_metrics_endpoint(
         fastapi_request: Request,
         agent_names: Optional[List[str]] = Query(default=None),
+        agent_types: Optional[List[str]] = Query(default=None),
         page: int = Query(default=1, ge=1),
         limit: int = Query(default=10, ge=1, le=100),
-        evaluation_service: EvaluationService = Depends(ServiceProvider.get_evaluation_service)
+        evaluation_service: EvaluationService = Depends(ServiceProvider.get_evaluation_service),
+        authorization_service: AuthorizationService = Depends(get_authorization_service),
+        current_user: User = Depends(get_current_user)
     ):
     """
     API endpoint to retrieve agent evaluation metrics.
@@ -337,37 +380,59 @@ async def get_agent_metrics_endpoint(
     Parameters:
     - fastapi_request: The FastAPI Request object.
     - agent_names: Optional list of agent names to filter by.
+    - agent_types: Optional list of agent types to filter by.
     - page: Page number for pagination.
     - limit: Number of records per page.
     - evaluation_service: Dependency-injected EvaluationService instance.
+    - authorization_service: Dependency-injected AuthorizationService instance.
+    - current_user: Current authenticated user.
 
     Returns:
     - List[Dict[str, Any]]: A list of agent metrics records.
     """
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    user = await get_user_info_from_request(fastapi_request)
 
     parsed_names = await _parse_agent_names(agent_names)
-    data = await evaluation_service.get_agent_metrics(user,parsed_names, page, limit)
+    parsed_types = await _parse_agent_names(agent_types)
+    data = await evaluation_service.get_agent_metrics(current_user, parsed_names, parsed_types, page, limit)
     if not data:
         raise HTTPException(status_code=404, detail="No agent metrics found")
     return data
 
 
 @router.get("/download-result")
-async def download_evaluation_result_endpoint(fastapi_request: Request, file_name: str):
+async def download_evaluation_result_endpoint(
+        fastapi_request: Request, 
+        file_name: str,
+        authorization_service: AuthorizationService = Depends(get_authorization_service),
+        current_user: User = Depends(get_current_user)
+    ):
     """
     API endpoint to download the evaluation result file.
 
     Parameters:
     - fastapi_request: The FastAPI Request object.
     - file_name: The name of the result file to download.
+    - authorization_service: Dependency-injected AuthorizationService instance.
+    - current_user: Current authenticated user.
 
     Returns:
     - FileResponse: Returns the file as a downloadable response.
     """
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -383,17 +448,30 @@ async def download_evaluation_result_endpoint(fastapi_request: Request, file_nam
 
 
 @router.get("/download-groundtruth-template")
-async def download_groundtruth_template_endpoint(fastapi_request: Request, file_name: str='Groundtruth_template.xlsx'):
+async def download_groundtruth_template_endpoint(
+        fastapi_request: Request, 
+        file_name: str='Groundtruth_template.xlsx',
+        authorization_service: AuthorizationService = Depends(get_authorization_service),
+        current_user: User = Depends(get_current_user)
+    ):
     """
     API endpoint to download sample upload file for groundtruth evaluation.
 
     Parameters:
     - fastapi_request: The FastAPI Request object.
     - file_name: The name of the template file to download (default is 'Groundtruth_template.xlsx').
+    - authorization_service: Dependency-injected AuthorizationService instance.
+    - current_user: Current authenticated user.
     
     Returns:
     - FileResponse: Returns the file as a downloadable response.
     """
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -413,8 +491,43 @@ async def upload_and_evaluate_json(
     fastapi_request: Request,
     file: UploadFile = File(...),
     subdirectory: str = "",
-    evaluation_request: GroundTruthEvaluationRequest = Depends()
+    evaluation_request: GroundTruthEvaluationRequest = Depends(),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=evaluation_request.agentic_application_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{evaluation_request.agentic_application_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -482,17 +595,30 @@ async def upload_and_evaluate_json(
 
 
 @router.get("/download-consistency-template")
-async def download_consistency_template_endpoint(fastapi_request: Request, file_name: str='Consistency_template.xlsx'):
+async def download_consistency_template_endpoint(
+    fastapi_request: Request, 
+    file_name: str='Consistency_template.xlsx',
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
+):
     """
     API endpoint to download sample upload file for Consistency and robustness evaluation.
 
     Parameters:
     - fastapi_request: The FastAPI Request object.
     - file_name: The name of the template file to download (default is 'Consistency_template.xlsx').
+    - authorization_service: Dependency-injected AuthorizationService instance.
+    - current_user: Current authenticated user.
     
     Returns:
     - FileResponse: Returns the file as a downloadable response.
     """
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
@@ -518,12 +644,50 @@ async def preview_agent_responses(
     model_name: str = Form(...),
     session_id: str = Form(...),
     consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
-    core_consistency_service: CoreConsistencyEvaluationService = Depends(ServiceProvider.get_core_consistency_service)
+    core_consistency_service: CoreConsistencyEvaluationService = Depends(ServiceProvider.get_core_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Handles the initial 'preview' step. Checks if an agent exists,
     generates responses for a query file or manual input, and saves temporary results.
     """
+    # Strip any surrounding quotes from the agent ID (in case user pastes quoted ID)
+    agent_id = agent_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agent_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     if isinstance(file, str):
         file = None
     # Validate input source
@@ -532,8 +696,8 @@ async def preview_agent_responses(
     if file and queries:
         raise HTTPException(status_code=400, detail="Provide either a file or manual queries, not both.")
  
-    # Check if the agent already exists
-    existing_agent = await consistency_service.get_agent_by_id(agent_id)
+    # Check if the agent already exists in evaluation metadata
+    existing_agent = await consistency_service.get_agent_by_id(agent_id, current_user)
     if existing_agent:
         return {
             "status": "agent_exists",
@@ -642,11 +806,49 @@ async def rerun_agent_responses(
     # Parameters from user request
     agent_id: str = Form(...),
     # Inject the service needed
-    core_consistency_service: CoreConsistencyEvaluationService = Depends(ServiceProvider.get_core_consistency_service)
+    core_consistency_service: CoreConsistencyEvaluationService = Depends(ServiceProvider.get_core_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Re-runs the agent on existing queries from a temporary session file.
     """
+    # Strip any surrounding quotes from the agent ID (in case user pastes quoted ID)
+    agent_id = agent_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agent_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     temp_xlsx_path, temp_meta_path = get_temp_paths(agent_id)
     if not temp_xlsx_path.exists() or not temp_meta_path.exists():
         raise HTTPException(status_code=404, detail="Session files not found. Cannot re-run.")
@@ -705,12 +907,51 @@ DB_OPERATION_LOCK = asyncio.Lock()
 async def approve_responses_endpoint(
     agentic_application_id: str = Form(...),
     # Inject the service needed for database operations
-    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service)
+    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
+    model_service: ModelService = Depends(ServiceProvider.get_model_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Approves the current set of responses and saves the data permanently.
     This finalizes the consistency benchmark for a new agent or an update.
     """
+    # Strip any surrounding quotes from the agent ID (in case user pastes quoted ID)
+    agentic_application_id = agentic_application_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agentic_application_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agentic_application_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     temp_xlsx_path, temp_meta_path = get_temp_paths(agentic_application_id)
     if not temp_xlsx_path.exists() or not temp_meta_path.exists():
         raise HTTPException(status_code=404, detail="Approval files not found. The session may have expired.")
@@ -758,11 +999,15 @@ async def approve_responses_endpoint(
                 
                 # ✅ FIXED: Create agent record only during approval (not preview)
                 agent_name = metadata.get("agent_name", "Unknown Agent")
-                model_name = metadata.get("model_name", "gpt-4o")
+                model_name = metadata.get("model_name", model_service.default_model_name)
                 log.info(f"🗃️ Creating agent record for: {agentic_application_id}")
                 try:
                     agent_type = metadata.get("agent_type", "Unknown Type")
-                    await consistency_service.upsert_agent_record(agentic_application_id, agent_name, agent_type, model_name)
+                    await consistency_service.upsert_agent_record(
+                        agentic_application_id, agent_name, agent_type, model_name, 
+                        department_name=agent_record.get('department_name'),
+                        created_by=current_user.email
+                    )
                 except Exception as e:
                     log.error(f"Error creating agent record for {agentic_application_id}: {e}", exc_info=True)
                     raise HTTPException(status_code=500, detail=f"Failed to create agent record: {str(e)}")
@@ -810,12 +1055,50 @@ def get_robustness_preview_path(agentic_id: str) -> Path:
 @router.post("/robustness/preview-queries/{agentic_application_id}", summary="Preview Robustness Queries")
 async def preview_robustness_queries(
     agentic_application_id: str,
-    core_robustness_service: CoreRobustnessEvaluationService = Depends(ServiceProvider.get_core_robustness_service)
+    core_robustness_service: CoreRobustnessEvaluationService = Depends(ServiceProvider.get_core_robustness_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Generates a new set of robustness queries for preview.
     Does NOT run the agent or save to the main database.
     """
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agentic_application_id = agentic_application_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agentic_application_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agentic_application_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     log.info(f"Received request to generate robustness query preview for: {agentic_application_id}")
     try:
         # Step 1: Generate queries using the modular helper
@@ -863,12 +1146,50 @@ def get_robustness_preview_path(agentic_id: str) -> Path:
 async def approve_robustness_evaluation(
     agentic_application_id: str,
     # Inject the core service that has the pipeline logic
-    core_robustness_service: CoreRobustnessEvaluationService = Depends(ServiceProvider.get_core_robustness_service)
+    core_robustness_service: CoreRobustnessEvaluationService = Depends(ServiceProvider.get_core_robustness_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Approves the previewed queries, runs the full evaluation pipeline,
     and saves the results to the database.
     """
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agentic_application_id = agentic_application_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agentic_application_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agentic_application_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     log.info(f"Received request to approve and run robustness evaluation for: {agentic_application_id}")
     
     preview_path = get_robustness_preview_path(agentic_application_id)
@@ -899,15 +1220,28 @@ async def approve_robustness_evaluation(
 
 @router.get("/available_agents/", summary="Get All Agent Evaluation Records")
 async def get_all_agents_from_consistency_robustness_details_table(
-    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service)
+    agent_type: Optional[str] = Query(None, description="Filter agents by type (e.g., 'ReAct', 'Meta', etc.)"),
+    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Retrieves a list of all agent evaluation records from the database.
+    Returns agents based on user role:
+    - Admin: All agents in their department
+    - Developer: Only agents they created in their department
+    
+    Optional filtering by agent_type.
     """
-    log.info("Received request to fetch all agent evaluation records.")
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    log.info(f"Received request to fetch agent evaluation records. agent_type filter: {agent_type}")
     try:
-       
-        all_agents = await consistency_service.get_all_agents()
+        all_agents = await consistency_service.get_all_agents(current_user, agent_type=agent_type)
         if not all_agents:
             log.info("No agent evaluation records found in the database.")
             return []
@@ -933,12 +1267,50 @@ async def generate_update_preview(
     agentic_application_id: str,
     request: UpdateEvaluationRequest,
     consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
-    inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference)
+    inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Takes updated model/queries, runs a new evaluation, and returns a temporary preview.
     This does NOT permanently alter the database structure yet.
     """
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agentic_application_id = agentic_application_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agentic_application_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agentic_application_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     log.info(f"Generating an UPDATE PREVIEW for agent: {agentic_application_id}")
     
     model_name = request.model_name
@@ -998,13 +1370,45 @@ async def generate_update_preview(
 @router.delete("/delete-agent/{agentic_application_id}", summary="Delete Agent and All Associated Data")
 async def delete_agent_details(
     agentic_application_id: str,
-    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service)
+    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Completely deletes an agent and all of its associated data, including its
     consistency and robustness result tables. This is a destructive action.
+    
+    Access Control:
+    - Admin: Can delete any agent evaluation in their department
+    - Developer: Can only delete agent evaluations they created (filtered via available_agents)
     """
-    log.warning(f"Received DELETE request for agent '{agentic_application_id}'.")
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agentic_application_id = agentic_application_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Get the evaluation record - uses the same filtering as available_agents
+    # (Admin sees all in dept, Developer sees only their own)
+    eval_record = await consistency_service.get_agent_by_id(agentic_application_id)
+    
+    if not eval_record:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent evaluation '{agentic_application_id}' not found."
+        )
+    
+    # Check department access - ensures admins from other departments can't delete
+    if eval_record.get('department_name') != user_department:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only delete agent evaluations in your department."
+        )
+    
+    log.warning(f"Received DELETE request for agent '{agentic_application_id}' by {current_user.email}.")
     try:
        
         await consistency_service.drop_agent_results_table(agentic_application_id)
@@ -1030,13 +1434,51 @@ async def delete_agent_details(
 @router.get("/agent/{agent_id}/recent_consistency_scores", summary="Get recent consistency scores for a specific agent")
 async def get_consistency_scores(
     agent_id: str,
-    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service)
+    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agent_id = agent_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agent_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     try:
         # Step 1: Fetch agent metadata
-        agent = await consistency_service.get_agent_by_id(agent_id)
+        agent = await consistency_service.get_agent_by_id(agent_id, current_user)
         if not agent:
-            raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found.")
+            raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found or you don't have access to it.")
 
         # Step 2: Fetch recent scores from the agent's table
         recent_scores = await consistency_service.data_repo.get_recent_consistency_scores(agent_id)
@@ -1054,13 +1496,51 @@ async def get_consistency_scores(
 @router.get("/agent/{agent_id}/recent_robustness_scores", summary="Get recent robustness scores for a specific agent")
 async def get_robustness_scores(
     agent_id: str,
-    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service)
+    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agent_id = agent_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agent_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
     try:
         # Step 1: Fetch agent metadata
-        agent = await consistency_service.get_agent_by_id(agent_id)
+        agent = await consistency_service.get_agent_by_id(agent_id, current_user)
         if not agent:
-            raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found.")
+            raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found or you don't have access to it.")
 
         # Step 2: Fetch recent robustness scores from the robustness_<agent_id> table
         robustness_table = f"robustness_{agent_id}"
@@ -1088,8 +1568,54 @@ def write_consistency_to_csv(records: List[Dict], file_path: str):
 @router.get("/agent/{agent_id}/download_consistency_record", summary="Download consistency records as CSV")
 async def download_consistency_records(
     agent_id: str,
-    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service)
+    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agent_id = agent_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agent_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
+    # Validate agent ownership/department access
+    agent = await consistency_service.get_agent_by_id(agent_id, current_user)
+    if not agent:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found or you don't have access to it."
+        )
+    
     try:
         table_name = agent_id  # assuming table name = agent_id
         records = await consistency_service.get_all_consistency_records(table_name)
@@ -1110,8 +1636,54 @@ async def download_consistency_records(
 @router.get("/agent/{agent_id}/download_robustness_record", summary="Download robustness records as CSV")
 async def download_robustness_records(
     agent_id: str,
-    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service)
+    consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    current_user: User = Depends(get_current_user)
 ):
+    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+    agent_id = agent_id.strip('"').strip("'")
+    
+    # Check evaluation access permission
+    user_department = current_user.department_name
+    has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
+    
+    # Validate agent ownership/department access
+    agent_service = ServiceProvider.get_agent_service()
+    
+    # Check if the agent exists and user has access to it
+    agent_records = await agent_service.get_agent(
+        agentic_application_id=agent_id,
+        department_name=user_department if current_user.role != 'SuperAdmin' else None
+    )
+    
+    if not agent_records:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found in your department."
+        )
+    
+    agent_record = agent_records[0]  # get_agent returns a list, take the first match
+    
+    # Allow access if: SuperAdmin, same department, public agent, or agent shared with user's department
+    agent_dept = agent_record.get('department_name')
+    is_public = agent_record.get('is_public', False)
+    shared_depts = agent_record.get('shared_with_departments', [])
+    if current_user.role != 'SuperAdmin' and agent_dept != user_department and not is_public and user_department not in shared_depts:
+        raise HTTPException(
+            status_code=403, 
+            detail="You can only evaluate agents in your department or agents that are public/shared with your department."
+        )
+    
+    # Validate agent ownership/department access
+    agent = await consistency_service.get_agent_by_id(agent_id, current_user)
+    if not agent:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Agent '{agent_id}' not found or you don't have access to it."
+        )
+    
     try:
         table_name = f"robustness_{agent_id}"  
         records = await consistency_service.get_all_robustness_records(table_name)

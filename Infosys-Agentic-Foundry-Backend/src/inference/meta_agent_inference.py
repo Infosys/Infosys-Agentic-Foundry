@@ -1,4 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import os
 import json
 import asyncio
 from typing import Dict
@@ -7,11 +8,11 @@ from langgraph.types import interrupt, StreamWriter
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AIMessage, ChatMessage
 
-from telemetry_wrapper import logger as log
-
 from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseMetaTypeAgentInference
+from src.schemas import AdminConfigLimits
+from src.config.constants import Limits
 from telemetry_wrapper import logger as log
 
 
@@ -33,6 +34,7 @@ class MetaWorkflowState(BaseWorkflowState):
     validation_score: float = None
     validation_feedback: str = None
     workflow_description: str = None
+    episodic_memory_messages: list = []  # Pre-fetched episodic memory for tracing
 
 
 class MetaAgentInference(BaseMetaTypeAgentInference):
@@ -42,19 +44,50 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
         super().__init__(inference_utils)
 
 
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False):
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False, message_queue: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False):
         """
         Builds the agent and chains for the Meta workflow.
         Returns writer_holder to enable streaming in handoff tools.
+        
+        Args:
+            message_queue: Not used by meta agent, included for interface compatibility.
+            session_id: Session ID for shell workspace (required if file_context_management_flag=True).
+            agent_id: Agent ID for shell workspace (required if file_context_management_flag=True).
+            context_flag: If False, no memory tools will be added.
+            file_context_management_flag: If True, use file-based context management (AgentShell) instead of old conversation fetching.
         """
         worker_agent_ids = agent_config["TOOLS_INFO"]
-        system_prompt = agent_config["SYSTEM_PROMPT"]
+        system_prompt_config = agent_config["SYSTEM_PROMPT"]
+        agent_name = agent_config.get("AGENT_NAME", "")
+        
+        # Determine which system prompt to use based on file_context_management_flag
+        if file_context_management_flag:
+            # Try to load file-context prompt from file (using agent_name, same as onboard)
+            safe_agent_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in agent_name)
+            file_context_prompt_path = os.path.join(
+                "agent_workspaces", "file_context_prompts", f"{safe_agent_name}_file_context_prompt.md"
+            )
+            if os.path.exists(file_context_prompt_path):
+                with open(file_context_prompt_path, "r", encoding="utf-8") as f:
+                    system_prompt = f.read()
+                log.info(f"📄 Loaded file-context prompt from: {file_context_prompt_path}")
+            else:
+                # Fallback to DB prompt if file doesn't exist
+                system_prompt = system_prompt_config.get("SYSTEM_PROMPT_META_AGENT", "")
+                log.warning(f"⚠️ File-context prompt not found at {file_context_prompt_path}, using DB prompt")
+        else:
+            # Use regular DB prompt
+            system_prompt = system_prompt_config.get("SYSTEM_PROMPT_META_AGENT", "")
+        
         meta_agent, _, writer_holder = await self._get_react_agent_as_supervisor_agent(
             llm=llm,
-            system_prompt=system_prompt.get("SYSTEM_PROMPT_META_AGENT", ""),
+            system_prompt=system_prompt,
             worker_agent_ids=worker_agent_ids,
             checkpointer=checkpointer,
             interrupt_tool=tool_interrupt_flag,
+            file_context_management_flag=file_context_management_flag,
+            agent_id=agent_id,
+            session_id=session_id,
         )
 
         chains = {
@@ -72,6 +105,8 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
         evaluation_flag = flags.get("evaluation_flag", False)
         validator_flag = flags.get("validator_flag", False)
         response_formatting_flag = flags.get("response_formatting_flag", False)
+
+        inference_config: AdminConfigLimits = flags.get("inference_config", AdminConfigLimits())
 
         llm = chains.get("llm", None)
         meta_agent = chains.get("meta_agent", None)
@@ -123,7 +158,7 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
                     if state["context_flag"] == False:
                         writer({"Node Name": "Generating Context", "Status": "Completed"})
                         return {
-                            "past_conversation_summary": "No past conversation summary available.",
+                            "past_conversation_summary": "",
                             # Keep your updated shape: downstream nodes read the rewritten query content
                             "query": getattr(current_state_query, "content", str(current_state_query)),
                             "ongoing_conversation": current_state_query,
@@ -145,7 +180,33 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
                             "start_timestamp": strt_tmstp,
                             "errors": errors,
                             "user_update_events": [],
+                            "episodic_memory_messages": [],
                         }
+                    
+                    # Check file_context_management_flag - if True, use file-based memory tool instead of conversation fetching
+                    if state.get("file_context_management_flag", False):
+                        log.info(f"File context management flag is set to True for session {state['session_id']}. Using file-based memory tool.")
+                        writer({"Node Name": "Generating Context", "Status": "Completed"})
+                        return {
+                            "past_conversation_summary": "",
+                            "query": getattr(current_state_query, "content", str(current_state_query)),
+                            "ongoing_conversation": [],  # Don't pass ongoing conversation when using file-based memory
+                            "executor_messages": current_state_query,
+                            "response": None,
+                            "evaluation_score": None,
+                            "evaluation_feedback": None,
+                            "validation_score": None,
+                            "validation_feedback": None,
+                            "workflow_description": workflow_description,
+                            "epoch": 0,
+                            'validation_attempts': 0,
+                            'evaluation_attempts': 0,
+                            "start_timestamp": strt_tmstp,
+                            "errors": errors,
+                            "user_update_events": [],
+                            "episodic_memory_messages": [],
+                        }
+                    
                     # Get summary via ChatService
                     writer({"Node Name": "Generating Context", "Status": "Started"})
                     conv_summary = await self.chat_service.get_chat_conversation_summary(
@@ -187,8 +248,31 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
                 "start_timestamp": strt_tmstp,
                 "errors": errors,
                 "user_update_events": [],
+                "episodic_memory_messages": [],
             }
 
+
+        async def prepare_episodic_memory_node(state: MetaWorkflowState, writer: StreamWriter):
+            """Prepares episodic memory context as a separate traced node."""
+            try:
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Started"})
+                agent_id = state["agentic_application_id"]
+                query = state["query"]
+                
+                # Fetch episodic memory context
+                log.info(f"[{state['session_id']}] Fetching episodic memory context...")
+                messages = await InferenceUtils.prepare_episodic_memory_context(
+                    state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, 
+                    query
+                )
+                log.info(f"[{state['session_id']}] Episodic memory context prepared: {len(messages)} messages")
+                
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Completed"})
+                return {"episodic_memory_messages": messages}
+            except Exception as e:
+                log.error(f"Error preparing episodic memory: {e}", exc_info=True)
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Failed"})
+                return {"episodic_memory_messages": [], "errors": state.get("errors", []) + [f"Episodic memory error: {e}"]}
 
         async def meta_agent_node(state: MetaWorkflowState,writer:StreamWriter):
             """
@@ -200,12 +284,9 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
 
-            agent_id = state["agentic_application_id"]
-            # episodic memory context
-            query = state["query"]
-            messages = await InferenceUtils.prepare_episodic_memory_context(
-                state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, query
-            )
+            # Use pre-fetched episodic memory from state (already prepared in separate traced node)
+            messages = state.get("episodic_memory_messages", [])
+            log.info(f"[{state['session_id']}] Using {len(messages)} pre-fetched episodic memory messages")
 
             try:
                 formatter_node_prompt = ""
@@ -307,7 +388,7 @@ User Query:
                 final_ai_message = AIMessage(
                     content=(
                         f"I'm unable to generate a detailed response right now. "
-                        f"Reattempting improvement cycle {state.get('epoch', 0)}. Query: {query}"
+                        f"Reattempting improvement cycle {state.get('epoch', 0)}. Query: {state['query']}"
                     )
                 )
                 final_content_parts.append(final_ai_message)
@@ -534,6 +615,7 @@ User Query:
             errors = []
             end_timestamp = get_timestamp()
             try:
+                # Save to database
                 asyncio.create_task(
                     self.chat_service.save_chat_message(
                         agentic_application_id=state["agentic_application_id"],
@@ -544,6 +626,18 @@ User Query:
                         ai_message=state["response"],
                     )
                 )
+                
+                # Save to file (using ChatService method)
+                await self.chat_service.save_chat_to_file(
+                    agentic_application_id=state["agentic_application_id"],
+                    session_id=state["session_id"],
+                    start_timestamp=state["start_timestamp"],
+                    end_timestamp=end_timestamp,
+                    human_message=state["query"],
+                    ai_message=state["response"],
+                    llm=llm
+                )
+                
                 asyncio.create_task(
                     self.chat_service.update_preferences_and_analyze_conversation(
                         user_input=state["query"],
@@ -552,7 +646,8 @@ User Query:
                         session_id=state["session_id"],
                     )
                 )
-                if (len(state["ongoing_conversation"]) + 1) % 8 == 0:
+                config_limits = await self.admin_config_service.get_limits()
+                if (len(state["ongoing_conversation"]) + 1) % (2*config_limits.chat_summary_interval) == 0:
                     log.debug("Storing chat summary")
                     asyncio.create_task(
                         self.chat_service.get_chat_summary(
@@ -688,8 +783,8 @@ User Query:
             Decides whether to return the final response or continue.
             SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
-            evaluation_threshold = 0.7
-            max_evaluation_epochs = 3
+            evaluation_threshold = inference_config.evaluation_score_threshold
+            max_evaluation_epochs = inference_config.max_evaluation_epochs
             
             # Using existing attempts counter from MetaWorkflowState
             current_attempts = state.get("evaluation_attempts", 0)
@@ -726,7 +821,8 @@ User Query:
                             new_final_response=status,
                             feedback=f"[EVALUATOR] Score: {evaluation_score:.2f} - {evaluation_feedback}", 
                             new_steps=status,
-                            lesson=lesson
+                            lesson=lesson,
+                            department_name=state.get("department_name")
                         )
                         log.info(f"💾 Meta Evaluator failure stored successfully for session {state['session_id']}")
                             
@@ -939,8 +1035,8 @@ User Query:
             Decides the next step based on validation results.
             SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
-            validation_threshold = 0.7
-            max_validation_attempts = 3
+            validation_threshold = inference_config.validation_score_threshold
+            max_validation_attempts = inference_config.max_validation_epochs
             
             # Using existing attempts counter from MetaWorkflowState
             current_attempts = state.get("validation_attempts", 0)
@@ -977,7 +1073,8 @@ User Query:
                             new_final_response=status,
                             feedback=f"[VALIDATOR] Score: {validation_score:.2f} - {validation_feedback}", 
                             new_steps=status,
-                            lesson=lesson
+                            lesson=lesson,
+                            department_name=state.get("department_name")
                         )
                         log.info(f"💾 Meta Validator failure stored successfully for session {state['session_id']}")
                             
@@ -1006,6 +1103,7 @@ User Query:
         # ---------------- Build Graph (Workflow) ----------------
         workflow = StateGraph(MetaWorkflowState)
         workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
+        workflow.add_node("prepare_episodic_memory", prepare_episodic_memory_node)
         workflow.add_node("meta_agent_node", meta_agent_node)
         workflow.add_node("final_response_node", final_response_node)
         if response_formatting_flag:
@@ -1025,7 +1123,8 @@ User Query:
 
         # Define the workflow sequence
         workflow.add_edge(START, "generate_past_conversation_summary")
-        workflow.add_edge("generate_past_conversation_summary", "meta_agent_node")
+        workflow.add_edge("generate_past_conversation_summary", "prepare_episodic_memory")
+        workflow.add_edge("prepare_episodic_memory", "meta_agent_node")
 
         # Router after meta_agent_node
         workflow.add_conditional_edges(

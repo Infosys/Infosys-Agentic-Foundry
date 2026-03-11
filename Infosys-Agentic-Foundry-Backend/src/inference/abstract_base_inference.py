@@ -1,5 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import re
+import os
+from dotenv import load_dotenv
 import json
 from abc import ABC, abstractmethod
 from typing import Any, List, Dict, Optional, Union, Callable
@@ -8,9 +10,18 @@ from fastapi import HTTPException
 from src.database.services import ChatService
 from src.inference.inference_utils import InferenceUtils
 from src.schemas import AgentInferenceRequest
-from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key
+from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets
 
 from telemetry_wrapper import logger as log
+
+from src.storage import get_storage_client
+
+load_dotenv()
+
+
+
+
+
 
 
 
@@ -29,9 +40,21 @@ class AbstractBaseInference(ABC):
         self.model_service = inference_utils.model_service
         self.feedback_learning_service = inference_utils.feedback_learning_service
         self.evaluation_service = inference_utils.evaluation_service
+        self.storage_provider=os.getenv('STORAGE_PROVIDER', "")
+        self.storage_client = None
+        self.admin_config_service = self.chat_service.admin_config_service
 
 
     # --- Helper Methods ---
+
+    def _initialize_storage_client(self):
+        if self.storage_provider and self.storage_provider.strip():
+            try:
+                self.storage_client = get_storage_client(self.storage_provider)
+            except ValueError as e:
+                log.info(f"Warning: Storage client initialization failed: {e}")
+            except Exception as e:
+                log.info(f"Warning: Storage configuration error: {e}")
 
     @staticmethod
     def _extract_user_email_from_session_id(session_id: str) -> str:
@@ -94,8 +117,17 @@ class AbstractBaseInference(ABC):
         local_var = {
             "get_user_secrets": get_user_secrets,
             "current_user_email": current_user_email,
-            "get_public_secrets": get_public_key
+            "get_public_secrets": get_public_key,
+            "get_group_secrets": get_group_secrets
         }
+        # if self.storage_provider:
+        #     self._initialize_storage_client()
+        # if self.storage_client is not None and hasattr(self.storage_client, 'open'):
+        #     log.info('Storage client initialized in agent execution environment.')
+        #     local_var["open"] = self.storage_client.open
+        # else:
+        #     local_var["open"] = open  # Use Python's built-in open as fallback
+
 
         tool_list: List[Callable] = []
         mcp_server_ids: List[str] = []
@@ -107,7 +139,7 @@ class AbstractBaseInference(ABC):
                     continue
 
                 log.info(f"Loading Python tool for ID: {tool_id} - CACHE LOG")
-                tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=tool_id)
+                tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=tool_id, message_queue_implementation=False)
                 log.info(f"Python tool reading completed for ID: {tool_id} - CACHE LOG")
                 if tool_record:
                     tool_record = tool_record[0]
@@ -148,7 +180,15 @@ class AbstractBaseInference(ABC):
         if not result:
             log.error(f"Agentic Application ID {agentic_application_id} not found.")
             raise HTTPException(status_code=404, detail=f"Agentic Application ID {agentic_application_id} not found.")
-        result = result[0]
+        result: dict = result[0]
+
+        validation_criteria = result.get("validation_criteria", [])
+        if isinstance(validation_criteria, str):
+            try:
+                validation_criteria = json.loads(validation_criteria)
+            except Exception as e:
+                log.error(f"Error parsing validation criteria for Agentic Application ID {agentic_application_id}: {e}")
+                validation_criteria = []
 
         agent_config = {
             "AGENT_NAME": result["agentic_application_name"],
@@ -156,10 +196,106 @@ class AbstractBaseInference(ABC):
             "TOOLS_INFO": json.loads(result["tools_id"]),
             "AGENT_DESCRIPTION": result["agentic_application_description"],
             "WORKFLOW_DESCRIPTION": result["agentic_application_workflow_description"],
-            "AGENT_TYPE": result['agentic_application_type']
+            "AGENT_TYPE": result['agentic_application_type'],
+            "VALIDATION_CRITERIA": validation_criteria
         }
         log.info(f"Agent tools configuration retrieved for Agentic Application ID: {agentic_application_id}")
         return agent_config
+
+    async def _get_validator_tool_instance(self, validator_tool_id: str) -> Optional[Callable]:
+        """
+        Retrieves and returns an executable validator function from the given validator tool ID.
+        
+        Args:
+            validator_tool_id (str): The ID of the validator tool (e.g., "_validator_85b6330e-...")
+            
+        Returns:
+            Optional[Callable]: The executable validator function if found, None otherwise.
+            The function will have signature: func(query: str, response: str) -> dict
+        """
+        if not validator_tool_id:
+            return None
+            
+        try:
+            log.info(f"Loading validator tool for ID: {validator_tool_id}")
+            
+            # local_var for exec() context, including secrets handlers
+            local_var = {
+                "get_user_secrets": get_user_secrets,
+                "current_user_email": current_user_email,
+                "get_public_secrets": get_public_key
+            }
+            
+            # Get validator tool record from tool service
+            validator_tools = await self.tool_service.tool_repo.get_tool_record(tool_id=validator_tool_id)
+            if not validator_tools:
+                log.warning(f"Validator tool {validator_tool_id} not found")
+                return None
+            
+            validator_tool = validator_tools[0]
+            tool_name = validator_tool["tool_name"]
+            tool_code = validator_tool["code_snippet"]
+
+            if not tool_code:
+                log.warning(f"Validator tool {validator_tool_id} has no code snippet")
+                return None
+            
+            # Execute the tool code to define the function
+            exec(tool_code, {"__builtins__": __builtins__, **local_var}, local_var)
+            
+            # Find the validator function (should have _validator in the name or be the only function)
+            validator_function = local_var.get(tool_name)
+
+            if validator_function:
+                log.info(f"Successfully loaded validator function from tool: {validator_tool_id}")
+            else:
+                log.warning(f"No callable function found in validator tool {validator_tool_id}")
+
+            return validator_function
+
+        except Exception as e:
+            log.error(f"Error loading validator tool {validator_tool_id}: {e}")
+            return None
+
+    async def _prepare_validation_criteria_with_tools(self, validation_criteria: List[dict]) -> List[dict]:
+        """
+        Processes validation criteria and replaces validator tool IDs with executable functions.
+        
+        Args:
+            validation_criteria: List of validation criteria dictionaries containing:
+                - query: The query pattern to match
+                - validator: Tool ID (e.g., "_validator_xxx") or None
+                - expected_answer: Expected behavior description
+                
+        Returns:
+            List of validation criteria with validator tool IDs replaced by executable functions.
+        """
+        if not validation_criteria:
+            return []
+            
+        processed_criteria = []
+        
+        for criteria in validation_criteria:
+            processed_item = criteria.copy()
+            validator_id = criteria.get("validator")
+            
+            if validator_id:
+                # Load the validator tool and replace the ID with the function
+                validator_func = await self._get_validator_tool_instance(validator_id)
+                if validator_func:
+                    processed_item["validator_function"] = validator_func
+                    log.info(f"Loaded validator function for criteria: {criteria.get('query', 'Unknown')[:50]}...")
+                else:
+                    log.warning(f"Could not load validator function for ID: {validator_id}")
+                    processed_item["validator_function"] = None
+            else:
+                processed_item["validator_function"] = None
+                
+            processed_criteria.append(processed_item)
+            
+        log.info(f"Processed {len(processed_criteria)} validation criteria, "
+                 f"{sum(1 for c in processed_criteria if c.get('validator_function'))} with tool validators")
+        return processed_criteria
 
     # Abstract Methods
 

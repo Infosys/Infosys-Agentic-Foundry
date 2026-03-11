@@ -40,6 +40,18 @@ def push_project(source_project_dir: Path, agent_name: str | Path,GITHUB_USERNAM
             shutil.copytree(source_project_dir, temp_clone_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns('.git'))
 
 
+            log.info("Searching for and removing '.env' files before committing...")
+            dotenv_files = list(temp_clone_dir.rglob('.env'))
+            if dotenv_files:
+                for dotenv_file in dotenv_files:
+                    try:
+                        dotenv_file.unlink() # unlink() is the pathlib method for deleting a file
+                        log.warning(f"  - Removed sensitive file: {dotenv_file}")
+                    except OSError as e:
+                        log.error(f"  - Error removing .env file at {dotenv_file}: {e}")
+            else:
+                log.info("No '.env' files found to remove.")
+
             # --- THIS IS THE FIX ---
             # 1. Stage the new files
             repo.git.add(A=True)

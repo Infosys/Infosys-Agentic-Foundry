@@ -4,36 +4,43 @@ node_modules/
 env/
 new/
 *__pycache__/
+.env
+migration-info.json
 
 *.db
 *.db-shm
 *.db-wal
 
-.env
+.env.example
 
 *.ipynb
 *.zip
 !Export_Agent/Frontend-Export.zip
 Export_Agent/Agentcode/Agent_Frontend/
 
+rbac.txt
+query.py
+query_domain.py
+temp_handler.py
+SHARING_SYSTEM_DOCUMENTATION.md
+
 .vscode/
 
 src/inference/chat_logs/
 agent_workspaces/
 onboarded_tools/
-user_uploads/
+user_uploads/*
 evaluation_uploads/
 uploaded_sqlite_dbs/
 temp_previews/
 responses_temp/
 outputs/
 sdlc/
+endor/
 Hugging_face/
 all-MiniLM-L6-v2 (3)/
 bge-reranker-large/
-
-all-MiniLM-L6-v2 (3)/
-bge-reranker-large/
+endor/
 
 ./personal_learning.py
 ./index.html
@@ -45,3 +52,10 @@ my_env
 !Export_Agent/Agentcode/Agent_Frontend/.env
 test_mcp_ttl_and_unused.py
 test_mcp_recycle_bin.py
+!user_uploads/ai_led_renewal_insurance_policy.db
+!user_uploads/SupplyChain.db
+!user_uploads/demand_forecasting_product_sales.db
+!user_uploads/demand_forecasting_tracking.db
+!user_uploads/customer_loyalty_agent_database.db
+!user_uploads/production_demand_forecast.csv
+!user_uploads/production_manufacturing.db

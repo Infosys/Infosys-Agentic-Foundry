@@ -113,7 +113,7 @@ You will be provided with a Python function and must:
 - **Do **not** explain your decision.
 - **Keep the suggestion short, specific, and actionable.
 - **Do **not** explain the decision. Just return the boolean and the suggestion.
-- **NEVER check for Hardcoded values, API keys, passwords, tokens, or other sensitive data if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
+- **NEVER check for Hardcoded values, API keys, passwords, tokens, or other sensitive data if they access through get_user_secrets(),get_public_key(),get_group_secrets(), os.environ[] and os.getenv().
 - **Only** check for malicious code which might cause harm to the system.
 - **Do **not** check for any other validations except unsafe code.
 - **Do **not** check for eval() and exec() functions as unsafe code.
@@ -147,7 +147,7 @@ Please consider the following details:
 
 ## Instructions
 You will be provided with a Python function and:
-- **Check for any hardcoded values that resemble API keys, secrets, tokens, passwords only it is fine if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
+- **Check for any hardcoded values that resemble API keys, secrets, tokens, passwords only it is fine if they access through get_user_secrets(),get_public_key(),get_group_secrets(), os.environ[] and os.getenv().
 - **Classify the function as valid or invalid based on this criterion.
 - **Return a short and practical suggestion if invalid.
 - **Return your analysis using the format below.
@@ -161,17 +161,17 @@ You will be provided with a Python function and:
    ```json
    {{
 		"validation": False,
-		"suggestion": <specify which values are hardcoded and suggest to store them securely using secret vault and access by using functions like get_user_secrets(),get_public_secrets()>
+		"suggestion": <specify which values are hardcoded and suggest to store them securely using secret vault and access by using functions like get_user_secrets(),get_public_secrets(),get_group_secrets()>
    }}
    ```
 - **Return a single-line feedback message** — both in the `suggestion` field only.
 - **Do NOT use a separate `code` field.**
 - **Do **not** explain your decision. Just return the boolean and the suggestion.
 - **Keep the suggestion as it is.
-- **Allow** flag if the hardcoded values are inside  get_user_secrets(), get_public_key(), os.environ[], or os.getenv() like get_user_secrets('base_url', 'https://default-weather-api.com'),get_public_secrets('url',"https://openai-ppcazure017.openai.azure.com/") anything.
+- **Allow** flag if the hardcoded values are inside  get_user_secrets(), get_public_key(),get_group_secrets(), os.environ[], or os.getenv() like get_user_secrets('base_url', 'https://default-weather-api.com'),get_public_secrets('url',"https://openai-ppcazure017.openai.azure.com/"), get_group_secrets("Group_name", 'url',"https://openai-ppcazure017.openai.azure.com/") anything.
 - **Check for only Keys,email ids, passwords, tokens, endpoints and urls if they are hardcoded directly in the code.
 - **Ignore other hardcoded values like str,integers, float, list, dict, tuples, set etc if they not come under confidential data.
-- **Ignore if they access through get_user_secrets(),get_public_key(), os.environ[] and os.getenv().
+- **Ignore if they access through get_user_secrets(),get_public_key(), get_group_secrets() get_group_secrets os.environ[] and os.getenv().
 - **Do NOT check for public constants,internal identifiers,environment specific tags,client specific tags,models and non-confidential data.
 - **Do **not** check any other validations except hardcoded values like API keys,tokens,urls, email ids,passwords and endpoints.
 - **Do not flag default string values like 'faiss_index_hsbc' in function parameters as hardcoded secrets. These are internal configuration identifiers and are allowed unless they contain sensitive data such as credentials, API keys, or client-specific secrets.
@@ -180,7 +180,7 @@ You will be provided with a Python function and:
 - **Do not flag hardcoded values that are part of comments or docstrings within the code. These do not affect the execution of the program and are typically used for explanatory purposes.
 - **Do not flag hardcoded values that are assigned to variables or constants but are not sensitive in nature, such as configuration settings, feature flags, or non-confidential identifiers.
 - **Do **not** flag based on variable names that include terms like 'key', 'token', 'password', 'secret', or 'credential' unless the assigned value is actually a sensitive hardcoded value.
-- **Do **not** flag if the hardcoded values are inside  get_user_secrets(), get_public_key(), os.environ[], or os.getenv() like get_user_secrets('base_url', 'https://default-weather-api.com'),get_public_secrets('url',"https://openai-ppcazure017.openai.azure.com/") anything.
+- **Do **not** flag if the hardcoded values are inside  get_user_secrets(), get_public_key(), get_group_secrets(), os.environ[], or os.getenv() like get_user_secrets('base_url', 'https://default-weather-api.com'),get_public_secrets('url',"https://openai-ppcazure017.openai.azure.com/"), get_group_secrets("Group_name", 'url',"https://openai-ppcazure017.openai.azure.com/") anything.
 - **Do **not** flag code that uses external libraries or modules to manage secrets, such as `dotenv`, `keyring`, or cloud provider SDKs, unless they contain hardcoded sensitive values as defined above.
 - **Do **not** flag if the values are hardcoded inside triple quotes (""" """) or (''' ''') as they are generally used for multi-line strings or docstrings.
 - **Do **not** flag if the values are hardcoded inside function definition parameters with default values.

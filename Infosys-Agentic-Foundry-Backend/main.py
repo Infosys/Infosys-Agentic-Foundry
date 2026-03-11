@@ -15,16 +15,23 @@ from src.utils.helper_functions import resolve_and_get_additional_no_proxys
 os.environ["NO_PROXY"] = resolve_and_get_additional_no_proxys()
 
 from src.config.settings import IS_PRODUCTION
+from src.config.constants import DatabaseName
+from src.config.application_config import app_config
 from src.api.app_container import app_container
 from src.api import (
-    tool_router, agent_router, chat_router, evaluation_router, feedback_learning_router,
-    secrets_router, tag_router, utility_router, data_connector_router, deprecated_router,
-    pipeline_router
+    mcp_conversion_router, tool_router, agent_router, chat_router, evaluation_router, feedback_learning_router,
+    secrets_router, tag_router, utility_router, data_connector_router, user_agent_access_router,
+    group_router, group_keys_router, pipeline_router
 )
+from src.api.admin_config_endpoints import router as admin_config_router
+from src.api.resource_dashboard_endpoints import router as resource_dashboard_router
+from src.api.resource_allocation_endpoints import router as resource_allocation_router
 from src.api.evaluation_endpoints import cleanup_old_files
 
 from src.auth.middleware import AuditMiddleware, AuthenticationMiddleware
 from src.auth.routes import router as auth_router
+from src.api.role_access_endpoints import router as role_access_router
+from src.api.department_endpoints import router as department_router
 
 from src.utils.gzip_middleware import CustomGZipMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -35,9 +42,9 @@ from telemetry_wrapper import logger as log
 load_dotenv()
 
 # Set Phoenix collector endpoint
-os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
+os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "")
 os.environ["PHOENIX_GRPC_PORT"] = os.getenv("PHOENIX_GRPC_PORT",'50051')
-os.environ["PHOENIX_SQL_DATABASE_URL"] = os.getenv("PHOENIX_SQL_DATABASE_URL")
+os.environ["PHOENIX_SQL_DATABASE_URL"] = app_config.postgres_db.connection_string(database=DatabaseName.ARIZE_TRACES)
 
 
 # --- Lifespan Function (for FastAPI) ---
@@ -159,6 +166,8 @@ app.add_middleware(CustomGZipMiddleware, minimum_size=500, compresslevel=5)
 
 # Various routers for different functionalities
 app.include_router(auth_router)
+app.include_router(role_access_router)
+app.include_router(department_router)
 app.include_router(tool_router)
 app.include_router(agent_router)
 app.include_router(chat_router)
@@ -167,9 +176,15 @@ app.include_router(feedback_learning_router)
 app.include_router(secrets_router)
 app.include_router(tag_router)
 app.include_router(utility_router)
-app.include_router(data_connector_router)
-app.include_router(deprecated_router)
 app.include_router(pipeline_router)
+app.include_router(admin_config_router)
+app.include_router(data_connector_router)
+app.include_router(mcp_conversion_router)
+app.include_router(user_agent_access_router)
+app.include_router(group_router)
+app.include_router(group_keys_router)
+app.include_router(resource_dashboard_router)  # Resource Dashboard for access key management
+app.include_router(resource_allocation_router)  # Resource Allocation Management (admin only)
 
 
 # Configure CORS
@@ -226,8 +241,8 @@ async def health_check():
         try:
             if hasattr(app_container, 'db_manager') and app_container.db_manager:
                 # Attempt a simple database query to verify connectivity
-                # Use the main database pool (first in the REQUIRED_DATABASES list)
-                pool = await app_container.db_manager.get_pool(app_container.db_manager.REQUIRED_DATABASES[0])
+                # Use the main database pool
+                pool = await app_container.db_manager.get_pool(DatabaseName.MAIN.db_name)
                 if pool:
                     async with pool.acquire() as connection:
                         await connection.fetchval("SELECT 1")

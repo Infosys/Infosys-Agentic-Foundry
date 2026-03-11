@@ -210,14 +210,11 @@
         ENDPOINT_URL_PREFIX=your_endpoint_url_prefix
         utility_endpoint_URL_prefix=your_utility_endpoint_url_prefix
 
-        DATABASE_URL=your_postgres_connection_string
         POSTGRESQL_HOST=your_postgres_host
         POSTGRESQL_USER=your_postgres_user
         POSTGRESQL_PASSWORD=your_postgres_password
         DATABASE=your_database_name
-        POSTGRESQL_DATABASE_URL=your_postgres_database_url
 
-        PHOENIX_SQL_DATABASE_URL=your_phoenix_sql_database_url
         PHOENIX_COLLECTOR_ENDPOINT=your_phoenix_collector_endpoint
         PHOENIX_GRPC_PORT=your_phoenix_grpc_port
         SBERT_MODEL_PATH=path_to_your_local_all-MiniLM-L6-v2

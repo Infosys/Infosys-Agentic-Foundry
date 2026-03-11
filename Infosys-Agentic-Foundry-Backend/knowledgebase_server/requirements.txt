@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+asyncpg
+numpy
+python-dotenv
+requests
+python-multipart
+PyPDF2
+python-docx
+PyMuPDF
+Pillow
+rapidocr-onnxruntime

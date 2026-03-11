@@ -66,15 +66,15 @@ class RedisPostgresManager:
     """
     
     def __init__(self, 
-            redis_host=os.getenv("REDIS_HOST"),
-            redis_port=int(os.getenv("REDIS_PORT")),
-            redis_db=int(os.getenv("REDIS_DB")),
-            redis_password=os.getenv("REDIS_PASSWORD"),
-            postgres_host=os.getenv("POSTGRESQL_HOST"),
-            postgres_port=int(os.getenv("POSTGRESQL_PORT")),
+            redis_host=os.getenv("REDIS_HOST", "localhost"),
+            redis_port=int(os.getenv("REDIS_PORT", 6379)),
+            redis_db=int(os.getenv("REDIS_DB", 0)),
+            redis_password=os.getenv("REDIS_PASSWORD", ""),
+            postgres_host=os.getenv("POSTGRESQL_HOST", "localhost"),
+            postgres_port=int(os.getenv("POSTGRESQL_PORT", 5432)),
             postgres_db=os.getenv("DATABASE", "agentic_workflow_as_service_database"),
-            postgres_user=os.getenv("POSTGRESQL_USER"),
-            postgres_password=os.getenv("POSTGRESQL_PASSWORD"),
+            postgres_user=os.getenv("POSTGRESQL_USER", "postgres"),
+            postgres_password=os.getenv("POSTGRESQL_PASSWORD", ""),
             postgres_table="memory_records",
             cache_threshold: int = 100,
             cache_ttl: int = 3600):

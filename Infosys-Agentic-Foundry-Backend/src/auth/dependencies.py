@@ -3,6 +3,7 @@ from fastapi import HTTPException, Request, Depends, status
 from src.auth.models import User, UserRole, Permission
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
+from src.decorators.tool_access import ToolUserContext, set_tool_user_context
 from telemetry_wrapper import logger as log
 from src.api.dependencies import ServiceProvider
 
@@ -54,7 +55,7 @@ def require_role(required_role: UserRole):
         current_user: User = Depends(get_current_user),
         authz_service: AuthorizationService = Depends(get_authorization_service)
     ):
-        if not await authz_service.has_role(current_user.id, required_role):
+        if not await authz_service.has_role(current_user.id, required_role, department_name=current_user.department_name):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Role {required_role.value} required"
@@ -69,7 +70,7 @@ def require_permission(permission: Permission):
         current_user: User = Depends(get_current_user),
         authz_service: AuthorizationService = Depends(get_authorization_service)
     ):
-        if not await authz_service.has_permission(current_user.id, permission):
+        if not await authz_service.has_permission(current_user.id, permission, department_name=current_user.department_name):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Permission {permission.value} required"
@@ -158,3 +159,55 @@ async def require_active_user(
             detail="User account is not active"
         )
     return current_user
+
+
+async def setup_tool_user_context(
+    request: Request,
+    current_user: User = Depends(get_current_user)
+) -> ToolUserContext:
+    """
+    Build and set ToolUserContext for tool access control decorators.
+    
+    This dependency should be used in inference endpoints to enable
+    @resource_access and @require_role decorators on tools.
+    
+    Usage in endpoint:
+        @router.post("/inference")
+        async def inference(
+            tool_context: ToolUserContext = Depends(setup_tool_user_context),
+            ...
+        ):
+            # tool_context is now set in ContextVar
+            # All tools with decorators will automatically check access
+    """
+    # Get user access keys from database
+    try:
+        user_access_repo = ServiceProvider.get_user_access_key_repository()
+        resource_access = await user_access_repo.get_user_access_keys(current_user.email, department_name=current_user.department_name)
+        resource_exclusions = await user_access_repo.get_user_excluded_values(current_user.email, department_name=current_user.department_name)
+    except Exception as e:
+        log.warning(f"Could not load user access keys: {e}")
+        resource_access = {}
+        resource_exclusions = {}
+    
+    # Get token from request
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.split(" ", 1)[1] if auth_header.startswith("Bearer ") else None
+    
+    # Build context
+    tool_context = ToolUserContext(
+        user_id=current_user.email,
+        email=current_user.email,
+        role=current_user.role,
+        department=current_user.department_name,
+        token=token,
+        resource_access=resource_access,
+        resource_exclusions=resource_exclusions
+    )
+    
+    # Set in ContextVar for decorators to access
+    set_tool_user_context(tool_context)
+    
+    log.debug(f"Tool user context set for {current_user.email}, access_keys: {list(resource_access.keys())}, exclusions: {list(resource_exclusions.keys())}")
+    
+    return tool_context

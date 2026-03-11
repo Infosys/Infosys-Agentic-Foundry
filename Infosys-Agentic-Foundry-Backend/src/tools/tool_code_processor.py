@@ -1,12 +1,12 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import ast
+import json
 import re
 import astor
+from typing import List
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 from src.prompts.prompts import tool_prompt_generator
-from telemetry_wrapper import logger as log
-
 from telemetry_wrapper import logger as log
 
 
@@ -88,6 +88,7 @@ def safe_to_source(tree: ast.AST) -> str:
     code = re.sub(r'(?<!\*)\*([a-zA-Z_][a-zA-Z0-9_]*)\s+and\s+([a-zA-Z_][a-zA-Z0-9_]*)', r'*(\1 and \2)', code)
     
     return code
+
 
 class ToolCodeProcessor:
     """
@@ -397,3 +398,182 @@ class ToolCodeProcessor:
             log.warning(f"Runtime validation error: {e}")
             return False
 
+
+    @staticmethod
+    async def modify_tool_for_kafka(code_snippet: str) -> str:
+        """
+        Transforms a Python function to send messages to Kafka instead of executing directly.
+        Preserves the original docstring and function signature.
+    
+        Args:
+            code_snippet (str): The original function code as a string
+        
+        Returns:
+            str: Modified function code as a string that sends messages to Kafka
+        """
+    
+        # Handle JSON string input
+        if code_snippet.strip().startswith('"') and code_snippet.strip().endswith('"'):
+            try:
+            # Parse JSON string and handle escaped characters
+                code_snippet = json.loads(code_snippet)
+            except json.JSONDecodeError:
+            # If it's not valid JSON, treat as raw string
+                pass
+    
+    # Parse the AST to extract function details
+        try:
+            tree = ast.parse(code_snippet)
+        
+        # Find the function definition
+            function_def = None
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    function_def = node
+                    break
+        
+            if not function_def:
+                raise ValueError("No function definition found in the code snippet")
+        
+        # Extract function details
+            func_name = function_def.name
+        
+        # Get the docstring
+            docstring = ast.get_docstring(function_def) 
+            docstring_lines = []
+            if docstring:
+                # Format docstring with proper indentation
+                docstring_lines = [
+                    '    """',
+                    *[f'    {line}' if line.strip() else '    ' for line in docstring.split('\n')],
+                    '    """'
+                ]
+        
+        # Extract function signature
+            args = []
+            for arg in function_def.args.args:
+                arg_name = arg.arg
+            # Try to get type annotation
+                if arg.annotation:
+                    if isinstance(arg.annotation, ast.Name):
+                        arg_type = arg.annotation.id
+                    elif isinstance(arg.annotation, ast.Constant):
+                        arg_type = str(arg.annotation.value)
+                    else:
+                        arg_type = "str"  # default
+                else:
+                    arg_type = "str"  # default if no annotation
+                args.append(f"{arg_name}:{arg_type}")
+        
+        # Get return type annotation
+            return_type = "str"  # default
+            if function_def.returns:
+                if isinstance(function_def.returns, ast.Name):
+                    return_type = function_def.returns.id
+                elif isinstance(function_def.returns, ast.Constant):
+                    return_type = str(function_def.returns.value)
+        
+        # Build function signature - add session_id as optional parameter
+            signature = f"def {func_name}_message_queue({', '.join(args)}, session_id: str = None)->{return_type}:"
+        
+            # Create argument dictionary for Kafka message
+            arg_names = [arg.split(':')[0] for arg in args]
+            args_dict = ', '.join([f"'{arg}': {arg}" for arg in arg_names])
+            args_dict_str="{" + args_dict + "}"
+        
+            # Generate the modified function
+            function_body = [
+                "    from src.database.kafka_handler import send_message_to_kafka_topic",
+                "",
+                f"    args = {{{args_dict}}}",
+                "",
+                f"    print(f'🔧 Tool \\'{func_name}\\' activated for session: {{session_id}}')",
+                f"    print(f'📦 Arguments collected: {{args}}')",
+                "",
+                "    # Send message to Kafka topic with session_id",
+                f"    send_message_to_kafka_topic('{func_name}', args, session_id)",
+                "",
+                f"    return f'Message sent to {func_name} topic with args: {{args}} for session: {{session_id}}'"
+            ]
+
+            modified_function_lines = [signature]
+            if docstring_lines:
+                modified_function_lines.extend(docstring_lines)
+            modified_function_lines.extend(function_body)
+        
+            modified_function = '\n'.join(modified_function_lines)
+
+            return modified_function
+
+        except Exception as e:
+            raise ValueError(f"Error parsing function code: {str(e)}")
+
+
+    @staticmethod
+    def extract_access_keys_from_code(code_str: str) -> List[str]:
+        """
+        Parse tool code and extract access_keys from @resource_access decorators.
+        
+        Looks for patterns like:
+        - @resource_access("employees", "emp_id")
+        - @resource_access(access_key="employees", param_name="emp_id")
+        - @authorized_tool(resource_checks={"employees": "emp_id", "projects": "proj_id"})
+        
+        Args:
+            code_str: The tool's source code
+            
+        Returns:
+            List of unique access_key strings found in decorators.
+            Returns empty list if no access control decorators found.
+        """
+        access_keys = set()
+        
+        try:
+            parsed_code = ast.parse(code_str)
+        except SyntaxError as e:
+            log.warning(f"Could not parse code for access key extraction: {e}")
+            return []
+        
+        for node in ast.walk(parsed_code):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for decorator in node.decorator_list:
+                    # Handle @resource_access("access_key", "param_name")
+                    if isinstance(decorator, ast.Call):
+                        decorator_name = None
+                        if isinstance(decorator.func, ast.Name):
+                            decorator_name = decorator.func.id
+                        elif isinstance(decorator.func, ast.Attribute):
+                            decorator_name = decorator.func.attr
+                        
+                        if decorator_name == "resource_access":
+                            # First positional arg is access_key
+                            if decorator.args and len(decorator.args) >= 1:
+                                first_arg = decorator.args[0]
+                                if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+                                    access_keys.add(first_arg.value)
+                                elif isinstance(first_arg, ast.Str):  # Python 3.7 compatibility
+                                    access_keys.add(first_arg.s)
+                            
+                            # Also check keyword arguments
+                            for keyword in decorator.keywords:
+                                if keyword.arg == "access_key":
+                                    if isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+                                        access_keys.add(keyword.value.value)
+                                    elif isinstance(keyword.value, ast.Str):
+                                        access_keys.add(keyword.value.s)
+                        
+                        elif decorator_name == "authorized_tool":
+                            # Look for resource_checks={"key": "param", ...}
+                            for keyword in decorator.keywords:
+                                if keyword.arg == "resource_checks":
+                                    if isinstance(keyword.value, ast.Dict):
+                                        for key in keyword.value.keys:
+                                            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                                                access_keys.add(key.value)
+                                            elif isinstance(key, ast.Str):
+                                                access_keys.add(key.s)
+        
+        result = list(access_keys)
+        if result:
+            log.info(f"Extracted access keys from tool code: {result}")
+        return result

@@ -5,17 +5,13 @@ from typing import List, Optional, Union, Dict
 from telemetry_wrapper import logger as log
 from dotenv import load_dotenv
 
+from src.config.constants import DatabaseName
+from src.config.application_config import app_config, PostgresDatabaseConfig
+
 load_dotenv()
 
 
-REQUIRED_DATABASES = [
-            os.getenv("DATABASE", "agentic_workflow_as_service_database"),
-            os.getenv("FEEDBACK_LEARNING_DB_NAME", "feedback_learning"),
-            os.getenv("EVALUATION_LOGS_DB_NAME", "evaluation_logs"),
-            os.getenv("RECYCLE_DB_NAME", "recycle"),
-            os.getenv("LOGIN_DB_NAME", "login"),
-            os.getenv("ARIZE_TRACES_DB_NAME", "arize_traces")
-        ]
+REQUIRED_DATABASES = app_config.postgres_db.required_databases
 
 class DatabaseManager:
     """
@@ -26,29 +22,19 @@ class DatabaseManager:
     - Connect to and disconnect from these databases.
     - Retrieve specific connection pools by name.
     - Perform administrative tasks like checking/creating databases and truncating/deleting tables.
-
-    It uses environment variables for database configuration:
-    - DATABASE: The actual name of the primary/main database (e.g., "agentic_workflow_as_service_database").
-    - POSTGRESQL_DB_URL_PREFIX: The URL prefix (e.g., "postgresql://user:pass@host:port/")
-                                to which database names are appended.
     """
 
-    def __init__(self, alias_to_main_db: str = 'db_main'):
+    def __init__(self):
         """
         Initializes the DatabaseManager.
 
         The `pools` dictionary will store active connection pools, keyed by database name.
-        The main database's pool will also be accessible via a configurable alias (default 'db_main').
-
-        Args:
-            alias_to_main_db (str): The alias key to use for the main database's connection pool
-                                    in the `self.pools` dictionary. Defaults to 'db_main'.
         """
         self.pools: Dict[str, asyncpg.Pool] = {}
-        self.db_main: str = os.getenv("DATABASE", "") # Actual name of the main database
-        self.db_url_prefix: str = os.getenv("POSTGRESQL_DB_URL_PREFIX", "")
-        self.alias: str = alias_to_main_db # The alias key for the main database pool
-        self.REQUIRED_DATABASES = REQUIRED_DATABASES
+        self.db_config: PostgresDatabaseConfig = app_config.postgres_db
+        self.db_main: str = DatabaseName.MAIN.db_name
+        self.db_url_prefix: str = self.db_config.url_prefix
+        self.REQUIRED_DATABASES = app_config.postgres_db.required_databases
 
 
     async def check_and_create_databases(self, required_db_names: List[str]):
@@ -70,13 +56,11 @@ class DatabaseManager:
         # This connection is temporary and closed immediately after use.
         conn = None
         try:
-            conn = await asyncpg.connect(f"{self.db_url_prefix}postgres")
+            conn = await asyncpg.connect(f"{self.db_url_prefix}{self.db_config.admin_database_name}")
             log.info(f"Connected to 'postgres' database for initial setup.")
 
             # Ensure all required databases exist
             for db_name in required_db_names:
-                if db_name == self.alias:
-                    db_name = self.db_main # Resolve alias to actual main DB name
                 exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", db_name)
                 if not exists:
                     log.info(f"Database '{db_name}' not found. Creating...")
@@ -110,9 +94,6 @@ class DatabaseManager:
         - `db_main_min_size`, `db_main_max_size`: Custom pool sizes specifically for the main database.
                                                   If provided, these override the global defaults for the main DB.
 
-        The main database's pool is stored under its actual name (from DATABASE env var)
-        and also aliased under the key `self.alias` (default 'db_main') in `self.pools` for convenience.
-
         Args:
             db_names (Optional[Union[List[str], str]]): A list of database names or a single database name to connect to.
                 If None, only the main database is connected.
@@ -139,8 +120,6 @@ class DatabaseManager:
 
 
         for db_name_actual in databases_to_connect_actual_names:
-            if db_name_actual == self.alias:
-                db_name_actual = self.db_main # Resolve alias to actual main DB name
             # Skip if pool already exists for this database name
             if db_name_actual in self.pools:
                 log.warning(f"Connection pool for '{db_name_actual}' already exists. Skipping creation.")
@@ -163,10 +142,6 @@ class DatabaseManager:
                 )
                 self.pools[db_name_actual] = pool
                 
-                # Alias the main database pool for convenience
-                if db_name_actual == self.db_main:
-                    self.pools[self.alias] = pool
-                
                 log.info(f"Connection pool for database '{db_name_actual}' created successfully (min={current_min_size}, max={current_max_size}).")
             except Exception as e:
                 log.error(f"Failed to create pool for database '{db_name_actual}': {e}")
@@ -176,8 +151,7 @@ class DatabaseManager:
         Retrieves a specific connection pool by its name.
 
         Args:
-            name (str): The name of the database (e.g., 'feedback_learning', 'login')
-                        or the alias `self.alias` (default 'db_main') for the primary database.
+            name (str): The name of the database (e.g., 'feedback_learning', 'login').
 
         Returns:
             asyncpg.Pool: The requested connection pool.
@@ -200,10 +174,8 @@ class DatabaseManager:
 
         Args:
             db_names (Optional[Union[List[str], str]]): A list of database names or a single database name to close.
-                                                        Can use `self.alias` or the actual main database name.
         """
         if db_names is None:
-            self.pools.pop(self.alias, None)
             db_names = list(self.pools.keys())
         elif isinstance(db_names, str):
             db_names = [db_names]
@@ -212,10 +184,6 @@ class DatabaseManager:
             pool = self.pools.pop(db_name, None)
             if pool:
                 await pool.close()
-                if db_name == self.alias:
-                    self.pools.pop(self.db_main, None)
-                elif db_name == self.db_main:
-                    self.pools.pop(self.alias, None)
                 log.info(f"Connection pool '{db_name}' closed.")
             else:
                 log.warning(f"Connection pool '{db_name}' does not exist or is already closed.")
@@ -227,7 +195,6 @@ class DatabaseManager:
         Args:
             table_name (str): The name of the table to delete.
             db_name (str): The name of the database where the table resides.
-                           Can be the actual database name or `self.alias`.
         """
         try:
             pool = await self.get_pool(db_name) # Use get_pool to retrieve the correct pool
@@ -250,7 +217,6 @@ class DatabaseManager:
         Args:
             table_name (str): The name of the table to truncate.
             db_name (str): The name of the database where the table resides.
-                           Can be the actual database name or `self.alias`.
         """
         try:
             pool = await self.get_pool(db_name) # Use get_pool to retrieve the correct pool

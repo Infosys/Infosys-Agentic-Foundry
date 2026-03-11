@@ -5,7 +5,6 @@ from typing import List, Dict, Set, Tuple
 try:
     from importlib.metadata import distributions, distribution, PackageNotFoundError
 except ImportError:
-    # Fallback for Python < 3.8
     from importlib_metadata import distributions, distribution, PackageNotFoundError
 
 parent_dir = Path(__file__).resolve().parent.parent
@@ -18,11 +17,15 @@ from src.utils.analyze_dependencies import (
     ImportAnalyzer,
     StringImportExtractor
 )
+from telemetry_wrapper import logger as log
 
 class ExportDependencyAnalyzer(DependencyAnalyzer):
     """
     Analyzes Export_Agent folder and tool code dependencies dynamically.
     """
+    
+    _file_imports_cache = None
+    _file_cache_initialized = False
     
     def __init__(self, export_agent_path: str, requirements_path: str, tool_code_strings: List[str] = None):
         super().__init__(export_agent_path, exclude_dirs=['__pycache__'])
@@ -30,36 +33,14 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
         self.requirements_path = Path(requirements_path).resolve()
         self.tool_code_strings = tool_code_strings or []
         self.requirements_comparator = None
-        self.import_to_package_cache = {}  
     
-    def map_import_to_package(self, import_name: str) -> str:
-        """Map an import name to its corresponding package name."""
-        top_level = import_name.split('.')[0]
-        if top_level in self.import_to_package_cache:
-            return self.import_to_package_cache[top_level]
-        try:
-            for dist in distributions():
-                try:
-                    if dist.read_text('top_level.txt'):
-                        top_level_modules = dist.read_text('top_level.txt').split()
-                        if top_level in top_level_modules:
-                            pkg_name = dist.name
-                            self.import_to_package_cache[top_level] = pkg_name
-                            return pkg_name
-                    
-                    if dist.read_text('RECORD'):
-                        record = dist.read_text('RECORD')
-                        for line in record.split('\n')[:100]:
-                            if line.startswith(f"{top_level}/"):
-                                pkg_name = dist.name
-                                self.import_to_package_cache[top_level] = pkg_name
-                                return pkg_name
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        
-        return top_level
+    @classmethod
+    def reset_cache(cls):
+        """Reset all caches. Useful if packages are installed/uninstalled or files change."""
+        log.info("Resetting ExportDependencyAnalyzer caches.")
+        DependencyAnalyzer.reset_cache()
+        cls._file_imports_cache = None
+        cls._file_cache_initialized = False
     
     def _get_base_export_requirements(self) -> List[str]:
         """
@@ -111,10 +92,18 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                 available_lower = available_pkg.lower()
                 if available_lower.startswith(family_root + '-') or available_lower == family_root:
                     runtime_deps[available_pkg] = all_available_packages[available_pkg]
-        keyword_mappings = self._get_keyword_package_mappings()
+        
+        keyword_mappings = {
+            'postgres': ['psycopg'],
+            'mysql': ['mysql'],
+        }
 
         for keyword, package_prefixes in keyword_mappings.items():
-            if self._has_keyword_dependency(base_packages, base_imports, keyword):
+            keyword_lower = keyword.lower()
+            has_keyword = any(keyword_lower in pkg.lower() for pkg in base_packages) or \
+                          any(keyword_lower in imp.lower() for imp in base_imports)
+            
+            if has_keyword:
                 for available_pkg in all_available_packages:
                     if available_pkg in base_packages or available_pkg in runtime_deps:
                         continue
@@ -181,38 +170,6 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                         families.add(base_name)
         
         return families
-    
-    def _get_keyword_package_mappings(self) -> Dict[str, List[str]]:
-        """
-        Get keyword-to-package-prefix mappings for special dependencies.
-        These handle cases where import names differ from package names.
-        
-        Returns:
-            Dict mapping keywords to lists of package prefixes
-        """
-        return {
-            'postgres': ['psycopg'],
-            'mysql': ['mysql'],
-        }
-    
-    def _has_keyword_dependency(self, packages: Set[str], imports: Set[str], keyword: str) -> bool:
-        """
-        Check if any package or import contains the given keyword.
-        
-        Returns:
-            True if keyword is found in packages or imports
-        """
-        keyword_lower = keyword.lower()
-        
-        for pkg in packages:
-            if keyword_lower in pkg.lower():
-                return True
-        
-        for imp in imports:
-            if keyword_lower in imp.lower():
-                return True
-        
-        return False
         
     def find_python_files(self) -> List[Path]:
         """
@@ -241,6 +198,31 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
         
         return python_files
     
+    def analyze_all_files(self) -> None:
+        """Analyze all Python files in the project and aggregate imports with caching."""
+        if self._file_cache_initialized and self._file_imports_cache is not None:
+            for import_type, imports in self._file_imports_cache.items():
+                self.all_imports[import_type].update(imports)
+            return
+        
+        ExportDependencyAnalyzer._file_imports_cache = {
+            'direct': set(),
+            'conditional': set(),
+            'dynamic': set(),
+            'indirect': set(),
+            'string_based': set()
+        }
+        
+        python_files = self.find_python_files()
+        
+        for py_file in python_files:
+            file_imports = self.analyze_file(py_file)
+            for import_type, imports in file_imports.items():
+                self.all_imports[import_type].update(imports)
+                self._file_imports_cache[import_type].update(imports)
+        
+        ExportDependencyAnalyzer._file_cache_initialized = True
+    
     def analyze_tool_codes(self) -> None:
         """Analyze tool code strings for imports using AST parsing."""
         if not self.tool_code_strings:
@@ -248,7 +230,7 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
         if not self.requirements_comparator:
             self.requirements_comparator = RequirementsComparator(str(self.requirements_path))
         
-        print(f"\n[Export Agent] Analyzing {len(self.tool_code_strings)} tool code(s) for dependencies...")
+        log.info(f"\n[Export Agent] Analyzing {len(self.tool_code_strings)} tool code(s) for dependencies...")
         
         tool_imports = set()
         
@@ -267,21 +249,21 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                 tool_imports.update(string_imports)
                 
             except Exception as e:
-                print(f"[Export Agent] Warning: Could not parse tool code {idx}: {e}")
+                log.warning(f"[Export Agent] Warning: Could not parse tool code {idx}: {e}")
                 continue
         
         if tool_imports:
-            print(f"[Export Agent] Raw imports from tool codes: {sorted(tool_imports)}")
+            log.info(f"[Export Agent] Raw imports from tool codes: {sorted(tool_imports)}")
         
         validated_tool_imports = self._validate_tool_imports(tool_imports)
         
         if validated_tool_imports:
-            print(f"[Export Agent] Validated tool imports: {sorted(validated_tool_imports)}")
+            log.info(f"[Export Agent] Validated tool imports: {sorted(validated_tool_imports)}")
             self.all_imports['direct'].update(validated_tool_imports)
             self.validated_tool_imports = validated_tool_imports
             self._tool_imports_logged = True
         else:
-            print("[Export Agent] No validated tool imports after filtering")
+            log.info("[Export Agent] No validated tool imports after filtering")
             self.validated_tool_imports = set()
     
     def _validate_tool_imports(self, tool_imports: Set[str]) -> Set[str]:
@@ -316,7 +298,7 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                     skipped.append((imp, "not a real package"))
         
         if skipped:
-            print(f"[Export Agent] Skipped imports: {skipped[:5]}...")
+            log.info(f"[Export Agent] Skipped imports: {skipped[:5]}...")
         
         return validated
     
@@ -331,12 +313,23 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
         return True
     
     def _is_real_package(self, top_level: str, full_import: str) -> bool:
-        """
-        Check if an import is a real installable package (not user-defined).
-        Dynamically discovers mappings from requirements.txt and installed packages.
-        """
+        """Check if an import is a real installable package using cache and distribution lookup."""
         if not self.requirements_comparator:
             return False
+        
+        if top_level in self._top_level_to_package_cache:
+            pkg_name = self._top_level_to_package_cache[top_level]
+            self.import_to_package_cache[top_level] = pkg_name
+            return True
+        
+        top_level_lower = top_level.lower()
+        if top_level_lower in self._top_level_to_package_cache:
+            pkg_name = self._top_level_to_package_cache[top_level_lower]
+            self.import_to_package_cache[top_level] = pkg_name
+            return True
+        
+        if top_level in self.import_to_package_cache:
+            return True
         
         try:
             dist = distribution(top_level)
@@ -362,39 +355,10 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
             normalized_alt = self.requirements_comparator.normalize_package_name(alt_name)
             if normalized_alt in self.requirements_comparator.requirements:
                 return True
-        
-        try:
-            for dist in distributions():
-                try:
-                    if dist.read_text('top_level.txt'):
-                        top_level_modules = dist.read_text('top_level.txt').split()
-                        if top_level in top_level_modules:
-                            pkg_name = self.requirements_comparator.normalize_package_name(dist.name)
-                            self.import_to_package_cache[top_level] = pkg_name
-                            return True
-                    
-                    if dist.read_text('RECORD'):
-                        record = dist.read_text('RECORD')
-                        top_level_dirs = set()
-                        for line in record.split('\n'):
-                            if line.strip() and not line.startswith(dist.name.replace('-', '_')):
-                                parts = line.split('/')
-                                if len(parts) > 0 and not parts[0].endswith('.dist-info'):
-                                    first_part = parts[0].split(',')[0]
-                                    if first_part and not first_part.startswith('.') and first_part[0].isalpha():
-                                        top_level_dirs.add(first_part)
-                        
-                        if top_level in top_level_dirs:
-                            pkg_name = self.requirements_comparator.normalize_package_name(dist.name)
-                            self.import_to_package_cache[top_level] = pkg_name
-                            return True
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        
-        if top_level in self.import_to_package_cache:
-            return True
+            if alt_name in self._top_level_to_package_cache:
+                pkg_name = self._top_level_to_package_cache[alt_name]
+                self.import_to_package_cache[top_level] = pkg_name
+                return True
         
         try:
             mapped_package = self.map_import_to_package(top_level)
@@ -411,6 +375,9 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                     pass
         except Exception:
             pass
+        
+        if top_level in self.import_to_package_cache:
+            return True
         
         return False
     
@@ -431,25 +398,23 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
         """
         Generate requirements: Base export agent dependencies + tool-specific dependencies.
         """
-        print("[Export Agent] Analyzing dependencies for export agent functionality...")
+        log.info("[Export Agent] Analyzing dependencies for export agent functionality...")
         
         self.requirements_comparator = RequirementsComparator(str(self.requirements_path))
         
-        print("[Export Agent] Analyzing base export agent dependencies...")
+        log.info("[Export Agent] Analyzing base export agent dependencies...")
         base_requirements = self._get_base_export_requirements()
         base_packages = self._extract_package_names(base_requirements)
         base_imports = self.get_all_unique_imports().copy()
-        print(f"[Export Agent] Base export agent dependencies: {len(base_packages)} packages")
+        log.info(f"[Export Agent] Base export agent dependencies: {len(base_packages)} packages")
         
         if self.tool_code_strings:
-            if not hasattr(self, 'validated_tool_imports'):
-                self.analyze_tool_codes()
+            log.info(f"\n[Export Agent] Analyzing {len(self.tool_code_strings)} tool code(s) for dependencies...")
+            self.analyze_tool_codes()
             
             if hasattr(self, 'validated_tool_imports') and self.validated_tool_imports:
                 tool_imports = self.validated_tool_imports
-                if not hasattr(self, '_tool_imports_logged'):
-                    print(f"[Export Agent] Validated tool imports: {sorted(tool_imports)}")
-                    self._tool_imports_logged = True
+                log.info(f"[Export Agent] Validated tool imports: {sorted(tool_imports)}")
                 
                 tool_import_to_package = self._build_import_to_package_map(tool_imports)
                 
@@ -461,7 +426,7 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                         tool_packages_in_base.add(normalized)
                 
                 if tool_packages_in_base:
-                    print(f"[Export Agent] Tool packages already in base: {sorted(tool_packages_in_base)}")
+                    log.info(f"[Export Agent] Tool packages already in base: {sorted(tool_packages_in_base)}")
                 
                 tool_requirements_from_base = self.requirements_comparator.generate_optimized_requirements(
                     tool_imports,
@@ -472,13 +437,13 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                 new_tool_packages = tool_packages - base_packages
                 
                 if new_tool_packages:
-                    print(f"[Export Agent] New tool packages from requirements.txt: {len(new_tool_packages)}")
+                    log.info(f"[Export Agent] New tool packages from requirements.txt: {len(new_tool_packages)}")
                     for pkg in sorted(new_tool_packages):
                         if pkg in self.requirements_comparator.requirements:
                             req_line = f"{pkg}{self.requirements_comparator.requirements[pkg]}"
                             if req_line not in base_requirements:
                                 base_requirements.append(req_line)
-                                print(f"  + {req_line}")
+                                log.info(f"  + {req_line}")
                 
                 new_dependencies = self._discover_new_dependencies(
                     tool_imports, 
@@ -487,18 +452,18 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
                 )
                 
                 if new_dependencies:
-                    print(f"[Export Agent] New tool packages from installed environment: {len(new_dependencies)}")
+                    log.info(f"[Export Agent] New tool packages from installed environment: {len(new_dependencies)}")
                     for pkg_name, version in sorted(new_dependencies.items()):
                         req_line = f"{pkg_name}{version}"
                         base_requirements.append(req_line)
-                        print(f"  + {req_line}")
+                        log.info(f"  + {req_line}")
                 
                 if not new_tool_packages and not new_dependencies:
-                    print("[Export Agent] No additional tool-specific dependencies needed (all covered by base)")
+                    log.info("[Export Agent] No additional tool-specific dependencies needed (all covered by base)")
             else:
-                print("[Export Agent] No validated tool imports detected")
+                log.info("[Export Agent] No validated tool imports detected")
         else:
-            print("[Export Agent] No tool codes provided for analysis")
+            log.info("[Export Agent] No tool codes provided for analysis")
         
         sqlean_package = "sqlean.py==3.49.1"
         if sqlean_package not in base_requirements:
@@ -513,11 +478,11 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
             if pkg_name not in base_packages and pkg_name not in default_packages:
                 tool_specific_count += 1
         
-        print(f"\n[Export Agent] Total dependencies: {len(final_requirements)} packages")
+        log.info(f"\n[Export Agent] Total dependencies: {len(final_requirements)} packages")
         if tool_specific_count > 0:
-            print(f"    (Base: {len(base_packages)}, Tool-specific additions: {tool_specific_count})\n")
+            log.info(f"    (Base: {len(base_packages)}, Tool-specific additions: {tool_specific_count})\n")
         else:
-            print(f"    (All dependencies covered by base requirements)\n")
+            log.info(f"    (All dependencies covered by base requirements)\n")
         
         return final_requirements
     
@@ -582,42 +547,60 @@ class ExportDependencyAnalyzer(DependencyAnalyzer):
         return new_deps
     
     def _get_actual_package_name(self, import_name: str) -> str:
-        """
-        Get the actual package name from an import.
-        """
+        """Get the actual package name from an import."""
         return self.map_import_to_package(import_name)
     
     def _get_installed_package_version(self, import_name: str) -> str:
-        """
-        Get installed package version. Returns empty string if not installed.
-        This also serves as validation that it's a real package, not user-defined.
-        """
+        """Get installed package version using cache lookup with fallback to distribution."""
+        pkg_name = None
+        if import_name in self._top_level_to_package_cache:
+            pkg_name = self._top_level_to_package_cache[import_name]
+        elif import_name.lower() in self._top_level_to_package_cache:
+            pkg_name = self._top_level_to_package_cache[import_name.lower()]
+        
+        if pkg_name and pkg_name in self._distributions_cache:
+            try:
+                dist = self._distributions_cache[pkg_name]
+                return f"=={dist.version}"
+            except Exception:
+                pass
+        
+        package_name = self.map_import_to_package(import_name)
+        if package_name != import_name:
+            pkg_normalized = package_name.lower().replace('_', '-')
+            if pkg_normalized in self._distributions_cache:
+                try:
+                    dist = self._distributions_cache[pkg_normalized]
+                    return f"=={dist.version}"
+                except Exception:
+                    pass
+        
+        alt_names = [
+            import_name.replace('_', '-').lower(),
+            import_name.lower(),
+            package_name.replace('_', '-').lower(),
+            package_name.lower()
+        ]
+        
+        for alt_name in alt_names:
+            if alt_name in self._distributions_cache:
+                try:
+                    dist = self._distributions_cache[alt_name]
+                    return f"=={dist.version}"
+                except Exception:
+                    continue
+        
         try:
             dist = distribution(import_name)
             return f"=={dist.version}"
         except PackageNotFoundError:
             pass
         
-        package_name = self.map_import_to_package(import_name)
-        
         try:
             dist = distribution(package_name)
             return f"=={dist.version}"
         except PackageNotFoundError:
             pass
-        
-        alt_names = [
-            package_name.replace('_', '-'),
-            package_name.lower(),
-            package_name.lower().replace('_', '-')
-        ]
-        
-        for alt_name in alt_names:
-            try:
-                dist = distribution(alt_name)
-                return f"=={dist.version}"
-            except PackageNotFoundError:
-                continue
         
         return ""
     

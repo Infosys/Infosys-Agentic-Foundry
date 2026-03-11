@@ -1,6 +1,88 @@
 # Release Notes
 
-## Version 1.7.0 - January 2026
+## Version 1.8.0 - March 11, 2026
+
+### Features
+
+* **Google ADK Framework Support**
+Added support for the Google ADK framework across agent templates.
+
+* **Inference Configuration Settings**
+Introduced Inference Configuration Settings to allow admins to configure thresholds and iteration limits for evaluators, validators, and critics.
+
+* **Blob Storage Integration**
+Implemented blob storage for tool files, chat uploads, and export agent artifacts, replacing local directory-based storage.
+
+* **Selective Tool Interrupt for Hybrid Agents**
+Extended selective interrupt capabilities to Hybrid templates for more controlled tool execution.
+
+* **Agent Welcome Message System**
+Added a system-generated welcome message for agents and if required user can also modify the welcome message.
+
+* **File Upload in Chat Inference**
+Enabled uploading files directly during chat inference sessions.
+
+* **Cloud-Based Tool File Management**
+Tool files are now uploaded and stored in cloud storage through a unified file manager.
+
+* **Pipeline-Aware Chat Details**
+Chat details API now returns full pipeline metadata where applicable.
+
+* **File-Based Context Management**
+Introduced file-based context persistence using markdown files and shell-command tools for stateful agent conversations.
+
+* **Python Tool → MCP Local Server Conversion**
+Added automation to convert Python-based tools into MCP local server tools.
+
+* **Agent–Knowledge Base Mapping**
+Implemented mapping between agents and knowledge bases for seamless knowledge integration.
+
+* **Auto-Onboarding of Sample Tools, Agents & Pipelines**
+Added functionality to automatically onboard sample tools, agents & pipelines at application startup.
+
+* **Tool & Validator Search Filters**
+Added filtering capabilities for tools and validators in paginated search.
+
+* **Tool Onboarding Assistant**
+Implemented automatic tool code generation using LLM capabilities.
+
+* **Role-Based Access Control (RBAC)**
+Added a department-based RBAC system controlling permissions for viewing, creating, updating, deleting, and executing tools, pipelines, and agents.
+
+### Enhancements
+
+* **UI & Performance**
+Export Agent Performance Enhancements with caching and parallel processing (ThreadPoolExecutor) to speed up dependency analysis.
+Extended blob support for export artifacts.
+
+* **Pipeline Execution Quality**
+Improved parallel pipeline execution logic.
+Corrected older/duplicate outputs.
+Resolved rate-limit and context-limit related failures.
+Improved pipeline history retrieval.
+
+* **Hybrid Template Quality**
+Added validator support to hybrid template.
+Fixed logic combining verifiers and validators.
+
+* **Metrics & Evaluation**
+Introduced agent-type-based efficiency metrics.
+Improved evaluation service with agent-type filtering.
+
+* **Onboarding & Performance**
+Parallelized LLM calls for faster agent onboarding and updating.
+Onboarded chatbot-related resources automatically on server start.
+
+### Fixes
+
+* Fixed Arize Phoenix tracing integration.
+* Eliminated duplicate/extra streaming responses from Hybrid agents.
+* Corrected hybrid response time calculations.
+* Fixed missing docstrings for async tool methods.
+* Fixed improper handling of resource usernames across user preferences and resource management.
+* Corrected missing display of feedback lessons in UI-related API responses.
+
+## Version 1.7.0 - February 3, 2026
 
 ### Features
 

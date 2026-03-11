@@ -1,6 +1,6 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 
 
 
@@ -19,5 +19,57 @@ class CriticSchema(BaseModel):
 
 class CanvasFormatSchema(BaseModel):
     parts: str = Field(..., description="JSON string of List of components in the canvas format")
+
+
+class FluencyEvaluationSchema(BaseModel):
+    fluency_rating: float = Field(..., description="A score between 0 and 1 indicating fluency of the response.")
+    justification: str = Field(..., description="Explain why this score was given based on grammar, clarity, tone, and readability.")
+    feedback: str = Field(..., description="Provide constructive feedback on what could be improved to raise the fluency score.")
+
+
+class RelevancyEvaluationSchema(BaseModel):
+    relevancy_rating: float = Field(..., description="A score between 0 and 1 indicating relevancy to the query.")
+    justification: str = Field(..., description="Explain why this score was given based on how well the response addressed the query.")
+    feedback: str = Field(..., description="Provide feedback on missing details, off-topic content, or improvements needed for relevance.")
+
+
+class CoherenceEvaluationSchema(BaseModel):
+    coherence_score: float = Field(..., description="A score between 0 and 1 indicating coherence of the response.")
+    justification: str = Field(..., description="Explain why this score was given based on logical flow, clarity, and consistency.")
+    feedback: str = Field(..., description="Provide feedback on how to improve structure, transitions, or clarity for better coherence.")
+
+
+class GroundednessEvaluationSchema(BaseModel):
+    groundedness_score: float = Field(..., description="A score between 0 and 1 indicating groundedness of the response.")
+    justification: str = Field(..., description="Explain why this score was given based on factual accuracy and avoidance of hallucination.")
+    feedback: str = Field(..., description="Provide feedback on factual errors, hallucinations, or lack of source credibility.")
+
+
+class EvaluationSchema(BaseModel):
+    """Schema for online agent evaluation output."""
+    fluency_evaluation: FluencyEvaluationSchema = Field(..., description="Fluency evaluation details.")
+    relevancy_evaluation: RelevancyEvaluationSchema = Field(..., description="Relevancy evaluation details.")
+    coherence_evaluation: CoherenceEvaluationSchema = Field(..., description="Coherence evaluation details.")
+    groundedness_evaluation: GroundednessEvaluationSchema = Field(..., description="Groundedness evaluation details.")
+    aggregate_score: Optional[float] = Field(None, description="Average score across all dimensions (0-1).")
+    evaluation_passed: Optional[bool] = Field(None, description="Whether the evaluation passed the threshold.")
+
+
+class ValidationResultSchema(BaseModel):
+    """Schema for individual validation result."""
+    validation_index: int = Field(..., description="Index of the matched validation criteria (0-based), or -1 for general relevancy validation.")
+    validation_status: str = Field(..., description="Validation status: 'pass', 'fail', or 'error'.")
+    validation_score: float = Field(..., description="A score between 0 and 1 indicating validation quality.")
+    feedback: str = Field(..., description="Detailed feedback explaining the validation result.")
+    validation_type: str = Field(..., description="Type of validation: 'tool_validator', 'llm_validator', or 'general_relevancy'.")
+
+
+class ValidationSchema(BaseModel):
+    """Schema for validator agent output in Google ADK."""
+    validation_results: List[ValidationResultSchema] = Field(default_factory=list, description="List of validation results for matched criteria.")
+    aggregate_score: float = Field(..., description="Aggregate validation score (0-1), average of all validation scores.")
+    validation_passed: bool = Field(..., description="Whether overall validation passed (aggregate_score >= 0.7).")
+    validation_feedback: str = Field(default="", description="Compiled feedback from all validation results for improvement.")
+    matched_patterns_count: int = Field(default=0, description="Number of validation patterns that matched the query.")
 
 

@@ -21,6 +21,8 @@ import os
 import json
 from dotenv import load_dotenv
 
+from src.config.constants import TableNames
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -248,9 +250,9 @@ class ConversationRestore:
             restored_counts = {"checkpoints": 0, "writes": 0, "blobs": 0}
             
             # Restore checkpoints - match by thread_id (like cleanup does)
-            recycle_cursor.execute("""
+            recycle_cursor.execute(f"""
                 SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata
-                FROM recycle_checkpoints
+                FROM {TableNames.RECYCLE_CHECKPOINTS.value}
                 WHERE thread_id = %s
             """, (thread_id,))
             
@@ -267,8 +269,8 @@ class ConversationRestore:
                     if isinstance(converted_record[6], dict):
                         converted_record[6] = json.dumps(converted_record[6])  # metadata
                 
-                result = main_cursor.execute("""
-                    INSERT INTO checkpoints
+                result = main_cursor.execute(f"""
+                    INSERT INTO {TableNames.CHECKPOINTS.value}
                     (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id) DO NOTHING
@@ -279,9 +281,9 @@ class ConversationRestore:
                     restored_counts["checkpoints"] += 1
             
             # Restore checkpoint_writes - match by thread_id (like cleanup does)
-            recycle_cursor.execute("""
+            recycle_cursor.execute(f"""
                 SELECT thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob, task_path
-                FROM recycle_checkpoint_writes
+                FROM {TableNames.RECYCLE_CHECKPOINT_WRITES.value}
                 WHERE thread_id = %s
             """, (thread_id,))
             
@@ -293,8 +295,8 @@ class ConversationRestore:
                 # not JSON, so we don't need to serialize it
                 converted_record = list(record)
                 
-                result = main_cursor.execute("""
-                    INSERT INTO checkpoint_writes
+                result = main_cursor.execute(f"""
+                    INSERT INTO {TableNames.CHECKPOINT_WRITES.value}
                     (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob, task_path)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id, task_id, idx) DO NOTHING
@@ -305,9 +307,9 @@ class ConversationRestore:
                     restored_counts["writes"] += 1
             
             # Restore checkpoint_blobs - match by thread_id (like cleanup does)
-            recycle_cursor.execute("""
+            recycle_cursor.execute(f"""
                 SELECT thread_id, checkpoint_ns, channel, version, type, blob
-                FROM recycle_checkpoint_blobs
+                FROM {TableNames.RECYCLE_CHECKPOINT_BLOBS.value}
                 WHERE thread_id = %s
             """, (thread_id,))
             
@@ -323,8 +325,8 @@ class ConversationRestore:
                     except (json.JSONDecodeError, TypeError):
                         pass  # Keep as is if not valid JSON
                 
-                result = main_cursor.execute("""
-                    INSERT INTO checkpoint_blobs
+                result = main_cursor.execute(f"""
+                    INSERT INTO {TableNames.CHECKPOINT_BLOBS.value}
                     (thread_id, checkpoint_ns, channel, version, type, blob)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (thread_id, checkpoint_ns, channel, version) DO NOTHING
@@ -368,20 +370,20 @@ class ConversationRestore:
             # Remove checkpoint data
             thread_id = f"{table_name}_{session_id}"
             
-            recycle_cursor.execute("""
-                DELETE FROM recycle_checkpoints 
+            recycle_cursor.execute(f"""
+                DELETE FROM {TableNames.RECYCLE_CHECKPOINTS.value} 
                 WHERE thread_id = %s
             """, (thread_id,))
             checkpoints_removed = recycle_cursor.rowcount
             
-            recycle_cursor.execute("""
-                DELETE FROM recycle_checkpoint_writes 
+            recycle_cursor.execute(f"""
+                DELETE FROM {TableNames.RECYCLE_CHECKPOINT_WRITES.value} 
                 WHERE thread_id = %s
             """, (thread_id,))
             writes_removed = recycle_cursor.rowcount
             
-            recycle_cursor.execute("""
-                DELETE FROM recycle_checkpoint_blobs 
+            recycle_cursor.execute(f"""
+                DELETE FROM {TableNames.RECYCLE_CHECKPOINT_BLOBS.value} 
                 WHERE thread_id = %s
             """, (thread_id,))
             blobs_removed = recycle_cursor.rowcount

@@ -1,6 +1,6 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import asyncio
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends, status
 
 from src.schemas import (
     SecretCreateRequest, PublicSecretCreateRequest, SecretUpdateRequest, PublicSecretUpdateRequest,
@@ -11,6 +11,10 @@ from src.utils.secrets_handler import (
     get_user_secrets_dict, create_public_key, update_public_key, get_public_key,
     get_all_public_keys, delete_public_key, list_public_keys
 )
+from src.auth.dependencies import get_current_user
+from src.auth.models import UserRole, User
+from src.auth.authorization_service import AuthorizationService
+from src.api.dependencies import ServiceProvider
 
 from telemetry_wrapper import logger as log, update_session_context
 
@@ -20,7 +24,12 @@ router = APIRouter(prefix="/secrets", tags=["Secrets"])
 
 
 @router.post("/create")
-async def create_user_secret_endpoint(fastapi_request: Request, request: SecretCreateRequest):
+async def create_user_secret_endpoint(
+    fastapi_request: Request, 
+    request: SecretCreateRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Create or update a user secret_data.
     
@@ -33,13 +42,20 @@ async def create_user_secret_endpoint(fastapi_request: Request, request: SecretC
     Raises:
         HTTPException: If secret_data creation fails.
     """
-    #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
+    
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to create user keys.")
+    
+    # Check vault access permission with department context
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+    
     try:
-        # Set the user context
-        
         # Initialize secrets manager
         secrets_manager = setup_secrets_manager()
         
@@ -47,7 +63,8 @@ async def create_user_secret_endpoint(fastapi_request: Request, request: SecretC
         success = secrets_manager.create_user_secret(
             user_email=request.user_email,
             key_name=request.key_name,
-            key_value=request.key_value
+            key_value=request.key_value,
+            department_name=department_name
         )
         
         if success:
@@ -79,7 +96,12 @@ async def create_user_secret_endpoint(fastapi_request: Request, request: SecretC
 
 
 @router.post("/public/create")
-async def create_public_secret_endpoint(fastapi_request: Request, request: PublicSecretCreateRequest):
+async def create_public_secret_endpoint(
+    fastapi_request: Request, 
+    request: PublicSecretCreateRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Create or update a public secret_data.
     
@@ -92,6 +114,14 @@ async def create_public_secret_endpoint(fastapi_request: Request, request: Publi
     Raises:
         HTTPException: If public secret_data creation fails.
     """
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to create public keys.")
+    # Check vault access permission with department context
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
@@ -99,7 +129,9 @@ async def create_public_secret_endpoint(fastapi_request: Request, request: Publi
     try:
         create_public_key(
             key_name=request.key_name,
-            key_value=request.key_value
+            key_value=request.key_value,
+            department_name=department_name
+            
         )
         log.info(f"Public key '{request.key_name}' created/updated successfully")
         return {
@@ -121,7 +153,12 @@ async def create_public_secret_endpoint(fastapi_request: Request, request: Publi
 
 
 @router.post("/get")
-async def get_user_secret_endpoint(fastapi_request: Request, request: SecretGetRequest):
+async def get_user_secret_endpoint(
+    fastapi_request: Request, 
+    request: SecretGetRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Retrieve user secrets by name or get all secrets.
     
@@ -134,6 +171,12 @@ async def get_user_secret_endpoint(fastapi_request: Request, request: SecretGetR
     Raises:
         HTTPException: If secret_data retrieval fails or secrets not found.
     """
+    # Check vault access permission with department context
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
@@ -144,12 +187,15 @@ async def get_user_secret_endpoint(fastapi_request: Request, request: SecretGetR
         # Initialize secrets manager
         secrets_manager = setup_secrets_manager()
         
+        if request.user_email != user_data.email:
+            raise HTTPException(status_code=403, detail="Access denied: You don't have permission to see these user secrets")
+        
         if request.key_name:
-            # Get a specific secret_data
             key_value = secrets_manager.get_user_secret(
-                user_email=request.user_email,
-                key_name=request.key_name
-            )
+                    user_email=request.user_email,
+                    key_name=request.key_name,
+                    department_name=department_name
+                )
             
             if key_value is not None:
                 log.info(f"Secret '{request.key_name}' retrieved successfully for user: {request.user_email}")
@@ -167,10 +213,10 @@ async def get_user_secret_endpoint(fastapi_request: Request, request: SecretGetR
                 )
                 
         elif request.key_names:
-            # Get multiple specific secrets
             secrets_dict = secrets_manager.get_user_secrets(
-                user_email=request.user_email,
-                key_names=request.key_names
+                    user_email=request.user_email,
+                    key_names=request.key_names,
+                    department_name=department_name
             )
             
             log.info(f"Multiple secrets retrieved successfully for user: {request.user_email}")
@@ -181,10 +227,10 @@ async def get_user_secret_endpoint(fastapi_request: Request, request: SecretGetR
             }
             
         else:
-            # Get all secrets for the user
             secrets_dict = secrets_manager.get_user_secrets(
-                user_email=request.user_email
-            )
+                    user_email=request.user_email,
+                    department_name=department_name
+                )
             
             log.info(f"All secrets retrieved successfully for user: {request.user_email}")
             return {
@@ -204,7 +250,12 @@ async def get_user_secret_endpoint(fastapi_request: Request, request: SecretGetR
 
 
 @router.post("/public/get")
-async def get_public_secret_endpoint(fastapi_request: Request, request: PublicSecretGetRequest):
+async def get_public_secret_endpoint(
+    fastapi_request: Request, 
+    request: PublicSecretGetRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Retrieve a public secret_data by name.
     
@@ -217,13 +268,18 @@ async def get_public_secret_endpoint(fastapi_request: Request, request: PublicSe
     Raises:
         HTTPException: If public secret_data retrieval fails or not found.
     """
+    # Check vault access permission with department context
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
     try:
-        # Get the public key
-        public_key_value = get_public_key(request.key_name)
+        public_key_value = get_public_key(request.key_name, department_name=department_name)
         
         if public_key_value is not None:
             log.info(f"Public key '{request.key_name}' retrieved successfully")
@@ -248,7 +304,12 @@ async def get_public_secret_endpoint(fastapi_request: Request, request: PublicSe
 
 
 @router.put("/update")
-async def update_user_secret_endpoint(fastapi_request: Request, request: SecretUpdateRequest):
+async def update_user_secret_endpoint(
+    fastapi_request: Request, 
+    request: SecretUpdateRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Update an existing user secret_data.
     
@@ -261,6 +322,14 @@ async def update_user_secret_endpoint(fastapi_request: Request, request: SecretU
     Raises:
         HTTPException: If secret_data update fails or secret_data doesn't exist.
     """
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to update user keys.")
+    # Check vault access permission with department context
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
@@ -274,7 +343,8 @@ async def update_user_secret_endpoint(fastapi_request: Request, request: SecretU
         # Check if secret_data exists first
         existing_secret = secrets_manager.get_user_secret(
             user_email=request.user_email,
-            key_name=request.key_name
+            key_name=request.key_name,
+            department_name=department_name
         )
         
         if existing_secret is None:
@@ -288,7 +358,8 @@ async def update_user_secret_endpoint(fastapi_request: Request, request: SecretU
         success = secrets_manager.update_user_secret(
             user_email=request.user_email,
             key_name=request.key_name,
-            key_value=request.key_value
+            key_value=request.key_value,
+            department_name=department_name
         )
         
         if success:
@@ -317,7 +388,12 @@ async def update_user_secret_endpoint(fastapi_request: Request, request: SecretU
 
 
 @router.put("/public/update")
-async def update_public_secret_endpoint(fastapi_request: Request, request: PublicSecretUpdateRequest):
+async def update_public_secret_endpoint(
+    fastapi_request: Request, 
+    request: PublicSecretUpdateRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Update an existing public secret_data.
     
@@ -330,6 +406,15 @@ async def update_public_secret_endpoint(fastapi_request: Request, request: Publi
     Raises:
         HTTPException: If public secret_data update fails or secret_data doesn't exist.
     """
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to update public keys.")
+    
+    # Check vault access permission
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
@@ -338,7 +423,8 @@ async def update_public_secret_endpoint(fastapi_request: Request, request: Publi
         # Update the public key
         success = update_public_key(
             key_name=request.key_name,
-            key_value=request.key_value
+            key_value=request.key_value,
+            department_name=department_name
         )
         
         if success:
@@ -363,7 +449,12 @@ async def update_public_secret_endpoint(fastapi_request: Request, request: Publi
 
 
 @router.delete("/delete")
-async def delete_user_secret_endpoint(fastapi_request: Request, request: SecretDeleteRequest):
+async def delete_user_secret_endpoint(
+    fastapi_request: Request, 
+    request: SecretDeleteRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Delete a user secret_data.
     
@@ -376,6 +467,14 @@ async def delete_user_secret_endpoint(fastapi_request: Request, request: SecretD
     Raises:
         HTTPException: If secret_data deletion fails or secret_data doesn't exist.
     """
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to delete user keys.")
+    # Check vault access permission
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
@@ -390,7 +489,8 @@ async def delete_user_secret_endpoint(fastapi_request: Request, request: SecretD
         # Delete the secret_data
         success = secrets_manager.delete_user_secret(
             user_email=request.user_email,
-            key_name=request.key_name
+            key_name=request.key_name,
+            department_name=department_name
         )
         
         if success:
@@ -419,7 +519,12 @@ async def delete_user_secret_endpoint(fastapi_request: Request, request: SecretD
 
 
 @router.delete("/public/delete")
-async def delete_public_secret_endpoint(fastapi_request: Request, request: PublicSecretDeleteRequest):
+async def delete_public_secret_endpoint(
+    fastapi_request: Request, 
+    request: PublicSecretDeleteRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     Delete a public secret_data.
 
@@ -432,6 +537,14 @@ async def delete_public_secret_endpoint(fastapi_request: Request, request: Publi
     Raises:
         HTTPException: If public secret_data deletion fails or secret_data doesn't exist.
     """
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to delete public keys.")
+    # Check vault access permission
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
@@ -439,7 +552,8 @@ async def delete_public_secret_endpoint(fastapi_request: Request, request: Publi
     try:
         # Delete the public key
         success = delete_public_key(
-            key_name=request.key_name
+            key_name=request.key_name,
+            department_name=department_name
         )
 
         if success:
@@ -464,7 +578,12 @@ async def delete_public_secret_endpoint(fastapi_request: Request, request: Publi
 
 
 @router.post("/list")
-async def list_user_secrets_endpoint(fastapi_request: Request, request: SecretListRequest):
+async def list_user_secrets_endpoint(
+    fastapi_request: Request, 
+    request: SecretListRequest,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     List all secret_data names for a user (without values).
     
@@ -477,6 +596,12 @@ async def list_user_secrets_endpoint(fastapi_request: Request, request: SecretLi
     Raises:
         HTTPException: If listing secrets fails.
     """
+    # Check vault access permission
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
@@ -487,9 +612,12 @@ async def list_user_secrets_endpoint(fastapi_request: Request, request: SecretLi
         # Initialize secrets manager
         secrets_manager = setup_secrets_manager()
         
-        # Get list of secret_data names
-        key_names = secrets_manager.list_user_key_names(
-            user_email=request.user_email
+        if request.user_email != user_data.email:
+            raise HTTPException(status_code=403, detail="Access denied: You don't have permission to see these user secrets")
+        
+        key_names = secrets_manager.list_user_secret_names(
+                user_email=request.user_email,
+                department_name=department_name
         )
         
         log.info(f"Secret names listed successfully for user: {request.user_email}")
@@ -509,7 +637,11 @@ async def list_user_secrets_endpoint(fastapi_request: Request, request: SecretLi
 
 
 @router.post("/public/list")
-async def list_public_secrets_endpoint(fastapi_request: Request):
+async def list_public_secrets_endpoint(
+    fastapi_request: Request,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
     """
     List all public secret_data names (without values).
     
@@ -519,13 +651,18 @@ async def list_public_secrets_endpoint(fastapi_request: Request):
     Raises:
         HTTPException: If listing public secrets fails.
     """
+    # Check vault access permission
+    department_name = user_data.department_name 
+    has_access = await authorization_service.check_vault_access(user_data.role, department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+        
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
     try:
-        # Get list of public key names
-        public_key_names = list_public_keys()
+        public_key_names = list_public_keys(department_name=department_name)    
         
         log.info("Public key names listed successfully")
         return {
@@ -540,36 +677,3 @@ async def list_public_secrets_endpoint(fastapi_request: Request):
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
-
-
-# Health check endpoint for secrets functionality
-@router.get("/health")
-async def secrets_health_check_endpoint(fastapi_request: Request):
-    """
-    Health check endpoint for secrets management functionality.
-    
-    Returns:
-        dict: Health status of the secrets management system.
-    """
-    #changed
-    user_id = fastapi_request.cookies.get("user_id")
-    user_session = fastapi_request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
-    try:
-        # Try to initialize secrets manager
-        secrets_manager = setup_secrets_manager()
-        
-        return {
-            "success": True,
-            "message": "Secrets management system is healthy",
-            "timestamp": str(asyncio.get_event_loop().time())
-        }
-        
-    except Exception as e:
-        log.error(f"Secrets health check failed: {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail=f"Secrets management system is unhealthy: {str(e)}"
-        )
-
-

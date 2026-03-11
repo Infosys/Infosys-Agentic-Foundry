@@ -1,6 +1,6 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 
 class ApprovalRequest(BaseModel):
     """Schema for updating the approval status of a feedback entry."""
@@ -13,5 +13,5 @@ class ApprovalRequest(BaseModel):
     # new_final_response: str = Field(..., description="The agent's new/corrected final response after feedback.")
     # new_steps: str = Field(..., description="The agent's new/corrected execution steps after feedback.")
     lesson: str | None = Field(None, description="The agent's lesson")
-    approved: bool | None = Field(None, description="Boolean indicating if the new response is approved.")
+    status: Literal['approve', 'reject', 'pending'] | None = Field(None, description="Status of the feedback: 'approve', 'reject', or 'pending'.")
 

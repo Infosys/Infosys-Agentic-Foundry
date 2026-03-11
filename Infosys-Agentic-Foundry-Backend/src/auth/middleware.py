@@ -4,7 +4,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from src.auth.dependencies import get_user_info_from_request, get_client_ip, get_user_agent
 from telemetry_wrapper import logger as log, update_session_context
 from typing import Set
-from src.utils.secrets_handler import current_user_email
+from src.utils.secrets_handler import current_user_email, current_user_department, current_user_role
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     """Middleware to handle authentication for all requests"""
@@ -12,7 +12,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     # Define public endpoints that don't require authentication
     PUBLIC_ENDPOINTS: Set[str] = {
         "/auth/login",
-        "/auth/register", 
+        "/auth/register",
+        "/auth/register-superadmin",
         "/auth/guest-login",
         "/docs",
         "/openapi.json",
@@ -38,6 +39,13 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         
         # Skip authentication for public endpoints
         if self._is_public_endpoint(request.url.path):
+            user_info=await get_user_info_from_request(request)
+            log.info(f'Setting user email...public endpoint:{user_info}')
+            if user_info and user_info.email:
+                current_user_email.set(user_info.email)
+            else:
+                current_user_email.set("anonymous")    
+                current_user_email.set("anonymous")
             return await call_next(request)
         log.info("about to call options")
         # Skip authentication for OPTIONS requests (CORS preflight)
@@ -83,6 +91,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 session_id=user_info.email  # Use email as unique identifier
             )
             current_user_email.set(user_info.email)
+            current_user_department.set(user_info.department_name)
+            current_user_role.set(user_info.role)
+
             # Process the request
             response = await call_next(request)
             

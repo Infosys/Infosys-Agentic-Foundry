@@ -10,8 +10,8 @@ class ToolData(BaseModel):
     created_by: str = Field(..., description="The email ID of the user who created the tool.")
     tag_ids: Optional[Union[List[str], str]] = Field(None, description="Optional list of tag IDs for the tool.")
     is_validator: Optional[bool] = Field(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
-
-
+    is_public: Optional[bool] = Field(False, description="If True, the tool will be visible to all departments. Default is False.")
+    shared_with_departments: Optional[List[str]] = Field(None, description="Optional list of department names to share this tool with. Only applicable for Admin users.")
 
 class AddToolRequest(BaseModel):
     """Schema for adding a new tool."""
@@ -22,7 +22,9 @@ class AddToolRequest(BaseModel):
     tag_ids: Optional[Union[List[str], str]] = Field(None, description="Optional comma-separated string or list of tag IDs for the tool.")
     force_add: Optional[bool] = Field(False, description="Force add flag for bypassing certain validations.")
     is_validator: Optional[bool] = Field(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
-
+    session_id: Optional[str] = Field(None, description="Optional session identifier for tracking tool creation."),
+    is_public: Optional[bool] = Field(False, description="Whether the tool should be public (accessible to all departments).")
+    shared_with_departments: Optional[List[str]] = Field(None, description="List of department names to share the tool with.")
 
 class UpdateToolRequest(BaseModel):
     """Schema for updating an existing tool."""
@@ -33,6 +35,8 @@ class UpdateToolRequest(BaseModel):
     code_snippet: Optional[str] = Field(None, description="New Python code snippet for the tool.")
     updated_tag_id_list: Optional[Union[List[str], str]] = Field(None, description="Optional list of new tag IDs for the tool.")
     is_validator: Optional[bool] = Field(False, description="Indicates if the tool is a validator tool. Validator tools must have exactly 2 parameters (query, response) and return validation results.")
+    is_public: Optional[bool] = Field(None, description="If provided, updates the tool's public visibility. True makes it visible to all departments.")
+    shared_with_departments: Optional[List[str]] = Field(None, description="If provided, replaces the list of departments this tool is shared with. Pass empty list to unshare from all.")
 
 class DeleteToolRequest(BaseModel):
     """Schema for deleting a tool."""
@@ -75,13 +79,10 @@ class McpToolUpdateRequest(BaseModel):
     code_content: Optional[str] = Field(None, description="New Python code content for 'file' type MCP tools.")
 
     updated_tag_id_list: Optional[Union[List[str], str]] = Field(None, description="Optional list of new tag IDs for the tool.")
-
-    # # Auth-related fields for internal service logic, not directly from user input for update
-    # is_public: Optional[bool] = Field(None, description="New public status for the tool.")
-    # status: Optional[str] = Field(None, description="New approval status for the tool ('pending', 'approved', 'rejected').")
-    # comments: Optional[str] = Field(None, description="New comments regarding the tool's status or approval.")
-    # approved_at: Optional[datetime] = Field(None, description="New timestamp when the tool was approved.")
-    # approved_by: Optional[str] = Field(None, description="New user who approved the tool.")
+    
+    shared_with_departments: Optional[List[str]] = Field(None, description="If provided, replaces the list of departments this MCP tool is shared with. Pass empty list to unshare from all.")
+    
+    is_public: Optional[bool] = Field(None, description="If provided, updates the MCP tool's public visibility. True makes it visible to all departments.")
 
 class McpToolInvocation(BaseModel):
     """Schema for a single MCP tool invocation."""
@@ -158,3 +159,113 @@ class InlineMcpErrorResponse(BaseModel):
     error_code: str = Field(..., description="Error code.")
     message: str = Field(..., description="Error message.")
     detail: Optional[str] = Field(None, description="Additional error details.")
+
+
+# ============================================================================
+# Tool Generation Pipeline Schemas
+# ============================================================================
+
+class ToolGenerationPipelineRequest(BaseModel):
+    """Request schema for tool generation via pipeline agent."""
+    pipeline_id: str = Field(..., description="The pipeline ID for tool generation agent")
+    session_id: str = Field(..., description="The user's session ID")
+    query: str = Field(..., description="The user's query for tool generation")
+    model_name: str = Field(default="gpt-4o", description="The LLM model to use")
+    reset_conversation: bool = Field(default=False, description="Whether to reset conversation")
+    current_code: Optional[str] = Field(
+        default=None, 
+        description="The current code in the editor. Send this if the user has manually edited the code, so the agent works with the latest version."
+    )
+    selected_code: Optional[str] = Field(
+        default=None,
+        description="The code that user has highlighted/selected in the editor. When provided, the agent will focus on this specific portion."
+    )
+
+
+# ============================================================================
+# Code Version Management Schemas
+# ============================================================================
+
+class SaveCodeVersionRequest(BaseModel):
+    """Request schema for saving a code version."""
+    session_id: str = Field(..., description="The user's session ID")
+    pipeline_id: str = Field(..., description="The pipeline ID")
+    code_snippet: str = Field(..., description="The code to save")
+    label: Optional[str] = Field(None, description="Optional label for this version (e.g., 'Added error handling')")
+    user_query: Optional[str] = Field(None, description="The user query that generated this code")
+
+
+class SwitchVersionRequest(BaseModel):
+    """Request schema for switching to a specific version."""
+    session_id: str = Field(..., description="The user's session ID")
+    version_id: str = Field(..., description="The version ID to switch to")
+
+
+class UpdateVersionLabelRequest(BaseModel):
+    """Request schema for updating a version label."""
+    version_id: str = Field(..., description="The version ID")
+    label: str = Field(..., description="The new label")
+
+
+class DeleteVersionRequest(BaseModel):
+    """Request schema for deleting a version."""
+    session_id: str = Field(..., description="The user's session ID")
+    version_id: str = Field(..., description="The version ID to delete")
+
+
+# ============================================================================
+# Tool Generation Conversation History Schemas
+# ============================================================================
+
+class ToolGenerationConversationEntry(BaseModel):
+    """Schema for a single conversation entry in tool generation."""
+    role: Literal["user", "assistant"] = Field(..., description="The role of the message sender")
+    message: str = Field(..., description="The text message content")
+    code_snippet: Optional[str] = Field(None, description="Code snippet if any was generated/referenced")
+    timestamp: Optional[str] = Field(None, description="ISO format timestamp of the message")
+
+
+class SaveConversationRequest(BaseModel):
+    """Request schema for saving a conversation entry."""
+    session_id: str = Field(..., description="The user's session ID")
+    pipeline_id: str = Field(..., description="The pipeline ID")
+    role: Literal["user", "assistant"] = Field(..., description="The role: 'user' or 'assistant'")
+    message: str = Field(..., description="The message content")
+    code_snippet: Optional[str] = Field(None, description="Associated code snippet if any")
+
+
+class GetConversationHistoryRequest(BaseModel):
+    """Request schema for fetching conversation history."""
+    session_id: str = Field(..., description="The user's session ID")
+    pipeline_id: Optional[str] = Field(None, description="Optional pipeline ID filter")
+    limit: Optional[int] = Field(50, description="Maximum number of messages to return")
+
+
+class ClearConversationRequest(BaseModel):
+    """Request schema for clearing conversation history."""
+    session_id: str = Field(..., description="The user's session ID")
+    pipeline_id: Optional[str] = Field(None, description="Optional pipeline ID - if not provided, clears all for session")
+
+
+class ToolGenerationConversationHistoryRequest(BaseModel):
+    """Request schema for fetching conversation history with pagination."""
+    session_id: str = Field(..., description="The user's session ID")
+    pipeline_id: Optional[str] = Field(None, description="Optional pipeline ID filter")
+    limit: Optional[int] = Field(50, ge=1, le=200, description="Maximum number of messages to return")
+    offset: Optional[int] = Field(0, ge=0, description="Number of messages to skip for pagination")
+    include_code: bool = Field(True, description="Whether to include code snippets in response")
+
+
+# ============================================================================
+# Tool Export / Import Schemas
+# ============================================================================
+
+class ExportToolsRequest(BaseModel):
+    """Request schema for exporting tools as a zip file."""
+    tool_ids: List[str] = Field(..., min_length=1, description="List of tool IDs to export")
+
+
+class ExportMcpToolsRequest(BaseModel):
+    """Request schema for exporting MCP tools as a zip file."""
+    tool_ids: List[str] = Field(..., min_length=1, description="List of MCP tool IDs to export")
+

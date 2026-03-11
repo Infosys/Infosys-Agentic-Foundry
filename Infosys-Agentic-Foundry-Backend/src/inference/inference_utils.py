@@ -30,6 +30,7 @@ CrossEncoder = RemoteCrossEncoder
 
 from src.models.model_service import ModelService
 from src.database.services import ChatService, ToolService, AgentService, FeedbackLearningService, EvaluationService, ConsistencyService
+from src.config.constants import Limits
 from src.prompts.prompts import FORMATTER_PROMPT
 from telemetry_wrapper import logger as log, update_session_context
 
@@ -610,18 +611,26 @@ Output:
         log.info(f"Executing general relevancy validation for query: '{query[:50]}...'")
         try:
             relevancy_prompt = f"""
-            Evaluate if the response is relevant and appropriate for the given query.
+            You are a validation assistant. Evaluate if the response correctly answers the given query.
             
             Query: {query}
             Response: {response}
             
+            VALIDATION RULES:
+            1. For mathematical queries: Check if the response contains the CORRECT numerical answer.
+            2. For factual queries: Check if the response provides accurate information.
+            3. For action queries: Check if the response confirms the action was completed correctly.
+            
+            IMPORTANT: If the response contains the CORRECT answer (even if it's just a number), it should PASS.
+            Do NOT fail a response just because it's brief - a concise correct answer is perfectly valid.
+            
             Rate the relevancy on a scale of 0.0 to 1.0 where:
-            - 1.0 = Highly relevant and directly addresses the query
-            - 0.8+ = Mostly relevant with good coverage
-            - 0.6+ = Somewhat relevant but could be better
-            - 0.4+ = Partially relevant with some gaps
+            - 1.0 = Correct and directly addresses the query
+            - 0.8+ = Mostly correct with good coverage
+            - 0.6+ = Partially correct but could be improved
+            - 0.4+ = Contains some relevant information but incomplete
             - 0.2+ = Minimally relevant
-            - 0.0 = Not relevant at all
+            - 0.0 = Incorrect or not relevant at all
             
             Respond in JSON format:
             {{
@@ -633,14 +642,24 @@ Output:
             Consider "pass" if score >= 0.7, otherwise "fail".
             """
             
-            result = await llm.ainvoke(relevancy_prompt)
+            # Handle both LangChain LLMs and Python-based BaseAIModelService
+            from src.models.base_ai_model_service import BaseAIModelService
+            if isinstance(llm, BaseAIModelService):
+                # Python-based agent LLM - expects list of messages, returns dict
+                messages = [llm.format_content_with_role(relevancy_prompt)]
+                result = await llm.ainvoke(messages=messages, config={"tool_choice": "none"})
+                content = result.get("final_response", "")
+            else:
+                # LangChain LLM - returns object with .content
+                result = await llm.ainvoke(relevancy_prompt)
+                content = result.content
             
             # Parse LLM response
             try:
                 import json
                 
                 # Clean the response content to handle markdown code blocks
-                content = result.content.strip()
+                content = content.strip()
                 
                 # Remove markdown code blocks if present
                 if content.startswith("```json"):
@@ -659,8 +678,8 @@ Output:
             except (json.JSONDecodeError, ValueError):
                 # Fallback parsing
                 log.warning("General relevancy JSON parsing failed, using fallback logic")
-                content = result.content.lower()
-                if "pass" in content:
+                content_lower = content.lower() if content else ""
+                if "pass" in content_lower:
                     log.info("General relevancy validation passed via fallback parsing")
                     return {
                         "validation_status": "pass",
@@ -775,12 +794,13 @@ Output:
         try:         
             # Generic validation prompt that works for any domain
             validation_prompt = f"""
-            Validate if the actual response appropriately addresses the criteria query.
+            You are a validation assistant. Check if the actual response correctly addresses the user's request.
             
-            User Query: {user_query or "Not provided"}
-            Criteria Query: {criteria_query}
-            Expected Answer: {expected_answer}
-            Actual Response: {actual_response}
+            CONTEXT:
+            - User Query (may include modifications): {user_query or "Not provided"}
+            - Criteria Type: {criteria_query}
+            - Expected Behavior: {expected_answer}
+            - Actual Response: {actual_response}
             
             Task: Evaluate if the actual response is relevant and appropriate for the given criteria query.
             
@@ -795,6 +815,12 @@ Output:
             2. Is the response factually accurate and well-reasoned?
             3. Does the response quality meet reasonable expectations?
             4. Does the response appropriately handle the specific inputs provided in the user query?
+            
+            VALIDATION RULES:
+            1. If the user query contains "User modifications", the response MUST address the MODIFIED request, not the original.
+            2. Extract the specific values/parameters from the modifications and verify the response uses them correctly.
+            3. A correct response that matches the expected outcome should PASS with score 1.0.
+            4. Do NOT fail a response that correctly addresses the modified request.
             
             Rate the response on a scale of 0.0 to 1.0:
             - 1.0 = Excellent response, fully addresses the criteria and user query
@@ -814,14 +840,24 @@ Output:
             Consider "pass" if score >= 0.75, otherwise "fail".
             """
             
-            result = await llm.ainvoke(validation_prompt)
+            # Handle both LangChain LLMs and Python-based BaseAIModelService
+            from src.models.base_ai_model_service import BaseAIModelService
+            if isinstance(llm, BaseAIModelService):
+                # Python-based agent LLM - expects list of messages, returns dict
+                messages = [llm.format_content_with_role(validation_prompt)]
+                result = await llm.ainvoke(messages=messages, config={"tool_choice": "none"})
+                content = result.get("final_response", "")
+            else:
+                # LangChain LLM - returns object with .content
+                result = await llm.ainvoke(validation_prompt)
+                content = result.content
             
             # Parse LLM response
             try:
                 import json
                 
                 # Clean the response content to handle markdown code blocks
-                content = result.content.strip()
+                content = content.strip()
                 
                 # Remove markdown code blocks if present
                 if content.startswith("```json"):
@@ -1073,14 +1109,25 @@ Output:
             Only include matches with confidence_score >= 0.7
             """
             
-            result = await llm.ainvoke(semantic_matching_prompt)
-            log.debug(f"LLM semantic matching response received, length: {len(result.content)} chars")
+            # Handle both LangChain LLMs and Python-based BaseAIModelService
+            from src.models.base_ai_model_service import BaseAIModelService
+            if isinstance(llm, BaseAIModelService):
+                # Python-based agent LLM - expects list of messages, returns dict
+                messages = [llm.format_content_with_role(semantic_matching_prompt)]
+                result = await llm.ainvoke(messages=messages, config={"tool_choice": "none"})
+                content = result.get("final_response", "")
+            else:
+                # LangChain LLM - returns object with .content
+                result = await llm.ainvoke(semantic_matching_prompt)
+                content = result.content
+            
+            log.debug(f"LLM semantic matching response received, length: {len(content)} chars")
             
             # Parse the LLM response
             try:
                 import json
                 # Clean the response content
-                content = result.content.strip()
+                content = content.strip()
                 if content.startswith("```json"):
                     content = content.replace("```json", "").replace("```", "").strip()
                 elif content.startswith("```"):
@@ -1267,23 +1314,17 @@ class EpisodicMemoryManager:
             user_id: str,
             *,
             embedding_model: Any = None,
-            cross_encoder: Any = None,
-            max_examples: int = 3,
-            max_queue_size: int = 30,
-            retention_days: int = 30,
-            relevance_threshold: float = 0.65,
-            cleanup_usage_threshold: int = 3,
-            low_performer_threshold: float = 0.2
+            cross_encoder: Any = None
         ):
         self.user_id = user_id
         self.embedding_model = embedding_model
         self.cross_encoder = cross_encoder
-        self.MAX_EXAMPLES = max_examples
-        self.MAX_QUEUE_SIZE = max_queue_size
-        self.RETENTION_DAYS = retention_days
-        self.RELEVANCE_THRESHOLD = relevance_threshold
-        self.CLEANUP_USAGE_THRESHOLD = cleanup_usage_threshold
-        self.LOW_PERFORMER_THRESHOLD = low_performer_threshold
+        self.MAX_EXAMPLES = Limits.MAX_EXAMPLES
+        self.MAX_QUEUE_SIZE = Limits.MAX_QUEUE_SIZE
+        self.RETENTION_DAYS = Limits.RETENTION_DAYS
+        self.RELEVANCE_THRESHOLD = Limits.RELEVANCE_THRESHOLD
+        self.CLEANUP_USAGE_THRESHOLD = Limits.CLEANUP_USAGE_THRESHOLD
+        self.LOW_PERFORMER_THRESHOLD = Limits.LOW_PERFORMER_THRESHOLD
         self.namespace = ("interaction_queue", user_id)
 
         if self.embedding_model is None:
@@ -1566,4 +1607,3 @@ class EpisodicMemoryManager:
                 "4. Do not fabricate facts, hallucinate, or confidently assert things you are unsure about.\n"
             )
         return context
-

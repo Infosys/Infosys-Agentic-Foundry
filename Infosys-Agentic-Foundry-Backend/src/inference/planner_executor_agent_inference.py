@@ -1,4 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import os
 import json
 import asyncio
 from typing import Dict, List, Optional, Literal
@@ -6,13 +7,16 @@ from fastapi import HTTPException
 from langgraph.types import interrupt
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import AIMessage, ChatMessage
-
+from langgraph.types import StreamWriter
 from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseAgentInference
+from src.schemas import AdminConfigLimits
+from src.config.constants import Limits
 from telemetry_wrapper import logger as log
 from src.prompts.prompts import online_agent_evaluation_prompt, feedback_lesson_generation_prompt
 from langgraph.types import StreamWriter
+from src.database.kafka_handler import listen_for_tool_response
 
 
 class PlannerExecutorWorkflowState(BaseWorkflowState):
@@ -36,6 +40,10 @@ class PlannerExecutorWorkflowState(BaseWorkflowState):
     validation_feedback: str = None
     workflow_description: str = None
     user_update_events: list = []
+    tool_result: str = None
+    use_filesystem_memory: bool = True
+    fs_memory_context: str = None  # Context built from filesystem
+    episodic_memory_messages: list = []  # Pre-fetched episodic memory for tracing
 
 class PlannerExecutorHITLWorkflowState(PlannerExecutorWorkflowState):
     is_plan_approved: Optional[Literal["yes", "no", None]] = None
@@ -52,29 +60,57 @@ class PlannerExecutorAgentInference(BaseAgentInference):
         super().__init__(inference_utils)
 
 
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False):
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False, message_queue: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False):
         """
         Builds the agent and chains for the Multi-Agent workflow.
+        
+        Args:
+            file_context_management_flag: If True, use file-based context management (AgentShell) instead of old conversation fetching.
         """
         tool_ids = agent_config["TOOLS_INFO"]
-        system_prompt = agent_config["SYSTEM_PROMPT"]
+        system_prompt_config = agent_config["SYSTEM_PROMPT"]
+        # Use agent_id from parameter or fallback to config
+        agent_id = agent_id if agent_id else agent_config.get("AGENT_ID", None)
+        agent_name = agent_config.get("AGENT_NAME", "")
 
-        planner_system_prompt = system_prompt.get("SYSTEM_PROMPT_PLANNER_AGENT", "").replace("{", "{{").replace("}", "}}")
-        replanner_system_prompt = system_prompt.get("SYSTEM_PROMPT_REPLANNER_AGENT", "").replace("{", "{{").replace("}", "}}")
+        planner_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_PLANNER_AGENT", "").replace("{", "{{").replace("}", "}}")
+        replanner_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_REPLANNER_AGENT", "").replace("{", "{{").replace("}", "}}")
 
+        # Determine which executor system prompt to use based on file_context_management_flag
+        if file_context_management_flag:
+            # Try to load file-context prompt from file (using agent_name, same as onboard)
+            safe_agent_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in agent_name)
+            file_context_prompt_path = os.path.join(
+                "agent_workspaces", "file_context_prompts", f"{safe_agent_name}_file_context_prompt.md"
+            )
+            if os.path.exists(file_context_prompt_path):
+                with open(file_context_prompt_path, "r", encoding="utf-8") as f:
+                    executor_system_prompt = f.read()
+                log.info(f"📄 Loaded file-context prompt from: {file_context_prompt_path}")
+            else:
+                # Fallback to DB prompt if file doesn't exist
+                executor_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_EXECUTOR_AGENT", "")
+                log.warning(f"⚠️ File-context prompt not found at {file_context_prompt_path}, using DB prompt")
+        else:
+            # Use regular DB prompt
+            executor_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_EXECUTOR_AGENT", "")
+        
+        general_query_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_GENERAL_LLM", "").replace("{", "{{").replace("}", "}}")
 
-        executor_system_prompt = system_prompt.get("SYSTEM_PROMPT_EXECUTOR_AGENT", "")
-        general_query_system_prompt = system_prompt.get("SYSTEM_PROMPT_GENERAL_LLM", "").replace("{", "{{").replace("}", "}}")
-
-        response_generator_system_prompt = system_prompt.get("SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT", "").replace("{", "{{").replace("}", "}}")
+        response_generator_system_prompt = system_prompt_config.get("SYSTEM_PROMPT_RESPONSE_GENERATOR_AGENT", "").replace("{", "{{").replace("}", "}}")
 
         # Executor Agent
-        executor_agent, tool_list = await self._get_react_agent_as_executor_agent(
+        executor_agent, tool_list, fs_memory = await self._get_react_agent_as_executor_agent(
                                         llm,
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
                                         tool_ids=tool_ids,
-                                        interrupt_tool=tool_interrupt_flag
+                                        interrupt_tool=tool_interrupt_flag,
+                                        message_queue=message_queue,
+                                        session_id=session_id,
+                                        agent_id=agent_id,
+                                        context_flag=context_flag,
+                                        file_context_management_flag=file_context_management_flag
                                     )
 
         # Planner Agent Chains
@@ -97,6 +133,7 @@ class PlannerExecutorAgentInference(BaseAgentInference):
             "llm": llm,
             "agent_executor": executor_agent,
             "tool_list": tool_list,
+            "fs_memory": fs_memory,
 
             "planner_chain_json": planner_chain_json,
             "planner_chain_str": planner_chain_str,
@@ -122,6 +159,7 @@ class PlannerExecutorAgentInference(BaseAgentInference):
         llm = chains.get("llm", None)
         executor_agent = chains.get("agent_executor", None)
         tool_list = chains.get("tool_list", [])
+        fs_memory = chains.get("fs_memory", None)  # Filesystem memory (may be None)
 
         planner_chain_json = chains.get("planner_chain_json", None)
         planner_chain_str = chains.get("planner_chain_str", None)
@@ -140,7 +178,12 @@ class PlannerExecutorAgentInference(BaseAgentInference):
         plan_verifier_flag = flags.get("plan_verifier_flag", False)
         evaluation_flag = flags.get("evaluation_flag", False)
         validator_flag = flags.get("validator_flag", False)
+        message_queue = flags.get("message_queue", False)
         
+        log.info(f"[INFO] Extracted flags - validator: {validator_flag}, evaluation: {evaluation_flag}, plan_verifier: {plan_verifier_flag}, message_queue: {message_queue}")
+
+        inference_config: AdminConfigLimits = flags.get("inference_config", AdminConfigLimits())
+
         log.info(f"[INFO] Extracted flags - validator: {validator_flag}, evaluation: {evaluation_flag}, plan_verifier: {plan_verifier_flag}")
 
         if not llm or not executor_agent or not planner_chain_json or not planner_chain_str or \
@@ -180,7 +223,7 @@ class PlannerExecutorAgentInference(BaseAgentInference):
                 else:
                     if state["context_flag"]==False:
                         new_state = {
-                            'past_conversation_summary': "No past conversation summary available.",
+                            'past_conversation_summary': "",
                             'query': current_state_query.content,
                             'ongoing_conversation': current_state_query,
                             'executor_messages': current_state_query,
@@ -203,7 +246,8 @@ class PlannerExecutorAgentInference(BaseAgentInference):
                             'validation_score': None,
                             'validation_feedback': None,
                             'workflow_description': workflow_description,
-                            'user_update_events': []
+                            'user_update_events': [],
+                            'tool_result': None
                         }
                         if plan_verifier_flag:
                             new_state.update({
@@ -212,6 +256,44 @@ class PlannerExecutorAgentInference(BaseAgentInference):
                             })
                       
                         return new_state
+                    
+                    # Check file_context_management_flag - if True, use file-based memory tool instead of conversation fetching
+                    if state.get("file_context_management_flag", False):
+                        log.info(f"File context management flag is set to True for session {state['session_id']}. Using file-based memory tool.")
+                        new_state = {
+                            'past_conversation_summary': "",
+                            'query': current_state_query.content,
+                            'ongoing_conversation': [],  # Don't pass ongoing conversation when using file-based memory
+                            'executor_messages': current_state_query,
+                            'preference': "No specific preferences provided.",
+                            'response': None,
+                            'start_timestamp': strt_tmstp,
+                            'response_quality_score': None,
+                            'critique_points': None,
+                            'plan': None,
+                            'past_steps_input': None,
+                            'past_steps_output': None,
+                            'epoch': 0,
+                            'validation_attempts': 0,
+                            'evaluation_attempts': 0,
+                            'step_idx': 0,
+                            'current_query_status': None,
+                            'errors': [],
+                            'evaluation_score': None,
+                            'evaluation_feedback': None,
+                            'validation_score': None,
+                            'validation_feedback': None,
+                            'workflow_description': workflow_description,
+                            'user_update_events': [],
+                            'tool_result': None
+                        }
+                        if plan_verifier_flag:
+                            new_state.update({
+                                'is_plan_approved': None,
+                                'plan_feedback': None
+                            })
+                        return new_state
+                    
                     # Get summary via ChatService
                     writer({"Node Name": "Generating Context", "Status":"Started"})
                     conv_summary = await self.chat_service.get_chat_conversation_summary(
@@ -260,7 +342,9 @@ class PlannerExecutorAgentInference(BaseAgentInference):
                 'validation_score': None,
                 'validation_feedback': None,
                 'workflow_description': workflow_description,
-                'user_update_events': []
+                'user_update_events': [],
+                'tool_result': None,
+                'episodic_memory_messages': []
             }
             if plan_verifier_flag:
                 new_state.update({
@@ -270,6 +354,28 @@ class PlannerExecutorAgentInference(BaseAgentInference):
 
             return new_state
 
+        async def prepare_episodic_memory_node(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState, writer: StreamWriter):
+            """Prepares episodic memory context as a separate traced node."""
+            try:
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Started"})
+                agent_id = state['agentic_application_id']
+                query = state["query"]
+                
+                # Fetch episodic memory context
+                log.info(f"[{state['session_id']}] Fetching episodic memory context...")
+                messages = await InferenceUtils.prepare_episodic_memory_context(
+                    state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, 
+                    query
+                )
+                log.info(f"[{state['session_id']}] Episodic memory context prepared: {len(messages)} messages")
+                
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Completed"})
+                return {"episodic_memory_messages": messages}
+            except Exception as e:
+                log.error(f"Error preparing episodic memory: {e}", exc_info=True)
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Failed"})
+                return {"episodic_memory_messages": [], "errors": state.get("errors", []) + [f"Episodic memory error: {e}"]}
+
         async def planner_agent(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState,writer:StreamWriter):
             """
             This function takes the current state of the conversation and generates a plan for the agent to follow.
@@ -277,11 +383,10 @@ class PlannerExecutorAgentInference(BaseAgentInference):
             # feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
             # feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
             writer({"Node Name": "Generating Plan", "Status":"Started"})
-            agent_id = state['agentic_application_id']
-            # Use the standard episodic memory function
-            query = state["query"]
-            messages = await InferenceUtils.prepare_episodic_memory_context(state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, query)
-
+            
+            # Use pre-fetched episodic memory from state (already prepared in separate traced node)
+            messages = state.get("episodic_memory_messages", [])
+            log.info(f"[{state['session_id']}] Using {len(messages)} pre-fetched episodic memory messages")
 
             evaluation_feedback = state.get("evaluation_feedback", "")
             evaluation_feedback_section = f"\n**Evaluation Feedback:**\n{evaluation_feedback}\n" if evaluation_feedback else ""
@@ -459,7 +564,7 @@ Note:
             step = state["plan"][state["step_idx"]]
             completed_steps = []
             completed_steps_responses = []
-            feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"])
+            feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=state["agentic_application_id"], department_name=state.get("department_name"))
             feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
 
             # Add evaluation guidance if available
@@ -712,6 +817,7 @@ Final Response from Executor Agent:
             errors = []
             end_timestamp = get_timestamp()
             try:
+                # Save to database
                 asyncio.create_task(self.chat_service.save_chat_message(
                                         agentic_application_id=state["agentic_application_id"],
                                         session_id=state["session_id"],
@@ -720,9 +826,21 @@ Final Response from Executor Agent:
                                         human_message=state["query"],
                                         ai_message=state["response"]
                                     ))
+                
+                # Save to file (using ChatService method)
+                await self.chat_service.save_chat_to_file(
+                    agentic_application_id=state["agentic_application_id"],
+                    session_id=state["session_id"],
+                    start_timestamp=state["start_timestamp"],
+                    end_timestamp=end_timestamp,
+                    human_message=state["query"],
+                    ai_message=state["response"],
+                    llm=llm
+                )
                 # asyncio.create_task(self.chat_service.update_preferences(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
                 asyncio.create_task(self.chat_service.update_preferences_and_analyze_conversation(user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]))
-                if (len(state["ongoing_conversation"])+1)%8 == 0:
+                config_limits = await self.admin_config_service.get_limits()
+                if (len(state["ongoing_conversation"])+1) % (2*config_limits.chat_summary_interval) == 0:
                     log.debug("Storing chat summary")
                     asyncio.create_task(self.chat_service.get_chat_summary(
                         agentic_application_id=state["agentic_application_id"],
@@ -893,8 +1011,8 @@ Final Response from Executor Agent:
             Decides whether to return the final response or continue with improvement cycle.
             SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
-            evaluation_threshold = 0.7  # Configurable threshold
-            max_evaluation_epochs = 3   # Maximum number of evaluation improvement cycles
+            evaluation_threshold = inference_config.evaluation_score_threshold  # Configurable threshold
+            max_evaluation_epochs = inference_config.max_evaluation_epochs   # Maximum number of evaluation improvement cycles
             
             current_epoch = state.get("evaluation_attempts", 0)
             evaluation_score = state.get("evaluation_score", 0.0)
@@ -931,7 +1049,8 @@ Final Response from Executor Agent:
                             new_final_response=status,
                             feedback=f"[EVALUATOR] Score: {evaluation_score:.2f} - {evaluation_feedback}", 
                             new_steps=status,
-                            lesson=lesson
+                            lesson=lesson,
+                            department_name=state.get("department_name")
                         )
                         log.info(f"💾 Planner-Executor Evaluator failure stored for session {state['session_id']}")
                             
@@ -952,7 +1071,12 @@ Final Response from Executor Agent:
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
             a = await executor_agent.aget_state(internal_thread)
-            if a.tasks == ():
+            
+            # Fixed operator precedence: use parentheses for clarity
+            if (tool_interrupt_flag or message_queue) and a.tasks != ():
+                log.info(f"[{state['session_id']}] Agent planning tool with interruption enabled, routing to interrupt_node_for_tool.")
+                return "interrupt_node_for_tool"
+            elif a.tasks == ():
                 response = a.values["messages"][-1].content
                 # checking_res = reversed(state["executor_messages"])
                 # for i in checking_res:
@@ -983,36 +1107,91 @@ Final Response from Executor Agent:
                 return "interrupt_node_for_tool"
 
         async def interrupt_node_for_tool(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState, writer:StreamWriter):
-            """Asks the human if the plan is ok or not"""
+            """
+            Handles tool interrupt/message queue flow.
+            - If message_queue is enabled: waits for async tool execution result from Kafka
+            - If tool_interrupt_flag is enabled: asks for human approval before tool execution
+            """
+            import time as time_module
+            
+            writer({"Node Name": "Tool Interrupt", "Status": "Started"})
+            
+            tool_result = None
+            is_approved = "yes"  # Default approval
+            
             thread_id = await self.chat_service._get_thread_id(state['agentic_application_id'], state['session_id'])
             internal_thread = await self.chat_service._get_thread_config("inside" + thread_id)
 
             agent_state = await executor_agent.aget_state(internal_thread)
 
             # Extract tool name from agent_state to check against interrupt_items
-            tool_name_in_task = None
+            current_tool_name = None
             last_message = agent_state.values.get("messages", [])[-1] if agent_state.values.get("messages") else None
             if last_message and hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-                tool_name_in_task = last_message.tool_calls[0].get('name')
+                current_tool_name = last_message.tool_calls[0].get('name')
+                if current_tool_name and current_tool_name.endswith('_message_queue'):
+                    current_tool_name = current_tool_name[:-14]  # Remove '_message_queue' suffix
+                    log.info(f"[{state['session_id']}] Extracted tool name for Kafka filtering: {current_tool_name}")
 
-            # Check if we should interrupt: tool_interrupt_flag AND (no interrupt_items OR tool_name is in interrupt_items)
-            interrupt_items = state.get("interrupt_items") or []
-            should_interrupt = tool_interrupt_flag and (not interrupt_items or (tool_name_in_task and tool_name_in_task in interrupt_items))
+            # Message Queue Flow: Tool was sent to Kafka, wait for result
+            if message_queue:
+                writer({"raw": {"tool_verifier": "Waiting for tool execution result from message queue..."}, "content": "Tool sent to message queue. Waiting for execution result..."})
+                log.info(f"[{state['session_id']}] Listening for tool response from Kafka for tool: {current_tool_name}...")
+                
+                # Use the request start_timestamp from state to filter out old messages
+                request_start_time = state.get('start_timestamp')
+                if request_start_time:
+                    # Convert to unix timestamp if it's a datetime string
+                    if isinstance(request_start_time, str):
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(request_start_time.replace('Z', '+00:00'))
+                            request_start_time = dt.timestamp()
+                        except:
+                            request_start_time = time_module.time() - 60  # Fallback: last 60 seconds
+                else:
+                    request_start_time = time_module.time() - 60  # Fallback: last 60 seconds
+                
+                tool_result = await listen_for_tool_response(state['session_id'], current_tool_name, request_start_time=request_start_time)
+                
+                if tool_result:
+                    writer({"raw": {"tool_result": tool_result}, "content": f"Tool execution completed. Result received."})
+                    log.info(f"[{state['session_id']}] Tool result received: {tool_result[:100]}...")
+                    writer({"Node Name": "Tool Interrupt", "Status": "Completed"})
+                    return {"tool_result": tool_result}
+                else:
+                    writer({"raw": {"tool_verifier": "Timeout waiting for tool result"}, "content": "Timeout waiting for tool execution result."})
+                    log.warning(f"[{state['session_id']}] Timeout waiting for tool response from Kafka")
+            
+            # Human-in-the-loop Flow: Ask for approval (only if not message_queue or if both are enabled)
+            elif tool_interrupt_flag:
+                # Check if we should interrupt: tool_interrupt_flag AND (no interrupt_items OR tool_name is in interrupt_items)
+                interrupt_items = state.get("interrupt_items") or []
+                should_interrupt = not interrupt_items or (current_tool_name and current_tool_name in interrupt_items)
 
-            if should_interrupt:
-                log.info(f"[{state['session_id']}] Interrupting for tool: {tool_name_in_task}")
-                is_plan_approved = interrupt("approved?(yes/feedback)") 
-                writer({"raw": {"tool_verifier": "Please confirm to execute the tool"}, "content": "Tool execution requires confirmation. Please approve to proceed."})
-                if is_plan_approved == "yes":
-                    writer({"raw": {"tool_verifier": "User approved the tool execution by clicking the thumbs up button"}, "content": "User approved the tool execution by clicking the thumbs up button"})              
+                if should_interrupt:
+                    log.info(f"[{state['session_id']}] Interrupting for tool: {current_tool_name}")
+                    is_approved = interrupt("approved?(yes/feedback)") 
+                    writer({"raw": {"tool_verifier": "Please confirm to execute the tool"}, "content": "Tool execution requires confirmation. Please approve to proceed."})
+                    if is_approved == "yes":
+                        writer({"raw": {"tool_verifier": "User approved the tool execution by clicking the thumbs up button"}, "content": "User approved the tool execution by clicking the thumbs up button"})              
+                else:
+                    log.info(f"[{state['session_id']}] Tool '{current_tool_name}' not in interrupt_items {interrupt_items}, auto-approving.")
+                    is_approved = "yes"
             else:
-                log.info(f"[{state['session_id']}] Tool '{tool_name_in_task}' not in interrupt_items {interrupt_items}, auto-approving.")
-                is_plan_approved = "yes"
-            return {"tool_feedback": is_plan_approved, "is_tool_interrupted": True}
+                log.info(f"[{state['session_id']}] Neither message_queue nor tool_interrupt enabled, auto-approving.")
+            
+            writer({"Node Name": "Tool Interrupt", "Status": "Completed"})
+            return {"tool_feedback": is_approved, "tool_result": None, "is_tool_interrupted": True}
 
         async def interrupt_node_decision_for_tool(state: PlannerExecutorWorkflowState | PlannerExecutorHITLWorkflowState):
-            if state["tool_feedback"]=='yes':
+            # If we have a tool result from message queue, proceed to executor
+            if state.get('tool_result'):
                 return "executor_agent_node"
+            # If user approved (or auto-approved), proceed to executor
+            elif state.get("tool_feedback") == 'yes':
+                return "executor_agent_node"
+            # Otherwise, user wants to update arguments
             else:
                 return "tool_interrupt"
 
@@ -1313,8 +1492,8 @@ Final Response from Executor Agent:
             Decides the next step based on validation results and current attempts.
             SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
-            validation_threshold = 0.7
-            max_validation_epochs = 3
+            validation_threshold = inference_config.validation_score_threshold  # Configurable threshold
+            max_validation_epochs = inference_config.max_validation_epochs   # Maximum number of validation improvement cycles
             
             current_epoch = state.get("validation_attempts", 0)
             validation_score = state.get("validation_score", 0.0)
@@ -1351,7 +1530,8 @@ Final Response from Executor Agent:
                             new_final_response=status,
                             feedback=f"[VALIDATOR] Score: {validation_score:.2f} - {validation_feedback}", 
                             new_steps=status,
-                            lesson=lesson
+                            lesson=lesson,
+                            department_name=state.get("department_name")
                         )
                         log.info(f"💾 Planner-Executor Validator failure stored for session {state['session_id']}")
                             
@@ -1386,11 +1566,12 @@ Final Response from Executor Agent:
             else:
                 log.info(f"[ROUTE] Routing to final_response (no validation or evaluation)")
                 return "final_response"
-
+        
         ### Build Graph
         workflow = StateGraph(PlannerExecutorWorkflowState if not plan_verifier_flag else PlannerExecutorHITLWorkflowState)
 
         workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
+        workflow.add_node("prepare_episodic_memory", prepare_episodic_memory_node)
         workflow.add_node("planner_agent", planner_agent)
 
         if plan_verifier_flag:
@@ -1455,7 +1636,8 @@ Final Response from Executor Agent:
             workflow.add_edge("response_generator_agent", "final_response")
 
         workflow.add_edge(START, "generate_past_conversation_summary")
-        workflow.add_edge("generate_past_conversation_summary", "planner_agent")
+        workflow.add_edge("generate_past_conversation_summary", "prepare_episodic_memory")
+        workflow.add_edge("prepare_episodic_memory", "planner_agent")
         workflow.add_conditional_edges(
             "planner_agent",
             route_general_question,

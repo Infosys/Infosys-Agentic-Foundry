@@ -9,6 +9,8 @@ import asyncpg
 import difflib
 from typing import List, Dict, Any, Optional, Union, Literal, Tuple
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from src.config.constants import TableNames, DatabaseName
+from src.config.application_config import app_config
 from src.utils.cache_utils import cache_result, invalidate_entity_cache, CacheableRepository
 from src.config.cache_config import EXPIRY_TIME, ENABLE_CACHING
 from telemetry_wrapper import logger as log
@@ -64,7 +66,7 @@ class BaseRepository:
         if emails:
             async with self.login_pool.acquire() as conn:
                 user_records = await conn.fetch(
-                    "SELECT mail_id, user_name FROM login_credential WHERE mail_id = ANY($1)",
+                    f"SELECT mail_id, user_name FROM {TableNames.LOGIN_CREDENTIAL.value} WHERE mail_id = ANY($1)",
                     list(emails)
                 )
                 email_to_username = {r['mail_id']: r['user_name'] for r in user_records}
@@ -81,14 +83,14 @@ class BaseRepository:
         return rows
 
 
-
 # --- Tag Repository ---
+
 class TagRepository(BaseRepository, CacheableRepository):
     """
     Repository for the 'tags_table'. Handles direct database interactions for tags.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tags_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TAG.value):
         """
         Initializes the TagRepository.
 
@@ -119,6 +121,21 @@ class TagRepository(BaseRepository, CacheableRepository):
 
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+
+                # Migration: Ensure UNIQUE constraint exists on tag_name (for existing tables)
+                try:
+                    await conn.execute(f"""
+                        DO $$ BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint 
+                            WHERE conname = '{self.table_name}_tag_name_key'
+                        ) THEN
+                            ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tag_name_key UNIQUE (tag_name);
+                        END IF;
+                        END $$;
+                    """)
+                except Exception as e:
+                    log.debug(f"Unique constraint on tag_name may already exist or cannot be added: {e}")
 
                 # Insert the 'Common' tag if the table is newly created
                 for default_tag in default_tags:
@@ -152,8 +169,8 @@ class TagRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(insert_statement, tag_id, tag_name.strip(), created_by)
-            await self.invalidate_entity("get_tag_record", tag_id, tag_name)
-            await self.invalidate_entity("get_all_tag_records")
+            await self.invalidate_all_method_cache("get_tag_record")
+            await self.invalidate_all_method_cache("get_all_tag_records")
             log.info(f"Tag record '{tag_name}' inserted successfully.")
             return True
         except asyncpg.UniqueViolationError:
@@ -238,8 +255,8 @@ class TagRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(update_statement, new_tag_name, tag_id, created_by)
-            await self.invalidate_entity("get_tag_record", tag_id)
-            await self.invalidate_entity("get_all_tag_records")
+            await self.invalidate_all_method_cache("get_tag_record")
+            await self.invalidate_all_method_cache("get_all_tag_records")
             if result != "UPDATE 0":
                 log.info(f"Tag record '{tag_id}' updated successfully to '{new_tag_name}'.")
                 return True
@@ -265,8 +282,8 @@ class TagRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(delete_statement, tag_id, created_by)
-            await self.invalidate_entity("get_tag_record", tag_id)
-            await self.invalidate_entity("get_all_tag_records")
+            await self.invalidate_all_method_cache("get_tag_record")
+            await self.invalidate_all_method_cache("get_all_tag_records")
             if result != "DELETE 0":
                 log.info(f"Tag record '{tag_id}' deleted successfully.")
                 return True
@@ -281,7 +298,6 @@ class TagRepository(BaseRepository, CacheableRepository):
             return False
 
 
-
 # --- TagToolMappingRepository ---
 
 class TagToolMappingRepository(BaseRepository, CacheableRepository):
@@ -289,7 +305,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
     Repository for the 'tag_tool_mapping_table'. Handles direct database interactions for tag-tool mappings.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tag_tool_mapping_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TAG_TOOL_MAPPING.value):
         """
         Initializes the TagToolMappingRepository.
 
@@ -312,7 +328,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 tag_id TEXT,
                 tool_id TEXT,
-                FOREIGN KEY(tag_id) REFERENCES tags_table(tag_id) ON DELETE RESTRICT,
+                FOREIGN KEY(tag_id) REFERENCES {TableNames.TAG.value}(tag_id) ON DELETE RESTRICT,
                 UNIQUE(tag_id, tool_id)
             );
             """
@@ -341,8 +357,8 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(insert_statement, tag_id, tool_id)
-            await self.invalidate_entity("get_tool_tag_mappings")
-            await self.invalidate_entity("get_tags_by_tool_id_records", tool_id=tool_id)
+            await self.invalidate_all_method_cache("get_tool_tag_mappings")
+            await self.invalidate_all_method_cache("get_tags_by_tool_id_records")
             log.info(f"Mapping tag '{tag_id}' to tool '{tool_id}' inserted successfully.")
             return True
         except Exception as e:
@@ -369,8 +385,8 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
                 result = await conn.execute(delete_statement, tag_id, tool_id)
             if result != "DELETE 0":
                 log.info(f"Mapping tag '{tag_id}' from tool '{tool_id}' removed successfully.")
-                await self.invalidate_entity("get_tool_tag_mappings")
-                await self.invalidate_entity("get_tags_by_tool_id_records", tool_id=tool_id)
+                await self.invalidate_all_method_cache("get_tool_tag_mappings")
+                await self.invalidate_all_method_cache("get_tags_by_tool_id_records")
                 return True
             else:
                 log.warning(f"Mapping tag '{tag_id}' from tool '{tool_id}' not found, no deletion performed.")
@@ -433,8 +449,8 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(delete_statement, tool_id)
             if result != "DELETE 0": 
-                await self.invalidate_entity("get_tool_tag_mappings")
-                await self.invalidate_entity("get_tags_by_tool_id_records", tool_id=tool_id)
+                await self.invalidate_all_method_cache("get_tool_tag_mappings")
+                await self.invalidate_all_method_cache("get_tags_by_tool_id_records")
                 log.info(f"All tag mappings for tool '{tool_id}' deleted successfully.")
                 return True
             else:
@@ -490,7 +506,7 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
     Repository for the 'tag_agentic_app_mapping_table'. Handles direct database interactions for tag-agent mappings.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tag_agentic_app_mapping_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TAG_AGENTIC_APP_MAPPING.value):
         """
         Initializes the TagAgentMappingRepository.
 
@@ -511,8 +527,8 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 tag_id TEXT,
                 agentic_application_id TEXT,
-                FOREIGN KEY(tag_id) REFERENCES tags_table(tag_id) ON DELETE RESTRICT,
-                FOREIGN KEY(agentic_application_id) REFERENCES agent_table(agentic_application_id) ON DELETE CASCADE,
+                FOREIGN KEY(tag_id) REFERENCES {TableNames.TAG.value}(tag_id) ON DELETE RESTRICT,
+                FOREIGN KEY(agentic_application_id) REFERENCES {TableNames.AGENT.value}(agentic_application_id) ON DELETE CASCADE,
                 UNIQUE(tag_id, agentic_application_id)
             );
             """
@@ -541,8 +557,8 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(insert_statement, tag_id, agentic_application_id)
-            await self.invalidate_entity("get_agent_tag_mappings")
-            await self.invalidate_entity("get_tags_by_agent_id_records", agent_id=agentic_application_id)
+            await self.invalidate_all_method_cache("get_agent_tag_mappings")
+            await self.invalidate_all_method_cache("get_tags_by_agent_id_records")
             log.info(f"Mapping tag '{tag_id}' to agent '{agentic_application_id}' inserted successfully.")
             return True
         except Exception as e:
@@ -569,8 +585,8 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
                 result = await conn.execute(delete_statement, tag_id, agentic_application_id)
             if result != "DELETE 0":
                 log.info(f"Mapping tag '{tag_id}' from agent '{agentic_application_id}' removed successfully.")
-                await self.invalidate_entity("get_agent_tag_mappings")
-                await self.invalidate_entity("get_tags_by_agent_id_records", agent_id=agentic_application_id)
+                await self.invalidate_all_method_cache("get_agent_tag_mappings")
+                await self.invalidate_all_method_cache("get_tags_by_agent_id_records")
                 return True
             else:
                 log.warning(f"Mapping tag '{tag_id}' from agent '{agentic_application_id}' not found, no deletion performed.")
@@ -633,8 +649,8 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(delete_statement, agent_id)
             if result != "DELETE 0":
-                await self.invalidate_entity("get_agent_tag_mappings")
-                await self.invalidate_entity("get_tags_by_agent_id_records", agent_id=agent_id)
+                await self.invalidate_all_method_cache("get_agent_tag_mappings")
+                await self.invalidate_all_method_cache("get_tags_by_agent_id_records")
                 log.info(f"All tag mappings for agent '{agent_id}' deleted successfully.")
                 return True
             else:
@@ -645,7 +661,6 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
             return False
 
 
-
 # --- Tool Repository ---
 
 class ToolRepository(BaseRepository, CacheableRepository):
@@ -653,7 +668,7 @@ class ToolRepository(BaseRepository, CacheableRepository):
     Repository for the 'tool_table'. Handles direct database interactions for tools.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tool_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL.value):
         """
         Initializes the ToolRepository.
 
@@ -673,10 +688,11 @@ class ToolRepository(BaseRepository, CacheableRepository):
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 tool_id TEXT PRIMARY KEY,
-                tool_name TEXT UNIQUE,
+                tool_name TEXT NOT NULL,
                 tool_description TEXT,
                 code_snippet TEXT,
                 model_name TEXT,
+                department_name TEXT DEFAULT 'General',
                 created_by TEXT,
                 created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -686,7 +702,8 @@ class ToolRepository(BaseRepository, CacheableRepository):
                 comments TEXT,
                 approved_at TIMESTAMPTZ,
                 approved_by TEXT,
-                CHECK (status IN ('pending', 'approved', 'rejected'))
+                CHECK (status IN ('pending', 'approved', 'rejected')),
+                UNIQUE (tool_name, department_name)
             );
             """
             async with self.pool.acquire() as conn:
@@ -698,6 +715,7 @@ class ToolRepository(BaseRepository, CacheableRepository):
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS approved_by TEXT",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN created_on TYPE TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN updated_on TYPE TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN last_used TYPE TIMESTAMPTZ",
@@ -706,11 +724,21 @@ class ToolRepository(BaseRepository, CacheableRepository):
                     f"DO $$ BEGIN "
                     f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_status_check') THEN "
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')); "
+                    f"END IF; END $$;",
+                    # Migration: Drop old unique constraint on tool_name only, add composite unique on (tool_name, department_name)
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_key; "
+                    f"END IF; END $$;",
+                    f"DO $$ BEGIN "
+                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tool_name_department_name_key UNIQUE (tool_name, department_name); "
                     f"END IF; END $$;"
                 ]
 
                 for stmt in alter_statements:
                     await conn.execute(stmt)
+                    
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -722,14 +750,14 @@ class ToolRepository(BaseRepository, CacheableRepository):
         Args:
             tool_data (Dict[str, Any]): A dictionary containing the tool data.
                                         Expected keys: tool_id, tool_name, tool_description,
-                                        code_snippet, model_name, created_by, created_on, updated_on.
+                                        code_snippet, model_name, created_by, created_on, updated_on, is_public.
 
         Returns:
             bool: True if the tool was inserted successfully, False if a unique violation occurred or on other error.
         """
         insert_statement = f"""
-        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by, created_on)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by, created_on, department_name, is_public)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """
         try:
             async with self.pool.acquire() as conn:
@@ -738,12 +766,11 @@ class ToolRepository(BaseRepository, CacheableRepository):
                     tool_data.get("tool_id"), tool_data.get("tool_name"),
                     tool_data.get("tool_description"), tool_data.get("code_snippet"),
                     tool_data.get("model_name"), tool_data.get("created_by"),
-                    tool_data["created_on"]
+                    tool_data["created_on"], tool_data.get("department_name"),
+                    tool_data.get("is_public", False)
                 )
-            await self.invalidate_entity("get_tool_record", tool_id=tool_data.get("tool_id"))
-            await self.invalidate_entity("get_tool_record", tool_name=tool_data.get("tool_name"))
-            await self.invalidate_entity("get_tool_record", tool_id=tool_data.get("tool_id"), tool_name=tool_data.get("tool_name"))
-            await self.invalidate_entity("get_all_tool_records")
+            await self.invalidate_all_method_cache("get_tool_record")
+            await self.invalidate_all_method_cache("get_all_tool_records")
 
             log.info(f"Tool record {tool_data.get('tool_name')} inserted successfully.")
             return True
@@ -755,28 +782,51 @@ class ToolRepository(BaseRepository, CacheableRepository):
             return False
 
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="ToolRepository")
-    async def get_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None,message_queue_implementation:bool=False, department_name: str = None, include_public: bool = True) -> List[Dict[str, Any]]:
         """
-        Retrieves a single tool record by its ID or name.
+        Retrieves a single tool record by its ID or name, optionally filtered by department_name.
+        When department_name is specified and include_public is True, also returns the tool if it's public.
 
         Args:
             tool_id (Optional[str]): The ID of the tool.
             tool_name (Optional[str]): The name of the tool.
+            department_name (str): The department name to filter by.
+            include_public (bool): Whether to include public tools from other departments. Defaults to True.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionary representing the tool record, or an empty list if not found.
         """
-        query = f"SELECT * FROM {self.table_name} WHERE "
+        query = f"SELECT * FROM {self.table_name}"
+        where_clauses = []
         params = []
+
         if tool_id:
-            query += "tool_id = $1"
+           # if tool_id.endswith()
+            if not message_queue_implementation:
+                if tool_id.endswith('_message_queue'):
+                    tool_id = tool_id[:-14]
+            where_clauses.append(f"tool_id = ${len(params)+1}")
             params.append(tool_id)
         elif tool_name:
-            query += "tool_name = $1"
+            if not message_queue_implementation:
+                if tool_name.endswith('_message_queue'):
+                    tool_name = tool_name[:-14]
+            where_clauses.append(f"tool_name = ${len(params)+1}")
             params.append(tool_name)
         else:
             log.warning("No tool_id or tool_name provided to get_tool_record.")
             return []
+
+        # Include own department tools OR public tools from other departments
+        if department_name:
+            if include_public:
+                where_clauses.append(f"(department_name = ${len(params)+1} OR is_public = TRUE)")
+            else:
+                where_clauses.append(f"department_name = ${len(params)+1}")
+            params.append(department_name)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
 
         try:
             async with self.pool.acquire() as conn:
@@ -794,27 +844,31 @@ class ToolRepository(BaseRepository, CacheableRepository):
             return []
 
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="ToolRepository")
-    async def get_all_tool_records(self) -> List[Dict[str, Any]]:
+    async def get_all_tool_records(self, department_name: str = None, include_public: bool = True) -> List[Dict[str, Any]]:
         """
-        Retrieves all tool records.
+        Retrieves all tool records, optionally filtered by department_name.
+        When department_name is specified and include_public is True, also includes public tools from other departments.
+
+        Args:
+            department_name (str, optional): Filter by department name.
+            include_public (bool): Whether to include public tools from other departments. Defaults to True.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing a tool record.
         """
-        # query = f"SELECT * FROM {self.table_name} WHERE  (status = 'approved' OR created_by = '{current_user_email.get(None)}') ORDER BY created_on DESC"
-        
-        query = f"""
-            SELECT 
-                tool_id, tool_name, tool_description, code_snippet, 
-                model_name, created_on, created_by, updated_on, last_used, is_public, 
-                status, comments, approved_at, approved_by 
-            FROM {self.table_name} 
-            ORDER BY created_on DESC
-        """
+        query = f"SELECT * FROM {self.table_name}"
+        params = []
+        if department_name:
+            if include_public:
+                query += " WHERE (department_name = $1 OR is_public = TRUE)"
+            else:
+                query += " WHERE department_name = $1"
+            params.append(department_name)
+        query += " ORDER BY created_on DESC"
         log.info(f"Executing query to retrieve all tool records: {query}")
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, *params)
             updated_rows = [dict(row) for row in rows]
             await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
             log.info(f"Retrieved {len(rows)} tool records from '{self.table_name}'.")
@@ -823,45 +877,157 @@ class ToolRepository(BaseRepository, CacheableRepository):
             log.error(f"Error retrieving all tool records: {e}")
             return []
 
+    async def get_all_tool_records_with_shared(
+        self, 
+        department_name: str, 
+        shared_tool_ids: List[str] = None,
+        include_public: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves all tool records for a department including:
+        1. Tools owned by the department
+        2. Tools shared with the department (via sharing table)
+        3. Public tools (is_public=True) from other departments (if include_public=True)
 
-    async def get_tools_by_search_or_page_records(self, search_value: str, limit: int, page: int, created_by:str = None) -> List[Dict[str, Any]]:
+        Args:
+            department_name (str): The department to get tools for.
+            shared_tool_ids (List[str]): List of tool IDs shared with this department.
+            include_public (bool): Whether to include public tools from other departments.
+
+        Returns:
+            List[Dict[str, Any]]: A list of tool records with 'is_shared' and 'is_public_access' flags.
+        """
+        if not department_name:
+            return await self.get_all_tool_records()
+
+        shared_tool_ids = shared_tool_ids or []
+        
+        # Build query to get:
+        # 1. Own department tools
+        # 2. Shared tools (by ID)
+        # 3. Public tools from other departments
+        
+        if shared_tool_ids and include_public:
+            query = f"""
+            SELECT *, 
+                CASE 
+                    WHEN department_name = $1 THEN FALSE
+                    WHEN tool_id = ANY($2) THEN TRUE
+                    ELSE FALSE
+                END as is_shared,
+                CASE 
+                    WHEN department_name != $1 AND is_public = TRUE AND tool_id != ALL($2) THEN TRUE
+                    ELSE FALSE
+                END as is_public_access
+            FROM {self.table_name}
+            WHERE department_name = $1 
+               OR tool_id = ANY($2)
+               OR (is_public = TRUE AND department_name != $1)
+            ORDER BY 
+                CASE WHEN department_name = $1 THEN 0 ELSE 1 END,
+                created_on DESC
+            """
+            params = [department_name, shared_tool_ids]
+        elif shared_tool_ids:
+            query = f"""
+            SELECT *, 
+                CASE WHEN department_name = $1 THEN FALSE ELSE TRUE END as is_shared,
+                FALSE as is_public_access
+            FROM {self.table_name}
+            WHERE department_name = $1 OR tool_id = ANY($2)
+            ORDER BY 
+                CASE WHEN department_name = $1 THEN 0 ELSE 1 END,
+                created_on DESC
+            """
+            params = [department_name, shared_tool_ids]
+        elif include_public:
+            query = f"""
+            SELECT *, 
+                FALSE as is_shared,
+                CASE WHEN department_name != $1 AND is_public = TRUE THEN TRUE ELSE FALSE END as is_public_access
+            FROM {self.table_name}
+            WHERE department_name = $1 OR (is_public = TRUE AND department_name != $1)
+            ORDER BY 
+                CASE WHEN department_name = $1 THEN 0 ELSE 1 END,
+                created_on DESC
+            """
+            params = [department_name]
+        else:
+            query = f"""
+            SELECT *, FALSE as is_shared, FALSE as is_public_access
+            FROM {self.table_name}
+            WHERE department_name = $1
+            WHERE tool_id NOT LIKE '%_message_queue'
+            ORDER BY created_on DESC
+            """
+            params = [department_name]
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            log.info(f"Retrieved {len(rows)} tool records (including shared/public) for department '{department_name}'.")
+            return updated_rows
+        except Exception as e:
+            log.error(f"Error retrieving tool records with shared: {e}")
+            return []
+
+
+    async def get_tools_by_search_or_page_records(self, search_value: str, limit: int, page: int, created_by: str = None, department_name: str = None, shared_tool_ids: List[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieves tool records with pagination and search filtering.
+        Includes public tools and shared tools when department_name is specified.
 
         Args:
             search_value (str): The value to search for in tool names (case-insensitive, LIKE).
             limit (int): The maximum number of records to return.
             page (int): The page number (1-indexed).
+            created_by (str, optional): If provided, include records created by this user even if not approved.
+            department_name (str, optional): If provided, filter results by department and include public/shared tools.
+            shared_tool_ids (List[str], optional): List of tool IDs shared with the department.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing a tool record.
         """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
         offset = limit * max(0, page - 1)
-        columns_to_select = """
-            tool_id, tool_name, tool_description, code_snippet, model_name, 
-            created_on, created_by, updated_on, last_used, is_public, status, 
-            comments, approved_at, approved_by
-        """
+        shared_tool_ids = shared_tool_ids or []
+
+        query = f"SELECT tool_id, tool_name, tool_description, created_by, department_name, is_public FROM {self.table_name}"
+        where_clauses: List[str] = []
+        params: List[Any] = []
+
+        # name filter (always present)
+        where_clauses.append(f"LOWER(tool_name) LIKE ${len(params) + 1}")
+        params.append(name_filter)
+
+        # created_by logic: allow either approved or created_by match
         if created_by:
-            query = f"""
-                SELECT {columns_to_select}
-                FROM {self.table_name}
-                WHERE (status = 'approved' OR created_by = $4) AND LOWER(tool_name) LIKE $1
-                ORDER BY created_on DESC
-                LIMIT $2 OFFSET $3;
-            """
-            # Note: Parameter index is now $4 for created_by
-            params = (name_filter, limit, offset, created_by)
+            where_clauses.append(f"(status = 'approved' OR created_by = ${len(params) + 1})")
+            params.append(created_by)
+
+        # department filter - include own department tools OR public tools OR shared tools
+        if department_name:
+            if shared_tool_ids:
+                where_clauses.append(f"(department_name = ${len(params) + 1} OR is_public = TRUE OR tool_id = ANY(${len(params) + 2}))")
+                params.append(department_name)
+                params.append(shared_tool_ids)
+            else:
+                where_clauses.append(f"(department_name = ${len(params) + 1} OR is_public = TRUE)")
+                params.append(department_name)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+
+        # add ordering and pagination - own department tools first, then shared, then public tools
+        if department_name:
+            query += f" ORDER BY CASE WHEN department_name = ${len(params) + 1} THEN 0 ELSE 1 END, created_on DESC LIMIT ${len(params) + 2} OFFSET ${len(params) + 3}"
+            params.extend([department_name, limit, offset])
         else:
-            query = f"""
-                SELECT {columns_to_select}
-                FROM {self.table_name}
-                WHERE LOWER(tool_name) LIKE $1
-                ORDER BY created_on DESC
-                LIMIT $2 OFFSET $3;
-            """
-            params = (name_filter, limit, offset)
+            query += f" ORDER BY created_on DESC LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}"
+            params.extend([limit, offset])
+
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
@@ -873,26 +1039,50 @@ class ToolRepository(BaseRepository, CacheableRepository):
             log.error(f"Error retrieving tool records by search/page: {e}")
             return []
 
-    async def get_total_tool_count(self, search_value: str = '',created_by: str =None) -> int:
+    async def get_total_tool_count(self, search_value: str = '', created_by: str = None, department_name: str = None, shared_tool_ids: List[str] = None) -> int:
         """
-        Retrieves the total count of tool records, optionally filtered by name.
+        Retrieves the total count of tool records, optionally filtered by name, creator and department.
+        Includes public tools and shared tools when department_name is specified.
 
         Args:
             search_value (str): The value to search for in tool names (case-insensitive, LIKE).
+            created_by (str, optional): Filter by creator email.
+            department_name (str, optional): Filter by department name (also includes public/shared tools).
+            shared_tool_ids (List[str], optional): List of tool IDs shared with the department.
 
         Returns:
             int: The total count of matching tool records.
         """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
-        # query = f"SELECT COUNT(*) FROM {self.table_name} WHERE  (status = 'approved' OR created_by = '{current_user_email.get(None)}') AND LOWER(tool_name) LIKE $1"
+        shared_tool_ids = shared_tool_ids or []
+        # Build WHERE clauses and parameter list safely
+        where_clauses = ["LOWER(tool_name) LIKE $1"]
+        params: List[Any] = [name_filter]
+        next_param_idx = 2
+
         if created_by:
-            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE created_by = '{created_by}' AND LOWER(tool_name) LIKE $1"
-        else:
-            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE LOWER(tool_name) LIKE $1"
+            where_clauses.append(f"created_by = ${next_param_idx}")
+            params.append(created_by)
+            next_param_idx += 1
+
+        # Include own department tools OR public tools OR shared tools
+        if department_name:
+            if shared_tool_ids:
+                where_clauses.append(f"(department_name = ${next_param_idx} OR is_public = TRUE OR tool_id = ANY(${next_param_idx + 1}))")
+                params.append(department_name)
+                params.append(shared_tool_ids)
+                next_param_idx += 2
+            else:
+                where_clauses.append(f"(department_name = ${next_param_idx} OR is_public = TRUE)")
+                params.append(department_name)
+                next_param_idx += 1
+
+        query = f"SELECT COUNT(*) FROM {self.table_name} WHERE " + " AND ".join(where_clauses)
         try:
             async with self.pool.acquire() as conn:
-                count = await conn.fetchval(query, name_filter)
-            log.info(f"Total tool count for search '{search_value}': {count}.")
+                count = await conn.fetchval(query, *params)
+            count = int(count) if count is not None else 0
+            log.info(f"Total tool count for search '{search_value}', created_by='{created_by}', department_name='{department_name}': {count}.")
             return count
         except Exception as e:
             log.error(f"Error getting total tool count: {e}")
@@ -922,10 +1112,8 @@ class ToolRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(query, tool_id, *values)
             if result != "UPDATE 0":
-                await self.invalidate_entity("get_tool_record", tool_id=tool_id)
-                await self.invalidate_entity("get_tool_record", tool_name=tool_data.get("tool_name"))
-                await self.invalidate_entity("get_tool_record", tool_id=tool_id, tool_name=tool_data.get("tool_name"))
-                await self.invalidate_entity("get_all_tool_records")
+                await self.invalidate_all_method_cache("get_tool_record")
+                await self.invalidate_all_method_cache("get_all_tool_records")
     
                 log.info(f"Tool record '{tool_id}' updated successfully.")
                 return True
@@ -951,8 +1139,8 @@ class ToolRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(delete_query, tool_id)
             if result != "DELETE 0":
-                await self.invalidate_entity("get_tool_record", tool_id=tool_id)
-                await self.invalidate_entity("get_all_tool_records")
+                await self.invalidate_all_method_cache("get_tool_record")
+                await self.invalidate_all_method_cache("get_all_tool_records")
     
                 
                 log.info(f"Tool record '{tool_id}' deleted successfully from '{self.table_name}'.")
@@ -1059,6 +1247,8 @@ class ToolRepository(BaseRepository, CacheableRepository):
                     approval_time_naive
                 )
             if result != "UPDATE 0":
+                await self.invalidate_all_method_cache("get_tool_record")
+                await self.invalidate_all_method_cache("get_all_tool_records")
                 log.info(f"Tool '{tool_id}' approved successfully by '{approved_by}' at {approval_time_utc}.")
                 return True
             else:
@@ -1103,9 +1293,1245 @@ class ToolRepository(BaseRepository, CacheableRepository):
         except Exception as e:
             log.error(f"ERROR REPOSITORY: Error updating last_used for tool '{tool_name}': {e}")
             return False
+
+
+# --- ToolDepartmentSharingRepository ---
+
+class ToolDepartmentSharingRepository(BaseRepository):
+    """
+    Repository for managing tool sharing across departments.
+    Handles sharing tools from one department to specific other departments.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL_DEPARTMENT_SHARING.value):
+        """
+        Initializes the ToolDepartmentSharingRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the tool department sharing table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'tool_department_sharing' table if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id SERIAL PRIMARY KEY,
+                tool_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                source_department TEXT NOT NULL,
+                target_department TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tool_id, target_department),
+                FOREIGN KEY (tool_id) REFERENCES {TableNames.TOOL.value}(tool_id) ON DELETE CASCADE
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                # Create index for faster lookups
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_tool_id ON {self.table_name} (tool_id)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_target_dept ON {self.table_name} (target_department)"
+                )
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def share_tool_with_department(
+        self, 
+        tool_id: str, 
+        tool_name: str,
+        source_department: str, 
+        target_department: str, 
+        shared_by: str
+    ) -> bool:
+        """
+        Shares a tool with a specific department.
+
+        Args:
+            tool_id (str): The ID of the tool to share.
+            tool_name (str): The name of the tool to share.
+            source_department (str): The department that owns the tool.
+            target_department (str): The department to share the tool with.
+            shared_by (str): The admin email who is sharing the tool.
+
+        Returns:
+            bool: True if shared successfully, False otherwise.
+        """
+        if source_department == target_department:
+            log.warning(f"Cannot share tool '{tool_id}' with its own department '{source_department}'.")
+            return False
+
+        insert_statement = f"""
+        INSERT INTO {self.table_name} (tool_id, tool_name, source_department, target_department, shared_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (tool_id, target_department) DO UPDATE SET tool_name = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(insert_statement, tool_id, tool_name, source_department, target_department, shared_by)
+            log.info(f"Tool '{tool_name}' ({tool_id}) shared with department '{target_department}' by '{shared_by}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error sharing tool '{tool_id}' with department '{target_department}': {e}")
+            return False
+
+    async def share_tool_with_multiple_departments(
+        self, 
+        tool_id: str, 
+        tool_name: str,
+        source_department: str, 
+        target_departments: List[str], 
+        shared_by: str
+    ) -> Dict[str, Any]:
+        """
+        Shares a tool with multiple departments at once.
+
+        Args:
+            tool_id (str): The ID of the tool to share.
+            tool_name (str): The name of the tool to share.
+            source_department (str): The department that owns the tool.
+            target_departments (List[str]): List of departments to share the tool with.
+            shared_by (str): The admin email who is sharing the tool.
+
+        Returns:
+            Dict[str, Any]: Result with success count and any failures.
+        """
+        success_count = 0
+        failures = []
+
+        for target_dept in target_departments:
+            if target_dept == source_department:
+                failures.append({"department": target_dept, "reason": "Cannot share with own department"})
+                continue
+            
+            success = await self.share_tool_with_department(tool_id, tool_name, source_department, target_dept, shared_by)
+            if success:
+                success_count += 1
+            else:
+                failures.append({"department": target_dept, "reason": "Failed to share"})
+
+        return {
+            "success_count": success_count,
+            "total_requested": len(target_departments),
+            "failures": failures
+        }
+
+    async def unshare_tool_from_department(self, tool_id: str, target_department: str) -> bool:
+        """
+        Removes sharing of a tool from a specific department.
+
+        Args:
+            tool_id (str): The ID of the tool.
+            target_department (str): The department to remove sharing from.
+
+        Returns:
+            bool: True if unshared successfully, False otherwise.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE tool_id = $1 AND target_department = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, tool_id, target_department)
+            if result != "DELETE 0":
+                log.info(f"Tool '{tool_id}' unshared from department '{target_department}'.")
+                return True
+            else:
+                log.warning(f"Tool '{tool_id}' was not shared with department '{target_department}'.")
+                return False
+        except Exception as e:
+            log.error(f"Error unsharing tool '{tool_id}' from department '{target_department}': {e}")
+            return False
+
+    async def unshare_tool_from_all_departments(self, tool_id: str) -> int:
+        """
+        Removes all sharing for a tool (useful when deleting a tool).
+
+        Args:
+            tool_id (str): The ID of the tool.
+
+        Returns:
+            int: Number of sharing records removed.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE tool_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, tool_id)
+            count = int(result.split()[-1]) if result else 0
+            log.info(f"Removed {count} sharing records for tool '{tool_id}'.")
+            return count
+        except Exception as e:
+            log.error(f"Error removing all sharing for tool '{tool_id}': {e}")
+            return 0
+
+    async def get_shared_departments_for_tool(self, tool_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all departments a tool is shared with.
+
+        Args:
+            tool_id (str): The ID of the tool.
+
+        Returns:
+            List[Dict[str, Any]]: List of sharing records.
+        """
+        query = f"""
+        SELECT tool_name, target_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE tool_id = $1
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, tool_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting shared departments for tool '{tool_id}': {e}")
+            return []
+
+    async def get_tools_shared_with_department(self, department_name: str) -> List[str]:
+        """
+        Gets all tool IDs that are shared with a specific department.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[str]: List of tool IDs shared with this department.
+        """
+        query = f"""
+        SELECT tool_id
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [row['tool_id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting tools shared with department '{department_name}': {e}")
+            return []
+
+    async def get_tools_shared_with_department_details(self, department_name: str) -> List[Dict[str, Any]]:
+        """
+        Gets all tools that are shared with a specific department with full details.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[Dict[str, Any]]: List of tool sharing records with tool_id, tool_name, source_department, etc.
+        """
+        query = f"""
+        SELECT tool_id, tool_name, source_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting tools shared with department '{department_name}': {e}")
+            return []
+
+    async def is_tool_shared_with_department(self, tool_id: str, department_name: str) -> bool:
+        """
+        Checks if a specific tool is shared with a department.
+
+        Args:
+            tool_id (str): The ID of the tool.
+            department_name (str): The department name.
+
+        Returns:
+            bool: True if the tool is shared with the department, False otherwise.
+        """
+        query = f"""
+        SELECT EXISTS(
+            SELECT 1 FROM {self.table_name}
+            WHERE tool_id = $1 AND LOWER(target_department) = LOWER($2)
+        )
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(query, tool_id, department_name)
+            return result
+        except Exception as e:
+            log.error(f"Error checking if tool '{tool_id}' is shared with department '{department_name}': {e}")
+            return False
+
+
+# --- McpToolDepartmentSharingRepository ---
+
+class McpToolDepartmentSharingRepository(BaseRepository):
+    """
+    Repository for managing MCP tool sharing across departments.
+    Handles sharing MCP tools from one department to specific other departments.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.MCP_TOOL_DEPARTMENT_SHARING.value):
+        """
+        Initializes the McpToolDepartmentSharingRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the MCP tool department sharing table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'mcp_tool_department_sharing' table if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id SERIAL PRIMARY KEY,
+                mcp_tool_id TEXT NOT NULL,
+                mcp_tool_name TEXT NOT NULL,
+                source_department TEXT NOT NULL,
+                target_department TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (mcp_tool_id, target_department),
+                FOREIGN KEY (mcp_tool_id) REFERENCES {TableNames.MCP_TOOL.value}(tool_id) ON DELETE CASCADE
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                # Create index for faster lookups
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_mcp_tool_id ON {self.table_name} (mcp_tool_id)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_target_dept ON {self.table_name} (target_department)"
+                )
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def share_mcp_tool_with_department(
+        self, 
+        mcp_tool_id: str, 
+        mcp_tool_name: str,
+        source_department: str, 
+        target_department: str, 
+        shared_by: str
+    ) -> bool:
+        """
+        Shares an MCP tool with a specific department.
+
+        Args:
+            mcp_tool_id (str): The ID of the MCP tool to share.
+            mcp_tool_name (str): The name of the MCP tool to share.
+            source_department (str): The department that owns the MCP tool.
+            target_department (str): The department to share the MCP tool with.
+            shared_by (str): The admin email who is sharing the MCP tool.
+
+        Returns:
+            bool: True if shared successfully, False otherwise.
+        """
+        if source_department == target_department:
+            log.warning(f"Cannot share MCP tool '{mcp_tool_id}' with its own department '{source_department}'.")
+            return False
+
+        insert_statement = f"""
+        INSERT INTO {self.table_name} (mcp_tool_id, mcp_tool_name, source_department, target_department, shared_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (mcp_tool_id, target_department) DO UPDATE SET mcp_tool_name = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(insert_statement, mcp_tool_id, mcp_tool_name, source_department, target_department, shared_by)
+            log.info(f"MCP tool '{mcp_tool_name}' ({mcp_tool_id}) shared with department '{target_department}' by '{shared_by}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error sharing MCP tool '{mcp_tool_id}' with department '{target_department}': {e}")
+            return False
+
+    async def share_mcp_tool_with_multiple_departments(
+        self, 
+        mcp_tool_id: str, 
+        mcp_tool_name: str,
+        source_department: str, 
+        target_departments: List[str], 
+        shared_by: str
+    ) -> Dict[str, Any]:
+        """
+        Shares an MCP tool with multiple departments at once.
+
+        Args:
+            mcp_tool_id (str): The ID of the MCP tool to share.
+            mcp_tool_name (str): The name of the MCP tool to share.
+            source_department (str): The department that owns the MCP tool.
+            target_departments (List[str]): List of departments to share the MCP tool with.
+            shared_by (str): The admin email who is sharing the MCP tool.
+
+        Returns:
+            Dict[str, Any]: Result with success count and any failures.
+        """
+        success_count = 0
+        failures = []
+
+        for target_dept in target_departments:
+            if target_dept == source_department:
+                failures.append({"department": target_dept, "reason": "Cannot share with own department"})
+                continue
+            
+            success = await self.share_mcp_tool_with_department(mcp_tool_id, mcp_tool_name, source_department, target_dept, shared_by)
+            if success:
+                success_count += 1
+            else:
+                failures.append({"department": target_dept, "reason": "Failed to share"})
+
+        return {
+            "success_count": success_count,
+            "total_requested": len(target_departments),
+            "failures": failures
+        }
+
+    async def unshare_mcp_tool_from_department(self, mcp_tool_id: str, target_department: str) -> bool:
+        """
+        Removes sharing of an MCP tool from a specific department.
+
+        Args:
+            mcp_tool_id (str): The ID of the MCP tool.
+            target_department (str): The department to remove sharing from.
+
+        Returns:
+            bool: True if unshared successfully, False otherwise.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE mcp_tool_id = $1 AND target_department = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, mcp_tool_id, target_department)
+            if result != "DELETE 0":
+                log.info(f"MCP tool '{mcp_tool_id}' unshared from department '{target_department}'.")
+                return True
+            else:
+                log.warning(f"MCP tool '{mcp_tool_id}' was not shared with department '{target_department}'.")
+                return False
+        except Exception as e:
+            log.error(f"Error unsharing MCP tool '{mcp_tool_id}' from department '{target_department}': {e}")
+            return False
+
+    async def unshare_mcp_tool_from_all_departments(self, mcp_tool_id: str) -> int:
+        """
+        Removes all sharing for an MCP tool (useful when deleting an MCP tool).
+
+        Args:
+            mcp_tool_id (str): The ID of the MCP tool.
+
+        Returns:
+            int: Number of sharing records removed.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE mcp_tool_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, mcp_tool_id)
+            count = int(result.split()[-1]) if result else 0
+            log.info(f"Removed {count} sharing records for MCP tool '{mcp_tool_id}'.")
+            return count
+        except Exception as e:
+            log.error(f"Error removing all sharing for MCP tool '{mcp_tool_id}': {e}")
+            return 0
+
+    async def get_shared_departments_for_mcp_tool(self, mcp_tool_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all departments an MCP tool is shared with.
+
+        Args:
+            mcp_tool_id (str): The ID of the MCP tool.
+
+        Returns:
+            List[Dict[str, Any]]: List of sharing records.
+        """
+        query = f"""
+        SELECT mcp_tool_name, target_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE mcp_tool_id = $1
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, mcp_tool_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting shared departments for MCP tool '{mcp_tool_id}': {e}")
+            return []
+
+    async def get_mcp_tools_shared_with_department(self, department_name: str) -> List[str]:
+        """
+        Gets all MCP tool IDs that are shared with a specific department.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[str]: List of MCP tool IDs shared with this department.
+        """
+        query = f"""
+        SELECT mcp_tool_id
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [row['mcp_tool_id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting MCP tools shared with department '{department_name}': {e}")
+            return []
+
+    async def get_mcp_tools_shared_with_department_details(self, department_name: str) -> List[Dict[str, Any]]:
+        """
+        Gets all MCP tools that are shared with a specific department with full details.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[Dict[str, Any]]: List of MCP tool sharing records with mcp_tool_id, mcp_tool_name, source_department, etc.
+        """
+        query = f"""
+        SELECT mcp_tool_id, mcp_tool_name, source_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting MCP tools shared with department '{department_name}': {e}")
+            return []
+
+    async def is_mcp_tool_shared_with_department(self, mcp_tool_id: str, department_name: str) -> bool:
+        """
+        Checks if a specific MCP tool is shared with a department.
+
+        Args:
+            mcp_tool_id (str): The ID of the MCP tool.
+            department_name (str): The department name.
+
+        Returns:
+            bool: True if the MCP tool is shared with the department, False otherwise.
+        """
+        query = f"""
+        SELECT EXISTS(
+            SELECT 1 FROM {self.table_name}
+            WHERE mcp_tool_id = $1 AND LOWER(target_department) = LOWER($2)
+        )
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(query, mcp_tool_id, department_name)
+            return result
+        except Exception as e:
+            log.error(f"Error checking if MCP tool '{mcp_tool_id}' is shared with department '{department_name}': {e}")
+            return False
+
+
+# --- KbDepartmentSharingRepository ---
+
+class KbDepartmentSharingRepository(BaseRepository):
+    """
+    Repository for managing knowledge base sharing across departments.
+    Handles sharing KBs from one department to specific other departments.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.KB_DEPARTMENT_SHARING.value):
+        """
+        Initializes the KbDepartmentSharingRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the KB department sharing table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'kb_department_sharing' table if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id SERIAL PRIMARY KEY,
+                knowledgebase_id TEXT NOT NULL,
+                knowledgebase_name TEXT NOT NULL,
+                source_department TEXT NOT NULL,
+                target_department TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (knowledgebase_id, target_department),
+                FOREIGN KEY (knowledgebase_id) REFERENCES {TableNames.KNOWLEDGEBASE.value}(knowledgebase_id) ON DELETE CASCADE
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                # Create index for faster lookups
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_kb_id ON {self.table_name} (knowledgebase_id)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_target_dept ON {self.table_name} (target_department)"
+                )
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def share_kb_with_department(
+        self, 
+        knowledgebase_id: str, 
+        knowledgebase_name: str,
+        source_department: str, 
+        target_department: str, 
+        shared_by: str
+    ) -> bool:
+        """
+        Shares a knowledge base with a specific department.
+
+        Args:
+            knowledgebase_id (str): The ID of the KB to share.
+            knowledgebase_name (str): The name of the KB to share.
+            source_department (str): The department that owns the KB.
+            target_department (str): The department to share the KB with.
+            shared_by (str): The admin email who is sharing the KB.
+
+        Returns:
+            bool: True if shared successfully, False otherwise.
+        """
+        if source_department == target_department:
+            log.warning(f"Cannot share KB '{knowledgebase_id}' with its own department '{source_department}'.")
+            return False
+
+        insert_statement = f"""
+        INSERT INTO {self.table_name} (knowledgebase_id, knowledgebase_name, source_department, target_department, shared_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (knowledgebase_id, target_department) DO UPDATE SET knowledgebase_name = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(insert_statement, knowledgebase_id, knowledgebase_name, source_department, target_department, shared_by)
+            log.info(f"KB '{knowledgebase_name}' ({knowledgebase_id}) shared with department '{target_department}' by '{shared_by}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error sharing KB '{knowledgebase_id}' with department '{target_department}': {e}")
+            return False
+
+    async def share_kb_with_multiple_departments(
+        self, 
+        knowledgebase_id: str, 
+        knowledgebase_name: str,
+        source_department: str, 
+        target_departments: List[str], 
+        shared_by: str
+    ) -> Dict[str, Any]:
+        """
+        Shares a KB with multiple departments at once.
+
+        Args:
+            knowledgebase_id (str): The ID of the KB to share.
+            knowledgebase_name (str): The name of the KB to share.
+            source_department (str): The department that owns the KB.
+            target_departments (List[str]): List of departments to share the KB with.
+            shared_by (str): The admin email who is sharing the KB.
+
+        Returns:
+            Dict[str, Any]: Result with success count and any failures.
+        """
+        success_count = 0
+        failures = []
+
+        for target_dept in target_departments:
+            if target_dept == source_department:
+                failures.append({"department": target_dept, "reason": "Cannot share with own department"})
+                continue
+            
+            success = await self.share_kb_with_department(knowledgebase_id, knowledgebase_name, source_department, target_dept, shared_by)
+            if success:
+                success_count += 1
+            else:
+                failures.append({"department": target_dept, "reason": "Failed to share"})
+
+        return {
+            "success_count": success_count,
+            "total_requested": len(target_departments),
+            "failures": failures
+        }
+
+    async def unshare_kb_from_department(self, knowledgebase_id: str, target_department: str) -> bool:
+        """
+        Removes sharing of a KB from a specific department.
+
+        Args:
+            knowledgebase_id (str): The ID of the KB.
+            target_department (str): The department to remove sharing from.
+
+        Returns:
+            bool: True if unshared successfully, False otherwise.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE knowledgebase_id = $1 AND target_department = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, knowledgebase_id, target_department)
+            if result != "DELETE 0":
+                log.info(f"KB '{knowledgebase_id}' unshared from department '{target_department}'.")
+                return True
+            else:
+                log.warning(f"KB '{knowledgebase_id}' was not shared with department '{target_department}'.")
+                return False
+        except Exception as e:
+            log.error(f"Error unsharing KB '{knowledgebase_id}' from department '{target_department}': {e}")
+            return False
+
+    async def unshare_kb_from_all_departments(self, knowledgebase_id: str) -> int:
+        """
+        Removes all sharing for a KB (useful when deleting a KB).
+
+        Args:
+            knowledgebase_id (str): The ID of the KB.
+
+        Returns:
+            int: Number of sharing records removed.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE knowledgebase_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, knowledgebase_id)
+            count = int(result.split()[-1]) if result else 0
+            log.info(f"Removed {count} sharing records for KB '{knowledgebase_id}'.")
+            return count
+        except Exception as e:
+            log.error(f"Error removing all sharing for KB '{knowledgebase_id}': {e}")
+            return 0
+
+    async def get_shared_departments_for_kb(self, knowledgebase_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all departments a KB is shared with.
+
+        Args:
+            knowledgebase_id (str): The ID of the KB.
+
+        Returns:
+            List[Dict[str, Any]]: List of sharing records.
+        """
+        query = f"""
+        SELECT knowledgebase_name, target_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE knowledgebase_id = $1
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, knowledgebase_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting shared departments for KB '{knowledgebase_id}': {e}")
+            return []
+
+    async def get_kbs_shared_with_department(self, department_name: str) -> List[str]:
+        """
+        Gets all KB IDs that are shared with a specific department.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[str]: List of KB IDs shared with this department.
+        """
+        query = f"""
+        SELECT knowledgebase_id
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [row['knowledgebase_id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting KBs shared with department '{department_name}': {e}")
+            return []
+
+    async def get_kbs_shared_with_department_details(self, department_name: str) -> List[Dict[str, Any]]:
+        """
+        Gets all KBs that are shared with a specific department with full details.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[Dict[str, Any]]: List of KB sharing records with knowledgebase_id, knowledgebase_name, source_department, etc.
+        """
+        query = f"""
+        SELECT knowledgebase_id, knowledgebase_name, source_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting KBs shared with department '{department_name}': {e}")
+            return []
+
+    async def is_kb_shared_with_department(self, knowledgebase_id: str, department_name: str) -> bool:
+        """
+        Checks if a specific KB is shared with a department.
+
+        Args:
+            knowledgebase_id (str): The ID of the KB.
+            department_name (str): The department name.
+
+        Returns:
+            bool: True if the KB is shared with the department, False otherwise.
+        """
+        query = f"""
+        SELECT EXISTS(
+            SELECT 1 FROM {self.table_name}
+            WHERE knowledgebase_id = $1 AND LOWER(target_department) = LOWER($2)
+        )
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(query, knowledgebase_id, department_name)
+            return result
+        except Exception as e:
+            log.error(f"Error checking if KB '{knowledgebase_id}' is shared with department '{department_name}': {e}")
+            return False
+
+
+# --- AgentDepartmentSharingRepository ---
+
+class AgentDepartmentSharingRepository(BaseRepository):
+    """
+    Repository for managing agent sharing across departments.
+    Handles sharing agents from one department to specific other departments.
+    When an agent is shared, its tools are automatically shared too.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT_DEPARTMENT_SHARING.value):
+        """
+        Initializes the AgentDepartmentSharingRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the agent department sharing table.
+        """
+        super().__init__(pool, login_pool, table_name)
+        self.tool_sharing_repo = None  # Will be set by app_container for cascade sharing
+        self.mcp_tool_sharing_repo = None  # Will be set by app_container for MCP tools cascade sharing
+        self.kb_sharing_repo = None  # Will be set by app_container for KB cascade sharing
+
+    def set_tool_sharing_repo(self, tool_sharing_repo):
+        """Sets the tool sharing repository for cascade sharing."""
+        self.tool_sharing_repo = tool_sharing_repo
+
+    def set_mcp_tool_sharing_repo(self, mcp_tool_sharing_repo):
+        """Sets the MCP tool sharing repository for cascade sharing of MCP tools."""
+        self.mcp_tool_sharing_repo = mcp_tool_sharing_repo
+
+    def set_kb_sharing_repo(self, kb_sharing_repo):
+        """Sets the KB sharing repository for cascade sharing of knowledge bases."""
+        self.kb_sharing_repo = kb_sharing_repo
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'agent_department_sharing' table if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id SERIAL PRIMARY KEY,
+                agentic_application_id TEXT NOT NULL,
+                agentic_application_name TEXT NOT NULL,
+                source_department TEXT NOT NULL,
+                target_department TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (agentic_application_id, target_department),
+                FOREIGN KEY (agentic_application_id) REFERENCES {TableNames.AGENT.value}(agentic_application_id) ON DELETE CASCADE
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                # Create index for faster lookups
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_agent_id ON {self.table_name} (agentic_application_id)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_target_dept ON {self.table_name} (target_department)"
+                )
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def share_agent_with_department(
+        self, 
+        agentic_application_id: str, 
+        agentic_application_name: str,
+        source_department: str, 
+        target_department: str, 
+        shared_by: str,
+        tools_info: List[Dict[str, str]] = None,
+        mcp_tools_info: List[Dict[str, str]] = None,
+        kbs_info: List[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Shares an agent with a specific department. Also shares all the agent's tools (both regular and MCP) and knowledge bases.
+
+        Args:
+            agentic_application_id (str): The ID of the agent to share.
+            agentic_application_name (str): The name of the agent to share.
+            source_department (str): The department that owns the agent.
+            target_department (str): The department to share the agent with.
+            shared_by (str): The admin email who is sharing the agent.
+            tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's regular tools.
+            mcp_tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's MCP tools.
+            kbs_info (List[Dict[str, str]]): List of dicts with 'kb_id' and 'kb_name' for agent's knowledge bases.
+
+        Returns:
+            Dict[str, Any]: Result with agent sharing status and tools sharing details.
+        """
+        if source_department == target_department:
+            log.warning(f"Cannot share agent '{agentic_application_id}' with its own department '{source_department}'.")
+            return {"success": False, "reason": "Cannot share with own department"}
+
+        insert_statement = f"""
+        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, source_department, target_department, shared_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (agentic_application_id, target_department) DO UPDATE SET agentic_application_name = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(insert_statement, agentic_application_id, agentic_application_name, source_department, target_department, shared_by)
+            log.info(f"Agent '{agentic_application_name}' ({agentic_application_id}) shared with department '{target_department}' by '{shared_by}'.")
+            
+            # Cascade: share all agent's regular tools with the same department
+            tools_shared = 0
+            tools_failed = []
+            if tools_info and self.tool_sharing_repo:
+                for tool in tools_info:
+                    tool_id = tool.get('tool_id')
+                    tool_name = tool.get('tool_name', '')
+                    tool_dept = tool.get('department_name', source_department)
+                    if tool_id:
+                        success = await self.tool_sharing_repo.share_tool_with_department(
+                            tool_id=tool_id,
+                            tool_name=tool_name,
+                            source_department=tool_dept,
+                            target_department=target_department,
+                            shared_by=shared_by
+                        )
+                        if success:
+                            tools_shared += 1
+                        else:
+                            tools_failed.append(tool_id)
+                log.info(f"Cascade shared {tools_shared} regular tools for agent '{agentic_application_id}' with department '{target_department}'.")
+            
+            # Cascade: share all agent's MCP tools with the same department
+            mcp_tools_shared = 0
+            mcp_tools_failed = []
+            if mcp_tools_info and self.mcp_tool_sharing_repo:
+                for mcp_tool in mcp_tools_info:
+                    mcp_tool_id = mcp_tool.get('tool_id')
+                    mcp_tool_name = mcp_tool.get('tool_name', '')
+                    mcp_tool_dept = mcp_tool.get('department_name', source_department)
+                    if mcp_tool_id:
+                        success = await self.mcp_tool_sharing_repo.share_mcp_tool_with_department(
+                            mcp_tool_id=mcp_tool_id,
+                            mcp_tool_name=mcp_tool_name,
+                            source_department=mcp_tool_dept,
+                            target_department=target_department,
+                            shared_by=shared_by
+                        )
+                        if success:
+                            mcp_tools_shared += 1
+                        else:
+                            mcp_tools_failed.append(mcp_tool_id)
+                log.info(f"Cascade shared {mcp_tools_shared} MCP tools for agent '{agentic_application_id}' with department '{target_department}'.")
+            
+            # Cascade: share all agent's knowledge bases with the same department
+            kbs_shared = 0
+            kbs_failed = []
+            if kbs_info and self.kb_sharing_repo:
+                for kb in kbs_info:
+                    kb_id = kb.get('kb_id')
+                    kb_name = kb.get('kb_name', '')
+                    kb_dept = kb.get('department_name', source_department)
+                    if kb_id:
+                        success = await self.kb_sharing_repo.share_kb_with_department(
+                            knowledgebase_id=kb_id,
+                            knowledgebase_name=kb_name,
+                            source_department=kb_dept,
+                            target_department=target_department,
+                            shared_by=shared_by
+                        )
+                        if success:
+                            kbs_shared += 1
+                        else:
+                            kbs_failed.append(kb_id)
+                log.info(f"Cascade shared {kbs_shared} knowledge bases for agent '{agentic_application_id}' with department '{target_department}'.")
+            
+            return {
+                "success": True,
+                "agent_shared": True,
+                "tools_shared_count": tools_shared,
+                "tools_failed": tools_failed,
+                "mcp_tools_shared_count": mcp_tools_shared,
+                "mcp_tools_failed": mcp_tools_failed,
+                "kbs_shared_count": kbs_shared,
+                "kbs_failed": kbs_failed
+            }
+        except Exception as e:
+            log.error(f"Error sharing agent '{agentic_application_id}' with department '{target_department}': {e}")
+            return {"success": False, "reason": str(e)}
+
+    async def share_agent_with_multiple_departments(
+        self, 
+        agentic_application_id: str, 
+        agentic_application_name: str,
+        source_department: str, 
+        target_departments: List[str], 
+        shared_by: str,
+        tools_info: List[Dict[str, str]] = None,
+        mcp_tools_info: List[Dict[str, str]] = None,
+        kbs_info: List[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Shares an agent with multiple departments at once. Also shares all agent's tools (both regular and MCP) and knowledge bases.
+
+        Args:
+            agentic_application_id (str): The ID of the agent to share.
+            agentic_application_name (str): The name of the agent to share.
+            source_department (str): The department that owns the agent.
+            target_departments (List[str]): List of departments to share the agent with.
+            shared_by (str): The admin email who is sharing the agent.
+            tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's regular tools.
+            mcp_tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's MCP tools.
+            kbs_info (List[Dict[str, str]]): List of dicts with 'kb_id' and 'kb_name' for agent's knowledge bases.
+
+        Returns:
+            Dict[str, Any]: Result with success count and any failures.
+        """
+        success_count = 0
+        failures = []
+        total_tools_shared = 0
+        total_mcp_tools_shared = 0
+        total_kbs_shared = 0
+
+        for target_dept in target_departments:
+            if target_dept == source_department:
+                failures.append({"department": target_dept, "reason": "Cannot share with own department"})
+                continue
+            
+            result = await self.share_agent_with_department(
+                agentic_application_id, 
+                agentic_application_name,
+                source_department, 
+                target_dept, 
+                shared_by,
+                tools_info,
+                mcp_tools_info,
+                kbs_info
+            )
+            if result.get("success"):
+                success_count += 1
+                total_tools_shared += result.get("tools_shared_count", 0)
+                total_mcp_tools_shared += result.get("mcp_tools_shared_count", 0)
+                total_kbs_shared += result.get("kbs_shared_count", 0)
+            else:
+                failures.append({"department": target_dept, "reason": result.get("reason", "Failed to share")})
+
+        return {
+            "success_count": success_count,
+            "total_requested": len(target_departments),
+            "total_tools_shared": total_tools_shared,
+            "total_mcp_tools_shared": total_mcp_tools_shared,
+            "total_kbs_shared": total_kbs_shared,
+            "failures": failures
+        }
+
+    async def unshare_agent_from_department(self, agentic_application_id: str, target_department: str) -> bool:
+        """
+        Removes sharing of an agent from a specific department.
+
+        Args:
+            agentic_application_id (str): The ID of the agent.
+            target_department (str): The department to remove sharing from.
+
+        Returns:
+            bool: True if unshared successfully, False otherwise.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE agentic_application_id = $1 AND target_department = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, agentic_application_id, target_department)
+            if result != "DELETE 0":
+                log.info(f"Agent '{agentic_application_id}' unshared from department '{target_department}'.")
+                return True
+            else:
+                log.warning(f"Agent '{agentic_application_id}' was not shared with department '{target_department}'.")
+                return False
+        except Exception as e:
+            log.error(f"Error unsharing agent '{agentic_application_id}' from department '{target_department}': {e}")
+            return False
+
+    async def unshare_agent_from_all_departments(self, agentic_application_id: str) -> int:
+        """
+        Removes all sharing for an agent (useful when deleting an agent).
+
+        Args:
+            agentic_application_id (str): The ID of the agent.
+
+        Returns:
+            int: Number of sharing records removed.
+        """
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE agentic_application_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, agentic_application_id)
+            count = int(result.split()[-1]) if result else 0
+            log.info(f"Removed {count} sharing records for agent '{agentic_application_id}'.")
+            return count
+        except Exception as e:
+            log.error(f"Error removing all sharing for agent '{agentic_application_id}': {e}")
+            return 0
+
+    async def get_shared_departments_for_agent(self, agentic_application_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all departments an agent is shared with.
+
+        Args:
+            agentic_application_id (str): The ID of the agent.
+
+        Returns:
+            List[Dict[str, Any]]: List of sharing records.
+        """
+        query = f"""
+        SELECT agentic_application_name, target_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE agentic_application_id = $1
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, agentic_application_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting shared departments for agent '{agentic_application_id}': {e}")
+            return []
+
+    async def get_agents_shared_with_department(self, department_name: str) -> List[str]:
+        """
+        Gets all agent IDs that are shared with a specific department.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[str]: List of agent IDs shared with this department.
+        """
+        query = f"""
+        SELECT agentic_application_id
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [row['agentic_application_id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting agents shared with department '{department_name}': {e}")
+            return []
+
+    async def get_agents_shared_with_department_details(self, department_name: str) -> List[Dict[str, Any]]:
+        """
+        Gets all agents that are shared with a specific department with full details.
+
+        Args:
+            department_name (str): The department name.
+
+        Returns:
+            List[Dict[str, Any]]: List of agent sharing records with agent_id, agent_name, source_department, etc.
+        """
+        query = f"""
+        SELECT agentic_application_id, agentic_application_name, source_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting agents shared with department '{department_name}': {e}")
+            return []
+
+    async def is_agent_shared_with_department(self, agentic_application_id: str, department_name: str) -> bool:
+        """
+        Checks if a specific agent is shared with a department.
+
+        Args:
+            agentic_application_id (str): The ID of the agent.
+            department_name (str): The department name.
+
+        Returns:
+            bool: True if the agent is shared with the department, False otherwise.
+        """
+        query = f"""
+        SELECT EXISTS(
+            SELECT 1 FROM {self.table_name}
+            WHERE agentic_application_id = $1 AND LOWER(target_department) = LOWER($2)
+        )
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(query, agentic_application_id, department_name)
+            return result
+        except Exception as e:
+            log.error(f"Error checking if agent '{agentic_application_id}' is shared with department '{department_name}': {e}")
+            return False
  
-
-
 
 # --- McpToolRepository ---
 
@@ -1113,7 +2539,7 @@ class McpToolRepository(BaseRepository):
     """
     Repository for the 'mcp_tool_table'. Handles direct database interactions for MCP server definitions.
     """
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "mcp_tool_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.MCP_TOOL.value):
         """
         Initializes the McpToolRepository.
 
@@ -1134,7 +2560,7 @@ class McpToolRepository(BaseRepository):
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 tool_id TEXT PRIMARY KEY,
-                tool_name TEXT UNIQUE NOT NULL,
+                tool_name TEXT NOT NULL,
                 tool_description TEXT,
                 mcp_config JSONB NOT NULL, -- Stores the entire MCP config dictionary for the server
                 is_public BOOLEAN DEFAULT FALSE,
@@ -1145,11 +2571,30 @@ class McpToolRepository(BaseRepository):
                 created_by TEXT,
                 created_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected'))
+                department_name TEXT DEFAULT 'General',
+                CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')),
+                UNIQUE (tool_name, department_name)
             );
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                # Add department_name column if it doesn't exist (for existing databases)
+                await conn.execute(
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'"
+                )
+                # Migration: Drop old unique constraint on tool_name only, add composite unique on (tool_name, department_name)
+                await conn.execute(
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_key; "
+                    f"END IF; END $$;"
+                )
+                await conn.execute(
+                    f"DO $$ BEGIN "
+                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tool_name_department_name_key UNIQUE (tool_name, department_name); "
+                    f"END IF; END $$;"
+                )
 
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
@@ -1173,8 +2618,8 @@ class McpToolRepository(BaseRepository):
         INSERT INTO {self.table_name} (
             tool_id, tool_name, tool_description, mcp_config,
             is_public, status, comments, approved_at, approved_by,
-            created_by, created_on, updated_on
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            created_by, created_on, updated_on, department_name
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         """
         try:
             # Ensure mcp_config is properly formatted for JSONB
@@ -1215,7 +2660,8 @@ class McpToolRepository(BaseRepository):
                     tool_data.get("approved_by"),
                     tool_data.get("created_by"),
                     created_on,
-                    updated_on
+                    updated_on,
+                    tool_data.get("department_name")
                 )
             log.info(f"MCP tool record '{tool_data.get('tool_name')}' inserted successfully.")
             return True
@@ -1226,28 +2672,38 @@ class McpToolRepository(BaseRepository):
             log.error(f"Error saving MCP tool record '{tool_data.get('tool_name')}': {e}. Tool data: {tool_data}")
             return False
 
-    async def get_mcp_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_mcp_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves a single MCP tool (server definition) record by its ID or name.
+        Retrieves a single MCP tool (server definition) record by its ID or name, optionally filtered by department_name.
 
         Args:
             tool_id (Optional[str]): The ID of the MCP tool.
             tool_name (Optional[str]): The name of the MCP tool.
+            department_name (str): The department name to filter by.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries representing the MCP tool record, or an empty list if not found.
         """
-        query = f"SELECT * FROM {self.table_name} WHERE "
+        query = f"SELECT * FROM {self.table_name}"
+        where_clauses = []
         params = []
+
         if tool_id:
-            query += "tool_id = $1"
+            where_clauses.append(f"tool_id = ${len(params)+1}")
             params.append(tool_id)
         elif tool_name:
-            query += "tool_name = $1"
+            where_clauses.append(f"tool_name = ${len(params)+1}")
             params.append(tool_name)
         else:
             log.warning("No tool_id or tool_name provided to get_mcp_tool_record.")
             return []
+
+        if department_name:
+            where_clauses.append(f"department_name = ${len(params)+1}")
+            params.append(department_name)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
 
         try:
             async with self.pool.acquire() as conn:
@@ -1264,17 +2720,49 @@ class McpToolRepository(BaseRepository):
             log.error(f"Error retrieving MCP tool record '{tool_id or tool_name}': {e}")
             return []
 
-    async def get_all_mcp_tool_records(self) -> List[Dict[str, Any]]:
+    async def get_all_mcp_tool_records(self, department_name: str = None, shared_mcp_tool_ids: List[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves all MCP tool (server definition) records.
+        Retrieves all MCP tool (server definition) records, optionally filtered by department_name.
+        Includes public MCP tools and shared MCP tools when department_name is specified.
+
+        Args:
+            department_name (str): The department name to filter by.
+            shared_mcp_tool_ids (List[str]): List of MCP tool IDs shared with this department.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing an MCP tool record.
         """
-        query = f"SELECT * FROM {self.table_name} ORDER BY created_on DESC"
+        params = []
+        shared_mcp_tool_ids = shared_mcp_tool_ids or []
+        
+        if department_name:
+            if shared_mcp_tool_ids:
+                # Include own department tools OR public tools OR shared tools
+                query = f"""
+                SELECT *,
+                    CASE WHEN tool_id = ANY($2) AND department_name != $1 THEN TRUE ELSE FALSE END as is_shared,
+                    CASE WHEN is_public = TRUE AND department_name != $1 AND NOT (tool_id = ANY($2)) THEN TRUE ELSE FALSE END as is_public_access
+                FROM {self.table_name}
+                WHERE department_name = $1 OR is_public = TRUE OR tool_id = ANY($2)
+                ORDER BY CASE WHEN department_name = $1 THEN 0 ELSE 1 END, created_on DESC
+                """
+                params = [department_name, shared_mcp_tool_ids]
+            else:
+                # Include own department tools OR public tools
+                query = f"""
+                SELECT *, FALSE as is_shared,
+                    CASE WHEN is_public = TRUE AND department_name != $1 THEN TRUE ELSE FALSE END as is_public_access
+                FROM {self.table_name}
+                WHERE department_name = $1 OR is_public = TRUE
+                ORDER BY CASE WHEN department_name = $1 THEN 0 ELSE 1 END, created_on DESC
+                """
+                params = [department_name]
+        else:
+            query = f"SELECT *, FALSE as is_shared, FALSE as is_public_access FROM {self.table_name} ORDER BY created_on DESC"
+        
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} MCP tool records from '{self.table_name}'.")
             updated_rows = [dict(row) for row in rows]
             await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
@@ -1283,21 +2771,26 @@ class McpToolRepository(BaseRepository):
             log.error(f"Error retrieving all MCP tool records: {e}")
             return []
 
-    async def get_mcp_tools_by_search_or_page_records(self, search_value: str, limit: int, page: int, mcp_type: Optional[List[Literal["file", "url", "module"]]] = None, created_by:str = None) -> List[Dict[str, Any]]:
+    async def get_mcp_tools_by_search_or_page_records(self, search_value: str, limit: int, page: int, mcp_type: Optional[List[Literal["file", "url", "module"]]] = None, created_by:str = None, department_name: str = None, shared_mcp_tool_ids: List[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieves MCP tool (server definition) records with pagination and search filtering.
+        Includes public MCP tools and shared MCP tools when department_name is specified.
 
         Args:
             search_value (str): The value to search for in tool names (case-insensitive, LIKE).
             limit (int): The maximum number of records to return.
             page (int): The page number (1-indexed).
             mcp_type (Optional[List[Literal["file", "url", "module"]]]): Optional list of MCP types to filter by.
+            created_by (str): Optional filter by creator's email.
+            department_name (str): Optional filter by department name (also includes public/shared tools).
+            shared_mcp_tool_ids (List[str], optional): List of MCP tool IDs shared with the department.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing an MCP tool record.
         """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
         offset = limit * max(0, page - 1)
+        shared_mcp_tool_ids = shared_mcp_tool_ids or []
 
         query = f"""
             SELECT * FROM {self.table_name}
@@ -1316,12 +2809,29 @@ class McpToolRepository(BaseRepository):
             params.append(type_patterns)
             param_idx += 1
         if created_by:
-            query += f" AND created_by = '${param_idx}'"
+            query += f" AND created_by = ${param_idx}"
             params.append(created_by)
             param_idx += 1
         
-        query += f" ORDER BY created_on DESC LIMIT ${param_idx} OFFSET ${param_idx + 1};"
-        params.extend([limit, offset])
+        # department filter - include own department MCP tools OR public MCP tools OR shared MCP tools
+        if department_name:
+            if shared_mcp_tool_ids:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE OR tool_id = ANY(${param_idx + 1}))"
+                params.append(department_name)
+                params.append(shared_mcp_tool_ids)
+                param_idx += 2
+            else:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE)"
+                params.append(department_name)
+                param_idx += 1
+        
+        # add ordering - own department tools first, then shared, then public tools
+        if department_name:
+            query += f" ORDER BY CASE WHEN department_name = ${param_idx} THEN 0 ELSE 1 END, created_on DESC LIMIT ${param_idx + 1} OFFSET ${param_idx + 2}"
+            params.extend([department_name, limit, offset])
+        else:
+            query += f" ORDER BY created_on DESC LIMIT ${param_idx} OFFSET ${param_idx + 1}"
+            params.extend([limit, offset])
 
         try:
             async with self.pool.acquire() as conn:
@@ -1334,11 +2844,13 @@ class McpToolRepository(BaseRepository):
             log.error(f"Error retrieving MCP tool records by search/page: {e}")
             return []
 
-    async def get_total_mcp_tool_count(self, search_value: str = '', mcp_type: Optional[List[Literal["file", "url", "module"]]] = None, created_by:str=None) -> int:
+    async def get_total_mcp_tool_count(self, search_value: str = '', mcp_type: Optional[List[Literal["file", "url", "module"]]] = None, created_by:str=None, department_name: str=None, shared_mcp_tool_ids: List[str] = None) -> int:
         """
         Retrieves the total count of MCP tool (server definition) records, optionally filtered by name and type.
+        Includes public MCP tools and shared MCP tools when department_name is specified.
         """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
+        shared_mcp_tool_ids = shared_mcp_tool_ids or []
         query = f"SELECT COUNT(*) FROM {self.table_name} WHERE LOWER(tool_name) LIKE $1"
         params = [name_filter]
         param_idx = 2
@@ -1353,9 +2865,19 @@ class McpToolRepository(BaseRepository):
             params.append(type_patterns)
             param_idx += 1
         if created_by:
-            query += f" AND created_by = '${param_idx}'"
+            query += f" AND created_by = ${param_idx}"
             params.append(created_by)
             param_idx += 1
+        
+        # Include own department MCP tools OR public MCP tools OR shared MCP tools
+        if department_name:
+            if shared_mcp_tool_ids:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE OR tool_id = ANY(${param_idx + 1}))"
+                params.append(department_name)
+                params.append(shared_mcp_tool_ids)
+            else:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE)"
+                params.append(department_name)
 
         try:
             async with self.pool.acquire() as conn:
@@ -1508,6 +3030,57 @@ class McpToolRepository(BaseRepository):
         except Exception as e:
             log.error(f"Error logging validation result for MCP tool {tool_id}: {e}")
 
+    async def update_mcp_config_metadata(self, tool_id: str, server_type: str, functions: List[str]) -> bool:
+        """
+        Updates the mcp_config JSONB field to include server_type and function list metadata.
+        
+        Args:
+            tool_id (str): The MCP tool ID
+            server_type (str): The server type (LOCAL or REMOTE)
+            functions (List[str]): List of function names in the server
+            
+        Returns:
+            bool: True if update was successful
+        """
+        try:
+            update_statement = f"""
+            UPDATE {self.table_name}
+            SET mcp_config = mcp_config || $1::jsonb,
+                updated_on = CURRENT_TIMESTAMP
+            WHERE tool_id = $2
+            """
+            
+            metadata = {
+                "server_type": server_type,
+                "functions": functions,
+                "function_count": len(functions)
+            }
+            
+            log.info(f"Preparing to update tool {tool_id} with metadata: {metadata}")
+            log.info(f"Server type value: '{server_type}' (type: {type(server_type).__name__})")
+            
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_statement, json.dumps(metadata), tool_id)
+                log.info(f"Database execute result: {result}")
+                
+                # Verify what was actually saved
+                verify_query = f"SELECT mcp_config FROM {self.table_name} WHERE tool_id = $1"
+                row = await conn.fetchrow(verify_query, tool_id)
+                if row:
+                    actual_config = row['mcp_config']
+                    log.info(f"🔍 Verification query result - mcp_config in DB: {actual_config}")
+                    log.info(f"🔍 server_type in DB: {actual_config.get('server_type') if isinstance(actual_config, dict) else 'NOT_DICT'}")
+                else:
+                    log.error(f"🔍 Verification failed - tool {tool_id} not found in DB")
+            
+            log.info(f"✅ Updated MCP config metadata for tool {tool_id}: type={server_type}, functions={len(functions)}")
+            return True
+        except Exception as e:
+            log.error(f"❌ Error updating MCP config metadata for tool {tool_id}: {e}")
+            import traceback
+            log.error(f"Traceback: {traceback.format_exc()}")
+            return False
+
 
 # --- ToolAgentMappingRepository ---
 
@@ -1516,7 +3089,7 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
     Repository for the 'tool_agent_mapping_table'. Handles direct database interactions for tool-agent mappings.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "tool_agent_mapping_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL_AGENT_MAPPING.value):
         """
         Initializes the ToolAgentMappingRepository.
 
@@ -1540,8 +3113,8 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
                 agentic_application_id TEXT,
                 tool_created_by TEXT,
                 agentic_app_created_by TEXT,
-                -- FOREIGN KEY(tool_id) REFERENCES tool_table(tool_id) ON DELETE RESTRICT, -- REMOVED
-                FOREIGN KEY(agentic_application_id) REFERENCES agent_table(agentic_application_id) ON DELETE CASCADE
+                -- FOREIGN KEY(tool_id) REFERENCES {TableNames.TOOL.value}(tool_id) ON DELETE RESTRICT, -- REMOVED
+                FOREIGN KEY(agentic_application_id) REFERENCES {TableNames.AGENT.value}(agentic_application_id) ON DELETE CASCADE
             );
             """
             async with self.pool.acquire() as conn:
@@ -1570,10 +3143,8 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(insert_statement, tool_id, agentic_application_id, tool_created_by, agentic_app_created_by)
-            await self.invalidate_entity("get_tool_agent_mappings_record", tool_id=tool_id, agentic_application_id=agentic_application_id)
-            await self.invalidate_entity("get_tool_agent_mappings_record", tool_id=tool_id)
-            await self.invalidate_entity("get_tool_agent_mappings_record", agentic_application_id=agentic_application_id)
-            await self.invalidate_entity("get_agent_record", agentic_application_id=agentic_application_id, namespace="AgentRepository")
+            await self.invalidate_all_method_cache("get_tool_agent_mappings_record")
+            await self.invalidate_all_method_cache("get_agent_record", namespace="AgentRepository")
             log.info(f"Mapping tool/agent '{tool_id}' to agent '{agentic_application_id}' inserted successfully.")
             return True
         except Exception as e:
@@ -1641,10 +3212,8 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
                 async with self.pool.acquire() as conn:
                     result = await conn.execute(delete_statement, *values)
                 if result != "DELETE 0":
-                    await self.invalidate_entity("get_tool_agent_mappings_record", tool_id=tool_id, agentic_application_id=agentic_application_id)
-                    await self.invalidate_entity("get_tool_agent_mappings_record", tool_id=tool_id)
-                    await self.invalidate_entity("get_tool_agent_mappings_record", agentic_application_id=agentic_application_id)
-                    await self.invalidate_entity("get_agent_record", agentic_application_id=agentic_application_id, namespace="AgentRepository")
+                    await self.invalidate_all_method_cache("get_tool_agent_mappings_record")
+                    await self.invalidate_all_method_cache("get_agent_record", namespace="AgentRepository")
                     log.info(f"Mapping tool/agent '{tool_id}' from agent '{agentic_application_id}' removed successfully.")
                     return True
                 else:
@@ -1701,7 +3270,7 @@ class RecycleToolRepository(BaseRepository):
     Repository for the 'recycle_tool' table. Handles direct database interactions for recycled tools.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "recycle_tool"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.RECYCLE_TOOL.value):
         """
         Initializes the RecycleToolRepository.
 
@@ -1721,10 +3290,11 @@ class RecycleToolRepository(BaseRepository):
             create_table_sql = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 tool_id TEXT PRIMARY KEY,
-                tool_name TEXT UNIQUE,
+                tool_name TEXT NOT NULL,
                 tool_description TEXT,
                 code_snippet TEXT,
                 model_name TEXT,
+                department_name TEXT DEFAULT 'General',
                 created_by TEXT,
                 created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -1734,7 +3304,8 @@ class RecycleToolRepository(BaseRepository):
                 comments TEXT,
                 approved_at TIMESTAMPTZ,
                 approved_by TEXT,
-                CHECK (status IN ('pending', 'approved', 'rejected'))
+                CHECK (status IN ('pending', 'approved', 'rejected')),
+                UNIQUE (tool_name, department_name)
             );
             """
             async with self.pool.acquire() as conn:
@@ -1746,6 +3317,7 @@ class RecycleToolRepository(BaseRepository):
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS approved_by TEXT",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN created_on TYPE TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN updated_on TYPE TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN last_used TYPE TIMESTAMPTZ",
@@ -1753,6 +3325,15 @@ class RecycleToolRepository(BaseRepository):
                     f"DO $$ BEGIN "
                     f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_status_check') THEN "
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')); "
+                    f"END IF; END $$;",
+                    # Migration: Drop old unique constraint on tool_name only, add composite unique on (tool_name, department_name)
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_key; "
+                    f"END IF; END $$;",
+                    f"DO $$ BEGIN "
+                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tool_name_department_name_key UNIQUE (tool_name, department_name); "
                     f"END IF; END $$;"
                 ]
 
@@ -1786,28 +3367,42 @@ class RecycleToolRepository(BaseRepository):
     async def insert_recycle_tool_record(self, tool_data: Dict[str, Any]) -> bool:
         """
         Inserts a tool record into the recycle bin.
+        If the tool already exists in the recycle bin, updates the record.
 
         Args:
             tool_data (Dict[str, Any]): A dictionary containing the tool data to insert.
 
         Returns:
-            bool: True if the record was inserted successfully, False otherwise.
+            bool: True if the record was inserted/updated successfully, False otherwise.
         """
         insert_query = f"""
-        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by, created_on, last_used)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (tool_id) DO NOTHING;
+        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by, created_on, updated_on, last_used, department_name, is_public, status, comments, approved_at, approved_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (tool_id) DO UPDATE SET 
+            updated_on = CURRENT_TIMESTAMP,
+            tool_description = EXCLUDED.tool_description,
+            code_snippet = EXCLUDED.code_snippet,
+            is_public = EXCLUDED.is_public,
+            status = EXCLUDED.status,
+            comments = EXCLUDED.comments;
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(
+                result = await conn.execute(
                     insert_query,
                     tool_data.get("tool_id"), tool_data.get("tool_name"), tool_data.get("tool_description"),
                     tool_data.get("code_snippet"), tool_data.get("model_name"), tool_data.get("created_by"),
-                    tool_data["created_on"], tool_data.get("last_used")
+                    tool_data.get("created_on"), tool_data.get("last_used"), tool_data.get("department_name"),
+                    tool_data.get("is_public", False), tool_data.get("status", "pending"), 
+                    tool_data.get("comments"), tool_data.get("approved_at"), tool_data.get("approved_by")
                 )
-            log.info(f"Tool record {tool_data.get('tool_name')} inserted into recycle bin successfully.")
-            return True
+            # Check if insert or update happened
+            if result and ("INSERT" in result or "UPDATE" in result):
+                log.info(f"Tool record {tool_data.get('tool_name')} inserted/updated in recycle bin successfully.")
+                return True
+            else:
+                log.warning(f"Tool record {tool_data.get('tool_name')} - unexpected result: {result}")
+                return False
         except Exception as e:
             log.error(f"Error inserting recycle tool record {tool_data.get('tool_name')}: {e}")
             return False
@@ -1836,17 +3431,22 @@ class RecycleToolRepository(BaseRepository):
             log.error(f"Error deleting recycle tool record '{tool_id}': {e}")
             return False
 
-    async def get_all_recycle_tool_records(self) -> List[Dict[str, Any]]:
+    async def get_all_recycle_tool_records(self, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves all tool records from the recycle bin.
+        Retrieves all tool records from the recycle bin, optionally filtered by department_name.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing a recycled tool record.
         """
-        query = f"SELECT * FROM {self.table_name} ORDER BY created_on DESC"
+        query = f"SELECT * FROM {self.table_name}"
+        params = []
+        if department_name:
+            query += " WHERE department_name = $1"
+            params.append(department_name)
+        query += " ORDER BY created_on DESC"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} recycle tool records from '{self.table_name}'.")
             updated_rows = [dict(row) for row in rows]
             await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
@@ -1855,28 +3455,38 @@ class RecycleToolRepository(BaseRepository):
             log.error(f"Error retrieving all recycle tool records: {e}")
             return []
 
-    async def get_recycle_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> Dict[str, Any] | None:
+    async def get_recycle_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None, department_name: str = None) -> Dict[str, Any] | None:
         """
-        Retrieves a single tool record from the recycle bin by ID or name.
+        Retrieves a single tool record from the recycle bin by ID or name, optionally filtered by department_name.
 
         Args:
             tool_id (Optional[str]): The ID of the tool.
             tool_name (Optional[str]): The name of the tool.
+            department_name (str): The department name to filter by.
 
         Returns:
             Dict[str, Any] | None: A dictionary representing the recycled tool record, or None if not found.
         """
-        query = f"SELECT * FROM {self.table_name} WHERE "
+        query = f"SELECT * FROM {self.table_name}"
         params = []
+        where_clauses = []
+
         if tool_id:
-            query += "tool_id = $1"
+            where_clauses.append(f"tool_id = ${len(params)+1}")
             params.append(tool_id)
         elif tool_name:
-            query += "tool_name = $1"
+            where_clauses.append(f"tool_name = ${len(params)+1}")
             params.append(tool_name)
         else:
             log.warning("No tool_id or tool_name provided to get_recycle_tool_record.")
             return None
+
+        if department_name:
+            where_clauses.append(f"department_name = ${len(params)+1}")
+            params.append(department_name)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
 
         try:
             async with self.pool.acquire() as conn:
@@ -1902,7 +3512,7 @@ class RecycleMcpToolRepository(BaseRepository):
     Repository for the 'recycle_mcp_tool' table. Handles direct database interactions for recycled MCP tools.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "recycle_mcp_tool"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.RECYCLE_MCP_TOOL.value):
         """
         Initializes the RecycleMcpToolRepository.
 
@@ -1922,7 +3532,7 @@ class RecycleMcpToolRepository(BaseRepository):
             create_table_sql = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 tool_id TEXT PRIMARY KEY,
-                tool_name TEXT UNIQUE NOT NULL,
+                tool_name TEXT NOT NULL,
                 tool_description TEXT,
                 mcp_config JSONB NOT NULL,
                 is_public BOOLEAN DEFAULT FALSE,
@@ -1934,11 +3544,30 @@ class RecycleMcpToolRepository(BaseRepository):
                 created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected'))
+                department_name TEXT DEFAULT 'General',
+                CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')),
+                UNIQUE (tool_name, department_name)
             );
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_table_sql)
+                # Add department_name column if it doesn't exist (for existing databases)
+                await conn.execute(
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'"
+                )
+                # Migration: Drop old unique constraint on tool_name only, add composite unique on (tool_name, department_name)
+                await conn.execute(
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_key; "
+                    f"END IF; END $$;"
+                )
+                await conn.execute(
+                    f"DO $$ BEGIN "
+                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tool_name_department_name_key UNIQUE (tool_name, department_name); "
+                    f"END IF; END $$;"
+                )
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -1967,24 +3596,32 @@ class RecycleMcpToolRepository(BaseRepository):
     async def insert_recycle_mcp_tool_record(self, tool_data: Dict[str, Any]) -> bool:
         """
         Inserts an MCP tool record into the recycle bin.
+        If the tool already exists in the recycle bin, updates the deleted_at timestamp.
 
         Args:
             tool_data (Dict[str, Any]): A dictionary containing the MCP tool data to insert.
 
         Returns:
-            bool: True if the record was inserted successfully, False otherwise.
+            bool: True if the record was inserted/updated successfully, False otherwise.
         """
         insert_query = f"""
         INSERT INTO {self.table_name} (
             tool_id, tool_name, tool_description, mcp_config,
             is_public, status, comments, approved_at, approved_by,
-            created_by, created_on, updated_on, deleted_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
-        ON CONFLICT (tool_id) DO NOTHING;
+            created_by, created_on, updated_on, deleted_at, department_name
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, $13)
+        ON CONFLICT (tool_id) DO UPDATE SET 
+            deleted_at = CURRENT_TIMESTAMP,
+            updated_on = CURRENT_TIMESTAMP,
+            tool_description = EXCLUDED.tool_description,
+            mcp_config = EXCLUDED.mcp_config,
+            is_public = EXCLUDED.is_public,
+            status = EXCLUDED.status,
+            comments = EXCLUDED.comments;
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(
+                result = await conn.execute(
                     insert_query,
                     tool_data.get("tool_id"),
                     tool_data.get("tool_name"),
@@ -1997,10 +3634,16 @@ class RecycleMcpToolRepository(BaseRepository):
                     tool_data.get("approved_by"),
                     tool_data.get("created_by"),
                     tool_data.get("created_on"),
-                    tool_data.get("updated_on")
+                    tool_data.get("updated_on"),
+                    tool_data.get("department_name")
                 )
-            log.info(f"MCP tool record {tool_data.get('tool_name')} inserted into recycle bin successfully.")
-            return True
+            # Check if insert or update happened (INSERT 0 1 or UPDATE 1)
+            if result and ("INSERT" in result or "UPDATE" in result):
+                log.info(f"MCP tool record {tool_data.get('tool_name')} inserted/updated in recycle bin successfully.")
+                return True
+            else:
+                log.warning(f"MCP tool record {tool_data.get('tool_name')} - unexpected result: {result}")
+                return False
         except Exception as e:
             log.error(f"Error inserting recycle MCP tool record {tool_data.get('tool_name')}: {e}")
             return False
@@ -2029,17 +3672,25 @@ class RecycleMcpToolRepository(BaseRepository):
             log.error(f"Error deleting recycle MCP tool record '{tool_id}': {e}")
             return False
 
-    async def get_all_recycle_mcp_tool_records(self) -> List[Dict[str, Any]]:
+    async def get_all_recycle_mcp_tool_records(self, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves all MCP tool records from the recycle bin.
+        Retrieves all MCP tool records from the recycle bin, optionally filtered by department_name.
+
+        Args:
+            department_name (str): The department name to filter by.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing a recycled MCP tool record.
         """
-        query = f"SELECT * FROM {self.table_name} ORDER BY deleted_at DESC"
+        query = f"SELECT * FROM {self.table_name}"
+        params = []
+        if department_name:
+            query += " WHERE department_name = $1"
+            params.append(department_name)
+        query += " ORDER BY deleted_at DESC"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} recycle MCP tool records from '{self.table_name}'.")
             updated_rows = [dict(row) for row in rows]
             await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
@@ -2055,28 +3706,38 @@ class RecycleMcpToolRepository(BaseRepository):
             log.error(f"Error retrieving all recycle MCP tool records: {e}")
             return []
 
-    async def get_recycle_mcp_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None) -> Dict[str, Any] | None:
+    async def get_recycle_mcp_tool_record(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None, department_name: str = None) -> Dict[str, Any] | None:
         """
-        Retrieves a single MCP tool record from the recycle bin by ID or name.
+        Retrieves a single MCP tool record from the recycle bin by ID or name, optionally filtered by department_name.
 
         Args:
             tool_id (Optional[str]): The ID of the MCP tool.
             tool_name (Optional[str]): The name of the MCP tool.
+            department_name (str): The department name to filter by.
 
         Returns:
             Dict[str, Any] | None: A dictionary representing the recycled MCP tool record, or None if not found.
         """
-        query = f"SELECT * FROM {self.table_name} WHERE "
+        query = f"SELECT * FROM {self.table_name}"
         params = []
+        where_clauses = []
+
         if tool_id:
-            query += "tool_id = $1"
+            where_clauses.append(f"tool_id = ${len(params)+1}")
             params.append(tool_id)
         elif tool_name:
-            query += "tool_name = $1"
+            where_clauses.append(f"tool_name = ${len(params)+1}")
             params.append(tool_name)
         else:
             log.warning("No tool_id or tool_name provided to get_recycle_mcp_tool_record.")
             return None
+
+        if department_name:
+            where_clauses.append(f"department_name = ${len(params)+1}")
+            params.append(department_name)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
 
         try:
             async with self.pool.acquire() as conn:
@@ -2108,7 +3769,7 @@ class AgentRepository(BaseRepository, CacheableRepository):
     Repository for the 'agent_table'. Handles direct database interactions for agents.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "agent_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT.value):
         """
         Initializes the AgentRepository.
 
@@ -2128,14 +3789,15 @@ class AgentRepository(BaseRepository, CacheableRepository):
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 agentic_application_id TEXT PRIMARY KEY,
-                agentic_application_name TEXT UNIQUE,
+                agentic_application_name TEXT NOT NULL,
                 agentic_application_description TEXT,
                 agentic_application_workflow_description TEXT,
                 agentic_application_type TEXT,
                 model_name TEXT,
                 system_prompt JSONB,
                 tools_id JSONB,
-                created_by TEXT,
+                department_name TEXT DEFAULT 'General',
+                created_by TEXT,     
                 created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -2144,7 +3806,8 @@ class AgentRepository(BaseRepository, CacheableRepository):
                 comments TEXT,
                 approved_at TIMESTAMPTZ,
                 approved_by TEXT,
-                CHECK (status IN ('pending', 'approved', 'rejected'))
+                CHECK (status IN ('pending', 'approved', 'rejected')),
+                UNIQUE (agentic_application_name, department_name)
             );
             """
             async with self.pool.acquire() as conn:
@@ -2156,17 +3819,30 @@ class AgentRepository(BaseRepository, CacheableRepository):
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS approved_by TEXT",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN last_used SET DEFAULT CURRENT_TIMESTAMP",
                     f"UPDATE {self.table_name} SET last_used = CURRENT_TIMESTAMP WHERE last_used IS NULL",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS validation_criteria JSONB DEFAULT '[]'",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS welcome_message TEXT DEFAULT 'Hello, how can I help you?'",
+                    f"UPDATE {self.table_name} SET welcome_message = 'Hello, how can I help you?' WHERE welcome_message IS NULL",
                     f"DO $$ BEGIN "
                     f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_status_check') THEN "
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')); "
+                    f"END IF; END $$;",
+                    # Migration: Drop old unique constraint on agentic_application_name only, add composite unique on (agentic_application_name, department_name)
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_agentic_application_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_agentic_application_name_key; "
+                    f"END IF; END $$;",
+                    f"DO $$ BEGIN "
+                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_name_department_key') THEN "
+                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_name_department_key UNIQUE (agentic_application_name, department_name); "
                     f"END IF; END $$;"
                 ]
 
                 for stmt in alter_statements:
                     await conn.execute(stmt)
+                    
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -2189,6 +3865,30 @@ class AgentRepository(BaseRepository, CacheableRepository):
         async with self.pool.acquire() as conn:
             return await conn.fetch(query, creator_email)
 
+    async def get_agent_names_by_department(self, department_name: str) -> List[asyncpg.Record]:
+        """
+        Get all agent names in a specific department.
+        """
+        query = f"""
+            SELECT agentic_application_name
+            FROM {self.table_name}
+            WHERE department_name = $1;
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(query, department_name)
+
+    async def get_agent_names_by_creator_and_department(self, creator_email: str, department_name: str) -> List[asyncpg.Record]:
+        """
+        Get agent names created by a specific user in a specific department.
+        """
+        query = f"""
+            SELECT agentic_application_name
+            FROM {self.table_name}
+            WHERE created_by = $1 AND department_name = $2;
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(query, creator_email, department_name)
+
     async def save_agent_record(self, agent_data: Dict[str, Any]) -> bool:
         """
         Inserts a new agent record into the agent table.
@@ -2198,14 +3898,14 @@ class AgentRepository(BaseRepository, CacheableRepository):
                                         Expected keys: agentic_application_id, agentic_application_name,
                                         agentic_application_description, agentic_application_workflow_description,
                                         agentic_application_type, model_name, system_prompt (JSON dumped),
-                                        tools_id (JSON dumped), created_by, created_on, updated_on.
+                                        tools_id (JSON dumped), created_by, department_name, created_on, updated_on, is_public.
 
         Returns:
             bool: True if the agent was inserted successfully, False if a unique violation occurred or on other error.
         """
         insert_statement = f"""
-        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, created_on, updated_on, validation_criteria)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, department_name, created_on, updated_on, validation_criteria, welcome_message, is_public)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         """
         try:
             async with self.pool.acquire() as conn:
@@ -2220,13 +3920,15 @@ class AgentRepository(BaseRepository, CacheableRepository):
                     agent_data["system_prompt"],
                     agent_data["tools_id"],
                     agent_data["created_by"],
+                    agent_data.get("department_name"),
                     agent_data["created_on"],
                     agent_data["updated_on"],
-                    agent_data.get("validation_criteria", "[]")
+                    agent_data.get("validation_criteria", "[]"),
+                    agent_data.get("welcome_message", "Hello, how can I help you?"),
+                    agent_data.get("is_public", False)
                 )
-            await self.invalidate_entity("get_agent_record", agentic_application_id=agent_data.get("agentic_application_id"))
-            await self.invalidate_entity("get_agents_details_for_chat_records")
-            await self.invalidate_entity("get_all_agent_records", agentic_application_type=agent_data.get("agentic_application_type"))
+            await self.invalidate_all_method_cache("get_agent_record")
+            await self.invalidate_all_method_cache("get_agents_details_for_chat_records")
             await self.invalidate_all_method_cache("get_all_agent_records")
             log.info(f"Agent record {agent_data.get('agentic_application_name')} inserted successfully.")
             return True
@@ -2238,15 +3940,18 @@ class AgentRepository(BaseRepository, CacheableRepository):
             return False
 
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="AgentRepository")
-    async def get_agent_record(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None, agentic_application_type: Optional[str] = None, created_by: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_agent_record(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None, agentic_application_type: Optional[str] = None, created_by: Optional[str] = None, department_name: str = None, include_public: bool = True) -> List[Dict[str, Any]]:
         """
         Retrieves a single agent record by ID, name, type, or creator.
+        When department_name is specified and include_public is True, also returns the agent if it's public.
 
         Args:
             agentic_application_id (Optional[str]): The ID of the agent.
             agentic_application_name (Optional[str]): The name of the agent.
             agentic_application_type (Optional[str]): The type of the agent.
             created_by (Optional[str]): The creator's email ID.
+            department_name (str): The department name to filter by.
+            include_public (bool): Whether to include public agents from other departments. Defaults to True.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionary representing the agent records, or an empty list if not found.
@@ -2255,6 +3960,7 @@ class AgentRepository(BaseRepository, CacheableRepository):
         where_clauses = []
         params = []
 
+        # Build filters for non-department fields
         filters = {
             "agentic_application_id": agentic_application_id,
             "agentic_application_name": agentic_application_name,
@@ -2262,9 +3968,20 @@ class AgentRepository(BaseRepository, CacheableRepository):
             "agentic_application_type": agentic_application_type
         }
 
-        for idx, (field, value) in enumerate(((f for f in filters.items() if f[1] not in (None, ""))), start=1):
-            where_clauses.append(f"{field} = ${idx}")
-            params.append(value)
+        param_idx = 1
+        for field, value in filters.items():
+            if value not in (None, ""):
+                where_clauses.append(f"{field} = ${param_idx}")
+                params.append(value)
+                param_idx += 1
+
+        # Handle department_name with include_public option
+        if department_name:
+            if include_public:
+                where_clauses.append(f"(department_name = ${param_idx} OR is_public = TRUE)")
+            else:
+                where_clauses.append(f"department_name = ${param_idx}")
+            params.append(department_name)
 
         if where_clauses:
             query += " WHERE " + " AND ".join(where_clauses)
@@ -2286,13 +4003,36 @@ class AgentRepository(BaseRepository, CacheableRepository):
             log.error(f"Error retrieving agent record '{agentic_application_id or agentic_application_name}': {e}")
             return []
 
+    async def get_agent_records_by_ids(self, agent_ids: List[str]) -> List[Dict[str, Any]]:
+        """
+        Batch fetch agent records (id, name, type) for a list of agent IDs.
+        Returns only agents that exist in agent_table.
+        """
+        if not agent_ids:
+            return []
+        query = f"""
+            SELECT agentic_application_id, agentic_application_name, agentic_application_type
+            FROM {self.table_name}
+            WHERE agentic_application_id = ANY($1::text[])
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, agent_ids)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error batch fetching agent records: {e}")
+            return []
+
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="AgentRepository")
-    async def get_all_agent_records(self, agentic_application_type: Optional[Union[str, List[str]]] = None) -> List[Dict[str, Any]]:
+    async def get_all_agent_records(self, agentic_application_type: Optional[Union[str, List[str]]] = None, department_name: str = None, include_public: bool = True) -> List[Dict[str, Any]]:
         """
         Retrieves all agent records, optionally filtered by type.
+        When department_name is specified and include_public is True, also includes public agents from other departments.
 
         Args:
             agentic_application_type (Optional[Union[str, List[str]]]): The type(s) of agent to filter by.
+            department_name (str, optional): Filter by department name.
+            include_public (bool): Whether to include public agents from other departments. Defaults to True.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing an agent record.
@@ -2302,17 +4042,31 @@ class AgentRepository(BaseRepository, CacheableRepository):
             agentic_application_id, agentic_application_name, agentic_application_description, 
             agentic_application_workflow_description, agentic_application_type, model_name, 
             system_prompt, tools_id, created_on, created_by, updated_on, last_used, is_public, 
-            status, comments, approved_at, approved_by
+            status, comments, approved_at, approved_by, department_name
         """
         query = f"SELECT {columns_to_select} FROM {self.table_name}"
         parameters = []
+        conditions = []
         if agentic_application_type:
             if isinstance(agentic_application_type, str):
                 agentic_application_type = [agentic_application_type]
             placeholders = ', '.join(f"${i+1}" for i in range(len(agentic_application_type)))
             # query += f" AND agentic_application_type IN ({placeholders})"
-            query += f" WHERE agentic_application_type IN ({placeholders})"
+            conditions.append(f"agentic_application_type IN ({placeholders})")
             parameters.extend(agentic_application_type)
+            
+        
+        if department_name:
+            if include_public:
+                conditions.append(f"(department_name = ${len(parameters)+1} OR is_public = TRUE)")
+            else:
+                conditions.append(f"department_name = ${len(parameters)+1}")
+            parameters.append(department_name)
+            
+        
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
         query += " ORDER BY created_on DESC"
 
         try:
@@ -2326,9 +4080,123 @@ class AgentRepository(BaseRepository, CacheableRepository):
             log.error(f"Error retrieving all agent records: {e}")
             return []
 
-    async def get_agents_by_search_or_page_records(self, search_value: str, limit: int, page: int, agentic_application_type: Optional[Union[str, List[str]]] = None, created_by: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_all_agent_records_with_shared(
+        self, 
+        department_name: str, 
+        shared_agent_ids: List[str] = None,
+        include_public: bool = True,
+        agentic_application_type: Optional[Union[str, List[str]]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves all agent records for a department including:
+        1. Agents owned by the department
+        2. Agents shared with the department (via sharing table)
+        3. Public agents (is_public=True) from other departments (if include_public=True)
+
+        Args:
+            department_name (str): The department to get agents for.
+            shared_agent_ids (List[str]): List of agent IDs shared with this department.
+            include_public (bool): Whether to include public agents from other departments.
+            agentic_application_type (Optional[Union[str, List[str]]]): The type(s) of agent to filter by.
+
+        Returns:
+            List[Dict[str, Any]]: A list of agent records with 'is_shared' and 'is_public_access' flags.
+        """
+        if not department_name:
+            return await self.get_all_agent_records(agentic_application_type=agentic_application_type)
+
+        shared_agent_ids = shared_agent_ids or []
+        
+        columns_to_select = """
+            agentic_application_id, agentic_application_name, agentic_application_description, 
+            agentic_application_workflow_description, agentic_application_type, model_name, 
+            system_prompt, tools_id, created_on, created_by, updated_on, last_used, is_public, 
+            status, comments, approved_at, approved_by, department_name
+        """
+        
+        # Build query based on conditions
+        params = []
+        type_condition = ""
+        
+        if agentic_application_type:
+            if isinstance(agentic_application_type, str):
+                agentic_application_type = [agentic_application_type]
+        
+        if shared_agent_ids and include_public:
+            query = f"""
+            SELECT {columns_to_select}, 
+                CASE 
+                    WHEN department_name = $1 THEN FALSE
+                    WHEN agentic_application_id = ANY($2) THEN TRUE
+                    ELSE FALSE
+                END as is_shared,
+                CASE 
+                    WHEN department_name != $1 AND is_public = TRUE AND agentic_application_id != ALL($2) THEN TRUE
+                    ELSE FALSE
+                END as is_public_access
+            FROM {self.table_name}
+            WHERE (department_name = $1 
+               OR agentic_application_id = ANY($2)
+               OR (is_public = TRUE AND department_name != $1))
+            """
+            params = [department_name, shared_agent_ids]
+            param_idx = 3
+        elif shared_agent_ids:
+            query = f"""
+            SELECT {columns_to_select}, 
+                CASE WHEN department_name = $1 THEN FALSE ELSE TRUE END as is_shared,
+                FALSE as is_public_access
+            FROM {self.table_name}
+            WHERE (department_name = $1 OR agentic_application_id = ANY($2))
+            """
+            params = [department_name, shared_agent_ids]
+            param_idx = 3
+        elif include_public:
+            query = f"""
+            SELECT {columns_to_select}, 
+                FALSE as is_shared,
+                CASE WHEN department_name != $1 AND is_public = TRUE THEN TRUE ELSE FALSE END as is_public_access
+            FROM {self.table_name}
+            WHERE (department_name = $1 OR (is_public = TRUE AND department_name != $1))
+            """
+            params = [department_name]
+            param_idx = 2
+        else:
+            query = f"""
+            SELECT {columns_to_select}, FALSE as is_shared, FALSE as is_public_access
+            FROM {self.table_name}
+            WHERE department_name = $1
+            """
+            params = [department_name]
+            param_idx = 2
+
+        # Add type filter if specified
+        if agentic_application_type:
+            placeholders = ', '.join(f"${i+param_idx}" for i in range(len(agentic_application_type)))
+            query += f" AND agentic_application_type IN ({placeholders})"
+            params.extend(agentic_application_type)
+
+        query += """
+            ORDER BY 
+                CASE WHEN department_name = $1 THEN 0 ELSE 1 END,
+                created_on DESC
+        """
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            log.info(f"Retrieved {len(rows)} agent records (including shared/public) for department '{department_name}'.")
+            return updated_rows
+        except Exception as e:
+            log.error(f"Error retrieving agent records with shared: {e}")
+            return []
+
+    async def get_agents_by_search_or_page_records(self, search_value: str, limit: int, page: int, agentic_application_type: Optional[Union[str, List[str]]] = None, created_by: Optional[str] = None, department_name: str = None, shared_agent_ids: List[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieves agent records with pagination and search filtering.
+        Includes public agents and shared agents when department_name is specified.
 
         Args:
             search_value (str): The value to search for in agent names (case-insensitive, LIKE).
@@ -2336,18 +4204,19 @@ class AgentRepository(BaseRepository, CacheableRepository):
             page (int): The page number (1-indexed).
             agentic_application_type (Optional[Union[str, List[str]]]): The type(s) of agent to filter by.
             created_by (Optional[str]): The creator's email ID to filter by.
+            department_name (str): The department name to filter by (also includes public/shared agents).
+            shared_agent_ids (List[str], optional): List of agent IDs shared with the department.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing an agent record.
         """
         columns_to_select = """
-            agentic_application_id, agentic_application_name, agentic_application_description, 
-            agentic_application_workflow_description, agentic_application_type, model_name, 
-            system_prompt, tools_id, created_on, created_by, updated_on, last_used, is_public, 
-            status, comments, approved_at, approved_by
+            agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_type,
+            created_by, department_name, is_public
         """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
         offset = limit * max(0, page - 1)
+        shared_agent_ids = shared_agent_ids or []
 
         query = f"""
             SELECT {columns_to_select} FROM {self.table_name}
@@ -2366,36 +4235,53 @@ class AgentRepository(BaseRepository, CacheableRepository):
             query += f" AND created_by = ${idx}"
             params.append(created_by)
             idx += 1
-        
-        # query += f" AND (status = 'approved' OR created_by = '{current_user_email.get(None)}') ORDER BY created_on DESC LIMIT ${idx} OFFSET ${idx + 1}"
-        query += f" ORDER BY created_on DESC LIMIT ${idx} OFFSET ${idx + 1}"
-        params.extend([limit, offset])
+        # Include own department agents OR public agents OR shared agents
+        if department_name:
+            if shared_agent_ids:
+                query += f" AND (department_name = ${idx} OR is_public = TRUE OR agentic_application_id = ANY(${idx + 1}))"
+                params.append(department_name)
+                params.append(shared_agent_ids)
+                # Order own department agents first
+                query += f" ORDER BY CASE WHEN department_name = ${idx} THEN 0 ELSE 1 END, created_on DESC LIMIT ${idx + 2} OFFSET ${idx + 3}"
+                params.extend([limit, offset])
+            else:
+                query += f" AND (department_name = ${idx} OR is_public = TRUE)"
+                params.append(department_name)
+                # Order own department agents first
+                query += f" ORDER BY CASE WHEN department_name = ${idx} THEN 0 ELSE 1 END, created_on DESC LIMIT ${idx + 1} OFFSET ${idx + 2}"
+                params.extend([limit, offset])
+        else:
+            query += f" ORDER BY created_on DESC LIMIT ${idx} OFFSET ${idx + 1}"
+            params.extend([limit, offset])
 
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} agent records for search '{search_value}', page {page}.")
             updated_rows = [dict(row) for row in rows]
-            await self._transform_emails_to_usernames(updated_rows, ['created_by', 'approved_by'])
+            await self._transform_emails_to_usernames(updated_rows, ['created_by'])
             return updated_rows
         except Exception as e:
             log.error(f"Error retrieving agent records by search/page: {e}")
             return []
 
-    async def get_total_agent_count(self, search_value: str = '', agentic_application_type: Optional[Union[str, List[str]]] = None, created_by: Optional[str] = None) -> int:
+    async def get_total_agent_count(self, search_value: str = '', agentic_application_type: Optional[Union[str, List[str]]] = None, created_by: Optional[str] = None, department_name: str = None, shared_agent_ids: List[str] = None) -> int:
         """
         Retrieves the total count of agent records, optionally filtered.
+        Includes public agents and shared agents when department_name is specified.
 
         Args:
             search_value (str): The value to search for in agent names (case-insensitive, LIKE).
             agentic_application_type (Optional[Union[str, List[str]]]): The type(s) of agent to filter by.
             created_by (Optional[str]): The creator's email ID to filter by.
+            department_name (str): The department name to filter by (also includes public/shared agents).
+            shared_agent_ids (List[str], optional): List of agent IDs shared with the department.
 
         Returns:
             int: The total count of matching agent records.
         """
         name_filter = f"%{search_value.lower()}%" if search_value else "%"
-        # query = f"SELECT COUNT(*) FROM {self.table_name} WHERE (status = 'approved' OR created_by = '{current_user_email.get(None)}') AND LOWER(agentic_application_name) LIKE $1"
+        shared_agent_ids = shared_agent_ids or []
         query = f"SELECT COUNT(*) FROM {self.table_name} WHERE LOWER(agentic_application_name) LIKE $1"
         params = [name_filter]
         idx = 2
@@ -2409,6 +4295,16 @@ class AgentRepository(BaseRepository, CacheableRepository):
         if created_by:
             query += f" AND created_by = ${idx}"
             params.append(created_by)
+            idx += 1
+        # Include own department agents OR public agents OR shared agents
+        if department_name:
+            if shared_agent_ids:
+                query += f" AND (department_name = ${idx} OR is_public = TRUE OR agentic_application_id = ANY(${idx + 1}))"
+                params.append(department_name)
+                params.append(shared_agent_ids)
+            else:
+                query += f" AND (department_name = ${idx} OR is_public = TRUE)"
+                params.append(department_name)
 
         try:
             async with self.pool.acquire() as conn:
@@ -2439,8 +4335,8 @@ class AgentRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(query, *values, agentic_application_id)
             if result != "UPDATE 0":
-                await self.invalidate_entity("get_agent_record", agentic_application_id=agentic_application_id)
-                await self.invalidate_entity("get_agents_details_for_chat_records")
+                await self.invalidate_all_method_cache("get_agent_record")
+                await self.invalidate_all_method_cache("get_agents_details_for_chat_records")
                 await self.invalidate_all_method_cache("get_all_agent_records")
                 log.info(f"Agent record '{agentic_application_id}' updated successfully.")
                 return True
@@ -2466,9 +4362,8 @@ class AgentRepository(BaseRepository, CacheableRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(delete_query, agentic_application_id)
             if result != "DELETE 0":
-                await self.invalidate_entity("get_agent_record", agentic_application_id=agentic_application_id)
-                await self.invalidate_entity("get_agents_details_for_chat_records")
-                # await self.invalidate_entity("get_all_agent_records", agentic_application_type=agent_data.get("agentic_application_type"))
+                await self.invalidate_all_method_cache("get_agent_record")
+                await self.invalidate_all_method_cache("get_agents_details_for_chat_records")
                 await self.invalidate_all_method_cache("get_all_agent_records")
                 log.info(f"Agent record '{agentic_application_id}' deleted successfully from '{self.table_name}'.")
                 return True
@@ -2483,33 +4378,90 @@ class AgentRepository(BaseRepository, CacheableRepository):
             return False
 
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="AgentRepository")
-    async def get_agents_details_for_chat_records(self) -> List[Dict[str, Any]]:
+    async def get_agents_details_for_chat_records(self, department_name: str = None, shared_agent_ids: List[str] = None, include_public: bool = True) -> List[Dict[str, Any]]:
         """
         Retrieves basic agent details (ID, name, type) for chat purposes.
+        When department_name is specified, also includes shared and public agents.
+        No status filtering is applied.
+
+        Args:
+            department_name (str): The department to filter by.
+            shared_agent_ids (List[str]): List of agent IDs shared with this department.
+            include_public (bool): Whether to include public agents from other departments.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each containing
                                   'agentic_application_id', 'agentic_application_name',
-                                  and 'agentic_application_type'.
+                                  'agentic_application_type', 'welcome_message', 'is_shared', and 'is_public_access'.
         """
-        # query = f"""
-        #     SELECT agentic_application_id, agentic_application_name, agentic_application_type
-        #     FROM {self.table_name}
-        #     WHERE (status = 'approved' OR created_by = '{current_user_email.get(None)}')
-        #     ORDER BY created_on DESC
-        # """
-        query = f"""
-            SELECT agentic_application_id, agentic_application_name, agentic_application_type
-            FROM {self.table_name}
-            ORDER BY created_on DESC
-        """
+        shared_agent_ids = shared_agent_ids or []
+        
+        if department_name:
+            if shared_agent_ids and include_public:
+                # Include own department + shared + public agents
+                # Pattern from get_agents_by_search_or_page_records: (department_name = $1 OR is_public = TRUE OR agentic_application_id = ANY($2))
+                query = f"""
+                    SELECT agentic_application_id, agentic_application_name, agentic_application_type, welcome_message,
+                        CASE WHEN agentic_application_id = ANY($2) AND department_name != $1 THEN TRUE ELSE FALSE END as is_shared,
+                        CASE WHEN is_public = TRUE AND department_name != $1 AND NOT (agentic_application_id = ANY($2)) THEN TRUE ELSE FALSE END as is_public_access
+                    FROM {self.table_name}
+                    WHERE (department_name = $1 OR is_public = TRUE OR agentic_application_id = ANY($2))
+                    ORDER BY CASE WHEN department_name = $1 THEN 0 ELSE 1 END, created_on DESC
+                """
+                params = [department_name, shared_agent_ids]
+            elif shared_agent_ids:
+                # Include own department + shared agents only
+                query = f"""
+                    SELECT agentic_application_id, agentic_application_name, agentic_application_type, welcome_message,
+                        CASE WHEN agentic_application_id = ANY($2) AND department_name != $1 THEN TRUE ELSE FALSE END as is_shared,
+                        FALSE as is_public_access
+                    FROM {self.table_name}
+                    WHERE (department_name = $1 OR agentic_application_id = ANY($2))
+                    ORDER BY CASE WHEN department_name = $1 THEN 0 ELSE 1 END, created_on DESC
+                """
+                params = [department_name, shared_agent_ids]
+            elif include_public:
+                # Include own department + public agents
+                query = f"""
+                    SELECT agentic_application_id, agentic_application_name, agentic_application_type, welcome_message,
+                        FALSE as is_shared,
+                        CASE WHEN is_public = TRUE AND department_name != $1 THEN TRUE ELSE FALSE END as is_public_access
+                    FROM {self.table_name}
+                    WHERE (department_name = $1 OR is_public = TRUE)
+                    ORDER BY CASE WHEN department_name = $1 THEN 0 ELSE 1 END, created_on DESC
+                """
+                params = [department_name]
+            else:
+                # Own department only
+                query = f"""
+                    SELECT agentic_application_id, agentic_application_name, agentic_application_type, welcome_message,
+                        FALSE as is_shared, FALSE as is_public_access
+                    FROM {self.table_name}
+                    WHERE department_name = $1
+                    ORDER BY created_on DESC
+                """
+                params = [department_name]
+        else:
+            # No department filter - return all
+            query = f"""
+                SELECT agentic_application_id, agentic_application_name, agentic_application_type, welcome_message,
+                    FALSE as is_shared, FALSE as is_public_access
+                FROM {self.table_name}
+                ORDER BY created_on DESC
+            """
+            params = []
+
+        log.debug(f"get_agents_details_for_chat_records query: {query}")
+        log.debug(f"params: department_name={department_name}, shared_agent_ids={shared_agent_ids}, include_public={include_public}")
+        
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} agent chat detail records from '{self.table_name}'.")
             return [dict(row) for row in rows]
         except Exception as e:
             log.error(f"Error retrieving agent chat detail records: {e}")
+            return []
             return []
 
     async def get_all_agents_for_approval(self) -> List[Dict[str, Any]]:
@@ -2603,6 +4555,9 @@ class AgentRepository(BaseRepository, CacheableRepository):
                     agentic_application_id
                 )
             if result != "UPDATE 0":
+                await self.invalidate_all_method_cache("get_agent_record")
+                await self.invalidate_all_method_cache("get_agents_details_for_chat_records")
+                await self.invalidate_all_method_cache("get_all_agent_records")
                 log.info(f"Agent '{agentic_application_id}' approved successfully by '{approved_by}' at {approval_time}.")
                 return True
             else:
@@ -2716,7 +4671,7 @@ class RecycleAgentRepository(BaseRepository):
     Repository for the 'recycle_agent' table. Handles direct database interactions for recycled agents.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "recycle_agent"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.RECYCLE_AGENT.value):
         """
         Initializes the RecycleAgentRepository.
 
@@ -2736,24 +4691,36 @@ class RecycleAgentRepository(BaseRepository):
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 agentic_application_id TEXT PRIMARY KEY,
-                agentic_application_name TEXT UNIQUE,
+                agentic_application_name TEXT NOT NULL,
                 agentic_application_description TEXT,
                 agentic_application_workflow_description TEXT,
                 agentic_application_type TEXT,
                 model_name TEXT,
                 system_prompt JSONB,
                 tools_id JSONB,
+                department_name TEXT DEFAULT 'General',
                 created_by TEXT,
                 created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (agentic_application_name, department_name)
             );
             """
 
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
                 alter_statements = [
-                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP"
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
+                    # Migration: Drop old unique constraint on agentic_application_name only, add composite unique on (agentic_application_name, department_name)
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_agentic_application_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_agentic_application_name_key; "
+                    f"END IF; END $$;",
+                    f"DO $$ BEGIN "
+                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_name_department_key') THEN "
+                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_name_department_key UNIQUE (agentic_application_name, department_name); "
+                    f"END IF; END $$;"
                 ]
                 for stmt in alter_statements:
                     await conn.execute(stmt)
@@ -2793,8 +4760,8 @@ class RecycleAgentRepository(BaseRepository):
             bool: True if the record was inserted successfully, False otherwise.
         """
         insert_query = f"""
-        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, created_on, last_used)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, created_on, last_used, department_name)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (agentic_application_id) DO NOTHING;
         """
         try:
@@ -2805,7 +4772,7 @@ class RecycleAgentRepository(BaseRepository):
                     agent_data["agentic_application_description"], agent_data["agentic_application_workflow_description"],
                     agent_data["agentic_application_type"], agent_data["model_name"],
                     agent_data["system_prompt"], agent_data["tools_id"],
-                    agent_data["created_by"], agent_data["created_on"], agent_data["last_used"]
+                    agent_data["created_by"], agent_data["created_on"], agent_data["last_used"], agent_data.get("department_name")
                 )
             log.info(f"Agent record {agent_data.get('agentic_application_name')} inserted into recycle bin successfully.")
             return True
@@ -2837,17 +4804,22 @@ class RecycleAgentRepository(BaseRepository):
             log.error(f"Error deleting recycle agent record '{agentic_application_id}': {e}")
             return False
 
-    async def get_all_recycle_agent_records(self) -> List[Dict[str, Any]]:
+    async def get_all_recycle_agent_records(self, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves all agent records from the recycle bin.
+        Retrieves all agent records from the recycle bin, optionally filtered by department_name.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing a recycled agent record.
         """
-        query = f"SELECT * FROM {self.table_name} ORDER BY created_on DESC"
+        query = f"SELECT * FROM {self.table_name}"
+        params = []
+        if department_name:
+            query += " WHERE department_name = $1"
+            params.append(department_name)
+        query += " ORDER BY created_on DESC"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await conn.fetch(query, *params)
             log.info(f"Retrieved {len(rows)} recycle agent records from '{self.table_name}'.")
             updated_rows = [dict(row) for row in rows]
             await self._transform_emails_to_usernames(updated_rows, ['created_by'])
@@ -2856,28 +4828,38 @@ class RecycleAgentRepository(BaseRepository):
             log.error(f"Error retrieving all recycle agent records: {e}")
             return []
 
-    async def get_recycle_agent_record(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None) -> Dict[str, Any] | None:
+    async def get_recycle_agent_record(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None, department_name: str = None) -> Dict[str, Any] | None:
         """
-        Retrieves a single agent record from the recycle bin by ID or name.
+        Retrieves a single agent record from the recycle bin by ID or name, optionally filtered by department_name.
 
         Args:
             agentic_application_id (Optional[str]): The ID of the agent.
             agentic_application_name (Optional[str]): The name of the agent.
+            department_name (str): The department name to filter by.
 
         Returns:
             Dict[str, Any] | None: A dictionary representing the recycled agent record, or None if not found.
         """
-        query = f"SELECT * FROM {self.table_name} WHERE "
+        query = f"SELECT * FROM {self.table_name}"
         params = []
+        where_clauses = []
+
         if agentic_application_id:
-            query += "agentic_application_id = $1"
+            where_clauses.append(f"agentic_application_id = ${len(params)+1}")
             params.append(agentic_application_id)
         elif agentic_application_name:
-            query += "agentic_application_name = $1"
+            where_clauses.append(f"agentic_application_name = ${len(params)+1}")
             params.append(agentic_application_name)
         else:
             log.warning("No agentic_application_id or agentic_application_name provided to get_recycle_agent_record.")
             return None
+
+        if department_name:
+            where_clauses.append(f"department_name = ${len(params)+1}")
+            params.append(department_name)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
 
         try:
             async with self.pool.acquire() as conn:
@@ -2914,10 +4896,11 @@ class ChatHistoryRepository(BaseRepository):
         """
         # We pass a empty table_name to super, as this repo handles multiple tables.
         super().__init__(pool, login_pool, table_name="")
-        self.DB_URL = os.getenv("POSTGRESQL_DATABASE_URL")  # Ensure this is correctly loaded
-        self.checkpoints_table = "checkpoints"
-        self.checkpoint_blobs_table = "checkpoint_blobs"
-        self.checkpoint_writes_table = "checkpoint_writes"
+        postgres_db = app_config.postgres_db
+        self.DB_URL = postgres_db.connection_string(database=DatabaseName.MAIN, disable_ssl=postgres_db.disable_ssl_for_chat_connections)
+        self.checkpoints_table = TableNames.CHECKPOINTS.value
+        self.checkpoint_blobs_table = TableNames.CHECKPOINT_BLOBS.value
+        self.checkpoint_writes_table = TableNames.CHECKPOINT_WRITES.value
 
     async def create_chat_history_table(self, table_name: str):
         """
@@ -3305,7 +5288,7 @@ class ChatHistoryRepository(BaseRepository):
         This allows inference services to use 'async with chat_history_repository.get_checkpointer_context_manager() as checkpointer:'
         """
         if not self.DB_URL:
-            raise ValueError("POSTGRESQL_DATABASE_URL (for checkpointer) is not configured in environment variables.")
+            raise ValueError("Could not get the database connection string for the checkpointer.")
 
         # AsyncPostgresSaver is itself an async context manager, so we just return its instance.
         # The caller will then use 'async with' on this returned instance.
@@ -3429,7 +5412,7 @@ class ChatHistoryRepository(BaseRepository):
 
         except Exception as e:
             log.error(f"Error fetching user queries from '{chat_table_name}': {e}")
-            return {}
+            return {"user_history": [], "agent_history": []}
 
     async def fetch_memory_from_postgres(self):
             """
@@ -3463,8 +5446,8 @@ class FeedbackLearningRepository(BaseRepository):
 
     def __init__(self, pool: asyncpg.Pool,
                  login_pool: asyncpg.Pool,
-                 feedback_table_name: str = "feedback_response",
-                 agent_feedback_table_name: str = "agent_feedback"):
+                 feedback_table_name: str = TableNames.FEEDBACK_LEARNING.value,
+                 agent_feedback_table_name: str = TableNames.AGENT_FEEDBACK.value):
         super().__init__(pool, login_pool, table_name=feedback_table_name)
         self.feedback_table_name = feedback_table_name
         self.agent_feedback_table_name = agent_feedback_table_name
@@ -3474,6 +5457,8 @@ class FeedbackLearningRepository(BaseRepository):
         """
         Creates the 'feedback_response' and 'agent_feedback' tables if they don't exist.
         If feedback_response table exists, alters it to add the 'lesson' field if missing.
+        Also migrates from boolean 'approved' column to text 'status' column if needed.
+        Also migrates from boolean 'approved' column to text 'status' column if needed.
         """
         create_feedback_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.feedback_table_name} (
@@ -3487,7 +5472,8 @@ class FeedbackLearningRepository(BaseRepository):
             new_steps TEXT,
             new_response TEXT,
             lesson TEXT,
-            approved BOOLEAN DEFAULT FALSE,
+            department_name TEXT DEFAULT 'General',
+            status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
@@ -3509,9 +5495,30 @@ class FeedbackLearningRepository(BaseRepository):
         );
         """
         
-        alter_table_query = f"""
+        alter_table_lesson_query = f"""
         ALTER TABLE {self.feedback_table_name}
         ADD COLUMN IF NOT EXISTS lesson TEXT;
+        """
+        
+        alter_table_department_query = f"""
+        ALTER TABLE {self.feedback_table_name}
+        ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General';
+        """
+        
+        # Migration: Add status column if not exists
+        alter_table_add_status_query = f"""
+        ALTER TABLE {self.feedback_table_name}
+        ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+        """
+        
+        # Migration: Convert approved boolean to status text if approved column exists
+        migrate_approved_to_status_query = f"""
+        UPDATE {self.feedback_table_name}
+        SET status = CASE 
+            WHEN approved = TRUE THEN 'approve'
+            ELSE 'pending'
+        END
+        WHERE status IS NULL OR status = 'pending';
         """
         
         try:
@@ -3527,26 +5534,40 @@ class FeedbackLearningRepository(BaseRepository):
                 
                 if table_exists:
                     # If table exists, check if lesson column exists and add it if missing
-                    await conn.execute(alter_table_query)
-                    log.info(f"Added 'lesson' column to {self.feedback_table_name} table if it was missing.")
+                    await conn.execute(alter_table_lesson_query)
+                    await conn.execute(alter_table_department_query)
+                    
+                    # Add status column and migrate from approved if needed
+                    await conn.execute(alter_table_add_status_query)
+                    
+                    # Check if approved column exists and migrate data
+                    approved_col_exists = await conn.fetchval(
+                        f"SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = '{self.feedback_table_name}' AND column_name = 'approved')"
+                    )
+                    if approved_col_exists:
+                        await conn.execute(migrate_approved_to_status_query)
+                        log.info(f"Migrated 'approved' boolean values to 'status' text in {self.feedback_table_name} table.")
+                    
+                    log.info(f"Added 'lesson', 'department_name', and 'status' columns to {self.feedback_table_name} table if they were missing.")
                     
             log.info("Feedback storage tables created successfully or already exist.")
         except Exception as e:
             log.error(f"Error creating feedback storage tables: {e}")
             raise # Re-raise for service to handle
 
-    async def insert_feedback_record(self, response_id: str, query: str, old_final_response: str, old_steps: str, feedback: str, new_final_response: str, new_steps: str, lesson: str, approved: bool = False) -> bool:
+    async def insert_feedback_record(self, response_id: str, query: str, old_final_response: str, old_steps: str, feedback: str, new_final_response: str, new_steps: str, lesson: str, department_name: str = None, status: str = 'pending') -> bool:
         """
         Inserts a new feedback response record.
+        status should be one of: 'pending', 'approve', 'reject'
         """
         insert_query = f"""
         INSERT INTO {self.feedback_table_name} (
-            response_id, query, old_final_response, old_steps, feedback, new_final_response, new_steps, approved, lesson
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+            response_id, query, old_final_response, old_steps, feedback, new_final_response, new_steps, status, lesson, department_name
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(insert_query, response_id, query, old_final_response, old_steps, feedback, new_final_response, new_steps, approved, lesson)
+                await conn.execute(insert_query, response_id, query, old_final_response, old_steps, feedback, new_final_response, new_steps, status, lesson, department_name)
             return True
         except Exception as e:
             log.error(f"Error inserting feedback record for response_id '{response_id}': {e}")
@@ -3568,74 +5589,109 @@ class FeedbackLearningRepository(BaseRepository):
             log.error(f"Error inserting agent feedback mapping for agent_id '{agent_id}', response_id '{response_id}': {e}")
             return False
 
-    async def get_approved_feedback_records(self, agent_id: str) -> List[Dict[str, Any]]:
+    async def get_approved_feedback_records(self, agent_id: str, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves approved feedback records for a specific agent.
+        Retrieves approved feedback records for a specific agent, optionally filtered by department_name.
         """
         select_query = f"""
-        SELECT fr.response_id, fr.query, fr.old_final_response, fr.old_steps, fr.feedback, fr.new_final_response, fr.new_steps, fr.lesson, fr.approved, fr.created_at FROM {self.feedback_table_name} fr
-        JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id
-        WHERE af.agent_id = $1 AND fr.approved = TRUE;
-        """
+        SELECT fr.response_id, fr.query, fr.old_final_response, fr.old_steps, fr.feedback, fr.new_final_response, fr.new_steps, fr.lesson, fr.status, fr.created_at, fr.department_name 
+        FROM {self.feedback_table_name} fr
+        INNER JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id
+        WHERE af.agent_id = $1 AND fr.status = 'approve'"""
+        
+        params = [agent_id]
+        if department_name:
+            select_query += " AND fr.department_name = $2"
+            params.append(department_name)
+        
+        select_query += ";"
+        
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(select_query, agent_id)
+                rows = await conn.fetch(select_query, *params)
+            log.info(f"Retrieved {len(rows)} approved feedback records for agent '{agent_id}' in department '{department_name}'")
             return [dict(row) for row in rows]
         except Exception as e:
             log.error(f"Error retrieving approved feedback records for agent '{agent_id}': {e}")
             return []
 
-    async def get_all_feedback_records_by_agent(self, agent_id: str) -> List[Dict[str, Any]]:
+    async def get_all_feedback_records_by_agent(self, agent_id: str, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves all feedback records (regardless of approval status) for a given agent.
+        Retrieves all feedback records (regardless of approval status) for a given agent, optionally filtered by department_name.
         """
         select_query = f"""
-        SELECT af.response_id, fr.feedback, fr.approved
+        SELECT af.response_id, fr.feedback, fr.status, fr.department_name, fr.lesson
         FROM {self.feedback_table_name} fr
         JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id
-        WHERE af.agent_id = $1;
-        """
+        WHERE af.agent_id = $1"""
+        
+        params = [agent_id]
+        if department_name:
+            select_query += " AND fr.department_name = $2"
+            params.append(department_name)
+        
+        select_query += ";"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(select_query, agent_id)
+                rows = await conn.fetch(select_query, *params)
             return [dict(row) for row in rows]
         except Exception as e:
             log.error(f"Error retrieving all feedback records for agent '{agent_id}': {e}")
             return []
 
-    async def get_feedback_record_by_response_id(self, response_id: str) -> List[Dict[str, Any]]:
+    async def get_feedback_record_by_response_id(self, response_id: str, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves a single feedback record by its response_id.
+        Retrieves a single feedback record by its response_id, optionally filtered by department_name.
         """
         select_query = f"""
-        SELECT fr.response_id, fr.query, fr.old_final_response, fr.old_steps, fr.feedback, fr.new_final_response, fr.new_steps, fr.lesson, fr.approved, fr.created_at, af.agent_id FROM {self.feedback_table_name} fr
+        SELECT fr.response_id, fr.query, fr.old_final_response, fr.old_steps, fr.feedback, fr.new_final_response, fr.new_steps, fr.lesson, fr.status, fr.created_at, fr.department_name, af.agent_id FROM {self.feedback_table_name} fr
         JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id
-        WHERE fr.response_id = $1;
-        """
+        WHERE fr.response_id = $1"""
+        
+        params = [response_id]
+        if department_name:
+            select_query += " AND fr.department_name = $2"
+            params.append(department_name)
+        
+        select_query += ";"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(select_query, response_id)
+                rows = await conn.fetch(select_query, *params)
             return [dict(row) for row in rows]
         except Exception as e:
             log.error(f"Error retrieving feedback record for response_id '{response_id}': {e}")
             return []
 
-    async def get_distinct_agents_with_feedback(self) -> List[str]:
+    async def get_distinct_agents_with_feedback(self, department_name: str = None) -> List[str]:
         """
-        Retrieves a list of distinct agent_ids that have associated feedback.
+        Retrieves a list of distinct agent_ids that have associated feedback, optionally filtered by department_name.
         """
-        select_query = f"SELECT DISTINCT agent_id FROM {self.agent_feedback_table_name};"
+        if department_name:
+            select_query = f"""
+            SELECT DISTINCT af.agent_id 
+            FROM {self.agent_feedback_table_name} af
+            JOIN {self.feedback_table_name} fr ON af.response_id = fr.response_id
+            WHERE fr.department_name = $1;
+            """
+            params = [department_name]
+        else:
+            select_query = f"SELECT DISTINCT agent_id FROM {self.agent_feedback_table_name};"
+            params = []
+            
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(select_query)
+                if params:
+                    rows = await conn.fetch(select_query, *params)
+                else:
+                    rows = await conn.fetch(select_query)
             return [row['agent_id'] for row in rows]
         except Exception as e:
             log.error(f"Error retrieving distinct agents with feedback: {e}")
             return []
 
-    async def update_feedback_record(self, response_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update_feedback_record(self, response_id: str, update_data: Dict[str, Any], department_name: str= None) -> bool:
         """
-        Updates fields in a feedback_response record.
+        Updates fields in a feedback_response record, optionally filtered by department_name.
         `update_data` should be a dictionary of column_name: new_value.
         """
         if not update_data:
@@ -3643,12 +5699,17 @@ class FeedbackLearningRepository(BaseRepository):
 
         set_clause = ', '.join([f"{key} = ${i+1}" for i, key in enumerate(update_data.keys())])
         values = list(update_data.values())
-        values.append(response_id) # response_id is the last parameter
+        values.append(response_id) # response_id parameter
+
+        where_clause = f"response_id = ${len(values)}"
+        if department_name:
+            values.append(department_name)
+            where_clause += f" AND department_name = ${len(values)}"
 
         update_query = f"""
         UPDATE {self.feedback_table_name}
         SET {set_clause}
-        WHERE response_id = ${len(values)};
+        WHERE {where_clause};
         """
         try:
             async with self.pool.acquire() as conn:
@@ -3687,8 +5748,391 @@ class FeedbackLearningRepository(BaseRepository):
             log.error(f"Error during agent_id migration in '{self.agent_feedback_table_name}': {e}", exc_info=True)
             return {"status": "error", "message": f"Failed to migrate agent_id records: {e}"}
 
+    async def get_all_feedback_records(self, department_name: str = None, agent_ids: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all feedback records, optionally filtered by department_name and agent_ids.
+        When agent_ids is provided, only returns feedback for those agents (e.g. agents that exist in main DB).
+        """
+        select_query = f"""
+        SELECT fr.response_id, fr.query, fr.old_final_response, fr.old_steps, fr.feedback, 
+               fr.new_final_response, fr.new_steps, fr.lesson, fr.status, fr.created_at, 
+               fr.department_name, af.agent_id 
+        FROM {self.feedback_table_name} fr
+        JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id"""
+        
+        params = []
+        conditions = []
+        param_idx = 1
+        if department_name:
+            conditions.append(f"fr.department_name = ${param_idx}")
+            params.append(department_name)
+            param_idx += 1
+        if agent_ids:
+            conditions.append(f"af.agent_id = ANY(${param_idx}::text[])")
+            params.append(agent_ids)
+        if conditions:
+            select_query += " WHERE " + " AND ".join(conditions)
+        select_query += " ORDER BY fr.created_at DESC;"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                if params:
+                    rows = await conn.fetch(select_query, *params)
+                else:
+                    rows = await conn.fetch(select_query)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error retrieving all feedback records: {e}")
+            return []
+
+    async def get_total_feedback_count(self, department_name: str = None, agent_ids: List[str] = None) -> int:
+        """
+        Returns the total count of feedback records, optionally filtered by department_name and agent_ids.
+        """
+        if agent_ids is not None and len(agent_ids) == 0:
+            return 0
+        select_query = f"SELECT COUNT(*) FROM {self.feedback_table_name} fr JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id"
+        params = []
+        conditions = []
+        param_idx = 1
+        if department_name:
+            conditions.append(f"fr.department_name = ${param_idx}")
+            params.append(department_name)
+            param_idx += 1
+        if agent_ids:
+            conditions.append(f"af.agent_id = ANY(${param_idx}::text[])")
+            params.append(agent_ids)
+        if conditions:
+            select_query += " WHERE " + " AND ".join(conditions)
+        select_query += ";"
+        try:
+            async with self.pool.acquire() as conn:
+                if params:
+                    count = await conn.fetchval(select_query, *params)
+                else:
+                    count = await conn.fetchval(select_query)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error retrieving total feedback count: {e}")
+            return 0
+
+    async def get_approved_feedback_count(self, department_name: str = None, agent_ids: List[str] = None) -> int:
+        """
+        Returns the count of approved feedback records, optionally filtered by department_name and agent_ids.
+        """
+        if agent_ids is not None and len(agent_ids) == 0:
+            return 0
+        select_query = f"SELECT COUNT(*) FROM {self.feedback_table_name} fr JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id WHERE fr.approved = TRUE"
+        params = []
+        conditions = []
+        param_idx = 1
+        if department_name:
+            conditions.append(f"fr.department_name = ${param_idx}")
+            params.append(department_name)
+            param_idx += 1
+        if agent_ids:
+            conditions.append(f"af.agent_id = ANY(${param_idx}::text[])")
+            params.append(agent_ids)
+        if conditions:
+            select_query += " AND " + " AND ".join(conditions)
+        select_query += ";"
+        try:
+            async with self.pool.acquire() as conn:
+                if params:
+                    count = await conn.fetchval(select_query, *params)
+                else:
+                    count = await conn.fetchval(select_query)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error retrieving approved feedback count: {e}")
+            return 0
+
+    async def get_pending_feedback_count(self, department_name: str = None, agent_ids: List[str] = None) -> int:
+        """
+        Returns the count of pending (not approved) feedback records, optionally filtered by department_name and agent_ids.
+        """
+        if agent_ids is not None and len(agent_ids) == 0:
+            return 0
+        select_query = f"SELECT COUNT(*) FROM {self.feedback_table_name} fr JOIN {self.agent_feedback_table_name} af ON fr.response_id = af.response_id WHERE fr.approved = FALSE"
+        params = []
+        conditions = []
+        param_idx = 1
+        if department_name:
+            conditions.append(f"fr.department_name = ${param_idx}")
+            params.append(department_name)
+            param_idx += 1
+        if agent_ids:
+            conditions.append(f"af.agent_id = ANY(${param_idx}::text[])")
+            params.append(agent_ids)
+        if conditions:
+            select_query += " AND " + " AND ".join(conditions)
+        select_query += ";"
+        try:
+            async with self.pool.acquire() as conn:
+                if params:
+                    count = await conn.fetchval(select_query, *params)
+                else:
+                    count = await conn.fetchval(select_query)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error retrieving pending feedback count: {e}")
+            return 0
+
+    async def get_rejected_feedback_count(self, department_name: str = None) -> int:
+        """
+        Returns the count of rejected feedback records, optionally filtered by department_name.
+        """
+        select_query = f"SELECT COUNT(*) FROM {self.feedback_table_name} WHERE status = 'reject'"
+        params = []
+        if department_name:
+            select_query += " AND department_name = $1"
+            params.append(department_name)
+        select_query += ";"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                if params:
+                    count = await conn.fetchval(select_query, *params)
+                else:
+                    count = await conn.fetchval(select_query)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error retrieving rejected feedback count: {e}")
+            return 0
+
+    async def get_rejected_feedback_count(self, department_name: str = None) -> int:
+        """
+        Returns the count of rejected feedback records, optionally filtered by department_name.
+        """
+        select_query = f"SELECT COUNT(*) FROM {self.feedback_table_name} WHERE status = 'reject'"
+        params = []
+        if department_name:
+            select_query += " AND department_name = $1"
+            params.append(department_name)
+        select_query += ";"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                if params:
+                    count = await conn.fetchval(select_query, *params)
+                else:
+                    count = await conn.fetchval(select_query)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error retrieving rejected feedback count: {e}")
+            return 0
+
+    async def get_agents_with_feedback_count(self, department_name: str = None, agent_ids: List[str] = None) -> int:
+        """
+        Returns the count of distinct agents that have associated feedback, optionally filtered by department_name and agent_ids.
+        """
+        if agent_ids is not None and len(agent_ids) == 0:
+            return 0
+        select_query = f"""
+            SELECT COUNT(DISTINCT af.agent_id) 
+            FROM {self.agent_feedback_table_name} af
+            JOIN {self.feedback_table_name} fr ON af.response_id = fr.response_id"""
+        params = []
+        conditions = []
+        param_idx = 1
+        if department_name:
+            conditions.append(f"fr.department_name = ${param_idx}")
+            params.append(department_name)
+            param_idx += 1
+        if agent_ids:
+            conditions.append(f"af.agent_id = ANY(${param_idx}::text[])")
+            params.append(agent_ids)
+        if conditions:
+            select_query += " WHERE " + " AND ".join(conditions)
+        select_query += ";"
+        try:
+            async with self.pool.acquire() as conn:
+                if params:
+                    count = await conn.fetchval(select_query, *params)
+                else:
+                    count = await conn.fetchval(select_query)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error retrieving agents with feedback count: {e}")
+            return 0
+
+    async def get_feedback_stats(self, department_name: str = None, agent_ids: List[str] = None) -> Dict[str, Any]:
+        """
+        Returns aggregated feedback statistics including total, approved, pending, rejected counts and agent count.
+        Returns aggregated feedback statistics including total, approved, pending, rejected counts and agent count.
+        """
+        try:
+            total_count = await self.get_total_feedback_count(department_name)
+            approved_count = await self.get_approved_feedback_count(department_name)
+            pending_count = await self.get_pending_feedback_count(department_name)
+            rejected_count = await self.get_rejected_feedback_count(department_name)
+            rejected_count = await self.get_rejected_feedback_count(department_name)
+            agents_count = await self.get_agents_with_feedback_count(department_name)
+            
+            return {
+                "total_feedback": total_count,
+                "approved_feedback": approved_count,
+                "pending_feedback": pending_count,
+                "rejected_feedback": rejected_count,
+                "rejected_feedback": rejected_count,
+                "agents_with_feedback": agents_count
+            }
+        except Exception as e:
+            log.error(f"Error retrieving feedback stats: {e}")
+            return {
+                "total_feedback": 0,
+                "approved_feedback": 0,
+                "pending_feedback": 0,
+                "rejected_feedback": 0,
+                "rejected_feedback": 0,
+                "agents_with_feedback": 0
+            }
+
+    async def delete_feedback_by_agent_id(self, agent_id: str) -> Dict[str, Any]:
+        """
+        Deletes all feedback/learning records for a specific agent.
+        
+        This method:
+        1. Retrieves all response_ids associated with the agent_id from agent_feedback table
+        2. Deletes those records from feedback_response table (cascades to agent_feedback)
+        
+        Args:
+            agent_id (str): The ID of the agent whose feedback records should be deleted.
+            
+        Returns:
+            Dict[str, Any]: A dictionary with status and count of deleted records.
+        """
+        # First, get all response_ids for this agent
+        get_response_ids_query = f"""
+        SELECT response_id FROM {self.agent_feedback_table_name}
+        WHERE agent_id = $1;
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Get all response_ids for this agent
+                rows = await conn.fetch(get_response_ids_query, agent_id)
+                response_ids = [row['response_id'] for row in rows]
+                
+                if not response_ids:
+                    log.info(f"No feedback records found for agent_id '{agent_id}'.")
+                    return {
+                        "status": "success",
+                        "message": f"No feedback records found for agent_id '{agent_id}'.",
+                        "deleted_count": 0
+                    }
+                
+                # Delete from feedback_response table (CASCADE will handle agent_feedback)
+                delete_query = f"""
+                DELETE FROM {self.feedback_table_name}
+                WHERE response_id = ANY($1);
+                """
+                result = await conn.execute(delete_query, response_ids)
+                deleted_count = int(result.split()[-1])
+                
+                log.info(f"Successfully deleted {deleted_count} feedback records for agent_id '{agent_id}'.")
+                return {
+                    "status": "success",
+                    "message": f"Successfully deleted {deleted_count} feedback records for agent_id '{agent_id}'.",
+                    "deleted_count": deleted_count
+                }
+        except Exception as e:
+            log.error(f"Error deleting feedback records for agent_id '{agent_id}': {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Failed to delete feedback records: {e}",
+                "deleted_count": 0
+            }
+
+    async def delete_orphaned_feedback_records(self) -> Dict[str, Any]:
+        """
+        Deletes feedback records where the associated agent_id no longer exists 
+        in either the agent table or the recycle_agent table.
+        
+        This method:
+        1. Gets all distinct agent_ids from the agent_feedback table
+        2. Identifies orphaned agent_ids (not in agent_table or recycle_agent)
+        3. Deletes feedback records for those orphaned agent_ids
+        
+        Returns:
+            Dict[str, Any]: A dictionary with status, message, deleted count, and orphaned agent_ids.
+        """
+        log.info("Starting cleanup of orphaned feedback records.")
+        
+        # Query to find orphaned agent_ids (not in agent_table or recycle_agent)
+        get_orphaned_agents_query = f"""
+        SELECT DISTINCT af.agent_id 
+        FROM {self.agent_feedback_table_name} af
+        WHERE NOT EXISTS (
+            SELECT 1 FROM {TableNames.AGENT.value} a 
+            WHERE a.agentic_application_id = af.agent_id
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM {TableNames.RECYCLE_AGENT.value} ra 
+            WHERE ra.agentic_application_id = af.agent_id
+        );
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Get all orphaned agent_ids
+                rows = await conn.fetch(get_orphaned_agents_query)
+                orphaned_agent_ids = [row['agent_id'] for row in rows]
+                
+                if not orphaned_agent_ids:
+                    log.info("No orphaned feedback records found.")
+                    return {
+                        "status": "success",
+                        "message": "No orphaned feedback records found.",
+                        "deleted_count": 0,
+                        "orphaned_agent_ids": []
+                    }
+                
+                log.info(f"Found {len(orphaned_agent_ids)} orphaned agent_ids: {orphaned_agent_ids}")
+                
+                # Get all response_ids for orphaned agents
+                get_response_ids_query = f"""
+                SELECT response_id FROM {self.agent_feedback_table_name}
+                WHERE agent_id = ANY($1);
+                """
+                response_rows = await conn.fetch(get_response_ids_query, orphaned_agent_ids)
+                response_ids = [row['response_id'] for row in response_rows]
+                
+                if not response_ids:
+                    log.info("No feedback response records to delete.")
+                    return {
+                        "status": "success",
+                        "message": "No feedback response records to delete.",
+                        "deleted_count": 0,
+                        "orphaned_agent_ids": orphaned_agent_ids
+                    }
+                
+                # Delete from feedback_response table (CASCADE will handle agent_feedback)
+                delete_query = f"""
+                DELETE FROM {self.feedback_table_name}
+                WHERE response_id = ANY($1);
+                """
+                result = await conn.execute(delete_query, response_ids)
+                deleted_count = int(result.split()[-1])
+                
+                log.info(f"Successfully deleted {deleted_count} orphaned feedback records for {len(orphaned_agent_ids)} orphaned agents.")
+                return {
+                    "status": "success",
+                    "message": f"Successfully deleted {deleted_count} orphaned feedback records for {len(orphaned_agent_ids)} orphaned agents.",
+                    "deleted_count": deleted_count,
+                    "orphaned_agent_ids": orphaned_agent_ids
+                }
+        except Exception as e:
+            log.error(f"Error deleting orphaned feedback records: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Failed to delete orphaned feedback records: {e}",
+                "deleted_count": 0,
+                "orphaned_agent_ids": []
+            }
 
 
+# ---------------------------111---------------------------------------
 # --- EvaluationDataRepository ---
 # --- CACHE NOT IMPLEMENTED FOR THIS CLASS ---
 class EvaluationDataRepository(BaseRepository):
@@ -3696,7 +6140,7 @@ class EvaluationDataRepository(BaseRepository):
     Repository for 'evaluation_data' table. Handles direct database interactions.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo: AgentRepository,  table_name: str = "evaluation_data"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo: AgentRepository,  table_name: str = TableNames.EVALUATION_DATA.value):
         super().__init__(pool, login_pool, table_name)
         self.agent_repo = agent_repo
 
@@ -3719,15 +6163,25 @@ class EvaluationDataRepository(BaseRepository):
             tool_prompt TEXT,
             steps JSONB,
             executor_messages JSONB,
-            evaluation_status TEXT DEFAULT 'unprocessed'
+            evaluation_status TEXT DEFAULT 'unprocessed',
+            department_name TEXT DEFAULT 'General'
         );
         """
+        
+        # ALTER TABLE statements for existing databases
+        alter_statements = [
+            f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General';"
+        ]
+        
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(create_table_query)
-            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+                # Execute ALTER statements for existing databases
+                for stmt in alter_statements:
+                    await conn.execute(stmt)
+            log.info(f"Table '{self.table_name}' created or updated successfully.")
         except Exception as e:
-            log.error(f"Error creating table '{self.table_name}': {e}")
+            log.error(f"Error creating or updating table '{self.table_name}': {e}")
             raise
 
     async def insert_evaluation_record(self, data: Dict[str, Any]) -> bool:
@@ -3738,8 +6192,8 @@ class EvaluationDataRepository(BaseRepository):
         INSERT INTO {self.table_name} (
             session_id, query, response, model_used,
             agent_id, agent_name, agent_type, agent_goal,
-            workflow_description, tool_prompt, steps, executor_messages
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
+            workflow_description, tool_prompt, steps, executor_messages, department_name
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
         """
         try:
             async with self.pool.acquire() as conn:
@@ -3749,7 +6203,8 @@ class EvaluationDataRepository(BaseRepository):
                     data.get("agent_id"), data.get("agent_name"), data.get("agent_type"), data.get("agent_goal"),
                     data.get("workflow_description"), data.get("tool_prompt"),
                     data.get("steps"),
-                    data.get("executor_messages")
+                    data.get("executor_messages"),
+                    data.get("department_name", "General")
                 )
             return True
         except Exception as e:
@@ -3764,7 +6219,7 @@ class EvaluationDataRepository(BaseRepository):
             SELECT
                 id, query, response, agent_goal, agent_name,agent_type,
                 workflow_description, steps, executor_messages, tool_prompt, model_used,
-                session_id, agent_id
+                session_id, agent_id, department_name
             FROM {self.table_name}
             WHERE evaluation_status = 'unprocessed'
             ORDER BY time_stamp
@@ -3778,6 +6233,47 @@ class EvaluationDataRepository(BaseRepository):
             log.error(f"Error fetching unprocessed evaluation record: {e}")
             return None
   
+    async def get_unprocessed_record_by_department(self, department_name: str) -> Dict[str, Any] | None:
+        """
+        Retrieves the next unprocessed evaluation record for a specific department.
+        Used by Admin users to access records in their department.
+        """
+        query = f"""
+            SELECT
+                id, query, response, agent_goal, agent_name, agent_type,
+                workflow_description, steps, executor_messages, tool_prompt, model_used,
+                session_id, agent_id, department_name
+            FROM {self.table_name}
+            WHERE evaluation_status = 'unprocessed'
+            AND department_name = $1
+            ORDER BY time_stamp
+            LIMIT 1;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, department_name)
+            return dict(row) if row else None
+        except Exception as e:
+            log.error(f"Error fetching unprocessed record by department {department_name}: {e}")
+            return None
+
+    async def count_unprocessed_records_by_department(self, department_name: str) -> int:
+        """
+        Counts unprocessed evaluation records for a specific department.
+        Used by Admin users to count records in their department.
+        """
+        query = f"""
+            SELECT COUNT(*) FROM {self.table_name}
+            WHERE evaluation_status = 'unprocessed'
+            AND department_name = $1;
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                return await conn.fetchval(query, department_name)
+        except Exception as e:
+            log.error(f"Error counting unprocessed records by department {department_name}: {e}")
+            return 0
+
     async def get_unprocessed_record_by_creator(self, creator_email: str) -> Dict[str, Any] | None:
         """
         Retrieves the next unprocessed evaluation record for agents created by the given user.
@@ -3800,7 +6296,7 @@ class EvaluationDataRepository(BaseRepository):
                 SELECT
                     id, query, response, agent_goal, agent_name, agent_type,
                     workflow_description, steps, executor_messages, tool_prompt, model_used,
-                    session_id, agent_id
+                    session_id, agent_id, department_name
                 FROM {self.table_name}
                 WHERE evaluation_status = 'unprocessed'
                 AND agent_id = ANY($1::text[])
@@ -3858,13 +6354,15 @@ class EvaluationDataRepository(BaseRepository):
         self,
         user: Optional[User],
         agent_names: Optional[List[str]] = None,
+        agent_types: Optional[List[str]] = None,
         page: int = 1,
         limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Retrieves evaluation data records, optionally filtered by agent names.
-        Admins can access all records.
-        Non-admins can only access records for agents they created.
+        Retrieves evaluation data records, optionally filtered by agent names and types.
+        - SuperAdmin can access all records across all departments
+        - Admin can access all records in their department
+        - Regular users can only access records for agents they created
         """
         try:
             offset = (page - 1) * limit
@@ -3873,32 +6371,73 @@ class EvaluationDataRepository(BaseRepository):
                 FROM {self.table_name}
             """
             params = []
+            conditions = []
 
-            # Step 1: Apply filtering for non-admin users
-            if user and user.role != UserRole.ADMIN:
-                log.info(f"Fetching agent names for user: {user.email}")
-                agent_names_result = await self.agent_repo.get_agent_name_by_creator(user.email)
-                owned_agent_names = [row["agentic_application_name"] for row in agent_names_result]
-
-                log.info(f"Owned agent names: {owned_agent_names}")
-
-                if not owned_agent_names:
-                    log.warning(f"No agents found for user {user.email}")
-                    return []
-
-                # If agent_names is provided, filter only those that the user owns
-                if agent_names:
-                    filtered_agent_names = list(set(agent_names) & set(owned_agent_names))
-                    if not filtered_agent_names:
-                        log.warning(f"User {user.email} does not own any of the requested agent names: {agent_names}")
-                        return []
-                    query += " WHERE agent_name = ANY($1::text[])"
-                    params.append(filtered_agent_names)
+            # Apply filtering based on user role and permissions
+            if user:
+                if user.role == UserRole.SUPER_ADMIN:
+                    # SuperAdmin can see all records - no additional filtering
+                    log.info(f"SuperAdmin {user.email} accessing all evaluation records")
+                    if agent_names:
+                        conditions.append(f"agent_name = ANY(${len(params)+1}::text[])")
+                        params.append(agent_names)
+                    if agent_types:
+                        conditions.append(f"agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+                        
+                elif user.role == UserRole.ADMIN:
+                    # Admin can see all records in their department
+                    log.info(f"Admin {user.email} accessing department records: {user.department_name}")
+                    
+                    # Add department filter
+                    conditions.append(f"department_name = ${len(params)+1}")
+                    params.append(user.department_name)
+                    
+                    if agent_names:
+                        conditions.append(f"agent_name = ANY(${len(params)+1}::text[])")
+                        params.append(agent_names)
+                    if agent_types:
+                        conditions.append(f"agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+                    
                 else:
-                    query += " WHERE agent_name = ANY($1::text[])"
-                    params.append(owned_agent_names)
+                    # Regular users can only see records for agents they created and in their department
+                    log.info(f"User {user.email} accessing own agent records")
+                    
+                    # Add department filter for regular users
+                    conditions.append(f"department_name = ${len(params)+1}")
+                    params.append(user.department_name)
+                    
+                    agent_names_result = await self.agent_repo.get_agent_names_by_creator_and_department(
+                        user.email, user.department_name
+                    )
+                    owned_agent_names = [row["agentic_application_name"] for row in agent_names_result]
 
-            # Step 2: Add pagination
+                    if not owned_agent_names:
+                        log.warning(f"No agents found for user {user.email} in department {user.department_name}")
+                        return []
+
+                    # If agent_names is provided, filter only those that the user owns
+                    if agent_names:
+                        filtered_agent_names = list(set(agent_names) & set(owned_agent_names))
+                        if not filtered_agent_names:
+                            log.warning(f"User {user.email} does not own any of the requested agent names: {agent_names}")
+                            return []
+                        conditions.append(f"agent_name = ANY(${len(params)+1}::text[])")
+                        params.append(filtered_agent_names)
+                    else:
+                        conditions.append(f"agent_name = ANY(${len(params)+1}::text[])")
+                        params.append(owned_agent_names)
+                    
+                    if agent_types:
+                        conditions.append(f"agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+
+            # Build WHERE clause from conditions
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            # Add pagination
             limit_param_index = len(params) + 1
             offset_param_index = len(params) + 2
             query += f" ORDER BY id DESC LIMIT ${limit_param_index} OFFSET ${offset_param_index};"
@@ -3906,7 +6445,7 @@ class EvaluationDataRepository(BaseRepository):
 
             log.debug(f"Executing query: {query} with params: {params}")
 
-            # Step 3: Execute query
+            # Execute query
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
 
@@ -3917,7 +6456,7 @@ class EvaluationDataRepository(BaseRepository):
             return []
 
 
-
+# ---------------------------222---------------------------------------
 # --- ToolEvaluationMetricsRepository ---
 # --- CACHE NOT IMPLEMENTED FOR THIS CLASS ---
 class ToolEvaluationMetricsRepository(BaseRepository):
@@ -3925,7 +6464,7 @@ class ToolEvaluationMetricsRepository(BaseRepository):
     Repository for 'tool_evaluation_metrics' table. Handles direct database interactions.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo: AgentRepository, table_name: str = "tool_evaluation_metrics"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo: AgentRepository, table_name: str = TableNames.TOOL_EVALUATION_METRICS.value):
         super().__init__(pool, login_pool, table_name)
         self.agent_repo = agent_repo
 
@@ -3935,7 +6474,7 @@ class ToolEvaluationMetricsRepository(BaseRepository):
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.table_name} (
             id SERIAL PRIMARY KEY,
-            evaluation_id INTEGER REFERENCES evaluation_data(id) ON DELETE CASCADE,
+            evaluation_id INTEGER REFERENCES {TableNames.EVALUATION_DATA.value}(id) ON DELETE CASCADE,
             user_query TEXT,
             agent_response TEXT,
             model_used TEXT,
@@ -3949,15 +6488,25 @@ class ToolEvaluationMetricsRepository(BaseRepository):
             tool_usage_efficiency_justification TEXT,
             tool_call_precision_justification TEXT,
             model_used_for_evaluation TEXT,
+            department_name TEXT DEFAULT 'General',
             time_stamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
+        
+        # ALTER TABLE statements for existing databases
+        alter_statements = [
+            f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General';"
+        ]
+        
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(create_table_query)
-            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+                # Execute ALTER statements for existing databases
+                for stmt in alter_statements:
+                    await conn.execute(stmt)
+            log.info(f"Table '{self.table_name}' created or updated successfully.")
         except Exception as e:
-            log.error(f"Error creating table '{self.table_name}': {e}")
+            log.error(f"Error creating or updating table '{self.table_name}': {e}")
             raise
 
     async def insert_metrics_record(self, metrics_data: Dict[str, Any]) -> bool:
@@ -3973,9 +6522,9 @@ class ToolEvaluationMetricsRepository(BaseRepository):
             tool_selection_accuracy_justification,
             tool_usage_efficiency_justification,
             tool_call_precision_justification,
-            model_used_for_evaluation
+            model_used_for_evaluation, department_name
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
         );
         """
         try:
@@ -3989,7 +6538,8 @@ class ToolEvaluationMetricsRepository(BaseRepository):
                     metrics_data.get("tool_selection_accuracy_justification"),
                     metrics_data.get("tool_usage_efficiency_justification"),
                     metrics_data.get("tool_call_precision_justification"),
-                    metrics_data.get("model_used_for_evaluation")
+                    metrics_data.get("model_used_for_evaluation"),
+                    metrics_data.get("department_name", "General")
                 )
             return True
         except Exception as e:
@@ -4000,54 +6550,95 @@ class ToolEvaluationMetricsRepository(BaseRepository):
         self,
         user: Optional[User],
         agent_names: Optional[List[str]] = None,
+        agent_types: Optional[List[str]] = None,
         page: int = 1,
         limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Retrieves tool evaluation metrics records, optionally filtered by agent names.
-        Admins can access all records or filter by agent names.
-        Non-admins can only access records for agents they created.
+        Retrieves tool evaluation metrics records, optionally filtered by agent names and types.
+        - SuperAdmin can access all records across all departments
+        - Admin can access all records in their department
+        - Regular users can only access records for agents they created
         """
         try:
             offset = (page - 1) * limit
             query = f"""
                 SELECT tem.*
                 FROM {self.table_name} tem
-                JOIN evaluation_data ed ON tem.evaluation_id = ed.id
+                JOIN {TableNames.EVALUATION_DATA.value} ed ON tem.evaluation_id = ed.id
             """
             params = []
+            conditions = []
 
-            # Step 1: Apply filtering
+            # Apply filtering based on user role and permissions
             if user:
-                if user.role == UserRole.ADMIN:
-                    # ✅ Admins can filter by agent names if provided
+                if user.role == UserRole.SUPER_ADMIN:
+                    # SuperAdmin can see all records - no additional filtering
+                    log.info(f"SuperAdmin {user.email} accessing all tool metrics")
                     if agent_names:
-                        query += " WHERE ed.agent_name = ANY($1::text[])"
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
                         params.append(agent_names)
+                    if agent_types:
+                        conditions.append(f"ed.agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+                        
+                elif user.role == UserRole.ADMIN:
+                    # Admin can see all records in their department
+                    log.info(f"Admin {user.email} accessing department tool metrics: {user.department_name}")
+                    
+                    # Add department filter
+                    conditions.append(f"ed.department_name = ${len(params)+1}")
+                    params.append(user.department_name)
+                    
+                    if agent_names:
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
+                        params.append(agent_names)
+                    if agent_types:
+                        conditions.append(f"ed.agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+                    
                 else:
-                    # Non-admins: restrict to owned agents
-                    log.info(f"Fetching agent names for user: {user.email}")
-                    agent_names_result = await self.agent_repo.get_agent_name_by_creator(user.email)
+                    # Regular users can only see records for agents they created and in their department
+                    log.info(f"User {user.email} accessing own agent tool metrics")
+                    
+                    # Add department filter for regular users
+                    conditions.append(f"ed.department_name = ${len(params)+1}")
+                    params.append(user.department_name)
+                    
+                    agent_names_result = await self.agent_repo.get_agent_names_by_creator_and_department(
+                        user.email, user.department_name
+                    )
                     owned_agent_names = [row["agentic_application_name"] for row in agent_names_result]
 
-                    log.info(f"Owned agent names: {owned_agent_names}")
-
                     if not owned_agent_names:
-                        log.warning(f"No agents found for user {user.email}")
+                        log.warning(f"No agents found for user {user.email} in department {user.department_name}")
                         return []
 
+                    # If agent_names is provided, filter only those that the user owns
                     if agent_names:
                         filtered_agent_names = list(set(agent_names) & set(owned_agent_names))
                         if not filtered_agent_names:
                             log.warning(f"User {user.email} does not own any of the requested agent names: {agent_names}")
                             return []
-                        query += " WHERE ed.agent_name = ANY($1::text[])"
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
                         params.append(filtered_agent_names)
                     else:
-                        query += " WHERE ed.agent_name = ANY($1::text[])"
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
                         params.append(owned_agent_names)
+                    
+                    if agent_types:
+                        conditions.append(f"ed.agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+            else:
+                # No user provided - this shouldn't happen with proper authentication
+                log.warning("No user provided for tool metrics access")
+                return []
 
-            # Step 2: Add pagination
+            # Build WHERE clause from conditions
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            # Add pagination
             limit_param_index = len(params) + 1
             offset_param_index = len(params) + 2
             query += f" ORDER BY tem.id DESC LIMIT ${limit_param_index} OFFSET ${offset_param_index};"
@@ -4066,7 +6657,7 @@ class ToolEvaluationMetricsRepository(BaseRepository):
             return []
 
 
-
+# ---------------------------333---------------------------------------
 # --- AgentEvaluationMetricsRepository ---
 # --- CACHE NOT IMPLEMENTED FOR THIS CLASS ---
 class AgentEvaluationMetricsRepository(BaseRepository):
@@ -4074,7 +6665,7 @@ class AgentEvaluationMetricsRepository(BaseRepository):
     Repository for 'agent_evaluation_metrics' table. Handles direct database interactions.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo :AgentRepository, table_name: str = "agent_evaluation_metrics"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, agent_repo :AgentRepository, table_name: str = TableNames.AGENT_EVALUATION_METRICS.value):
         super().__init__(pool, login_pool, table_name)
         self.agent_repo = agent_repo
 
@@ -4083,7 +6674,7 @@ class AgentEvaluationMetricsRepository(BaseRepository):
         create_table_query = f"""
         CREATE TABLE IF NOT EXISTS {self.table_name} (
             id SERIAL PRIMARY KEY,
-            evaluation_id INTEGER REFERENCES evaluation_data(id) ON DELETE CASCADE,
+            evaluation_id INTEGER REFERENCES {TableNames.EVALUATION_DATA.value}(id) ON DELETE CASCADE,
             user_query TEXT,
             response TEXT,
             model_used TEXT,
@@ -4105,14 +6696,15 @@ class AgentEvaluationMetricsRepository(BaseRepository):
             communication_efficiency_justification TEXT,
             efficiency_category TEXT,
             model_used_for_evaluation TEXT,
+            department_name TEXT DEFAULT 'General',
             time_stamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
         
         alter_statements = [
-        
             f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS communication_efficiency_score REAL DEFAULT NULL;",
             f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS communication_efficiency_justification TEXT DEFAULT 'NaN';",
+            f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General';"
         ]
 
         try:
@@ -4141,11 +6733,11 @@ class AgentEvaluationMetricsRepository(BaseRepository):
             response_fluency, response_fluency_justification,
             response_coherence, response_coherence_justification,
             communication_efficiency_score, communication_efficiency_justification,
-            efficiency_category, model_used_for_evaluation
+            efficiency_category, model_used_for_evaluation, department_name
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18,
-            $19, $20, $21, $22
+            $19, $20, $21, $22, $23
         );
         """
         try:
@@ -4161,7 +6753,8 @@ class AgentEvaluationMetricsRepository(BaseRepository):
                     metrics_data.get("response_fluency"), metrics_data.get("response_fluency_justification"),
                     metrics_data.get("response_coherence"), metrics_data.get("response_coherence_justification"),
                     metrics_data.get("communication_efficiency_score"),metrics_data.get("communication_efficiency_justification"),
-                    metrics_data.get("efficiency_category"), metrics_data.get("model_used_for_evaluation")
+                    metrics_data.get("efficiency_category"), metrics_data.get("model_used_for_evaluation"),
+                    metrics_data.get("department_name", "General")
                 )
             return True
         except Exception as e:
@@ -4173,50 +6766,95 @@ class AgentEvaluationMetricsRepository(BaseRepository):
         self,
         user: Optional[User],
         agent_names: Optional[List[str]] = None,
+        agent_types: Optional[List[str]] = None,
         page: int = 1,
         limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Retrieves agent evaluation metrics records, optionally filtered by agent names.
-        Admins can access all records or filter by agent names.
-        Non-admins can only access records for agents they created.
+        Retrieves agent evaluation metrics records, optionally filtered by agent names and types.
+        - SuperAdmin can access all records across all departments
+        - Admin can access all records in their department
+        - Regular users can only access records for agents they created
         """
         try:
             offset = (page - 1) * limit
             query = f"""
                 SELECT aem.*
                 FROM {self.table_name} aem
-                JOIN evaluation_data ed ON aem.evaluation_id = ed.id
+                JOIN {TableNames.EVALUATION_DATA.value} ed ON aem.evaluation_id = ed.id
             """
             params = []
+            conditions = []
 
+            # Apply filtering based on user role and permissions
             if user:
-                if user.role == UserRole.ADMIN:
+                if user.role == UserRole.SUPER_ADMIN:
+                    # SuperAdmin can see all records - no additional filtering
+                    log.info(f"SuperAdmin {user.email} accessing all agent metrics")
                     if agent_names:
-                        query += " WHERE ed.agent_name = ANY($1::text[])"
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
                         params.append(agent_names)
+                    if agent_types:
+                        conditions.append(f"ed.agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+                        
+                elif user.role == UserRole.ADMIN:
+                    # Admin can see all records in their department
+                    log.info(f"Admin {user.email} accessing department agent metrics: {user.department_name}")
+                    
+                    # Add department filter
+                    conditions.append(f"ed.department_name = ${len(params)+1}")
+                    params.append(user.department_name)
+                    
+                    if agent_names:
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
+                        params.append(agent_names)
+                    if agent_types:
+                        conditions.append(f"ed.agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+                    
                 else:
-                    log.info(f"Fetching agent names for user: {user.email}")
-                    agent_names_result = await self.agent_repo.get_agent_name_by_creator(user.email)
+                    # Regular users can only see records for agents they created and in their department
+                    log.info(f"User {user.email} accessing own agent metrics")
+                    
+                    # Add department filter for regular users
+                    conditions.append(f"ed.department_name = ${len(params)+1}")
+                    params.append(user.department_name)
+                    
+                    agent_names_result = await self.agent_repo.get_agent_names_by_creator_and_department(
+                        user.email, user.department_name
+                    )
                     owned_agent_names = [row["agentic_application_name"] for row in agent_names_result]
 
-                    log.info(f"Owned agent names: {owned_agent_names}")
-
                     if not owned_agent_names:
-                        log.warning(f"No agents found for user {user.email}")
+                        log.warning(f"No agents found for user {user.email} in department {user.department_name}")
                         return []
 
+                    # If agent_names is provided, filter only those that the user owns
                     if agent_names:
                         filtered_agent_names = list(set(agent_names) & set(owned_agent_names))
                         if not filtered_agent_names:
                             log.warning(f"User {user.email} does not own any of the requested agent names: {agent_names}")
                             return []
-                        query += " WHERE ed.agent_name = ANY($1::text[])"
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
                         params.append(filtered_agent_names)
                     else:
-                        query += " WHERE ed.agent_name = ANY($1::text[])"
+                        conditions.append(f"ed.agent_name = ANY(${len(params)+1}::text[])")
                         params.append(owned_agent_names)
+                    
+                    if agent_types:
+                        conditions.append(f"ed.agent_type = ANY(${len(params)+1}::text[])")
+                        params.append(agent_types)
+            else:
+                # No user provided - this shouldn't happen with proper authentication
+                log.warning("No user provided for agent metrics access")
+                return []
 
+            # Build WHERE clause from conditions
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            # Add pagination
             limit_param_index = len(params) + 1
             offset_param_index = len(params) + 2
             query += f" ORDER BY aem.id DESC LIMIT ${limit_param_index} OFFSET ${offset_param_index};"
@@ -4239,7 +6877,7 @@ class AgentEvaluationMetricsRepository(BaseRepository):
 
 class ExportAgentRepository(BaseRepository):
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "export_agent"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.EXPORT_AGENT.value):
         super().__init__(pool, login_pool, table_name)
 
 
@@ -4319,8 +6957,6 @@ class ExportAgentRepository(BaseRepository):
             raise
 
 
-
-
 # --- Chat State History Manager Repository Class ---
 
 class ChatStateHistoryManagerRepository(BaseRepository):
@@ -4329,7 +6965,7 @@ class ChatStateHistoryManagerRepository(BaseRepository):
     Each entry represents a single turn of interaction (user query + agent steps + final response).
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "agent_chat_state_history_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT_CHAT_STATE_HISTORY.value):
         """
         Initializes the ChatHistoryManager with a database connection pool and table name.
         """
@@ -4448,7 +7084,7 @@ class ChatStateHistoryManagerRepository(BaseRepository):
         Retrieves chat history records from the table where thread_id matches a prefix.
 
         Args:
-            thread_id_prefix (str): The prefix for the thread_id (e.g., 'simple_ai_agent_uuid_user@example.com_%').
+            thread_id_prefix (str): The prefix for the thread_id (e.g., 'hybrid_agent_uuid_user@example.com_%').
 
         Returns:
             A list of chat history records, or an empty list if not found or on error.
@@ -4549,6 +7185,8 @@ def sanitize_identifier(name: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_]', '_', name)
 
 
+# ---------------------------444---------------------------------------
+
 class AgentMetadataRepository(BaseRepository):
     """
     Handles all interactions with the main 'agent_evaluations' table and
@@ -4568,7 +7206,9 @@ class AgentMetadataRepository(BaseRepository):
             agent_type VARCHAR(255) NOT NULL,
             model_name VARCHAR(100), is_enabled BOOLEAN DEFAULT TRUE,
             last_updated_at TIMESTAMP, last_robustness_run_at TIMESTAMP,
-            queries_last_updated_at TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            queries_last_updated_at TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            department_name VARCHAR(255) DEFAULT 'General',
+            created_by VARCHAR(255)
         );
         """
         
@@ -4586,24 +7226,55 @@ class AgentMetadataRepository(BaseRepository):
         END $$;
         """
         
+        # Migration: Add department_name column if it doesn't exist
+        add_department_name_column_query = """
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'agent_evaluations' 
+                AND column_name = 'department_name'
+            ) THEN
+                ALTER TABLE agent_evaluations ADD COLUMN department_name VARCHAR(255) DEFAULT 'General';
+            END IF;
+        END $$;
+        """
+        
+        # Migration: Add created_by column if it doesn't exist
+        add_created_by_column_query = """
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_name = 'agent_evaluations' 
+                AND column_name = 'created_by'
+            ) THEN
+                ALTER TABLE agent_evaluations ADD COLUMN created_by VARCHAR(255);
+            END IF;
+        END $$;
+        """
+        
         async with self.pool.acquire() as conn:
             await conn.execute(create_table_query)
             await conn.execute(add_agent_type_column_query)
+            await conn.execute(add_department_name_column_query)
+            await conn.execute(add_created_by_column_query)
         log.info("Table 'agent_evaluations' checked/created successfully and migrations applied.")
 
-    async def upsert_agent_record(self, agent_id: str, agent_name: str, agent_type: str, model_name: str):
+    async def upsert_agent_record(self, agent_id: str, agent_name: str, agent_type: str, model_name: str, department_name: str = None, created_by: str = None):
         """Inserts a new agent or updates an existing one using UPSERT."""
         query = """
-        INSERT INTO agent_evaluations (agent_id, agent_name, agent_type, model_name, last_updated_at, created_at)
-        VALUES ($1, $2, $3, $4, NOW(), NOW())
+        INSERT INTO agent_evaluations (agent_id, agent_name, agent_type, model_name, department_name, created_by, last_updated_at, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
         ON CONFLICT (agent_id) DO UPDATE SET
             agent_name = EXCLUDED.agent_name,
             agent_type = EXCLUDED.agent_type,
             model_name = EXCLUDED.model_name,
+            department_name = EXCLUDED.department_name,
             last_updated_at = NOW();
         """
         async with self.pool.acquire() as conn:
-            await conn.execute(query, agent_id, agent_name, agent_type, model_name)
+            await conn.execute(query, agent_id, agent_name, agent_type, model_name, department_name, created_by)
         log.info(f"Successfully upserted record for agent_id: {agent_id}")
 
     async def get_agent_by_id(self, agent_id: str) -> Optional[Dict[str, Any]]:
@@ -4612,6 +7283,19 @@ class AgentMetadataRepository(BaseRepository):
         async with self.pool.acquire() as conn:
             record = await conn.fetchrow(query, agent_id)
         return dict(record) if record else None
+
+    async def get_agents_by_department(self, department_name: str = None) -> List[Dict[str, Any]]:
+        """Fetches agent records filtered by department."""
+        if department_name:
+            query = "SELECT * FROM agent_evaluations WHERE department_name = $1"
+            params = [department_name]
+        else:
+            query = "SELECT * FROM agent_evaluations"
+            params = []
+            
+        async with self.pool.acquire() as conn:
+            records = await conn.fetch(query, *params)
+        return [dict(record) for record in records]
 
     async def get_agents_to_reevaluate(self, interval_minutes: int) -> list:
         """Fetches agents that need a consistency re-evaluation."""
@@ -4669,6 +7353,7 @@ class AgentMetadataRepository(BaseRepository):
         return None
 
 
+# ---------------------------555---------------------------------------
 
 class AgentDataTableRepository(BaseRepository):
     """
@@ -4694,7 +7379,11 @@ class AgentDataTableRepository(BaseRepository):
         async with self.pool.acquire() as conn:
             await conn.execute(f'DROP TABLE IF EXISTS "{safe_table_name}" CASCADE;')
             await conn.execute(create_query)
-            data_to_insert = list(initial_dataframe[['queries', response_column_name]].itertuples(index=False, name=None))
+            # Convert all values to strings to avoid type mismatch errors
+            data_to_insert = [
+                (str(row[0]) if row[0] is not None else None, str(row[1]) if row[1] is not None else None)
+                for row in initial_dataframe[['queries', response_column_name]].itertuples(index=False, name=None)
+            ]
             insert_query = f'INSERT INTO "{safe_table_name}" (queries, "{response_column_name}") VALUES ($1, $2);'
             await conn.executemany(insert_query, data_to_insert)
 
@@ -4791,14 +7480,57 @@ class AgentDataTableRepository(BaseRepository):
         async with self.pool.acquire() as conn:
             await conn.execute(query)
 
-    async def get_all_agent_records(self) -> List[Dict[str, Any]]:
+    async def get_all_agent_records(self, user: Optional[User] = None, agent_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetches all records from the agent_evaluations table and returns them
         as a list of dictionaries, including the queries from each agent's consistency table.
+        Filters based on user role:
+        - Admin: All agents in their department
+        - Developer: Only agents they created in their department
+        
+        Optionally filter by agent_type (case-insensitive).
+        Valid agent_types: react_agent, multi_agent, planner_executor_agent, 
+                          react_critic_agent, hybrid_agent, meta_agent, planner_meta_agent
         """
-        query = "SELECT * FROM agent_evaluations ORDER BY created_at DESC;"
+        base_query = "SELECT * FROM agent_evaluations"
+        where_conditions = []
+        params = []
+        param_index = 1
+        
+        # Apply user-based filtering
+        if user and user.department_name:
+            # Always filter by department
+            where_conditions.append(f"department_name = ${param_index}")
+            params.append(user.department_name)
+            param_index += 1
+            
+            # Developer can only see their own created evaluations
+            # Admin can see all in their department
+            # Role comes as "Admin", "Developer" etc. (capitalized)
+            if user.role == 'Developer':
+                where_conditions.append(f"created_by = ${param_index}")
+                params.append(user.email)
+                param_index += 1
+        
+        # Apply agent_type filtering if provided (case-insensitive)
+        if agent_type:
+            where_conditions.append(f"LOWER(agent_type) = LOWER(${param_index})")
+            params.append(agent_type)
+            param_index += 1
+        
+        # Build final query
+        if where_conditions:
+            query = f"{base_query} WHERE {' AND '.join(where_conditions)} ORDER BY created_at DESC;"
+        else:
+            query = f"{base_query} ORDER BY created_at DESC;"
+        
+        log.info(f"Executing query: {query} with params: {params}")
+        
         async with self.pool.acquire() as conn:
-            records = await conn.fetch(query)
+            if params:
+                records = await conn.fetch(query, *params)
+            else:
+                records = await conn.fetch(query)
             
             # Convert records to dictionaries and fetch queries for each agent
             agent_records = []
@@ -4901,7 +7633,7 @@ class PipelineRepository(BaseRepository, CacheableRepository):
     Repository for the 'pipelines_table'. Handles direct database interactions for agent pipelines.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "pipelines_table"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.PIPELINES.value):
         """
         Initializes the PipelineRepository.
 
@@ -4924,18 +7656,130 @@ class PipelineRepository(BaseRepository, CacheableRepository):
                 pipeline_description TEXT,
                 pipeline_definition JSONB NOT NULL,
                 created_by TEXT NOT NULL,
+                department_name TEXT DEFAULT 'General',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT TRUE
+                is_active BOOLEAN DEFAULT TRUE,
+                CONSTRAINT uq_pipeline_name_department UNIQUE (pipeline_name, department_name)
             );
-            CREATE INDEX IF NOT EXISTS idx_pipelines_created_by ON {self.table_name}(created_by);
-            CREATE INDEX IF NOT EXISTS idx_pipelines_is_active ON {self.table_name}(is_active);
             """
+            
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                
+                # ALTER statements to add columns/indexes if table already exists
+                alter_statements = [
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
+                    f"CREATE INDEX IF NOT EXISTS idx_pipelines_created_by ON {self.table_name}(created_by)",
+                    f"CREATE INDEX IF NOT EXISTS idx_pipelines_is_active ON {self.table_name}(is_active)",
+                    f"CREATE INDEX IF NOT EXISTS idx_pipelines_department_name ON {self.table_name}(department_name)",
+                ]
+                
+                for stmt in alter_statements:
+                    try:
+                        await conn.execute(stmt)
+                    except Exception as alter_error:
+                        log.warning(f"ALTER statement warning for '{self.table_name}': {alter_error}")
+                
+                # Migration: Rename duplicate pipeline names within departments (must run before adding unique constraint)
+                await self._migrate_duplicate_pipeline_names(conn)
+                
+                # Add unique constraint on (pipeline_name, department_name)
+                try:
+                    await conn.execute(f"""
+                        ALTER TABLE {self.table_name} 
+                        ADD CONSTRAINT uq_pipeline_name_department 
+                        UNIQUE (pipeline_name, department_name)
+                    """)
+                    log.info(f"Unique constraint on (pipeline_name, department_name) added to '{self.table_name}'")
+                except Exception as constraint_error:
+                    # Constraint may already exist
+                    if "already exists" not in str(constraint_error).lower():
+                        log.warning(f"Unique constraint warning for '{self.table_name}': {constraint_error}")
+                        
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def _migrate_duplicate_pipeline_names(self, conn):
+        """
+        Migration to rename duplicate pipeline names within each department.
+        Appends _dupl_1, _dupl_2, etc. to duplicates.
+        """
+        try:
+            # Find duplicates: pipelines with same name in same department
+            find_duplicates_query = f"""
+            SELECT pipeline_id, pipeline_name, department_name,
+                   ROW_NUMBER() OVER (PARTITION BY pipeline_name, department_name ORDER BY created_at) as rn
+            FROM {self.table_name}
+            WHERE (pipeline_name, department_name) IN (
+                SELECT pipeline_name, department_name
+                FROM {self.table_name}
+                GROUP BY pipeline_name, department_name
+                HAVING COUNT(*) > 1
+            )
+            """
+            
+            rows = await conn.fetch(find_duplicates_query)
+            
+            if not rows:
+                log.debug("No duplicate pipeline names found.")
+                return
+            
+            # Update duplicates (skip rn=1 as that's the original)
+            updated_count = 0
+            for row in rows:
+                if row['rn'] > 1:
+                    new_name = f"{row['pipeline_name']}_dupl_{row['rn'] - 1}"
+                    update_query = f"""
+                    UPDATE {self.table_name}
+                    SET pipeline_name = $1, updated_at = CURRENT_TIMESTAMP
+                    WHERE pipeline_id = $2
+                    """
+                    await conn.execute(update_query, new_name, row['pipeline_id'])
+                    updated_count += 1
+                    log.info(f"Renamed duplicate pipeline '{row['pipeline_name']}' to '{new_name}' (ID: {row['pipeline_id']})")
+            
+            if updated_count > 0:
+                log.info(f"Migration complete: Renamed {updated_count} duplicate pipeline names.")
+                
+        except Exception as e:
+            log.warning(f"Pipeline name migration warning: {e}")
+
+    async def check_pipeline_name_exists(
+        self,
+        pipeline_name: str,
+        department_name: str,
+        exclude_pipeline_id: Optional[str] = None
+    ) -> bool:
+        """
+        Check if a pipeline with the given name already exists in the department.
+        
+        Args:
+            pipeline_name: Name to check
+            department_name: Department to check within
+            exclude_pipeline_id: Pipeline ID to exclude (for update operations)
+            
+        Returns:
+            bool: True if name exists, False otherwise
+        """
+        query = f"""
+        SELECT COUNT(*) FROM {self.table_name}
+        WHERE LOWER(pipeline_name) = LOWER($1) AND department_name = $2
+        """
+        params = [pipeline_name.strip(), department_name]
+        
+        if exclude_pipeline_id:
+            query += " AND pipeline_id != $3"
+            params.append(exclude_pipeline_id)
+        
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval(query, *params)
+                return count > 0
+        except Exception as e:
+            log.error(f"Error checking pipeline name existence: {e}")
+            return False
 
     async def insert_pipeline(
         self,
@@ -4943,7 +7787,8 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         pipeline_name: str,
         pipeline_description: str,
         pipeline_definition: dict,
-        created_by: str
+        created_by: str,
+        department_name: str = None
     ) -> bool:
         """
         Inserts a new pipeline record.
@@ -4954,14 +7799,15 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             pipeline_description: Description of the pipeline
             pipeline_definition: JSON definition of nodes and edges
             created_by: Email of the creator
+            department_name: Department name for the pipeline
 
         Returns:
             bool: True if successful, False otherwise
         """
         insert_statement = f"""
         INSERT INTO {self.table_name} 
-        (pipeline_id, pipeline_name, pipeline_description, pipeline_definition, created_by)
-        VALUES ($1, $2, $3, $4, $5)
+        (pipeline_id, pipeline_name, pipeline_description, pipeline_definition, created_by, department_name)
+        VALUES ($1, $2, $3, $4, $5, $6)
         """
         try:
             async with self.pool.acquire() as conn:
@@ -4971,27 +7817,34 @@ class PipelineRepository(BaseRepository, CacheableRepository):
                     pipeline_name.strip(),
                     pipeline_description,
                     json.dumps(pipeline_definition),
-                    created_by
+                    created_by,
+                    department_name
                 )
-            await self.invalidate_entity("get_pipeline", pipeline_id)
-            await self.invalidate_entity("get_all_pipelines")
+            await self.invalidate_all_method_cache("get_pipeline")
+            await self.invalidate_all_method_cache("get_all_pipelines")
             log.info(f"Pipeline '{pipeline_name}' inserted successfully with ID: {pipeline_id}")
-            return True
-        except asyncpg.UniqueViolationError:
-            log.warning(f"Pipeline with ID '{pipeline_id}' already exists.")
-            return False
+            return {"success": True}
+        except asyncpg.UniqueViolationError as e:
+            error_str = str(e).lower()
+            if "uq_pipeline_name_department" in error_str or "pipeline_name" in error_str:
+                log.warning(f"Pipeline with name '{pipeline_name}' already exists in department '{department_name}'.")
+                return {"success": False, "error": "duplicate_name", "message": f"A pipeline with name '{pipeline_name}' already exists in this department."}
+            else:
+                log.warning(f"Pipeline with ID '{pipeline_id}' already exists.")
+                return {"success": False, "error": "duplicate_id", "message": f"Pipeline with ID '{pipeline_id}' already exists."}
         except Exception as e:
             log.error(f"Error inserting pipeline '{pipeline_name}': {e}")
-            return False
+            return {"success": False, "error": "unknown", "message": str(e)}
 
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="PipelineRepository")
-    async def get_all_pipelines(self, created_by: Optional[str] = None, is_active: Optional[bool] = None) -> List[Dict[str, Any]]:
+    async def get_all_pipelines(self, created_by: Optional[str] = None, is_active: Optional[bool] = None, department_name: str = None) -> List[Dict[str, Any]]:
         """
         Retrieves all pipeline records with optional filtering.
 
         Args:
             created_by: Filter by creator email
             is_active: Filter by active status
+            department_name: Filter by department name
 
         Returns:
             List of pipeline dictionaries
@@ -5008,6 +7861,11 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         if is_active is not None:
             query += f" AND is_active = ${param_idx}"
             params.append(is_active)
+            param_idx += 1
+        
+        if department_name:
+            query += f" AND department_name = ${param_idx}"
+            params.append(department_name)
             param_idx += 1
         
         query += " ORDER BY updated_at DESC"
@@ -5028,11 +7886,38 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             log.error(f"Error retrieving pipelines: {e}")
             return []
 
+    async def get_pipeline_by_name(self, pipeline_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a single pipeline record by its exact name.
+
+        Args:
+            pipeline_name: The exact pipeline name to look up
+
+        Returns:
+            Pipeline dictionary if found, None otherwise
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE pipeline_name = $1 LIMIT 1"
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, pipeline_name)
+            if not row:
+                return None
+            row_dict = dict(row)
+            if isinstance(row_dict.get('pipeline_definition'), str):
+                row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+            await self._transform_emails_to_usernames([row_dict], ['created_by'])
+            log.info(f"Pipeline '{pipeline_name}' retrieved successfully.")
+            return row_dict
+        except Exception as e:
+            log.error(f"Error retrieving pipeline by name '{pipeline_name}': {e}")
+            return None
+
     async def get_total_pipeline_count(
         self,
         search_value: str = '',
         created_by: Optional[str] = None,
-        is_active: Optional[bool] = None
+        is_active: Optional[bool] = None,
+        department_name: str = None
     ) -> int:
         """
         Gets the total count of pipelines matching the search criteria.
@@ -5041,6 +7926,7 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             search_value: Search string to match against pipeline name
             created_by: Filter by creator email
             is_active: Filter by active status
+            department_name: Filter by department name
 
         Returns:
             int: Total count of matching pipelines
@@ -5064,6 +7950,11 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             params.append(is_active)
             param_idx += 1
         
+        if department_name:
+            query += f" AND department_name = ${param_idx}"
+            params.append(department_name)
+            param_idx += 1
+        
         try:
             async with self.pool.acquire() as conn:
                 count = await conn.fetchval(query, *params)
@@ -5078,7 +7969,8 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         limit: int = 20,
         page: int = 1,
         created_by: Optional[str] = None,
-        is_active: Optional[bool] = None
+        is_active: Optional[bool] = None,
+        department_name: str = None
     ) -> List[Dict[str, Any]]:
         """
         Retrieves pipelines with pagination and search filtering.
@@ -5089,6 +7981,7 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             page: Page number (1-indexed)
             created_by: Filter by creator email
             is_active: Filter by active status
+            department_name: Filter by department name
 
         Returns:
             List of pipeline dictionaries
@@ -5113,6 +8006,11 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             params.append(is_active)
             param_idx += 1
         
+        if department_name:
+            query += f" AND department_name = ${param_idx}"
+            params.append(department_name)
+            param_idx += 1
+        
         query += f" ORDER BY updated_at DESC LIMIT ${param_idx} OFFSET ${param_idx + 1}"
         params.extend([limit, offset])
         
@@ -5133,20 +8031,27 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             return []
 
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="PipelineRepository")
-    async def get_pipeline(self, pipeline_id: str) -> Optional[Dict[str, Any]]:
+    async def get_pipeline(self, pipeline_id: str, department_name: str = None) -> Optional[Dict[str, Any]]:
         """
         Retrieves a single pipeline by ID.
 
         Args:
             pipeline_id: The pipeline ID
+            department_name: Filter by department name
 
         Returns:
             Pipeline dictionary or None if not found
         """
         query = f"SELECT * FROM {self.table_name} WHERE pipeline_id = $1"
+        params = [pipeline_id]
+        
+        if department_name:
+            query += " AND department_name = $2"
+            params.append(department_name)
+        
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(query, pipeline_id)
+                row = await conn.fetchrow(query, *params)
             if row:
                 row_dict = dict(row)
                 if isinstance(row_dict.get('pipeline_definition'), str):
@@ -5168,7 +8073,7 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         pipeline_description: Optional[str] = None,
         pipeline_definition: Optional[dict] = None,
         is_active: Optional[bool] = None
-    ) -> bool:
+    ) -> Dict[str, Any]:
         """
         Updates a pipeline record.
 
@@ -5180,7 +8085,7 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             is_active: New active status (optional)
 
         Returns:
-            bool: True if successful, False otherwise
+            dict: Result with success status and optional error message
         """
         updates = []
         params = []
@@ -5208,7 +8113,7 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         
         if not updates:
             log.warning("No fields to update for pipeline.")
-            return False
+            return {"success": False, "error": "no_fields", "message": "No fields to update."}
         
         updates.append("updated_at = CURRENT_TIMESTAMP")
         params.append(pipeline_id)
@@ -5222,17 +8127,25 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(update_statement, *params)
-            await self.invalidate_entity("get_pipeline", pipeline_id)
-            await self.invalidate_entity("get_all_pipelines")
+            await self.invalidate_all_method_cache("get_pipeline")
+            await self.invalidate_all_method_cache("get_all_pipelines")
             if result != "UPDATE 0":
                 log.info(f"Pipeline '{pipeline_id}' updated successfully.")
-                return True
+                return {"success": True}
             else:
                 log.warning(f"Pipeline '{pipeline_id}' not found, no update performed.")
-                return False
+                return {"success": False, "error": "not_found", "message": f"Pipeline '{pipeline_id}' not found."}
+        except asyncpg.UniqueViolationError as e:
+            error_str = str(e).lower()
+            if "uq_pipeline_name_department" in error_str or "pipeline_name" in error_str:
+                log.warning(f"Cannot update pipeline '{pipeline_id}': name '{pipeline_name}' already exists in department.")
+                return {"success": False, "error": "duplicate_name", "message": f"A pipeline with name '{pipeline_name}' already exists in this department."}
+            else:
+                log.error(f"Unique violation error updating pipeline '{pipeline_id}': {e}")
+                return {"success": False, "error": "duplicate", "message": str(e)}
         except Exception as e:
             log.error(f"Error updating pipeline '{pipeline_id}': {e}")
-            return False
+            return {"success": False, "error": "unknown", "message": str(e)}
 
     async def delete_pipeline(self, pipeline_id: str) -> bool:
         """
@@ -5248,8 +8161,8 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(delete_statement, pipeline_id)
-            await self.invalidate_entity("get_pipeline", pipeline_id)
-            await self.invalidate_entity("get_all_pipelines")
+            await self.invalidate_all_method_cache("get_pipeline")
+            await self.invalidate_all_method_cache("get_all_pipelines")
             if result != "DELETE 0":
                 log.info(f"Pipeline '{pipeline_id}' deleted successfully.")
                 return True
@@ -5261,6 +8174,354 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             return False
 
 
+# --- AgentPipelineMappingRepository ---
+
+class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
+    """
+    Repository for the 'agent_pipeline_mapping_table'. Handles direct database interactions for agent-pipeline mappings.
+    Similar to ToolAgentMappingRepository, but maps agents to pipelines.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT_PIPELINE_MAPPING.value):
+        """
+        Initializes the AgentPipelineMappingRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the agent-pipeline mapping table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'agent_pipeline_mapping_table' if it does not exist.
+        NOTE: The FOREIGN KEY to agent_table is intentionally removed here
+              to allow mapping of pipeline IDs (worker pipelines) as 'agentic_application_id'.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                agentic_application_id TEXT,
+                pipeline_id TEXT,
+                agent_created_by TEXT,
+                pipeline_created_by TEXT,
+                -- FOREIGN KEY(agentic_application_id) REFERENCES {TableNames.AGENT.value}(agentic_application_id) ON DELETE RESTRICT, -- REMOVED
+                FOREIGN KEY(pipeline_id) REFERENCES {TableNames.PIPELINES.value}(pipeline_id) ON DELETE CASCADE
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def assign_agent_to_pipeline_record(self, agentic_application_id: str, pipeline_id: str, agent_created_by: str, pipeline_created_by: str) -> bool:
+        """
+        Inserts a mapping between an agent/worker_pipeline and a pipeline.
+
+        Args:
+            agentic_application_id (str): The ID of the agent or worker pipeline.
+            pipeline_id (str): The ID of the pipeline.
+            agent_created_by (str): The creator of the agent/worker pipeline.
+            pipeline_created_by (str): The creator of the pipeline.
+
+        Returns:
+            bool: True if the mapping was inserted successfully, False otherwise.
+        """
+        insert_statement = f"""
+        INSERT INTO {self.table_name} (agentic_application_id, pipeline_id, agent_created_by, pipeline_created_by)
+        VALUES ($1, $2, $3, $4)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(insert_statement, agentic_application_id, pipeline_id, agent_created_by, pipeline_created_by)
+            await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
+            await self.invalidate_all_method_cache("get_pipeline", namespace="PipelineRepository")
+            log.info(f"Mapping agent/pipeline '{agentic_application_id}' to pipeline '{pipeline_id}' inserted successfully.")
+            return True
+        except Exception as e:
+            log.error(f"Error assigning agent/pipeline '{agentic_application_id}' to pipeline '{pipeline_id}': {e}")
+            return False
+
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="AgentPipelineMappingRepository")
+    async def get_agent_pipeline_mappings_record(self, agentic_application_id: Optional[str] = None, pipeline_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves agent-pipeline mappings by agentic_application_id or pipeline_id, including pipeline_name.
+
+        Args:
+            agentic_application_id (Optional[str]): The ID of the agent or worker pipeline to filter by.
+            pipeline_id (Optional[str]): The ID of the pipeline to filter by.
+
+        Returns:
+            List[Dict[str, Any]]: A list of dictionaries, each representing an agent-pipeline mapping with pipeline_name.
+        """
+        select_statement = f"""
+            SELECT apm.agentic_application_id, apm.pipeline_id, apm.agent_created_by, apm.pipeline_created_by, 
+                   p.pipeline_name 
+            FROM {self.table_name} apm
+            LEFT JOIN {TableNames.PIPELINES.value} p ON apm.pipeline_id = p.pipeline_id
+        """
+        where_clause = []
+        values = []
+
+        filters = {"apm.agentic_application_id": agentic_application_id, "apm.pipeline_id": pipeline_id}
+        for idx, (field, value) in enumerate((f for f in filters.items() if f[1] is not None), start=1):
+            where_clause.append(f"{field} = ${idx}")
+            values.append(value)
+
+        if where_clause:
+            select_statement += " WHERE " + " AND ".join(where_clause)
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_statement, *values)
+            log.info(f"Retrieved {len(rows)} agent-pipeline mappings from '{self.table_name}'.")
+            updated_rows = [dict(row) for row in rows]
+            await self._transform_emails_to_usernames(updated_rows, ['agent_created_by', 'pipeline_created_by'])
+            return updated_rows
+        except Exception as e:
+            log.error(f"Error retrieving agent-pipeline mappings: {e}")
+            return []
+
+    async def remove_agent_from_pipeline_record(self, agentic_application_id: Optional[str] = None, pipeline_id: Optional[str] = None) -> bool:
+        """
+        Removes a mapping between an agent/worker_pipeline and a pipeline.
+
+        Args:
+            agentic_application_id (Optional[str]): The ID of the agent or worker pipeline to remove.
+            pipeline_id (Optional[str]): The ID of the pipeline to remove the mapping from.
+
+        Returns:
+            bool: True if the mapping was removed successfully, False otherwise.
+        """
+        delete_statement = f"DELETE FROM {self.table_name}"
+        where_clause = []
+        values = []
+
+        filters = {"agentic_application_id": agentic_application_id, "pipeline_id": pipeline_id}
+        for idx, (field, value) in enumerate((f for f in filters.items() if f[1] is not None), start=1):
+            where_clause.append(f"{field} = ${idx}")
+            values.append(value)
+
+        if where_clause:
+            delete_statement += " WHERE " + " AND ".join(where_clause)
+            try:
+                async with self.pool.acquire() as conn:
+                    result = await conn.execute(delete_statement, *values)
+                if result != "DELETE 0":
+                    await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
+                    await self.invalidate_all_method_cache("get_pipeline", namespace="PipelineRepository")
+                    log.info(f"Mapping agent/pipeline '{agentic_application_id}' from pipeline '{pipeline_id}' removed successfully.")
+                    return True
+                else:
+                    log.warning(f"Mapping agent/pipeline '{agentic_application_id}' from pipeline '{pipeline_id}' not found, no deletion performed.")
+                    return False
+            except Exception as e:
+                log.error(f"Error removing agent/pipeline mapping: {e}")
+                return False
+        log.warning("No criteria provided to remove_agent_from_pipeline_record, no action taken.")
+        return False
+
+    async def drop_agent_id_fk_constraint(self):
+        """
+        Dynamically finds and drops the foreign key constraint on agent_pipeline_mapping_table.agentic_application_id.
+        This is crucial for allowing pipeline IDs (worker pipelines) to be stored in the 'agentic_application_id' column.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                constraint_query = f"""
+                SELECT tc.constraint_name
+                FROM information_schema.table_constraints AS tc
+                JOIN information_schema.key_column_usage AS kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                WHERE tc.table_schema = current_schema()
+                  AND tc.table_name = '{self.table_name}'
+                  AND kcu.column_name = 'agentic_application_id'
+                  AND tc.constraint_type = 'FOREIGN KEY';
+                """
+                constraint_record = await conn.fetchrow(constraint_query)
+
+                if constraint_record:
+                    constraint_name = constraint_record['constraint_name']
+                    drop_fk_statement = f"""
+                    ALTER TABLE {self.table_name}
+                    DROP CONSTRAINT {constraint_name};
+                    """
+                    await conn.execute(drop_fk_statement)
+                    await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
+                    log.info(f"Successfully dropped foreign key constraint '{constraint_name}' on '{self.table_name}.agentic_application_id'.")
+                    return True
+                else:
+                    log.info(f"No foreign key constraint found on '{self.table_name}.agentic_application_id' to drop. (This is expected if already removed).")
+                    return False
+
+        except Exception as e:
+            log.error(f"Error attempting to drop foreign key constraint on '{self.table_name}.agentic_application_id': {e}")
+            return False
+
+    async def migrate_pipelines_to_agent_mappings(self) -> Dict[str, Any]:
+        """
+        Migration function that scans all pipelines, extracts agent IDs from pipeline_definition,
+        and creates agent-pipeline mappings in agent_pipeline_mapping_table.
+        
+        This extracts agent IDs from the 'nodes' array in pipeline_definition JSONB where
+        each node has a 'data' object containing 'agent_id' or 'agentic_application_id'.
+        
+        Skips agents that don't exist in the agent_table.
+        
+        Checks migration-info.json file before running - if migration already completed, skips.
+        Updates the file after successful migration.
+        
+        Returns:
+            Dict with migration stats: total_pipelines, mappings_created, mappings_skipped, agents_not_found, errors
+        """
+        MIGRATION_ID = "pipeline_agent_mapping_v1"
+        MIGRATION_INFO_FILE = "migration-info.json"
+        
+        stats = {
+            "total_pipelines": 0,
+            "mappings_created": 0,
+            "mappings_skipped": 0,
+            "agents_not_found": 0,
+            "errors": []
+        }
+        
+        # Check if migration already completed
+        try:
+            if os.path.exists(MIGRATION_INFO_FILE):
+                with open(MIGRATION_INFO_FILE, 'r') as f:
+                    migration_info = json.load(f)
+                if MIGRATION_ID in migration_info.get("completed_migrations", []):
+                    log.info(f"Migration '{MIGRATION_ID}' already completed. Skipping.")
+                    return {"skipped": True, "reason": f"Migration '{MIGRATION_ID}' already completed"}
+        except Exception as e:
+            log.warning(f"Could not read migration-info file: {e}. Proceeding with migration.")
+        
+        try:
+            # Fetch all pipelines with their definitions
+            fetch_pipelines_query = f"""
+                SELECT pipeline_id, pipeline_name, pipeline_definition, created_by 
+                FROM {TableNames.PIPELINES.value}
+            """
+            
+            async with self.pool.acquire() as conn:
+                pipelines = await conn.fetch(fetch_pipelines_query)
+            
+            stats["total_pipelines"] = len(pipelines)
+            log.info(f"Migration: Found {len(pipelines)} pipelines to process.")
+            
+            for pipeline in pipelines:
+                pipeline_id = pipeline['pipeline_id']
+                pipeline_created_by = pipeline['created_by']
+                pipeline_definition = pipeline['pipeline_definition']
+                
+                # Extract agent IDs from pipeline_definition nodes
+                agent_ids = set()
+                if isinstance(pipeline_definition, str):
+                    pipeline_definition = json.loads(pipeline_definition)
+                if pipeline_definition and isinstance(pipeline_definition, dict):
+                    nodes = pipeline_definition.get('nodes', [])
+                    for node in nodes:
+                        if isinstance(node, dict) and node.get('node_type') == 'agent':
+                            data = node.get('config', {})
+                            if isinstance(data, dict):
+                                # Try different possible keys for agent ID
+                                agent_id = data.get('agent_id')
+                                if agent_id:
+                                    agent_ids.add(agent_id)
+                
+                # Create mappings for each agent found
+                for agent_id in agent_ids:
+                    try:
+                        # Check if agent exists in agent_table
+                        agent_exists_query = f"""
+                            SELECT 1 FROM {TableNames.AGENT.value} 
+                            WHERE agentic_application_id = $1
+                        """
+                        async with self.pool.acquire() as conn:
+                            agent_exists = await conn.fetchrow(agent_exists_query, agent_id)
+                        
+                        if not agent_exists:
+                            stats["agents_not_found"] += 1
+                            log.warning(f"Migration: Agent '{agent_id}' not found in database, skipping mapping to pipeline '{pipeline_id}'")
+                            continue
+                        
+                        # Check if mapping already exists
+                        check_query = f"""
+                            SELECT 1 FROM {self.table_name} 
+                            WHERE agentic_application_id = $1 AND pipeline_id = $2
+                        """
+                        async with self.pool.acquire() as conn:
+                            existing = await conn.fetchrow(check_query, agent_id, pipeline_id)
+                        
+                        if existing:
+                            stats["mappings_skipped"] += 1
+                            log.debug(f"Migration: Mapping already exists for agent '{agent_id}' -> pipeline '{pipeline_id}'")
+                            continue
+                        
+                        # Get the actual agent creator from agent_table
+                        agent_creator_query = f"""
+                            SELECT created_by FROM {TableNames.AGENT.value} 
+                            WHERE agentic_application_id = $1
+                        """
+                        async with self.pool.acquire() as conn:
+                            agent_record = await conn.fetchrow(agent_creator_query, agent_id)
+                        
+                        agent_created_by = agent_record['created_by'] if agent_record and agent_record['created_by'] else pipeline_created_by
+                        
+                        # Insert new mapping
+                        insert_query = f"""
+                            INSERT INTO {self.table_name} (agentic_application_id, pipeline_id, agent_created_by, pipeline_created_by)
+                            VALUES ($1, $2, $3, $4)
+                        """
+                        async with self.pool.acquire() as conn:
+                            await conn.execute(insert_query, agent_id, pipeline_id, agent_created_by, pipeline_created_by)
+                        
+                        stats["mappings_created"] += 1
+                        log.info(f"Migration: Created mapping for agent '{agent_id}' -> pipeline '{pipeline_id}'")
+                        
+                    except Exception as e:
+                        error_msg = f"Error creating mapping for agent '{agent_id}' -> pipeline '{pipeline_id}': {str(e)}"
+                        stats["errors"].append(error_msg)
+                        log.error(f"Migration: {error_msg}")
+            
+            # Invalidate cache after migration
+            await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
+            
+            # Update migration-info file to mark this migration as completed
+            try:
+                migration_info = {"completed_migrations": []}
+                if os.path.exists(MIGRATION_INFO_FILE):
+                    with open(MIGRATION_INFO_FILE, 'r') as f:
+                        migration_info = json.load(f)
+                
+                if "completed_migrations" not in migration_info:
+                    migration_info["completed_migrations"] = []
+                
+                if MIGRATION_ID not in migration_info["completed_migrations"]:
+                    migration_info["completed_migrations"].append(MIGRATION_ID)
+                    migration_info[MIGRATION_ID] = {
+                        "completed_at": datetime.now().isoformat(),
+                        "stats": stats
+                    }
+                
+                with open(MIGRATION_INFO_FILE, 'w') as f:
+                    json.dump(migration_info, f, indent=2)
+                log.info(f"Migration '{MIGRATION_ID}' marked as completed in {MIGRATION_INFO_FILE}")
+            except Exception as e:
+                log.warning(f"Could not update migration-info file: {e}")
+            
+            log.info(f"Migration completed: {stats}")
+            return stats
+            
+        except Exception as e:
+            error_msg = f"Migration failed: {str(e)}"
+            stats["errors"].append(error_msg)
+            log.error(f"Migration: {error_msg}")
+            return stats
+
+
 # --- Pipeline Run Repository ---
 
 class PipelineRunRepository(BaseRepository):
@@ -5269,7 +8530,7 @@ class PipelineRunRepository(BaseRepository):
     Handles direct database interactions for pipeline run tracking.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "pipelines_run"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.PIPELINES_RUN.value):
         """
         Initializes the PipelineRunRepository.
 
@@ -5513,7 +8774,7 @@ class PipelineStepsRepository(BaseRepository):
     Handles direct database interactions for pipeline step tracking.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "pipeline_steps"):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.PIPELINE_STEPS.value):
         """
         Initializes the PipelineStepsRepository.
 
@@ -5666,3 +8927,4273 @@ class PipelineStepsRepository(BaseRepository):
             log.error(f"Error deleting pipeline steps for run '{run_id}': {e}")
             return False
 
+
+# --- Knowledgebase Repository ---
+
+class KnowledgebaseRepository(BaseRepository):
+    """
+    Repository for managing knowledge base records.
+    Stores KB metadata in knowledgebase_table.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.KNOWLEDGEBASE.value):
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'knowledgebase_table' in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                knowledgebase_id TEXT PRIMARY KEY,
+                knowledgebase_name TEXT NOT NULL,
+                list_of_documents TEXT,
+                created_by TEXT NOT NULL,
+                department_name TEXT DEFAULT 'General',
+                is_public BOOLEAN DEFAULT FALSE,
+                created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(knowledgebase_name, department_name)
+            );
+            """
+
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                
+                # Migration: Add department_name column if it doesn't exist (for existing tables)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'")
+                except Exception as e:
+                    log.debug(f"department_name column may already exist: {e}")
+                
+                # Migration: Add is_public column if it doesn't exist
+                try:
+                    await conn.execute(f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE")
+                except Exception as e:
+                    log.debug(f"is_public column may already exist: {e}")
+                
+                # Migration: Drop old unique constraint on knowledgebase_name only, add composite unique on (knowledgebase_name, department_name)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.table_name} DROP CONSTRAINT IF EXISTS {self.table_name}_knowledgebase_name_key")
+                    await conn.execute(f"""
+                        DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_knowledgebase_name_department_name_key') THEN
+                        ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_knowledgebase_name_department_name_key UNIQUE (knowledgebase_name, department_name);
+                        END IF;
+                        END $$;
+                    """)
+                    log.info(f"Migrated unique constraint to (knowledgebase_name, department_name) for {self.table_name}")
+                except Exception as e:
+                    log.debug(f"Unique constraint migration may have already completed: {e}")
+
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def save_knowledgebase_record(self, kb_data: Dict[str, Any]) -> bool:
+        """
+        Inserts a new knowledgebase record into the knowledgebase table.
+        Returns True if inserted, False if already exists.
+        """
+        insert_statement = f"""
+        INSERT INTO {self.table_name} 
+        (knowledgebase_id, knowledgebase_name, list_of_documents, created_by, department_name, is_public, created_on)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (knowledgebase_name, department_name) DO NOTHING
+        RETURNING knowledgebase_id
+        """
+        
+        try:
+            # Convert list to comma-separated string
+            docs_list = kb_data.get("list_of_documents", [])
+            docs_str = ",".join(docs_list) if isinstance(docs_list, list) else str(docs_list)
+            
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(
+                    insert_statement,
+                    kb_data.get("knowledgebase_id"),
+                    kb_data.get("knowledgebase_name"),
+                    docs_str,
+                    kb_data.get("created_by", "system"),
+                    kb_data.get("department_name", "General"),
+                    kb_data.get("is_public", False),
+                    kb_data.get("created_on")
+                )
+                
+                if result:
+                    log.info(f"Knowledge base '{kb_data.get('knowledgebase_name')}' created successfully")
+                    return True
+                else:
+                    log.warning(f"Knowledge base '{kb_data.get('knowledgebase_name')}' already exists")
+                    return False
+                    
+        except Exception as e:
+            log.error(f"Error saving knowledgebase record: {e}")
+            raise
+
+    async def update_kb_visibility(self, kb_id: str, is_public: bool) -> bool:
+        """
+        Updates the is_public flag for a knowledge base.
+        
+        Args:
+            kb_id (str): The knowledge base ID.
+            is_public (bool): Whether the KB should be publicly accessible.
+        
+        Returns:
+            bool: True if updated, False if KB not found.
+        """
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET is_public = $1, updated_on = CURRENT_TIMESTAMP
+        WHERE knowledgebase_id = $2
+        RETURNING knowledgebase_id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(update_statement, is_public, kb_id)
+            if result:
+                log.info(f"KB '{kb_id}' visibility updated to is_public={is_public}")
+                return True
+            else:
+                log.warning(f"KB '{kb_id}' not found for visibility update")
+                return False
+        except Exception as e:
+            log.error(f"Error updating KB visibility for '{kb_id}': {e}")
+            raise
+
+    async def get_all_knowledgebase_records(self, department_name: str = None) -> List[Dict[str, Any]]:
+        """Retrieve all knowledgebase records, optionally filtered by department. Also includes public KBs from other departments."""
+        if department_name:
+            select_statement = f"SELECT * FROM {self.table_name} WHERE department_name = $1 OR is_public = TRUE ORDER BY created_on DESC"
+            params = [department_name]
+        else:
+            select_statement = f"SELECT * FROM {self.table_name} ORDER BY created_on DESC"
+            params = []
+        
+        try:
+            async with self.pool.acquire() as conn:
+                records = await conn.fetch(select_statement, *params)
+                kb_list = [dict(record) for record in records]
+                
+                # Transform emails to usernames
+                kb_list = await self._transform_emails_to_usernames(kb_list, ['created_by'])
+                
+                log.info(f"Retrieved {len(kb_list)} knowledge base records")
+                return kb_list
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledgebase records: {e}")
+            raise
+
+    async def get_knowledgebase_by_id(self, kb_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a specific knowledgebase record by ID."""
+        select_statement = f"SELECT * FROM {self.table_name} WHERE knowledgebase_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                record = await conn.fetchrow(select_statement, kb_id)
+                
+                if record:
+                    kb_dict = dict(record)
+                    # Transform emails to usernames
+                    kb_list = await self._transform_emails_to_usernames([kb_dict], ['created_by'])
+                    return kb_list[0] if kb_list else kb_dict
+                
+                return None
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledgebase by ID: {e}")
+            raise
+
+    async def get_knowledgebase_by_name(self, kb_name: str, department_name: str = None) -> Optional[Dict[str, Any]]:
+        """Retrieve a specific knowledgebase record by name, optionally filtered by department."""
+        if department_name:
+            select_statement = f"SELECT * FROM {self.table_name} WHERE knowledgebase_name = $1 AND department_name = $2"
+            params = [kb_name, department_name]
+        else:
+            select_statement = f"SELECT * FROM {self.table_name} WHERE knowledgebase_name = $1"
+            params = [kb_name]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                record = await conn.fetchrow(select_statement, *params)
+                
+                if record:
+                    kb_dict = dict(record)
+                    # Transform emails to usernames
+                    kb_list = await self._transform_emails_to_usernames([kb_dict], ['created_by'])
+                    return kb_list[0] if kb_list else kb_dict
+                
+                return None
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledgebase by name: {e}")
+            raise
+
+    async def delete_knowledgebase(self, kb_id: str) -> bool:
+        """Delete a knowledgebase record."""
+        delete_statement = f"DELETE FROM {self.table_name} WHERE knowledgebase_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, kb_id)
+                
+                deleted = result.split()[-1] != "0" if result else False
+                if deleted:
+                    log.info(f"Knowledge base {kb_id} deleted successfully")
+                else:
+                    log.warning(f"Knowledge base {kb_id} not found for deletion")
+                
+                return deleted
+                
+        except Exception as e:
+            log.error(f"Error deleting knowledgebase: {e}")
+            raise
+
+    async def get_all_knowledgebase_records_with_emails(self, department_name: str = None) -> List[Dict[str, Any]]:
+        """Retrieve all knowledgebase records without transforming emails to usernames."""
+        if department_name:
+            select_statement = f"SELECT * FROM {self.table_name} WHERE department_name = $1 ORDER BY created_on DESC"
+            params = [department_name]
+        else:
+            select_statement = f"SELECT * FROM {self.table_name} ORDER BY created_on DESC"
+            params = []
+        
+        try:
+            async with self.pool.acquire() as conn:
+                records = await conn.fetch(select_statement, *params)
+                kb_list = [dict(record) for record in records]
+                
+                log.info(f"Retrieved {len(kb_list)} knowledge base records with original emails")
+                return kb_list
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledgebase records: {e}")
+            raise
+
+    async def get_knowledgebase_by_id_with_email(self, kb_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a specific knowledgebase record by ID without transforming email to username."""
+        select_statement = f"SELECT * FROM {self.table_name} WHERE knowledgebase_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                record = await conn.fetchrow(select_statement, kb_id)
+                
+                if record:
+                    return dict(record)
+                
+                return None
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledgebase by ID: {e}")
+            raise
+
+    async def get_knowledgebases_by_ids_with_email(self, kb_ids: List[str]) -> List[Dict[str, Any]]:
+        """Retrieve multiple knowledgebase records by IDs in a single query without transforming emails."""
+        select_statement = f"SELECT * FROM {self.table_name} WHERE knowledgebase_id = ANY($1)"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                records = await conn.fetch(select_statement, kb_ids)
+                kb_list = [dict(record) for record in records]
+                
+                log.info(f"Retrieved {len(kb_list)} knowledge base records with original emails")
+                return kb_list
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledgebases by IDs: {e}")
+            raise
+
+
+# --- Agent Knowledgebase Mapping Repository ---
+
+class AgentKnowledgebaseMappingRepository(BaseRepository):
+    """
+    Repository for managing agent-to-knowledgebase mappings.
+    Links agents to their associated knowledge bases.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT_KNOWLEDGEBASE_MAPPING.value):
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'agent_knowledgebase_mapping_table' in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                agentic_application_id TEXT PRIMARY KEY,
+                knowledgebase_ids TEXT[],
+                created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def set_knowledgebases_for_agent(
+        self,
+        agentic_application_id: str,
+        knowledgebase_ids: List[str]
+    ) -> bool:
+        """Set knowledge base IDs for an agent (replaces existing)."""
+        upsert_statement = f"""
+        INSERT INTO {self.table_name} 
+        (agentic_application_id, knowledgebase_ids, created_on, updated_on)
+        VALUES ($1, $2, $3, $3)
+        ON CONFLICT (agentic_application_id) 
+        DO UPDATE SET 
+            knowledgebase_ids = EXCLUDED.knowledgebase_ids,
+            updated_on = EXCLUDED.updated_on
+        """
+        
+        try:
+            now = datetime.now(timezone.utc)
+            async with self.pool.acquire() as conn:
+                await conn.execute(upsert_statement, agentic_application_id, knowledgebase_ids, now)
+            
+            log.info(f"Set {len(knowledgebase_ids)} knowledge bases for agent {agentic_application_id}")
+            return True
+            
+        except Exception as e:
+            log.error(f"Error setting knowledge bases for agent: {e}")
+            raise
+
+    async def add_knowledgebases_to_agent(
+        self,
+        agentic_application_id: str,
+        knowledgebase_ids: List[str]
+    ) -> bool:
+        """Add knowledge base IDs to agent's existing list."""
+        update_statement = f"""
+        INSERT INTO {self.table_name} 
+        (agentic_application_id, knowledgebase_ids, created_on, updated_on)
+        VALUES ($1, $2, $3, $3)
+        ON CONFLICT (agentic_application_id) 
+        DO UPDATE SET 
+            knowledgebase_ids = ARRAY(SELECT DISTINCT unnest({self.table_name}.knowledgebase_ids || EXCLUDED.knowledgebase_ids)),
+            updated_on = EXCLUDED.updated_on
+        """
+        
+        try:
+            now = datetime.now(timezone.utc)
+            async with self.pool.acquire() as conn:
+                await conn.execute(update_statement, agentic_application_id, knowledgebase_ids, now)
+            
+            log.info(f"Added {len(knowledgebase_ids)} knowledge bases to agent {agentic_application_id}")
+            return True
+            
+        except Exception as e:
+            log.error(f"Error adding knowledge bases to agent: {e}")
+            raise
+
+    async def remove_knowledgebases_from_agent(
+        self,
+        agentic_application_id: str,
+        knowledgebase_ids: List[str]
+    ) -> bool:
+        """Remove knowledge base IDs from agent's list."""
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET 
+            knowledgebase_ids = ARRAY(SELECT unnest(knowledgebase_ids) EXCEPT SELECT unnest($2::TEXT[])),
+            updated_on = $3
+        WHERE agentic_application_id = $1
+        """
+        
+        try:
+            now = datetime.now(timezone.utc)
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_statement, agentic_application_id, knowledgebase_ids, now)
+            
+            log.info(f"Removed {len(knowledgebase_ids)} knowledge bases from agent {agentic_application_id}")
+            return True
+            
+        except Exception as e:
+            log.error(f"Error removing knowledge bases from agent: {e}")
+            raise
+
+    async def get_knowledgebases_for_agent(
+        self,
+        agentic_application_id: str
+    ) -> List[Dict[str, Any]]:
+        """Retrieve all knowledge bases associated with an agent."""
+        query = f"""
+        SELECT kb.* FROM knowledgebase_table kb
+        WHERE kb.knowledgebase_id = ANY(
+            SELECT unnest(knowledgebase_ids) FROM {self.table_name}
+            WHERE agentic_application_id = $1
+        )
+        ORDER BY kb.created_on DESC
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                records = await conn.fetch(query, agentic_application_id)
+                kb_list = [dict(record) for record in records]
+                
+                # Transform emails to usernames
+                kb_list = await self._transform_emails_to_usernames(kb_list, ['created_by'])
+                
+                log.info(f"Retrieved {len(kb_list)} knowledge bases for agent {agentic_application_id}")
+                return kb_list
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledge bases for agent: {e}")
+            raise
+
+    async def get_knowledgebase_ids_for_agent(
+        self,
+        agentic_application_id: str
+    ) -> List[str]:
+        """Retrieve knowledge base IDs for an agent."""
+        query = f"""
+        SELECT knowledgebase_ids FROM {self.table_name}
+        WHERE agentic_application_id = $1
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                record = await conn.fetchrow(query, agentic_application_id)
+                
+                if record and record['knowledgebase_ids']:
+                    return list(record['knowledgebase_ids'])
+                return []
+                
+        except Exception as e:
+            log.error(f"Error retrieving knowledge base IDs for agent: {e}")
+            raise
+
+    async def unlink_all_knowledgebases_from_agent(self, agentic_application_id: str) -> int:
+        """Remove all knowledge base associations from an agent."""
+        delete_statement = f"""
+        DELETE FROM {self.table_name} 
+        WHERE agentic_application_id = $1
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, agentic_application_id)
+            
+            deleted_count = int(result.split()[-1]) if result else 0
+            
+            log.info(f"Unlinked {deleted_count} knowledge bases from agent {agentic_application_id}")
+            return deleted_count
+            
+        except Exception as e:
+            log.error(f"Error unlinking all knowledge bases from agent: {e}")
+            raise
+
+    async def get_agents_using_knowledgebase(self, kb_id: str) -> List[Dict[str, Any]]:
+        """Get all agents that are using a specific knowledgebase."""
+        query = f"""
+        SELECT akm.agentic_application_id, a.agentic_application_name
+        FROM {self.table_name} akm
+        JOIN agent_table a ON akm.agentic_application_id = a.agentic_application_id
+        WHERE $1 = ANY(akm.knowledgebase_ids)
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                records = await conn.fetch(query, kb_id)
+                return [dict(record) for record in records]
+        except Exception as e:
+            log.error(f"Error getting agents using knowledgebase {kb_id}: {e}")
+            raise
+
+
+# --- Tool Generation Code Versions Repository ---
+
+class ToolGenerationCodeVersionRepository(BaseRepository):
+    """
+    Repository for managing code version history in tool generation sessions.
+    Allows users to save checkpoints and switch between different code versions.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL_GENERATION_CODE_VERSIONS.value):
+        """
+        Initializes the ToolGenerationCodeVersionRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the code versions table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'tool_generation_code_versions' table in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                version_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                pipeline_id TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                code_snippet TEXT NOT NULL,
+                label TEXT,
+                is_auto_saved BOOLEAN DEFAULT TRUE,
+                is_current BOOLEAN DEFAULT FALSE,
+                created_by TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                metadata JSONB DEFAULT '{{}}'::jsonb
+            );
+            CREATE INDEX IF NOT EXISTS idx_code_versions_session_id ON {self.table_name}(session_id);
+            CREATE INDEX IF NOT EXISTS idx_code_versions_pipeline_id ON {self.table_name}(pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_code_versions_session_version ON {self.table_name}(session_id, version_number);
+            CREATE INDEX IF NOT EXISTS idx_code_versions_is_current ON {self.table_name}(session_id, is_current);
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def save_code_version(
+        self,
+        session_id: str,
+        pipeline_id: str,
+        code_snippet: str,
+        created_by: str,
+        label: Optional[str] = None,
+        is_auto_saved: bool = True,
+        metadata: Optional[dict] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Saves a new code version for a session.
+        
+        **Duplicate Check:** Before saving, compares with the latest version's code.
+        If the code is identical (after stripping whitespace), skips saving and returns
+        the existing version instead.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: The pipeline ID
+            code_snippet: The code to save
+            created_by: Email of the creator
+            label: Optional label for the version (e.g., "Initial version", "Added error handling")
+            is_auto_saved: Whether this was auto-saved or manually saved
+            metadata: Optional metadata (e.g., user_query that generated this code)
+
+        Returns:
+            Dict with version details if successful, None otherwise.
+            Returns existing version if code is duplicate.
+        """
+        # First, check if this exact code already exists in ANY version (not just latest)
+        # This prevents duplicate versions when user asks for same code again
+        existing_code_query = f"""
+        SELECT version_id, version_number, code_snippet, created_at 
+        FROM {self.table_name} 
+        WHERE session_id = $1 AND TRIM(code_snippet) = TRIM($2)
+        ORDER BY version_number DESC 
+        LIMIT 1
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                existing_row = await conn.fetchrow(existing_code_query, session_id, code_snippet)
+                
+                # If this exact code already exists in any version, return that version
+                if existing_row:
+                    log.info(f"Code already exists as version {existing_row['version_number']}, returning existing version for session '{session_id}'")
+                    
+                    # Also make this the current version since user is working with it
+                    await conn.execute(
+                        f"UPDATE {self.table_name} SET is_current = FALSE WHERE session_id = $1",
+                        session_id
+                    )
+                    await conn.execute(
+                        f"UPDATE {self.table_name} SET is_current = TRUE WHERE version_id = $1",
+                        existing_row["version_id"]
+                    )
+                    
+                    return {
+                        "version_id": existing_row["version_id"],
+                        "version_number": existing_row["version_number"],
+                        "created_at": str(existing_row["created_at"]),
+                        "is_current": True,
+                        "is_duplicate": True
+                    }
+        except Exception as e:
+            log.warning(f"Error checking for duplicate code: {e}, proceeding with save")
+        
+        version_id = f"ver_{uuid.uuid4().hex[:16]}"
+        
+        # Get next version number for this session
+        version_number_query = f"SELECT COALESCE(MAX(version_number), 0) + 1 FROM {self.table_name} WHERE session_id = $1"
+        
+        # First, unset current flag on all versions for this session
+        unset_current_query = f"UPDATE {self.table_name} SET is_current = FALSE WHERE session_id = $1"
+        
+        insert_statement = f"""
+        INSERT INTO {self.table_name} 
+        (version_id, session_id, pipeline_id, version_number, code_snippet, label, is_auto_saved, is_current, created_by, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9)
+        RETURNING version_id, version_number, created_at
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    # Get next version number
+                    version_number = await conn.fetchval(version_number_query, session_id)
+                    
+                    # Unset current flag on existing versions
+                    await conn.execute(unset_current_query, session_id)
+                    
+                    # Insert new version
+                    row = await conn.fetchrow(
+                        insert_statement,
+                        version_id,
+                        session_id,
+                        pipeline_id,
+                        version_number,
+                        code_snippet,
+                        label,
+                        is_auto_saved,
+                        created_by,
+                        json.dumps(metadata or {})
+                    )
+            
+            if row:
+                log.info(f"Code version {version_number} saved for session '{session_id}'")
+                return {
+                    "version_id": row["version_id"],
+                    "version_number": row["version_number"],
+                    "created_at": str(row["created_at"]),
+                    "is_current": True
+                }
+            return None
+        except Exception as e:
+            log.error(f"Error saving code version for session '{session_id}': {e}")
+            return None
+
+    async def get_all_versions(
+        self,
+        session_id: str,
+        include_code: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves all code versions for a session.
+
+        Args:
+            session_id: The user's session ID
+            include_code: Whether to include the full code snippet in response
+
+        Returns:
+            List of version dictionaries ordered by version_number descending
+        """
+        columns = "version_id, session_id, pipeline_id, version_number, label, is_auto_saved, is_current, created_by, created_at, metadata"
+        if include_code:
+            columns += ", code_snippet"
+        
+        query = f"""
+        SELECT {columns}
+        FROM {self.table_name}
+        WHERE session_id = $1
+        ORDER BY version_number DESC
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, session_id)
+            
+            versions = []
+            for row in rows:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                versions.append(version)
+            
+            return versions
+        except Exception as e:
+            log.error(f"Error retrieving code versions for session '{session_id}': {e}")
+            return []
+
+    async def get_version(
+        self,
+        version_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a specific code version by ID.
+
+        Args:
+            version_id: The version ID
+
+        Returns:
+            Version dictionary if found, None otherwise
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE version_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, version_id)
+            
+            if row:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                return version
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving code version '{version_id}': {e}")
+            return None
+
+    async def get_version_by_number(
+        self,
+        session_id: str,
+        version_number: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a specific code version by session_id and version_number.
+
+        Args:
+            session_id: The user's session ID
+            version_number: The version number (1, 2, 3, etc.)
+
+        Returns:
+            Version dictionary if found, None otherwise
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE session_id = $1 AND version_number = $2"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, session_id, version_number)
+            
+            if row:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                return version
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving code version {version_number} for session '{session_id}': {e}")
+            return None
+
+    async def get_current_version(
+        self,
+        session_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the current (active) code version for a session.
+
+        Args:
+            session_id: The user's session ID
+
+        Returns:
+            Current version dictionary if found, None otherwise
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE session_id = $1 AND is_current = TRUE"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, session_id)
+            
+            if row:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                return version
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving current code version for session '{session_id}': {e}")
+            return None
+
+    async def switch_to_version(
+        self,
+        session_id: str,
+        version_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Switches to a specific code version, making it the current version.
+
+        Args:
+            session_id: The user's session ID
+            version_id: The version ID to switch to
+
+        Returns:
+            The switched-to version dictionary if successful, None otherwise
+        """
+        # First verify the version belongs to this session
+        verify_query = f"SELECT * FROM {self.table_name} WHERE version_id = $1 AND session_id = $2"
+        unset_current_query = f"UPDATE {self.table_name} SET is_current = FALSE WHERE session_id = $1"
+        set_current_query = f"UPDATE {self.table_name} SET is_current = TRUE WHERE version_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    # Verify version exists and belongs to session
+                    row = await conn.fetchrow(verify_query, version_id, session_id)
+                    if not row:
+                        log.warning(f"Version '{version_id}' not found for session '{session_id}'")
+                        return None
+                    
+                    # Unset current flag on all versions
+                    await conn.execute(unset_current_query, session_id)
+                    
+                    # Set current flag on target version
+                    await conn.execute(set_current_query, version_id)
+            
+            # Return the updated version
+            version = dict(row)
+            version['is_current'] = True
+            if version.get('metadata') and isinstance(version['metadata'], str):
+                version['metadata'] = json.loads(version['metadata'])
+            if version.get('created_at'):
+                version['created_at'] = str(version['created_at'])
+            
+            log.info(f"Switched to version '{version_id}' (v{version['version_number']}) for session '{session_id}'")
+            return version
+        except Exception as e:
+            log.error(f"Error switching to version '{version_id}': {e}")
+            return None
+
+    async def update_version_label(
+        self,
+        version_id: str,
+        label: str
+    ) -> bool:
+        """
+        Updates the label for a specific version.
+
+        Args:
+            version_id: The version ID
+            label: The new label
+
+        Returns:
+            True if successful, False otherwise
+        """
+        query = f"UPDATE {self.table_name} SET label = $1 WHERE version_id = $2"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, label, version_id)
+            return "UPDATE 1" in result
+        except Exception as e:
+            log.error(f"Error updating label for version '{version_id}': {e}")
+            return False
+
+    async def delete_version(
+        self,
+        version_id: str,
+        session_id: str
+    ) -> bool:
+        """
+        Deletes a specific version. Cannot delete the current version.
+
+        Args:
+            version_id: The version ID to delete
+            session_id: The session ID for verification
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # First check if it's the current version
+        check_query = f"SELECT is_current FROM {self.table_name} WHERE version_id = $1 AND session_id = $2"
+        delete_query = f"DELETE FROM {self.table_name} WHERE version_id = $1 AND session_id = $2 AND is_current = FALSE"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(check_query, version_id, session_id)
+                if not row:
+                    log.warning(f"Version '{version_id}' not found for session '{session_id}'")
+                    return False
+                if row['is_current']:
+                    log.warning(f"Cannot delete current version '{version_id}'")
+                    return False
+                
+                result = await conn.execute(delete_query, version_id, session_id)
+            
+            log.info(f"Version '{version_id}' deleted for session '{session_id}'")
+            return "DELETE 1" in result
+        except Exception as e:
+            log.error(f"Error deleting version '{version_id}': {e}")
+            return False
+
+    async def delete_all_versions_for_session(
+        self,
+        session_id: str
+    ) -> bool:
+        """
+        Deletes all versions for a session (used when resetting conversation).
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        query = f"DELETE FROM {self.table_name} WHERE session_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, session_id)
+            log.info(f"All code versions deleted for session '{session_id}'")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting all versions for session '{session_id}': {e}")
+            return False
+
+    async def get_version_count(
+        self,
+        session_id: str
+    ) -> int:
+        """
+        Gets the total number of versions for a session.
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            Number of versions
+        """
+        query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval(query, session_id)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error getting version count for session '{session_id}': {e}")
+            return 0
+
+
+# --- Tool Generation Conversation History Repository ---
+
+class ToolGenerationConversationHistoryRepository(BaseRepository):
+    """
+    Repository for managing conversation history in tool generation sessions.
+    Stores user queries and assistant responses with associated code snippets.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL_GENERATION_CONVERSATION_HISTORY.value):
+        """
+        Initializes the ToolGenerationConversationHistoryRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the conversation history table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'tool_generation_conversation_history' table in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                message_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                pipeline_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                message TEXT NOT NULL,
+                code_snippet TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                metadata JSONB DEFAULT '{{}}'::jsonb
+            );
+            CREATE INDEX IF NOT EXISTS idx_conv_history_session_id ON {self.table_name}(session_id);
+            CREATE INDEX IF NOT EXISTS idx_conv_history_pipeline_id ON {self.table_name}(pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_conv_history_session_pipeline ON {self.table_name}(session_id, pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_conv_history_created_at ON {self.table_name}(created_at);
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def save_message(
+        self,
+        session_id: str,
+        pipeline_id: str,
+        role: str,
+        message: str,
+        code_snippet: Optional[str] = None,
+        created_by: Optional[str] = None,
+        metadata: Optional[dict] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Saves a conversation message.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: The pipeline ID
+            role: 'user' or 'assistant'
+            message: The message content
+            code_snippet: Optional code snippet associated with this message
+            created_by: Email of the user (for user messages)
+            metadata: Optional additional metadata
+
+        Returns:
+            Dict with message details if successful, None otherwise.
+        """
+        message_id = str(uuid.uuid4())
+        
+        query = f"""
+            INSERT INTO {self.table_name} 
+            (message_id, session_id, pipeline_id, role, message, code_snippet, created_by, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    query,
+                    message_id,
+                    session_id,
+                    pipeline_id,
+                    role,
+                    message,
+                    code_snippet,
+                    created_by,
+                    json.dumps(metadata) if metadata else "{}"
+                )
+            
+            if row:
+                result = dict(row)
+                if result.get("metadata") and isinstance(result["metadata"], str):
+                    result["metadata"] = json.loads(result["metadata"])
+                if result.get("created_at"):
+                    result["created_at"] = result["created_at"].isoformat()
+                log.info(f"Conversation message saved: {message_id} (role: {role}) for session '{session_id}'")
+                return result
+            return None
+        except Exception as e:
+            log.error(f"Error saving conversation message for session '{session_id}': {e}")
+            return None
+
+    async def get_conversation_history(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_code: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Gets conversation history for a session.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: Optional filter by pipeline ID
+            limit: Maximum number of messages to return
+            offset: Number of messages to skip (for pagination)
+            include_code: Whether to include code snippets in response
+
+        Returns:
+            List of conversation messages ordered by timestamp (oldest first)
+        """
+        if include_code:
+            select_fields = "message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata"
+        else:
+            select_fields = "message_id, session_id, pipeline_id, role, message, created_by, created_at, metadata"
+        
+        if pipeline_id:
+            query = f"""
+                SELECT {select_fields}
+                FROM {self.table_name}
+                WHERE session_id = $1 AND pipeline_id = $2
+                ORDER BY created_at ASC
+                LIMIT $3 OFFSET $4
+            """
+            params = [session_id, pipeline_id, limit, offset]
+        else:
+            query = f"""
+                SELECT {select_fields}
+                FROM {self.table_name}
+                WHERE session_id = $1
+                ORDER BY created_at ASC
+                LIMIT $2 OFFSET $3
+            """
+            params = [session_id, limit, offset]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            
+            result = []
+            for row in rows:
+                entry = dict(row)
+                if entry.get("metadata") and isinstance(entry["metadata"], str):
+                    entry["metadata"] = json.loads(entry["metadata"])
+                if entry.get("created_at"):
+                    entry["timestamp"] = entry["created_at"].isoformat()
+                    del entry["created_at"]
+                result.append(entry)
+            
+            return result
+        except Exception as e:
+            log.error(f"Error getting conversation history for session '{session_id}': {e}")
+            return []
+
+    async def get_latest_messages(
+        self,
+        session_id: str,
+        pipeline_id: str,
+        count: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Gets the latest N messages for a session/pipeline.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: The pipeline ID
+            count: Number of latest messages to return
+
+        Returns:
+            List of messages (most recent last)
+        """
+        query = f"""
+            SELECT message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+            FROM {self.table_name}
+            WHERE session_id = $1 AND pipeline_id = $2
+            ORDER BY created_at DESC
+            LIMIT $3
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, session_id, pipeline_id, count)
+            
+            result = []
+            for row in rows:
+                entry = dict(row)
+                if entry.get("metadata") and isinstance(entry["metadata"], str):
+                    entry["metadata"] = json.loads(entry["metadata"])
+                if entry.get("created_at"):
+                    entry["timestamp"] = entry["created_at"].isoformat()
+                    del entry["created_at"]
+                result.append(entry)
+            
+            # Reverse to get chronological order (oldest first)
+            return list(reversed(result))
+        except Exception as e:
+            log.error(f"Error getting latest messages for session '{session_id}': {e}")
+            return []
+
+    async def clear_conversation_history(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None
+    ) -> bool:
+        """
+        Clears conversation history for a session.
+
+        Args:
+            session_id: The session ID
+            pipeline_id: Optional pipeline ID - if provided, only clears for that pipeline
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if pipeline_id:
+            query = f"DELETE FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
+            params = [session_id, pipeline_id]
+        else:
+            query = f"DELETE FROM {self.table_name} WHERE session_id = $1"
+            params = [session_id]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, *params)
+            log.info(f"Conversation history cleared for session '{session_id}'" + (f" pipeline '{pipeline_id}'" if pipeline_id else ""))
+            return True
+        except Exception as e:
+            log.error(f"Error clearing conversation history for session '{session_id}': {e}")
+            return False
+
+    async def get_message_count(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None
+    ) -> int:
+        """
+        Gets the total number of messages for a session.
+
+        Args:
+            session_id: The session ID
+            pipeline_id: Optional pipeline ID filter
+
+        Returns:
+            Number of messages
+        """
+        if pipeline_id:
+            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
+            params = [session_id, pipeline_id]
+        else:
+            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1"
+            params = [session_id]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval(query, *params)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error getting message count for session '{session_id}': {e}")
+            return 0
+
+    async def get_latest_code_snippet(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Gets the latest code snippet from conversation history.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: Optional filter by pipeline ID
+
+        Returns:
+            Dict with code_snippet, message_id, and timestamp, or None if not found
+        """
+        if pipeline_id:
+            query = f"""
+                SELECT message_id, code_snippet, created_at
+                FROM {self.table_name}
+                WHERE session_id = $1 AND pipeline_id = $2 
+                    AND code_snippet IS NOT NULL AND code_snippet != ''
+                ORDER BY created_at DESC
+                LIMIT 1
+            """
+            params = [session_id, pipeline_id]
+        else:
+            query = f"""
+                SELECT message_id, code_snippet, created_at
+                FROM {self.table_name}
+                WHERE session_id = $1 
+                    AND code_snippet IS NOT NULL AND code_snippet != ''
+                ORDER BY created_at DESC
+                LIMIT 1
+            """
+            params = [session_id]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *params)
+            
+            if row:
+                return {
+                    "message_id": row["message_id"],
+                    "code_snippet": row["code_snippet"],
+                    "timestamp": row["created_at"].isoformat() if row["created_at"] else None
+                }
+            return None
+        except Exception as e:
+            log.error(f"Error getting latest code snippet for session '{session_id}': {e}")
+            return None
+
+    async def clear_from_message(
+        self,
+        session_id: str,
+        message_id: str
+    ) -> int:
+        """
+        Clears all messages after a specific message (for restore functionality).
+        Keeps the specified message and all messages before it.
+
+        Args:
+            session_id: The session ID
+            message_id: The message ID to restore to (messages after this will be deleted)
+
+        Returns:
+            Number of deleted messages, or -1 on error
+        """
+        # First, get the sequence_number of the target message
+        get_seq_query = f"""
+            SELECT sequence_number FROM {self.table_name}
+            WHERE session_id = $1 AND message_id = $2
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                seq_num = await conn.fetchval(get_seq_query, session_id, message_id)
+                
+                if seq_num is None:
+                    log.warning(f"Message '{message_id}' not found in session '{session_id}'")
+                    return -1
+                
+                # Delete all messages with sequence_number greater than the target
+                delete_query = f"""
+                    DELETE FROM {self.table_name}
+                    WHERE session_id = $1 AND sequence_number > $2
+                """
+                result = await conn.execute(delete_query, session_id, seq_num)
+                
+                # Extract count from "DELETE n"
+                deleted_count = int(result.split()[-1]) if result else 0
+                log.info(f"Restored conversation to message '{message_id}', deleted {deleted_count} messages")
+                return deleted_count
+                
+        except Exception as e:
+            log.error(f"Error clearing messages from message '{message_id}' in session '{session_id}': {e}")
+            return -1
+
+
+
+
+# --- Tool Generation Code Versions Repository ---
+
+class ToolGenerationCodeVersionRepository(BaseRepository):
+    """
+    Repository for managing code version history in tool generation sessions.
+    Allows users to save checkpoints and switch between different code versions.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL_GENERATION_CODE_VERSIONS.value):
+        """
+        Initializes the ToolGenerationCodeVersionRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the code versions table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'tool_generation_code_versions' table in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                version_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                pipeline_id TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                code_snippet TEXT NOT NULL,
+                label TEXT,
+                is_auto_saved BOOLEAN DEFAULT TRUE,
+                is_current BOOLEAN DEFAULT FALSE,
+                created_by TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                metadata JSONB DEFAULT '{{}}'::jsonb
+            );
+            CREATE INDEX IF NOT EXISTS idx_code_versions_session_id ON {self.table_name}(session_id);
+            CREATE INDEX IF NOT EXISTS idx_code_versions_pipeline_id ON {self.table_name}(pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_code_versions_session_version ON {self.table_name}(session_id, version_number);
+            CREATE INDEX IF NOT EXISTS idx_code_versions_is_current ON {self.table_name}(session_id, is_current);
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def save_code_version(
+        self,
+        session_id: str,
+        pipeline_id: str,
+        code_snippet: str,
+        created_by: str,
+        label: Optional[str] = None,
+        is_auto_saved: bool = True,
+        metadata: Optional[dict] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Saves a new code version for a session.
+        
+        **Duplicate Check:** Before saving, compares with the latest version's code.
+        If the code is identical (after stripping whitespace), skips saving and returns
+        the existing version instead.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: The pipeline ID
+            code_snippet: The code to save
+            created_by: Email of the creator
+            label: Optional label for the version (e.g., "Initial version", "Added error handling")
+            is_auto_saved: Whether this was auto-saved or manually saved
+            metadata: Optional metadata (e.g., user_query that generated this code)
+
+        Returns:
+            Dict with version details if successful, None otherwise.
+            Returns existing version if code is duplicate.
+        """
+        # First, check if this exact code already exists in ANY version (not just latest)
+        # This prevents duplicate versions when user asks for same code again
+        existing_code_query = f"""
+        SELECT version_id, version_number, code_snippet, created_at 
+        FROM {self.table_name} 
+        WHERE session_id = $1 AND TRIM(code_snippet) = TRIM($2)
+        ORDER BY version_number DESC 
+        LIMIT 1
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                existing_row = await conn.fetchrow(existing_code_query, session_id, code_snippet)
+                
+                # If this exact code already exists in any version, return that version
+                if existing_row:
+                    log.info(f"Code already exists as version {existing_row['version_number']}, returning existing version for session '{session_id}'")
+                    
+                    # Also make this the current version since user is working with it
+                    await conn.execute(
+                        f"UPDATE {self.table_name} SET is_current = FALSE WHERE session_id = $1",
+                        session_id
+                    )
+                    await conn.execute(
+                        f"UPDATE {self.table_name} SET is_current = TRUE WHERE version_id = $1",
+                        existing_row["version_id"]
+                    )
+                    
+                    return {
+                        "version_id": existing_row["version_id"],
+                        "version_number": existing_row["version_number"],
+                        "created_at": str(existing_row["created_at"]),
+                        "is_current": True,
+                        "is_duplicate": True
+                    }
+        except Exception as e:
+            log.warning(f"Error checking for duplicate code: {e}, proceeding with save")
+        
+        version_id = f"ver_{uuid.uuid4().hex[:16]}"
+        
+        # Get next version number for this session
+        version_number_query = f"SELECT COALESCE(MAX(version_number), 0) + 1 FROM {self.table_name} WHERE session_id = $1"
+        
+        # First, unset current flag on all versions for this session
+        unset_current_query = f"UPDATE {self.table_name} SET is_current = FALSE WHERE session_id = $1"
+        
+        insert_statement = f"""
+        INSERT INTO {self.table_name} 
+        (version_id, session_id, pipeline_id, version_number, code_snippet, label, is_auto_saved, is_current, created_by, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9)
+        RETURNING version_id, version_number, created_at
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    # Get next version number
+                    version_number = await conn.fetchval(version_number_query, session_id)
+                    
+                    # Unset current flag on existing versions
+                    await conn.execute(unset_current_query, session_id)
+                    
+                    # Insert new version
+                    row = await conn.fetchrow(
+                        insert_statement,
+                        version_id,
+                        session_id,
+                        pipeline_id,
+                        version_number,
+                        code_snippet,
+                        label,
+                        is_auto_saved,
+                        created_by,
+                        json.dumps(metadata or {})
+                    )
+            
+            if row:
+                log.info(f"Code version {version_number} saved for session '{session_id}'")
+                return {
+                    "version_id": row["version_id"],
+                    "version_number": row["version_number"],
+                    "created_at": str(row["created_at"]),
+                    "is_current": True
+                }
+            return None
+        except Exception as e:
+            log.error(f"Error saving code version for session '{session_id}': {e}")
+            return None
+
+    async def get_all_versions(
+        self,
+        session_id: str,
+        include_code: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves all code versions for a session.
+
+        Args:
+            session_id: The user's session ID
+            include_code: Whether to include the full code snippet in response
+
+        Returns:
+            List of version dictionaries ordered by version_number descending
+        """
+        columns = "version_id, session_id, pipeline_id, version_number, label, is_auto_saved, is_current, created_by, created_at, metadata"
+        if include_code:
+            columns += ", code_snippet"
+        
+        query = f"""
+        SELECT {columns}
+        FROM {self.table_name}
+        WHERE session_id = $1
+        ORDER BY version_number DESC
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, session_id)
+            
+            versions = []
+            for row in rows:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                versions.append(version)
+            
+            return versions
+        except Exception as e:
+            log.error(f"Error retrieving code versions for session '{session_id}': {e}")
+            return []
+
+    async def get_version(
+        self,
+        version_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a specific code version by ID.
+
+        Args:
+            version_id: The version ID
+
+        Returns:
+            Version dictionary if found, None otherwise
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE version_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, version_id)
+            
+            if row:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                return version
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving code version '{version_id}': {e}")
+            return None
+
+    async def get_version_by_number(
+        self,
+        session_id: str,
+        version_number: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a specific code version by session_id and version_number.
+
+        Args:
+            session_id: The user's session ID
+            version_number: The version number (1, 2, 3, etc.)
+
+        Returns:
+            Version dictionary if found, None otherwise
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE session_id = $1 AND version_number = $2"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, session_id, version_number)
+            
+            if row:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                return version
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving code version {version_number} for session '{session_id}': {e}")
+            return None
+
+    async def get_current_version(
+        self,
+        session_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the current (active) code version for a session.
+
+        Args:
+            session_id: The user's session ID
+
+        Returns:
+            Current version dictionary if found, None otherwise
+        """
+        query = f"SELECT * FROM {self.table_name} WHERE session_id = $1 AND is_current = TRUE"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, session_id)
+            
+            if row:
+                version = dict(row)
+                if version.get('metadata') and isinstance(version['metadata'], str):
+                    version['metadata'] = json.loads(version['metadata'])
+                if version.get('created_at'):
+                    version['created_at'] = str(version['created_at'])
+                return version
+            return None
+        except Exception as e:
+            log.error(f"Error retrieving current code version for session '{session_id}': {e}")
+            return None
+
+    async def switch_to_version(
+        self,
+        session_id: str,
+        version_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Switches to a specific code version, making it the current version.
+
+        Args:
+            session_id: The user's session ID
+            version_id: The version ID to switch to
+
+        Returns:
+            The switched-to version dictionary if successful, None otherwise
+        """
+        # First verify the version belongs to this session
+        verify_query = f"SELECT * FROM {self.table_name} WHERE version_id = $1 AND session_id = $2"
+        unset_current_query = f"UPDATE {self.table_name} SET is_current = FALSE WHERE session_id = $1"
+        set_current_query = f"UPDATE {self.table_name} SET is_current = TRUE WHERE version_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    # Verify version exists and belongs to session
+                    row = await conn.fetchrow(verify_query, version_id, session_id)
+                    if not row:
+                        log.warning(f"Version '{version_id}' not found for session '{session_id}'")
+                        return None
+                    
+                    # Unset current flag on all versions
+                    await conn.execute(unset_current_query, session_id)
+                    
+                    # Set current flag on target version
+                    await conn.execute(set_current_query, version_id)
+            
+            # Return the updated version
+            version = dict(row)
+            version['is_current'] = True
+            if version.get('metadata') and isinstance(version['metadata'], str):
+                version['metadata'] = json.loads(version['metadata'])
+            if version.get('created_at'):
+                version['created_at'] = str(version['created_at'])
+            
+            log.info(f"Switched to version '{version_id}' (v{version['version_number']}) for session '{session_id}'")
+            return version
+        except Exception as e:
+            log.error(f"Error switching to version '{version_id}': {e}")
+            return None
+
+    async def update_version_label(
+        self,
+        version_id: str,
+        label: str
+    ) -> bool:
+        """
+        Updates the label for a specific version.
+
+        Args:
+            version_id: The version ID
+            label: The new label
+
+        Returns:
+            True if successful, False otherwise
+        """
+        query = f"UPDATE {self.table_name} SET label = $1 WHERE version_id = $2"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, label, version_id)
+            return "UPDATE 1" in result
+        except Exception as e:
+            log.error(f"Error updating label for version '{version_id}': {e}")
+            return False
+
+    async def delete_version(
+        self,
+        version_id: str,
+        session_id: str
+    ) -> bool:
+        """
+        Deletes a specific version. Cannot delete the current version.
+
+        Args:
+            version_id: The version ID to delete
+            session_id: The session ID for verification
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # First check if it's the current version
+        check_query = f"SELECT is_current FROM {self.table_name} WHERE version_id = $1 AND session_id = $2"
+        delete_query = f"DELETE FROM {self.table_name} WHERE version_id = $1 AND session_id = $2 AND is_current = FALSE"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(check_query, version_id, session_id)
+                if not row:
+                    log.warning(f"Version '{version_id}' not found for session '{session_id}'")
+                    return False
+                if row['is_current']:
+                    log.warning(f"Cannot delete current version '{version_id}'")
+                    return False
+                
+                result = await conn.execute(delete_query, version_id, session_id)
+            
+            log.info(f"Version '{version_id}' deleted for session '{session_id}'")
+            return "DELETE 1" in result
+        except Exception as e:
+            log.error(f"Error deleting version '{version_id}': {e}")
+            return False
+
+    async def delete_all_versions_for_session(
+        self,
+        session_id: str
+    ) -> bool:
+        """
+        Deletes all versions for a session (used when resetting conversation).
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        query = f"DELETE FROM {self.table_name} WHERE session_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, session_id)
+            log.info(f"All code versions deleted for session '{session_id}'")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting all versions for session '{session_id}': {e}")
+            return False
+
+    async def get_version_count(
+        self,
+        session_id: str
+    ) -> int:
+        """
+        Gets the total number of versions for a session.
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            Number of versions
+        """
+        query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval(query, session_id)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error getting version count for session '{session_id}': {e}")
+            return 0
+
+
+# --- Tool Generation Conversation History Repository ---
+
+class ToolGenerationConversationHistoryRepository(BaseRepository):
+    """
+    Repository for managing conversation history in tool generation sessions.
+    Stores user queries and assistant responses with associated code snippets.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL_GENERATION_CONVERSATION_HISTORY.value):
+        """
+        Initializes the ToolGenerationConversationHistoryRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the conversation history table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'tool_generation_conversation_history' table in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                message_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                pipeline_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                message TEXT NOT NULL,
+                code_snippet TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                metadata JSONB DEFAULT '{{}}'::jsonb
+            );
+            CREATE INDEX IF NOT EXISTS idx_conv_history_session_id ON {self.table_name}(session_id);
+            CREATE INDEX IF NOT EXISTS idx_conv_history_pipeline_id ON {self.table_name}(pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_conv_history_session_pipeline ON {self.table_name}(session_id, pipeline_id);
+            CREATE INDEX IF NOT EXISTS idx_conv_history_created_at ON {self.table_name}(created_at);
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def save_message(
+        self,
+        session_id: str,
+        pipeline_id: str,
+        role: str,
+        message: str,
+        code_snippet: Optional[str] = None,
+        created_by: Optional[str] = None,
+        metadata: Optional[dict] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Saves a conversation message.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: The pipeline ID
+            role: 'user' or 'assistant'
+            message: The message content
+            code_snippet: Optional code snippet associated with this message
+            created_by: Email of the user (for user messages)
+            metadata: Optional additional metadata
+
+        Returns:
+            Dict with message details if successful, None otherwise.
+        """
+        message_id = str(uuid.uuid4())
+        
+        query = f"""
+            INSERT INTO {self.table_name} 
+            (message_id, session_id, pipeline_id, role, message, code_snippet, created_by, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    query,
+                    message_id,
+                    session_id,
+                    pipeline_id,
+                    role,
+                    message,
+                    code_snippet,
+                    created_by,
+                    json.dumps(metadata) if metadata else "{}"
+                )
+            
+            if row:
+                result = dict(row)
+                if result.get("metadata") and isinstance(result["metadata"], str):
+                    result["metadata"] = json.loads(result["metadata"])
+                if result.get("created_at"):
+                    result["created_at"] = result["created_at"].isoformat()
+                log.info(f"Conversation message saved: {message_id} (role: {role}) for session '{session_id}'")
+                return result
+            return None
+        except Exception as e:
+            log.error(f"Error saving conversation message for session '{session_id}': {e}")
+            return None
+
+    async def get_conversation_history(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_code: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Gets conversation history for a session.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: Optional filter by pipeline ID
+            limit: Maximum number of messages to return
+            offset: Number of messages to skip (for pagination)
+            include_code: Whether to include code snippets in response
+
+        Returns:
+            List of conversation messages ordered by timestamp (oldest first)
+        """
+        if include_code:
+            select_fields = "message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata"
+        else:
+            select_fields = "message_id, session_id, pipeline_id, role, message, created_by, created_at, metadata"
+        
+        if pipeline_id:
+            query = f"""
+                SELECT {select_fields}
+                FROM {self.table_name}
+                WHERE session_id = $1 AND pipeline_id = $2
+                ORDER BY created_at ASC
+                LIMIT $3 OFFSET $4
+            """
+            params = [session_id, pipeline_id, limit, offset]
+        else:
+            query = f"""
+                SELECT {select_fields}
+                FROM {self.table_name}
+                WHERE session_id = $1
+                ORDER BY created_at ASC
+                LIMIT $2 OFFSET $3
+            """
+            params = [session_id, limit, offset]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+            
+            result = []
+            for row in rows:
+                entry = dict(row)
+                if entry.get("metadata") and isinstance(entry["metadata"], str):
+                    entry["metadata"] = json.loads(entry["metadata"])
+                if entry.get("created_at"):
+                    entry["timestamp"] = entry["created_at"].isoformat()
+                    del entry["created_at"]
+                result.append(entry)
+            
+            return result
+        except Exception as e:
+            log.error(f"Error getting conversation history for session '{session_id}': {e}")
+            return []
+
+    async def get_latest_messages(
+        self,
+        session_id: str,
+        pipeline_id: str,
+        count: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Gets the latest N messages for a session/pipeline.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: The pipeline ID
+            count: Number of latest messages to return
+
+        Returns:
+            List of messages (most recent last)
+        """
+        query = f"""
+            SELECT message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+            FROM {self.table_name}
+            WHERE session_id = $1 AND pipeline_id = $2
+            ORDER BY created_at DESC
+            LIMIT $3
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, session_id, pipeline_id, count)
+            
+            result = []
+            for row in rows:
+                entry = dict(row)
+                if entry.get("metadata") and isinstance(entry["metadata"], str):
+                    entry["metadata"] = json.loads(entry["metadata"])
+                if entry.get("created_at"):
+                    entry["timestamp"] = entry["created_at"].isoformat()
+                    del entry["created_at"]
+                result.append(entry)
+            
+            # Reverse to get chronological order (oldest first)
+            return list(reversed(result))
+        except Exception as e:
+            log.error(f"Error getting latest messages for session '{session_id}': {e}")
+            return []
+
+    async def clear_conversation_history(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None
+    ) -> bool:
+        """
+        Clears conversation history for a session.
+
+        Args:
+            session_id: The session ID
+            pipeline_id: Optional pipeline ID - if provided, only clears for that pipeline
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if pipeline_id:
+            query = f"DELETE FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
+            params = [session_id, pipeline_id]
+        else:
+            query = f"DELETE FROM {self.table_name} WHERE session_id = $1"
+            params = [session_id]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, *params)
+            log.info(f"Conversation history cleared for session '{session_id}'" + (f" pipeline '{pipeline_id}'" if pipeline_id else ""))
+            return True
+        except Exception as e:
+            log.error(f"Error clearing conversation history for session '{session_id}': {e}")
+            return False
+
+    async def get_message_count(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None
+    ) -> int:
+        """
+        Gets the total number of messages for a session.
+
+        Args:
+            session_id: The session ID
+            pipeline_id: Optional pipeline ID filter
+
+        Returns:
+            Number of messages
+        """
+        if pipeline_id:
+            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
+            params = [session_id, pipeline_id]
+        else:
+            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1"
+            params = [session_id]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                count = await conn.fetchval(query, *params)
+            return count or 0
+        except Exception as e:
+            log.error(f"Error getting message count for session '{session_id}': {e}")
+            return 0
+
+    async def get_latest_code_snippet(
+        self,
+        session_id: str,
+        pipeline_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Gets the latest code snippet from conversation history.
+
+        Args:
+            session_id: The user's session ID
+            pipeline_id: Optional filter by pipeline ID
+
+        Returns:
+            Dict with code_snippet, message_id, and timestamp, or None if not found
+        """
+        if pipeline_id:
+            query = f"""
+                SELECT message_id, code_snippet, created_at
+                FROM {self.table_name}
+                WHERE session_id = $1 AND pipeline_id = $2 
+                    AND code_snippet IS NOT NULL AND code_snippet != ''
+                ORDER BY created_at DESC
+                LIMIT 1
+            """
+            params = [session_id, pipeline_id]
+        else:
+            query = f"""
+                SELECT message_id, code_snippet, created_at
+                FROM {self.table_name}
+                WHERE session_id = $1 
+                    AND code_snippet IS NOT NULL AND code_snippet != ''
+                ORDER BY created_at DESC
+                LIMIT 1
+            """
+            params = [session_id]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *params)
+            
+            if row:
+                return {
+                    "message_id": row["message_id"],
+                    "code_snippet": row["code_snippet"],
+                    "timestamp": row["created_at"].isoformat() if row["created_at"] else None
+                }
+            return None
+        except Exception as e:
+            log.error(f"Error getting latest code snippet for session '{session_id}': {e}")
+            return None
+
+    async def clear_from_message(
+        self,
+        session_id: str,
+        message_id: str
+    ) -> int:
+        """
+        Clears all messages after a specific message (for restore functionality).
+        Keeps the specified message and all messages before it.
+
+        Args:
+            session_id: The session ID
+            message_id: The message ID to restore to (messages after this will be deleted)
+
+        Returns:
+            Number of deleted messages, or -1 on error
+        """
+        # First, get the sequence_number of the target message
+        get_seq_query = f"""
+            SELECT sequence_number FROM {self.table_name}
+            WHERE session_id = $1 AND message_id = $2
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                seq_num = await conn.fetchval(get_seq_query, session_id, message_id)
+                
+                if seq_num is None:
+                    log.warning(f"Message '{message_id}' not found in session '{session_id}'")
+                    return -1
+                
+                # Delete all messages with sequence_number greater than the target
+                delete_query = f"""
+                    DELETE FROM {self.table_name}
+                    WHERE session_id = $1 AND sequence_number > $2
+                """
+                result = await conn.execute(delete_query, session_id, seq_num)
+                
+                # Extract count from "DELETE n"
+                deleted_count = int(result.split()[-1]) if result else 0
+                log.info(f"Restored conversation to message '{message_id}', deleted {deleted_count} messages")
+                return deleted_count
+                
+        except Exception as e:
+            log.error(f"Error clearing messages from message '{message_id}' in session '{session_id}': {e}")
+            return -1
+
+
+
+
+# --- User Agent Access Repository ---
+class UserAgentAccessRepository(BaseRepository):
+    """
+    Repository for the 'user_agent_access' table. Handles direct database interactions for user agent access management.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "user_agent_access"):
+        """
+        Initializes the UserAgentAccessRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the user agent access table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'user_agent_access' table if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                user_email TEXT PRIMARY KEY,
+                agent_ids TEXT[] NOT NULL,
+                given_access_by TEXT NOT NULL
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                
+                # Add department_name column if it doesn't exist (for existing tables)
+                try:
+                    await conn.execute(f"""
+                        ALTER TABLE {self.table_name} 
+                        ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'
+                    """)
+                except Exception as alter_error:
+                    log.warning(f"Could not add department_name column to {self.table_name}: {alter_error}")
+                
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def grant_agent_access(self, user_email: str, agent_id: str, given_access_by: str) -> tuple[bool, str]:
+        """
+        Grants access to an agent for a user. If user already has access record, adds the agent_id to the list.
+        
+        Args:
+            user_email (str): The email of the user to grant access to.
+            agent_id (str): The ID of the agent to grant access to.
+            given_access_by (str): The admin who is granting the access.
+            
+        Returns:
+            tuple[bool, str]: (success_status, message)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Check if user already has an access record
+                existing_record = await conn.fetchrow(
+                    f"SELECT agent_ids FROM {self.table_name} WHERE user_email = $1",
+                    user_email
+                )
+                
+                if existing_record:
+                    # User has existing record, add agent_id if not already present
+                    current_agent_ids = list(existing_record['agent_ids'])
+                    if agent_id not in current_agent_ids:
+                        current_agent_ids.append(agent_id)
+                        await conn.execute(
+                            f"UPDATE {self.table_name} SET agent_ids = $1, given_access_by = $2 WHERE user_email = $3",
+                            current_agent_ids, given_access_by, user_email
+                        )
+                        log.info(f"Added agent '{agent_id}' to existing access for user '{user_email}'.")
+                        return True, f"Successfully added agent '{agent_id}' to existing access for user '{user_email}'."
+                    else:
+                        log.info(f"User '{user_email}' already has access to agent '{agent_id}'.")
+                        return True, f"User '{user_email}' already has access to agent '{agent_id}'."
+                else:
+                    # Create new access record
+                    await conn.execute(
+                        f"INSERT INTO {self.table_name} (user_email, agent_ids, given_access_by) VALUES ($1, $2, $3)",
+                        user_email, [agent_id], given_access_by
+                    )
+                    log.info(f"Created new access record for user '{user_email}' with agent '{agent_id}'.")
+                    
+                return True, f"Successfully granted access to agent '{agent_id}' for user '{user_email}'."
+                
+        except Exception as e:
+            log.error(f"Error granting agent access for user '{user_email}': {e}")
+            return False, f"Error granting agent access: {str(e)}"
+
+    async def revoke_agent_access(self, user_email: str, agent_id: str) -> bool:
+        """
+        Revokes access to an agent for a user.
+        
+        Args:
+            user_email (str): The email of the user to revoke access from.
+            agent_id (str): The ID of the agent to revoke access to.
+            
+        Returns:
+            bool: True if access was revoked successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                existing_record = await conn.fetchrow(
+                    f"SELECT agent_ids FROM {self.table_name} WHERE user_email = $1",
+                    user_email
+                )
+                
+                if existing_record:
+                    current_agent_ids = list(existing_record['agent_ids'])
+                    if agent_id in current_agent_ids:
+                        current_agent_ids.remove(agent_id)
+                        
+                        if current_agent_ids:
+                            # Update with remaining agent IDs
+                            await conn.execute(
+                                f"UPDATE {self.table_name} SET agent_ids = $1 WHERE user_email = $2",
+                                current_agent_ids, user_email
+                            )
+                            log.info(f"Removed agent '{agent_id}' from access for user '{user_email}'.")
+                        else:
+                            # Remove entire record if no agents left
+                            await conn.execute(
+                                f"DELETE FROM {self.table_name} WHERE user_email = $1",
+                                user_email
+                            )
+                            log.info(f"Removed entire access record for user '{user_email}' as no agents remain.")
+                        
+                        return True
+                    else:
+                        log.warning(f"User '{user_email}' does not have access to agent '{agent_id}'.")
+                        return False
+                else:
+                    log.warning(f"No access record found for user '{user_email}'.")
+                    return False
+                    
+        except Exception as e:
+            log.error(f"Error revoking agent access for user '{user_email}': {e}")
+            return False
+
+    async def get_user_agent_access(self, user_email: str) -> Dict[str, Any]:
+        """
+        Retrieves agent access information for a specific user.
+        
+        Args:
+            user_email (str): The email of the user.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing user's agent access information, or empty dict if not found.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"SELECT * FROM {self.table_name} WHERE user_email = $1",
+                    user_email
+                )
+                
+                if row:
+                    log.info(f"Retrieved agent access for user '{user_email}'.")
+                    return dict(row)
+                else:
+                    log.info(f"No agent access found for user '{user_email}'.")
+                    return {}
+                    
+        except Exception as e:
+            log.error(f"Error retrieving agent access for user '{user_email}': {e}")
+            return {}
+
+    async def get_all_user_agent_access(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all user agent access records.
+        
+        Returns:
+            List[Dict[str, Any]]: List of all user agent access records.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(f"SELECT * FROM {self.table_name}")
+                
+            log.info(f"Retrieved {len(rows)} user agent access records.")
+            return [dict(row) for row in rows]
+            
+        except Exception as e:
+            log.error(f"Error retrieving all user agent access records: {e}")
+            return []
+
+    async def check_user_agent_access(self, user_email: str, agent_id: str) -> bool:
+        """
+        Checks if a user has access to a specific agent.
+        
+        Args:
+            user_email (str): The email of the user.
+            agent_id (str): The ID of the agent.
+            
+        Returns:
+            bool: True if user has access, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"SELECT agent_ids FROM {self.table_name} WHERE user_email = $1",
+                    user_email
+                )
+                
+                if row and agent_id in row['agent_ids']:
+                    return True
+                return False
+                
+        except Exception as e:
+            log.error(f"Error checking agent access for user '{user_email}': {e}")
+            return False
+
+    async def get_users_with_agent_access(self, agent_id: str) -> List[str]:
+        """
+        Retrieves all users who have access to a specific agent.
+        
+        Args:
+            agent_id (str): The ID of the agent.
+            
+        Returns:
+            List[str]: List of user emails who have access to the agent.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"SELECT user_email FROM {self.table_name} WHERE $1 = ANY(agent_ids)",
+                    agent_id
+                )
+                
+            user_emails = [row['user_email'] for row in rows]
+            log.info(f"Found {len(user_emails)} users with access to agent '{agent_id}'.")
+            return user_emails
+            
+        except Exception as e:
+            log.error(f"Error retrieving users with access to agent '{agent_id}': {e}")
+            return []
+
+    async def get_all_tool_ids_for_user(self, user_email: str) -> Dict[str, Any]:
+        """
+        Retrieves all tool IDs bound to agents that the user has access to.
+        
+        Args:
+            user_email (str): The email of the user.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing accessible agent IDs and tool IDs.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # First check if user has any agent access
+                user_access_row = await conn.fetchrow(
+                    f"SELECT agent_ids FROM {self.table_name} WHERE user_email = $1",
+                    user_email
+                )
+                
+                if not user_access_row:
+                    log.warning(f"User '{user_email}' has no agent access records.")
+                    return {
+                        "accessible_agent_ids": [],
+                        "tool_ids": []
+                    }
+                
+                user_accessible_agents = list(user_access_row['agent_ids'])
+                
+                if not user_accessible_agents:
+                    log.warning(f"User '{user_email}' has no accessible agents.")
+                    return {
+                        "accessible_agent_ids": [],
+                        "tool_ids": []
+                    }
+                
+                # Get all tool IDs for the user's accessible agents
+                query = """
+                    SELECT DISTINCT tam.tool_id
+                    FROM tool_agent_mapping_table tam
+                    WHERE tam.agentic_application_id = ANY($1::text[])
+                    AND tam.tool_id IS NOT NULL
+                """
+                
+                rows = await conn.fetch(query, user_accessible_agents)
+                
+            tool_ids = [row['tool_id'] for row in rows]
+            log.info(f"Retrieved {len(tool_ids)} tool IDs for user '{user_email}' across {len(user_accessible_agents)} agents.")
+            
+            return {
+                "accessible_agent_ids": user_accessible_agents,
+                "tool_ids": tool_ids
+            }
+            
+        except Exception as e:
+            log.error(f"Error retrieving all tool IDs for user '{user_email}': {e}")
+            return {
+                "accessible_agent_ids": [],
+                "tool_ids": []
+            }
+
+    async def get_tools_bound_with_agents_for_users(self, user_email: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves a comprehensive list of tools bound with agents for different users.
+        
+        Args:
+            user_email (Optional[str]): If provided, filters results for a specific user.
+                                      If None, returns data for all users.
+            
+        Returns:
+            List[Dict[str, Any]]: List of dictionaries containing:
+                - user_email: Email of the user who has access
+                - agent_id: ID of the agent
+                - agent_name: Name of the agent
+                - agent_description: Description of the agent
+                - agent_created_by: Who created the agent
+                - tool_id: ID of the tool bound to the agent
+                - tool_name: Name of the tool
+                - tool_description: Description of the tool
+                - tool_created_by: Who created the tool
+                - given_access_by: Who granted access to the user
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Build the base query with JOINs across all relevant tables
+                query = f"""
+                    SELECT DISTINCT
+                        uaa.user_email,
+                        uaa.given_access_by,
+                        a.agentic_application_id as agent_id,
+                        a.agentic_application_name as agent_name,
+                        a.agentic_application_description as agent_description,
+                        a.created_by as agent_created_by,
+                        tam.tool_id,
+                        t.tool_name,
+                        t.tool_description,
+                        t.created_by as tool_created_by
+                    FROM {self.table_name} uaa
+                    INNER JOIN UNNEST(uaa.agent_ids) AS agent_id_unnest ON true
+                    INNER JOIN agent_table a ON a.agentic_application_id = agent_id_unnest
+                    LEFT JOIN tool_agent_mapping_table tam ON tam.agentic_application_id = a.agentic_application_id
+                    LEFT JOIN tool_table t ON t.tool_id = tam.tool_id
+                """
+                
+                params = []
+                if user_email:
+                    query += " WHERE uaa.user_email = $1"
+                    params.append(user_email)
+                
+                query += " ORDER BY uaa.user_email, a.agentic_application_name, t.tool_name"
+                
+                rows = await conn.fetch(query, *params)
+                
+            result = []
+            for row in rows:
+                result.append({
+                    "user_email": row['user_email'],
+                    "given_access_by": row['given_access_by'],
+                    "agent_id": row['agent_id'],
+                    "agent_name": row['agent_name'],
+                    "agent_description": row['agent_description'],
+                    "agent_created_by": row['agent_created_by'],
+                    "tool_id": row['tool_id'],
+                    "tool_name": row['tool_name'],
+                    "tool_description": row['tool_description'],
+                    "tool_created_by": row['tool_created_by']
+                })
+                
+            if user_email:
+                log.info(f"Retrieved {len(result)} tool-agent bindings for user '{user_email}'.")
+            else:
+                log.info(f"Retrieved {len(result)} tool-agent bindings for all users.")
+                
+            return result
+            
+        except Exception as e:
+            log.error(f"Error retrieving tools bound with agents for users: {e}")
+            return []
+
+    async def get_agents_and_tools_summary_for_users(self, user_email: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves a summary of agents and their associated tools for different users.
+        Groups tools by agent for easier consumption.
+        
+        Args:
+            user_email (Optional[str]): If provided, filters results for a specific user.
+                                      If None, returns data for all users.
+            
+        Returns:
+            List[Dict[str, Any]]: List of dictionaries containing:
+                - user_email: Email of the user who has access
+                - given_access_by: Who granted access to the user
+                - agent_id: ID of the agent
+                - agent_name: Name of the agent
+                - agent_description: Description of the agent
+                - agent_created_by: Who created the agent
+                - tools: List of tools bound to this agent, each containing:
+                    - tool_id: ID of the tool
+                    - tool_name: Name of the tool
+                    - tool_description: Description of the tool
+                    - tool_created_by: Who created the tool
+        """
+        try:
+            # Get the detailed list first
+            detailed_list = await self.get_tools_bound_with_agents_for_users(user_email)
+            
+            # Group by user and agent
+            summary = {}
+            for item in detailed_list:
+                key = (item['user_email'], item['agent_id'])
+                
+                if key not in summary:
+                    summary[key] = {
+                        "user_email": item['user_email'],
+                        "given_access_by": item['given_access_by'],
+                        "agent_id": item['agent_id'],
+                        "agent_name": item['agent_name'],
+                        "agent_description": item['agent_description'],
+                        "agent_created_by": item['agent_created_by'],
+                        "tools": []
+                    }
+                
+                # Add tool if it exists (some agents might not have tools)
+                if item['tool_id']:
+                    tool_info = {
+                        "tool_id": item['tool_id'],
+                        "tool_name": item['tool_name'],
+                        "tool_description": item['tool_description'],
+                        "tool_created_by": item['tool_created_by']
+                    }
+                    # Avoid duplicates
+                    if tool_info not in summary[key]['tools']:
+                        summary[key]['tools'].append(tool_info)
+            
+            result = list(summary.values())
+            
+            if user_email:
+                log.info(f"Retrieved agent-tools summary for user '{user_email}': {len(result)} agents.")
+            else:
+                log.info(f"Retrieved agent-tools summary for all users: {len(result)} user-agent combinations.")
+            
+            return result
+            
+        except Exception as e:
+            log.error(f"Error retrieving agents and tools summary for users: {e}")
+            return []
+
+    # Pagination methods for search functionality
+    async def get_total_user_agent_access_count(self, search_value: str = '', created_by: Optional[str] = None) -> int:
+        """
+        Returns the total count of user agent access records matching the search criteria.
+        
+        Args:
+            search_value (str, optional): User email or given_access_by to filter by.
+            created_by (str, optional): The email ID of the user who granted access.
+            
+        Returns:
+            int: Total count of matching user agent access records.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                conditions = []
+                params = []
+                param_count = 0
+                
+                if search_value:
+                    param_count += 1
+                    conditions.append(f"user_email ILIKE ${param_count}")
+                    params.append(f"%{search_value}%")
+                
+                if created_by:
+                    param_count += 1
+                    conditions.append(f"given_access_by = ${param_count}")
+                    params.append(created_by)
+                
+                where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+                
+                query = f"SELECT COUNT(*) FROM {self.table_name}{where_clause}"
+                count = await conn.fetchval(query, *params)
+                return count or 0
+                
+        except Exception as e:
+            log.error(f"Error getting total user agent access count: {e}")
+            return 0
+
+    async def get_user_agent_access_by_search_or_page_records(self, search_value: str = '', limit: int = 20, 
+                                                           page: int = 1, created_by: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves user agent access records with pagination and search filtering.
+        
+        Args:
+            search_value (str, optional): User email or given_access_by to filter by.
+            limit (int, optional): Number of results per page.
+            page (int, optional): Page number for pagination.
+            created_by (str, optional): The email ID of the user who granted access.
+            
+        Returns:
+            List[Dict[str, Any]]: List of user agent access records.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                conditions = []
+                params = []
+                param_count = 0
+                
+                if search_value:
+                    param_count += 1
+                    conditions.append(f"user_email ILIKE ${param_count}")
+                    params.append(f"%{search_value}%")
+                
+                if created_by:
+                    param_count += 1
+                    conditions.append(f"given_access_by = ${param_count}")
+                    params.append(created_by)
+                
+                where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+                
+                # Calculate offset
+                offset = (page - 1) * limit
+                param_count += 1
+                limit_clause = f" LIMIT ${param_count}"
+                params.append(limit)
+                
+                param_count += 1
+                offset_clause = f" OFFSET ${param_count}"
+                params.append(offset)
+                
+                query = f"""
+                SELECT user_email, agent_ids, given_access_by
+                FROM {self.table_name}
+                {where_clause}
+                ORDER BY user_email ASC
+                {limit_clause}{offset_clause}
+                """
+                
+                rows = await conn.fetch(query, *params)
+                return [dict(row) for row in rows]
+                
+        except Exception as e:
+            log.error(f"Error retrieving user agent access records by search or page: {e}")
+            return []
+
+
+# --- Group Management Repository ---
+class GroupRepository(BaseRepository):
+    """
+    Repository for the 'groups' table. Handles direct database interactions for group management.
+    Groups are organizational units that contain lists of users and agents, managed by super-admins.
+    Groups are scoped within departments for multi-tenant access control.
+    
+    Schema Design:
+    - user_emails: ALL group members (includes admins, developers, and regular users)
+    - agent_ids: List of agent IDs belonging to this group
+    - department_name: Department context for multi-tenant isolation
+    - Role management is handled at the application level, not in the database schema
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "groups"):
+        """
+        Initializes the GroupRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the groups table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'groups' table if it does not exist.
+        """
+        try:
+            # Create groups table with department context
+            create_groups_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                group_name TEXT NOT NULL,
+                department_name TEXT NOT NULL DEFAULT 'General',
+                group_description TEXT,
+                user_emails TEXT[] NOT NULL DEFAULT '{{}}',
+                agent_ids TEXT[] NOT NULL DEFAULT '{{}}',
+                created_by TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (group_name, department_name)
+            );
+            """
+            
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_groups_statement)
+                
+                # Add default value to department_name column if it doesn't have one (for existing tables)
+                try:
+                    await conn.execute(f"""
+                        ALTER TABLE {self.table_name} 
+                        ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'
+                    """)
+                except Exception as alter_error:
+                    log.warning(f"Could not set default for department_name in {self.table_name}: {alter_error}")
+                
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def group_exists(self, group_name: str, department_name: str = None) -> bool:
+        """
+        Checks if a group with the given name already exists in the specified department.
+        
+        Args:
+            group_name (str): The group name to check.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if group exists, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(
+                    f"SELECT COUNT(*) FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    group_name, department_name
+                )
+                return result > 0
+        except Exception as e:
+            log.error(f"Error checking if group '{group_name}' exists in department '{department_name}': {e}")
+            return False
+
+    async def create_group(self, group_name: str, group_description: str, 
+                          user_emails: List[str], agent_ids: List[str], created_by: str,
+                          department_name: str = None) -> bool:
+        """
+        Creates a new group within a department.
+        
+        Args:
+            group_name (str): The name of the group (unique within department).
+            group_description (str): The description of the group.
+            user_emails (List[str]): List of user emails in the group.
+            agent_ids (List[str]): List of agent IDs in the group.
+            created_by (str): The super-admin who created the group.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if group was created successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    f"""INSERT INTO {self.table_name} 
+                       (group_name, group_description, user_emails, agent_ids, created_by, department_name) 
+                       VALUES ($1, $2, $3, $4, $5, $6)""",
+                    group_name, group_description, user_emails, agent_ids, created_by, department_name
+                )
+            log.info(f"Created group '{group_name}' in department '{department_name}'.")
+            return True
+        except asyncpg.UniqueViolationError:
+            log.warning(f"Group '{group_name}' already exists in department '{department_name}' (unique violation).")
+            return False
+        except Exception as e:
+            log.error(f"Error creating group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def get_group(self, group_name: str, department_name: str = None) -> Dict[str, Any]:
+        """
+        Retrieves a group by its name and optional department.
+
+        Args:
+            group_name (str): The group name.
+            department_name (str): The department context (optional).
+
+        Returns:
+            Dict[str, Any]: Group information or empty dict if not found.
+        """
+        try:
+            query = f"SELECT * FROM {self.table_name} WHERE group_name = $1"
+            params: List[Any] = [group_name]
+
+            # Only include department_name condition when a non-empty value is provided
+            if department_name is not None and department_name != "":
+                query += " AND department_name = $2"
+                params.append(department_name)
+
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *params)
+
+            if row:
+                return dict(row)
+            else:
+                log.info(f"Group '{group_name}' not found" + (f" in department '{department_name}'." if department_name else "."))
+                return {}
+
+        except Exception as e:
+            log.error(f"Error retrieving group '{group_name}'" + (f" in department '{department_name}': {e}" if department_name else f": {e}"))
+            return {}
+
+    async def get_all_groups(self, department_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all groups, optionally filtered by department_name.
+
+        Args:
+            department_name (str): The department context to filter groups. If None or empty, returns all groups.
+
+        Returns:
+            List[Dict[str, Any]]: List of groups.
+        """
+        try:
+            query = f"SELECT * FROM {self.table_name}"
+            params: List[Any] = []
+
+            # Use department_name condition only when a non-empty value is provided
+            if department_name is not None and department_name != "":
+                query += " WHERE department_name = $1"
+                params.append(department_name)
+
+            query += " ORDER BY created_at DESC"
+
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+
+            log.info(f"Retrieved {len(rows)} groups for department '{department_name}'.")
+            return [dict(row) for row in rows]
+
+        except Exception as e:
+            log.error(f"Error retrieving all groups for department '{department_name}': {e}")
+            return []
+
+    async def update_group(self, group_name: str, department_name: str = None, new_group_name: Optional[str] = None, 
+                           group_description: Optional[str] = None, user_emails: Optional[List[str]] = None,
+                           agent_ids: Optional[List[str]] = None) -> bool:
+        """
+        Updates a group's information.
+        
+        Args:
+            group_name (str): The current group name to update.
+            department_name (str): The department context.
+            new_group_name (Optional[str]): New group name.
+            group_description (Optional[str]): New group description.
+            user_emails (Optional[List[str]]): New list of user emails.
+            agent_ids (Optional[List[str]]): New list of agent IDs.
+            
+        Returns:
+            bool: True if group was updated successfully, False otherwise.
+        """
+        try:
+            update_fields = []
+            params = []
+            param_count = 1
+            
+            if new_group_name is not None:
+                update_fields.append(f"group_name = ${param_count}")
+                params.append(new_group_name)
+                param_count += 1
+                
+            if group_description is not None:
+                update_fields.append(f"group_description = ${param_count}")
+                params.append(group_description)
+                param_count += 1
+                
+            if user_emails is not None:
+                update_fields.append(f"user_emails = ${param_count}")
+                params.append(user_emails)
+                param_count += 1
+                
+            if agent_ids is not None:
+                update_fields.append(f"agent_ids = ${param_count}")
+                params.append(agent_ids)
+                param_count += 1
+            
+            if not update_fields:
+                log.warning(f"No fields to update for group '{group_name}' in department '{department_name}'.")
+                return False
+            
+            update_fields.append(f"updated_at = CURRENT_TIMESTAMP")
+            params.append(group_name)
+            params.append(department_name)
+            
+            query = f"UPDATE {self.table_name} SET {', '.join(update_fields)} WHERE group_name = ${param_count} AND department_name = ${param_count + 1}"
+            
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, *params)
+                
+            if result == "UPDATE 1":
+                log.info(f"Updated group '{group_name}' in department '{department_name}'.")
+                return True
+            else:
+                log.warning(f"Group '{group_name}' not found for update in department '{department_name}'.")
+                return False
+                
+        except Exception as e:
+            log.error(f"Error updating group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def delete_group(self, group_name: str, department_name: str = None) -> bool:
+        """
+        Deletes a group.
+        
+        Args:
+            group_name (str): The group name to delete.
+            department_name (str): The department context.
+            
+        Returns:
+            bool: True if group was deleted successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    group_name, department_name
+                )
+                
+            if result == "DELETE 1":
+                log.info(f"Deleted group '{group_name}' from department '{department_name}'.")
+                return True
+            else:
+                log.warning(f"Group '{group_name}' not found for deletion in department '{department_name}'.")
+                return False
+                
+        except Exception as e:
+            log.error(f"Error deleting group '{group_name}' from department '{department_name}': {e}")
+            return False
+
+    async def add_users_to_group(self, group_name: str, user_emails: List[str], department_name: str = None) -> Dict[str, Any]:
+        """
+        Adds users to a group.
+        
+        Args:
+            group_name (str): The group name.
+            user_emails (List[str]): List of user emails to add.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            Dict[str, Any]: Result with details about which users were added.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Get current users
+                current_row = await conn.fetchrow(
+                    f"SELECT user_emails FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    group_name, department_name
+                )
+                
+                if not current_row:
+                    log.warning(f"Group '{group_name}' not found in department '{department_name}'.")
+                    return {
+                        "success": False,
+                        "message": f"Group '{group_name}' not found in department '{department_name}'.",
+                        "users_added": [],
+                        "users_already_present": [],
+                        "users_requested": user_emails
+                    }
+                
+                current_users = list(current_row['user_emails']) if current_row['user_emails'] else []
+                
+                # Track which users are new vs already present
+                users_added = []
+                users_already_present = []
+                
+                for email in user_emails:
+                    if email not in current_users:
+                        current_users.append(email)
+                        users_added.append(email)
+                    else:
+                        users_already_present.append(email)
+                
+                # Update group
+                await conn.execute(
+                    f"UPDATE {self.table_name} SET user_emails = $1, updated_at = CURRENT_TIMESTAMP WHERE group_name = $2 AND department_name = $3",
+                    current_users, group_name, department_name
+                )
+                
+                log.info(f"Added {len(users_added)} new users to group '{group_name}' in department '{department_name}'. {len(users_already_present)} were already present.")
+                return {
+                    "success": True,
+                    "message": f"Processed {len(user_emails)} users for group '{group_name}' in department '{department_name}'.",
+                    "users_added": users_added,
+                    "users_already_present": users_already_present,
+                    "users_requested": user_emails
+                }
+            
+        except Exception as e:
+            log.error(f"Error adding users to group '{group_name}' in department '{department_name}': {e}")
+            return {
+                "success": False,
+                "message": f"Error adding users to group: {str(e)}",
+                "users_added": [],
+                "users_already_present": [],
+                "users_requested": user_emails
+            }
+
+    async def remove_users_from_group(self, group_name: str, user_emails: List[str], department_name: str = None) -> bool:
+        """
+        Removes users from a group.
+        
+        Args:
+            group_name (str): The group name.
+            user_emails (List[str]): List of user emails to remove.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if users were removed successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Get current users
+                current_row = await conn.fetchrow(
+                    f"SELECT user_emails FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    group_name, department_name
+                )
+                
+                if not current_row:
+                    log.warning(f"Group '{group_name}' not found in department '{department_name}'.")
+                    return False
+                
+                current_users = list(current_row['user_emails']) if current_row['user_emails'] else []
+                
+                # Remove users
+                for email in user_emails:
+                    if email in current_users:
+                        current_users.remove(email)
+                
+                # Update group
+                await conn.execute(
+                    f"UPDATE {self.table_name} SET user_emails = $1, updated_at = CURRENT_TIMESTAMP WHERE group_name = $2 AND department_name = $3",
+                    current_users, group_name, department_name
+                )
+                
+            log.info(f"Removed {len(user_emails)} users from group '{group_name}' in department '{department_name}'.")
+            return True
+            
+        except Exception as e:
+            log.error(f"Error removing users from group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def add_agents_to_group(self, group_name: str, agent_ids: List[str], department_name: str = None) -> Dict[str, Any]:
+        """
+        Adds agents to a group.
+        
+        Args:
+            group_name (str): The group name.
+            agent_ids (List[str]): List of agent IDs to add.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            Dict[str, Any]: Result with details about which agents were added.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Get current agents
+                current_row = await conn.fetchrow(
+                    f"SELECT agent_ids FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    group_name, department_name
+                )
+                
+                if not current_row:
+                    log.warning(f"Group '{group_name}' not found in department '{department_name}'.")
+                    return {
+                        "success": False,
+                        "message": f"Group '{group_name}' not found in department '{department_name}'.",
+                        "agents_added": [],
+                        "agents_already_present": [],
+                        "agents_requested": agent_ids
+                    }
+                
+                current_agents = list(current_row['agent_ids']) if current_row['agent_ids'] else []
+                
+                # Track which agents are new vs already present
+                agents_added = []
+                agents_already_present = []
+                
+                for agent_id in agent_ids:
+                    if agent_id not in current_agents:
+                        current_agents.append(agent_id)
+                        agents_added.append(agent_id)
+                    else:
+                        agents_already_present.append(agent_id)
+                
+                # Update group
+                await conn.execute(
+                    f"UPDATE {self.table_name} SET agent_ids = $1, updated_at = CURRENT_TIMESTAMP WHERE group_name = $2 AND department_name = $3",
+                    current_agents, group_name, department_name
+                )
+                
+                log.info(f"Added {len(agents_added)} new agents to group '{group_name}' in department '{department_name}'. {len(agents_already_present)} were already present.")
+                return {
+                    "success": True,
+                    "message": f"Processed {len(agent_ids)} agents for group '{group_name}' in department '{department_name}'.",
+                    "agents_added": agents_added,
+                    "agents_already_present": agents_already_present,
+                    "agents_requested": agent_ids
+                }
+            
+        except Exception as e:
+            log.error(f"Error adding agents to group '{group_name}' in department '{department_name}': {e}")
+            return {
+                "success": False,
+                "message": f"Error adding agents to group: {str(e)}",
+                "agents_added": [],
+                "agents_already_present": [],
+                "agents_requested": agent_ids
+            }
+
+    async def remove_agents_from_group(self, group_name: str, agent_ids: List[str], department_name: str = None) -> bool:
+        """
+        Removes agents from a group.
+        
+        Args:
+            group_name (str): The group name.
+            agent_ids (List[str]): List of agent IDs to remove.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if agents were removed successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Get current agents
+                current_row = await conn.fetchrow(
+                    f"SELECT agent_ids FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    group_name, department_name
+                )
+                
+                if not current_row:
+                    log.warning(f"Group '{group_name}' not found in department '{department_name}'.")
+                    return False
+                
+                current_agents = list(current_row['agent_ids']) if current_row['agent_ids'] else []
+                
+                # Remove agents
+                for agent_id in agent_ids:
+                    if agent_id in current_agents:
+                        current_agents.remove(agent_id)
+                
+                # Update group
+                await conn.execute(
+                    f"UPDATE {self.table_name} SET agent_ids = $1, updated_at = CURRENT_TIMESTAMP WHERE group_name = $2 AND department_name = $3",
+                    current_agents, group_name, department_name
+                )
+                
+            log.info(f"Removed {len(agent_ids)} agents from group '{group_name}' in department '{department_name}'.")
+            return True
+            
+        except Exception as e:
+            log.error(f"Error removing agents from group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def get_groups_by_user(self, user_email: str, department_name: str = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all groups that contain a specific user, optionally filtered by department.
+
+        Args:
+            user_email (str): The user email to search for.
+            department_name (str, optional): Department to filter groups by.
+
+        Returns:
+            List[Dict[str, Any]]: List of groups containing the user.
+        """
+        try:
+            query = f"SELECT * FROM {self.table_name} WHERE $1 = ANY(user_emails)"
+            params = [user_email]
+
+            if department_name:
+                query += " AND department_name = $2"
+                params.append(department_name)
+
+            query += " ORDER BY created_at DESC"
+
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+
+            groups = [dict(row) for row in rows]
+            log.info(f"Found {len(groups)} groups containing user '{user_email}'" + (f" in department '{department_name}'." if department_name else "."))
+            return groups
+
+        except Exception as e:
+            log.error(f"Error retrieving groups for user '{user_email}'" + (f" in department '{department_name}': {e}" if department_name else f": {e}"))
+            return []
+
+    async def get_groups_by_agent(self, agent_id: str, department_name: str = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all groups that contain a specific agent, optionally filtered by department.
+
+        Args:
+            agent_id (str): The agent ID to search for.
+            department_name (str, optional): Department to filter groups by.
+
+        Returns:
+            List[Dict[str, Any]]: List of groups containing the agent.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                if department_name:
+                    rows = await conn.fetch(
+                        f"SELECT * FROM {self.table_name} WHERE $1 = ANY(agent_ids) AND department_name = $2 ORDER BY created_at DESC",
+                        agent_id,
+                        department_name,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        f"SELECT * FROM {self.table_name} WHERE $1 = ANY(agent_ids) ORDER BY created_at DESC",
+                        agent_id,
+                    )
+
+            groups = [dict(row) for row in rows]
+            log.info(f"Found {len(groups)} groups containing agent '{agent_id}'" + (f" in department '{department_name}'." if department_name else "."))
+            return groups
+
+        except Exception as e:
+            log.error(f"Error retrieving groups for agent '{agent_id}'" + (f" in department '{department_name}': {e}" if department_name else f": {e}"))
+            return []
+
+    async def check_user_group_access(self, user_email: str, group_name: str, department_name: str = None) -> bool:
+        """
+        Checks if a user has access to a group.
+        
+        Args:
+            user_email (str): The user's email.
+            group_name (str): The group name.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if user is a group member, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"""
+                    SELECT user_emails 
+                    FROM {self.table_name} 
+                    WHERE group_name = $1 AND department_name = $2
+                    """,
+                    group_name, department_name
+                )
+            
+            if not row:
+                return False
+            
+            # Check if user is a group member
+            return bool(row['user_emails'] and user_email in row['user_emails'])
+                
+        except Exception as e:
+            log.error(f"Error checking user group access for '{user_email}' in group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def get_total_group_count(self, search_value: str = '', created_by: Optional[str] = None, department_name: str = None) -> int:
+        """
+        Returns the total count of groups matching the search criteria.
+
+        Args:
+            search_value (str, optional): Group name to filter by.
+            created_by (str, optional): The email ID of the user who created the group.
+            department_name (str, optional): Department to filter groups by.
+
+        Returns:
+            int: Total count of matching groups.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                conditions = []
+                params: List[Any] = []
+                param_count = 0
+
+                if search_value:
+                    param_count += 1
+                    conditions.append(f"group_name ILIKE ${param_count}")
+                    params.append(f"%{search_value}%")
+
+                if created_by:
+                    param_count += 1
+                    conditions.append(f"created_by = ${param_count}")
+                    params.append(created_by)
+
+                if department_name:
+                    param_count += 1
+                    conditions.append(f"department_name = ${param_count}")
+                    params.append(department_name)
+
+                where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+                query = f"SELECT COUNT(*) FROM {self.table_name}{where_clause}"
+                count = await conn.fetchval(query, *params)
+                return int(count) if count is not None else 0
+
+        except Exception as e:
+            log.error(f"Error getting total group count: {e}")
+            return 0
+
+    async def get_groups_by_search_or_page_records(self, search_value: str = '', limit: int = 20, 
+                                                   page: int = 1, created_by: Optional[str] = None, department_name: str = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves groups with pagination and search filtering.
+        
+        Args:
+            search_value (str, optional): Group name to filter by.
+            limit (int, optional): Number of results per page.
+            page (int, optional): Page number for pagination.
+            created_by (str, optional): The email ID of the user who created the group.
+            department_name (str, optional): Department to filter groups by.
+            
+        Returns:
+            List[Dict[str, Any]]: List of group records.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                conditions = []
+                params = []
+                param_count = 0
+                
+                if search_value:
+                    param_count += 1
+                    conditions.append(f"group_name ILIKE ${param_count}")
+                    params.append(f"%{search_value}%")
+                
+                if created_by:
+                    param_count += 1
+                    conditions.append(f"created_by = ${param_count}")
+                    params.append(created_by)
+
+                if department_name:
+                    param_count += 1
+                    conditions.append(f"department_name = ${param_count}")
+                    params.append(department_name)
+                
+                where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+                
+                # Calculate offset
+                offset = (page - 1) * limit
+                param_count += 1
+                limit_clause = f" LIMIT ${param_count}"
+                params.append(limit)
+                
+                param_count += 1
+                offset_clause = f" OFFSET ${param_count}"
+                params.append(offset)
+                
+                query = f"""
+                SELECT group_name, group_description, user_emails, agent_ids, 
+                       created_by, created_at, updated_at, department_name
+                FROM {self.table_name}
+                {where_clause}
+                ORDER BY created_at DESC
+                {limit_clause}{offset_clause}
+                """
+                
+                rows = await conn.fetch(query, *params)
+                return [dict(row) for row in rows]
+                
+        except Exception as e:
+            log.error(f"Error retrieving groups by search or page: {e}")
+            return []
+
+
+class GroupSecretsRepository(BaseRepository):
+    """
+    Repository for the 'group_secrets' table. Handles direct database interactions for group secrets management.
+    Group secrets are encrypted key-value pairs that can be accessed by group members based on their roles.
+    Groups are scoped within departments for multi-tenant access control.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = "group_secrets"):
+        """
+        Initializes the GroupSecretsRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the group_secrets table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'group_secrets' table if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id SERIAL PRIMARY KEY,
+                group_name TEXT NOT NULL,
+                department_name TEXT NOT NULL DEFAULT 'General',
+                key_name TEXT NOT NULL,
+                encrypted_value TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_group_secrets_group 
+                    FOREIGN KEY (group_name, department_name) REFERENCES groups(group_name, department_name) ON DELETE CASCADE,
+                CONSTRAINT unique_group_key UNIQUE (group_name, department_name, key_name)
+            );
+            """
+            
+            create_index_statement = f"""
+            CREATE INDEX IF NOT EXISTS idx_group_secrets_group_name 
+            ON {self.table_name}(group_name, department_name);
+            """
+            
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                await conn.execute(create_index_statement)
+                
+                # Add default value to department_name column if it doesn't have one (for existing tables)
+                try:
+                    await conn.execute(f"""
+                        ALTER TABLE {self.table_name} 
+                        ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'
+                    """)
+                except Exception as alter_error:
+                    log.warning(f"Could not set default for department_name in {self.table_name}: {alter_error}")
+                
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def create_group_secret(self, group_name: str, key_name: str, encrypted_value: str, created_by: str, department_name: str = None) -> bool:
+        """
+        Creates a new secret_record for a group.
+        
+        Args:
+            group_name (str): The group name.
+            key_name (str): The name of the secret_key.
+            encrypted_value (str): The encrypted secret_value.
+            created_by (str): The email of the user creating the secret_record.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if secret_record was created successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    f"""
+                    INSERT INTO {self.table_name} (group_name, department_name, key_name, encrypted_value, created_by, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    group_name, department_name, key_name, encrypted_value, created_by
+                )
+            log.info(f"Created group secret '{key_name}' for group '{group_name}' in department '{department_name}' by '{created_by}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error creating group secret '{key_name}' for group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def get_group_secret(self, group_name: str, key_name: str, department_name: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a specific group secret_record.
+        
+        Args:
+            group_name (str): The group name.
+            key_name (str): The name of the secret_key.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            Optional[Dict[str, Any]]: The secret_record if found, None otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"SELECT * FROM {self.table_name} WHERE group_name = $1 AND department_name = $2 AND key_name = $3",
+                    group_name, department_name, key_name
+                )
+            
+            if row:
+                log.info(f"Retrieved group secret '{key_name}' for group '{group_name}' in department '{department_name}'.")
+                return dict(row)
+            else:
+                log.warning(f"Group secret '{key_name}' not found for group '{group_name}' in department '{department_name}'.")
+                return None
+                
+        except Exception as e:
+            log.error(f"Error retrieving group secret '{key_name}' for group '{group_name}' in department '{department_name}': {e}")
+            return None
+
+    async def update_group_secret(self, group_name: str, key_name: str, encrypted_value: str, updated_by: str, department_name: str = None) -> bool:
+        """
+        Updates an existing group secret_record.
+        
+        Args:
+            group_name (str): The group name.
+            key_name (str): The name of the secret_key.
+            encrypted_value (str): The new encrypted secret_value.
+            updated_by (str): The email of the user updating the secret_record.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if secret_record was updated successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    f"""
+                    UPDATE {self.table_name} 
+                    SET encrypted_value = $4, updated_at = CURRENT_TIMESTAMP 
+                    WHERE group_name = $1 AND department_name = $2 AND key_name = $3
+                    """,
+                    group_name, department_name, key_name, encrypted_value
+                )
+            
+            if result == "UPDATE 1":
+                log.info(f"Updated group secret '{key_name}' for group '{group_name}' in department '{department_name}' by '{updated_by}'.")
+                return True
+            else:
+                log.warning(f"Group secret '{key_name}' not found for group '{group_name}' in department '{department_name}' during update.")
+                return False
+                
+        except Exception as e:
+            log.error(f"Error updating group secret '{key_name}' for group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def delete_group_secret(self, group_name: str, key_name: str, department_name: str = None) -> bool:
+        """
+        Deletes a group secret_record.
+        
+        Args:
+            group_name (str): The group name.
+            key_name (str): The name of the secret_key.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if secret_record was deleted successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE group_name = $1 AND department_name = $2 AND key_name = $3",
+                    group_name, department_name, key_name
+                )
+            
+            if result == "DELETE 1":
+                log.info(f"Deleted group secret '{key_name}' for group '{group_name}' in department '{department_name}'.")
+                return True
+            else:
+                log.warning(f"Group secret '{key_name}' not found for group '{group_name}' in department '{department_name}' during deletion.")
+                return False
+                
+        except Exception as e:
+            log.error(f"Error deleting group secret '{key_name}' for group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def list_group_secrets(self, group_name: str, department_name: str = None) -> List[Dict[str, Any]]:
+        """
+        Lists all secrets for a group (without encrypted values for security).
+        
+        Args:
+            group_name (str): The group name.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            List[Dict[str, Any]]: List of secret_records without encrypted values.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"""
+                    SELECT id, group_name, department_name, key_name, created_by, created_at, updated_at 
+                    FROM {self.table_name} 
+                    WHERE group_name = $1 AND department_name = $2 
+                    ORDER BY created_at DESC
+                    """,
+                    group_name, department_name
+                )
+            
+            secrets = [dict(row) for row in rows]
+            log.info(f"Retrieved {len(secrets)} group secrets for group '{group_name}' in department '{department_name}'.")
+            return secrets
+            
+        except Exception as e:
+            log.error(f"Error listing group secrets for group '{group_name}' in department '{department_name}': {e}")
+            return []
+
+    async def secret_exists(self, group_name: str, key_name: str, department_name: str = None) -> bool:
+        """
+        Checks if a group secret_record with the given name already exists.
+        
+        Args:
+            group_name (str): The group name.
+            key_name (str): The secret_key name to check.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if secret_record exists, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(
+                    f"SELECT COUNT(*) FROM {self.table_name} WHERE group_name = $1 AND department_name = $2 AND key_name = $3",
+                    group_name, department_name, key_name
+                )
+                return result > 0
+        except Exception as e:
+            log.error(f"Error checking if group secret '{key_name}' exists in group '{group_name}' in department '{department_name}': {e}")
+            return False
+
+    async def group_secret_exists(self, group_name: str, key_name: str, department_name: str = None) -> bool:
+        """
+        Alias for secret_exists method to maintain compatibility with service layer.
+        
+        Args:
+            group_name (str): The group name.
+            key_name (str): The secret_key name to check.
+            department_name (str): The department context for the group.
+            
+        Returns:
+            bool: True if secret_record exists, False otherwise.
+        """
+        return await self.secret_exists(group_name, key_name, department_name)
+
+
+class ToolAccessKeyMappingRepository(BaseRepository):
+    """
+    Repository for mapping tools to their required access keys.
+    
+    When a tool is onboarded with @resource_access decorators, this table
+    stores which access_keys that tool requires. This enables:
+    - Querying what access keys a tool needs
+    - Finding all tools that use a specific access key
+    - Admin visibility into tool access requirements
+    
+    Example:
+        Tool "get_employee_salary" requires access_key "employees"
+        Tool "update_project" requires access_keys ["employees", "projects"]
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool):
+        super().__init__(pool, login_pool, "tool_access_key_mapping")
+
+    async def create_table_if_not_exists(self):
+        """Create tool_access_key_mapping table if it doesn't exist"""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            tool_id VARCHAR(255) PRIMARY KEY,
+            tool_name VARCHAR(255) NOT NULL,
+            access_keys TEXT[] NOT NULL DEFAULT '{{}}',
+            department_name VARCHAR(255) DEFAULT 'General'
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_tool_access_key_mapping_tool_name 
+        ON {self.table_name}(tool_name);
+        
+        CREATE INDEX IF NOT EXISTS idx_tool_access_key_mapping_department 
+        ON {self.table_name}(department_name);
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+            log.info(f"Table '{self.table_name}' created or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+            raise
+
+    async def save_tool_access_keys(
+        self,
+        tool_id: str,
+        tool_name: str,
+        access_keys: List[str],
+        department_name: str = None
+    ) -> bool:
+        """
+        Save or update access keys for a tool.
+        
+        Args:
+            tool_id: The tool's unique ID
+            tool_name: The tool's name
+            access_keys: List of access keys the tool requires
+            department_name: The department the tool belongs to
+            
+        Returns:
+            bool: True if successful
+        """
+        if not access_keys:
+            log.debug(f"No access keys to save for tool {tool_name}")
+            return True
+            
+        query = f"""
+        INSERT INTO {self.table_name} (tool_id, tool_name, access_keys, department_name)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (tool_id) 
+        DO UPDATE SET 
+            tool_name = $2,
+            access_keys = $3,
+            department_name = $4
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, tool_id, tool_name, access_keys, department_name)
+            log.info(f"Saved access keys {access_keys} for tool '{tool_name}' (ID: {tool_id}) in department '{department_name}'")
+            return True
+        except Exception as e:
+            log.error(f"Error saving access keys for tool {tool_name}: {e}")
+            return False
+
+    async def get_tool_access_keys(self, tool_id: str, department_name: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Get access keys for a specific tool.
+        
+        Args:
+            tool_id: The tool's unique ID
+            department_name: Optional department filter
+            
+        Returns:
+            Dict with tool_id, tool_name, access_keys, department_name or None if not found
+        """
+        if department_name:
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE tool_id = $1 AND department_name = $2"
+            params = (tool_id, department_name)
+        else:
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE tool_id = $1"
+            params = (tool_id,)
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *params)
+                if row:
+                    return {
+                        "tool_id": row["tool_id"],
+                        "tool_name": row["tool_name"],
+                        "access_keys": list(row["access_keys"]) if row["access_keys"] else [],
+                        "department_name": row["department_name"]
+                    }
+                return None
+        except Exception as e:
+            log.error(f"Error fetching access keys for tool {tool_id}: {e}")
+            return None
+
+    async def get_tool_access_keys_by_name(self, tool_name: str, department_name: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Get access keys for a tool by its name.
+        
+        Args:
+            tool_name: The tool's name
+            department_name: Optional department filter
+            
+        Returns:
+            Dict with tool_id, tool_name, access_keys, department_name or None if not found
+        """
+        if department_name:
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE tool_name = $1 AND department_name = $2"
+            params = (tool_name, department_name)
+        else:
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE tool_name = $1"
+            params = (tool_name,)
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *params)
+                if row:
+                    return {
+                        "tool_id": row["tool_id"],
+                        "tool_name": row["tool_name"],
+                        "access_keys": list(row["access_keys"]) if row["access_keys"] else [],
+                        "department_name": row["department_name"]
+                    }
+                return None
+        except Exception as e:
+            log.error(f"Error fetching access keys for tool name {tool_name}: {e}")
+            return None
+
+    async def get_tools_by_access_key(self, access_key: str, department_name: str = None) -> List[Dict[str, Any]]:
+        """
+        Get all tools that require a specific access key.
+        
+        Args:
+            access_key: The access key to search for
+            department_name: Optional department filter
+            
+        Returns:
+            List of tools (tool_id, tool_name, access_keys, department_name) that use this access key
+        """
+        if department_name:
+            query = f"""
+            SELECT tool_id, tool_name, access_keys, department_name 
+            FROM {self.table_name} 
+            WHERE $1 = ANY(access_keys) AND department_name = $2
+            """
+            params = (access_key, department_name)
+        else:
+            query = f"""
+            SELECT tool_id, tool_name, access_keys, department_name 
+            FROM {self.table_name} 
+            WHERE $1 = ANY(access_keys)
+            """
+            params = (access_key,)
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+                return [
+                    {
+                        "tool_id": row["tool_id"],
+                        "tool_name": row["tool_name"],
+                        "access_keys": list(row["access_keys"]) if row["access_keys"] else [],
+                        "department_name": row["department_name"]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            log.error(f"Error fetching tools for access key {access_key}: {e}")
+            return []
+
+    async def get_all_tool_access_mappings(self, department_name: str = None) -> List[Dict[str, Any]]:
+        """
+        Get all tool access key mappings.
+        
+        Args:
+            department_name: Optional department filter
+        
+        Returns:
+            List of all mappings (tool_id, tool_name, access_keys, department_name)
+        """
+        if department_name:
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE department_name = $1 ORDER BY tool_name"
+            params = (department_name,)
+        else:
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} ORDER BY tool_name"
+            params = ()
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+                return [
+                    {
+                        "tool_id": row["tool_id"],
+                        "tool_name": row["tool_name"],
+                        "access_keys": list(row["access_keys"]) if row["access_keys"] else [],
+                        "department_name": row["department_name"]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            log.error(f"Error fetching all tool access mappings: {e}")
+            return []
+
+    async def delete_tool_access_keys(self, tool_id: str, department_name: str = None) -> bool:
+        """
+        Delete access key mapping for a tool.
+        
+        Args:
+            tool_id: The tool's unique ID
+            department_name: Optional department filter
+            
+        Returns:
+            bool: True if successful
+        """
+        if department_name:
+            query = f"DELETE FROM {self.table_name} WHERE tool_id = $1 AND department_name = $2"
+            params = (tool_id, department_name)
+        else:
+            query = f"DELETE FROM {self.table_name} WHERE tool_id = $1"
+            params = (tool_id,)
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, *params)
+            log.info(f"Deleted access key mapping for tool ID: {tool_id}")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting access keys for tool {tool_id}: {e}")
+            return False
+
+    async def delete_by_department(self, department_name: str) -> bool:
+        """
+        Delete all tool access key mappings for a department.
+        
+        Args:
+            department_name: The department name
+            
+        Returns:
+            bool: True if successful
+        """
+        query = f"DELETE FROM {self.table_name} WHERE department_name = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, department_name)
+            log.info(f"Deleted all tool access key mappings for department: {department_name}")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting tool access keys for department {department_name}: {e}")
+            return False
+
+    async def get_all_unique_access_keys(self, department_name: str = None) -> List[str]:
+        """
+        Get all unique access keys used across all tools.
+        
+        Args:
+            department_name: Optional department filter
+        
+        Returns:
+            List of unique access key names
+        """
+        if department_name:
+            query = f"""
+            SELECT DISTINCT unnest(access_keys) as access_key 
+            FROM {self.table_name}
+            WHERE department_name = $1
+            ORDER BY access_key
+            """
+            params = (department_name,)
+        else:
+            query = f"""
+            SELECT DISTINCT unnest(access_keys) as access_key 
+            FROM {self.table_name}
+            ORDER BY access_key
+            """
+            params = ()
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *params)
+                return [row["access_key"] for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching unique access keys: {e}")
+            return []
+
+
+class AccessKeyDefinitionsRepository:
+    """
+    Repository for managing access key definitions.
+    
+    This table stores the master list of access keys that exist in the system.
+    Access keys are created manually by users and are associated with departments.
+    Only the creator can delete an access key.
+    
+    Example:
+        access_key: "employees"
+        department_name: "HR"
+        created_by: "admin@company.com"
+        description: "Employee ID access for HR tools"
+    """
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+        self.table_name = "access_key_definitions"
+
+    async def create_table_if_not_exists(self):
+        """Create access_key_definitions table if it doesn't exist"""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            access_key VARCHAR(100) NOT NULL,
+            department_name VARCHAR(255) NOT NULL,
+            created_by VARCHAR(255) NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            description TEXT,
+            PRIMARY KEY (access_key, department_name)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_access_key_definitions_department 
+        ON {self.table_name}(department_name);
+        
+        CREATE INDEX IF NOT EXISTS idx_access_key_definitions_created_by 
+        ON {self.table_name}(created_by);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+            log.info(f"Table '{self.table_name}' created or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+            raise
+
+    async def create_access_key(
+        self,
+        access_key: str,
+        department_name: str,
+        created_by: str,
+        description: str = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new access key definition.
+        
+        Args:
+            access_key: Unique identifier for the access key
+            department_name: Department this access key belongs to
+            created_by: User who created this access key
+            description: Optional description of what this access key controls
+            
+        Returns:
+            Dict with success status and created access key info
+        """
+        query = f"""
+        INSERT INTO {self.table_name} (access_key, department_name, created_by, description)
+        VALUES ($1, $2, $3, $4)
+        RETURNING access_key, department_name, created_by, created_at, description
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, access_key, department_name, created_by, description)
+                if row:
+                    log.info(f"Created access key '{access_key}' for department '{department_name}' by {created_by}")
+                    return {
+                        "success": True,
+                        "access_key": row["access_key"],
+                        "department_name": row["department_name"],
+                        "created_by": row["created_by"],
+                        "created_at": str(row["created_at"]),
+                        "description": row["description"]
+                    }
+                return {"success": False, "error": "Failed to create access key"}
+        except asyncpg.UniqueViolationError:
+            log.warning(f"Access key '{access_key}' already exists")
+            return {"success": False, "error": f"Access key '{access_key}' already exists"}
+        except Exception as e:
+            log.error(f"Error creating access key '{access_key}': {e}")
+            return {"success": False, "error": str(e)}
+
+    async def get_access_keys_by_department(self, department_name: str) -> List[Dict[str, Any]]:
+        """
+        Get all access keys for a specific department.
+        
+        Args:
+            department_name: Department to filter by
+            
+        Returns:
+            List of access key definitions
+        """
+        query = f"""
+        SELECT access_key, department_name, created_by, created_at, description
+        FROM {self.table_name}
+        WHERE department_name = $1
+        ORDER BY access_key
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+                return [
+                    {
+                        "access_key": row["access_key"],
+                        "department_name": row["department_name"],
+                        "created_by": row["created_by"],
+                        "created_at": str(row["created_at"]),
+                        "description": row["description"]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            log.error(f"Error fetching access keys for department {department_name}: {e}")
+            return []
+
+    async def get_all_access_keys(self) -> List[Dict[str, Any]]:
+        """
+        Get all access key definitions.
+        
+        Returns:
+            List of all access key definitions
+        """
+        query = f"""
+        SELECT access_key, department_name, created_by, created_at, description
+        FROM {self.table_name}
+        ORDER BY department_name, access_key
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query)
+                return [
+                    {
+                        "access_key": row["access_key"],
+                        "department_name": row["department_name"],
+                        "created_by": row["created_by"],
+                        "created_at": str(row["created_at"]),
+                        "description": row["description"]
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            log.error(f"Error fetching all access keys: {e}")
+            return []
+
+    async def get_access_key(
+        self, 
+        access_key: str, 
+        department_name: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific access key definition, optionally filtered by department.
+        
+        Args:
+            access_key: The access key to retrieve
+            department_name: Optional department to filter by
+            
+        Returns:
+            Access key definition or None if not found
+        """
+        if department_name:
+            query = f"""
+            SELECT access_key, department_name, created_by, created_at, description
+            FROM {self.table_name}
+            WHERE access_key = $1 AND department_name = $2
+            """
+            params = [access_key, department_name]
+        else:
+            query = f"""
+            SELECT access_key, department_name, created_by, created_at, description
+            FROM {self.table_name}
+            WHERE access_key = $1
+            """
+            params = [access_key]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *params)
+                if row:
+                    return {
+                        "access_key": row["access_key"],
+                        "department_name": row["department_name"],
+                        "created_by": row["created_by"],
+                        "created_at": str(row["created_at"]),
+                        "description": row["description"]
+                    }
+                return None
+        except Exception as e:
+            log.error(f"Error fetching access key '{access_key}': {e}")
+            return None
+
+    async def delete_access_key(self, access_key: str, department_name: str, requesting_user: str) -> Dict[str, Any]:
+        """
+        Delete an access key. Only the creator can delete it.
+        
+        Args:
+            access_key: The access key to delete
+            department_name: The department the access key belongs to
+            requesting_user: The user attempting to delete
+            
+        Returns:
+            Dict with success status
+        """
+        # First check if user is the creator
+        check_query = f"SELECT created_by FROM {self.table_name} WHERE access_key = $1 AND department_name = $2"
+        delete_query = f"DELETE FROM {self.table_name} WHERE access_key = $1 AND department_name = $2 AND created_by = $3"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Check ownership
+                row = await conn.fetchrow(check_query, access_key, department_name)
+                if not row:
+                    return {"success": False, "error": f"Access key '{access_key}' not found in department '{department_name}'"}
+                
+                if row["created_by"] != requesting_user:
+                    return {
+                        "success": False, 
+                        "error": f"Only the creator ({row['created_by']}) can delete this access key"
+                    }
+                
+                # Delete
+                result = await conn.execute(delete_query, access_key, department_name, requesting_user)
+                if "DELETE 1" in result:
+                    log.info(f"Deleted access key '{access_key}' in department '{department_name}' by {requesting_user}")
+                    return {"success": True, "message": f"Access key '{access_key}' deleted successfully"}
+                return {"success": False, "error": "Failed to delete access key"}
+        except Exception as e:
+            log.error(f"Error deleting access key '{access_key}': {e}")
+            return {"success": False, "error": str(e)}
+
+    async def update_access_key(
+        self,
+        access_key: str,
+        department_name: str,
+        description: str = None,
+        requesting_user: str = None
+    ) -> Dict[str, Any]:
+        """
+        Update an access key description. Only the creator can update it.
+        
+        Args:
+            access_key: The access key to update
+            department_name: The department the access key belongs to
+            description: New description
+            requesting_user: The user attempting to update
+            
+        Returns:
+            Dict with success status
+        """
+        check_query = f"SELECT created_by FROM {self.table_name} WHERE access_key = $1 AND department_name = $2"
+        update_query = f"""
+        UPDATE {self.table_name}
+        SET description = $3
+        WHERE access_key = $1 AND department_name = $2 AND created_by = $4
+        RETURNING access_key, department_name, created_by, created_at, description
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Check ownership
+                row = await conn.fetchrow(check_query, access_key, department_name)
+                if not row:
+                    return {"success": False, "error": f"Access key '{access_key}' not found in department '{department_name}'"}
+                
+                if requesting_user and row["created_by"] != requesting_user:
+                    return {
+                        "success": False, 
+                        "error": f"Only the creator ({row['created_by']}) can update this access key"
+                    }
+                
+                # Update
+                updated = await conn.fetchrow(update_query, access_key, department_name, description, requesting_user or row["created_by"])
+                if updated:
+                    log.info(f"Updated access key '{access_key}' in department '{department_name}'")
+                    return {
+                        "success": True,
+                        "access_key": updated["access_key"],
+                        "department_name": updated["department_name"],
+                        "created_by": updated["created_by"],
+                        "created_at": str(updated["created_at"]),
+                        "description": updated["description"]
+                    }
+                return {"success": False, "error": "Failed to update access key"}
+        except Exception as e:
+            log.error(f"Error updating access key '{access_key}': {e}")
+            return {"success": False, "error": str(e)}

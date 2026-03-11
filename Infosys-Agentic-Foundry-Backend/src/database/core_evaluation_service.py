@@ -7,9 +7,16 @@ from datetime import datetime
 from pytz import timezone
 import pandas as pd
 import asyncio
+import uuid
+from datetime import datetime
+from pytz import timezone
+import pandas as pd
+import asyncio
 
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import Runnable
+from fastapi import FastAPI, HTTPException
 from langchain_core.runnables import Runnable
 from fastapi import FastAPI, HTTPException
 from src.models.model_service import ModelService
@@ -25,8 +32,15 @@ from src.prompts.prompts import (
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.inference.react_agent_inference import ReactAgentInference
 from src.database.services import EvaluationService, ConsistencyService
-from src.models.model_service import ModelService
+from src.inference.react_agent_inference import ReactAgentInference
+from src.database.services import EvaluationService, ConsistencyService
+
+from src.inference.react_agent_inference import ReactAgentInference
+from src.database.services import EvaluationService, ConsistencyService
+from src.models.model_service import ModelService, global_model_service
+from src.config.constants import AgentType
 from telemetry_wrapper import logger as log
+from src.schemas import AgentInferenceRequest
 from src.schemas import AgentInferenceRequest
 
 
@@ -64,7 +78,7 @@ class CoreEvaluationService:
         # Step 1: Evaluate communication efficiency if meta agent
         comm_score = None
         comm_justification = None
-        if agent_type == "meta_agent":
+        if agent_type == AgentType.META_AGENT:
             try:
                 prompt_template = ChatPromptTemplate.from_template(COMM_EFFICIENCY_PROMPT)
                 chain = prompt_template | llm | StrOutputParser()
@@ -162,7 +176,7 @@ class CoreEvaluationService:
 
             # Include communication efficiency if available
             # if comm_score is not None:
-            if agent_type == "meta_agent":
+            if agent_type == AgentType.META_AGENT:
                 scores['communication_efficiency_score'] = comm_score
                 justifications['communication_efficiency_justification'] = comm_justification
 
@@ -431,7 +445,8 @@ class CoreEvaluationService:
                         "communication_efficiency_score": scores.get("communication_efficiency_score", None),
                         "communication_efficiency_justification": justifications.get("communication_efficiency_justification", 'NaN'),
                         "efficiency_category": scores.get('Efficiency Category', 'Unknown'),
-                        "model_used_for_evaluation": eval_llm_model_name
+                        "model_used_for_evaluation": eval_llm_model_name,
+                        "department": data.get("department", "General")  # Add department field
                     }
                     
                     await self.evaluation_service.insert_agent_metrics(metrics_payload)
@@ -489,7 +504,8 @@ class CoreEvaluationService:
                         "tool_selection_accuracy_justification": tool_result.get("tool_selection_accuracy_justification", ""),
                         "tool_usage_efficiency_justification": tool_result.get("tool_usage_efficiency_justification", ""),
                         "tool_call_precision_justification": tool_result.get("tool_call_precision_justification", ""),
-                        "model_used_for_evaluation": eval_llm_model_name
+                        "model_used_for_evaluation": eval_llm_model_name,
+                        "department": data.get("department", "General")  # Add department field
                     })
                     yield {
                         "status": "tool_metrics_inserted",
@@ -741,7 +757,7 @@ class CoreConsistencyEvaluationService:
                 
                 agentic_application_id=agent_id,
                 model_name=model_name,
-                agent_type="react_agent",
+                agent_type=AgentType.REACT_AGENT.value,
                 session_id=f"auto_reeval_{int(datetime.now().timestamp())}",
                 llm=llm,
             )
@@ -922,7 +938,7 @@ class CoreRobustnessEvaluationService:
             agent_details = await self.consistency_service.get_agent_by_id(agentic_id)
             if not agent_details:
                 raise ValueError(f"Agent {agentic_id} not found.")
-            model_name = agent_details.get("model_name", "gpt-4o")
+            model_name = agent_details.get("model_name", global_model_service.default_model_name)
         except Exception as e:
             log.error(f"Error fetching agent details for {agentic_id}: {e}", exc_info=True)
             raise ValueError(f"Failed to fetch agent details for agent {agentic_id}: {str(e)}")
@@ -981,7 +997,7 @@ class CoreRobustnessEvaluationService:
         
         return dataset, response_col, score_col
 
-    async def score_responses(self, dataset, response_col: str, score_col: str, model_name: str = "gpt-4o"):
+    async def score_responses(self, dataset, response_col: str, score_col: str, model_name: str = global_model_service.default_model_name):
         """
         Scores agent responses based on the robustness rubric.
         """
@@ -1024,7 +1040,7 @@ class CoreRobustnessEvaluationService:
             if not agent_details:
                 raise ValueError(f"Agent {agentic_id} not found.")
 
-            model_name = agent_details.get("model_name", "gpt-4o")
+            model_name = agent_details.get("model_name", global_model_service.default_model_name)
             
             # --- Step 1: Generate Queries ---
             categories = ["Unexpected Input (Out-of-Scope Requests)", "Tool Error Simulation (Missing Specific Capability)", "Adversarial Input (Deceptive Details)"]
@@ -1064,7 +1080,7 @@ class CoreRobustnessEvaluationService:
             if not agent_details:
                 raise ValueError(f"Agent {agent_id} not found.")
 
-            model_name = agent_details.get("model_name", "gpt-4o")
+            model_name = agent_details.get("model_name", global_model_service.default_model_name)
 
             enriched_data, response_col, score_col = await self.run_agent_on_dataset(
                 dataset, model_name, agent_id
@@ -1202,5 +1218,6 @@ class CoreRobustnessEvaluationService:
 
         except Exception as e:
             log.error(f"[Robustness Scheduler] Critical error in background task: {e}", exc_info=True)
+
 
 

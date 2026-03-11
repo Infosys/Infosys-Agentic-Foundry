@@ -30,9 +30,12 @@ if __name__ == "__main__":
         os.path.join("uploaded_sqlite_dbs", "*"),
         os.path.join("user_uploads", "*"),
         os.path.join("Hugging_face", "*"),
+        os.path.join("onboarded_tools", "*"),
+        os.path.join("outputs", "*"),
+        os.path.join("responses_temp", "*"),
+        os.path.join("temp_previews", "*"),
         ".gitignore",
-        "run_server.py",
-        "user_interface.py"
+        "run_server.py"
     ]
 
     # Combine default excludes with any user-provided excludes

@@ -1,4 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import os
 import re
 import json
 import asyncio
@@ -8,9 +9,12 @@ from typing import Any, Dict, List, Optional, Union, Callable, Literal, Tuple, A
 from fastapi import HTTPException
 
 from src.schemas import AgentInferenceRequest
+from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets
 from src.inference.abstract_base_inference import AbstractBaseInference
 from src.models.base_ai_model_service import BaseAIModelService
 from src.tools.mcp_tool_adapter import MCPToolAdapter
+from src.schemas import AdminConfigLimits
+from src.config.constants import Limits
 from src.prompts.prompts import FORMATTER_PROMPT, online_agent_evaluation_prompt
 from src.inference.inference_utils import InferenceUtils
 from src.utils.helper_functions import get_timestamp
@@ -71,6 +75,15 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
         Helper method to create a Python-based agent instance with tools loaded dynamically.
         This function supports loading both Python code-based tools and MCP tools.
         """
+        # local_var for exec() context, including secrets handlers
+        local_var = {
+            "get_user_secrets": get_user_secrets,
+            "current_user_email": current_user_email,
+            "get_public_secrets": get_public_key,
+            "get_group_secrets": get_group_secrets
+        }
+
+        tool_list: List[Union[Callable, MCPToolAdapter]] = []
         tool_list: List[Union[Callable, MCPToolAdapter]] = await self._get_tools_instances(tool_ids=tool_ids)
         memory_management_tools = await self._get_memory_management_tools_instances()
         tool_list.extend(memory_management_tools)
@@ -116,12 +129,21 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
 
     async def evaluate_agent_response(self, agent_response: Dict[str, Any], llm: BaseAIModelService, workflow_description: str = "") -> Dict[str, Any]:
             
-        def generate_conversation_string(agent_steps: List[Dict[str, Any]]) -> str:
+        async def generate_conversation_string(agent_steps: List[Dict[str, Any]]) -> str:
             log.info("Generating conversation string from agent steps for evaluation.")
             conversation_lines = []
+            query_and_feedbacks = []
             for step in agent_steps:
                 if step.get("role") == "user":
-                    conversation_lines.append(f"User: {step.get('content')}")
+                    step_content = step.get("content", "")
+                    conversation_lines.append(f"User: {step_content}")
+                    # Track queries and feedbacks for evaluation agent awareness
+                    query_feedback_content = None
+                    if not query_and_feedbacks:
+                        query_feedback_content = f"*Initial Query*: {step_content}"
+                    else:
+                        query_feedback_content = f"*Updated Query/Feedback*: {step_content}"
+                    query_and_feedbacks.append(query_feedback_content)
 
                 elif step.get("role") == "assistant":
                     if step.get("content"):
@@ -131,24 +153,44 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                         for tool_call in step["tool_calls"]:
                             tool_name = tool_call["function"]["name"]
                             tool_input = tool_call["function"]["arguments"]
+                            tool_input = json.loads(tool_input) if isinstance(tool_input, str) else tool_input
                             conversation_lines.append(f"Tool ({tool_name}) called with input: {tool_input}.")
+                            original_arguments = tool_call["function"].get("original_arguments", None)
+                            if original_arguments:
+                                query_feedback_content = (
+                                    f"*Tool Call Update Notice*: The tool '{tool_name}' was originally called with arguments {original_arguments}. "
+                                    f"However, the user updated the arguments to {tool_input} before execution."
+                                )
+                                query_and_feedbacks.append(query_feedback_content)
 
                 elif step.get("role") == "tool":
                     tool_name = step.get("name")
                     tool_output = step.get("content")
                     conversation_lines.append(f"Tool ({tool_name}) returned output: {tool_output}")
             log.info("Conversation string generation completed.")
-            return "\n".join(conversation_lines)
+            conv_str = "\n".join(conversation_lines)
+            query_feedback_str = "\n".join(query_and_feedbacks)
+
+            return conv_str, query_feedback_str
 
 
         try:
             # Format the evaluation query
             log.info(f"EVALUATOR CALLED")
+            conv_str, query_feedback_str = await generate_conversation_string(agent_response["agent_steps"])
+            user_query_with_feedbacks = f"{query_feedback_str}\n Additional Context with initial Query: {agent_response['user_query']}"
             formatted_evaluation_query = online_agent_evaluation_prompt.format(
-                User_Query=agent_response["user_query"],
+                User_Query=user_query_with_feedbacks,
                 Agent_Response=agent_response["final_response"],
-                past_conversation_summary=generate_conversation_string(agent_response["agent_steps"]),
+                past_conversation_summary=conv_str,
                 workflow_description=workflow_description
+            )
+
+            formatted_evaluation_query += (
+                "\n\nNote: The user may have updated there initial query or provided feedback on top of the initial query, "
+                "or modified tool call arguments. Therefore, while evaluating the agent's response, "
+                "the latest query/feedback should be considered and given higher priority for evaluation even if the feedback "
+                "or updated query or tool call arguments diverges completely from the initial one."
             )
 
             # Call the LLM for evaluation
@@ -242,10 +284,12 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                                 plan_feedback: Optional[str] = None,
                                 response_formatting_flag: bool = True,
                                 tool_interrupt_flag: bool = False,
+                                tools_to_interrupt: Optional[List[str]] = None,
                                 tool_feedback: str = None,
                                 context_flag: bool = True,
                                 temperature: float = 0,
-                                evaluation_flag: bool = False
+                                evaluation_flag: bool = False,
+                                inference_config: AdminConfigLimits = AdminConfigLimits(),
                             ) -> Dict[str, Any]:
         """
         Generates a response from the Python-based agent, handling history, tool calls,
@@ -257,12 +301,13 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
         config = {
             "configurable": {
                 "thread_id": thread_id,
-                "history_lookback": 8 if context_flag else 0,
+                "history_lookback": Limits.PYTHON_BASED_AGENT_CHAT_HISTORY_LOOKBACK if context_flag else 0,
                 "resume_previous_chat": False,
                 "store_response_custom_metadata": False
             },
             "tool_choice": "auto",
             "tool_interrupt": tool_interrupt_flag,
+            "tools_to_interrupt": tools_to_interrupt,
             "updated_tool_calls": tool_feedback
         }
 
@@ -280,7 +325,6 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             log.error("Agent instance not found in chains.")
             raise HTTPException(status_code=500, detail="Agent instance not found in chains.")
 
-        app._temperature = temperature
         log.info("Agent build successfully")
 
         log.info(f"Invoking agent for query: {query}\n with Session ID: {session_id} and Agent Id: {agentic_application_id}")
@@ -321,11 +365,13 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                                 plan_feedback: Optional[str] = None,
                                 response_formatting_flag: bool = True,
                                 tool_interrupt_flag: bool = False,
+                                tools_to_interrupt: Optional[List[str]] = None,
                                 tool_feedback: str = None,
                                 context_flag: bool = True,
                                 temperature: float = 0,
                                 evaluation_flag: bool = False,
-                                enable_streaming_flag: bool = False
+                                enable_streaming_flag: bool = False,
+                                inference_config: AdminConfigLimits = AdminConfigLimits()
                             ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Generates a streaming response from the Hybrid agent, handling history, tool calls,
@@ -357,12 +403,19 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                 raise HTTPException(status_code=500, detail=f"Error occurred while retrieving agent configuration: {str(e)}")
 
         try:
-            query = inference_request.query
+            query = inference_request.query or ""
+            
+            if inference_request.uploaded_files:
+                base_dir = "user_uploads"
+                files_info = "\n".join([f"- {base_dir}/{f}" for f in inference_request.uploaded_files])
+                query = f"{query}\n\n[Attached files:\n{files_info}]" if query else f"[Attached files:\n{files_info}]"
+            
             session_id = inference_request.session_id
             model_name = inference_request.model_name
             reset_conversation = inference_request.reset_conversation
 
             tool_interrupt_flag = inference_request.tool_verifier_flag
+            tools_to_interrupt = inference_request.interrupt_items
             tool_feedback = inference_request.tool_feedback
             try:
                 if tool_feedback:
@@ -383,10 +436,13 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
             response_formatting_flag = inference_request.response_formatting_flag
             context_flag = inference_request.context_flag
             evaluation_flag = inference_request.evaluation_flag
+            validator_flag = inference_request.validator_flag
 
             context_flag = inference_request.context_flag
             temperature = inference_request.temperature
             enable_streaming_flag = inference_request.enable_streaming_flag
+
+            inference_config = await self.admin_config_service.get_limits()
 
 
             match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
@@ -423,11 +479,14 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                     plan_feedback=plan_feedback,
                     response_formatting_flag=response_formatting_flag,
                     tool_interrupt_flag=tool_interrupt_flag,
+                    tools_to_interrupt=tools_to_interrupt,
                     tool_feedback=tool_feedback,
                     context_flag=context_flag,
                     evaluation_flag=evaluation_flag,
+                    validator_flag=validator_flag,
                     temperature=temperature,
-                    enable_streaming_flag=enable_streaming_flag
+                    enable_streaming_flag=enable_streaming_flag,
+                    inference_config=inference_config
                 ):
                     # Forward streaming status updates (but not the final history list)
                     if isinstance(stream_chunk, dict) and "executor_messages" not in stream_chunk:
@@ -453,10 +512,13 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
                     plan_feedback=plan_feedback,
                     response_formatting_flag=response_formatting_flag,
                     tool_interrupt_flag=tool_interrupt_flag,
+                    tools_to_interrupt=tools_to_interrupt,
                     tool_feedback=tool_feedback,
                     context_flag=context_flag,
                     evaluation_flag=evaluation_flag,
-                    temperature=temperature
+                    validator_flag=validator_flag,
+                    temperature=temperature,
+                    inference_config=inference_config
                 )
 
             if not response:

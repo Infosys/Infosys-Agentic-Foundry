@@ -1,0 +1,88 @@
+name: Backend Deploy (Production Only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test-env
+
+# Global env for GitHub Actions (Node.js)
+env:
+  NODE_EXTRA_CA_CERTS: /home/projadmin/cerifi.crt
+
+jobs:
+  backend-deploy:
+    runs-on: [self-hosted, linux, x64, linux-test-vm]
+
+    steps:
+      # 1. Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # 3. Install System Dependencies (Corrected with Proxy Settings)
+      - name: Install System Dependencies
+        run: |
+          echo "Setting up Proxy and SSL variables..."
+          # 1. Set the Proxy (For Internet access)
+          export http_proxy=http://blrproxy.ad.infosys.com:443
+          export https_proxy=http://blrproxy.ad.infosys.com:443
+          # 2. CRITICAL: Tell Linux NOT to use proxy for internal Infosys servers
+          # We add 'bl2um002' (your repo) and '.infosys.com' to this list.
+          export no_proxy=.ad.infosys.com,.infosys.com,bl2um002.ad.infosys.com,localhost,127.0.0.1
+          # 3. Set the Certificate (Use Absolute Path!)
+          # Make sure it is the .crt version we converted earlier
+          export SSL_CERT_FILE=/home/projadmin/cerifi.crt
+          # echo "Installing Python 3.11..."
+          # 4. Run DNF with 'sudo -E'
+          # The '-E' flag is VERY IMPORTANT. It tells sudo to "Preserve Environment".
+          # Without -E, sudo forgets the proxy variables you just set.
+          #  sudo -E dnf install -y python3.13 python3.13-devel pip || sudo -E dnf install -y --setopt=sslverify=false python3.13 python3.13-devel pip
+      # 4. Copy files (Local Copy)
+      - name: Copy files locally
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.APP_ENV_FILE_TEST_VM }}  # .env content from GitHub Secrets
+        run: |
+          echo "Deploying files locally..."
+          mkdir -p /home/projadmin/CICD/Infyagentframework/
+          cp -rfv ./* /home/projadmin/CICD/Infyagentframework/
+          # Write the secret content into the destination .env file
+          # printf preserves exact content (including newlines) without adding extra ones
+          printf "%s" "$ENV_FILE_CONTENT" > /home/projadmin/CICD/Infyagentframework/.env
+      # 5. Install Python Packages (in venv)
+      - name: Install Python Requirements
+        run: |
+          VENV_PATH="/home/projadmin/CICD/Infyagentframework/venv"
+          # Delete old venv if it uses the wrong python version
+          # if [ -d "$VENV_PATH" ]; then
+          #   # Check if existing venv is Python 3.13
+          #   # if [ ! -f "$VENV_PATH/bin/python3.13" ]; then
+          #     # echo "Old venv found (not 3.13). Deleting..."
+          #     # rm -rf "$VENV_PATH"
+          #   # fi
+          # fi
+          # Create venv with Python 3.13
+          if [ ! -d "$VENV_PATH" ]; then
+            echo "Creating virtual environment with Python 3.13..."
+            python -m venv "$VENV_PATH"
+          fi
+          # Activate & Install
+          source "$VENV_PATH/bin/activate"
+          echo "Upgrading pip..."
+          # venv/bin/activate
+          pip install uv
+          uv pip install -r requirements.txt
+          # Point to your custom cert for PIP as well
+          export PIP_CERT="/home/projadmin/cerifi.crt"
+          REQ_FILE="/home/projadmin/CICD/Infyagentframework/requirements.txt"
+          if [ -f "$REQ_FILE" ]; then
+            echo "Installing requirements..."
+            pip install -r "$REQ_FILE"
+          else
+            echo "WARNING: requirements.txt not found"
+          fi
+      # 6. Restart Service
+      - name: Restart CTL service
+        run: |
+         sudo systemctl restart CICD-fastapi.service

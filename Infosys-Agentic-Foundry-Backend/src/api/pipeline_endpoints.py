@@ -31,6 +31,7 @@ router = APIRouter(prefix="/pipelines", tags=["Pipelines"])
 
 # --- Pipeline CRUD Endpoints ---
 
+# EXPORT:EXCLUDE:START
 @router.post("/create")
 async def create_pipeline_endpoint(
     request: Request,
@@ -53,8 +54,12 @@ async def create_pipeline_endpoint(
     dict
         A dictionary containing the status of the creation operation.
     """
-    # Check permissions
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "pipelines"):
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to create pipelines.")
+    
+    # Check permissions using agents permission
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "agents", user_department):
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to create pipelines."
@@ -70,7 +75,8 @@ async def create_pipeline_endpoint(
             pipeline_name=pipeline_request.pipeline_name,
             pipeline_description=pipeline_request.pipeline_description,
             pipeline_definition=pipeline_request.pipeline_definition.model_dump(),
-            created_by=pipeline_request.created_by
+            created_by=pipeline_request.created_by,
+            department_name=user_data.department_name
         )
 
         if not result.get("is_created"):
@@ -84,6 +90,7 @@ async def create_pipeline_endpoint(
     except Exception as e:
         log.error(f"Error creating pipeline: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating pipeline: {str(e)}")
+# EXPORT:EXCLUDE:END
 
 
 @router.get("/get")
@@ -111,8 +118,9 @@ async def get_all_pipelines_endpoint(
     dict
         A dictionary containing the list of pipelines.
     """
-    # Check permissions
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "pipelines"):
+    # Check permissions using agents permission
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to view pipelines."
@@ -121,10 +129,18 @@ async def get_all_pipelines_endpoint(
     pipeline_service: PipelineService = ServiceProvider.get_pipeline_service()
 
     try:
-        pipelines = await pipeline_service.get_all_pipelines(
-            created_by=created_by,
-            is_active=is_active
-        )
+        # If user is SUPER_ADMIN, do not restrict by department; otherwise include department_name
+        if user_data.role == UserRole.SUPER_ADMIN:
+            pipelines = await pipeline_service.get_all_pipelines(
+                created_by=created_by,
+                is_active=is_active
+            )
+        else:
+            pipelines = await pipeline_service.get_all_pipelines(
+                created_by=created_by,
+                is_active=is_active,
+                department_name=user_data.department_name
+            )
         
         return {
             "status": "success",
@@ -171,8 +187,9 @@ async def search_paginated_pipelines_endpoint(
     dict
         A dictionary containing total_count and paginated pipeline details.
     """
-    # Check permissions
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "pipelines"):
+    # Check permissions using agents permission
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to view pipelines."
@@ -184,13 +201,24 @@ async def search_paginated_pipelines_endpoint(
     pipeline_service: PipelineService = ServiceProvider.get_pipeline_service()
 
     try:
-        result = await pipeline_service.get_pipelines_by_search_or_page(
-            search_value=search_value or '',
-            limit=page_size,
-            page=page_number,
-            created_by=created_by,
-            is_active=is_active
-        )
+        # If user is SUPER_ADMIN, do not restrict by department; otherwise include department_name
+        if user_data.role == UserRole.SUPER_ADMIN:
+            result = await pipeline_service.get_pipelines_by_search_or_page(
+                search_value=search_value or '',
+                limit=page_size,
+                page=page_number,
+                created_by=created_by,
+                is_active=is_active
+            )
+        else:
+            result = await pipeline_service.get_pipelines_by_search_or_page(
+                search_value=search_value or '',
+                limit=page_size,
+                page=page_number,
+                created_by=created_by,
+                is_active=is_active,
+                department_name=user_data.department_name
+            )
         
         if not result["details"]:
             raise HTTPException(status_code=404, detail="No pipelines found matching criteria.")
@@ -202,6 +230,56 @@ async def search_paginated_pipelines_endpoint(
     except Exception as e:
         log.error(f"Error searching pipelines: {e}")
         raise HTTPException(status_code=500, detail=f"Error searching pipelines: {str(e)}")
+
+
+@router.get("/get-by-name")
+async def get_pipeline_by_name_endpoint(
+    request: Request,
+    pipeline_name: str = Query(..., description="The name of the pipeline to look up"),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieve a pipeline by its name.
+
+    Parameters:
+    ----------
+    request : Request
+        The FastAPI Request object.
+    pipeline_name : str
+        The name of the pipeline to look up.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the pipeline_id and pipeline details.
+    """
+    user_department = user_data.department_name if hasattr(user_data, 'department_name') else None
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to view pipelines."
+        )
+
+    pipeline_service: PipelineService = ServiceProvider.get_pipeline_service()
+
+    try:
+        pipeline = await pipeline_service.get_pipeline_by_name(pipeline_name)
+
+        if not pipeline:
+            raise HTTPException(status_code=404, detail=f"Pipeline with name '{pipeline_name}' not found.")
+
+        return {
+            "status": "success",
+            "pipeline_id": pipeline.get("pipeline_id"),
+            "pipeline": pipeline
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error retrieving pipeline by name '{pipeline_name}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving pipeline: {str(e)}")
 
 
 @router.get("/get/{pipeline_id}")
@@ -226,8 +304,9 @@ async def get_pipeline_endpoint(
     dict
         A dictionary containing the pipeline details.
     """
-    # Check permissions
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "pipelines"):
+    # Check permissions using agents permission
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to view pipelines."
@@ -236,7 +315,11 @@ async def get_pipeline_endpoint(
     pipeline_service: PipelineService = ServiceProvider.get_pipeline_service()
 
     try:
-        pipeline = await pipeline_service.get_pipeline(pipeline_id)
+        # If user is SUPER_ADMIN, do not restrict by department; otherwise include department_name
+        if user_data.role == UserRole.SUPER_ADMIN:
+            pipeline = await pipeline_service.get_pipeline(pipeline_id)
+        else:
+            pipeline = await pipeline_service.get_pipeline(pipeline_id, department_name=user_data.department_name)
         
         if not pipeline:
             raise HTTPException(status_code=404, detail=f"Pipeline '{pipeline_id}' not found.")
@@ -249,7 +332,7 @@ async def get_pipeline_endpoint(
         log.error(f"Error retrieving pipeline {pipeline_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving pipeline: {str(e)}")
 
-
+# EXPORT:EXCLUDE:START
 @router.put("/update/{pipeline_id}")
 async def update_pipeline_endpoint(
     request: Request,
@@ -280,8 +363,12 @@ async def update_pipeline_endpoint(
     dict
         A dictionary containing the status of the update operation.
     """
-    # Check basic operation permission first
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "update", "pipelines"):
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to update pipelines.")
+    
+    # Check basic operation permission first using agents permission
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "update", "agents", user_department):
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to update pipelines. Only admins and developers can perform this action"
@@ -289,13 +376,17 @@ async def update_pipeline_endpoint(
 
     pipeline_service: PipelineService = ServiceProvider.get_pipeline_service()
 
-    # Get the existing pipeline to check creator
-    existing_pipeline = await pipeline_service.get_pipeline(pipeline_id)
+    # Get the existing pipeline to check creator (with department filter for non-SUPER_ADMIN)
+    if user_data.role == UserRole.SUPER_ADMIN:
+        existing_pipeline = await pipeline_service.get_pipeline(pipeline_id)
+    else:
+        existing_pipeline = await pipeline_service.get_pipeline(pipeline_id, department_name=user_data.department_name)
+    
     if not existing_pipeline:
         raise HTTPException(status_code=404, detail=f"Pipeline '{pipeline_id}' not found.")
     
     # Check if user is admin or creator
-    is_admin = await authorization_service.has_role(user_email=user_data.email, required_role=UserRole.ADMIN)
+    is_admin = await authorization_service.has_role(user_email=user_data.email, required_role=UserRole.ADMIN, department_name=user_data.department_name)
     is_creator = (existing_pipeline.get("created_by") == user_data.username or 
                   existing_pipeline.get("created_by") == user_data.email)
     
@@ -359,8 +450,12 @@ async def delete_pipeline_endpoint(
     dict
         A dictionary containing the status of the deletion operation.
     """
-    # Check basic operation permission first
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "delete", "pipelines"):
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to delete pipelines.")
+    
+    # Check basic operation permission first using agents permission
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "delete", "agents", user_department):
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to delete pipelines. Only admins and developers can perform this action"
@@ -368,13 +463,17 @@ async def delete_pipeline_endpoint(
 
     pipeline_service: PipelineService = ServiceProvider.get_pipeline_service()
 
-    # Get the existing pipeline to check creator
-    existing_pipeline = await pipeline_service.get_pipeline(pipeline_id)
+    # Get the existing pipeline to check creator (with department filter for non-SUPER_ADMIN)
+    if user_data.role == UserRole.SUPER_ADMIN:
+        existing_pipeline = await pipeline_service.get_pipeline(pipeline_id)
+    else:
+        existing_pipeline = await pipeline_service.get_pipeline(pipeline_id, department_name=user_data.department_name)
+    
     if not existing_pipeline:
         raise HTTPException(status_code=404, detail=f"Pipeline '{pipeline_id}' not found.")
     
     # Check if user is admin or creator
-    is_admin = await authorization_service.has_role(user_email=user_data.email, required_role=UserRole.ADMIN)
+    is_admin = await authorization_service.has_role(user_email=user_data.email, required_role=UserRole.ADMIN, department_name=user_data.department_name)
     is_creator = (existing_pipeline.get("created_by") == user_data.username or 
                   existing_pipeline.get("created_by") == user_data.email)
     
@@ -399,6 +498,7 @@ async def delete_pipeline_endpoint(
     except Exception as e:
         log.error(f"Error deleting pipeline {pipeline_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error deleting pipeline: {str(e)}")
+# EXPORT:EXCLUDE:END
 
 # --- Agent List Endpoint for Pipeline Builder ---
 
@@ -421,8 +521,9 @@ async def get_available_agents_endpoint(
     dict
         List of available agents with their IDs, names, and types.
     """
-    # Check permissions
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents"):
+    # Check permissions using agents permission
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
         raise HTTPException(
             status_code=403,
             detail="You don't have permission to view agents."
@@ -435,7 +536,11 @@ async def get_available_agents_endpoint(
         from src.api.app_container import app_container
         agent_service = app_container.agent_service
         
-        agents = await agent_service.agent_repo.get_all_agent_records()
+        # If user is SUPER_ADMIN, do not restrict by department; otherwise include department_name
+        if user_data.role == UserRole.SUPER_ADMIN:
+            agents = await agent_service.agent_repo.get_all_agent_records()
+        else:
+            agents = await agent_service.agent_repo.get_all_agent_records(department_name=user_data.department_name)
         
         # Return simplified list for pipeline builder
         available_agents = [

@@ -1,4 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import os
 import json
 import asyncio
 from typing import Dict, List
@@ -10,6 +11,8 @@ from langchain_core.messages import AIMessage, ChatMessage
 from src.utils.helper_functions import get_timestamp, build_effective_query_with_user_updates
 from src.inference.inference_utils import InferenceUtils
 from src.inference.base_agent_inference import BaseWorkflowState, BaseMetaTypeAgentInference
+from src.schemas import AdminConfigLimits
+from src.config.constants import Limits
 from telemetry_wrapper import logger as log
 
 from src.prompts.prompts import online_agent_evaluation_prompt, feedback_lesson_generation_prompt
@@ -45,6 +48,7 @@ class PlannerMetaWorkflowState(BaseWorkflowState):
     validation_score: float = None
     validation_feedback: str = None
     workflow_description: str = None
+    episodic_memory_messages: list = []  # Pre-fetched episodic memory for tracing
 
 
 class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
@@ -55,17 +59,44 @@ class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
     def __init__(self, inference_utils: InferenceUtils):
         super().__init__(inference_utils)
 
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer=None, tool_interrupt_flag: bool = False):
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer=None, tool_interrupt_flag: bool = False, message_queue: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False):
         """
         Builds the agent and chains for the Planner Meta workflow.
         Returns writer_holder to enable streaming in handoff tools.
+        
+        Args:
+            message_queue: Not used by planner meta agent, included for interface compatibility.
+            session_id: Session ID for shell workspace (required if file_context_management_flag=True).
+            agent_id: Agent ID for shell workspace (required if file_context_management_flag=True).
+            context_flag: If False, no memory tools will be added.
+            file_context_management_flag: If True, use file-based context management (AgentShell) instead of old conversation fetching.
         """
         worker_agent_ids = agent_config["TOOLS_INFO"]
         system_prompts = agent_config["SYSTEM_PROMPT"]
+        agent_id = agent_id if agent_id else agent_config.get("AGENT_ID", None)
+        agent_name = agent_config.get("AGENT_NAME", "")
 
-        # Load system prompts from your config
+        # Determine which supervisor prompt to use based on file_context_management_flag
+        if file_context_management_flag:
+            # Try to load file-context prompt from file (using agent_name, same as onboard)
+            safe_agent_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in agent_name)
+            file_context_prompt_path = os.path.join(
+                "agent_workspaces", "file_context_prompts", f"{safe_agent_name}_file_context_prompt.md"
+            )
+            if os.path.exists(file_context_prompt_path):
+                with open(file_context_prompt_path, "r", encoding="utf-8") as f:
+                    meta_agent_supervisor_prompt = f.read()
+                log.info(f"📄 Loaded file-context prompt from: {file_context_prompt_path}")
+            else:
+                # Fallback to DB prompt if file doesn't exist
+                meta_agent_supervisor_prompt = system_prompts.get('SYSTEM_PROMPT_META_AGENT_SUPERVISOR', "").replace("{", "{{").replace("}", "}}")
+                log.warning(f"⚠️ File-context prompt not found at {file_context_prompt_path}, using DB prompt")
+        else:
+            # Use regular DB prompt
+            meta_agent_supervisor_prompt = system_prompts.get('SYSTEM_PROMPT_META_AGENT_SUPERVISOR', "").replace("{", "{{").replace("}", "}}")
+
+        # Load other system prompts from your config
         meta_agent_planner_prompt = system_prompts.get('SYSTEM_PROMPT_META_AGENT_PLANNER', "").replace("{", "{{").replace("}", "}}")
-        meta_agent_supervisor_prompt = system_prompts.get('SYSTEM_PROMPT_META_AGENT_SUPERVISOR', "").replace("{", "{{").replace("}", "}}")
         meta_agent_responder_prompt = system_prompts.get('SYSTEM_PROMPT_META_AGENT_RESPONDER', "").replace("{", "{{").replace("}", "}}")
 
         # --- Define Chains ---
@@ -77,7 +108,10 @@ class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
             system_prompt=meta_agent_supervisor_prompt,
             worker_agent_ids=worker_agent_ids,
             checkpointer=checkpointer,
-            interrupt_tool=tool_interrupt_flag
+            interrupt_tool=tool_interrupt_flag,
+            file_context_management_flag=file_context_management_flag,
+            agent_id=agent_id,
+            session_id=session_id,
         )
 
         chains = {
@@ -99,6 +133,8 @@ class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
         plan_verifier_flag = flags.get("plan_verifier_flag", False)
         validator_flag = flags.get("validator_flag", False)
         response_formatting_flag = flags.get("response_formatting_flag", False)
+
+        inference_config: AdminConfigLimits = flags.get("inference_config", AdminConfigLimits())
 
         llm = chains.get("llm", None)
         meta_agent = chains.get("meta_agent", None)
@@ -164,7 +200,7 @@ class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
                     # Get summary via ChatService
                     if state["context_flag"] == False:
                         return{
-                            'past_conversation_summary': "No past conversation summary available.",
+                            'past_conversation_summary': "",
                             'query': current_state_query.content,
                             'executor_messages': current_state_query,
                             'ongoing_conversation': current_state_query,
@@ -191,8 +227,40 @@ class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
                             # HITL
                             'is_plan_approved': None,
                             'plan_feedback': input_plan_feedback,
-                            'current_query_status': None
+                            'current_query_status': None,
+                            'episodic_memory_messages': []
                         }
+                    
+                    # Check file_context_management_flag - if True, use file-based memory tool instead of conversation fetching
+                    if state.get("file_context_management_flag", False):
+                        log.info(f"File context management flag is set to True for session {state['session_id']}. Using file-based memory tool.")
+                        return{
+                            'past_conversation_summary': "",
+                            'query': current_state_query.content,
+                            'executor_messages': current_state_query,
+                            'ongoing_conversation': [],  # Don't pass ongoing conversation when using file-based memory
+                            'response': None,
+                            'evaluation_score': None,
+                            'evaluation_feedback': None,
+                            'validation_score': None,
+                            'validation_feedback': None,
+                            'workflow_description': workflow_description,
+                            'start_timestamp': strt_tmstp,
+                            'epoch': 0,
+                            'evaluation_attempts': 0,
+                            'validation_attempts': 0,  
+                            'plan': [],
+                            'past_steps_input': [],
+                            'past_steps_output': [],
+                            'step_idx': 0,
+                            'errors': errors,
+                            'user_update_events': [],
+                            'is_plan_approved': None,
+                            'plan_feedback': input_plan_feedback,
+                            'current_query_status': None,
+                            'episodic_memory_messages': []
+                        }
+                    
                     writer({"Node Name": "Generating Context", "Status": "Started"})
                     conv_summary = await self.chat_service.get_chat_conversation_summary(
                         agentic_application_id=state["agentic_application_id"],
@@ -237,21 +305,40 @@ class PlannerMetaAgentInference(BaseMetaTypeAgentInference):
                 # HITL
                 'is_plan_approved': None,
                 'plan_feedback': input_plan_feedback,
-                'current_query_status': None
+                'current_query_status': None,
+                'episodic_memory_messages': []
             }
-
-
+        
+        async def prepare_episodic_memory_node(state: PlannerMetaWorkflowState, writer: StreamWriter):
+            """Prepares episodic memory context - traced as a separate node by Phoenix."""
+            writer({"Node Name": "Preparing Episodic Memory", "Status": "Started"})
+            
+            try:
+                query = state["query"]
+                agent_id = state['agentic_application_id']
+                
+                # Fetch episodic memory context
+                log.info(f"[{state['session_id']}] Fetching episodic memory context...")
+                messages = await InferenceUtils.prepare_episodic_memory_context(
+                    state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, 
+                    query
+                )
+                log.info(f"[{state['session_id']}] Episodic memory context prepared: {len(messages)} messages")
+                
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Completed"})
+                return {"episodic_memory_messages": messages}
+            except Exception as e:
+                log.error(f"Error preparing episodic memory: {e}", exc_info=True)
+                writer({"Node Name": "Preparing Episodic Memory", "Status": "Failed"})
+                return {"episodic_memory_messages": [], "errors": state.get("errors", []) + [f"Episodic memory error: {e}"]}
 
         async def meta_planner_agent(state: PlannerMetaWorkflowState, writer: StreamWriter):
             """Generates a plan for the supervisor to execute."""
             writer({"Node Name": "Generating Plan", "Status": "Started"})
-            agent_id = state['agentic_application_id']
-
-            # Use the standard episodic memory function
-            query = state["query"]
-            messages = await InferenceUtils.prepare_episodic_memory_context(
-                state["mentioned_agent_id"] if state["mentioned_agent_id"] else agent_id, query
-            )
+            
+            # Use pre-fetched episodic memory from state (already prepared in separate traced node)
+            messages = state.get("episodic_memory_messages", [])
+            log.info(f"[{state['session_id']}] Using {len(messages)} pre-fetched episodic memory messages")
 
             # Include feedback block if user provided feedback on the plan
             feedback_block = ""
@@ -496,6 +583,7 @@ Please synthesize these results into a single, comprehensive, and well-formatted
             errors = []
             end_timestamp = get_timestamp()
             try:
+                # Save to database
                 asyncio.create_task(self.chat_service.save_chat_message(
                     agentic_application_id=state["agentic_application_id"],
                     session_id=state["session_id"],
@@ -504,10 +592,23 @@ Please synthesize these results into a single, comprehensive, and well-formatted
                     human_message=state["query"],
                     ai_message=state["response"]
                 ))
+                
+                # Save to file (using ChatService method)
+                await self.chat_service.save_chat_to_file(
+                    agentic_application_id=state["agentic_application_id"],
+                    session_id=state["session_id"],
+                    start_timestamp=state["start_timestamp"],
+                    end_timestamp=end_timestamp,
+                    human_message=state["query"],
+                    ai_message=state["response"],
+                    llm=llm
+                )
+                
                 asyncio.create_task(self.chat_service.update_preferences_and_analyze_conversation(
                     user_input=state["query"], llm=llm, agentic_application_id=state["agentic_application_id"], session_id=state["session_id"]
                 ))
-                if (len(state["ongoing_conversation"]) + 1) % 8 == 0:
+                config_limits = await self.admin_config_service.get_limits()
+                if (len(state["ongoing_conversation"]) + 1) % (2*config_limits.chat_summary_interval) == 0:
                     log.debug("Storing chat summary")
                     asyncio.create_task(self.chat_service.get_chat_summary(
                         agentic_application_id=state["agentic_application_id"],
@@ -877,8 +978,8 @@ Please synthesize these results into a single, comprehensive, and well-formatted
             Decides whether to return the final response or continue with improvement cycle.
             SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
-            evaluation_threshold = 0.7
-            max_evaluation_epochs = 3
+            evaluation_threshold = inference_config.evaluation_score_threshold
+            max_evaluation_epochs = inference_config.max_evaluation_epochs
 
             current_epoch = state.get("evaluation_attempts", 0)
             evaluation_score = state.get("evaluation_score", 0.0)
@@ -913,7 +1014,8 @@ Please synthesize these results into a single, comprehensive, and well-formatted
                             new_final_response=status,
                             feedback=f"[EVALUATOR] Score: {evaluation_score:.2f} - {evaluation_feedback}", 
                             new_steps=status,
-                            lesson=lesson
+                            lesson=lesson,
+                            department_name=state.get("department_name")
                         )
                         log.info(f"💾 Planner Meta Evaluator failure stored for session {state['session_id']}")
                             
@@ -1123,8 +1225,8 @@ Please synthesize these results into a single, comprehensive, and well-formatted
             Decides the next step based on validation results and current attempts.
             SAVES feedback ONLY if the score fails the threshold (score < 0.7).
             """
-            validation_threshold = 0.7
-            max_validation_attempts = 3
+            validation_threshold = inference_config.validation_score_threshold
+            max_validation_attempts = inference_config.max_validation_epochs
 
             current_attempts = state.get("validation_attempts", 0)
             validation_score = state.get("validation_score", 0.0)
@@ -1159,7 +1261,8 @@ Please synthesize these results into a single, comprehensive, and well-formatted
                             new_final_response=status,
                             feedback=f"[VALIDATOR] Score: {validation_score:.2f} - {validation_feedback}", 
                             new_steps=status,
-                            lesson=lesson
+                            lesson=lesson,
+                            department_name=state.get("department_name")
                         )
                         log.info(f"💾 Planner Meta Validator failure stored for session {state['session_id']}")
                             
@@ -1207,6 +1310,7 @@ Please synthesize these results into a single, comprehensive, and well-formatted
 
         # ----- Nodes -----
         workflow.add_node("generate_past_conversation_summary", generate_past_conversation_summary)
+        workflow.add_node("prepare_episodic_memory", prepare_episodic_memory_node)
         workflow.add_node("meta_planner_agent", meta_planner_agent)
 
         # Plan verifier nodes (conditional parity)
@@ -1239,7 +1343,8 @@ Please synthesize these results into a single, comprehensive, and well-formatted
 
         # ----- Edges -----
         workflow.add_edge(START, "generate_past_conversation_summary")
-        workflow.add_edge("generate_past_conversation_summary", "meta_planner_agent")
+        workflow.add_edge("generate_past_conversation_summary", "prepare_episodic_memory")
+        workflow.add_edge("prepare_episodic_memory", "meta_planner_agent")
 
         if plan_verifier_flag:
             workflow.add_conditional_edges(
@@ -1336,5 +1441,5 @@ Please synthesize these results into a single, comprehensive, and well-formatted
         log.info("Planner Meta Agent workflow built successfully")
         return workflow
 
-  
+
   

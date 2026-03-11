@@ -27,7 +27,7 @@ class AzureAIModelService(BaseAIModelService):
         api_base: str, # Azure endpoint
         api_version: str, # Azure API version, e.g., "2023-12-01-preview"
         model: Optional[str] = None,
-        temperature: float = 0.0,
+        temperature: Optional[float] = None,
         chat_history_manager: Optional[ChatStateHistoryManagerRepository] = None
     ):
         super().__init__(
@@ -82,6 +82,11 @@ class AzureAIModelService(BaseAIModelService):
                 - "tool_choice": (str) Strategy for tool selection by the LLM. Default is "auto".
                 - "tool_interrupt": (bool) If True, the agent will pause and return tool calls
                                     for user approval/modification before execution.
+                - "tools_to_interrupt": (Optional[List[str]]) A list of tool names that should trigger
+                                        an interrupt when called. If tool_interrupt is True and this is None,
+                                        all tool calls will be interrupted. If tool_interrupt is True and this
+                                        is a list, only tool calls with names in this list will be interrupted.
+                                        If tool_interrupt is False, this parameter is ignored.
                 - "parallel_tool_calls": (bool) If True, allows the LLM to request multiple tool calls
                                              in a single response. Default is False.
                 - "updated_tool_calls": (Union[List[Dict], Dict])
@@ -91,16 +96,6 @@ class AzureAIModelService(BaseAIModelService):
                     This is used when resuming an interrupted chat to modify tool arguments for multiple tool calls.
                     - If a dict, it should be the argument dictionary for the first tool call only.
                     This is typically used when parallel tool calls are disabled and only the first tool call's arguments need to be updated.
-
-        Returns:
-            Dict[str, Any]:
-                A dictionary containing the final response from the LLM, or an error message,
-                along with the agent steps for the current turn.
-                Example: {
-                    "user_query": "...",
-                    "final_response": "...",
-                    "agent_steps": [...]
-                }
         """
         if not self._model:
             raise ValueError("Model not set.")
@@ -117,8 +112,19 @@ class AzureAIModelService(BaseAIModelService):
         store_response_custom_metadata = configurable.get("store_response_custom_metadata", False)
         tool_choice = config.get("tool_choice", "auto")
         tool_interrupt = config.get("tool_interrupt", False)
+        tools_to_interrupt: Optional[List[str]] = config.get("tools_to_interrupt", None)
         parallel_tool_calls = config.get("parallel_tool_calls", not tool_interrupt)
         
+        # Log the tool interrupt configuration
+        if tool_interrupt:
+            if tools_to_interrupt:
+                tools_to_interrupt = set(tools_to_interrupt)
+                log.info(f"[Agent Stream] Selective tool interrupt enabled for tools: {tools_to_interrupt}")
+            else:
+                log.info("[Agent Stream] Tool interrupt enabled for ALL tools.")
+        else:
+            tools_to_interrupt = None  # Ensure it's None if interrupt is disabled
+
         updated_tool_calls: List[Dict[str, Any]] = config.get("updated_tool_calls", None)
         if not updated_tool_calls:
             updated_tool_calls = []
@@ -184,21 +190,34 @@ class AzureAIModelService(BaseAIModelService):
                                                                                     candidate=updated_tool_calls_dict[tool_call["id"]]
                                                                                 )
                                 tool_call["function"]["arguments"] = json.dumps(updated_tool_calls_dict[tool_call["id"]])
+                                if reference_args != updated_tool_calls_dict[tool_call["id"]]:
+                                    tool_call["function"]["original_arguments"] = reference_args
                                 log.info(f"  [Agent Stream] Applied user update for tool '{tool_call['function']['name']}' (ID: {tool_call['id']}).")
 
                             tool_execution_tasks.append(self._execute_tool_call(tool_call))
 
                         tool_outputs = await asyncio.gather(*tool_execution_tasks)
                         for tool_output, tool_call in zip(tool_outputs, pending_tool_calls):
+                            tool_call_name = tool_call["function"]["name"]
+                            original_args = tool_call["function"].get("original_arguments", None)
+                            if original_args:
+                                updated_args = updated_tool_calls_dict.get(tool_call["id"])
+                                note_msg = (
+                                    f"The tool '{tool_call_name}' was originally called with arguments {original_args}. "
+                                    f"However, as part of the human-in-the-loop process, the user explicitly updated the arguments to {updated_args}. "
+                                    f"Consequently, the tool was executed using these updated arguments ({updated_args}). "
+                                    "Please proceed with the understanding that the operation was performed using the user-specified values."
+                                )
+                                tool_output = {"tool_response": tool_output, "Note": note_msg}
                             tool_message = {
                                 "tool_call_id": tool_call["id"],
                                 "role": "tool",
-                                "name": tool_call["function"]["name"],
+                                "name": tool_call_name,
                                 "content": json.dumps(tool_output),
                             }
                             current_turn_messages.append(tool_message)
-                            yield {"raw": {"Tool Name": tool_call["function"]["name"], "Tool Output": tool_output}, "content": f"Tool {tool_call['function']['name']} returned: {tool_output}"}
-                            yield {"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_call["function"]["name"]}
+                            yield {"raw": {"Tool Name": tool_call_name, "Tool Output": tool_output}, "content": f"Tool {tool_call_name} returned: {tool_output}"}
+                            yield {"Node Name": "Tool Call", "Status": "Completed", "Tool Name": tool_call_name}
 
                         
                         log.info(f"[Agent] Resuming interrupted chat {most_recent_entry_id} for thread '{thread_id}' with {len(current_turn_messages)} messages.")
@@ -293,9 +312,26 @@ class AzureAIModelService(BaseAIModelService):
                     yield ({"raw": {"thinking_completed": "Thinking completed. Proceeding to tool calls."}, "content": "Thinking completed. Proceeding to tool calls."})
                     log.info(f"[Agent Stream] Collected {len(response_message.tool_calls)} tool calls.")
 
+                    # Determine if we should interrupt based on selective tool interrupt logic
+                    should_interrupt = False
                     if tool_interrupt:
+                        if tools_to_interrupt is None:
+                            # If tools_to_interrupt is None, interrupt all tool calls
+                            should_interrupt = True
+                            log.debug("[Agent Stream] tools_to_interrupt is None, will interrupt all tool calls.")
+                        else:
+                            # Check if any of the requested tool calls are in the tools_to_interrupt set
+                            requested_tool_names = [tc.function.name for tc in response_message.tool_calls]
+                            matching_tools = [name for name in requested_tool_names if name in tools_to_interrupt]
+                            if matching_tools:
+                                should_interrupt = True
+                                log.info(f"[Agent Stream] Selective interrupt triggered. Matching tools: {matching_tools}")
+                            else:
+                                log.info(f"[Agent Stream] No tools in interrupt list. Requested tools: {requested_tool_names}, Interrupt list: {tools_to_interrupt}. Proceeding without interrupt.")
+
+                    if should_interrupt:
                         # Handle interrupt logic - structured interrupt request
-                        log.info("[Agent] Tool interrupt flag is ON. Interrupting for user approval.")
+                        log.info("[Agent Stream] Tool interrupt flag is ON. Interrupting for user approval.")
                         
                         # Emit Tool Call Started for each pending tool call before interrupt
                         for tool_call in response_message.tool_calls:
@@ -483,6 +519,11 @@ class AzureAIModelService(BaseAIModelService):
                 - "tool_choice": (str) Strategy for tool selection by the LLM. Default is "auto".
                 - "tool_interrupt": (bool) If True, the agent will pause and return tool calls
                                     for user approval/modification before execution.
+                - "tools_to_interrupt": (Optional[List[str]]) A list of tool names that should trigger
+                                        an interrupt when called. If tool_interrupt is True and this is None,
+                                        all tool calls will be interrupted. If tool_interrupt is True and this
+                                        is a list, only tool calls with names in this list will be interrupted.
+                                        If tool_interrupt is False, this parameter is ignored.
                 - "parallel_tool_calls": (bool) If True, allows the LLM to request multiple tool calls
                                              in a single response. Default is False.
                 - "updated_tool_calls": (Union[List[Dict], Dict])
@@ -518,7 +559,19 @@ class AzureAIModelService(BaseAIModelService):
 
         tool_choice = config.get("tool_choice", "auto")
         tool_interrupt = config.get("tool_interrupt", False)
+        tools_to_interrupt: Optional[List[str]] = config.get("tools_to_interrupt", None)
         parallel_tool_calls = config.get("parallel_tool_calls", not tool_interrupt)
+        
+        # Log the tool interrupt configuration
+        if tool_interrupt:
+            if tools_to_interrupt:
+                tools_to_interrupt = set(tools_to_interrupt)
+                log.info(f"[Agent] Selective tool interrupt enabled for tools: {tools_to_interrupt}")
+            else:
+                log.info("[Agent] Tool interrupt enabled for ALL tools.")
+        else:
+            tools_to_interrupt = None  # Ensure it's None if interrupt is disabled
+        
         updated_tool_calls: List[Dict[str, Any]] = config.get("updated_tool_calls", None)
         if not updated_tool_calls:
             updated_tool_calls = []
@@ -579,16 +632,29 @@ class AzureAIModelService(BaseAIModelService):
                                                                                     candidate=updated_tool_calls_dict[tool_call["id"]]
                                                                                 )
                                 tool_call["function"]["arguments"] = json.dumps(updated_tool_calls_dict[tool_call["id"]])
+                                if reference_args != updated_tool_calls_dict[tool_call["id"]]:
+                                    tool_call["function"]["original_arguments"] = reference_args
                                 log.info(f"  [Agent] Applied user update for tool '{tool_call['function']['name']}' (ID: {tool_call['id']}).")
 
                             tool_execution_tasks.append(self._execute_tool_call(tool_call))
 
                         tool_outputs = await asyncio.gather(*tool_execution_tasks)
                         for tool_output, tool_call in zip(tool_outputs, pending_tool_calls):
+                            tool_call_name = tool_call["function"]["name"]
+                            original_args = tool_call["function"].get("original_arguments", None)
+                            if original_args:
+                                updated_args = updated_tool_calls_dict.get(tool_call["id"])
+                                note_msg = (
+                                    f"The tool '{tool_call_name}' was originally called with arguments {original_args}. "
+                                    f"However, as part of the human-in-the-loop process, the user explicitly updated the arguments to {updated_args}. "
+                                    f"Consequently, the tool was executed using these updated arguments ({updated_args}). "
+                                    "Please proceed with the understanding that the operation was performed using the user-specified values."
+                                )
+                                tool_output = {"tool_response": tool_output, "Note": note_msg}
                             tool_message = {
                                 "tool_call_id": tool_call["id"],
                                 "role": "tool",
-                                "name": tool_call["function"]["name"],
+                                "name": tool_call_name,
                                 "content": json.dumps(tool_output),
                             }
                             current_turn_messages.append(tool_message)
@@ -655,8 +721,24 @@ class AzureAIModelService(BaseAIModelService):
                     log.info(f"[Agent] LLM requested {len(response_message.tool_calls)} tool call(s).")
 
                     # --- Tool Interrupt Logic ---
-                    # Interrupt only if tool_interrupt flag is True
+                    # Determine if we should interrupt based on selective tool interrupt logic
+                    should_interrupt = False
                     if tool_interrupt:
+                        if tools_to_interrupt is None:
+                            # If tools_to_interrupt is None, interrupt all tool calls
+                            should_interrupt = True
+                            log.debug("[Agent] tools_to_interrupt is None, will interrupt all tool calls.")
+                        else:
+                            # Check if any of the requested tool calls are in the tools_to_interrupt list
+                            requested_tool_names = [tc.function.name for tc in response_message.tool_calls]
+                            matching_tools = [name for name in requested_tool_names if name in tools_to_interrupt]
+                            if matching_tools:
+                                should_interrupt = True
+                                log.info(f"[Agent] Selective interrupt triggered. Matching tools: {matching_tools}")
+                            else:
+                                log.info(f"[Agent] No tools in interrupt list. Requested tools: {requested_tool_names}, Interrupt list: {tools_to_interrupt}. Proceeding without interrupt.")
+
+                    if should_interrupt:
                         log.info("[Agent] Tool interrupt flag is ON. Interrupting for user approval.")
                         if store_chat:
                             if current_entry_id:

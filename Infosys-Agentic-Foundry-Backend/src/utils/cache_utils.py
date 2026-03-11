@@ -38,14 +38,15 @@ class CacheableRepository:
             await invalidate_entity_cache(namespace, method, *args, **kwargs)
             
 
-    async def invalidate_all_method_cache(self, method_name: str):
+    async def invalidate_all_method_cache(self, method_name: str, namespace: str = None):
         client = await _resolve_cache_client()
         if client is None:
             return
         method = getattr(self, method_name, None)
+        target_namespace = namespace if namespace else await self._namespace()
         if method:
-            await invalidate_all_variants(await self._namespace(), method)
-            log.info(f"Invalidated all cache variants for method: {method_name}")
+            await invalidate_all_variants(target_namespace, method)
+            log.info(f"Invalidated all cache variants for method: {method_name} in namespace: {target_namespace}")
 
 
 async def make_cache_key(namespace: str, func: Callable, *args, **kwargs) -> str:

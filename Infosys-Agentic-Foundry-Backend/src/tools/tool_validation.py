@@ -1,10 +1,8 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import json, re, ast
 from langgraph.graph import StateGraph
 from pydantic import BaseModel, Field
 from typing import Optional, Any
-import json,re,ast
-# from src.models.model import load_model
-# llm = load_model('gpt-4o', temperature=0.0)
 from pydantic import BaseModel
 from typing import Optional,Annotated
 from telemetry_wrapper import logger as log, update_session_context
@@ -114,9 +112,6 @@ class ToolValidationState(BaseModel):
 async def get_llm(model_name: str):
     from src.api.dependencies import ServiceProvider
     model_service = ServiceProvider.get_model_service()
-    # if model_name=="gpt-35-turbo":
-    #     if "gpt-4o" in model_service.available_models:
-    #         model_name="gpt-4o"
     llm = await model_service.get_llm_model(model_name=model_name)
     return llm
 def extract_json(response):
@@ -143,7 +138,25 @@ def extract_json(response):
 
 async def test_Case1_is_code_compilable(func_code: str) -> bool:
     try:
-        exec(func_code, {})
+        # Import decorators and utilities that tool creators can use
+        from src.decorators.tool_access import resource_access, require_role, authorized_tool, current_tool_user, get_tool_user_context
+        from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department
+        
+        # Provide context for exec() so decorators are available
+        exec_globals = {
+            "resource_access": resource_access,
+            "require_role": require_role,
+            "authorized_tool": authorized_tool,
+            "current_tool_user": current_tool_user,
+            "get_tool_user_context": get_tool_user_context,
+            "get_user_secrets": get_user_secrets,
+            "current_user_email": current_user_email,
+            "current_user_department": current_user_department,
+            "get_public_secrets": get_public_key,
+            "get_group_secrets": get_group_secrets,
+        }
+        
+        exec(func_code, exec_globals)
         return {
             "validation": True
         }
@@ -259,7 +272,7 @@ async def test_Case7_hardcoded_values(function_code: str, model:str):
 
     for line in function_code.splitlines():
         # Skip lines containing get_public_secrets or os.environ
-        if "get_public_secrets" in line or "os.environ" in line or "get_user_secrets" in line or "os.getenv" in line:
+        if "get_public_secrets" in line or "os.environ" in line or "get_user_secrets" in line or "get_group_secrets" in line or "os.getenv" in line:
             continue
 
         for key, pattern in patterns.items():

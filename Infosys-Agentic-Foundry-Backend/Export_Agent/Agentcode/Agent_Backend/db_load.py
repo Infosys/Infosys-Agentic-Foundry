@@ -1,530 +1,228 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-import uuid
-import json
-import asyncpg
-from typing import Dict, Any
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from src.utils.cache_utils import CacheableRepository
-from src.config.cache_config import EXPIRY_TIME, ENABLE_CACHING
-from telemetry_wrapper import logger as log
 import os
+import json
+from datetime import datetime, timezone
+from src.database.repositories import (
+    ToolRepository, McpToolRepository, AgentRepository,
+    TagToolMappingRepository, TagAgentMappingRepository, TagRepository
+)
+from telemetry_wrapper import logger as log
 from dotenv import load_dotenv
+
 load_dotenv()
-user_id = os.getenv("USER_EMAIL")
-# --- Base Repository ---
 
 
-class BaseRepository:
+async def load_exported_data(
+    tool_repo: ToolRepository,
+    mcp_tool_repo: McpToolRepository,
+    agent_repo: AgentRepository,
+    tag_repo: TagRepository,
+    tag_tool_mapping_repo: TagToolMappingRepository,
+    tag_agent_mapping_repo: TagAgentMappingRepository,
+):
     """
-    Base class for all repositories.
-    Provides the database connection pool to subclasses.
+    Reads the exported config files (agent_config.py, tools_config.py,
+    worker_agents_config.py) and inserts all data into the database using the
+    *original* repository objects.  This avoids duplicating table schemas.
+
+    Missing columns that are not present in the export files are filled with
+    sensible defaults:
+        department_name  -> 'General'
+        is_public        -> True
+        created_on       -> current UTC time
+        updated_on       -> current UTC time
+        status           -> 'approved'
+
+    Order of operations:
+        1. Regular tools  (from tools_config)
+        2. MCP tools      (from tools_config, prefixed mcp_file_/mcp_url_/mcp_module_)
+        3. Worker agents  (from worker_agents_config)
+        4. Agents         (from agent_config)
+        5. Tag-tool mappings
+        6. Tag-agent mappings (agents + worker agents)
     """
+    from tools_config import tools_data
+    from agent_config import agent_data
+    from worker_agents_config import worker_agents
 
-    def __init__(self, pool: asyncpg.Pool, table_name: str):
-        """
-        Initializes the BaseRepository with a database connection pool.
+    tools_data: dict = tools_data
+    agent_data: dict = agent_data
+    worker_agents: dict = worker_agents
 
-        Args:
-            pool (asyncpg.Pool): The asyncpg connection pool.
-        """
-        if not pool:
-            raise ValueError("Connection pool is not provided.")
-        self.pool = pool
-        self.table_name = table_name
+    now = datetime.now(timezone.utc)
+    mcp_prefixes = ("mcp_file_", "mcp_url_", "mcp_module_")
 
-class ExportedTagToolMappingRepository(BaseRepository, CacheableRepository):
-    """
-    Repository for the 'tag_tool_mapping_table'. Handles direct database interactions for tag-tool mappings.
-    """
-
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tag_tool_mapping_table"):
-        """
-        Initializes the TagToolMappingRepository.
-
-        Args:
-            pool (asyncpg.Pool): The asyncpg connection pool.
-            table_name (str): The name of the tag-tool mapping table.
-        """
-        super().__init__(pool, table_name)
-
-
-    async def create_table_if_not_exists(self):
-        """
-        Creates the 'tag_tool_mapping_table' if it does not exist.
-        The FOREIGN KEY to tool_table.tool_id is intentionally removed here
-        to allow mapping of tool IDs from both tool_table and mcp_tool_table.
-        """
+    # ── 1 & 2. Insert tools (regular + MCP) ──────────────────────────────
+    for tool_id, tool_info in tools_data.items():
+        if tool_info is None:
+            continue
         try:
-            create_statement = f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name} (
-                tag_id TEXT,
-                tool_id TEXT,
-                FOREIGN KEY(tag_id) REFERENCES tags_table(tag_id) ON DELETE RESTRICT,
-                UNIQUE(tag_id, tool_id)
-            );
-            """
-            async with self.pool.acquire() as conn:
-                await conn.execute(create_statement)
-            log.info(f"Table '{self.table_name}' created successfully or already exists (without tool_id FK).")
-        except Exception as e:
-            log.error(f"Error creating table '{self.table_name}': {e}")
+            if tool_id.startswith(mcp_prefixes):
+                # MCP tool
+                mcp_config = tool_info.get("mcp_config", {})
+                if isinstance(mcp_config, str):
+                    mcp_config = json.loads(mcp_config)
 
-    async def assign_tag_to_tool_record(self) -> bool:
-        """
-        Inserts a mapping between a tag and a tool.
-
-        Args:
-            tag_id (str): The ID of the tag.
-            tool_id (str): The ID of the tool.
-
-        Returns:
-            bool: True if the mapping was inserted successfully, False otherwise.
-        """
-        from tools_config import tools_data
-        tags={}
-        for i in tools_data.values():
-            tool_id=i['tool_id']
-            for tag in i['tags']:
-                tag_name=tag['tag_name']
-                tags[tool_id]=tag_name
-        print("tool tags:",tags)
-        for tool_id,tag_name in tags.items():
-            fetch_statement = f"""
-            SELECT tag_id FROM tags_table WHERE tag_name=$1;
-            """
-            insert_statement = f"""
-            INSERT INTO {self.table_name} (tag_id, tool_id)
-            VALUES ($1, $2)
-            ON CONFLICT (tag_id, tool_id) DO NOTHING;
-            """
-            try:
-                async with self.pool.acquire() as conn:
-                    await conn.execute(fetch_statement, tag_name)
-                    row = await conn.fetchrow(fetch_statement, tag_name)
-                    tag_id = row['tag_id'] if row else None
-                    await conn.execute(insert_statement, tag_id, tool_id)
-                log.info(f"Mapping tag '{tag_id}' to tool '{tool_id}' inserted successfully.")
-    
-            except Exception as e:
-                log.error(f"Error assigning tag '{tag_id}' to tool '{tool_id}': {e}")
-                return False
-        return True
-
-class ExportedTagAgentMappingRepository(BaseRepository, CacheableRepository):
-    """
-    Repository for the 'tag_agentic_app_mapping_table'. Handles direct database interactions for tag-agent mappings.
-    """
-
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tag_agentic_app_mapping_table"):
-        """
-        Initializes the TagAgentMappingRepository.
-
-        Args:
-            pool (asyncpg.Pool): The asyncpg connection pool.
-            table_name (str): The name of the tag-agent mapping table.
-        """
-        super().__init__(pool, table_name)
-
-
-    async def create_table_if_not_exists(self):
-        """
-        Creates the 'tag_agentic_app_mapping_table' if it does not exist.
-        """
-        try:
-            create_statement = f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name} (
-                tag_id TEXT,
-                agentic_application_id TEXT,
-                FOREIGN KEY(tag_id) REFERENCES tags_table(tag_id) ON DELETE RESTRICT,
-                FOREIGN KEY(agentic_application_id) REFERENCES agent_table(agentic_application_id) ON DELETE CASCADE,
-                UNIQUE(tag_id, agentic_application_id)
-            );
-            """
-            async with self.pool.acquire() as conn:
-                await conn.execute(create_statement)
-            log.info(f"Table '{self.table_name}' created successfully or already exists.")
-        except Exception as e:
-            log.error(f"Error creating table '{self.table_name}': {e}")
-
-    async def assign_tag_to_agent_record(self) -> bool:
-        """
-        Inserts a mapping between a tag and an agent.
-
-        Args:
-            tag_id (str): The ID of the tag.
-            agentic_application_id (str): The ID of the agent.
-
-        Returns:
-            bool: True if the mapping was inserted successfully, False otherwise.
-        """
-        from agent_config import agent_data
-        from worker_agents_config import worker_agents
-        tags={}
-        for i in agent_data.values():
-            agentic_application_id=i['agentic_application_id']
-            for tag in i['tags']:
-                tag_name=tag['tag_name']
-                tags[agentic_application_id]=tag_name
-        for i in worker_agents.values():
-            agentic_application_id=i['agentic_application_id']
-            for tag in i['tags']:
-                tag_name=tag['tag_name']
-                tags[agentic_application_id]=tag_name
-        print("Agent tags:",tags)
-        for agentic_application_id,tag_name in tags.items():
-            fetch_statement=f"""
-            SELECT tag_id FROM tags_table WHERE tag_name=$1;
-            """
-            insert_statement = f"""
-            INSERT INTO {self.table_name} (tag_id, agentic_application_id)
-            VALUES ($1, $2)
-            ON CONFLICT (tag_id, agentic_application_id) DO NOTHING;
-            """
-            try:
-                async with self.pool.acquire() as conn:
-                    await conn.execute(fetch_statement, tag_name)
-                    row = await conn.fetchrow(fetch_statement, tag_name)
-                    tag_id = row['tag_id'] if row else None
-                    await conn.execute(insert_statement, tag_id, agentic_application_id)
-                log.info(f"Mapping tag '{tag_id}' to agent '{agentic_application_id}' inserted successfully.")
-            except Exception as e:
-                log.error(f"Error assigning tag '{tag_id}' to agent '{agentic_application_id}': {e}")
-                return False
-        return True
-              
-class ExportedToolRepository(BaseRepository, CacheableRepository):
-    """
-    Repository for the 'tool_table'. Handles direct database interactions for tools.
-    """
-
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "tool_table"):
-        """
-        Initializes the ToolRepository.
-
-        Args:
-            pool (asyncpg.Pool): The asyncpg connection pool.
-            table_name (str): The name of the tools table.
-        """
-        super().__init__(pool, table_name)
-
-
-    async def create_table_if_not_exists(self):
-        """
-        Creates the 'tool_table' in PostgreSQL if it does not exist.
-        """
-        try:
-            create_statement = f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name} (
-                tool_id TEXT PRIMARY KEY,
-                tool_name TEXT UNIQUE,
-                tool_description TEXT,
-                code_snippet TEXT,
-                model_name TEXT,
-                created_by TEXT,
-                last_used TIMESTAMPTZ DEFAULT NOW(),
-                created_on TIMESTAMPTZ DEFAULT NOW()   
-            );
-            """
-            async with self.pool.acquire() as conn:
-                await conn.execute(create_statement)
-            log.info(f"Table '{self.table_name}' created successfully or already exists.")
-        except Exception as e:
-            log.error(f"Error creating table '{self.table_name}': {e}")
-    async def save_tool_record(self) -> bool:
-        """
-        Inserts a new tool record into the tool table.
-
-        Args:
-            tool_data (Dict[str, Any]): A dictionary containing the tool data.
-                                        Expected keys: tool_id, tool_name, tool_description,
-                                        code_snippet, model_name, created_by, created_on, updated_on.
-
-        Returns:
-            bool: True if the tool was inserted successfully, False if a unique violation occurred or on other error.
-        """
-        from tools_config import tools_data
-        insert_statement = f"""
-        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (tool_id) DO UPDATE SET
-                    tool_name = EXCLUDED.tool_name,
-                    tool_description = EXCLUDED.tool_description,
-                    code_snippet = EXCLUDED.code_snippet,
-                    model_name = EXCLUDED.model_name,
-                    created_by = EXCLUDED.created_by;
-        """
-        try:
-            for tool_data in tools_data.values():
-                # print("in tool repo",tool_data)
-                if (tool_data.get('tool_id')).startswith("mcp_file_") or (tool_data.get('tool_id')).startswith("mcp_url_"):
-                    mrepo=ExportedMcpToolRepository(self.pool)
-                    await mrepo.create_table_if_not_exists()
-                    await mrepo.save_mcp_tool_record(tool_data)
-                else:
-                    path= tool_data.get("code_snippet", "")
-                    with open(path, 'r', encoding='utf-8') as f:
-                        code_snippet = f.read()
-                    async with self.pool.acquire() as conn:
-                        await conn.execute(
-                            insert_statement,
-                            tool_data.get("tool_id"), tool_data.get("tool_name"),
-                            tool_data.get("tool_description"), code_snippet,
-                            tool_data.get("model_name"),
-                            user_id
-                            # tool_data["created_by"]
-                        )
-                    log.info(f"Tool record {tool_data.get('tool_name')} inserted successfully.")
-            return True
-        except asyncpg.UniqueViolationError:
-            log.warning(f"Tool record {tool_data.get('tool_name')} already exists (unique violation).")
-            return False
-        except Exception as e:
-            log.error(f"Error saving tool record {tool_data.get('tool_name')}: {e}")
-            return False
-
-class ExportedAgentRepository(BaseRepository, CacheableRepository):
-    """
-    Repository for the 'agent_table'. Handles direct database interactions for agents.
-    """
-
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "agent_table"):
-        """
-        Initializes the AgentRepository.
-
-        Args:
-            pool (asyncpg.Pool): The asyncpg connection pool.
-            table_name (str): The name of the agents table.
-        """
-        super().__init__(pool, table_name)
-
-
-    async def create_table_if_not_exists(self):
-        """
-        Creates the 'recycle_agent' table if it does not exist.
-        """
-        try:
-            create_statement = f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name} (
-                agentic_application_id TEXT PRIMARY KEY,
-                agentic_application_name TEXT UNIQUE,
-                agentic_application_description TEXT,
-                agentic_application_workflow_description TEXT,
-                agentic_application_type TEXT,
-                model_name TEXT,
-                system_prompt JSONB,
-                tools_id JSONB,
-                created_by TEXT,
-                last_used TIMESTAMPTZ DEFAULT NOW(),
-                created_on TIMESTAMPTZ DEFAULT NOW()
-            );
-            """
-            async with self.pool.acquire() as conn:
-                await conn.execute(create_statement)
-                alter_statements = [
-                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS validation_criteria JSONB DEFAULT '[]'"
-                ]
-                for alter_statement in alter_statements:
-                    await conn.execute(alter_statement)
-            log.info(f"Table '{self.table_name}' created successfully or already exists.")
-        except Exception as e:
-            log.error(f"Error creating table '{self.table_name}': {e}")
-            
-    async def save_agent_record(self) -> bool:
-        from agent_config import agent_data
-        from worker_agents_config import worker_agents
-        try:
-            for agent in agent_data.values():
-                agent_id = agent.get("agentic_application_id", str(uuid.uuid4()))
-                agent_name = agent.get("agentic_application_name")
-                agent_description = agent.get("agentic_application_description", "")
-                workflow_description = agent.get("agentic_application_workflow_description", "")
-                agent_type = agent.get("agentic_application_type", "default")
-                model_name = agent.get("model_name", "default_model")
-                system_prompt = agent.get("system_prompt", {})
-                system_prompt = json.dumps(system_prompt)
-                tools_id = agent.get("tools_id", [])
-                tools_id=json.dumps(tools_id)
-                # created_by=agent.get("created_by","")
-                created_by=user_id
-                validation_criteria=agent.get("validation_criteria", "[]")
-                validation_criteria=json.dumps(validation_criteria)
-
-                insert_statement = f"""
-                INSERT INTO {self.table_name} (
-                    agentic_application_id,
-                    agentic_application_name,
-                    agentic_application_description,
-                    agentic_application_workflow_description,
-                    agentic_application_type,
-                    model_name,
-                    system_prompt,
-                    tools_id,
-                    created_by,
-                    validation_criteria
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9,$10)
-                ON CONFLICT (agentic_application_id) DO UPDATE SET
-                    agentic_application_name = EXCLUDED.agentic_application_name,
-                    agentic_application_description = EXCLUDED.agentic_application_description,
-                    agentic_application_workflow_description = EXCLUDED.agentic_application_workflow_description,
-                    agentic_application_type = EXCLUDED.agentic_application_type,
-                    model_name = EXCLUDED.model_name,
-                    system_prompt = EXCLUDED.system_prompt,
-                    tools_id = EXCLUDED.tools_id,
-                    created_by = EXCLUDED.created_by,
-                    validation_criteria = EXCLUDED.validation_criteria;
-                """
-                
-                async with self.pool.acquire() as conn:
-                    await conn.execute(insert_statement, 
-                                       agent_id, 
-                                       agent_name, 
-                                       agent_description, 
-                                       workflow_description, 
-                                       agent_type, 
-                                       model_name, 
-                                       system_prompt, 
-                                       tools_id,
-                                       created_by,
-                                       validation_criteria)
-            if worker_agents:
-                for agent in worker_agents.values():
-                    agent_id = agent.get("agentic_application_id", str(uuid.uuid4()))
-                    agent_name = agent.get("agentic_application_name")
-                    agent_description = agent.get("agentic_application_description", "")
-                    workflow_description = agent.get("agentic_application_workflow_description", "")
-                    agent_type = agent.get("agentic_application_type", "default")
-                    model_name = agent.get("model_name", "default_model")
-                    system_prompt = agent.get("system_prompt", {})
-                    system_prompt = json.dumps(system_prompt)
-                    tools_id = agent.get("tools_id", [])
-                    tools_id=json.dumps(tools_id)
-                    # tools_id = agent.get("tools_id", [])
-                    # created_by=agent.get("created_by","")
-                    created_by=user_id
-                    validation_criteria=agent.get("validation_criteria", "[]")
-                    validation_criteria=json.dumps(validation_criteria)
-
-                    insert_statement = f"""
-                    INSERT INTO {self.table_name} (
-                        agentic_application_id,
-                        agentic_application_name,
-                        agentic_application_description,
-                        agentic_application_workflow_description,
-                        agentic_application_type,
-                        model_name,
-                        system_prompt,
-                        tools_id,
-                        created_by,
-                        validation_criteria
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9,$10)
-                    ON CONFLICT (agentic_application_id) DO UPDATE SET
-                        agentic_application_name = EXCLUDED.agentic_application_name,
-                        agentic_application_description = EXCLUDED.agentic_application_description,
-                        agentic_application_workflow_description = EXCLUDED.agentic_application_workflow_description,
-                        agentic_application_type = EXCLUDED.agentic_application_type,
-                        model_name = EXCLUDED.model_name,
-                        system_prompt = EXCLUDED.system_prompt,
-                        tools_id = EXCLUDED.tools_id,
-                        created_by = EXCLUDED.created_by,
-                        validation_criteria = EXCLUDED.validation_criteria;
-                    """
-                    
-                    async with self.pool.acquire() as conn:
-                        await conn.execute(insert_statement, 
-                                        agent_id, 
-                                        agent_name, 
-                                        agent_description, 
-                                        workflow_description, 
-                                        agent_type, 
-                                        model_name, 
-                                        system_prompt, 
-                                        tools_id,
-                                        created_by,
-                                        validation_criteria)
+                mcp_data = {
+                    "tool_id": tool_info.get("tool_id", tool_id),
+                    "tool_name": tool_info.get("tool_name"),
+                    "tool_description": tool_info.get("tool_description", ""),
+                    "mcp_config": json.dumps(mcp_config),
+                    "is_public": True,
+                    "status": "approved",
+                    "comments": None,
+                    "approved_at": now.replace(tzinfo=None),
+                    "approved_by": "system",
+                    "created_by": tool_info.get("created_by", ""),
+                    "created_on": now.replace(tzinfo=None),
+                    "updated_on": now.replace(tzinfo=None),
+                    "department_name": "General",
+                }
+                await mcp_tool_repo.save_mcp_tool_record(mcp_data)
+                log.info(f"Loaded MCP tool: {mcp_data['tool_name']}")
             else:
-                log.info("Worker Agents data is empty")
-            
-            log.info(f"Agent records saved successfully in table '{self.table_name}'.")
+                # Regular tool — resolve code_snippet from file if needed
+                code_snippet = tool_info.get("code_snippet", "")
+                if code_snippet and not _looks_like_code(code_snippet):
+                    # It's a relative path like 'tools_codes/my_tool.py'
+                    if os.path.exists(code_snippet):
+                        with open(code_snippet, "r", encoding="utf-8") as f:
+                            code_snippet = f.read()
+                    else:
+                        log.warning(f"Tool code file not found: {code_snippet}")
+
+                tool_data = {
+                    "tool_id": tool_info.get("tool_id", tool_id),
+                    "tool_name": tool_info.get("tool_name"),
+                    "tool_description": tool_info.get("tool_description", ""),
+                    "code_snippet": code_snippet,
+                    "model_name": tool_info.get("model_name", ""),
+                    "created_by": tool_info.get("created_by", ""),
+                    "created_on": now,
+                    "department_name": "General",
+                    "is_public": True,
+                }
+                await tool_repo.save_tool_record(tool_data)
+                log.info(f"Loaded tool: {tool_data['tool_name']}")
         except Exception as e:
-            log.error(f"Error inserting into table '{self.table_name}': {e}")   
+            log.error(f"Error loading tool '{tool_id}': {e}")
 
-class ExportedMcpToolRepository(BaseRepository):
-    """
-    Repository for the 'mcp_tool_table'. Handles direct database interactions for MCP server definitions.
-    """
-    def __init__(self, pool: asyncpg.Pool, table_name: str = "mcp_tool_table"):
-        """
-        Initializes the McpToolRepository.
+    # ── 3. Insert worker agents ──────────────────────────────────────────
+    if worker_agents:
+        for agent_id, agent_info in worker_agents.items():
+            if agent_info is None:
+                continue
+            try:
+                await _insert_agent(agent_repo, agent_info, agent_id, now)
+                log.info(f"Loaded worker agent: {agent_info.get('agentic_application_name')}")
+            except Exception as e:
+                log.error(f"Error loading worker agent '{agent_id}': {e}")
 
-        Args:
-            pool (asyncpg.Pool): The asyncpg connection pool.
-            table_name (str): The name of the MCP tools table.
-        """
-        super().__init__(pool, table_name)
-
-
-    async def create_table_if_not_exists(self):
-        """
-        Creates the 'mcp_tool_table' in PostgreSQL if it does not exist.
-        Includes new auth-related columns and the CHECK constraint directly.
-        """
+    # ── 4. Insert agents ─────────────────────────────────────────────────
+    for agent_id, agent_info in agent_data.items():
+        if agent_info is None:
+            continue
         try:
-            create_statement = f"""
-            CREATE TABLE IF NOT EXISTS {self.table_name} (
-                tool_id TEXT PRIMARY KEY,
-                tool_name TEXT UNIQUE NOT NULL,
-                tool_description TEXT,
-                mcp_config JSONB NOT NULL, 
-                created_by TEXT,
-                created_on TIMESTAMPTZ DEFAULT NOW()
-            );
-            """
-            async with self.pool.acquire() as conn:
-                await conn.execute(create_statement)
-
-            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+            await _insert_agent(agent_repo, agent_info, agent_id, now)
+            log.info(f"Loaded agent: {agent_info.get('agentic_application_name')}")
         except Exception as e:
-            log.error(f"Error creating table '{self.table_name}': {e}")
-            raise # Re-raise to ensure startup failure if table creation fails
-    async def save_mcp_tool_record(self, tool_data: Dict[str, Any]) -> bool:
-        """
-        Inserts a new MCP tool (server definition) record into the mcp_tool_table.
+            log.error(f"Error loading agent '{agent_id}': {e}")
 
-        Args:
-            tool_data (Dict[str, Any]): A dictionary containing the MCP tool data.
-                                        Expected keys: tool_id, tool_name, tool_description,
-                                        mcp_config (JSON dumped), is_public, status, comments,
-                                        approved_at, approved_by, created_by, created_on, updated_on.
+    # ── 5. Tag-tool mappings ──────────────────────────────────────────────
+    for tool_id, tool_info in tools_data.items():
+        if tool_info is None:
+            continue
+        tags = tool_info.get("tags", [])
+        for tag in tags:
+            tag_name = tag.get("tag_name")
+            if not tag_name:
+                continue
+            try:
+                tag_record = await tag_repo.get_tag_record(tag_name=tag_name)
+                if tag_record:
+                    await tag_tool_mapping_repo.assign_tag_to_tool_record(
+                        tag_id=tag_record["tag_id"],
+                        tool_id=tool_info.get("tool_id", tool_id),
+                    )
+                else:
+                    log.warning(f"Tag '{tag_name}' not found in DB, skipping tool mapping.")
+            except Exception as e:
+                log.error(f"Error mapping tag '{tag_name}' to tool '{tool_id}': {e}")
 
-        Returns:
-            bool: True if the tool was inserted successfully, False if a unique violation occurred or on other error.
-        """
-        insert_statement = f"""
-        INSERT INTO {self.table_name} (
-            tool_id, tool_name, tool_description,mcp_config,
-            created_by
-        ) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tool_id) DO UPDATE SET
-            tool_name = EXCLUDED.tool_name,
-            tool_description = EXCLUDED.tool_description,
-            mcp_config = EXCLUDED.mcp_config,
-            created_by = EXCLUDED.created_by
-        """
-        try:
-            print(tool_data)
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    insert_statement,
-                    tool_data.get("tool_id"),
-                    tool_data.get("tool_name"),
-                    tool_data.get("tool_description"),
-                    json.dumps(tool_data.get("mcp_config")), # Ensure JSONB is dumped
-                    # tool_data.get("created_by")
-                    user_id
-                )
-            log.info(f"MCP tool record '{tool_data.get('tool_name')}' inserted successfully.")
-            return True
-        except asyncpg.UniqueViolationError:
-            log.warning(f"MCP tool record '{tool_data.get('tool_name')}' already exists (unique violation).")
-            return False
-        except Exception as e:
-            log.error(f"Error saving MCP tool record '{tool_data.get('tool_name')}': {e}")
-            return False
+    # ── 6. Tag-agent mappings (agents + worker agents) ────────────────────
+    all_agents = {}
+    all_agents.update(agent_data or {})
+    all_agents.update(worker_agents or {})
+
+    for agent_id, agent_info in all_agents.items():
+        if agent_info is None:
+            continue
+        tags = agent_info.get("tags", [])
+        for tag in tags:
+            tag_name = tag.get("tag_name")
+            if not tag_name:
+                continue
+            try:
+                tag_record = await tag_repo.get_tag_record(tag_name=tag_name)
+                if tag_record:
+                    await tag_agent_mapping_repo.assign_tag_to_agent_record(
+                        tag_id=tag_record["tag_id"],
+                        agentic_application_id=agent_info.get(
+                            "agentic_application_id", agent_id
+                        ),
+                    )
+                else:
+                    log.warning(f"Tag '{tag_name}' not found in DB, skipping agent mapping.")
+            except Exception as e:
+                log.error(f"Error mapping tag '{tag_name}' to agent '{agent_id}': {e}")
+
+    log.info("load_exported_data: All exported data loaded successfully.")
+
+
+# ── Private helpers ───────────────────────────────────────────────────────
+
+async def _insert_agent(agent_repo: AgentRepository, agent_info: dict, agent_id: str, now: datetime):
+    """Build the data dict expected by AgentRepository.save_agent_record and insert."""
+    system_prompt = agent_info.get("system_prompt", {})
+    if not isinstance(system_prompt, str):
+        system_prompt = json.dumps(system_prompt)
+
+    tools_id = agent_info.get("tools_id", [])
+    if not isinstance(tools_id, str):
+        tools_id = json.dumps(tools_id)
+
+    validation_criteria = agent_info.get("validation_criteria", [])
+    if not isinstance(validation_criteria, str):
+        validation_criteria = json.dumps(validation_criteria)
+
+    record = {
+        "agentic_application_id": agent_info.get("agentic_application_id", agent_id),
+        "agentic_application_name": agent_info.get("agentic_application_name"),
+        "agentic_application_description": agent_info.get("agentic_application_description", ""),
+        "agentic_application_workflow_description": agent_info.get("agentic_application_workflow_description", ""),
+        "agentic_application_type": agent_info.get("agentic_application_type", ""),
+        "model_name": agent_info.get("model_name", ""),
+        "system_prompt": system_prompt,
+        "tools_id": tools_id,
+        "created_by": agent_info.get("created_by", ""),
+        "department_name": "General",
+        "created_on": now,
+        "updated_on": now,
+        "validation_criteria": validation_criteria,
+        "welcome_message": agent_info.get("welcome_message", "Hello, how can I help you?"),
+        "is_public": True,
+    }
+    await agent_repo.save_agent_record(record)
+
+
+def _looks_like_code(text: str) -> bool:
+    """Heuristic: return True if the text looks like actual Python code rather than a file path."""
+    stripped = text.strip()
+    return (
+        stripped.startswith("def ")
+        or stripped.startswith("async def ")
+        or stripped.startswith("import ")
+        or stripped.startswith("from ")
+        or stripped.startswith("#")
+        or "\n" in stripped
+    )

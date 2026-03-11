@@ -21,6 +21,8 @@ import os
 import json
 from dotenv import load_dotenv
 
+from src.config.constants import TableNames
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -97,22 +99,22 @@ class ConversationCleanup:
             """)
             
             # Create recycle_checkpoints
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS recycle_checkpoints (
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {TableNames.RECYCLE_CHECKPOINTS.value} (
                     thread_id TEXT NOT NULL,
                     checkpoint_ns TEXT NOT NULL DEFAULT '',
                     checkpoint_id TEXT NOT NULL,
                     parent_checkpoint_id TEXT,
                     type TEXT,
                     checkpoint JSONB NOT NULL,
-                    metadata JSONB NOT NULL DEFAULT '{}',
+                    metadata JSONB NOT NULL DEFAULT '{{}}',
                     deleted_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 );
             """)
             
             # Create recycle_checkpoint_writes
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS recycle_checkpoint_writes (
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {TableNames.RECYCLE_CHECKPOINT_WRITES.value} (
                     thread_id TEXT NOT NULL,
                     checkpoint_ns TEXT NOT NULL DEFAULT '',
                     checkpoint_id TEXT NOT NULL,
@@ -127,8 +129,8 @@ class ConversationCleanup:
             """)
             
             # Create recycle_checkpoint_blobs
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS recycle_checkpoint_blobs (
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {TableNames.RECYCLE_CHECKPOINT_BLOBS.value} (
                     thread_id TEXT NOT NULL,
                     checkpoint_ns TEXT NOT NULL DEFAULT '',
                     channel TEXT NOT NULL,
@@ -155,8 +157,8 @@ class ConversationCleanup:
             """)
             
             # Create recycle_agent
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS recycle_agent (
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {TableNames.RECYCLE_AGENT.value} (
                     agentic_application_id TEXT NOT NULL,
                     agentic_application_name TEXT,
                     agentic_application_description TEXT,
@@ -176,8 +178,8 @@ class ConversationCleanup:
             """)
             
             # Create recycle_tool
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS recycle_tool (
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {TableNames.RECYCLE_TOOL.value} (
                     tool_id TEXT NOT NULL,
                     tool_name TEXT,
                     tool_description TEXT,
@@ -200,8 +202,8 @@ class ConversationCleanup:
             """)
             
             # Create recycle_mcp_tool
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS recycle_mcp_tool (
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {TableNames.RECYCLE_MCP_TOOL.value} (
                     tool_id TEXT PRIMARY KEY,
                     tool_name TEXT UNIQUE NOT NULL,
                     tool_description TEXT,
@@ -347,9 +349,9 @@ class ConversationCleanup:
             recycle_cursor = self.recycle_conn.cursor()
             
             # Backup checkpoints
-            main_cursor.execute("""
+            main_cursor.execute(f"""
                 SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata
-                FROM checkpoints
+                FROM {TableNames.CHECKPOINTS.value}
                 WHERE thread_id = %s
             """, (thread_id,))
             
@@ -363,40 +365,40 @@ class ConversationCleanup:
                 if len(converted_record) >= 7 and isinstance(converted_record[6], dict):
                     converted_record[6] = json.dumps(converted_record[6])  # metadata
                     
-                recycle_cursor.execute("""
-                    INSERT INTO recycle_checkpoints
+                recycle_cursor.execute(f"""
+                    INSERT INTO {TableNames.RECYCLE_CHECKPOINTS.value}
                     (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, type, checkpoint, metadata, deleted_date)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, converted_record + [deleted_date])
             
             # Backup checkpoint_writes
-            main_cursor.execute("""
+            main_cursor.execute(f"""
                 SELECT thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob, task_path
-                FROM checkpoint_writes
+                FROM {TableNames.CHECKPOINT_WRITES.value}
                 WHERE thread_id = %s
             """, (thread_id,))
             
             write_records = main_cursor.fetchall()
             
             for record in write_records:
-                recycle_cursor.execute("""
-                    INSERT INTO recycle_checkpoint_writes
+                recycle_cursor.execute(f"""
+                    INSERT INTO {TableNames.RECYCLE_CHECKPOINT_WRITES.value}
                     (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob, task_path, deleted_date)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, record + (deleted_date,))
             
             # Backup checkpoint_blobs
-            main_cursor.execute("""
+            main_cursor.execute(f"""
                 SELECT thread_id, checkpoint_ns, channel, version, type, blob
-                FROM checkpoint_blobs
+                FROM {TableNames.CHECKPOINT_BLOBS.value}
                 WHERE thread_id = %s
             """, (thread_id,))
             
             blob_records = main_cursor.fetchall()
             
             for record in blob_records:
-                recycle_cursor.execute("""
-                    INSERT INTO recycle_checkpoint_blobs
+                recycle_cursor.execute(f"""
+                    INSERT INTO {TableNames.RECYCLE_CHECKPOINT_BLOBS.value}
                     (thread_id, checkpoint_ns, channel, version, type, blob, deleted_date)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, record + (deleted_date,))
@@ -445,18 +447,37 @@ class ConversationCleanup:
             # Delete checkpoint data
             thread_id = f"{table_name}_{session_id}"
             
-            main_cursor.execute("DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,))
+            main_cursor.execute(f"DELETE FROM {TableNames.CHECKPOINTS.value} WHERE thread_id = %s", (thread_id,))
             checkpoints_deleted = main_cursor.rowcount
             
-            main_cursor.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
+            main_cursor.execute(f"DELETE FROM {TableNames.CHECKPOINT_WRITES.value} WHERE thread_id = %s", (thread_id,))
             writes_deleted = main_cursor.rowcount
             
-            main_cursor.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))
+            main_cursor.execute(f"DELETE FROM {TableNames.CHECKPOINT_BLOBS.value} WHERE thread_id = %s", (thread_id,))
             blobs_deleted = main_cursor.rowcount
+            
+            # Delete feedback/learning records for this agent
+            # First, get all response_ids associated with this agent
+            main_cursor.execute(f"""
+                SELECT response_id FROM {TableNames.AGENT_FEEDBACK.value}
+                WHERE agent_id = %s
+            """, (agentic_application_id,))
+            
+            response_ids = [row[0] for row in main_cursor.fetchall()]
+            feedback_deleted = 0
+            
+            if response_ids:
+                # Delete from feedback_response table (CASCADE will handle agent_feedback)
+                main_cursor.execute(f"""
+                    DELETE FROM {TableNames.FEEDBACK_LEARNING.value}
+                    WHERE response_id = ANY(%s)
+                """, (response_ids,))
+                feedback_deleted = main_cursor.rowcount
             
             logger.info(f"Deleted from main database - Summary: {summary_deleted}, "
                        f"Long-term: {longterm_deleted}, Checkpoints: {checkpoints_deleted}, "
-                       f"Writes: {writes_deleted}, Blobs: {blobs_deleted}")
+                       f"Writes: {writes_deleted}, Blobs: {blobs_deleted}, "
+                       f"Feedback: {feedback_deleted}")
                        
         except Exception as e:
             logger.error(f"Error deleting main data: {e}")
@@ -539,8 +560,6 @@ class ConversationCleanup:
         except Exception as e:
             logger.error(f"Critical error in cleanup process: {e}")
             raise
-        finally:
-            self.close_connections()
 
     def permanent_delete_insidetable_records(self, dry_run: bool = False):
         """
@@ -554,26 +573,26 @@ class ConversationCleanup:
                 
             with self.main_conn.cursor() as cursor:
                     # Check if checkpoint tables exist first
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT EXISTS (
                             SELECT FROM information_schema.tables 
-                            WHERE table_name = 'checkpoints'
+                            WHERE table_name = '{TableNames.CHECKPOINTS.value}'
                         )
                     """)
                     checkpoints_exists = cursor.fetchone()[0]
                     
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT EXISTS (
                             SELECT FROM information_schema.tables 
-                            WHERE table_name = 'checkpoint_writes'
+                            WHERE table_name = '{TableNames.CHECKPOINT_WRITES.value}'
                         )
                     """)
                     checkpoint_writes_exists = cursor.fetchone()[0]
                     
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT EXISTS (
                             SELECT FROM information_schema.tables 
-                            WHERE table_name = 'checkpoint_blobs'
+                            WHERE table_name = '{TableNames.CHECKPOINT_BLOBS.value}'
                         )
                     """)
                     checkpoint_blobs_exists = cursor.fetchone()[0]
@@ -585,8 +604,8 @@ class ConversationCleanup:
                     
                     # Check for records with thread_id starting with "insidetable" only if tables exist
                     if checkpoints_exists:
-                        cursor.execute("""
-                            SELECT COUNT(*) FROM checkpoints 
+                        cursor.execute(f"""
+                            SELECT COUNT(*) FROM {TableNames.CHECKPOINTS.value} 
                             WHERE thread_id LIKE 'insidetable%'
                         """)
                         checkpoint_count = cursor.fetchone()[0]
@@ -594,8 +613,8 @@ class ConversationCleanup:
                         logger.info("checkpoints table does not exist")
                     
                     if checkpoint_writes_exists:
-                        cursor.execute("""
-                            SELECT COUNT(*) FROM checkpoint_writes 
+                        cursor.execute(f"""
+                            SELECT COUNT(*) FROM {TableNames.CHECKPOINT_WRITES.value} 
                             WHERE thread_id LIKE 'insidetable%'
                         """)
                         checkpoint_writes_count = cursor.fetchone()[0]
@@ -603,8 +622,8 @@ class ConversationCleanup:
                         logger.info("checkpoint_writes table does not exist")
                     
                     if checkpoint_blobs_exists:
-                        cursor.execute("""
-                            SELECT COUNT(*) FROM checkpoint_blobs 
+                        cursor.execute(f"""
+                            SELECT COUNT(*) FROM {TableNames.CHECKPOINT_BLOBS.value} 
                             WHERE thread_id LIKE 'insidetable%'
                         """)
                         checkpoint_blobs_count = cursor.fetchone()[0]
@@ -621,20 +640,20 @@ class ConversationCleanup:
                         
                         if not dry_run:
                             # Delete from checkpoint_blobs first (foreign key constraints)
-                            cursor.execute("""
-                                DELETE FROM checkpoint_blobs 
+                            cursor.execute(f"""
+                                DELETE FROM {TableNames.CHECKPOINT_BLOBS.value} 
                                 WHERE thread_id LIKE 'insidetable%'
                             """)
                             
                             # Delete from checkpoint_writes
-                            cursor.execute("""
-                                DELETE FROM checkpoint_writes 
+                            cursor.execute(f"""
+                                DELETE FROM {TableNames.CHECKPOINT_WRITES.value} 
                                 WHERE thread_id LIKE 'insidetable%'
                             """)
                             
                             # Delete from checkpoints
-                            cursor.execute("""
-                                DELETE FROM checkpoints 
+                            cursor.execute(f"""
+                                DELETE FROM {TableNames.CHECKPOINTS.value} 
                                 WHERE thread_id LIKE 'insidetable%'
                             """)
                             
@@ -719,22 +738,22 @@ class ConversationCleanup:
                             deleted_counts["longterm_memory"] += recycle_cursor.rowcount
                             
                             # Delete from recycle_checkpoints
-                            recycle_cursor.execute("""
-                                DELETE FROM recycle_checkpoints
+                            recycle_cursor.execute(f"""
+                                DELETE FROM {TableNames.RECYCLE_CHECKPOINTS.value}
                                 WHERE thread_id = %s AND deleted_date = %s
                             """, (thread_id, deleted_date))
                             deleted_counts["checkpoints"] += recycle_cursor.rowcount
                             
                             # Delete from recycle_checkpoint_writes
-                            recycle_cursor.execute("""
-                                DELETE FROM recycle_checkpoint_writes
+                            recycle_cursor.execute(f"""
+                                DELETE FROM {TableNames.RECYCLE_CHECKPOINT_WRITES.value}
                                 WHERE thread_id = %s AND deleted_date = %s
                             """, (thread_id, deleted_date))
                             deleted_counts["checkpoint_writes"] += recycle_cursor.rowcount
                             
                             # Delete from recycle_checkpoint_blobs
-                            recycle_cursor.execute("""
-                                DELETE FROM recycle_checkpoint_blobs
+                            recycle_cursor.execute(f"""
+                                DELETE FROM {TableNames.RECYCLE_CHECKPOINT_BLOBS.value}
                                 WHERE thread_id = %s AND deleted_date = %s
                             """, (thread_id, deleted_date))
                             deleted_counts["checkpoint_blobs"] += recycle_cursor.rowcount
@@ -754,9 +773,9 @@ class ConversationCleanup:
             logger.info("Permanently deleting old agents and tools...")
             
             # Delete old agents
-            recycle_cursor.execute("""
+            recycle_cursor.execute(f"""
                 SELECT agentic_application_id, updated_on
-                FROM recycle_agent
+                FROM {TableNames.RECYCLE_AGENT.value}
                 WHERE updated_on < %s
                 ORDER BY updated_on
             """, (cutoff_date,))
@@ -767,8 +786,8 @@ class ConversationCleanup:
             for agentic_application_id, updated_on in agent_records_to_delete:
                 if not dry_run:
                     try:
-                        recycle_cursor.execute("""
-                            DELETE FROM recycle_agent
+                        recycle_cursor.execute(f"""
+                            DELETE FROM {TableNames.RECYCLE_AGENT.value}
                             WHERE agentic_application_id = %s AND updated_on = %s
                         """, (agentic_application_id, updated_on))
                         deleted_counts["agents"] += recycle_cursor.rowcount
@@ -780,9 +799,9 @@ class ConversationCleanup:
                     logger.info(f"[DRY RUN] Would permanently delete agent: {agentic_application_id} (updated on: {updated_on})")
             
             # Delete old tools
-            recycle_cursor.execute("""
+            recycle_cursor.execute(f"""
                 SELECT tool_id, updated_on
-                FROM recycle_tool
+                FROM {TableNames.RECYCLE_TOOL.value}
                 WHERE updated_on < %s
                 ORDER BY updated_on
             """, (cutoff_date,))
@@ -793,8 +812,8 @@ class ConversationCleanup:
             for tool_id, updated_on in tool_records_to_delete:
                 if not dry_run:
                     try:
-                        recycle_cursor.execute("""
-                            DELETE FROM recycle_tool
+                        recycle_cursor.execute(f"""
+                            DELETE FROM {TableNames.RECYCLE_TOOL.value}
                             WHERE tool_id = %s AND updated_on = %s
                         """, (tool_id, updated_on))
                         deleted_counts["tools"] += recycle_cursor.rowcount
@@ -806,9 +825,9 @@ class ConversationCleanup:
                     logger.info(f"[DRY RUN] Would permanently delete tool: {tool_id} (updated on: {updated_on})")
             
             # Delete old MCP tools
-            recycle_cursor.execute("""
+            recycle_cursor.execute(f"""
                 SELECT tool_id, deleted_at
-                FROM recycle_mcp_tool
+                FROM {TableNames.RECYCLE_MCP_TOOL.value}
                 WHERE deleted_at < %s
                 ORDER BY deleted_at
             """, (cutoff_date,))
@@ -819,8 +838,8 @@ class ConversationCleanup:
             for tool_id, deleted_at in mcp_tool_records_to_delete:
                 if not dry_run:
                     try:
-                        recycle_cursor.execute("""
-                            DELETE FROM recycle_mcp_tool
+                        recycle_cursor.execute(f"""
+                            DELETE FROM {TableNames.RECYCLE_MCP_TOOL.value}
                             WHERE tool_id = %s AND deleted_at = %s
                         """, (tool_id, deleted_at))
                         deleted_counts["mcp_tools"] += recycle_cursor.rowcount
@@ -864,7 +883,7 @@ def main():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     env_path = os.path.join(project_root, '.env')
     load_dotenv(env_path)
-    
+
     parser = argparse.ArgumentParser(description='Cleanup old conversation data')
     parser.add_argument('--days', type=int, default=30, 
                        help='Days threshold for cleanup (default: 30)')
@@ -872,17 +891,24 @@ def main():
                        help='Perform dry run without actual deletion')
     parser.add_argument('--recycle-db', type=str, default='recycle',
                        help='Recycle database name (default: recycle)')
-    
+    parser.add_argument('--recycle-retention-days', type=int, default=None,
+                       help='Days to retain data in recycle bin before permanent deletion (default: from env or 15)')
+
     args = parser.parse_args()
-    
+
     # Get database configuration from environment variables
     db_host = os.getenv("POSTGRESQL_HOST", "localhost")
     db_port = os.getenv("POSTGRESQL_PORT", "5432")
     db_user = os.getenv("POSTGRESQL_USER", "postgres")
     db_password = os.getenv("POSTGRESQL_PASSWORD", "postgres")
     main_db_name = os.getenv("DATABASE", "iaf_database")
-    recycle_retention_days = int(os.getenv("RECYCLE_BIN_RETENTION_DAYS", "15"))
-    
+
+    # Use command line argument if provided, otherwise fall back to env variable
+    if args.recycle_retention_days is not None:
+        recycle_retention_days = args.recycle_retention_days
+    else:
+        recycle_retention_days = int(os.getenv("RECYCLE_BIN_RETENTION_DAYS", "15"))
+
     # Database configurations
     main_db_config = {
         "dbname": main_db_name,
@@ -891,7 +917,7 @@ def main():
         "host": db_host,
         "port": db_port
     }
-    
+
     recycle_db_config = {
         "dbname": args.recycle_db,
         "user": db_user,
@@ -899,30 +925,36 @@ def main():
         "host": db_host,
         "port": db_port
     }
-    
+
     logger.info(f"Using main database: {main_db_name}")
     logger.info(f"Using recycle database: {args.recycle_db}")
     logger.info(f"Database host: {db_host}:{db_port}")
     logger.info(f"Recycle retention period: {recycle_retention_days} days")
-    
+
     try:
         cleanup_handler = ConversationCleanup(main_db_config, recycle_db_config)
-        
+
         # First, permanently delete "insidetable" records from main database (no recycle)
         logger.info("Step 1: Permanently deleting 'insidetable' records from main database...")
         cleanup_handler.permanent_delete_insidetable_records(args.dry_run)
-        
+
         # Second, perform permanent deletion from recycle bin
         logger.info("Step 2: Performing permanent deletion from recycle bin...")
         cleanup_handler.permanent_delete_from_recycle(recycle_retention_days, args.dry_run)
-        
+
         # Then, perform cleanup of old conversations
         logger.info("Step 3: Cleaning up old conversations...")
         cleanup_handler.cleanup_conversations(args.days, args.dry_run)
-        
+
     except Exception as e:
         logger.error(f"Failed to run cleanup: {e}")
         sys.exit(1)
+    finally:
+        # Ensure connections are closed
+        try:
+            cleanup_handler.close_connections()
+        except:
+            pass
 
 
 if __name__ == "__main__":

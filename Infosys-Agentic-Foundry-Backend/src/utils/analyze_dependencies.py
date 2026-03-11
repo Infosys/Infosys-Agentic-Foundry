@@ -11,6 +11,7 @@ try:
 except ImportError:
     # Fallback for Python < 3.8
     from importlib_metadata import distributions, distribution, PackageNotFoundError
+from telemetry_wrapper import logger as log
 
 class ImportAnalyzer(ast.NodeVisitor):
     """AST visitor to extract all types of imports from Python source code."""
@@ -123,8 +124,12 @@ class StringImportExtractor:
         
         for module in potential_modules:
             if any(pattern in module for pattern in ['sql', 'db', 'connector', 'driver', 'database']):
-                if re.search(rf'["\'{module}["\'].*(?:connection|database|driver|connector)', content, re.IGNORECASE):
-                    imports.add(module)
+                content_lower = content.lower()
+                module_lower = module.lower()
+                if module_lower in content_lower:
+                    db_keywords = ['connection', 'database', 'driver', 'connector']
+                    if any(keyword in content_lower for keyword in db_keywords):
+                        imports.add(module)
         
         file_extensions = re.findall(r'\.([a-z]{2,5})["\']', content.lower())
         for ext in set(file_extensions):
@@ -136,15 +141,89 @@ class StringImportExtractor:
         
         vector_classes = re.findall(r'(?:from\s+[\w.]+\s+import\s+|class\s+)([A-Z][A-Z]+)\b', content)
         for cls in vector_classes:
-            if re.search(rf'{cls}.*(?:vector|embedding|index|store)', content, re.IGNORECASE) or \
-               re.search(rf'(?:vector|embedding|index|store).*{cls}', content, re.IGNORECASE):
-                imports.add(cls.lower())
+            content_lower = content.lower()
+            cls_lower = cls.lower()
+            vector_keywords = ['vector', 'embedding', 'index', 'store']
+            if cls_lower in content_lower and any(keyword in content_lower for keyword in vector_keywords):
+                imports.add(cls_lower)
         
         return imports
-
+        
 
 class DependencyAnalyzer:
     """Analyzes project dependencies by scanning Python files for all import types."""
+    
+    _distributions_cache = None
+    _top_level_to_package_cache = None
+    _cache_initialized = False
+    
+    @classmethod
+    def reset_cache(cls):
+        """Reset all caches. Useful if packages are installed/uninstalled."""
+        DependencyAnalyzer._distributions_cache = None
+        DependencyAnalyzer._top_level_to_package_cache = None
+        DependencyAnalyzer._cache_initialized = False
+    
+    @classmethod
+    def _initialize_distribution_cache(cls):
+        """
+        Build a one-time cache of all installed package metadata.
+        This dramatically speeds up import-to-package mapping.
+        Includes both top_level.txt and RECORD-based mappings.
+        """
+        if DependencyAnalyzer._cache_initialized:
+            return
+        
+        try:
+            from importlib.metadata import distributions
+        except ImportError:
+            from importlib_metadata import distributions
+        
+        DependencyAnalyzer._distributions_cache = {}
+        DependencyAnalyzer._top_level_to_package_cache = {}
+        
+        try:
+            for dist in distributions():
+                try:
+                    pkg_name = dist.name.lower().replace('_', '-')
+                    DependencyAnalyzer._distributions_cache[pkg_name] = dist
+                    try:
+                        top_level_txt = dist.read_text('top_level.txt')
+                        if top_level_txt:
+                            for module in top_level_txt.split():
+                                module = module.strip()
+                                if module:
+                                    DependencyAnalyzer._top_level_to_package_cache[module] = pkg_name
+                                    DependencyAnalyzer._top_level_to_package_cache[module.lower()] = pkg_name
+                    except Exception:
+                        pass
+                    
+                    try:
+                        record = dist.read_text('RECORD')
+                        if record:
+                            for line in record.split('\n')[:100]:
+                                if '/' in line:
+                                    first_part = line.split('/')[0]
+                                    if first_part and first_part[0].isalpha() and not first_part.endswith('.dist-info'):
+                                        if first_part not in DependencyAnalyzer._top_level_to_package_cache:
+                                            DependencyAnalyzer._top_level_to_package_cache[first_part] = pkg_name
+                                        if first_part.lower() not in DependencyAnalyzer._top_level_to_package_cache:
+                                            DependencyAnalyzer._top_level_to_package_cache[first_part.lower()] = pkg_name
+                    except Exception:
+                        pass
+                    
+                    pkg_as_module = dist.name.replace('-', '_')
+                    DependencyAnalyzer._top_level_to_package_cache[pkg_as_module] = pkg_name
+                    DependencyAnalyzer._top_level_to_package_cache[pkg_as_module.lower()] = pkg_name
+                    DependencyAnalyzer._top_level_to_package_cache[dist.name] = pkg_name
+                    DependencyAnalyzer._top_level_to_package_cache[dist.name.lower()] = pkg_name
+                    
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        
+        DependencyAnalyzer._cache_initialized = True
     
     def __init__(self, project_path: str, exclude_dirs: Optional[List[str]] = None):
         self.project_path = Path(project_path).resolve()
@@ -161,6 +240,8 @@ class DependencyAnalyzer:
             'string_based': set()
         }
         self.stdlib_modules = self._get_stdlib_modules()
+        self.import_to_package_cache = {}
+        self._initialize_distribution_cache()
         
     def _get_stdlib_modules(self) -> Set[str]:
         """Get set of Python standard library modules."""
@@ -246,7 +327,7 @@ class DependencyAnalyzer:
             }
             
         except Exception as e:
-            print(f"Warning: Could not analyze {filepath}: {e}", file=sys.stderr)
+            log.warning(f"Warning: Could not analyze {filepath}: {e}")
             return {
                 'direct': set(),
                 'conditional': set(),
@@ -259,45 +340,40 @@ class DependencyAnalyzer:
         """Detect hidden dependencies based on package namespaces."""
         namespace_deps = set()
         
+        def extract_potential_deps(name: str) -> Set[str]:
+            """Extract potential dependency names from a module/class name."""
+            potential_deps = set()
+            name_lower = name.lower()
+            
+            if '_' in name_lower:
+                potential_deps.add(name_lower.replace('_', ''))
+                potential_deps.add(name_lower.replace('_', '-'))
+                parts = name_lower.split('_')
+                if len(parts) == 2:
+                    potential_deps.add(''.join(parts))
+            
+            if name != name_lower:
+                potential_deps.add(name_lower)
+            
+            for suffix in ['lib', 'client', 'api', 'wrapper', 'adapter']:
+                if name_lower.endswith(suffix):
+                    base = name_lower[:-len(suffix)]
+                    if base:
+                        potential_deps.add(base)
+            
+            return potential_deps
+        
         for import_name in imports:
             if '.' in import_name:
                 parts = import_name.split('.')
                 
                 for part in parts:
-                    potential_deps = self._extract_potential_deps_from_name(part)
-                    namespace_deps.update(potential_deps)
+                    namespace_deps.update(extract_potential_deps(part))
                 
                 if len(parts) >= 2:
-                    last_part = parts[-1]
-                    potential_deps = self._extract_potential_deps_from_name(last_part)
-                    namespace_deps.update(potential_deps)
+                    namespace_deps.update(extract_potential_deps(parts[-1]))
         
         return namespace_deps
-    
-    def _extract_potential_deps_from_name(self, name: str) -> Set[str]:
-        """Extract potential dependency names from a module/class name."""
-        potential_deps = set()
-        name_lower = name.lower()
-        
-        if '_' in name_lower:
-            no_underscore = name_lower.replace('_', '')
-            potential_deps.add(no_underscore)
-            hyphenated = name_lower.replace('_', '-')
-            potential_deps.add(hyphenated)
-            parts = name_lower.split('_')
-            if len(parts) == 2:
-                potential_deps.add(''.join(parts))
-        
-        if name != name_lower:
-            potential_deps.add(name_lower)
-        
-        for suffix in ['lib', 'client', 'api', 'wrapper', 'adapter']:
-            if name_lower.endswith(suffix):
-                base = name_lower[:-len(suffix)]
-                if base:
-                    potential_deps.add(base)
-        
-        return potential_deps
     
     def analyze_all_files(self) -> None:
         """Analyze all Python files in the project and aggregate imports."""
@@ -333,7 +409,6 @@ class DependencyAnalyzer:
                             clean_deps = set()
                             for dep in deps.split(','):
                                 dep = dep.strip()
-                                # Remove version specifiers
                                 dep = re.split(r'[<>=!]', dep)[0].strip()
                                 if dep:
                                     clean_deps.add(dep)
@@ -348,7 +423,7 @@ class DependencyAnalyzer:
         to_check = set(packages)
         checked = set()
         
-        print(f"  Checking {len(to_check)} packages for dependencies...")
+        log.info(f"  Checking {len(to_check)} packages for dependencies...")
         
         while to_check:
             package = to_check.pop()
@@ -370,26 +445,37 @@ class DependencyAnalyzer:
     def map_import_to_package(self, import_name: str) -> Optional[str]:
         """
         Map an import name to its package name using dynamic discovery.
-        Uses installed package metadata to find the correct package name.
+        Uses cached package metadata for fast lookups, with fallback to iteration.
         """
         if '.' in import_name:
             return import_name.replace('.', '-')
         
         top_level = import_name.split('.')[0]
+        if top_level in self.import_to_package_cache:
+            return self.import_to_package_cache[top_level]
         
-        try:
-            for dist in distributions():
-                try:
-                    if dist.read_text('top_level.txt'):
-                        top_level_modules = dist.read_text('top_level.txt').split()
-                        if top_level in top_level_modules:
-                            return dist.name
-                        if import_name in top_level_modules:
-                            return dist.name
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        if top_level in self._top_level_to_package_cache:
+            pkg_name = self._top_level_to_package_cache[top_level]
+            self.import_to_package_cache[top_level] = pkg_name
+            return pkg_name
+        
+        top_level_lower = top_level.lower()
+        if top_level_lower in self._top_level_to_package_cache:
+            pkg_name = self._top_level_to_package_cache[top_level_lower]
+            self.import_to_package_cache[top_level] = pkg_name
+            return pkg_name
+        
+        alt_names = [
+            top_level.replace('_', '-'),
+            top_level_lower.replace('_', '-'),
+            top_level.replace('-', '_'),
+            top_level_lower.replace('-', '_')
+        ]
+        for alt_name in alt_names:
+            if alt_name in self._top_level_to_package_cache:
+                pkg_name = self._top_level_to_package_cache[alt_name]
+                self.import_to_package_cache[top_level] = pkg_name
+                return pkg_name
         
         return import_name
 
@@ -426,7 +512,7 @@ class RequirementsComparator:
         else:
             # Parse from file
             if not self.requirements_path.exists():
-                print(f"Warning: {self.requirements_path} not found.", file=sys.stderr)
+                log.warning(f"Warning: {self.requirements_path} not found.")
                 return
             
             with open(self.requirements_path, 'r', encoding='utf-8') as f:
@@ -551,4 +637,3 @@ class RequirementsComparator:
                     unique_unmatched[top_level] = (import_name, package_name)
         
         return optimized
-

@@ -1,8 +1,14 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import os
 import re
+import os
 import json
 import time
 import asyncio
+import threading
+import inspect
+from pathlib import Path
+from functools import partial
 from datetime import datetime
 from copy import deepcopy
 from abc import ABC, abstractmethod
@@ -22,15 +28,19 @@ from langgraph.graph.state import CompiledStateGraph, StateGraph
 from langgraph.types import StreamWriter
 from src.utils.helper_functions import get_timestamp
 from src.inference.inference_utils import InferenceUtils
-from src.schemas import AgentInferenceRequest
-from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key
+
+from src.database.kafka_handler import create_kafka_topic,kafka_worker
+
+from src.schemas import AgentInferenceRequest, AdminConfigLimits
+from src.config.constants import AgentType
+from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department
+from src.decorators.tool_access import resource_access, require_role, authorized_tool, current_tool_user, get_tool_user_context
 from src.auth.models import UserRole
 from telemetry_wrapper import logger as log, update_session_context
 from src.utils.phoenix_manager import ensure_project_registered, traced_project_context, log_trace_context
-
+from src.storage import get_storage_client
 
 # Define common TypedDict for state if applicable to all workflows
-# This state can be extended by specific workflow implementations
 class BaseWorkflowState(TypedDict):
     query: str
     response: str
@@ -48,6 +58,7 @@ class BaseWorkflowState(TypedDict):
     parts_storage_dict: Annotated[Dict[Any, Any], InferenceUtils.add_parts]  # For storing parts temporarily
     response_formatting_flag: bool = True
     context_flag : bool = True
+    file_context_management_flag: bool = False  # When True (and context_flag=True), use file-based context with tool
     validation_score: Optional[float] = None
     validation_feedback: Optional[str] = None
     validation_attempts: int = 0
@@ -56,6 +67,7 @@ class BaseWorkflowState(TypedDict):
     evaluation_feedback: str = None
     evaluation_attempts: int = 0
     interrupt_items: Optional[List[str]] = None  # List of tool/node names to interrupt at during execution
+    department_name: Optional[str] = None  # Department name for department-scoped feedback learning
 
 class BaseAgentInference(ABC):
     """
@@ -72,54 +84,288 @@ class BaseAgentInference(ABC):
         self.model_service = inference_utils.model_service
         self.feedback_learning_service = inference_utils.feedback_learning_service
         self.evaluation_service = inference_utils.evaluation_service
+        self.storage_provider = os.getenv('STORAGE_PROVIDER', "")
+        self.storage_client = None
+        self.message_queue=False
+        self.admin_config_service = self.chat_service.admin_config_service
 
 
     # --- Helper Methods ---
+
+    def _initialize_storage_client(self):
+        if self.storage_provider and self.storage_provider.strip():
+            try:
+                self.storage_client = get_storage_client(self.storage_provider)
+            except ValueError as e:
+                log.info(f"Warning: Storage client initialization failed: {e}")
+            except Exception as e:
+                log.info(f"Warning: Storage configuration error: {e}")
 
     async def _get_react_agent_as_executor_agent(self,
                                                  llm: Any,
                                                  system_prompt: str,
                                                  checkpointer: Any = None,
                                                  tool_ids: List[str] = [],
-                                                 interrupt_tool: bool = False
+                                                 interrupt_tool: bool = False,
+                                                 knowledgebase_names: str = None,
+                                                 message_queue: bool = False,
+                                                 session_id: str = None,
+                                                 use_shell_memory: bool = True,
+                                                 agent_id: str = None,
+                                                 context_flag: bool = True,
+                                                 file_context_management_flag: bool = False
                                                 ) -> Any:
         """
         Helper method to create a React agent as an executor agent with tools loaded dynamically.
         This function now supports loading both Python code-based tools and MCP tools.
+        
+        Args:
+            session_id: Session ID to bind to message_queue tools for filtering Kafka results.
+            use_shell_memory: If True, use AgentShell single-tool interface (DEFAULT, recommended).
+            agent_id: Agent ID for memory isolation (required for memory tools).
+            context_flag: If False, NO memory/context management (no tools, no conversation fetch).
+            file_context_management_flag: If True (and context_flag=True), use file-based context 
+                                         with run_shell_command tool instead of DB conversation fetch.
+        
+        Context Management Logic:
+            - context_flag=False: No memory tools, no conversation fetching (completely disabled)
+            - context_flag=True, file_context_management_flag=False: Traditional DB-based context (fetch past conversations)
+            - context_flag=True, file_context_management_flag=True: File-based context with run_shell_command tool
+        
+        Memory Tool Options (only if context_flag=True AND file_context_management_flag=True):
+            1. use_shell_memory=True (DEFAULT): Single `run_shell_command` tool with Unix-like interface
+               - Commands: ls, cd, cat, grep, find, echo, semgrep (semantic search)
+               - Minimal context footprint, powerful file operations
+            2. use_shell_memory=False: Database-backed manage_memory + search_memory
         """
-        # local_var for exec() context, including secrets handlers
+        # local_var for exec() context, including secrets handlers and access control decorators
         local_var = {
             "get_user_secrets": get_user_secrets,
             "current_user_email": current_user_email,
-            "get_public_secrets": get_public_key
+            "current_user_department": current_user_department,
+            "get_public_secrets": get_public_key,
+            "get_group_secrets": get_group_secrets,
+            # Tool access control decorators - available for tool creators
+            "resource_access": resource_access,
+            "require_role": require_role,
+            "authorized_tool": authorized_tool,
+            "current_tool_user": current_tool_user,
+            "get_tool_user_context": get_tool_user_context
         }
 
         tool_list: List[BaseTool | StructuredTool] = []
-        manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
-        tool_list.append(manage_memory_tool)
+        
+        # ========== MEMORY TOOLS SELECTION ==========
+        # Only add memory tools if:
+        # 1. context_flag is True (context management enabled)
+        # 2. file_context_management_flag is True (use file-based context with tools)
+        
+        agent_shell = None  # Will hold AgentShell instance
+        memory_loaded = False
+        
+        if not context_flag:
+            log.info("⏭️ Skipping memory tools (context_flag=False) - no context management")
+            memory_loaded = True  # Skip memory loading
+        elif not file_context_management_flag:
+            log.info("⏭️ Skipping memory tools (file_context_management_flag=False) - using traditional DB context")
+            memory_loaded = True  # Skip memory loading, will use DB-based conversation fetch
+        
+        # Option 1: AgentShell - Single tool with Unix-like interface (RECOMMENDED)
+        # Only when context_flag=True AND file_context_management_flag=True
+        if not memory_loaded and use_shell_memory and agent_id and session_id:
+            try:
+                from src.memory.agent_shell.tools import get_shell_tools_for_session
+                
+                # Get user email from context variable for hierarchical storage
+                user_email = current_user_email.get(None)
+                
+                agent_shell, shell_tools = get_shell_tools_for_session(
+                    agent_id=agent_id,
+                    session_id=session_id,
+                    user_email=user_email,
+                    workspace_root="./agent_workspaces"
+                )
+                tool_list.extend(shell_tools)
+                memory_loaded = True
+                log.info(f"✅ AgentShell loaded for user={user_email}, agent={agent_id}, session={session_id[:12]}... (1 tool: run_shell_command)")
+                log.info(f"   📁 Workspace: {agent_shell.shell_root}")
+                log.info(f"   🔍 Commands: ls, cd, cat, grep, find, echo, semgrep (semantic search)")
+            except Exception as e:
+                log.warning(f"Failed to load AgentShell, falling back to database memory: {e}")
+                use_shell_memory = False
+        
+        # Option 2: Database-backed memory (fallback when AgentShell fails)
+        if not memory_loaded:
+            manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
+            tool_list.append(manage_memory_tool)
 
-        search_memory_tool = await self.inference_utils.create_search_memory_tool(
-            embedding_model=self.inference_utils.embedding_model
-        )
-        tool_list.append(search_memory_tool)
+            search_memory_tool = await self.inference_utils.create_search_memory_tool(
+                embedding_model=self.inference_utils.embedding_model
+            )
+            tool_list.append(search_memory_tool)
+            log.info(f"✅ Database memory tools loaded (2 tools: manage_memory, search_memory)")
+
+        # Add knowledgebase retriever tool if knowledgebase_names is provided
+        if knowledgebase_names:
+            try:
+                from src.utils.knowledgebase import knowledgebase_retriever
+                tool_list.append(knowledgebase_retriever)
+                log.info(f"Knowledgebase retriever tool added for KB: {knowledgebase_names}")
+            except Exception as e:
+                log.error(f"Error loading knowledgebase_retriever tool: {e}")
 
         mcp_server_ids = []
 
+        # Creating kafka topic for dynamic results
+        if message_queue:
+            res=create_kafka_topic('dynamic_results')
+            
         for tool_id in tool_ids:
             if tool_id.startswith("mcp_"):
                 mcp_server_ids.append(tool_id)
                 continue
 
             try:
+                original_tool_id = tool_id  # Store original tool_id before modification
+                
+                # For message_queue, first load and register the ORIGINAL tool for Kafka worker
+                if message_queue:
+                    log.info(f"Loading ORIGINAL tool for Kafka worker registration: {original_tool_id}")
+                    original_tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=original_tool_id, message_queue_implementation=False)
+                    if original_tool_record:
+                        original_tool_record = original_tool_record[0]
+                        original_codes = original_tool_record["code_snippet"]
+                        original_tool_name = original_tool_record["tool_name"]
+                        
+                        log.debug(f"Debug: About to register original tool with name: '{original_tool_name}'")
+                        log.debug(f"Debug: Original tool code snippet (first 200 chars): {original_codes[:200]}...")
+                        
+                        # Execute original tool code to get the function
+                        exec(original_codes, local_var)
+                        original_func = local_var[original_tool_name]
+                        
+                        log.debug(f"Debug: Successfully extracted function from local_var['{original_tool_name}']: {original_func}")
+                        
+                        # Register the original function for Kafka worker to use
+                        from src.database.kafka_handler import register_function
+                        register_function(original_tool_name, original_func)
+                        log.info(f"✅ Registered original tool '{original_tool_name}' for Kafka worker execution")
+                    else:
+                        log.warning(f"Original tool record for ID {original_tool_id} not found for registration.")
+                    
+                    # Now switch to load the message_queue version
+                    tool_id += '_message_queue'
+                    
                 log.info(f"Loading Python tool for ID: {tool_id} - CACHE LOG")
-                tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=tool_id)
+                tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=tool_id,message_queue_implementation=message_queue)
                 log.info(f"Python tool reading completed for ID: {tool_id} - CACHE LOG")
                 if tool_record:
                     tool_record = tool_record[0]
                     codes = tool_record["code_snippet"]
                     tool_name = tool_record["tool_name"]
+                    log.info(f"code for message queue tool:{codes}")
+
+                    log.info(f"Tool name: {tool_name}")
+                    # Creating kafka topic
+                    if message_queue:
+                        if tool_name.endswith('_message_queue'):
+                            res=create_kafka_topic(tool_name[:-14])
+                            if res: 
+                                worker_thread = threading.Thread(target=kafka_worker, args=(tool_name[:-14],), daemon=True)
+                                worker_thread.start()
+                                time.sleep(3)  # Give the worker some time to start
+                                log.info(f"Worker thread started for topic: {tool_name[:-14]}")
+                            else:
+                                raise HTTPException(status_code=500, detail="Failed to create Kafka topic.")
+                        else:
+                            res=create_kafka_topic(tool_name)
+                            if res:
+                                worker_thread = threading.Thread(target=kafka_worker, args=(tool_name,), daemon=True)
+                                worker_thread.start()
+                                time.sleep(3)  # Give the worker some time to start
+                                log.info(f"Worker thread started for topic: {tool_name}")
+                            else:
+                                log.error(f"Failed to create Kafka topic for tool: {tool_name}")
+                                raise HTTPException(status_code=500, detail="Failed to create Kafka topic.")
+
                     exec(codes, local_var)
-                    tool_list.append(local_var[tool_name])
+                    loaded_tool = local_var[tool_name]
+                    
+                                       # For message_queue tools, inject session_id into the tool's execution context
+                    if message_queue and session_id:
+                        # Store session_id in the local_var context so the tool can access it
+                        # The message_queue tool already has session_id as a parameter with default None
+                        # We need to make it always use our session_id
+                        
+                        # Get the original function
+                        if hasattr(loaded_tool, 'func'):
+                            original_func = loaded_tool.func
+                            tool_name_attr = loaded_tool.name
+                            tool_desc = loaded_tool.description
+                        else:
+                            original_func = loaded_tool
+                            tool_name_attr = getattr(loaded_tool, 'name', tool_name)
+                            tool_desc = getattr(loaded_tool, 'description', '')
+                        
+                        # Get the original function's signature to extract parameter info (excluding session_id)
+                        import inspect
+                        from functools import wraps
+                        from pydantic import create_model, Field
+                        from typing import get_type_hints
+                        
+                        sig = inspect.signature(original_func)
+                        params_without_session = {
+                            name: param for name, param in sig.parameters.items() 
+                            if name != 'session_id'
+                        }
+                        
+                        # Build a Pydantic model for the args schema (excluding session_id)
+                        type_hints = {}
+                        try:
+                            type_hints = get_type_hints(original_func)
+                        except Exception:
+                            pass
+                        
+                        field_definitions = {}
+                        for param_name, param in params_without_session.items():
+                            param_type = type_hints.get(param_name, str)
+                            if param.default is inspect.Parameter.empty:
+                                field_definitions[param_name] = (param_type, ...)
+                            else:
+                                field_definitions[param_name] = (param_type, param.default)
+                        
+                        # Create dynamic Pydantic model for args schema
+                        ArgsSchema = create_model(f'{tool_name_attr}Schema', **field_definitions)
+                        
+                        # Create a wrapper function that injects session_id
+                        captured_session_id = session_id  # Capture in closure
+                        captured_func = original_func      # Capture in closure
+                        
+                        def make_wrapper(func, sid):
+                            """Factory to create wrapper with proper closure"""
+                            @wraps(func)
+                            def wrapper(**kwargs):
+                                kwargs['session_id'] = sid
+                                return func(**kwargs)
+                            return wrapper
+                        
+                        wrapper_func = make_wrapper(captured_func, captured_session_id)
+                        
+                        # Copy the original function's signature (minus session_id) to the wrapper
+                        # This is needed for StructuredTool to build the correct schema
+                        wrapper_func.__name__ = original_func.__name__
+                        wrapper_func.__doc__ = original_func.__doc__
+                        
+                        # Create new StructuredTool with the wrapper and explicit args_schema
+                        loaded_tool = StructuredTool.from_function(
+                            func=wrapper_func,
+                            name=tool_name_attr,
+                            description=tool_desc,
+                            args_schema=ArgsSchema
+                        )
+                        log.info(f"Bound session_id '{session_id}' to tool '{tool_name}'")
+                    
+                    tool_list.append(loaded_tool)
                 else:
                     log.warning(f"Python tool record for ID {tool_id} not found.")
                     raise HTTPException(status_code=404, detail=f"Python tool record for ID {tool_id} not found.")
@@ -141,16 +387,72 @@ class BaseAgentInference(ABC):
                 log.error(f"Error occurred while loading tools from MCP servers {mcp_server_ids}: {e}")
                 raise HTTPException(status_code=500, detail=f"Error occurred while loading tools from MCP servers {mcp_server_ids}: {e}")
 
+        # NOTE: Context management prompt is NOT auto-injected.
+        # Include run_shell_command instructions directly in your agent's system prompt if needed.
+        # See: src/prompts/context_management_prompt.md for reference
+
+        # ========== INJECT CURRENT USER INFO INTO SYSTEM PROMPT ==========
+        # Get current user info and inject into system prompt for personalization
+        try:
+            user_email = current_user_email.get(None)
+            if user_email:
+                # Try to get full user details from auth service
+                try:
+                    from src.api.dependencies import ServiceProvider
+                    auth_service = ServiceProvider.get_auth_service()
+                    user_data = await auth_service.user_repo.get_user_by_email(user_email)
+                    
+                    if user_data:
+                        user_info_section = f"""
+## Current User Information
+You are currently assisting the following user:
+- **Email:** {user_data.get('mail_id', user_email)}
+- **Name:** {user_data.get('user_name', 'Unknown')}
+- **Role:** {user_data.get('role', 'User')}
+
+Please personalize your responses appropriately for this user.
+#Always greet user by their Name for general calls
+"""
+                        system_prompt = f"{system_prompt}\n{user_info_section}"
+                        log.info(f"✅ Injected user info into system prompt for: {user_email}")
+                    else:
+                        # Fallback: just inject email
+                        user_info_section = f"""
+## Current User Information
+You are currently assisting: {user_email}
+"""
+                        system_prompt = f"{system_prompt}\n{user_info_section}"
+                        log.info(f"✅ Injected user email into system prompt: {user_email}")
+                except Exception as e:
+                    log.warning(f"Could not fetch full user details, using email only: {e}")
+                    user_info_section = f"""
+## Current User Information
+You are currently assisting: {user_email}
+"""
+                    system_prompt = f"{system_prompt}\n{user_info_section}"
+        except Exception as e:
+            log.warning(f"Could not inject user info into system prompt: {e}")
+
         interrupt_before = ["tools"] if interrupt_tool and tool_list else None
         try:
-            executor_agent = create_react_agent(
+            if message_queue:
+                executor_agent = create_react_agent(
+                llm,
+                tools=tool_list,
+                checkpointer=checkpointer,
+                interrupt_after=["tools"],
+                prompt=system_prompt
+            )
+            else:
+                executor_agent = create_react_agent(
                 llm,
                 tools=tool_list,
                 checkpointer=checkpointer,
                 interrupt_before=interrupt_before,
                 prompt=system_prompt
-            )
-            return executor_agent, tool_list
+                )
+            # Return executor_agent, tool_list, and memory instance (shell)
+            return executor_agent, tool_list, agent_shell
 
         except Exception as e:
             log.error(f"Error occurred while creating agent executor: {e}")
@@ -200,6 +502,7 @@ class BaseAgentInference(ABC):
         result = result[0]
 
         agent_config = {
+            "AGENT_ID": result["agentic_application_id"],
             "AGENT_NAME": result["agentic_application_name"],
             "SYSTEM_PROMPT": json.loads(result["system_prompt"]),
             "TOOLS_INFO": json.loads(result["tools_id"]),
@@ -212,9 +515,15 @@ class BaseAgentInference(ABC):
     # Abstract Methods
 
     @abstractmethod
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer, tool_interrupt_flag: bool = False) -> Any:
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer, tool_interrupt_flag: bool = False, message_queue: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False) -> Any:
         """
         Abstract method to build and compile the LangGraph chains for a specific agent type.
+        
+        Args:
+            session_id: Session ID to bind to message_queue tools for filtering Kafka results.
+            agent_id: Agent/application ID for shell workspace (required if file_context_management_flag=True).
+            context_flag: If False, no memory tools will be added.
+            file_context_management_flag: If True (and context_flag=True), use file-based context with tool.
         """
         pass
 
@@ -236,7 +545,9 @@ class BaseAgentInference(ABC):
         is_plan_approved: Literal["yes", "no", None] = None,
         plan_feedback: str = None,
         tool_feedback: str = None,
-        session_id: str = None
+        session_id: str = None,
+        message_queue: bool = False,
+        tool_result: str = None
         ):
         try:
             # Determine which stream to use based on conditions
@@ -250,6 +561,9 @@ class BaseAgentInference(ABC):
             elif is_plan_approved == "no" and not plan_feedback:
                 async for state in app.astream(Command(resume="no"), config=config,stream_mode="custom"):
                     yield state
+            elif message_queue and tool_result:
+                async for state in app.astream(Command(resume=tool_result), config=config,stream_mode="custom"):
+                    yield state        
             elif is_plan_approved == "no" and plan_feedback is not None:
                 async for state in app.astream(Command(resume=plan_feedback), config=config,stream_mode="custom"):
                     yield state
@@ -314,12 +628,16 @@ class BaseAgentInference(ABC):
                                 tool_interrupt_flag: bool = False,
                                 tool_feedback: str = None,
                                 context_flag: bool = True,
+                                file_context_management_flag: bool = False,
                                 temperature: float = 0.0,
                                 enable_streaming_flag: bool = False,
                                 evaluation_flag: bool = False,
                                 validator_flag: bool = False,
                                 mentioned_agent_id: str = None,
-                                interrupt_items: List[str] = None
+                                interrupt_items: List[str] = None,
+                                message_queue: bool = False,
+                                inference_config: AdminConfigLimits = AdminConfigLimits(),
+                                department_name: str = None
                             ):
         if not plan_verifier_flag:
             is_plan_approved = plan_feedback = None
@@ -333,7 +651,12 @@ class BaseAgentInference(ABC):
                 llm, 
                 agent_config, 
                 checkpointer, 
-                tool_interrupt_flag=tool_interrupt_flag
+                tool_interrupt_flag=tool_interrupt_flag,
+                message_queue=message_queue,
+                session_id=session_id,
+                agent_id=agentic_application_id,
+                context_flag=context_flag,
+                file_context_management_flag=file_context_management_flag
             )
             if reset_conversation:
                 try:
@@ -342,16 +665,19 @@ class BaseAgentInference(ABC):
                 except Exception as e:
                     log.error(f"Error occurred while resetting conversation: {e}")
 
-            flags = {
+            flags_and_config = {
                 "plan_verifier_flag": plan_verifier_flag,
                 "tool_interrupt_flag": tool_interrupt_flag,
                 "response_formatting_flag": response_formatting_flag,
                 "context_flag": context_flag,
+                "file_context_management_flag": file_context_management_flag,
                 "evaluation_flag": evaluation_flag,
-                "validator_flag": validator_flag
+                "validator_flag": validator_flag,
+                "message_queue": message_queue,
+                "inference_config": inference_config
             }
             log.debug("Building workflow")
-            workflow = await self._build_workflow(chains, flags)
+            workflow = await self._build_workflow(chains, flags_and_config)
             log.debug("Workflow built successfully")
             app = workflow.compile(checkpointer=checkpointer)
             log.debug("Workflow compiled successfully")
@@ -376,8 +702,10 @@ class BaseAgentInference(ABC):
                         'evaluation_flag': evaluation_flag,
                         "response_formatting_flag": response_formatting_flag,
                         "context_flag": context_flag,
+                        "file_context_management_flag": file_context_management_flag,
                         "mentioned_agent_id": mentioned_agent_id,
-                        "interrupt_items": interrupt_items
+                        "interrupt_items": interrupt_items,
+                        "department_name": department_name
                     }
                     if enable_streaming_flag:
                         streammer = self._astream(
@@ -447,7 +775,8 @@ class BaseAgentInference(ABC):
                   *,
                   agent_config: Optional[Union[dict, None]] = None,
                   insert_into_eval_flag: bool = True,
-                  role: str = None
+                  role: str = None,
+                  department_name: str = None
                 ) -> Any:
         """
         Runs the Agent inference workflow.
@@ -465,7 +794,13 @@ class BaseAgentInference(ABC):
                 raise HTTPException(status_code=500, detail=f"Error occurred while retrieving agent configuration: {str(e)}")
 
         try:
-            query = inference_request.query
+            query = inference_request.query or ""
+            
+            if inference_request.uploaded_files:
+                base_dir = "user_uploads"
+                files_info = "\n".join([f"- {base_dir}/{f}" for f in inference_request.uploaded_files])
+                query = f"{query}\n\n[Attached files:\n{files_info}]" if query else f"[Attached files:\n{files_info}]"
+            
             session_id = inference_request.session_id
             model_name = inference_request.model_name
             reset_conversation = inference_request.reset_conversation
@@ -474,6 +809,7 @@ class BaseAgentInference(ABC):
             plan_verifier_flag = inference_request.plan_verifier_flag
             response_formatting_flag = inference_request.response_formatting_flag
             context_flag = inference_request.context_flag
+            file_context_management_flag = inference_request.file_context_management_flag
             is_plan_approved = inference_request.is_plan_approved
             plan_feedback = inference_request.plan_feedback
             evaluation_flag = inference_request.evaluation_flag
@@ -482,6 +818,9 @@ class BaseAgentInference(ABC):
             enable_streaming_flag = inference_request.enable_streaming_flag
             mentioned_agent_id = inference_request.mentioned_agentic_application_id
             interrupt_items = inference_request.interrupt_items
+            message_queue = inference_request.message_queue
+
+            inference_config = await self.admin_config_service.get_limits()
 
             match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', session_id)
             user_name = match.group(0) if match else "guest"
@@ -498,44 +837,134 @@ class BaseAgentInference(ABC):
 
             update_session_context(agent_type=agent_config["AGENT_TYPE"], agent_name=agent_name)
 
-            # For react agent, we need to add knowledge base retriever tool if knowledgebase_name is provided
-            if agent_config["AGENT_TYPE"] == "react_agent" and hasattr(inference_request, "knowledgebase_name") and inference_request.knowledgebase_name:
-                knowledgebase_retriever_tool = await self.tool_service.get_tool(tool_name="knowledgebase_retriever")
-                knowledgebase_retriever_id = knowledgebase_retriever_tool[0]["tool_id"] if knowledgebase_retriever_tool else None
-                if not knowledgebase_retriever_id:
-                    log.error("Knowledge Base Retriever tool not found. Please ensure it is registered in the system.")
-                    yield {"response": "Knowledge Base Retriever tool not found. Please ensure it is registered in the system."}
-                    return 
+            # Fetch knowledgebase names from database if agent has KB mappings
+            knowledgebase_names = None
+            if agent_config["AGENT_TYPE"] in ["react_agent", "react_critic_agent"]:
+                try:
+                    # Get KB mappings for this agent from database
+                    from src.api.app_container import app_container
+                    if app_container.knowledgebase_service:
+                        kb_records = await app_container.knowledgebase_service.agent_kb_mapping_repo.get_knowledgebases_for_agent(
+                            agentic_application_id=agentic_application_id
+                        )
+                        
+                        if kb_records:
+                            # Extract KB names as a list
+                            knowledgebase_names = [kb.get("knowledgebase_name") for kb in kb_records]
+                            agent_config['KNOWLEDGEBASE_NAMES'] = knowledgebase_names
+                            
+                            log.info(f"Knowledge Bases configured from database: {knowledgebase_names}")
+                            
+                            # Enhanced system prompt to guide the agent on using the knowledge base tool
+                            kb_instruction = f"""
 
-                agent_config['TOOLS_INFO'].append(knowledgebase_retriever_id)
-                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REACT_AGENT'] += f" ;Use Knowledge Base: {inference_request.knowledgebase_name} regarding the query and if any useful information found use it and pass it to any tools if no useful content is extracted call use the agent as if the knowledgebase tool is not existing, but use the instructions for each of tools and execute the query."
+IMPORTANT - Knowledge Base Retrieval Tool Available:
+You have access to a 'knowledgebase_retriever' tool that can search knowledge bases for relevant information.
+
+Knowledge Base Names: {knowledgebase_names}
+
+CRITICAL INSTRUCTIONS:
+- For ANY query, use the knowledgebase_retriever tool FIRST to search the knowledge base.
+- If the retrieved information is irrelevant or doesn't answer the query, use other available tools.
+- If the retrieved information is useful for another tool (e.g., code snippets, API details), pass that information to the appropriate tool.
+
+How to use the tool:
+- Call knowledgebase_retriever with TWO parameters:
+  1. query: Your search query (what you want to find)
+  2. knowledgebase_names: Pass the knowledge base list: {knowledgebase_names}
+
+Example:
+  knowledgebase_retriever(query="product features", knowledgebase_names={knowledgebase_names})
+
+When to use:
+- ALWAYS call this tool FIRST for any user query that might be answered by domain knowledge
+- Review the retrieved information carefully and determine if it answers the query
+- If the knowledge base provides relevant information, use it in your response
+- If the knowledge base information is incomplete or irrelevant, proceed with other available tools
+- You can combine knowledge base information with other tool outputs for comprehensive answers
+
+Always prioritize accuracy: if the knowledge base provides specific information, use it in your response."""
+                            
+                            # Add instruction to the appropriate system prompt based on agent type
+                            if agent_config["AGENT_TYPE"] == "react_agent":
+                                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_REACT_AGENT'] += kb_instruction
+                            elif agent_config["AGENT_TYPE"] == "react_critic_agent":
+                                agent_config['SYSTEM_PROMPT']['SYSTEM_PROMPT_EXECUTOR_AGENT'] += kb_instruction
+                except Exception as e:
+                    log.warning(f"Error fetching knowledge bases for agent '{agentic_application_id}': {e}")
 
 
             # Generate response using the React agent workflow
-            async for response in self._generate_response(
-                query=query,
-                agentic_application_id=agentic_application_id,
-                session_id=session_id,
-                model_name=model_name,
-                agent_config=agent_config,
-                project_name=project_name,
-                reset_conversation=reset_conversation,
-                plan_verifier_flag=plan_verifier_flag,
-                is_plan_approved=is_plan_approved,
-                plan_feedback=plan_feedback,
-                response_formatting_flag=response_formatting_flag,
-                context_flag=context_flag,
-                evaluation_flag=evaluation_flag,
-                validator_flag=validator_flag,
-                tool_interrupt_flag=tool_interrupt_flag,
-                tool_feedback=tool_feedback,
-                temperature=temperature,
-                enable_streaming_flag=enable_streaming_flag,
-                mentioned_agent_id=mentioned_agent_id,
-                interrupt_items=interrupt_items
-            ):
-                if "executor_messages" not in response:
-                    yield response
+            try:
+                async for response in self._generate_response(
+                    query=query,
+                    agentic_application_id=agentic_application_id,
+                    session_id=session_id,
+                    model_name=model_name,
+                    agent_config=agent_config,
+                    project_name=project_name,
+                    reset_conversation=reset_conversation,
+                    plan_verifier_flag=plan_verifier_flag,
+                    is_plan_approved=is_plan_approved,
+                    plan_feedback=plan_feedback,
+                    response_formatting_flag=response_formatting_flag,
+                    context_flag=context_flag,
+                    file_context_management_flag=file_context_management_flag,
+                    evaluation_flag=evaluation_flag,
+                    validator_flag=validator_flag,
+                    tool_interrupt_flag=tool_interrupt_flag,
+                    tool_feedback=tool_feedback,
+                    temperature=temperature,
+                    enable_streaming_flag=enable_streaming_flag,
+                    mentioned_agent_id=mentioned_agent_id,
+                    interrupt_items=interrupt_items,
+                    inference_config=inference_config,
+                    department_name=department_name
+                ):
+                    if "executor_messages" not in response:
+                        yield response
+            except Exception as e:
+                error_str = str(e).lower()
+                error_message = None
+                
+                # Check for rate limit errors
+                if any(keyword in error_str for keyword in ["rate limit", "ratelimit", "429", "too many requests", "quota exceeded", "requests per minute"]):
+                    error_message = "I apologize, but the service is currently experiencing high demand. The rate limit has been exceeded. Please wait a moment and try again."
+                    log.warning(f"Rate limit error encountered: {e}")
+                
+                # Check for request limit errors
+                elif any(keyword in error_str for keyword in ["request limit", "max requests", "request quota"]):
+                    error_message = "The maximum number of requests has been reached. Please try again later or contact support if this persists."
+                    log.warning(f"Request limit error encountered: {e}")
+                
+                # Check for context length/token limit errors
+                elif any(keyword in error_str for keyword in ["context length", "token limit", "max tokens", "context_length_exceeded", "maximum context", "too long", "reduce the length"]):
+                    error_message = "The conversation has become too long and exceeds the context limit. Please start a new conversation or reduce the length of your message."
+                    log.warning(f"Context limit error encountered: {e}")
+                
+                # Check for content policy/jailbreak errors
+                elif any(keyword in error_str for keyword in ["content policy", "jailbreak", "content filter", "unsafe content", "policy violation", "content management", "responsible ai"]):
+                    error_message = "Your request could not be processed as it may violate content policies. Please rephrase your question and ensure it follows acceptable use guidelines."
+                    log.warning(f"Content policy/jailbreak error encountered: {e}")
+                
+                # Generic error fallback
+                else:
+                    error_message = f"An error occurred while processing your request: {str(e)}"
+                    log.error(f"Unexpected error during response generation: {e}")
+                
+                # Create error response with AIMessage
+                response = {
+                    "response": error_message,
+                    "error": str(e),
+                    "executor_messages": [
+                        HumanMessage(content=query),
+                        AIMessage(content=error_message)
+                    ]
+                }
+                update_session_context(response=error_message)
+                yield response
+                return
+
             if isinstance(response, str):
                 update_session_context(response=response)
                 response = {"error": response}
@@ -554,9 +983,10 @@ class BaseAgentInference(ABC):
                     response, 
                     agentic_application_id=agentic_application_id,
                     session_id=session_id,
-                    role=role
+                    role=role,
+                    department_name=department_name
                 )
-
+                
             if insert_into_eval_flag:
                 try:
                     time_start = time.monotonic()
@@ -570,12 +1000,14 @@ class BaseAgentInference(ABC):
             log.info(f"Time taken for inference: {time_taken:.2f} seconds")
             response["executor_messages"][-1]["response_time"] = time_taken
             
-            # Filter entire response based on user role
-            if role == UserRole.USER:
-                # For USER role, return only executor_messages with filtered fields
-                yield {"executor_messages": response.get("executor_messages", [])}
-                return
-
+            
+            # Filter entire response based on user role permissions
+            if department_name and role and self.chat_service.authorization_service:
+                has_execution_steps_access = await self.chat_service.authorization_service.check_execution_steps_access(role, department_name=department_name)
+                if not has_execution_steps_access:
+                    # For roles without execution steps access, return only executor_messages with filtered fields
+                    yield {"executor_messages": response.get("executor_messages", [])}
+            
             yield response
 
         except Exception as e:
@@ -663,7 +1095,7 @@ class BaseMetaTypeAgentInference(BaseAgentInference):
 
         # Agents and Chains
         planner_chain_json, planner_chain_str = await self._get_chains(llm, planner_system_prompt)
-        executor_agent, tool_list = await self._get_react_agent_as_executor_agent(
+        executor_agent, tool_list, _ = await self._get_react_agent_as_executor_agent(
                                         llm,
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
@@ -1133,7 +1565,7 @@ Critique Points:
 
         # Agents and Chains
         planner_chain_json, planner_chain_str = await self._get_chains(llm, planner_system_prompt)
-        executor_agent, tool_list = await self._get_react_agent_as_executor_agent(
+        executor_agent, tool_list, _ = await self._get_react_agent_as_executor_agent(
                                         llm,
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
@@ -1390,7 +1822,7 @@ Final Response from Executor Agent:
         critic_system_prompt = system_prompts.get("SYSTEM_PROMPT_CRITIC_AGENT", "").replace("{", "{{").replace("}", "}}")
 
         # Agents and Chains
-        executor_agent, tool_list = await self._get_react_agent_as_executor_agent(
+        executor_agent, tool_list, _ = await self._get_react_agent_as_executor_agent(
                                         llm,
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
@@ -1737,10 +2169,18 @@ Response:
                                                    system_prompt: str,
                                                    checkpointer: Any = None,
                                                    worker_agent_ids: List[str] = [],
-                                                   interrupt_tool: bool = False
+                                                   interrupt_tool: bool = False,
+                                                   file_context_management_flag: bool = False,
+                                                   agent_id: str = None,
+                                                   session_id: str = None
                                                    ) -> Any:
         """
         Helper method to create a React agent as a supervisor or meta agent with agents loaded dynamically.
+        
+        Args:
+            file_context_management_flag: If True, use file-based shell tools instead of DB memory tools.
+            agent_id: Agent ID for shell workspace (required if file_context_management_flag=True).
+            session_id: Session ID for shell workspace (required if file_context_management_flag=True).
         
         Returns:
             tuple: (supervisor_agent, worker_agents_as_tools_list, writer_holder)
@@ -1751,13 +2191,41 @@ Response:
         # Shared holder for StreamWriter - will be set by the meta agent node
         writer_holder = {"writer": None}
         
-        manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
-        worker_agents_as_tools_list.append(manage_memory_tool)
+        # Add memory tools based on file_context_management_flag
+        if file_context_management_flag and agent_id and session_id:
+            # Use file-based AgentShell tools
+            try:
+                from src.memory.agent_shell.tools import get_shell_tools_for_session
+                from src.utils.secrets_handler import current_user_email
+                
+                user_email = current_user_email.get(None)
+                
+                agent_shell, shell_tools = get_shell_tools_for_session(
+                    agent_id=agent_id,
+                    session_id=session_id,
+                    user_email=user_email,
+                    workspace_root="./agent_workspaces"
+                )
+                worker_agents_as_tools_list.extend(shell_tools)
+                log.info(f"✅ AgentShell loaded for meta/supervisor agent: user={user_email}, agent={agent_id[:12]}...")
+            except Exception as e:
+                log.warning(f"Failed to load AgentShell for meta agent, falling back to DB memory: {e}")
+                # Fallback to DB memory tools
+                manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
+                worker_agents_as_tools_list.append(manage_memory_tool)
+                search_memory_tool = await self.inference_utils.create_search_memory_tool(
+                    embedding_model=self.inference_utils.embedding_model
+                )
+                worker_agents_as_tools_list.append(search_memory_tool)
+        else:
+            # Use traditional DB memory tools
+            manage_memory_tool = await self.inference_utils.create_manage_memory_tool()
+            worker_agents_as_tools_list.append(manage_memory_tool)
 
-        search_memory_tool = await self.inference_utils.create_search_memory_tool(
-            embedding_model=self.inference_utils.embedding_model
-        )
-        worker_agents_as_tools_list.append(search_memory_tool)
+            search_memory_tool = await self.inference_utils.create_search_memory_tool(
+                embedding_model=self.inference_utils.embedding_model
+            )
+            worker_agents_as_tools_list.append(search_memory_tool)
 
         for worker_agent_id in worker_agent_ids:
             worker_agent_config = await self._get_agent_config(agentic_application_id=worker_agent_id)
@@ -1769,27 +2237,27 @@ Response:
             worker_agent_name = worker_agent_config.get("AGENT_NAME")
             worker_agent_name = await self.agent_service.agent_service_utils._normalize_agent_name(worker_agent_name)
 
-            if worker_agent_type == "react_agent":
-                worker_agent, _ = await self._get_react_agent_as_executor_agent(
+            if worker_agent_type == AgentType.REACT_AGENT:
+                worker_agent, _, _ = await self._get_react_agent_as_executor_agent(
                                         llm=llm,
                                         system_prompt=worker_agent_system_prompt.get("SYSTEM_PROMPT_REACT_AGENT", ""),
                                         tool_ids=worker_agent_tool_ids
                                     )
-            elif worker_agent_type == "multi_agent":
+            elif worker_agent_type == AgentType.PLANNER_EXECUTOR_CRITIC_AGENT:
                 worker_agent, _, _ = await self._get_planner_executor_critic_agent_as_worker_agent(
                     llm=llm,
                     system_prompts=worker_agent_system_prompt,
                     tool_ids=worker_agent_tool_ids,
                     writer_holder=writer_holder  # Pass the shared writer_holder for streaming
                 )
-            elif worker_agent_type == "planner_executor_agent":
+            elif worker_agent_type == AgentType.PLANNER_EXECUTOR_AGENT:
                 worker_agent, _, _ = await self._get_planner_executor_agent_as_worker_agent(
                     llm=llm,
                     system_prompts=worker_agent_system_prompt,
                     tool_ids=worker_agent_tool_ids,
                     writer_holder=writer_holder  # Pass the shared writer_holder for streaming
                 )
-            elif worker_agent_type == "react_critic_agent":
+            elif worker_agent_type == AgentType.REACT_CRITIC_AGENT:
                 worker_agent, _, _ = await self._get_react_critic_agent_as_worker_agent(
                     llm=llm,
                     system_prompts=worker_agent_system_prompt,
@@ -1824,4 +2292,3 @@ Response:
         except Exception as e:
             log.error(f"Error occurred while creating meta agent: {e}")
             raise HTTPException(status_code=500, detail=f"Error occurred while creating meta agent\nError: {e}")
-

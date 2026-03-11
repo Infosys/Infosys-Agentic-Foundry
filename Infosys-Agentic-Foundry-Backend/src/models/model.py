@@ -2,37 +2,31 @@
 """
 This module provides a function to get a model based on the configuration.
 """
-import os
-from typing import cast, Any
 import dotenv
-import httpx
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
+import asyncio
+from src.models.model_service import global_model_service
 from telemetry_wrapper import logger as log
 
-
 dotenv.load_dotenv()
-os.environ["AZURE_OPENAI_API_KEY"] = os.getenv("AZURE_OPENAI_API_KEY")
-http_client = httpx.Client(verify=False)
-def load_model(model_name: str = "gpt-4o", temperature: float = 0):
-    if model_name.startswith("gpt"):
-        log.info(f"Loading OpenAI model: {model_name}")
-        return AzureChatOpenAI(
-            azure_endpoint=os.getenv("AZURE_ENDPOINT"),
-            openai_api_version=os.getenv("OPENAI_API_VERSION"),
-            azure_deployment=model_name,
-            temperature=temperature,
-            max_tokens=None,
-            http_client=http_client
-        )
-    elif model_name=="gemini-1.5-flash":
-        log.info(f"Loading Google Generative AI model: {model_name}")
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            temperature=temperature,
-        )
-    log.error(f"Invalid model name: {model_name}")
-    raise ValueError("Invalid model name specified")
+
+def load_model(model_name: str = global_model_service.default_model_name, temperature: float = 0):
+    """
+    Load and return a llm model instance of langgraph based on the provided model name and temperature.
+    """
+    get_model_async_call = global_model_service.get_llm_model(model_name=model_name, temperature=temperature)
+    log.info(f"Loading model: {model_name} with temperature: {temperature}")
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop, create one
+        log.debug("No running event loop found, creating new event loop with asyncio.run()")
+        return asyncio.run(get_model_async_call)
+    else:
+        # There's a running loop - use run_until_complete or nest_asyncio
+        log.debug("Running event loop detected, using nest_asyncio for nested async execution")
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(get_model_async_call)
 
 

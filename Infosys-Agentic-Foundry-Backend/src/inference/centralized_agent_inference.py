@@ -2,6 +2,7 @@
 from typing import Literal, Any
 
 from src.schemas import AgentInferenceRequest
+from src.config.constants import AgentType, FrameworkType
 # Langgraph based Inference Imports
 from src.inference.base_agent_inference import BaseAgentInference
 from src.inference.react_agent_inference import ReactAgentInference
@@ -11,8 +12,15 @@ from src.inference.react_critic_agent_inference import ReactCriticAgentInference
 from src.inference.meta_agent_inference import MetaAgentInference
 from src.inference.planner_meta_agent_inference import PlannerMetaAgentInference
 # Python based Inference Imports
-from src.inference.python_based_inference.simple_ai_agent_inference import SimpleAIAgentInference
 from src.inference.python_based_inference.hybrid_agent_inference import HybridAgentInference
+# Google ADK based Inference Imports
+from src.inference.google_adk_inference.react_agent_gadk_inference import ReactAgentGADKInference
+from src.inference.google_adk_inference.planner_executor_critic_agent_gadk_inference import PlannerExecutorCriticAgentGADKInference
+from src.inference.google_adk_inference.planner_executor_agent_gadk_inference import PlannerExecutorAgentGADKInference
+from src.inference.google_adk_inference.react_critic_agent_gadk_inference import ReactCriticAgentGADKInference
+from src.inference.google_adk_inference.meta_agent_gadk_inference import MetaAgentGADKInference
+from src.inference.google_adk_inference.planner_meta_agent_gadk_inference import PlannerMetaAgentGADKInference
+
 from src.inference.inference_utils import InferenceUtils
 
 
@@ -31,8 +39,14 @@ class CentralizedAgentInference:
             meta_agent_inference: MetaAgentInference,
             planner_meta_agent_inference: PlannerMetaAgentInference,
 
-            simple_ai_agent_inference: SimpleAIAgentInference,
             hybrid_agent_inference: HybridAgentInference,
+
+            gadk_react_agent_inference: ReactAgentGADKInference,
+            gadk_planner_executor_critic_agent_inference: PlannerExecutorCriticAgentGADKInference,
+            gadk_planner_executor_agent_inference: PlannerExecutorAgentGADKInference,
+            gadk_react_critic_agent_inference: ReactCriticAgentGADKInference,
+            gadk_meta_agent_inference: MetaAgentGADKInference,
+            gadk_planner_meta_agent_inference: PlannerMetaAgentGADKInference,
 
             inference_utils: InferenceUtils
         ):
@@ -43,34 +57,82 @@ class CentralizedAgentInference:
         self.meta_agent_inference = meta_agent_inference
         self.planner_meta_agent_inference = planner_meta_agent_inference
 
-        self.simple_ai_agent_inference = simple_ai_agent_inference
         self.hybrid_agent_inference = hybrid_agent_inference
+
+        self.gadk_react_agent_inference = gadk_react_agent_inference
+        self.gadk_planner_executor_critic_agent_inference = gadk_planner_executor_critic_agent_inference
+        self.gadk_planner_executor_agent_inference = gadk_planner_executor_agent_inference
+        self.gadk_react_critic_agent_inference = gadk_react_critic_agent_inference
+        self.gadk_meta_agent_inference = gadk_meta_agent_inference
+        self.gadk_planner_meta_agent_inference = gadk_planner_meta_agent_inference
 
         self.inference_utils = inference_utils
         self.feedback_learning_service = inference_utils.feedback_learning_service
 
         self.langgraph_inference_services_map = {
-            "react_agent": self.react_agent_inference,
-            "multi_agent": self.multi_agent_inference,
-            "planner_executor_agent": self.planner_executor_agent_inference,
-            "react_critic_agent": self.react_critic_agent_inference,
-            "meta_agent": self.meta_agent_inference,
-            "planner_meta_agent": self.planner_meta_agent_inference
+            AgentType.REACT_AGENT: self.react_agent_inference,
+            AgentType.PLANNER_EXECUTOR_CRITIC_AGENT: self.multi_agent_inference,
+            AgentType.PLANNER_EXECUTOR_AGENT: self.planner_executor_agent_inference,
+            AgentType.REACT_CRITIC_AGENT: self.react_critic_agent_inference,
+            AgentType.META_AGENT: self.meta_agent_inference,
+            AgentType.PLANNER_META_AGENT: self.planner_meta_agent_inference
         }
 
+        self.google_adk_inference_services_map = {
+            AgentType.REACT_AGENT: self.gadk_react_agent_inference,
+            AgentType.PLANNER_EXECUTOR_CRITIC_AGENT: self.gadk_planner_executor_critic_agent_inference,
+            AgentType.PLANNER_EXECUTOR_AGENT: self.gadk_planner_executor_agent_inference,
+            AgentType.REACT_CRITIC_AGENT: self.gadk_react_critic_agent_inference,
+            AgentType.META_AGENT: self.gadk_meta_agent_inference,
+            AgentType.PLANNER_META_AGENT: self.gadk_planner_meta_agent_inference
+        }
 
-    async def get_specialized_agent_inference(self, agent_type: str, framework_type: Literal["langgraph", "pure_python"] = "langgraph") -> BaseAgentInference:
+    async def get_specialized_agent_inference(self, agent_type: str, framework_type: FrameworkType = FrameworkType.LANGGRAPH) -> BaseAgentInference:
         """Return the appropriate specialized service instance"""
 
-        if agent_type == "simple_ai_agent":
-            return self.simple_ai_agent_inference
-        if agent_type == "hybrid_agent":
+        if agent_type == AgentType.HYBRID_AGENT:
             return self.hybrid_agent_inference
 
-        if framework_type == "langgraph" and agent_type in self.langgraph_inference_services_map:
+        if framework_type == FrameworkType.GOOGLE_ADK and agent_type in self.google_adk_inference_services_map:
+            return self.google_adk_inference_services_map[agent_type]
+
+        if framework_type == FrameworkType.LANGGRAPH and agent_type in self.langgraph_inference_services_map:
             return self.langgraph_inference_services_map[agent_type]
 
         raise ValueError(f"Unknown agent type: {agent_type}")
+
+    @staticmethod
+    def get_user_context_prompt(user_name: str, role: str, department_name: str = None) -> str:
+        """
+        Generate a user context prompt to be injected into the system prompt.
+        This allows agent creators to define role-based data visibility rules.
+        
+        Args:
+            user_name: The logged-in user's name/email
+            role: The user's role (User, Developer, Admin, SuperAdmin)
+            department_name: The user's department (optional)
+        
+        Returns:
+            A formatted string containing user context information
+        """
+        department_info = f"\n- Department: {department_name}" if department_name else ""
+        return f'''
+
+## CURRENT USER CONTEXT
+The following information identifies the currently logged-in user. Use this context to apply any role-based or user-specific rules defined in this prompt.
+
+- User Name: {user_name}
+- Role: {role}{department_info}
+
+- Use User Name in your responses to personalize interactions.
+
+### ROLE-BASED ACCESS INSTRUCTIONS:
+When executing tools or returning data, apply any role-specific visibility rules defined by the agent creator. For example:
+- If the agent creator specified "show only summary data for User role", filter the response accordingly
+- If the agent creator specified "show full details for Admin role", provide complete information
+- Always respect the data visibility rules based on the current user's role
+
+'''
 
     @staticmethod
     def get_lesson_prompt(feedback_msg: str) -> str:
@@ -104,30 +166,48 @@ After drafting your response, verify that you've correctly applied all relevant 
             inference_request: AgentInferenceRequest,
             *,
             insert_into_eval_flag: bool = True,
-            role: str = None
+            role: str = None,
+            department_name: str = None,
+            user_name: str = None
         ):
         """
         Run the inference request using the appropriate agent inference service based on the agent type.
+        
+        Args:
+            inference_request: The inference request containing all necessary parameters
+            insert_into_eval_flag: Flag to insert evaluation data
+            sse_manager: SSE manager for streaming
+            role: The logged-in user's role (User, Developer, Admin, SuperAdmin)
+            department_name: The user's department
+            user_name: The logged-in user's name/email for role-based access control
         """
         agent_id = inference_request.mentioned_agentic_application_id or inference_request.agentic_application_id
         agent_config = await self.react_agent_inference._get_agent_config(agent_id)
+        
+        # Generate user context prompt if user information is available
+        user_context_prompt = ""
+        if user_name and role:
+            user_context_prompt = self.get_user_context_prompt(user_name, role, department_name)
 
         # Handle Feedback Learning Integration
-        feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=agent_id)
+        feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=agent_id, department_name=department_name)
         feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
         lesson_prompt = self.get_lesson_prompt(feedback_msg) if feedback_msg else ""
         system_prompts: dict = agent_config.get('SYSTEM_PROMPT', {})
         for system_prompt_key in system_prompts.keys():
             agent_config['SYSTEM_PROMPT'][system_prompt_key] += lesson_prompt
+            if user_context_prompt:
+                agent_config['SYSTEM_PROMPT'][system_prompt_key] += user_context_prompt
 
-        # Get the specialized agent inference service
-        agent_inference: BaseAgentInference = await self.get_specialized_agent_inference(agent_type=agent_config["AGENT_TYPE"])
+
+        agent_inference: BaseAgentInference = await self.get_specialized_agent_inference(agent_type=agent_config["AGENT_TYPE"], framework_type=inference_request.framework_type)
 
         async for response in agent_inference.run(
                 inference_request=inference_request,
                 agent_config=agent_config,
                 insert_into_eval_flag=insert_into_eval_flag,
-                role=role
+                role=role,
+                department_name=department_name
             ):
             yield response
 

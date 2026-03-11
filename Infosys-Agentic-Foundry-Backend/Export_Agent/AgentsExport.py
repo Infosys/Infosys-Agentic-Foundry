@@ -10,8 +10,9 @@ import zipfile
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from src.database.services import ToolService, AgentService,McpToolService
+from src.database.services import ToolService, AgentService, McpToolService, ExportService
 from src.auth.repositories import UserRepository
+from src.config.constants import AgentType
 from telemetry_wrapper import logger as log
 from Export_Agent.export_dependency_analyzer import generate_export_requirements
 if sys.platform.startswith('win'):
@@ -24,8 +25,18 @@ class AgentExporter:
         ('telemetry_wrapper.py', 'Agent_Backend'),
         ('groundtruth.py', 'Agent_Backend'),
         ('MultiDBConnection_Manager.py','Agent_Backend'),
-        ('VERSION', 'Agent_Backend')
+        ('VERSION', 'Agent_Backend'),
+        ('main.py', 'Agent_Backend'),
+        ('.env.example', 'Agent_Backend'),
+        ('model_server.py', 'Agent_Backend'),
+        ('README.md', 'Agent_Backend')
     ]
+
+    # Marker constants for export preprocessing
+    EXPORT_EXCLUDE_START = '# EXPORT:EXCLUDE:START'
+    EXPORT_EXCLUDE_END = '# EXPORT:EXCLUDE:END'
+    EXPORT_INCLUDE_START = '# EXPORT:INCLUDE:START'
+    EXPORT_INCLUDE_END = '# EXPORT:INCLUDE:END'
 
     def __init__(
         self,
@@ -33,12 +44,12 @@ class AgentExporter:
         user_email: str,
         file_names: List[str],
         env_config: Dict[str, Any],
-        tool_service,
-        agent_service,
-        mcp_service,
-        export_repo,
-        export_and_deploy,
-        login_pool: asyncpg.Pool
+        tool_service: ToolService,
+        agent_service: AgentService,
+        mcp_service: McpToolService,
+        export_service: ExportService,
+        export_and_deploy: bool,
+        login_pool: asyncpg.Pool,
     ):
         self.agent_ids = agent_ids
         self.user_email = user_email
@@ -48,7 +59,7 @@ class AgentExporter:
         self.tool_service = tool_service
         self.agent_service = agent_service
         self.mcp_service = mcp_service
-        self.export_repo = export_repo
+        self.export_service = export_service
         self.export_and_deploy=export_and_deploy
         self.login_pool = login_pool
 
@@ -166,8 +177,8 @@ class AgentExporter:
         except Exception as e:
             raise e
     #------------------------------------------------------------------------        
-    async def get_tool_data(self,agent_data, export_path,tool_service: ToolService = None ,mcp_service:McpToolService=None, tools=[]):
-        if not tool_service:
+    async def get_tool_data(self, agent_data: dict, export_path: str, tools: List[str] = []):
+        if not self.tool_service:
             raise ValueError("ToolService instance is required to fetch tool data.")
         import json
         if not tools:
@@ -207,7 +218,7 @@ class AgentExporter:
                 else:
                     tools_data[mcp_id] = None
         for tool_id in tool_ids:
-            tool_data = await tool_service.get_tool(tool_id=tool_id)
+            tool_data = await self.tool_service.get_tool(tool_id=tool_id)
             if tool_data:
                 tool_dict= tool_data[0]
                 processed_tool_dict = {}
@@ -258,19 +269,13 @@ class AgentExporter:
                 else:
                     agent_for_json_dump[key] = value if value is not None else default_null
         return agent_for_json_dump
-    #------------------------------------------------------------------------    
-    async def get_user_from_email(self,user_email: str) -> Optional[tuple]:
-        user_repo = UserRepository(pool=self.login_pool)
-        user_data = await user_repo.get_user_by_email(user_email)
-        if user_data:
-            return user_data['user_name'], user_data['role']
-        return None
+
     #------------------------------------------------------------------------   
     async def store_logs(self,agentic_application_id,agentic_application_name,user_email,user_name):
         import uuid
         eid=str(uuid.uuid4())
         ts=datetime.now()
-        await self.export_repo.insert_export_log(
+        await self.export_service.insert_export_log(
             export_id=eid,
             agent_id=agentic_application_id,
             agent_name=agentic_application_name,
@@ -281,10 +286,6 @@ class AgentExporter:
     #------------------------------------------------------------------------
     async def write_env_and_configs(self, target_path: str, agent_dict: dict, tool_codes: List[str] = None):
         remove_quotes=["DATABASE_URL","POSTGRESQL_HOST","POSTGRESQL_PORT","POSTGRESQL_USER","POSTGRESQL_PASSWORD","DATABASE","CONNECTION_POOL_SIZE","REDIS_HOST","REDIS_PORT","REDIS_DB","REDIS_PASSWORD","CACHE_EXPIRY_TIME","IAF_PASSWORD","ENABLE_CACHING","GITHUB_USERNAME","GITHUB_PAT","GITHUB_EMAIL","TARGET_REPO_NAME","TARGET_REPO_OWNER","TARGET_BRANCH"]
-        user = role = None
-        if self.user_email:
-            res = await self.get_user_from_email(self.user_email)
-            if res: user, role = res[0], res[1]
         env_path = os.path.join(target_path, 'Agent_Backend/.env')
         # Write to a file
         if self.env_config:
@@ -296,8 +297,7 @@ class AgentExporter:
                     else:
                         if value is not None:
                             env_file.write(f'{key}={value}\n')
-        with open(env_path, 'a') as f:
-            f.write(f"\nUSER_EMAIL={self.user_email or ''}\nUSER_NAME={user or ''}\nROLE={role or ''}\n")
+
         config_py_path = os.path.join(target_path, 'Agent_Backend/agent_config.py')
         with open(config_py_path, 'w') as f:
             f.write('agent_data = ')
@@ -314,14 +314,10 @@ class AgentExporter:
             log.warning(f"Failed to generate requirements, falling back to requirements.txt: {e}")
             shutil.copy('requirements.txt', req_path)
         
-        await self.store_logs(agent_dict['agentic_application_id'],agent_dict['agentic_application_name'],self.user_email,user)
+        await self.store_logs(agent_dict['agentic_application_id'], agent_dict['agentic_application_name'], self.user_email, self.user_email)
     #------------------------------------------------------------------------
     async def write_env_and_agentconfigs(self, target_path: str, configs: dict, tool_codes: List[str] = None):
         remove_quotes=["DATABASE_URL","POSTGRESQL_HOST","POSTGRESQL_PORT","POSTGRESQL_USER","POSTGRESQL_PASSWORD","DATABASE","CONNECTION_POOL_SIZE","REDIS_HOST","REDIS_PORT","REDIS_DB","REDIS_PASSWORD","CACHE_EXPIRY_TIME","IAF_PASSWORD","ENABLE_CACHING"]
-        user = role = None
-        if self.user_email:
-            res = await self.get_user_from_email(self.user_email)
-            if res: user, role = res[0], res[1]
         # Write to a file
         env_path = os.path.join(target_path, 'Agent_Backend/.env')
         if self.env_config:
@@ -333,8 +329,6 @@ class AgentExporter:
                     else:
                         if value is not None:
                             env_file.write(f'{key}={value}\n')
-        with open(env_path, 'a') as f:
-            f.write(f"\nUSER_EMAIL={self.user_email or ''}\nUSER_NAME={user or ''}\nROLE={role or ''}\n")
 
         config_py_path = os.path.join(target_path, 'Agent_Backend/agent_config.py')
         adict = {agent_id: agent_dict for agent_id, agent_dict in configs.items()}
@@ -354,7 +348,7 @@ class AgentExporter:
             shutil.copy('requirements.txt', req_path)
         
         for agent_id, agent_dict in configs.items():
-            await self.store_logs(agent_dict['agentic_application_id'],agent_dict['agentic_application_name'],self.user_email,user)
+            await self.store_logs(agent_dict['agentic_application_id'],agent_dict['agentic_application_name'], self.user_email, self.user_email)
     #------------------------------------------------------------------------
     def copy_static_template_base(self, dst_folder: str):
         shutil.copytree(self.STATIC_TEMPLATE_FOLDER, dst_folder)
@@ -382,43 +376,134 @@ class AgentExporter:
     #------------------------------------------------------------------------
 
     def copy_src_folder(self, target_folder: str):
-        # Define source and destination paths
+        """Copy the src/ folder to the export, then process EXPORT markers.
+
+        Excludes: __pycache__, agent_templates, onboard, chat_logs.
+        Copies src/api/ as-is (no longer uses Export_Agent/api/).
+        After copying, runs process_export_markers() on every .py file
+        to strip EXCLUDE blocks and uncomment INCLUDE blocks.
+        """
         src = os.path.join(os.getcwd(), 'src')
-        api_src = os.path.join(os.getcwd(), 'Export_Agent', 'api')
         dest = os.path.join(target_folder, 'Agent_Backend', 'src')
 
-        # Remove existing destination folder if it exists
         if os.path.exists(dest):
             shutil.rmtree(dest)
 
-        # Copy the src folder
         shutil.copytree(
             src,
             dest,
             ignore=shutil.ignore_patterns(
                 '__pycache__', '*.pyc', '*.pyo', '*.pyd', '.Python',
                 'env', 'venv', 'ENV', 'env.bak', 'venv.bak',
-                'api', 'agent_templates'
+                'agent_templates', 'chat_logs', 'onboard'
             )
         )
-        api_dest = os.path.join(dest, 'api')
-        shutil.copytree(api_src, api_dest)
+
+    #------------------------------------------------------------------------
+    def copy_knowledgebase_server(self, target_folder: str):
+        """Copy the knowledgebase_server folder into Agent_Backend."""
+        src = os.path.join(os.getcwd(), 'knowledgebase_server')
+        dest = os.path.join(target_folder, 'Agent_Backend', 'knowledgebase_server')
+        if os.path.exists(src):
+            shutil.copytree(
+                src,
+                dest,
+                ignore=shutil.ignore_patterns(
+                    '__pycache__', '*.pyc', '*.pyo', '*.pyd', '.Python',
+                    '.env', 'env', '.venv', 'ENV', 'env.bak', 'venv.bak'
+                )
+            )
+        else:
+            log.warning('knowledgebase_server folder not found, skipping.')
+
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def process_export_markers(directory: str):
+        """Walk *directory* and process every ``.py`` file for EXPORT markers.
+
+        Supported markers (must appear as Python comments at any indentation):
+
+        ``# EXPORT:EXCLUDE:START`` / ``# EXPORT:EXCLUDE:END``
+            Lines between (inclusive of the marker lines) are **removed**.
+
+        ``# EXPORT:INCLUDE:START`` / ``# EXPORT:INCLUDE:END``
+            The marker lines are removed and every line between them is
+            **uncommented** by stripping the first ``# `` (hash + space)
+            that follows the leading whitespace.  This means the code is
+            dormant in the source repository (commented out) but becomes
+            active in the export.
+
+        The function modifies files **in-place** — always call it on a
+        *copy*, never on the original source tree.
+        """
+        for dirpath, _, filenames in os.walk(directory):
+            for fname in filenames:
+                if not fname.endswith('.py'):
+                    continue
+                fpath = os.path.join(dirpath, fname)
+                try:
+                    with open(fpath, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+
+                    new_lines: list = []
+                    skip_mode = False      # inside EXCLUDE block
+                    include_mode = False   # inside INCLUDE block
+
+                    for line in lines:
+                        stripped = line.strip()
+
+                        # ── EXCLUDE markers ──
+                        if stripped == AgentExporter.EXPORT_EXCLUDE_START:
+                            skip_mode = True
+                            continue
+                        if stripped == AgentExporter.EXPORT_EXCLUDE_END:
+                            skip_mode = False
+                            continue
+                        if skip_mode:
+                            continue
+
+                        # ── INCLUDE markers ──
+                        if stripped == AgentExporter.EXPORT_INCLUDE_START:
+                            include_mode = True
+                            continue
+                        if stripped == AgentExporter.EXPORT_INCLUDE_END:
+                            include_mode = False
+                            continue
+                        if include_mode:
+                            # Uncomment: remove the first '# ' after leading whitespace
+                            leading = len(line) - len(line.lstrip())
+                            rest = line[leading:]  # e.g. '# feedback_pool = main_pool\n'
+                            if rest.startswith('# '):
+                                new_lines.append(line[:leading] + rest[2:])
+                            else:
+                                # Safety: if the line is not commented, keep as-is
+                                new_lines.append(line)
+                            continue
+
+                        # ── Normal line ──
+                        new_lines.append(line)
+
+                    with open(fpath, 'w', encoding='utf-8') as f:
+                        f.writelines(new_lines)
+                except Exception as e:
+                    log.warning(f'Error processing export markers in {fpath}: {e}')
+
     #------------------------------------------------------------------------
     async def build_agent_folder(self, agent_id: str, agent_dict: dict) -> str:
         agent_type = agent_dict['agentic_application_type']
-        if agent_type== 'react_agent':
+        if agent_type == AgentType.REACT_AGENT:
             foldername='React Agent'
-        elif agent_type == 'react_critic_agent':
+        elif agent_type == AgentType.REACT_CRITIC_AGENT:
             foldername='React Critic Agent'
-        elif agent_type == 'planner_executor_agent':
+        elif agent_type == AgentType.PLANNER_EXECUTOR_AGENT:
             foldername='Planner Executor Agent'
-        elif agent_type == 'multi_agent':
+        elif agent_type == AgentType.PLANNER_EXECUTOR_CRITIC_AGENT:
             foldername="Multi Agent"
-        elif agent_type == 'meta_agent':
+        elif agent_type == AgentType.META_AGENT:
             foldername='Meta Agent'
-        elif agent_type == 'planner_meta_agent':
+        elif agent_type == AgentType.PLANNER_META_AGENT:
             foldername='Planner Meta Agent'
-        elif agent_type == 'hybrid_agent':
+        elif agent_type == AgentType.HYBRID_AGENT:
             foldername='Hybrid Agent'
         target_folder = os.path.join(self.work_dir, f"{foldername}")
         self.copy_static_template_base(target_folder)     # final export folder (Agent_code)
@@ -427,11 +512,12 @@ class AgentExporter:
         
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
+        self.copy_knowledgebase_server(target_folder)
         self.copy_user_uploads(target_folder)
 
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
         os.makedirs(agent_backend, exist_ok=True)
-        if agent_type in {"meta_agent", "planner_meta_agent"}:
+        if agent_type in AgentType.meta_types():
             worker_agent_ids = agent_dict.get("tools_id")
             worker_agents = {}
             for wid in worker_agent_ids:
@@ -466,15 +552,18 @@ class AgentExporter:
                     tools_ids.add(validator)
             # if validator:
             #     tools_ids.add(validator)
-            await self.get_tool_data(agent_dict, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
+            await self.get_tool_data(agent_dict, export_path=target_folder, tools=tools_ids)
         else:
             worker_agents_path = os.path.join(agent_backend, "worker_agents_config.py")
             with open(worker_agents_path, 'w') as f:
                 f.write('worker_agents = {}\n')
-            tool_codes = await self.get_tool_data(agent_dict, export_path=target_folder,tool_service=self.tool_service)
+            tool_codes = await self.get_tool_data(agent_dict, export_path=target_folder)
         
         # Pass tool codes to write_env_and_configs for dependency analysis
         await self.write_env_and_configs(target_folder, agent_dict, tool_codes=tool_codes)
+
+        # Process EXPORT markers on all .py files in Agent_Backend (main.py, db_load.py, src/)
+        self.process_export_markers(agent_backend)
         
         return target_folder
     #------------------------------------------------------------------------
@@ -486,6 +575,7 @@ class AgentExporter:
         
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
+        self.copy_knowledgebase_server(target_folder)
         self.copy_user_uploads(target_folder)
 
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
@@ -495,7 +585,7 @@ class AgentExporter:
         test=[]
         for agent in configs.values():
             atype = agent['agentic_application_type']
-            if atype in {"meta_agent", "planner_meta_agent"}:
+            if atype in AgentType.meta_types():
                 worker_agent_ids = agent.get("tools_id")
                 worker_ids.update(worker_agent_ids)
                 # validator = agent["validation_criteria"][0]["validator"]
@@ -544,15 +634,25 @@ class AgentExporter:
                 validator = criterion.get("validator")
                 if validator:
                     tools_ids.add(validator)     
-        # await self.get_tool_data(configs, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
-        tool_codes = await self.get_tool_data(configs, export_path=target_folder,tool_service=self.tool_service,tools=tools_ids)
+        tool_codes = await self.get_tool_data(configs, export_path=target_folder, tools=tools_ids)
         
         # Pass tool codes to write_env_and_agentconfigs for dependency analysis
         await self.write_env_and_agentconfigs(target_folder, configs, tool_codes=tool_codes)
+
+        # Process EXPORT markers on all .py files in Agent_Backend (main.py, db_load.py, src/)
+        self.process_export_markers(agent_backend)
         
         return target_folder
     #------------------------------------------------------------------------
     async def export(self):
+        """
+        Export the agent(s) to a zip file.
+        Frontend code is included via copy_static_template_base() which copies from
+        Export_Agent/Agentcode (which includes Agent_Frontend extracted at server startup).
+        
+        Returns:
+            str: Path to the generated zip archive.
+        """
         configs = await self.gather_agent_configs()
         # print(configs)
         agent_folders = []

@@ -7,5 +7,8 @@ from src.api.secrets_endpoints import router as secrets_router
 from src.api.tag_endpoints import router as tag_router
 from src.api.utility_endpoints import router as utility_router
 from src.api.data_connector_endpoints import router as data_connector_router
-from src.api.deprecated_endpoints import router as deprecated_router
+from src.api.user_agent_access_endpoints import router as user_agent_access_router
+from src.api.group_endpoints import router as group_router
+from src.api.group_keys_endpoints import router as group_keys_router
 from src.api.pipeline_endpoints import router as pipeline_router
+from src.api.mcp_conversion_endpoints import router as mcp_conversion_router
