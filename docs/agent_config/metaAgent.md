@@ -14,6 +14,7 @@ The Meta Agent supports binding of the following worker agent templates:
 - Multi Agent
 - Planner Executor Agent
 - Planner Executor Critic Agent
+- Hybrid Agent
 
 You'll then assign a descriptive name that clearly represents your meta agent's purpose and function. After naming your agent, you'll define its primary goal and objective, explaining what the coordinated agent system is designed to accomplish. 
 

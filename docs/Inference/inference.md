@@ -60,76 +60,121 @@ Smart prompt suggestions help you interact more efficiently by providing context
 
 You can configure your chat experience with toggle options for canvas view, context flag, and other interface preferences.
 
-- **Tool Verifier:**
+### 1. Tool Verifier
 
-    The Tool Interrupt feature allows you to verify and control tool executions during agent interactions.
+The Tool Interrupt feature allows you to verify and control tool executions during agent interactions.
 
-- **Validators:**
+### 2. Validators
 
-    The Validator feature allows you to validate agent responses using custom logic. You can enable the validator toggle in the chat interface to activate this feature for supported agent templates.
+The Validator feature allows you to validate agent responses using custom logic. You can enable the validator toggle in the chat interface to activate this feature for supported agent templates.
 
-    Supported Agent Templates:
+Supported Agent Templates:
 
-    `React`, `React Critic`, `Planner Executor Critic`, `Planner Executor`, `Meta`, `Planner Meta`
+`React`, `React Critic`, `Planner Executor Critic`, `Planner Executor`, `Meta`, `Planner Meta`, `Hybrid Agent`
 
-    **Onboarding a Validator**
+**Onboarding a Validator**
 
-    - Go to the Tools page and select the `Validator` option.
-    - Provide a code snippet for the validator. The code must include functions with the arguments `query` and `response`, and should return a `validation score`, `validation status`, and `feedback` regarding the response's compliance with expected formats.
+- Go to the Tools page and select the `Validator` option.
+- Provide a code snippet for the validator. The code must include functions with the arguments `query` and `response`, and should return a `validation score`, `validation status`, and `feedback` regarding the response's compliance with expected formats.
 
-    **Adding Validation Patterns to Agents**
+**Adding Validation Patterns to Agents**
 
-    To add validation patterns, click the `plus (+) icon` in the agent onboarding interface. 
-    For each pattern:
+To add validation patterns, click the `plus (+) icon` in the agent onboarding interface. 
+For each pattern:
 
-    - Provide a sample query and a generic expected response.
-    - Select a validator for the pattern, or choose "None" if not required.
-    - You can add one or more validation patterns per agent.
+- Provide a sample query and a generic expected response.
+- Select a validator for the pattern, or choose "None" if not required.
+- You can add one or more validation patterns per agent.
 
-    **Using the Validator in Chat Inference**
+**Using the Validator in Chat Inference**
 
-    - Enable the `Validator` toggle in the chat interface.
+- Enable the `Validator` toggle in the chat interface.
 
-    **How it works**:
+**How it works**:
 
-    - When a user submits a query, the system checks for semantic similarity with existing validation patterns.
-    - If a matching pattern is found and a validator is assigned, the validator runs and returns a validation score, status, and feedback.
-    - If no validator is assigned to the matched pattern, the system performs a standard LLM call and returns a validation score, status, and feedback.
-    - For Planner Executor Critic and Planner Executor templates, validation results are sent to the replanner agent, which generates the response.
-    - For React and React Critic templates, the agent receives the validation results and regenerates its response based on the feedback.
+- When a user submits a query, the system checks for semantic similarity with existing validation patterns.
+- If a matching pattern is found and a validator is assigned, the validator runs and returns a validation score, status, and feedback.
+- If no validator is assigned to the matched pattern, the system performs a standard LLM call and returns a validation score, status, and feedback.
+- For Planner Executor Critic and Planner Executor templates, validation results are sent to the replanner agent, which generates the response.
+- For React and React Critic templates, the agent receives the validation results and regenerates its response based on the feedback.
 
-    This workflow ensures agent responses are evaluated and improved in real time, enhancing reliability and interaction quality.
+This workflow ensures agent responses are evaluated and improved in real time, enhancing reliability and interaction quality.
 
-- **Canvas View:**
+### 3. File Context
 
-    Provides a comprehensive visual overview of agent interactions and workflows.
+The File Context feature provides a virtual file system for memory management when enabled. When `file_context_management_flag=True` (with `context_flag=True`), the agent uses a hierarchical directory structure instead of fetching past conversations from a database.
 
-- **Context Flag:**
+**How It Works:**
 
-    When disabled, the agent operates without memory retention, treating each query as an independent interaction without access to past conversations or memory data.
+The agent receives a `run_shell_command` tool that provides access to a Unix-like shell with the following directory structure:
 
-- **Online Evaluator:**
+| Directory | Purpose |
+|:----------|:--------|
+| `/user/` | User preferences (shared across all agents for this user) |
+| `/agent/facts/` | Agent-specific learned facts (persists across sessions) |
+| `/session/` | Current session data, pending context, conversation history |
 
-    The Online Evaluator assesses the quality of agent responses in real time:
+**Agent Behavior - Memory-First Approach:**
 
-    1. When you submit a query, the agent's response is evaluated for quality.
-    2. If the score is below 0.75, feedback is provided and the response is regenerated.
-    3. This process repeats until the response achieves a score of 0.75 or higher.
-    4. Only then is the final response presented to you.
+Before calling any other tool, the agent MUST:
+
+1. `cat /user/preferences.md` → Check user preferences
+2. `ls /agent/facts/` → List available facts
+3. `cat /session/pending_context/current.md` → Check for pending multi-turn context
+
+**Key Commands Available:**
+
+```bash
+cat /path/file.md       # Read file
+ls /path/               # List directory
+echo "text" > file.md   # Write (overwrite)
+echo "text" >> file.md  # Append
+mkdir /path/            # Create directory
+grep "pattern" /path/   # Search
+```
+
+**Benefits:**
+
+- **Persistent Memory** — Agent-specific facts stored in `/agent/` persist across sessions
+- **Shared User Preferences** — User preferences in `/user/` are shared across all agents
+- **Multi-Turn Context Tracking** — Pending context tracked via files in `/session/`
+- **No Database Dependency** — Conversation history managed through the file system
+- **Reduced Token Consumption** — More efficient context and token usage
+
+### 4. Canvas View
+
+Provides a comprehensive visual overview of agent interactions and workflows.
+
+### 5. Context Flag
+
+When disabled, the agent operates without memory retention, treating each query as an independent interaction without access to past conversations or memory data.
+
+### 6. Online Evaluator
+
+The Online Evaluator assesses the quality of agent responses in real time:
+
+1. When you submit a query, the agent's response is evaluated for quality.
+2. If the score is below 0.75, feedback is provided and the response is regenerated.
+3. This process repeats until the response achieves a score of 0.75 or higher.
+4. Only then is the final response presented to you.
 
 **3. Temperature Settings**
 
 The temperature setting controls the randomness and creativity of responses. Lower values make replies more focused and deterministic, while higher values increase creativity and variability. Adjust the temperature slider to fine-tune agent behavior.
 
-**4. Knowledge Base Integration**
-
-Integrated knowledge base resources are available to enhance agent responses and provide additional information.
-
-**5. Chat Options and Chat History**
+**4. Chat Options and Chat History**
 
 You can manage chat sessions with options for starting new chats, accessing chat history, and controlling session settings.
 
-**6. Context Agent**
+**5. Agent Welcome Message System**
+
+Each agent can display a personalized welcome message when a new chat session begins. This message introduces the agent's capabilities and purpose to users. You can regenerate or disable the welcome message using the toggle available in the chat interface.
+
+**6. File Upload in Chat Inference**
+
+Users can upload files directly during chat inference sessions, enabling the agent to process and analyze document content in real-time. This feature eliminates the need for pre-uploading files and allows for seamless integration of file-based context into ongoing conversations.
+
+**7. Context Agent**
 
 The Context Agent feature allows you to add an additional agent to your chat session using the "@" button in the chat interface. This enables you to train the context agent on the main agent’s queries and responses, enhancing its ability to understand and respond based on ongoing conversation data.
 

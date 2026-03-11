@@ -6,7 +6,7 @@ Agentic Foundry architecture includes a comprehensive orchestration system that 
 - **Reusable Templates**: Developers can utilize predefined, reusable templates to streamline the creation of agents. These templates allow for the rapid definition of agents with specific roles or persona attributes, ensuring consistency and reducing development time.
 - **Customizable Roles**: Agents can be tailored to meet the unique requirements of an application by defining their behaviors, objectives, and interaction styles. This flexibility enables developers to create agents that align with specific use cases or business goals.
 
-We mainly have three types of templates: `React`, `React Critic`, `Multi`, `Planner Executor`,`Meta`, `Planner Meta`.
+We mainly have seven types of templates: `React`, `React Critic`, `Multi`, `Planner Executor`, `Meta`, `Planner Meta`, and `Hybrid`.
 
 **React Template**: 
 
@@ -87,6 +87,20 @@ Acts as a high-level orchestrator, combining advanced planning with dynamic agen
     1. Managing a team of agents where some are specialized in data gathering, others in analysis, and some in reporting, all working together to complete a comprehensive business intelligence task.
     2. Orchestrating a multi-agent system where agents need to collaborate, share results, and build upon each other's work in a dynamic and possibly unpredictable environment.
     3. Any scenario where complex problem-solving requires the integration of multiple specialized agents, with a need for high-level oversight and coordination.
+
+**Hybrid Template**: 
+
+The Hybrid Agent uses a single agent instance to both plan and execute. Unlike the Multi Agent (Planner-Executor-Critic) architecture which uses separate agents for planning, executing, and critiquing, the Hybrid Agent creates the plan and then executes each step itself — all within the same agent instance. Other aspects such as feedback learning and canvas remain consistent with other agent templates.
+
+` Use Case` : 
+
+When the task requires both planning and execution but can be handled by a single agent without the overhead of multi-agent coordination.
+
+` Examples` :
+
+1. Straightforward multi-step tasks where a single agent can plan and execute without needing separate specialist agents.
+2. Scenarios where reduced latency and simpler orchestration are preferred over the Planner-Executor-Critic paradigm.
+3. Tasks that benefit from a unified context — the same agent retains full awareness of the plan while executing each step.
 
 ---
 

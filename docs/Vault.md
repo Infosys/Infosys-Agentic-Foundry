@@ -4,19 +4,42 @@ The Vault is a secure storage system designed to manage sensitive information su
 
 
 
-## Overview
+**Vault Interface Overview:**
 
-The Vault serves as a centralized repository for managing secrets, providing two distinct storage options:
+The Vault serves as a centralized repository for managing secrets, providing three distinct storage options:
 
 - **Private Vault**: Personal storage accessible only to the individual user
-- **Public Vault**: Shared storage accessible across the organization
+- **Public Vault**: Shared storage accessible across the entire organization
+- **Group Vault**: Shared storage accessible within specific groups or departments
+
+**Interface Features:**
+
+- **Add Secret Button** — Click the "+" or "Add Secret" button in any tab to create a new secret entry in that scope
+- **Secret List View** — Each tab displays a list of secrets with their names, making it easy to identify and manage stored values
+- **Search and Filter** — Quickly find specific secrets using the search functionality
+- **Edit and Delete** — Manage existing secrets with edit and delete options (based on your permissions)
+- **Masked Values** — Secret values are displayed with masking (e.g., `sk-123***********def`) to maintain security
+- **Copy Functionality** — Easily copy secret names to use in your tool code
+
+**Creating Secrets:**
+
+To create a new secret in any tab:
+
+1. Select the appropriate tab (Private, Public, or Group) based on the desired access scope
+2. Click the "Add Secret" or "+" button
+3. Enter a descriptive **Secret Name** (e.g., `weather_api_key`, `database_url`)
+4. Enter the **Secret Value** (API key, URL, password, etc.)
+5. Click "Save" to store the secret
+
+The secret will now be available for use in tools within the selected scope.
 
 ## Key Features
 
 - **Secure Storage**: Safely store API keys, URLs, and other sensitive data
 - **Masked Display**: Values are displayed with masking for security
 - **Easy Retrieval**: Access stored values using simple function calls
-- **Access Control**: Separate private and public storage with appropriate permissions
+- **Multi-Level Access Control**: Three-tiered vault system (Private, Public, and Group) with appropriate permissions
+- **Group Collaboration**: Share secrets within teams while maintaining department isolation
 
 ## Vault Sections
 
@@ -56,11 +79,37 @@ The Public Vault is designed for shared information that can be accessed by all 
 - Organization-wide API keys
 - Standard configuration values
 
+### Group Vault
+
+The Group Vault is designed for shared information within specific groups or departments, providing a middle ground between private and fully public access.
+
+**Characteristics:**
+
+- Department or group-level accessible storage
+- Only members of the specific group/department can view and access stored values
+- Suitable for team-specific credentials, department resources, and shared project keys
+- Enables collaboration within teams while maintaining separation from other groups
+
+**Use Cases:**
+
+- Department-specific API keys
+- Team project credentials
+- Group-shared database connections
+- Department-level service endpoints
+- Collaborative project authentication tokens
+
+**Benefits:**
+
+- **Controlled Sharing**: Share secrets with your team without exposing them organization-wide
+- **Department Isolation**: Keep department resources separate and secure
+- **Team Collaboration**: Enable seamless collaboration within groups
+- **Flexible Access**: Maintain privacy from other departments while sharing within your team
+
 ## Creating Vault Entries
 
 **Adding a New Secret**
 
-1. **Select Vault Type**: Choose between Private or Public vault
+1. **Select Vault Type**: Choose between Private, Public, or Group vault based on the desired access scope
 2. **Enter Name**: Provide a descriptive name for your secret (e.g., `weather_api_key`, `database_url`)
 3. **Enter Value**: Input the actual value (API key, URL, etc.)
 4. **Save**: Store the secret in the selected vault
@@ -97,6 +146,16 @@ Use `get_public_secrets()` to retrieve values from the public vault:
 base_url = get_public_secrets('weather_api_base_url', 'https://default-weather-api.com')
 shared_endpoint = get_public_secrets('common_endpoint', 'https://api.example.com')
 org_api_key = get_public_secrets('organization_api_key', 'default_key')
+```
+**Group Vault Retrieval**
+
+Use `get_group_secrets()` to retrieve values from the group vault:
+
+```python
+# Syntax: get_group_secrets('secret_name', 'default_value')
+team_api_key = get_group_secrets('team_service_key', 'no_key_found')
+dept_endpoint = get_group_secrets('department_endpoint', 'https://default-endpoint.com')
+project_token = get_group_secrets('project_auth_token', 'default_token')
 ```
 
 ## Practical Examples
@@ -155,7 +214,9 @@ Type: Private
 
 - **Private Vault**: Only the owner can access their private secrets
 - **Public Vault**: All organization members can access public secrets
-- **No Cross-Access**: Users cannot access other users' private secrets
+- **Group Vault**: Only members of the specific group or department can access group secrets
+- **No Cross-Access**: Users cannot access other users' private secrets or other groups' secrets
+- **Department Isolation**: Group secrets are isolated between different departments and teams
 
 ## Using Tools Created by Other Users
 

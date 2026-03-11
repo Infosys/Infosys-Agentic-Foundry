@@ -15,13 +15,25 @@ A knowledge base serves as an external memory for agents, enabling them to:
 
 Knowledge bases are created and managed from the **Tool Page**. This interface allows you to upload documents (PDF, TXT), enter a name for the new knowledge base, and add it to the centralized directory.
 
----
+## Adding Knowledge Bases to Agents
 
-## Using Knowledge Bases in Inference
+Once knowledge bases are created, they can be added to agents during the agent onboarding process. This allows agents to access domain-specific information and provide more accurate, context-aware responses.
 
-During chat inference, one or multiple knowledge bases can be selected for the agent to reference while answering queries. This is done using a dedicated icon in the chat interface, allowing the agent's knowledge to be tailored to the context of the question.
+**How to Add Knowledge Bases:**
 
-Selecting the appropriate knowledge base(s) ensures the agent provides contextually accurate and precise answers, which is especially useful for organizations with multiple knowledge bases serving different departments or domains.
+1. Navigate to the `Agent Onboarding` page
+2. Go to the `Resources` tab
+3. In the `Knowledge Bases` section, select one or more knowledge bases that you want the agent to use
+4. The selected knowledge bases will be available to the agent during inference
+
+**Benefits:**
+
+- `Persistent Configuration` — Knowledge bases are configured at the agent level, so they're always available when the agent is used
+- `Multiple Knowledge Bases` — Add multiple knowledge bases to support different domains or topics within a single agent
+- `Context-Aware Responses` — Agents leverage the selected knowledge bases to provide accurate, domain-specific answers
+- `Flexible Management` — Update or modify knowledge base assignments as your information needs change
+
+This approach ensures that agents have consistent access to relevant information sources, making them more reliable and effective for specialized tasks.
 
 ---
 

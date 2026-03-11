@@ -111,3 +111,17 @@ Tools are saved as files on the server during the onboarding and update process.
 !!! info
 
     This file management logic is synchronized with the database operations, ensuring consistency between the tool records in the database and the actual tool files on the server.
+
+## Python Tool to MCP Local Server Conversion
+
+The platform provides automation to convert Python-based tools into MCP (Model Context Protocol) local server tools. This feature streamlines the migration from standalone Python tools to server-based tool execution.
+
+**How to Convert:**
+
+Users can select one or more tools from the tools list and then click on the `'Convert to MCP'` icon to initiate the conversion process.
+
+**Benefits:**
+
+- **Seamless Integration**: Automatically transforms Python tool code into MCP-compatible format
+- **Enhanced Modularity**: Enables better organization and separation of tool functionality
+- **Reusability**: Converted tools can be easily shared and reused across different agents and workflows

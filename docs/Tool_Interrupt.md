@@ -10,6 +10,20 @@ Tool Interrupt is a toggle feature available in the inference section of the fra
 
 The Tool Interrupt toggle button can be found in the **Inference** section of the framework interface.
 
+## Template Support
+
+All agent templates support both **Tool Interrupt** and **Selective Tool Interrupt** features:
+
+- **React**
+- **React Critic**
+- **Planner Executor Critic**
+- **Planner Executor**
+- **Meta**
+- **Planner Meta**
+- **Hybrid**
+
+This universal support ensures consistent human-in-the-loop control across all agent architectures.
+
 ## Operating Modes
 
 **1. Without Tool Interrupt (Default Mode)**

@@ -9,6 +9,15 @@ markdown_extensions:
 - admonition
 - pymdownx.details
 - pymdownx.superfences
+- attr_list
+- md_in_html
+- def_list
+- pymdownx.tabbed:
+    alternate_style: true
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    
 extra_css:
     - css/hide-footer.css
 
@@ -34,6 +43,7 @@ nav:
      - Database setup: Installation/Database_Setup.md
      - VM installation using docker-compose: Installation/VM_Docker-Compose.md
   - Enabling Additional LLM Models: custom_llm_models.md
+  - Model Server Integration: Model_server.md
   - Agents Design: 
      - Overview: Agents_Design/overview.md
      - React Agent Design: Agents_Design/React Agent Design.md
@@ -44,10 +54,21 @@ nav:
      - Planner Meta Agent Design: Agents_Design/Planner_meta_agent_design.md
      - Hybrid Agent Design: Agents_Design/Hybrid_Agent_Design.md
   - Admin Screen: Admin_Screen.md
-  - Tools Configuration : tools_config/tools.md
-  - Tool Validation: Tool_Validation.md
-  - Tool Interrupt: Tool_Interrupt.md
-  - Memory Management: memory_management.md
+  - Time-To-Live: Time-To-Live.md
+  - Super Admin: SuperAdmin.md
+  - Role Base Access Control: RBAC.md
+  - API Authentication: JWT.md
+  - Vault: Vault.md
+  - Tools:
+    - Tools Configuration : tools_config/tools.md
+    - Tool Creation via Chat Inference: tools_config/tool_creation.md
+    - Tool Validation: Tool_Validation.md
+    - Tool Interrupt: Tool_Interrupt.md
+  - Files: files_upload/files.md
+  - DataConnectors: DataConnectors.md
+  - Knowledge Base: Knowledge_Base.md
+  - MCP Registry: MCP_Registry.md
+  - Agent Pipelines: Agent_Pipelines.md
   - Agent Configuration:
       - Overview: agent_config/Overview.md
       - React Agent Configuration: agent_config/reactAgent.md
@@ -57,6 +78,8 @@ nav:
       - Meta Agent Configuration: agent_config/metaAgent.md
       - Planner Meta Agent Configuration: agent_config/PlannerMeta.md
       - Hybrid Agent Configuration: agent_config/HybridAgent.md
+  - Memory Management: memory_management.md
+  - Google ADK Framework Support: Google_ADK_Framework_Support.md
   - Inference:
       - Overview: Inference/inference.md
       - React Agent Inference: Inference/reactAgent_inference.md
@@ -67,25 +90,16 @@ nav:
       - Planner Meta Agent Inference: Inference/MetaPlanner_inference.md
       - Hybrid Agent Inference: Inference/HybridAgent_inference.md
       - Canvas Screen: Inference/Canvas_Screen.md
-  - Files: files_upload/files.md
-  - Telemetry:
-      - Open Telemetry: Telemetry/telemetry.md
-      - Connecting to Grafana: Telemetry/Connecting_to_Grafana.md
-      - Arize Phoenix: Telemetry/Arize_Phoenix.md
+  - Serever Sent Events: SSE.md
+  - Prompt Optimization: prompt_optimization.md
   - Evaluation: 
       - Evaluation Metrics: Evaluation/evaluation_metrics.md
       - Groundtruth Evaluation: Evaluation/Groundtruth_Evaluation.md
       - Consistency Evaluation: Evaluation/Consistency.md
-  - Vault: Vault.md
-  - API Authentication: JWT.md
-  - GZIP Compression: GZIP_Compression.md
-  - Knowledge Base: Knowledge_Base.md
-  - DataConnectors: DataConnectors.md
+  - Telemetry:
+      - Open Telemetry: Telemetry/telemetry.md
+      - Connecting to Grafana: Telemetry/Connecting_to_Grafana.md
+      - Arize Phoenix: Telemetry/Arize_Phoenix.md
   - Export Agent: ExportAgent.md
-  - Prompt Optimization: prompt_optimization.md
-  - MCP Registry: MCP_Registry.md
-  - Time-To-Live: Time-To-Live.md
-  - Model Server Integration: Model_server.md
-  - Role Base Access Control: RBAC.md
-  - Serever Sent Events: SSE.md
-  - Agent Pipelines: Agent_Pipelines.md
+  - GZIP Compression: GZIP_Compression.md
+  - Prebuilt Components Auto-Onboarding: onboarding.md

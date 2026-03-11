@@ -2,66 +2,23 @@
 ## Overview
 The `Admin Screen` serves as the central hub for managing and monitoring key components of the system. 
 
-- It is organized into multiple sections including `Tools`, `Agents`, `Chat`, `Vault`, `Data Connectors`, `Files`, `Evaluation` and an additional tab labeled `Admin`. 
+- It is organized into multiple sections including `chat`, `Tools`, `Servers`, `Agents`, `Pipelines`, `Vault`, `Data Connectors`, `Knowledge Base`, `Resource Dashboard`, `Evaluation`, `Files` and an additional tab labeled `Admin`. 
 - The `Admin` tab is specifically designed to provide administrators with advanced management capabilities.
-- Within the `Admin` tab, you will find four main functional areas that enable administrators to effectively manage users, oversee agent feedback, and evaluate system performance: `Register`, `Learning - Feedback Approval`, `RecycleBin` and `Unused Tools & Agents`.
+- Within the `Admin` tab, you will find four main functional tabs that enable administrators to effectively manage users, oversee agent feedback, Installation, recycle bin management and Unused tools and agents, Groups and Role Control, Resource Management, and Inference Configuration.
 ---
 
-## 1. Register
+## 1. User Management
 
-This tab is dedicated to user registration and role management. It enables administrators to create new user accounts by providing essential credentials and assigning appropriate roles.
+The User Management section in the Admin tab allows administrators to manage user accounts, roles, and access within their department. Admins have three key capabilities:
 
-**User Input Fields:**
+- **User Assignment** — Assign roles to registered users within the department. SuperAdmin can assign any role in any department, while Admin can only assign roles within their own department.
+- **User Update** — Update a user's role, or reset/set a temporary password for users within the department.
+- **User Access Management** — Enable or disable login access for users. Admins can manage users within their own department, while SuperAdmin can manage users globally across all departments.
 
-- **Email:** Unique identifier for the user.
-- **Password:** Secure password for login.
-- **Role:** Dropdown selection among `Admin`, `Developer`, and `User`.
+For detailed information on user management operations, permissions, and rules, refer to the RBAC documentation:
 
-### User Roles and Permissions
+[:octicons-arrow-right-24: User Management Within Departments](RBAC.md#4-user-management-within-departments)
 
-The platform defines three distinct user roles `Admin`, `Developer`, and `User` each with specific access levels and capabilities.
-
-**1. Admin Role**
-
-Admins have full administrative privileges with unrestricted access to all system features. This role is typically responsible for platform-wide configuration and oversight.
-
-**Admin Capabilities:**
-
-- Onboard new tools and agents.
-- Update existing tools and agents.
-- Delete tools and agents.
-- Upload files via the `Files` section.
-- Interact with agents in the `Chat Inference` section.
-- Manage the feedback learning, including review, approval, and learning updates.
-- Perform model evaluations and view detailed performance metrics.
-
-**2. Developer Role**
-
-Developers are responsible for the setup, configuration, and maintenance of tools and agents. While they have extensive technical access, their permissions are slightly restricted compared to Admins.
-
-**Developer Capabilities:**
-
-- Onboard new tools and agents.
-- Update tools and agents.
-- Delete tools and agents.
-- Upload files relevant to tool and agent functionality in the `Chat Inference` section.
-- Interact with agents in the `Chat Inference` section.
-- No access to feedback approval or evaluation metrics.
-
-**3. User Role**
-
-Users typically interact with tools and agents for practical use cases, testing, or demonstrations. Their permissions mirror those of Developers, focusing on hands-on interaction.
-
-**User Capabilities:**
-
-- End-user role with capabilities equivalent to the Developer.
-- Can onboard, update, and delete tools and agents, upload files, and interact with agents.
-- Typically engaged in the practical use and testing of tools rather than administrative oversight.
-
-!!! Note
-    Only the **creator (owner)** of a tool or agent has permission to **update** or **delete** it. This applies to all roles, ensuring secure and accountable resource management.
-
----
 
 ## 2. Learning - Feedback Approval
 
@@ -92,36 +49,13 @@ The system offers a comprehensive view of each feedback item. For each feedback,
 **Administrative Capabilities:**
 
 - Review the feedback in detail to assess its validity and impact on agent performance.
-- Approve feedback to validate its effectiveness and relevance.
+- Approve the lesson by enabling the **"Included in learning"** toggle switch. This marks the feedback as approved and ready to be integrated into the agent's learning.
 - Commit changes, which updates the agent's knowledge base or response logic accordingly.
 - This process supports continuous learning and improvement of agents by integrating verified feedback.
 
 ---
 
-## 3. RecycleBin
-
-The **RecycleBin** tab lets administrators manage deleted tools, agents and MCP Servers. All removed items are listed here, providing a way to review them before permanent deletion.
-
-**Key Features**
-
-- **View Deleted Items:** See a list of all deleted tools, agents and MCP Servers.
-- **Restore Functionality:** Restore mistakenly deleted items with a single click.
-- **Permanent Deletion:** Permanently remove items that are no longer needed. This action cannot be undone.
-
-> **Note:**
-> Only users with administrative privileges can access the RecycleBin tab and perform restore or permanent delete actions.
-
-## 4. Unused Tools, Agents and MCP Servers
-
-The **Unused Tools, Agents and MCP Servers** tab displays all tools, agents and MCP Servers that have not been used or updated in the last 15 days. `Unused` means there has been no interaction with the agent or modification to the tool/agent during this period.
-
-**Administrative Capabilities:**
-
-- View a comprehensive list of unused tools, agents and MCP Servers.
-- Delete unused tools, agents or MCP Servers directly from this tab.
-- Deleted items are automatically moved to the RecycleBin for potential recovery or permanent deletion.
-
-## 5. Installation
+## 3. Installation
 
 The `Installation` tab provides administrators with comprehensive visibility into the Python package dependencies required by the tools in the system. This section helps ensure that all necessary packages are properly installed and tracks pending installation requests from users.
 
@@ -181,3 +115,99 @@ This tab tracks tool onboarding failures caused by missing module dependencies a
     - Review pending dependency requests from users.
     - Install the requested packages after validation.
     - Notify users once the package is installed so they can retry tool onboarding.
+
+## 4. RecycleBin
+
+The **RecycleBin** tab lets administrators manage deleted tools, agents and MCP Servers. All removed items are listed here, providing a way to review them before permanent deletion.
+
+**Key Features**
+
+- **View Deleted Items:** See a list of all deleted tools, agents and MCP Servers.
+- **Restore Functionality:** Restore mistakenly deleted items with a single click.
+- **Permanent Deletion:** Permanently remove items that are no longer needed. This action cannot be undone.
+
+> **Note:**
+> Only users with administrative privileges can access the RecycleBin tab and perform restore or permanent delete actions.
+
+## 5. Unused Tools, Agents and MCP Servers
+
+The **Unused Tools, Agents and MCP Servers** tab displays all tools, agents and MCP Servers that have not been used or updated in the last 15 days. `Unused` means there has been no interaction with the agent or modification to the tool/agent during this period.
+
+**Administrative Capabilities:**
+
+- View a comprehensive list of unused tools, agents and MCP Servers.
+- Delete unused tools, agents or MCP Servers directly from this tab.
+- Deleted items are automatically moved to the RecycleBin for potential recovery or permanent deletion.
+
+## 6. Control Tab
+
+The **Control** tab in the Admin section enables administrators to manage groups and configure role-based permissions within their department.
+
+**Group Management** — Organize users and agents into groups for collaborative access and shared vault secrets. Admins can create, update, and manage group memberships within their department.
+
+**Role Permissions** — Configure role-based access control by defining what actions each role can perform on resources (Tools, Agents, Servers, Pipelines). Set Read, Add, Update, Delete, and Execute permissions at the role level.
+
+For detailed information on group creation, member management, permission configuration, and access control rules, refer to the RBAC documentation:
+
+[:octicons-arrow-right-24: Group Management](RBAC.md#group-management)
+
+[:octicons-arrow-right-24: Permissions](RBAC.md#permissions)
+
+---
+
+## 7. Resource Management
+
+The `Resource Management` section in the Admin tab enables administrators to control tool-level data access across the organization. This feature provides fine-grained access control by allowing tool creators to define access keys that determine which data users can access when running specific tools.
+
+**Key Capabilities:**
+
+- `Access Key Management` — Create, view, and manage access keys that control data access at the tool level
+- `Resource Allocation` — Assign and manage access key permissions for users within the department
+- `User Access Control` — Define allowed or excluded values for each user, supporting both specific values and wildcard access patterns
+- `Tool Integration` — View which tools are using specific access keys and manage their associations
+- `Bulk User Management` — Efficiently add or remove multiple users from access keys
+
+**Admin Responsibilities:**
+
+1. View all access keys created within their department
+2. Manage user assignments to access keys
+3. Update user-specific allowed/excluded values for fine-grained control
+4. Monitor which users have access to specific data resources
+5. Ensure proper data access governance and compliance
+
+For detailed information on access key creation, resource allocation workflows, tool-level decorators, and comprehensive examples, refer to the RBAC documentation:
+
+[:octicons-arrow-right-24: Resource Dashboard](RBAC.md#resource-dashboard)
+
+## 8. Inference Configuration
+
+The **Inference Configuration** section in the Admin tab allows administrators to configure and manage inference-related settings for the system. This section provides control over how agents process queries and generate responses, enabling fine-tuning of performance, behavior, and resource utilization.
+
+**Key Configuration Options:**
+
+Administrators can manage various inference parameters that affect agent behavior and performance:
+
+- **Model Selection** — Configure which language models are available for different agent types and use cases
+- **Temperature Settings** — Adjust the randomness and creativity of agent responses
+- **Token Limits** — Set maximum token counts for prompts and responses to control costs and response length
+- **Timeout Configuration** — Define timeout thresholds for inference requests to prevent long-running operations
+- **Retry Logic** — Configure retry attempts and backoff strategies for failed inference calls
+- **Streaming Settings** — Enable or disable streaming responses for real-time user feedback
+- **Caching Policies** — Set up response caching to improve performance and reduce API costs
+- **Rate Limiting** — Configure rate limits to prevent system overload and manage API quotas
+
+**Admin Capabilities:**
+
+- View current inference configuration settings across the system
+- Update configuration parameters to optimize agent performance
+- Set department-specific or global inference policies
+- Monitor inference behavior and adjust settings based on usage patterns
+- Ensure compliance with organizational policies and budget constraints
+
+!!! tip "Best Practices"
+    - Start with conservative settings and adjust based on monitoring data
+    - Test configuration changes in a development environment before applying to production
+    - Balance response quality with cost and performance considerations
+    - Regularly review and optimize settings based on user feedback and system metrics
+
+---

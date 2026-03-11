@@ -9,10 +9,10 @@
       
       
       
-        <link rel="prev" href="../Model_server/">
+        <link rel="prev" href="../SuperAdmin/">
       
       
-        <link rel="next" href="../SSE/">
+        <link rel="next" href="../JWT/">
       
       
         
@@ -64,6 +64,11 @@
     <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
+      
+        
+        <a href="#role-based-access-control-rbac" class="md-skip">
+          Skip to content
+        </a>
       
     </div>
     <div data-md-component="announce">
@@ -685,6 +690,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../Model_server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Server Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -694,10 +726,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
             
   
   
@@ -715,8 +747,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -991,14 +1023,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../tools_config/tools/" class="md-nav__link">
+      <a href="../Time-To-Live/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Tools Configuration
+    Time-To-Live
   
 
     
@@ -1018,14 +1050,286 @@
   
   
     <li class="md-nav__item">
-      <a href="../Tool_Validation/" class="md-nav__link">
+      <a href="../SuperAdmin/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Tool Validation
+    Super Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Role Base Access Control
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Role Base Access Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#department-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Department Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Department Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-default-department" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Default Department
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-department-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Department Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-role-management-within-departments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Role Management Within Departments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-user-management-within-departments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. User Management Within Departments
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharing-across-departments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sharing Across Departments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#group-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Group Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resource-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-ui-visibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dynamic UI Visibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-file-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files &amp; File Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#business-rules-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Business Rules Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../JWT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Authentication
   
 
     
@@ -1045,41 +1349,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../Tool_Interrupt/" class="md-nav__link">
+      <a href="../Vault/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Tool Interrupt
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../memory_management/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Memory Management
+    Vault
   
 
     
@@ -1107,10 +1384,311 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
         
           
-          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tool_creation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Creation via Chat Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Interrupt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DataConnectors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DataConnectors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Knowledge_Base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge Base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../MCP_Registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agent_Pipelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Pipelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" >
+        
+          
+          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="0">
             
   
   
@@ -1128,8 +1706,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_14">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_22">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1376,6 +1954,60 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../memory_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Google_ADK_Framework_Support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google ADK Framework Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -1385,10 +2017,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_25" >
         
           
-          <label class="md-nav__link" for="__nav_15" id="__nav_15_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_25" id="__nav_25_label" tabindex="0">
             
   
   
@@ -1406,8 +2038,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_15_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_15">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_25_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_25">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1683,14 +2315,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../files_upload/files/" class="md-nav__link">
+      <a href="../SSE/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Files
+    Serever Sent Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompt_optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompt Optimization
   
 
     
@@ -1718,148 +2377,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_28" >
         
           
-          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Telemetry
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_17">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Telemetry
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../Telemetry/telemetry/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Open Telemetry
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../Telemetry/Connecting_to_Grafana/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Connecting to Grafana
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../Telemetry/Arize_Phoenix/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Arize Phoenix
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
-        
-          
-          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_28" id="__nav_28_label" tabindex="0">
             
   
   
@@ -1877,8 +2398,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_18">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_28_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_28">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1985,15 +2506,62 @@
   
   
   
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_29" >
+        
+          
+          <label class="md-nav__link" for="__nav_29" id="__nav_29_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_29_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_29">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Telemetry
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
-      <a href="../Vault/" class="md-nav__link">
+      <a href="../Telemetry/telemetry/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Vault
+    Open Telemetry
   
 
     
@@ -2005,6 +2573,70 @@
     </li>
   
 
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Connecting_to_Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connecting to Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arize Phoenix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
     
       
       
@@ -2013,14 +2645,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../JWT/" class="md-nav__link">
+      <a href="../ExportAgent/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    API Authentication
+    Export Agent
   
 
     
@@ -2067,265 +2699,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../Knowledge_Base/" class="md-nav__link">
+      <a href="../onboarding/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Knowledge Base
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../DataConnectors/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    DataConnectors
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../ExportAgent/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Export Agent
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../prompt_optimization/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Prompt Optimization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../MCP_Registry/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    MCP Registry
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../Time-To-Live/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Time-To-Live
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../Model_server/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Model Server Integration
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Role Base Access Control
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../SSE/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Serever Sent Events
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../Agent_Pipelines/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Agent Pipelines
+    Prebuilt Components Auto-Onboarding
   
 
     
@@ -2355,6 +2736,187 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#department-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Department Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Department Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-default-department" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Default Department
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-department-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Department Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-role-management-within-departments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Role Management Within Departments
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-user-management-within-departments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. User Management Within Departments
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Permissions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharing-across-departments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sharing Across Departments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#group-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Group Management
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resource-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-ui-visibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dynamic UI Visibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-file-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files &amp; File Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#business-rules-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Business Rules Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -2379,10 +2941,950 @@
 
 
 
-  <h1>Role Base Access Control</h1>
+<h1 id="role-based-access-control-rbac">Role-Based Access Control (RBAC)</h1>
+<h2 id="overview">Overview</h2>
+<p>The Infosys Agent Foundry (IAF) implements a comprehensive <strong>Role-Based Access Control (RBAC)</strong> system that governs access to all platform resources. The system is organized around <code>departments</code>, where each department has its own set of <code>roles</code> and <code>permissions</code>, providing fine-grained control over who can view, create, update, delete, and execute tools, agents, pipelines, and other resources.</p>
+<p><strong>Key Principles</strong></p>
+<ul>
+<li><code>Department-scoped access</code>: Users see and interact only with resources in their department (plus shared/public resources).</li>
+<li><code>Role-based permissions</code>: Each role within a department has a configurable permission matrix.</li>
+<li><code>Hierarchical authority</code>: SuperAdmin &gt; Admin &gt; Developer &gt; User.</li>
+<li><code>Cross-department sharing</code>: Resources can be made public or shared with specific departments.</li>
+<li><code>Cascade sharing</code>: Sharing an agent or pipeline automatically shares its dependent resources.</li>
+<li><code>Audit trail</code>: Every action is logged for security and compliance.</li>
+</ul>
+<hr />
+<h2 id="architecture">Architecture</h2>
+<p><strong>1. Departments</strong></p>
+<p>Departments are the <code>top-level organizational unit</code>. Every resource (tools, agents, pipelines, knowledge bases, etc.) belongs to a department, and users operate within the context of a department.</p>
+<ul>
+<li>A <code>default "General" department</code> is automatically created on first server startup.</li>
+<li>Only the <code>SuperAdmin</code> can create or delete departments.</li>
+<li>Each department maintains its own allowed roles and corresponding permissions.</li>
+</ul>
+<p><strong>2. Roles</strong></p>
+<p>Roles define the level of access a user has within a department.</p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SuperAdmin</code></td>
+<td>Platform-wide access. Not tied to any single department. Centralized control over all departments.</td>
+</tr>
+<tr>
+<td><code>Admin</code></td>
+<td>Highest authority within a department. Manages users, roles, permissions, groups, and resources within their own department.</td>
+</tr>
+<tr>
+<td><code>Developer</code></td>
+<td>Full CRUD and execute access on tools, agents, and pipelines within their department.</td>
+</tr>
+<tr>
+<td><code>User</code></td>
+<td>Read and execute access on agents and pipelines only (by default).</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>A member can have <strong>only one role per department</strong> but may have accounts in <strong>multiple departments</strong>.</p>
+</div>
+<p><strong>3. Role Hierarchy</strong></p>
+<div class="highlight"><pre><span></span><code>SuperAdmin (Level 3) ──── Platform-wide, all permissions
+    │
+    ├── Admin (Level 2) ──── Department-wide, manages users/roles/permissions
+    │       │
+    │       ├── Developer (Level 1) ──── Full CRUD + Execute on tools, agents, pipelines
+    │       │
+    │       └── User (Level 0) ──── Read + Execute agents/pipelines only
+    │
+    └── (Can manage any department)
+</code></pre></div>
+<hr />
+<h2 id="authentication">Authentication</h2>
+<p><strong>1. Registration</strong></p>
+<ul>
+<li>Users register with <code>email</code>, <code>username</code>, and <code>password</code>.</li>
+<li>After registration, users are in a <code>pending</code> state — they are not assigned to any department or role yet.</li>
+<li>Users must contact a <code>SuperAdmin</code> or <code>department Admin</code> to get assigned a role in a department.</li>
+<li>SuperAdmin can assign any role in any department.</li>
+<li>Admin can only assign roles within their own department.</li>
+<li>A dedicated <code>Contact Page</code> is available for registered users to reach out to admins.</li>
+<li>A contact list of SuperAdmin and department Admin contacts is available to help users reach out.</li>
+</ul>
+<p><strong>2. Login</strong></p>
+<ul>
+<li>Users log in with <code>email</code>, <code>password</code>, and <code>department</code>.</li>
+<li>Department selection is <code>required</code> for all users except SuperAdmin.</li>
+<li>SuperAdmin can log in <code>with or without</code> specifying a department (department is optional for SuperAdmin).</li>
+<li>Users must have <code>active status</code> to log in (both globally and within the department).</li>
+</ul>
+<p><strong>3. SuperAdmin Bootstrap (First-Time Setup)</strong></p>
+<p>When the platform is set up for the first time:</p>
+<ul>
+<li>The <code>first registered person</code> becomes the <code>SuperAdmin</code>.</li>
+<li>The default <code>"General"</code> department is created automatically with default roles:</li>
+<li><code>Admin</code> — Full permissions within department + Admin Tab</li>
+<li><code>Developer</code> — Full permissions within department</li>
+<li><code>User</code> — Agent read + execute only</li>
+</ul>
+<p><strong>4. Password Management</strong></p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Reset Password</code></td>
+<td>SuperAdmin can set a temporary password for any user across all departments. Admin can set a temporary password for users within their own department. The temporary password must then be shared with the user so they can log in.</td>
+</tr>
+<tr>
+<td><code>Forced Password Change</code></td>
+<td>On the next login with the temporary password, the user is required to set a new password before they can proceed.</td>
+</tr>
+<tr>
+<td><code>Self-Service Change</code></td>
+<td>Any authenticated user can change their own password at any time.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="department-management">Department Management</h2>
+<h3 id="1-default-department">1. Default Department</h3>
+<ul>
+<li><code>Name</code>: <code>General</code></li>
+<li><code>Auto-created</code> on server startup.</li>
+<li><code>Default roles</code>: Admin, Developer, User (with pre-configured default permissions for each).</li>
+</ul>
+<h3 id="2-department-operations">2. Department Operations</h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Who Can Do It</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Create Department</code></td>
+<td>SuperAdmin only</td>
+<td>Creates a new department.</td>
+</tr>
+<tr>
+<td><code>Delete Department</code></td>
+<td>SuperAdmin only</td>
+<td>Deletes a department and its associations.</td>
+</tr>
+<tr>
+<td><code>List Departments</code></td>
+<td>Any authenticated user</td>
+<td>View all available departments.</td>
+</tr>
+<tr>
+<td><code>Get Department Details</code></td>
+<td>Any authenticated user</td>
+<td>View specific department information.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="3-role-management-within-departments">3. Role Management Within Departments</h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Who Can Do It</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Add Role to Department</code></td>
+<td>Admin (own dept) / SuperAdmin</td>
+<td>Adds an allowed role (Admin/Developer/User) to a department. Default permissions are auto-assigned.</td>
+</tr>
+<tr>
+<td><code>Remove Role from Department</code></td>
+<td>Admin (own dept) / SuperAdmin</td>
+<td>Removes a role from a department.</td>
+</tr>
+<tr>
+<td><code>List Department Roles</code></td>
+<td>Admin (own dept) / SuperAdmin</td>
+<td>View all roles configured for a department.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4-user-management-within-departments">4. User Management Within Departments</h3>
+<p>Admins have three categories of user management (accessible from the <code>Admin Tab</code>):</p>
+<p><strong>User Assignment</strong>:</p>
+<ul>
+<li>Assign roles to registered users within the department.</li>
+<li>SuperAdmin can assign any role in any department.</li>
+<li>Admin can only assign roles within their own department.</li>
+</ul>
+<p><strong>User Update</strong>:</p>
+<ul>
+<li>Update a user's role within the department.</li>
+<li>Reset/set temporary password for users.</li>
+<li>SuperAdmin can operate across all departments.</li>
+</ul>
+<p><strong>User Access Management</strong>:</p>
+<ul>
+<li><code>Enable/disable</code> login access for users.</li>
+<li>Admin can disable users <code>within their own department only</code>.</li>
+<li>Users <code>cannot disable themselves</code>.</li>
+<li>Admin <code>cannot disable SuperAdmin</code> users.</li>
+<li>SuperAdmin can disable users <code>globally</code> (across all departments).</li>
+</ul>
+<hr />
+<h2 id="permissions">Permissions</h2>
+<p><strong>1. Permission Matrix</strong></p>
+<p>Each role within a department has a configurable permission matrix:</p>
+<p><strong>CRUD &amp; Execute Permissions (Resource-Level)</strong></p>
+<p>Each of the following permissions can be toggled independently for <code>Tools</code> and <code>Agents</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Controls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Read Access</code></td>
+<td>View tools/agents (and servers/pipelines)</td>
+</tr>
+<tr>
+<td><code>Add Access</code></td>
+<td>Create tools/agents</td>
+</tr>
+<tr>
+<td><code>Update Access</code></td>
+<td>Modify tools/agents</td>
+</tr>
+<tr>
+<td><code>Delete Access</code></td>
+<td>Delete tools/agents</td>
+</tr>
+<tr>
+<td><code>Execute Access</code></td>
+<td>Execute/run tools/agents</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>Servers currently follow the <strong>same permissions as tools</strong>, and Pipelines currently follow the <strong>same permissions as agents</strong>. Separate permissions for Servers and Pipelines will be introduced in the next release.</p>
+</div>
+<p><strong>Chat/Execution Toggle Permissions</strong></p>
+<p>These control features within the agent chat/execution interface:</p>
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Description</th>
+<th>Dependency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Execution Steps</code></td>
+<td>View detailed execution steps</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+<tr>
+<td><code>Tool Verifier</code></td>
+<td>Tool verifier toggle in chat</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+<tr>
+<td><code>Plan Verifier</code></td>
+<td>Plan verifier toggle in chat</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+<tr>
+<td><code>Online Evaluation</code></td>
+<td>Online evaluation toggle</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+<tr>
+<td><code>Validator</code></td>
+<td>Validator tools access</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+<tr>
+<td><code>File Context</code></td>
+<td>File context management</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+<tr>
+<td><code>Canvas View</code></td>
+<td>Canvas view in UI</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+<tr>
+<td><code>Context</code></td>
+<td>Context management</td>
+<td>Requires <code>Execute Access (Agents)</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Independent Permissions</strong></p>
+<p>These permissions are standalone and do not depend on other permissions:</p>
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Evaluation Access</code></td>
+<td>Access to evaluation features</td>
+</tr>
+<tr>
+<td><code>Vault Access</code></td>
+<td>Access to secrets/vault management</td>
+</tr>
+<tr>
+<td><code>Data Connector Access</code></td>
+<td>Access to data connector features</td>
+</tr>
+<tr>
+<td><code>Knowledge Base Access</code></td>
+<td>Access to knowledge base management</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Special Permissions (Implied)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Dependent On</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Resource Dashboard</code></td>
+<td>Requires <code>Add Access (Tools)</code> or <code>Update Access (Tools)</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>2. Permission Dependencies</strong></p>
+<div class="highlight"><pre><span></span><code>Read Access (Tools) ◄── Add Access (Tools)
+                    ◄── Update Access (Tools)
+                    ◄── Delete Access (Tools)
+                    ◄── Execute Access (Tools)
 
-<p>Users with the <code>user</code> role cannot access the Tools, Agents, Vault and Data Connectors pages. They are allowed to interact with agents on the Inference page but cannot view execution steps or use the tool verifier and plan verifier features.</p>
-<p>More features will be added soon.</p>
+Read Access (Agents) ◄── Add Access (Agents)
+                     ◄── Update Access (Agents)
+                     ◄── Delete Access (Agents)
+                     ◄── Execute Access (Agents) ◄── Execution Steps
+                                                  ◄── Tool Verifier
+                                                  ◄── Plan Verifier
+                                                  ◄── Online Evaluation
+                                                  ◄── Validator
+                                                  ◄── File Context
+                                                  ◄── Canvas View
+                                                  ◄── Context
+</code></pre></div>
+<p><strong>Validation Rule</strong>: <code>Read Access</code> is a <code>prerequisite</code> — you cannot grant <code>Add</code>, <code>Update</code>, <code>Delete</code>, or <code>Execute</code> access for a resource type (Tools/Agents) unless <code>Read Access</code> is enabled for that same resource type.</p>
+<p><strong>3. Default Permissions by Role</strong></p>
+<p>When a role is added to a department, default permissions are auto-assigned:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:4"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Tools Permissions</label><label for="__tabbed_1_2">Agents Permissions</label><label for="__tabbed_1_3">Chat / Execution Toggles</label><label for="__tabbed_1_4">Independent Permissions</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th style="text-align: center;">Admin</th>
+<th style="text-align: center;">Developer</th>
+<th style="text-align: center;">User</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Add Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Update Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Delete Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Execute Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th style="text-align: center;">Admin</th>
+<th style="text-align: center;">Developer</th>
+<th style="text-align: center;">User</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Add Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Update Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Delete Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Execute Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th style="text-align: center;">Admin</th>
+<th style="text-align: center;">Developer</th>
+<th style="text-align: center;">User</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Execution Steps</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Tool Verifier</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Plan Verifier</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Online Evaluation</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Validator</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>File Context</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Canvas View</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Context</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th style="text-align: center;">Admin</th>
+<th style="text-align: center;">Developer</th>
+<th style="text-align: center;">User</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Evaluation Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Vault Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Data Connector Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td>Knowledge Base Access</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<p><strong>4 Managing Permissions</strong></p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Who Can Do It</th>
+<th>Restriction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Set permissions</code></td>
+<td>Admin (own dept) / SuperAdmin</td>
+<td>Admin <code>cannot</code> modify Admin role permissions</td>
+</tr>
+<tr>
+<td><code>View permissions</code></td>
+<td>Admin (own dept) / SuperAdmin</td>
+<td>Admin sees own dept only; SuperAdmin sees all</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition important">
+<p class="admonition-title">Critical Rule</p>
+<p>Only <strong>SuperAdmin</strong> can set or update permissions for the <strong>Admin</strong> role. Department Admins cannot modify their own role's permissions.</p>
+</div>
+<hr />
+<h2 id="sharing-across-departments">Sharing Across Departments</h2>
+<p>Resources can be made accessible to other departments through two mechanisms:</p>
+<p><strong>1. Public Access</strong></p>
+<p>Marking a resource as <code>Public</code> makes it <code>read-accessible</code> to <code>all departments</code>.</p>
+<ul>
+<li>Available for: <code>Tools</code>, <code>MCP Servers</code>, <code>Agents</code>, <code>Knowledge Bases</code>, <code>Pipelines</code> (coming soon).</li>
+</ul>
+<p><strong>2. Department-Specific Sharing</strong></p>
+<p>Using the <code>Shared with Departments</code> setting, a resource can be shared with <code>specific departments</code> only.</p>
+<ul>
+<li>Available for: <code>Tools</code>, <code>MCP Servers</code>, <code>Agents</code>, <code>Knowledge Bases</code>, <code>Pipelines</code> (coming soon).</li>
+<li><code>Public</code> and <code>Shared with Departments</code> are <code>mutually exclusive</code> — a public resource is already accessible to all, so specifying departments is redundant.</li>
+</ul>
+<p><strong>3. Cascade Sharing</strong></p>
+<p>When a higher-level resource is shared, its dependent resources are <code>automatically shared</code> as well:</p>
+<p><strong>Agent Sharing Cascade</strong></p>
+<div class="highlight"><pre><span></span><code>Agent (shared/public)
+  ├── Regular Tools ──── automatically shared/public
+  ├── MCP Servers ──── automatically shared/public
+  └── Knowledge Bases ──── automatically shared/public
+</code></pre></div>
+<p><strong>Pipeline Sharing Cascade (Coming Soon)</strong></p>
+<div class="highlight"><pre><span></span><code>Pipeline (shared/public)
+  └── Agents
+        ├── Regular Tools ──── automatically shared/public
+        ├── MCP Servers ──── automatically shared/public
+        └── Knowledge Bases ──── automatically shared/public
+</code></pre></div>
+<p><strong>4. Sharing Operations</strong></p>
+<p><strong>Agent Sharing</strong></p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Share Agent</code></td>
+<td>Share an agent with specific departments. This cascades sharing to the agent's tools, MCP servers, and knowledge bases.</td>
+</tr>
+<tr>
+<td><code>Unshare Agent</code></td>
+<td>Remove sharing of an agent from a specific department.</td>
+</tr>
+<tr>
+<td><code>View Sharing Info</code></td>
+<td>View the current sharing configuration for an agent.</td>
+</tr>
+<tr>
+<td><code>View Shared Agents</code></td>
+<td>View agents that have been shared with the current user's department.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Tool &amp; MCP Server Sharing</strong></p>
+<p>Sharing is managed via the <code>Public</code> and <code>Shared with Departments</code> settings during tool/server creation and update operations.</p>
+<p><strong>Knowledge Base Sharing</strong></p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Update KB Sharing</code></td>
+<td>Update the sharing settings for a knowledge base.</td>
+</tr>
+<tr>
+<td><code>Upload KB with Sharing</code></td>
+<td>Upload a knowledge base with sharing options configured.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="group-management">Group Management</h2>
+<p><strong>1. Groups Overview</strong></p>
+<p>Groups provide a way to organize <code>users</code> and <code>agents</code> within a department for collaborative access — particularly for shared secrets in the vault.</p>
+<ul>
+<li>Groups are <code>department-scoped</code>: all members and agents must belong to the <code>same department</code>.</li>
+<li>Only <code>Admins</code> can create and manage groups within their own department.</li>
+</ul>
+<p><strong>2. Group Operations</strong></p>
+<ul>
+<li><code>Admin</code> can create a group within their department, adding users and agents to it.</li>
+<li><code>Admin</code> can update group members, agents, and description, or delete the group entirely.</li>
+<li><code>Admin</code> can look up which groups a specific user or agent belongs to.</li>
+</ul>
+<p><strong>3. Group Secrets (Vault)</strong></p>
+<p>Groups can have their own <code>secrets</code> stored in the vault, accessible only by group members. This is available in the <code>Vault</code> page under the <code>Group Keys</code> tab.</p>
+<ul>
+<li><code>Anyone</code> can create, update, and delete group secrets (requires <code>Vault Access</code> permission).</li>
+<li><code>Group members</code> can view the secrets of their group (requires <code>Vault Access</code> permission).</li>
+<li>Users who are not members of the group cannot see or manage its secrets.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>All group secret operations require the <code>Vault Access</code> permission to be enabled for the user's role.</p>
+</div>
+<hr />
+<h2 id="resource-dashboard">Resource Dashboard</h2>
+<p>The Resource Dashboard provides <code>tool-level data access control</code> — allowing tool creators to define access keys that control which data a user can access when running a tool.</p>
+<p><strong>1. Access Key Management (Self-Service)</strong></p>
+<p>Available to users with <code>tool create/update permission</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>List Access Keys</code></td>
+<td>View all access keys in the department</td>
+</tr>
+<tr>
+<td><code>Create Access Key</code></td>
+<td>Create a new access key</td>
+</tr>
+<tr>
+<td><code>Get Access Key Details</code></td>
+<td>View details of a specific access key</td>
+</tr>
+<tr>
+<td><code>Delete Access Key</code></td>
+<td>Delete an access key (creator only)</td>
+</tr>
+<tr>
+<td><code>View Tools Using Key</code></td>
+<td>View which tools are using a specific access key</td>
+</tr>
+<tr>
+<td><code>Update Own Access</code></td>
+<td>Update own allowed/excluded values for an access key</td>
+</tr>
+</tbody>
+</table>
+<p><code>Key Rules:</code></p>
+<ul>
+<li>Only the <code>creator</code> of an access key can delete it.</li>
+<li>Cannot delete an access key if tools are still using it.</li>
+<li>Supports <code>wildcard</code> access: <code>allowed_values: ["*"]</code> with optional <code>exclusions: ["CEO001"]</code>.</li>
+<li>Wildcard (<code>*</code>) and specific values are <code>mutually exclusive</code>.</li>
+</ul>
+<p><strong>2. Resource Allocation (Admin)</strong></p>
+<p>Admins can manage access key assignments for users in their department:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>List Access Keys</code></td>
+<td>View all access keys in the admin's department</td>
+</tr>
+<tr>
+<td><code>View Key Users</code></td>
+<td>View which users have access to a specific key</td>
+</tr>
+<tr>
+<td><code>View User's Values</code></td>
+<td>View a specific user's allowed values for a key</td>
+</tr>
+<tr>
+<td><code>Update User's Access</code></td>
+<td>Update a user's access values for a key</td>
+</tr>
+<tr>
+<td><code>Bulk Manage Users</code></td>
+<td>Bulk add or remove users from a key</td>
+</tr>
+</tbody>
+</table>
+<p><strong>3. Tool-Level Access Decorators</strong></p>
+<p>Tool creators can embed access control directly in tool code using three decorators:</p>
+<p><strong><code>@resource_access(access_key, param_name)</code> — Data-Level Access Control</strong></p>
+<p>Checks if the executing user has permission to access specific data values based on their access key assignments.</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@resource_access</span><span class="p">(</span><span class="s2">&quot;employee_access&quot;</span><span class="p">,</span> <span class="s2">&quot;employee_id&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_employee_salary</span><span class="p">(</span><span class="n">employee_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="c1"># Only runs if user has access to this employee_id</span>
+    <span class="o">...</span>
+</code></pre></div>
+<p><strong><code>@require_role(*roles)</code> — Role-Based Access Control</strong></p>
+<p>Restricts tool execution to users with specific roles.</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@require_role</span><span class="p">(</span><span class="s2">&quot;Admin&quot;</span><span class="p">,</span> <span class="s2">&quot;Developer&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">admin_only_tool</span><span class="p">():</span>
+    <span class="c1"># Only runs for Admin or Developer users</span>
+    <span class="o">...</span>
+</code></pre></div>
+<p><strong><code>@authorized_tool</code> — Combined Access Control</strong></p>
+<p>Combines both resource access and role-based checks.</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@authorized_tool</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">combined_access_tool</span><span class="p">():</span>
+    <span class="c1"># Both role and resource access checks applied</span>
+    <span class="o">...</span>
+</code></pre></div>
+<p>These decorators use a <code>ToolUserContext</code> that is automatically injected at runtime, containing:
+- <code>user_id</code>, <code>email</code>, <code>role</code>, <code>department</code>, <code>token</code>
+- <code>resource_access</code>: Dictionary of access key → allowed values
+- <code>resource_exclusions</code>: Dictionary of access key → excluded values</p>
+<hr />
+<h2 id="dynamic-ui-visibility">Dynamic UI Visibility</h2>
+<p>The UI dynamically shows or hides <code>tabs and features</code> based on the logged-in user's permissions:</p>
+<table>
+<thead>
+<tr>
+<th>UI Element</th>
+<th>Required Permission</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Tools tab</code></td>
+<td>Read Access (Tools)</td>
+</tr>
+<tr>
+<td><code>Agents tab</code></td>
+<td>Read Access (Agents)</td>
+</tr>
+<tr>
+<td><code>Servers tab</code></td>
+<td>Read Access (Tools) — follows tools permission</td>
+</tr>
+<tr>
+<td><code>Pipelines tab</code></td>
+<td>Read Access (Agents) — follows agents permission</td>
+</tr>
+<tr>
+<td><code>Evaluation tab</code></td>
+<td>Evaluation Access</td>
+</tr>
+<tr>
+<td><code>Vault tab</code></td>
+<td>Vault Access</td>
+</tr>
+<tr>
+<td><code>Data Connectors tab</code></td>
+<td>Data Connector Access</td>
+</tr>
+<tr>
+<td><code>Knowledge Base tab</code></td>
+<td>Knowledge Base Access</td>
+</tr>
+<tr>
+<td><code>Resource Dashboard</code></td>
+<td>Add Access (Tools) or Update Access (Tools)</td>
+</tr>
+<tr>
+<td><code>Admin tab</code></td>
+<td>Admin or SuperAdmin role</td>
+</tr>
+<tr>
+<td><code>Execution Steps (chat)</code></td>
+<td>Execution Steps</td>
+</tr>
+<tr>
+<td><code>Tool Verifier (chat)</code></td>
+<td>Tool Verifier</td>
+</tr>
+<tr>
+<td><code>Plan Verifier (chat)</code></td>
+<td>Plan Verifier</td>
+</tr>
+<tr>
+<td><code>Online Evaluation (chat)</code></td>
+<td>Online Evaluation</td>
+</tr>
+<tr>
+<td><code>Validator (chat)</code></td>
+<td>Validator</td>
+</tr>
+<tr>
+<td><code>File Context (chat)</code></td>
+<td>File Context</td>
+</tr>
+<tr>
+<td><code>Canvas View (chat)</code></td>
+<td>Canvas View</td>
+</tr>
+<tr>
+<td><code>Context (chat)</code></td>
+<td>Context</td>
+</tr>
+<tr>
+<td><code>Permissions page</code></td>
+<td>Available in Profile tab for all authenticated users</td>
+</tr>
+</tbody>
+</table>
+<p>Users will <code>only see</code> the tabs and features they have permission for. The permissions page in the Profile tab allows any logged-in user to view their own permission set.</p>
+<hr />
+<h2 id="files-file-context">Files &amp; File Context</h2>
+<p>The platform supports two levels of file storage:</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Scope</th>
+<th>Access</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Root-level files</code></td>
+<td>Global</td>
+<td>Accessible by <code>all departments</code></td>
+</tr>
+<tr>
+<td><code>Department-level files</code></td>
+<td>Department-scoped</td>
+<td>Accessible by <code>department members only</code></td>
+</tr>
+</tbody>
+</table>
+<p>File context access is controlled by the <code>File Context</code> permission.</p>
+<hr />
+<h2 id="business-rules-summary">Business Rules Summary</h2>
+<p><strong>SuperAdmin Rules</strong></p>
+<ul>
+<li>First registered user becomes SuperAdmin.</li>
+<li>Has platform-wide access — all permission checks return <code>true</code>.</li>
+<li>Can log in without specifying a department.</li>
+<li>Can create/delete departments.</li>
+<li>Can assign any role in any department.</li>
+<li>Can disable users globally.</li>
+<li>Is the only role that can modify Admin role permissions.</li>
+<li>Cannot create or update groups (not tied to any department).</li>
+</ul>
+<p><strong>Admin Rules</strong></p>
+<ul>
+<li>Highest authority within their own department.</li>
+<li>Can manage users, roles, and permissions in their department only.</li>
+<li>Cannot modify Admin role permissions — only SuperAdmin can.</li>
+<li>Cannot disable SuperAdmin users.</li>
+<li>Cannot disable themselves.</li>
+</ul>
+<p><strong>Sharing Rules</strong></p>
+<ul>
+<li><code>Public</code> and <code>Shared with Departments</code> are mutually exclusive.</li>
+<li>Sharing an agent cascades to its tools, MCP servers, and knowledge bases.</li>
+<li>Sharing a pipeline cascades to its agents and their resources (coming soon).</li>
+<li>Shared resources provide read-only access to target departments.</li>
+</ul>
+<p><strong>Permission Rules</strong></p>
+<ul>
+<li><code>Read</code> permission is a prerequisite for <code>Create</code>, <code>Update</code>, <code>Delete</code>, and <code>Execute</code> permissions.</li>
+<li>Chat toggle permissions (Execution Steps, Tool Verifier, etc.) require <code>Execute Agents</code> permission.</li>
+<li>Servers currently follow tool permissions; pipelines currently follow agent permissions. Separate permissions will be introduced in the next release.</li>
+<li>Resource Dashboard requires tool create/update permission.</li>
+<li>Vault operations require <code>Vault Access</code> permission.</li>
+</ul>
+<p><strong>Tool/Agent Update Rules</strong></p>
+<ul>
+<li>Tools and MCP servers bound to an agent cannot be updated — must remove from agent first.</li>
+<li>Agents bound to a pipeline cannot be updated independently.</li>
+</ul>
+<hr />
 
 
 
