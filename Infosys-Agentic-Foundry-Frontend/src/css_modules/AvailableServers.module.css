@@ -793,3 +793,134 @@
   border-radius: 0 0 8px 8px;
   width: 100%;
 }
+
+/* ========================================
+   Server Health Status Indicator Styles
+   ======================================== */
+
+/* Health status dot - base styles */
+.healthDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+/* Healthy state - green dot */
+.healthDot.healthy {
+  background: var(--success, #16a34a);
+  box-shadow: 0 0 4px rgba(22, 163, 74, 0.5);
+}
+
+/* Unhealthy state - red dot */
+.healthDot.unhealthy {
+  background: var(--danger, #dc2626);
+  box-shadow: 0 0 4px rgba(220, 38, 38, 0.5);
+}
+
+/* Unknown/timeout state - gray dot */
+.healthDot.unknown {
+  background: var(--muted, #9ca3af);
+  box-shadow: 0 0 4px rgba(156, 163, 175, 0.5);
+}
+
+/* Checking state - pulsing blue dot */
+.healthDot.checking {
+  background: var(--app-primary-color, #0073cf);
+  animation: healthPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes healthPulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Health status wrapper for card integration */
+.healthStatusWrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--pill-bg, rgba(0, 0, 0, 0.04));
+  font-size: var(--font-size-xs, 11px);
+  font-family: var(--font-primary);
+  color: var(--muted, #6b7280);
+  cursor: default;
+}
+
+.healthStatusWrapper.healthy {
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--success, #16a34a);
+}
+
+.healthStatusWrapper.unhealthy {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger, #dc2626);
+}
+
+.healthStatusWrapper.unknown {
+  background: rgba(156, 163, 175, 0.1);
+  color: var(--muted, #6b7280);
+}
+
+.healthStatusWrapper.checking {
+  background: rgba(0, 115, 207, 0.08);
+  color: var(--app-primary-color, #0073cf);
+}
+
+/* Tooltip for health status */
+.healthTooltip {
+  position: relative;
+}
+
+.healthTooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--card-bg, #1e1e1e);
+  border: 1px solid var(--border, #333);
+  color: var(--text-primary, #fff);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.healthTooltip::before {
+  content: "";
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--border, #333);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  z-index: 101;
+}
+
+.healthTooltip:hover::after,
+.healthTooltip:hover::before {
+  opacity: 1;
+  visibility: visible;
+}
+

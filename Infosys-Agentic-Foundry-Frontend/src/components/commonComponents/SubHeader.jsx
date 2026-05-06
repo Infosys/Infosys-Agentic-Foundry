@@ -2,12 +2,13 @@ import React from "react";
 import SVGIcons from "../../Icons/SVGIcons";
 import styles from "./SubHeader.module.css";
 import UnifiedFilterDropdown from "./UnifiedFilterDropdown";
-import Cookies from "js-cookie";
+import { getUserNameFromToken } from "../../utils/jwtUtils";
 import DeleteModal from "./DeleteModal";
 import { useAuth } from "../../context/AuthContext";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
 import Breadcrumb from "./Breadcrumb";
+import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox";
 
 // Stable default values defined outside component to prevent new references on each render
 const EMPTY_ARRAY = [];
@@ -44,6 +45,20 @@ const SubHeader = (props) => {
     secondaryButtonDisabled = false,
     secondaryButtonTitle = "",
 
+    // Tertiary button props
+    tertiaryButtonLabel = "",
+    onTertiaryButtonClick,
+    tertiaryButtonDisabled = false,
+    tertiaryButtonTitle = "",
+    tertiaryButtonIcon = "upload-new",
+
+    // Quaternary button props
+    quaternaryButtonLabel = "",
+    onQuaternaryButtonClick,
+    quaternaryButtonDisabled = false,
+    quaternaryButtonTitle = "",
+    quaternaryButtonIcon = "download",
+
     // Control visibility of refresh and plus buttons
     showRefreshButton = true,
     showPlusButton = true,
@@ -68,6 +83,15 @@ const SubHeader = (props) => {
 
     // Agent type metadata for showing type badges
     agentTypeMetadata = {},
+
+    // Multi-select delete props
+    showSelectAll = false,
+    isAllSelected = false,
+    isPartiallySelected = false,
+    onSelectAll,
+    selectedCount = 0,
+    onDeleteSelected,
+    deleteSelectedLabel = "Delete",
   } = props;
 
   // Use stable references for array/function props to prevent infinite loops
@@ -88,7 +112,7 @@ const SubHeader = (props) => {
   const isServersContext = normalizedHeading === "servers" || normalizedActiveTab === "servers";
   const isAgentsContext = normalizedHeading === "agents" || normalizedActiveTab === "agents";
   const isToolsContext = normalizedHeading === "tools" || normalizedActiveTab === "tools";
-  const isPipelinesContext = normalizedHeading === "pipelines" || normalizedActiveTab === "pipelines";
+  const isWorkflowsContext = normalizedHeading === "workflows" || normalizedActiveTab === "workflows";
   const isMetricsContext = normalizedActiveTab === "metrics" || normalizedActiveTab === "evaluation";
   const isVaultContext = normalizedHeading === "vault" || normalizedActiveTab === "vault";
   const isConsistencyContext = normalizedHeading === "consistency" || normalizedActiveTab === "consistency";
@@ -168,7 +192,7 @@ const SubHeader = (props) => {
     if (isAgentsContext) return "Search Agents";
     if (isServersContext) return "Search Servers";
     if (isToolsContext) return "Search Tools";
-    if (isPipelinesContext) return "Search Pipelines";
+    if (isWorkflowsContext) return "Search Workflows";
     if (isVaultContext) return "Search Secrets";
     if (isConsistencyContext) return "Search Consistencies";
     if (isMetricsContext) return "Search Consistencies";
@@ -194,7 +218,7 @@ const SubHeader = (props) => {
     return "Items";
   };
 
-  const userName = Cookies.get("userName");
+  const userName = getUserNameFromToken();
 
   const [showAddModal, setShowAddModal] = React.useState(false);
 
@@ -264,7 +288,7 @@ const SubHeader = (props) => {
                 // Only update local state, don't trigger API call
                 setLocalTags(newTags);
               }}
-              createdByOptions={showCreatedByDropdown ? ["All", "Me"] : []}
+              createdByOptions={showCreatedByDropdown ? ["All", "Me", "System"] : []}
               selectedCreatedBy={createdBy}
               onCreatedByChange={stableOnCreatedByChange}
               contextType={getContextType()}
@@ -340,6 +364,54 @@ const SubHeader = (props) => {
           </button>
             )} */}
 
+          {quaternaryButtonLabel && (
+            <IAFButton
+              type="secondary"
+              onClick={onQuaternaryButtonClick}
+              className="subheaderExportBtn"
+              title={quaternaryButtonTitle}
+              icon={
+                <SVGIcons
+                  icon={quaternaryButtonIcon}
+                  fill={quaternaryButtonDisabled ? "var(--disabled-bg)" : "var(--secondary-bg)"}
+                  color={quaternaryButtonDisabled ? "var(--disabled-text)" : "var(--content-color)"}
+                  width={16}
+                  height={16}
+                />
+              }
+              disabled={quaternaryButtonDisabled}>
+              {quaternaryButtonLabel}
+            </IAFButton>
+          )}
+          {tertiaryButtonLabel && (
+            <IAFButton
+              type="secondary"
+              onClick={onTertiaryButtonClick}
+              className="subheaderExportBtn"
+              title={tertiaryButtonTitle}
+              icon={
+                <SVGIcons
+                  icon={tertiaryButtonIcon}
+                  fill={tertiaryButtonDisabled ? "var(--disabled-bg)" : "var(--secondary-bg)"}
+                  color={tertiaryButtonDisabled ? "var(--disabled-text)" : "var(--content-color)"}
+                  width={16}
+                  height={16}
+                />
+              }
+              disabled={tertiaryButtonDisabled}>
+              {tertiaryButtonLabel}
+            </IAFButton>
+          )}
+          {/* Delete Selected button - shown at top right end when items are selected */}
+          {onDeleteSelected && selectedCount > 0 && (
+            <IAFButton
+              type="primary"
+              onClick={onDeleteSelected}
+              icon={<SVGIcons icon="trash" width={14} height={14} color="#fff" />}
+            >
+              {deleteSelectedLabel} ({selectedCount})
+            </IAFButton>
+          )}
           {secondaryButtonLabel && (
             <IAFButton
               type="secondary"
@@ -370,6 +442,22 @@ const SubHeader = (props) => {
           )}
         </div>
       </div>
+      {/* Select All row - displayed below the header bar, above the cards */}
+      {showSelectAll && (
+        <div className={styles.selectAllRow}>
+          <div className={styles.selectAllWrapper}>
+            <CheckBox
+              checked={isAllSelected}
+              indeterminate={isPartiallySelected}
+              onChange={(checked) => onSelectAll && onSelectAll(checked)}
+              label="Select All"
+            />
+            <label className={styles.selectAllLabel} onClick={() => onSelectAll && onSelectAll(!isAllSelected)}>
+              Select All
+            </label>
+          </div>
+        </div>
+      )}
       {showMyItemsFilter && (
         <div className={styles.secondRow}>
           <div className={styles.myItemsFilter}>

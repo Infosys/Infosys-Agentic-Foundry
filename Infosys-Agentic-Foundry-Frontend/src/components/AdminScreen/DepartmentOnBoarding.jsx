@@ -5,18 +5,17 @@ import { APIs } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import useFetch from "../../Hooks/useAxios.js";
 import { extractErrorMessage } from "../../utils/errorUtils";
-import Cookies from "js-cookie";
+import { getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
-import SVGIcons from "../../Icons/SVGIcons";
 
 const MIN_ROLE_LENGTH = 2;
 const MAX_ROLE_LENGTH = 50;
 
 function DepartmentOnBoarding(props) {
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
+  const loggedInUserEmail = getEmailFromToken();
+  const userName = getUserNameFromToken();
 
   const formObject = {
     name: "",

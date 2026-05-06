@@ -6,7 +6,6 @@ import { useMessage } from "../../Hooks/MessageContext";
 import Loader from "../commonComponents/Loader";
 import { useToolsAgentsService } from "../../services/toolService";
 import AddServer from "../AgentOnboard/AddServer.jsx";
-import Cookies from "js-cookie";
 import { useMcpServerService } from "../../services/serverService";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
@@ -26,6 +25,7 @@ const ToolDetailModal = ({
   agentType,
   tool,
   resourceTab = "tools",
+  selectedVersion,
   useToolCardDescriptionStyle = false,
   hideModifyButton = false,
   onExpandSlider = null, // Callback to expand/contract the parent slider
@@ -38,6 +38,8 @@ const ToolDetailModal = ({
   const [fetchedDescription, setFetchedDescription] = useState("");
   const [fetchedEndpoint, setFetchedEndpoint] = useState("");
   const [fetchedModuleName, setFetchedModuleName] = useState("");
+  const [fetchedWorkflowDescription, setFetchedWorkflowDescription] = useState("");
+  const [fetchedSystemPrompt, setFetchedSystemPrompt] = useState(null);
   const { checkToolEditable, getToolById } = useToolsAgentsService();
   const { getServerById } = useMcpServerService();
   const { fetchData } = useFetch();
@@ -49,22 +51,61 @@ const ToolDetailModal = ({
       setFetchedDescription("");
       setFetchedEndpoint("");
       setFetchedModuleName("");
+      setFetchedWorkflowDescription("");
+      setFetchedSystemPrompt(null);
       return;
     }
     const toolId = tool?.tool_id || tool?.id;
+    const agentId = tool?.agentic_application_id || tool?.agent_id || tool?.tool_id || tool?.id;
+
+    // Determine resource type
+    const isAgent = resourceTab === "agents" || tool?.type === "agents";
+    const mcpType = (tool?.mcp_type || "").toLowerCase();
+    const isMcpToolId = typeof toolId === "string" && toolId.startsWith("mcp_");
+    const isServer = mcpType === "file" || mcpType === "url" || mcpType === "module" || resourceTab === "servers" || isMcpToolId;
+
+    // For agents, fetch using GET_AGENTS_BY_ID
+    if (isAgent && agentId) {
+      const fetchAgentDetails = async () => {
+        setLoading(true);
+        try {
+          const agentData = await fetchData(APIs.GET_AGENTS_BY_ID + agentId);
+          const fullData = Array.isArray(agentData) ? agentData[0] : agentData;
+          if (!fullData) return;
+
+          if (!description && (fullData?.agentic_application_description || fullData?.description)) {
+            setFetchedDescription(fullData.agentic_application_description || fullData.description);
+          }
+          if (fullData?.agentic_application_workflow_description) {
+            setFetchedWorkflowDescription(fullData.agentic_application_workflow_description);
+          }
+          if (fullData?.system_prompt) {
+            setFetchedSystemPrompt(fullData.system_prompt);
+          }
+        } catch {
+          console.error("Failed to fetch agent details for preview");
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchAgentDetails();
+      return;
+    }
+
     if (!toolId) return;
 
-    // Determine if we already have all needed data from props
-    const hasServerData = codeSnippet || endpoint || moduleName;
-    const needsFetch = !hasServerData && !codeSnippet;
+    // Always fetch for servers to get fresh data from MCP_GET_SERVER_BY_ID
+    // For tools, fetch if we don't have the needed data OR if a specific version is selected
+    const hasToolData = codeSnippet && !codeSnippet.includes("No code available");
+    const needsFetch = isServer || !hasToolData || selectedVersion;
 
     if (!needsFetch) return;
 
-    // Single fetch path: /tools/get/{id} returns full data for both tools and servers
     const fetchDetails = async () => {
       setLoading(true);
       try {
-        const details = await getToolById(toolId);
+        // Use MCP_GET_SERVER_BY_ID for servers, GET_TOOLS_BY_ID for regular tools
+        const details = isServer ? await getServerById(toolId) : await getToolById(toolId);
         const fullData = Array.isArray(details) ? details[0] : details;
         if (!fullData) return;
 
@@ -74,21 +115,27 @@ const ToolDetailModal = ({
         }
 
         // Check if it's a server (has mcp_type) — extract server-specific data
-        const mcpType = (fullData?.mcp_type || "").toLowerCase();
-        if (mcpType === "file") {
+        const fetchedMcpType = (fullData?.mcp_type || "").toLowerCase();
+        if (fetchedMcpType === "file") {
           const code = fullData?.mcp_config?.args?.[1];
           if (typeof code === "string" && code.trim().length > 0) {
             setFetchedCodeSnippet(code);
           }
-        } else if (mcpType === "url") {
+        } else if (fetchedMcpType === "url") {
           const url = fullData?.mcp_config?.url || "";
           if (url) setFetchedEndpoint(url);
-        } else if (mcpType === "module") {
+        } else if (fetchedMcpType === "module") {
           const mod = fullData?.mcp_config?.args?.[1] || "";
           if (mod) setFetchedModuleName(mod);
-        } else if (fullData?.code_snippet) {
-          // Regular tool — extract code snippet
-          setFetchedCodeSnippet(fullData.code_snippet);
+        } else {
+          // Regular tool — extract version-specific or main code snippet
+          if (selectedVersion && fullData?.versioning?.[selectedVersion]) {
+            const versionData = fullData.versioning[selectedVersion];
+            if (versionData.code_snippet) setFetchedCodeSnippet(versionData.code_snippet);
+            if (versionData.tool_description) setFetchedDescription(versionData.tool_description);
+          } else if (fullData?.code_snippet) {
+            setFetchedCodeSnippet(fullData.code_snippet);
+          }
         }
       } catch {
         console.error("Failed to fetch resource details for preview");
@@ -97,15 +144,22 @@ const ToolDetailModal = ({
       }
     };
     fetchDetails();
-  }, [isOpen, tool?.tool_id, tool?.id]);
+  }, [isOpen, tool?.tool_id, tool?.id, resourceTab, selectedVersion]);
 
   if (!isOpen) return null;
 
-  // Use fetched data as fallback when props are empty
-  const displayCodeSnippet = codeSnippet || fetchedCodeSnippet;
-  const displayDescription = description || fetchedDescription;
+  // Use fetched data — when a version is selected, prefer fetched (version-specific) data over props
+  const isPlaceholderCode = codeSnippet && codeSnippet.includes("No code available");
+  const displayCodeSnippet = selectedVersion
+    ? (fetchedCodeSnippet || codeSnippet)
+    : (isPlaceholderCode ? (fetchedCodeSnippet || codeSnippet) : (codeSnippet || fetchedCodeSnippet));
+  const displayDescription = selectedVersion
+    ? (fetchedDescription || description)
+    : (description || fetchedDescription);
   const displayEndpoint = endpoint || fetchedEndpoint;
   const displayModuleName = moduleName || fetchedModuleName;
+  const displayWorkflowDescription = agenticApplicationWorkflowDescription || fetchedWorkflowDescription;
+  const displaySystemPrompt = systemPrompt || fetchedSystemPrompt;
 
   /**
    * Handle Modify button click
@@ -119,12 +173,13 @@ const ToolDetailModal = ({
     const mcpType = (tool?.mcp_type || "").toLowerCase();
     const isServer = resourceTab === "servers" || mcpType === "file" || mcpType === "url" || mcpType === "module";
     const isMetaAgent = agentType === META_AGENT || agentType === PLANNER_META_AGENT;
+    const isAgentResource = resourceTab === "agents" || tool?.type === "agents";
 
     setLoading(true);
     try {
-      if (isMetaAgent) {
-        // For Meta Agents: Call GET_AGENTS_BY_ID
-        const agentId = tool?.agentic_application_id || tool?.id;
+      if (isMetaAgent || isAgentResource) {
+        // For Meta Agents / Agent resources: Call GET_AGENTS_BY_ID
+        const agentId = tool?.agentic_application_id || tool?.agent_id || tool?.tool_id || tool?.id;
         if (agentId) {
           const agentData = await fetchData(APIs.GET_AGENTS_BY_ID + agentId);
           if (agentData) {
@@ -248,27 +303,27 @@ const ToolDetailModal = ({
                 </div>
               )}
 
-              {/* Workflow Description - Show when agenticApplicationWorkflowDescription exists (Meta Agents) */}
-              {agenticApplicationWorkflowDescription && (
+              {/* Workflow Description - Show when workflow description exists */}
+              {displayWorkflowDescription && (
                 <div className={styles.contentSection}>
                   <span className={styles.sectionLabel}>Workflow Description</span>
                   <div className={styles.markdownContent}>
-                    <ReactMarkdown>{String(agenticApplicationWorkflowDescription)}</ReactMarkdown>
+                    <ReactMarkdown>{String(displayWorkflowDescription)}</ReactMarkdown>
                   </div>
                 </div>
               )}
 
-              {/* System Prompt - Show when systemPrompt exists (Meta Agents) */}
-              {systemPrompt && (
+              {/* System Prompt - Show when systemPrompt exists */}
+              {displaySystemPrompt && (
                 <div className={styles.contentSection}>
                   <span className={styles.sectionLabel}>System Prompt</span>
                   <div className={styles.markdownContent}>
-                    <ReactMarkdown>
-                      {typeof systemPrompt === "string" ? JSON.parse(systemPrompt)?.SYSTEM_PROMPT_REACT_AGENT || "" : systemPrompt?.SYSTEM_PROMPT_REACT_AGENT || ""}
-                    </ReactMarkdown>
-                    <ReactMarkdown>
-                      {typeof systemPrompt === "string" ? JSON.parse(systemPrompt)?.SYSTEM_PROMPT_EXECUTOR_AGENT || "" : systemPrompt?.SYSTEM_PROMPT_EXECUTOR_AGENT || ""}
-                    </ReactMarkdown>
+                    {(() => {
+                      const promptObj = typeof displaySystemPrompt === "string" ? (() => { try { return JSON.parse(displaySystemPrompt); } catch { return {}; } })() : displaySystemPrompt;
+                      return Object.entries(promptObj).map(([key, value]) => (
+                        value ? <ReactMarkdown key={key}>{String(value)}</ReactMarkdown> : null
+                      ));
+                    })()}
                   </div>
                 </div>
               )}

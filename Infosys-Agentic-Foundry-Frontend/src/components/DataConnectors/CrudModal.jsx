@@ -9,7 +9,7 @@ import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import { Modal } from "../commonComponents/Modal";
 import { sanitizeInput } from "../../utils/sanitization";
 
-const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
+const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting, initialConnectionName = "", onBack }) => {
   const [crudData, setCrudData] = useState({
     selectedConnection: "",
     collection: "",
@@ -49,6 +49,18 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
   useEffect(() => {
     fetchMongodbConnectionsData();
   }, []);
+
+  // Auto-select connection when initialConnectionName is provided and connections are loaded
+  useEffect(() => {
+    if (initialConnectionName && mongodbConnections.length > 0) {
+      const matchingConn = getAPIMongoDBConnections().find(
+        (conn) => conn.label === initialConnectionName
+      );
+      if (matchingConn) {
+        setCrudData((prev) => ({ ...prev, selectedConnection: matchingConn.value }));
+      }
+    }
+  }, [initialConnectionName, mongodbConnections]);
 
   useEffect(() => {
     if (!isExecuting) {
@@ -199,38 +211,47 @@ const CrudModal = ({ database, onClose, onExecuteCrud, isExecuting }) => {
       {isExecuting && <Loader />}
       <div className={styles.modalHeader}>
         <div className={styles.headerLeft}>
+          {onBack && (
+            <button className={styles.backBtn} onClick={onBack} aria-label="Back to list" title="Back to connections list">
+              <SVGIcons icon="chevron-left" width={18} height={18} />
+            </button>
+          )}
           <div className={styles.databaseIcon} style={{ backgroundColor: database.color }}>
             <SVGIcons icon={database.icon} width={24} height={24} fill="white" />
           </div>
           <div>
-            <h3 className={styles.modalTitle}>CRUD Operations - {database.name}</h3>
+            <h3 className={styles.modalTitle}>
+              CRUD Operations{initialConnectionName ? ` — ${initialConnectionName}` : ` - ${database.name}`}
+            </h3>
             <p className={styles.modalSubtitle}>Perform database operations</p>
           </div>
         </div>
-        <button className="closeBtn" aria-label="Close modal" onClick={onClose}>
+        <button className="closeBtn" aria-label="Close modal" onClick={onBack || onClose}>
           ×
         </button>
       </div>
 
       <div className={styles.modalBody}>
-        <div className="formGroup">
-          <label htmlFor="selectedConnection" className="label-desc">
-            Select Connected DB <span className="required">*</span>
-          </label>
-          <NewCommonDropdown
-            options={allMongoDBConnections.map((conn) => conn.label)}
-            selected={allMongoDBConnections.find((c) => c.value === crudData.selectedConnection)?.label || ""}
-            onSelect={(label) => {
-              const conn = allMongoDBConnections.find((c) => c.label === label);
-              if (conn) {
-                handleCrudInputChange({ target: { name: "selectedConnection", value: conn.value } });
-              }
-            }}
-            placeholder={loadingMongodbConnections ? "Loading Connections..." : hasConnections ? "Select A MongoDB Connection..." : "No Connections Available"}
-            showSearch={true}
-            width="100%"
-          />
-        </div>
+        {!initialConnectionName && (
+          <div className="formGroup">
+            <label htmlFor="selectedConnection" className="label-desc">
+              Select Connected DB <span className="required">*</span>
+            </label>
+            <NewCommonDropdown
+              options={allMongoDBConnections.map((conn) => conn.label)}
+              selected={allMongoDBConnections.find((c) => c.value === crudData.selectedConnection)?.label || ""}
+              onSelect={(label) => {
+                const conn = allMongoDBConnections.find((c) => c.label === label);
+                if (conn) {
+                  handleCrudInputChange({ target: { name: "selectedConnection", value: conn.value } });
+                }
+              }}
+              placeholder={loadingMongodbConnections ? "Loading Connections..." : hasConnections ? "Select A MongoDB Connection..." : "No Connections Available"}
+              showSearch={true}
+              width="100%"
+            />
+          </div>
+        )}
 
         <div className="formGroup">
           <label htmlFor="collection" className="label-desc">

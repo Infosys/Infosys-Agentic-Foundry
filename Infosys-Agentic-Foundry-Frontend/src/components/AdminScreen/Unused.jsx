@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 import styles from "./Unused.module.css";
 import style from "../../css_modules/AvailableAgents.module.css";
 import { APIs } from "../../constant";
@@ -9,9 +9,21 @@ import Loader from "../commonComponents/Loader.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
 import EmptyState from "../commonComponents/EmptyState.jsx";
+import useMultiSelect from "../../Hooks/useMultiSelect";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
+import SVGIcons from "../../Icons/SVGIcons";
+import subHeaderStyles from "../commonComponents/SubHeader.module.css";
 import { getServerType } from "../../utils/serverUtils.js";
+import { usePermissions } from "../../context/PermissionsContext.jsx";
 
 const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedAgentTypes = [], selectedServerTypes = [], selectedToolTypes = [] }) => {
+  const { hasPermission } = usePermissions();
+  const canDeleteAgents = typeof hasPermission === "function" ? hasPermission("delete_access.agents") : false;
+  const canDeleteServers = typeof hasPermission === "function" ? hasPermission("delete_access.mcp_servers") : false;
+  const canDeleteTools = typeof hasPermission === "function" ? hasPermission("delete_access.tools") : false;
+
   const [selectedType, setSelectedType] = useState(initialType); // for data fetching
   const [activeTab, setActiveTab] = useState(initialType); // for tab highlight
   const [data, setData] = useState([]);
@@ -19,6 +31,8 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
   const [error, setError] = useState(null);
   const [internalSearchTerm, setInternalSearchTerm] = useState("");
   const [refreshCounter, setRefreshCounter] = useState(0); // Used to trigger re-fetch
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Use external search term if provided, otherwise use internal
   const searchTerm = externalSearchTerm !== undefined ? externalSearchTerm : internalSearchTerm;
@@ -27,32 +41,33 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
 
   const deleteItem = async (id, email, isAdmin) => {
     try {
-      let endpoint;
+      let endpoint, idKey;
       if (selectedType === "agents") {
         endpoint = APIs.DELETE_AGENTS;
-      } else if (selectedType === "tools") {
-        endpoint = APIs.DELETE_TOOLS;
-      } else if (selectedType === "servers") {
-        endpoint = APIs.MCP_DELETE_TOOLS;
+        idKey = "agent_ids";
+      } else if (selectedType === "tools" || selectedType === "servers") {
+        endpoint = selectedType === "tools" ? APIs.DELETE_TOOLS : APIs.MCP_DELETE_TOOLS;
+        idKey = "tool_ids";
       }
-      const response = await deleteData(`${endpoint}${id}`, {
+      const payload = {
         user_email_id: email,
         is_admin: isAdmin,
-      });
+      };
+      payload[idKey] = [id];
+      const response = await deleteData(endpoint, payload);
 
-      if (response?.is_delete || response?.is_deleted) {
-        addMessage(response?.message || "Deleted successfully", "success");
-        // Refresh the list by incrementing counter
-        setRefreshCounter((prev) => prev + 1);
-        return true;
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+        if (statusMsg) {
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+        if (!hasAnyFailure) setRefreshCounter((prev) => prev + 1);
+        return !hasAnyFailure;
       } else {
-        const errorMsg = response?.detail || response?.message || "Failed to delete";
-        addMessage(errorMsg, "error");
         return false;
       }
     } catch (error) {
-      const errorMsg = error?.response?.data?.detail || error?.message || "Failed to delete";
-      addMessage(errorMsg, "error");
       return false;
     }
   };
@@ -66,7 +81,7 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
       setError(null);
 
       try {
-        const userEmail = Cookies.get("email");
+        const userEmail = getEmailFromToken();
         if (!userEmail) {
           throw new Error("User email not found");
         }
@@ -196,12 +211,12 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
   // Filter data based on search term and agent type filter
   const filteredData = useMemo(() => {
     let result = data;
-    
+
     // Apply agent type filter (only for agents)
     if (selectedType === "agents" && selectedAgentTypes && selectedAgentTypes.length > 0) {
       result = result.filter((item) => selectedAgentTypes.includes(item?.agentic_application_type));
     }
-    
+
     // Apply tool type filter (only for tools)
     if (selectedType === "tools" && selectedToolTypes && selectedToolTypes.length > 0) {
       result = result.filter((item) => {
@@ -209,7 +224,7 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
         return selectedToolTypes.some((filterType) => filterType.toLowerCase() === toolType);
       });
     }
-    
+
     // Apply server type filter (only for servers)
     if (selectedType === "servers" && selectedServerTypes && selectedServerTypes.length > 0) {
       result = result.filter((item) => {
@@ -217,7 +232,7 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
         return selectedServerTypes.some((filterType) => filterType.toLowerCase() === serverType);
       });
     }
-    
+
     // Apply search term filter
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase();
@@ -228,13 +243,68 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
         return name.toLowerCase().includes(searchLower) || description.toLowerCase().includes(searchLower) || createdBy.toLowerCase().includes(searchLower);
       });
     }
-    
+
     return result;
   }, [data, searchTerm, selectedType, selectedAgentTypes, selectedServerTypes, selectedToolTypes]);
 
   const handleTabClick = (tabType) => {
     setSelectedType(tabType);
     setActiveTab(tabType);
+    clearMultiSelection();
+  };
+
+  // Dynamic idKey based on selectedType
+  const unusedIdKey = selectedType === "agents" ? "agentic_application_id" : selectedType === "servers" ? "id" : "tool_id";
+
+  // Multi-select state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: filteredData, idKey: unusedIdKey });
+
+  // Bulk delete handler — calls API directly to avoid per-item toasts from deleteItem
+  const handleBulkDeleteUnused = async () => {
+    if (multiSelectIds.length === 0) return;
+    setBulkDeleteLoading(true);
+    const email = getEmailFromToken();
+    const isAdmin = getRoleFromToken().toLowerCase() === "admin";
+
+    // Determine endpoint and idKey based on current tab type
+    let endpoint, idKey;
+    if (selectedType === "agents") {
+      endpoint = APIs.DELETE_AGENTS;
+      idKey = "agent_ids";
+    } else if (selectedType === "tools" || selectedType === "servers") {
+      endpoint = selectedType === "tools" ? APIs.DELETE_TOOLS : APIs.MCP_DELETE_TOOLS;
+      idKey = "tool_ids";
+    }
+
+    const payload = {
+      user_email_id: email,
+      is_admin: isAdmin,
+    };
+    payload[idKey] = multiSelectIds;
+    try {
+      const response = await deleteData(endpoint, payload);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch (error) {
+      // silent catch
+    }
+    clearMultiSelection();
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    setRefreshCounter((prev) => prev + 1);
   };
 
   if (!style || !styles) {
@@ -257,7 +327,31 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
         </div>
       )}
 
-      <SummaryLine visibleCount={filteredData.length} />
+      {/* Summary + Delete button row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px" }}>
+        <SummaryLine visibleCount={filteredData.length} />
+        {multiSelectCount > 0 && (selectedType === "agents" ? canDeleteAgents : selectedType === "servers" ? canDeleteServers : canDeleteTools) && (
+          <IAFButton
+            type="primary"
+            className={subHeaderStyles.deleteSelectedBtn}
+            onClick={() => setShowBulkDeleteModal(true)}
+            icon={<SVGIcons icon="trash" width={14} height={14} color="#fff" />}
+          >
+            Delete ({multiSelectCount})
+          </IAFButton>
+        )}
+      </div>
+      {/* Select All row - above cards */}
+      {filteredData.length > 1 && (selectedType === "agents" ? canDeleteAgents : selectedType === "servers" ? canDeleteServers : canDeleteTools) && <div className={subHeaderStyles.selectAllRow}>
+        <label className={subHeaderStyles.selectAllWrapper}>
+          <CheckBox
+            checked={isAllSelected}
+            indeterminate={isPartiallySelected}
+            onChange={handleSelectAll}
+          />
+          <span className={subHeaderStyles.selectAllLabel}>Select All</span>
+        </label>
+      </div>}
       <div className="listWrapper">
         {loading && <Loader />}
         {error && <div className={styles.error}>{error}</div>}
@@ -279,8 +373,8 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
                     selectedType === "agents"
                       ? "Agents unused for more than 15 days will appear here"
                       : selectedType === "servers"
-                      ? "Servers unused for more than 15 days will appear here"
-                      : "Tools unused for more than 15 days will appear here"
+                        ? "Servers unused for more than 15 days will appear here"
+                        : "Tools unused for more than 15 days will appear here"
                   }
                   showClearFilter={false}
                   showCreateButton={false}
@@ -291,12 +385,16 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
                 {selectedType === "agents" ? (
                   <DisplayCard1
                     data={filteredData.filter((agent) => agent && typeof agent === "object")}
-                    showDeleteButton={true}
+                    showDeleteButton={canDeleteAgents}
                     isUnusedSection={true}
+                    showCheckbox={canDeleteAgents}
+                    onSelectionChange={handleMultiSelectChange}
+                    selectedIds={multiSelectIds}
+                    idKey="agentic_application_id"
                     onDeleteClick={(name, item) => {
                       const id = item?.agentic_application_id;
-                      const email = Cookies.get("email");
-                      const isAdmin = Cookies.get("role").toLowerCase() === "admin";
+                      const email = getEmailFromToken();
+                      const isAdmin = getRoleFromToken().toLowerCase() === "admin";
                       if (id) deleteItem(id, email, isAdmin);
                     }}
                     cardNameKey="agentic_application_name"
@@ -309,12 +407,16 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
                 ) : selectedType === "servers" ? (
                   <DisplayCard1
                     data={filteredData.filter((item) => item && typeof item === "object")}
-                    showDeleteButton={true}
+                    showDeleteButton={canDeleteServers}
                     isUnusedSection={true}
+                    showCheckbox={canDeleteServers}
+                    onSelectionChange={handleMultiSelectChange}
+                    selectedIds={multiSelectIds}
+                    idKey="id"
                     onDeleteClick={(name, item) => {
                       const id = item?.id || item?.server_id;
-                      const email = Cookies.get("email");
-                      const isAdmin = Cookies.get("role").toLowerCase() === "admin";
+                      const email = getEmailFromToken();
+                      const isAdmin = getRoleFromToken().toLowerCase() === "admin";
                       if (id) deleteItem(id, email, isAdmin);
                     }}
                     cardNameKey="name"
@@ -327,12 +429,16 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
                 ) : (
                   <DisplayCard1
                     data={filteredData.filter((item) => item && typeof item === "object")}
-                    showDeleteButton={true}
+                    showDeleteButton={canDeleteTools}
                     isUnusedSection={true}
+                    showCheckbox={canDeleteTools}
+                    onSelectionChange={handleMultiSelectChange}
+                    selectedIds={multiSelectIds}
+                    idKey="tool_id"
                     onDeleteClick={(name, item) => {
                       const id = item?.tool_id || item?.id;
-                      const email = Cookies.get("email");
-                      const isAdmin = Cookies.get("role").toLowerCase() === "admin";
+                      const email = getEmailFromToken();
+                      const isAdmin = getRoleFromToken().toLowerCase() === "admin";
                       if (id) deleteItem(id, email, isAdmin);
                     }}
                     cardNameKey="tool_name"
@@ -348,6 +454,14 @@ const Unused = ({ initialType = "agents", heading, externalSearchTerm, selectedA
           </div>
         )}
       </div>
+
+      {showBulkDeleteModal && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete ${multiSelectCount} selected ${selectedType === "agents" ? "agent" : selectedType === "servers" ? "server" : "tool"}(s)? This action cannot be undone.`}
+          onConfirm={handleBulkDeleteUnused}
+          setShowConfirmation={setShowBulkDeleteModal}
+        />
+      )}
     </>
   );
 };

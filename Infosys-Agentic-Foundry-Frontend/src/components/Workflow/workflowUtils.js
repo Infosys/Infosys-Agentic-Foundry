@@ -1,7 +1,7 @@
 /**
- * Pipeline Utility Functions
+ * Workflow Utility Functions
  * 
- * Helper functions for Pipeline components
+ * Helper functions for Workflow components
  */
 
 /**
@@ -30,14 +30,6 @@ export const getAgentTypeAbbreviation = (agentType) => {
   return mapping?.title || (agentType.length >= 2 ? agentType.substring(0, 2).toUpperCase() : agentType.toUpperCase()) || "";
 };
 
-/**
- * Generate unique ID for nodes/edges
- * @param {string} prefix - Prefix for the ID
- * @returns {string} - Unique ID
- */
-export const generateId = (prefix = "node") => {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-};
 
 /**
  * Format date for display
@@ -59,16 +51,44 @@ export const formatDate = (dateString) => {
 };
 
 /**
- * Get node count from pipeline definition
- * @param {Object} pipeline - Pipeline object
+ * Get node count from workflow definition
+ * Handles both full workflow_definition (when readAccess is true)
+ * and direct node_count/nodes_count fields (when readAccess is false)
+ * @param {Object} workflow - Workflow object
  * @returns {number} - Number of nodes
  */
-export const getNodeCount = (pipeline) => {
+export const getNodeCount = (workflow) => {
   try {
-    const definition = pipeline?.pipeline_definition;
+    const definition = workflow?.workflow_definition;
+
+    // When readAccess is true, workflow_definition contains full nodes array
     if (definition?.nodes) {
       return definition.nodes.length;
     }
+
+    // When readAccess is false, workflow_definition contains node_count directly
+    if (typeof definition?.node_count === "number") {
+      return definition.node_count;
+    }
+
+    // Also check nodes_count (with 's') inside workflow_definition
+    if (typeof definition?.nodes_count === "number") {
+      return definition.nodes_count;
+    }
+
+    // Check top-level node_count / nodes_count on the workflow object itself
+    if (typeof workflow?.node_count === "number") {
+      return workflow.node_count;
+    }
+    if (typeof workflow?.nodes_count === "number") {
+      return workflow.nodes_count;
+    }
+
+    // Fallback: check if workflow_definition is a number (some APIs return count directly)
+    if (typeof definition === "number") {
+      return definition;
+    }
+
     return 0;
   } catch {
     return 0;
@@ -77,7 +97,6 @@ export const getNodeCount = (pipeline) => {
 
 export default {
   getAgentTypeAbbreviation,
-  generateId,
   formatDate,
   getNodeCount,
 };

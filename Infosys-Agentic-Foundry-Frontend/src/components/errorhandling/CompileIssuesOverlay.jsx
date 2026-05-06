@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { generateUUID } from "../../utils/uuidPolyfill";
 
 // Global parser & buffer helpers (must exist before early suppression block to avoid ReferenceError on fast refresh)
 if (typeof window !== "undefined") {
@@ -9,7 +8,7 @@ if (typeof window !== "undefined") {
 const pushEarly = (entry) => {
   try {
     if (window.__earlyDevProblemsBuffer) window.__earlyDevProblemsBuffer.push(entry);
-  } catch (_) {}
+  } catch (_) { }
 };
 
 // Extracts "Line X:Y: 'Ident' is not defined" plus preceding file path lines
@@ -73,7 +72,7 @@ if (typeof window !== "undefined" && process.env.NODE_ENV === "development" && !
     const mo = new MutationObserver(() => immediateHide());
     mo.observe(document.documentElement, { childList: true, subtree: true });
     setTimeout(() => mo.disconnect(), 15000);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 // Dev-only overlay to show recent console errors & warnings nicely.
@@ -144,7 +143,7 @@ export const CompileIssuesOverlay = () => {
 
     setEntries((prev) => {
       if (prev.some((e) => e.text === text && e.type === type)) return prev; // dedupe
-      const next = [{ id: `${Date.now()}_${generateUUID()}`, type, text, time }, ...prev];
+      const next = [{ id: `${Date.now()}`, type, text, time }, ...prev];
       return next.slice(0, MAX_ENTRIES);
     });
   }, []); // Empty dependency array since it doesn't depend on any props/state
@@ -215,7 +214,7 @@ export const CompileIssuesOverlay = () => {
       mo = new MutationObserver(() => suppress());
       mo.observe(document.documentElement, { childList: true, subtree: true });
       setTimeout(() => mo.disconnect(), 30000);
-    } catch (_) {}
+    } catch (_) { }
 
     // Do not capture generic console output anymore (runtime issues handled elsewhere)
     console.error = (...a) => {

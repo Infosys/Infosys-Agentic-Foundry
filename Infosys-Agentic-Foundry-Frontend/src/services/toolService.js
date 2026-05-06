@@ -1,7 +1,7 @@
 import { APIs } from "../constant";
 import useFetch from "../Hooks/useAxios";
 import { extractErrorMessage } from "../utils/errorUtils";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken } from "../utils/jwtUtils";
 
 export const useToolsAgentsService = () => {
   const { fetchData, postData, putData, deleteData } = useFetch();
@@ -46,6 +46,152 @@ export const useToolsAgentsService = () => {
     try {
       if (!toolId) throw new Error("toolId is required");
       const response = await fetchData(APIs.GET_TOOLS_BY_ID + toolId);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // ============ Tool Version Management Services ============
+
+  // Save a code version
+  const saveToolVersion = async (payload) => {
+    try {
+      const response = await postData(APIs.TOOL_VERSION_SAVE, payload);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // List all code versions for a session
+  const getToolVersions = async (sessionId, includeCode = false) => {
+    try {
+      if (!sessionId) throw new Error("session_id is required");
+      const response = await fetchData(
+        `${APIs.TOOL_VERSION_LIST}${encodeURIComponent(sessionId)}?include_code=${includeCode}`
+      );
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Get a specific version by version number
+  const getToolVersionByNumber = async (sessionId, versionNumber) => {
+    try {
+      if (!sessionId || versionNumber == null) throw new Error("session_id and version_number are required");
+      const response = await fetchData(
+        `${APIs.TOOL_VERSION_GET}${encodeURIComponent(sessionId)}/${encodeURIComponent(versionNumber)}`
+      );
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Get the current active version for a session
+  const getCurrentToolVersion = async (sessionId) => {
+    try {
+      if (!sessionId) throw new Error("session_id is required");
+      const response = await fetchData(
+        `${APIs.TOOL_VERSION_CURRENT}${encodeURIComponent(sessionId)}`
+      );
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Switch to a different code version
+  const switchToolVersion = async (payload) => {
+    try {
+      const response = await postData(APIs.TOOL_VERSION_SWITCH, payload);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Update a version label
+  const updateToolVersionLabel = async (payload) => {
+    try {
+      const response = await putData(APIs.TOOL_VERSION_LABEL, payload);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Delete a specific code version
+  const deleteToolVersion = async (payload) => {
+    try {
+      const response = await deleteData(APIs.TOOL_VERSION_DELETE, payload);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Clear all versions for a session
+  const clearToolVersions = async (sessionId) => {
+    try {
+      if (!sessionId) throw new Error("session_id is required");
+      const response = await deleteData(
+        `${APIs.TOOL_VERSION_CLEAR}${encodeURIComponent(sessionId)}`
+      );
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Get version count for a session
+  const getToolVersionCount = async (sessionId) => {
+    try {
+      if (!sessionId) throw new Error("session_id is required");
+      const response = await fetchData(
+        `${APIs.TOOL_VERSION_COUNT}${encodeURIComponent(sessionId)}`
+      );
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Get conversation history for a session
+  const getToolConversationHistory = async (sessionId) => {
+    try {
+      if (!sessionId) throw new Error("session_id is required");
+      const response = await fetchData(
+        `${APIs.TOOL_CONVERSATION_HISTORY}${encodeURIComponent(sessionId)}`
+      );
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Get latest code for a session
+  const getLatestCode = async (sessionId) => {
+    try {
+      if (!sessionId) throw new Error("session_id is required");
+      const response = await fetchData(
+        `${APIs.TOOL_CONVERSATION_LATEST_CODE}${encodeURIComponent(sessionId)}`
+      );
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  // Clear conversation history for a session
+  const clearConversationHistory = async (sessionId) => {
+    try {
+      if (!sessionId) throw new Error("session_id is required");
+      const response = await deleteData(
+        `${APIs.TOOL_CONVERSATION_CLEAR}${encodeURIComponent(sessionId)}`
+      );
       return response;
     } catch (error) {
       return extractErrorMessage(error);
@@ -135,7 +281,7 @@ export const useToolsAgentsService = () => {
 
   // /tools/add -> JSON body with all fields
   // /tools/add-message-queue -> form-urlencoded with is_validator as query param,
-  //   add_tool_request (JSON string), is_public, shared_with_departments as form fields
+  //   add_tool_request (JSON string), is_public as form fields
   const addTool = async (toolData, useMessageQueue = false) => {
     try {
       if (useMessageQueue) {
@@ -143,17 +289,14 @@ export const useToolsAgentsService = () => {
         const isValidator = toolData.is_validator ?? false;
         const apiUrl = `${APIs.ADD_TOOLS_MESSAGE_QUEUE}?is_validator=${isValidator}`;
 
-        // Build the add_tool_request JSON object (excludes is_public & shared_with_departments)
-        const { is_public, shared_with_departments, ...requestBody } = toolData;
+        // Build the add_tool_request JSON object (excludes is_public)
+        const { is_public, ...requestBody } = toolData;
         const addToolRequestJson = JSON.stringify(requestBody);
 
         // Build form-urlencoded body
         const formParams = new URLSearchParams();
         formParams.append("add_tool_request", addToolRequestJson);
         formParams.append("is_public", String(is_public ?? false));
-        if (Array.isArray(shared_with_departments)) {
-          shared_with_departments.forEach((dept) => formParams.append("shared_with_departments", dept));
-        }
 
         const response = await postData(apiUrl, formParams, {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -177,17 +320,34 @@ export const useToolsAgentsService = () => {
 
   const updateTools = async (toolData, toolId, force_add) => {
     try {
-      const apiUrl = force_add ? `${APIs.UPDATE_TOOLS}${toolId}?force_add=true` : `${APIs.UPDATE_TOOLS}${toolId}`;
+      const params = [];
+      if (force_add) params.push("force_add=true");
+      const queryString = params.length > 0 ? `?${params.join("&")}` : "";
+      const apiUrl = `${APIs.UPDATE_TOOLS}${toolId}${queryString}`;
       const response = await putData(apiUrl, toolData);
       return response;
     } catch (error) {
       return extractErrorMessage(error);
     }
   };
-  const deleteTool = async (toolData, toolId) => {
+  /**
+   * Delete tool(s) - uses DELETE_TOOLS endpoint
+   * For single tool: sends tool_id as path param with version in body
+   * For multiple tools: sends tool_ids array in body (bulk delete)
+   * @param {Object} toolData - Payload data (user_email_id, is_admin, version)
+   * @param {string|string[]} toolIdOrIds - Single toolId or array of toolIds
+   */
+  const deleteTool = async (toolData, toolIdOrIds) => {
     try {
-      const apiUrl = `${APIs.DELETE_TOOLS}${toolId}`;
-      const response = await deleteData(apiUrl, toolData);
+      const ids = Array.isArray(toolIdOrIds) ? toolIdOrIds : [toolIdOrIds];
+      const apiUrl = APIs.DELETE_TOOLS;
+      const payload = {
+        user_email_id: toolData.user_email_id,
+        is_admin: toolData.is_admin,
+        tool_ids: ids,
+        version: "version" in toolData ? toolData.version : null,
+      };
+      const response = await deleteData(apiUrl, payload);
       return response;
     } catch (error) {
       return extractErrorMessage(error);
@@ -278,9 +438,69 @@ export const useToolsAgentsService = () => {
     }
   };
 
+  const importToolsPreview = async (zipFile) => {
+    try {
+      const apiUrl = APIs.IMPORT_TOOLS_PREVIEW;
+      const formData = new FormData();
+      formData.append("zip_file", zipFile);
+      const response = await postData(apiUrl, formData);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  const importTools = async (zipFile, modelName, createdBy, conflictResolution, nameOverrides = null) => {
+    try {
+      const apiUrl = APIs.IMPORT_TOOLS;
+      const formData = new FormData();
+      formData.append("zip_file", zipFile);
+      formData.append("model_name", modelName || "");
+      formData.append("created_by", createdBy || "");
+      if (conflictResolution) {
+        formData.append("conflict_resolution", conflictResolution);
+      }
+      if (nameOverrides) {
+        formData.append("name_overrides", nameOverrides);
+      }
+      const response = await postData(apiUrl, formData);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+  const exportTools = async (toolIds) => {
+    try {
+      const apiUrl = APIs.EXPORT_TOOLS;
+      const response = await postData(apiUrl, { tool_ids: toolIds }, {
+        responseType: "blob",
+      });
+      return response;
+    } catch (error) {
+      // Attempt to parse blob error for structured message
+      try {
+        const blob = error?.response?.data;
+        if (blob instanceof Blob && ((blob.type && blob.type.includes("json")) || blob.size < 8192)) {
+          const text = await blob.text();
+          const trimmed = text.trim();
+          if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && (parsed.detail || parsed.message || parsed.error)) {
+              error.message = parsed.detail || parsed.message || parsed.error;
+            }
+          }
+        }
+      } catch (_) {
+        // ignore parse issues
+      }
+      throw error;
+    }
+  };
+
   const checkToolEditable = async (tool, setShowForm, addMessage, setLoading) => {
-    const userEmailId = Cookies.get("email") || "Guest";
-    const role = Cookies.get("role");
+    const userEmailId = getEmailFromToken() || "Guest";
+    const role = getRoleFromToken();
     const isAdmin = role && role?.toLowerCase() === "admin";
     const updatedTool = { ...tool, user_email_id: userEmailId, is_admin: isAdmin };
     if (setLoading) setLoading(true);
@@ -340,8 +560,10 @@ export const useToolsAgentsService = () => {
       dataToSend.append("mcp_url", serverData.mcp_url || "");
       dataToSend.append("code_content", serverData.code_content || serverData.code_snippet || "");
       dataToSend.append("code_snippet", serverData.code_snippet || serverData.code_content || "");
-      if (serverData.command) {
-        dataToSend.append("command", serverData.command);
+      if (serverData.mcp_command) {
+        dataToSend.append("mcp_command", serverData.mcp_command);
+      } else if (serverData.command) {
+        dataToSend.append("mcp_command", serverData.command);
       }
       if (serverData.externalArgs) {
         dataToSend.append("externalArgs", serverData.externalArgs);
@@ -375,15 +597,8 @@ export const useToolsAgentsService = () => {
       normalizedTagIds.forEach((id) => {
         dataToSend.append("tag_ids", id);
       });
-      // Add is_public and shared_with_departments fields
+      // Add is_public field
       dataToSend.append("is_public", String(serverData.is_public ?? false));
-      if (Array.isArray(serverData.shared_with_departments) && serverData.shared_with_departments.length > 0) {
-        serverData.shared_with_departments.forEach((dept) => {
-          dataToSend.append("shared_with_departments", dept);
-        });
-      } else {
-        dataToSend.append("shared_with_departments", "");
-      }
       const response = await postData(apiUrl, dataToSend);
       return response || null;
     } catch (error) {
@@ -399,9 +614,28 @@ export const useToolsAgentsService = () => {
   // Test server tool (play button) - send JSON, not FormData
   const testServerTool = async (toolId, payload) => {
     try {
-      const apiUrl = `/tools/mcp/test/${toolId}`;
+      const apiUrl = `${APIs.MCP_TEST_TOOL}${toolId}`;
       // Use postData with JSON payload
       const response = await postData(apiUrl, payload);
+      return response;
+    } catch (error) {
+      return extractErrorMessage(error);
+    }
+  };
+
+
+  /**
+   * Delete agent(s) - always use array of agent_ids and DELETE_AGENTS endpoint (no agentId in URL)
+   * @param {Object} agentData - Additional payload data (e.g., user_email_id, is_admin)
+   * @param {string|string[]} agentIdOrIds - Single agentId or array of agentIds
+   */
+  const deleteAgent = async (agentData, agentIdOrIds) => {
+    try {
+      const apiUrl = APIs.DELETE_AGENTS;
+      // Accept single ID or array, always send as array
+      const ids = Array.isArray(agentIdOrIds) ? agentIdOrIds : [agentIdOrIds];
+      const payload = { ...agentData, agent_ids: ids };
+      const response = await deleteData(apiUrl, payload);
       return response;
     } catch (error) {
       return extractErrorMessage(error);
@@ -416,11 +650,28 @@ export const useToolsAgentsService = () => {
     addTool,
     updateTools,
     deleteTool,
+    deleteAgent,
     exportAgents,
+    exportTools,
+    importTools,
+    importToolsPreview,
     checkToolEditable,
     calculateDivs,
     addServer,
     testServerTool,
     getToolById,
+    // Version management
+    saveToolVersion,
+    getToolVersions,
+    getToolVersionByNumber,
+    getCurrentToolVersion,
+    switchToolVersion,
+    updateToolVersionLabel,
+    deleteToolVersion,
+    clearToolVersions,
+    getToolVersionCount,
+    getToolConversationHistory,
+    getLatestCode,
+    clearConversationHistory,
   };
 };

@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import Cookies from "js-cookie";
 import SVGIcons from "../../Icons/SVGIcons";
 import styles from "./SignUpAdmin.module.css";
 import containerStyles from "../../css_modules/AnimatedContainer.module.css";
 import useFetch from "../../Hooks/useAxios";
-import { APIs, roleOptions } from "../../constant";
+import { APIs, BASE_URL, roleOptions } from "../../constant";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
+import DepartmentSelector from "../commonComponents/DepartmentSelector/DepartmentSelector";
 import { useMessage } from "../../Hooks/MessageContext";
+import { encodePassword } from "../../utils/encodeUtils";
+import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
+import axios from "axios";
 
 const SignUp = ({ isAdminScreen = false, embedded = false }) => {
   const { postData, fetchData, setJwtToken } = useFetch();
@@ -19,7 +22,7 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
   const TAB_INDEX_EMAIL = 2;
 
   // Get user role from cookies
-  const userRole = Cookies.get("role") || "";
+  const userRole = getRoleFromToken();
   const normalizedRole = userRole.toUpperCase().replace(/[\s_-]/g, "");
   const isSuperAdmin = normalizedRole === "SUPERADMIN";
 
@@ -35,11 +38,18 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [deptLoading, setDeptLoading] = useState(false);
 
+  // SuperAdmin existence check (for login-page registration)
+  const [superadminExists, setSuperadminExists] = useState(true);
+  const [superadminCheckLoading, setSuperadminCheckLoading] = useState(false);
+
+  // Departments for login-page registration when no superadmin exists
+  const [registerDepartments, setRegisterDepartments] = useState([]);
+  const [selectedRegisterDepts, setSelectedRegisterDepts] = useState([]);
+  const [registerDeptLoading, setRegisterDeptLoading] = useState(false);
+
   // Dynamic roles state - fetched based on department
   const [departmentRoles, setDepartmentRoles] = useState([]);
   const [rolesLoading, setRolesLoading] = useState(false);
-
-  // Password refs - only used on login page register
   const passwordRef = useRef("");
   const confirmPasswordRef = useRef("");
 
@@ -60,8 +70,60 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
   const navigate = useNavigate();
 
   // Get Admin's department from cookies
-  const adminDepartment = Cookies.get("department") || "";
+  const adminDepartment = getDepartmentFromToken();
   const isAdmin = normalizedRole === "ADMIN";
+
+  // Check if superadmin exists when on login-page registration
+  useEffect(() => {
+    if (!isAdminScreen) {
+      const checkSuperadminExists = async () => {
+        setSuperadminCheckLoading(true);
+        try {
+          const response = await axios.get(`${BASE_URL}${APIs.SUPERADMIN_EXISTS}`);
+          const data = response.data;
+          setSuperadminExists(data?.superadmin_exists ?? false);
+
+          // If superadmin EXISTS, fetch departments for dropdown (same as Login page)
+          if (data?.superadmin_exists === true) {
+            setRegisterDeptLoading(true);
+            try {
+              const deptRes = await axios.get(`${BASE_URL}${APIs.GET_DEPARTMENTS}`);
+              const resp = deptRes.data;
+              let items = [];
+              if (resp) {
+                if (Array.isArray(resp)) {
+                  items = resp;
+                } else if (resp.success && Array.isArray(resp.departments)) {
+                  items = resp.departments;
+                } else if (Array.isArray(resp.departments)) {
+                  items = resp.departments;
+                } else if (Array.isArray(resp.domains)) {
+                  items = resp.domains;
+                } else if (Array.isArray(resp.data)) {
+                  items = resp.data;
+                }
+              }
+              const mapped = items.map((d) =>
+                typeof d === "string" ? d : d.department_name || d.domain_name || d.name || String(d)
+              );
+              setRegisterDepartments(Array.isArray(mapped) ? mapped : []);
+            } catch (err) {
+              console.error("Failed to fetch departments:", err);
+              setRegisterDepartments([]);
+            } finally {
+              setRegisterDeptLoading(false);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to check superadmin existence:", err);
+          setSuperadminExists(false); // default to false on error (no dropdown)
+        } finally {
+          setSuperadminCheckLoading(false);
+        }
+      };
+      checkSuperadminExists();
+    }
+  }, [isAdminScreen]);
 
   // Fetch departments for SuperAdmin
   useEffect(() => {
@@ -151,6 +213,10 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
     setSelectedDepartment(option);
   };
 
+  const handleRegisterDeptsApply = (items) => {
+    setSelectedRegisterDepts(items);
+  };
+
   const usernameChange = (value) => {
     setUsername(value);
     if (value) {
@@ -230,8 +296,6 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-
-    // Login page: email + password + confirm password
     // Admin page: email + role
     // SuperAdmin page: email + department + role
 
@@ -241,6 +305,12 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
 
       if (!username || !email || !passwordRef.current || !confirmPasswordRef.current) {
         addMessage("Please fill all the fields", "error");
+        return;
+      }
+
+      // When superadmin exists, at least one department is required
+      if (superadminExists && selectedRegisterDepts.length === 0) {
+        addMessage("Please select at least one department", "error");
         return;
       }
 
@@ -279,17 +349,27 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
       let response;
 
       if (!isAdminScreen) {
-        // Login page: use REGISTER endpoint with username and password
+        // Login page: use appropriate endpoint based on superadmin existence
         const payload = {
           email_id: email,
           user_name: username,
-          password: passwordRef.current,
+          password: encodePassword(passwordRef.current),
         };
-        response = await postData(APIs.REGISTER, payload);
+
+        if (superadminExists) {
+          // Superadmin exists → normal register with selected departments
+          if (selectedRegisterDepts.length > 0) {
+            payload.department_names = selectedRegisterDepts;
+          }
+          response = await postData(APIs.REGISTER, payload);
+        } else {
+          // No superadmin → register as superadmin (no department needed)
+          response = await postData(APIs.REGISTER_SUPERADMIN, payload);
+        }
       } else {
         // Admin/SuperAdmin: use ASSIGN_ROLE_DEPARTMENT endpoint
         // Admin uses logged-in department, SuperAdmin uses selected department
-        const userDepartment = Cookies.get("department") || "";
+        const userDepartment = getDepartmentFromToken();
         const payload = {
           email_id: email,
           department_name: isSuperAdmin ? selectedDepartment : userDepartment,
@@ -322,27 +402,35 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
           setShowConfirmPassword(false);
           setHasPasswordInput(false);
           setHasConfirmPasswordInput(false);
+          setSelectedRegisterDepts([]);
 
           setTimeout(() => {
             navigate("/login");
           }, REDIRECT_TIMEOUT_MS);
         }
       } else {
-        addMessage(response?.detail || response?.message || "Registration failed", "error");
+        const detail = response?.detail;
+        const msg = Array.isArray(detail)
+          ? detail.map((d) => d.msg || JSON.stringify(d)).join(", ")
+          : detail || response?.message || "Registration failed";
+        addMessage(typeof msg === "string" ? msg : String(msg), "error");
       }
     } catch (error) {
-      addMessage(error?.response?.data?.detail || error?.response?.data?.message || "Something went wrong. Please try again.", "error");
+      const errDetail = error?.response?.data?.detail;
+      const errMsg = Array.isArray(errDetail)
+        ? errDetail.map((d) => d.msg || JSON.stringify(d)).join(", ")
+        : errDetail || error?.response?.data?.message || "Something went wrong. Please try again.";
+      addMessage(typeof errMsg === "string" ? errMsg : String(errMsg), "error");
     } finally {
       setIsLoading(false);
     }
   };
 
   // Computed validation based on context
-  // Login page: username + email + password + confirm password
   // Admin page: email + role
   // SuperAdmin page: email + department + role
   const isFormValid = !isAdminScreen
-    ? username && email && hasPasswordInput && hasConfirmPasswordInput && !errUsername && !errEmail && !errPass && !errConfirmPass
+    ? username && email && hasPasswordInput && hasConfirmPasswordInput && !errUsername && !errEmail && !errPass && !errConfirmPass && (!superadminExists || selectedRegisterDepts.length > 0)
     : isSuperAdmin
       ? email && selectedOption !== "Select Role" && selectedDepartment && !errEmail
       : email && selectedOption !== "Select Role" && !errEmail;
@@ -350,7 +438,7 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
   // Form content component to avoid code duplication
   const formContent = (
     <div className={`${styles.registerContainer} ${!isAdminScreen ? "authCardDark" : styles.adminRegister}`}>
-      <h3 className={styles.registerTitle}>{isAdminScreen ? "Assignment" : "Register"}</h3>
+      <h3 className={styles.registerTitle}>{isAdminScreen ? "Assignment" : (!superadminExists ? "Super Admin Register" : "Register")}</h3>
       <form className={styles.form} onSubmit={onSubmit}>
         {/* Email - Always shown */}
         <div className={styles.inputGroup}>
@@ -394,7 +482,6 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
           </div>
         )}
 
-        {/* Password - Only on login page */}
         {!isAdminScreen && (
           <div className={styles.inputGroup}>
             <div className={styles.inputWrapper}>
@@ -420,7 +507,6 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
           </div>
         )}
 
-        {/* Confirm Password - Only on login page */}
         {!isAdminScreen && (
           <div className={styles.inputGroup}>
             <div className={styles.inputWrapper}>
@@ -446,6 +532,20 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
           </div>
         )}
 
+        {/* Department Multi-Select Dropdown - On login page register when superadmin exists */}
+        {!isAdminScreen && superadminExists && (
+          <div className={styles.inputGroup}>
+            <DepartmentSelector
+              selectedDepartments={selectedRegisterDepts}
+              onChange={handleRegisterDeptsApply}
+              departmentsList={registerDepartments}
+              disabled={registerDeptLoading || superadminCheckLoading}
+              loading={registerDeptLoading}
+              placeholder={registerDeptLoading ? "Loading departments..." : "Click + to add departments"}
+            />
+          </div>
+        )}
+
         {/* Department Dropdown - Only for SuperAdmin in Admin Screen */}
         {isAdminScreen && isSuperAdmin && (
           <div className={styles.inputGroup}>
@@ -466,7 +566,7 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
         {isAdminScreen && (
           <div className={styles.inputGroup}>
             <NewCommonDropdown
-              options={departmentRoles.length > 0 ? departmentRoles : roleOptions}
+              options={(departmentRoles.length > 0 ? departmentRoles : roleOptions).filter((r) => isSuperAdmin || r.toLowerCase() !== "admin")}
               selected={selectedOption === "Select Role" ? "" : selectedOption}
               onSelect={handleOptionSelect}
               placeholder={rolesLoading ? "Loading roles..." : "Select Role"}
@@ -480,7 +580,7 @@ const SignUp = ({ isAdminScreen = false, embedded = false }) => {
 
         {/* Footer: Login link (for signup page) + Submit Button */}
         <div className={`${styles.formFooter} ${!isAdminScreen ? styles.formFooterWithLink : ""}`}>
-          {!isAdminScreen && (
+          {!isAdminScreen && superadminExists && (
             <a href="/login" className={styles.loginLink} tabIndex={7}>
               Already have an account? Login
             </a>

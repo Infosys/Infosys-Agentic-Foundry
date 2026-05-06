@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import styles from "./ConnectionModal.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useMessage } from "../../Hooks/MessageContext";
+import { DEFAULT_BLOCKED_SQL_COMMANDS } from "../../constant";
 import Loader from "../commonComponents/Loader.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
 import UploadBox from "../commonComponents/UploadBox.jsx";
@@ -15,6 +16,9 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [connectionDescription, setConnectionDescription] = useState("");
+  const [blockedCommands, setBlockedCommands] = useState([]);
+  const [blockedCommandInput, setBlockedCommandInput] = useState("");
 
   // Initialize form data based on database fields
   useEffect(() => {
@@ -196,6 +200,13 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
         }
         connectionData.databaseName = formData.databaseName;
       }
+      // Add new optional fields
+      if (connectionDescription.trim()) {
+        connectionData.connection_description = connectionDescription.trim();
+      }
+      if (blockedCommands.length > 0) {
+        connectionData.blocked_sql_commands = blockedCommands;
+      }
       window.tempConnectionData = connectionData;
       try {
         await onSubmit(syntheticEvent);
@@ -301,6 +312,78 @@ const ConnectionModal = ({ database, onClose, onSubmit, isConnecting }) => {
               )}
             </div>
           ))}
+
+          {/* Description field (optional) */}
+          <div className="formGroup">
+            <label htmlFor="connection_description" className="label-desc">
+              Description
+            </label>
+            <input
+              id="connection_description"
+              name="connection_description"
+              type="text"
+              value={connectionDescription}
+              onChange={(e) => setConnectionDescription(e.target.value)}
+              className="input"
+              placeholder="Human-readable description (optional)"
+            />
+          </div>
+
+          {/* Blocked SQL Commands (optional) */}
+          <div className={`formGroup ${styles.fullWidth}`}>
+            <label className="label-desc">
+              Blocked SQL Commands
+            </label>
+            <div className={styles.blockedCommandsContainer}>
+              <div className={styles.blockedCommandsPills}>
+                {blockedCommands.map((cmd) => (
+                  <span key={cmd} className={styles.blockedCommandPill}>
+                    {cmd}
+                    <button
+                      type="button"
+                      className={styles.blockedCommandRemove}
+                      onClick={() => setBlockedCommands((prev) => prev.filter((c) => c !== cmd))}
+                      aria-label={`Remove ${cmd}`}
+                    >
+                      <SVGIcons icon="close-icon" width={8} height={8} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className={styles.blockedCommandInputRow}>
+                <input
+                  type="text"
+                  className="input"
+                  value={blockedCommandInput}
+                  onChange={(e) => setBlockedCommandInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const cmd = blockedCommandInput.trim();
+                      if (cmd && !blockedCommands.includes(cmd)) {
+                        setBlockedCommands((prev) => [...prev, cmd]);
+                        setBlockedCommandInput("");
+                      }
+                    }
+                  }}
+                  placeholder="Type a SQL keyword and press Enter"
+                />
+                <IAFButton
+                  type="secondary"
+                  onClick={() => {
+                    setBlockedCommands([...DEFAULT_BLOCKED_SQL_COMMANDS]);
+                  }}
+                  disabled={blockedCommands.length === DEFAULT_BLOCKED_SQL_COMMANDS.length &&
+                    blockedCommands.every((c) => DEFAULT_BLOCKED_SQL_COMMANDS.includes(c))}
+                >
+                  Defaults
+                </IAFButton>
+              </div>
+              <p className={styles.blockedCommandsHint}>
+                Leave empty to use default list ({DEFAULT_BLOCKED_SQL_COMMANDS.length} commands). Only SELECT queries are allowed by default.
+              </p>
+            </div>
+          </div>
 
           {/* SQLite warning and upload section - full width */}
           {database.id === "sqlite" && (

@@ -1,7 +1,6 @@
 import React from "react";
 import { useMessage } from "../../Hooks/MessageContext";
 import { lastApiError } from "../../config/axiosInterceptors";
-import { generateUUID } from "../../utils/uuidPolyfill";
 
 // Global error tracking to prevent API loops across all ErrorBoundary instances
 let globalErrorCount = 0;
@@ -82,7 +81,7 @@ class ErrorBoundary extends React.Component {
       hasError: isCritical, // Only show fallback UI for critical errors
       errorCount: 0,
       lastErrorTime: now,
-      errorId: `error_${Date.now()}_${generateUUID()}`,
+      errorId: `error_${Date.now()}`,
       errorMessage: recentApiError || error?.message || "An unexpected error occurred",
     };
   }

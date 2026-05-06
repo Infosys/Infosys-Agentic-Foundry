@@ -160,6 +160,8 @@ export const ICON_NAMES = [
   "logout",
   "fa-project-diagram",
   "fa-user-outline",
+  "bell",
+  "share",
 ];
 
 const SVGIcons = (props) => {
@@ -2125,6 +2127,31 @@ const SVGIcons = (props) => {
           <path d="M5 4H11" stroke="currentColor" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round" />
           <path d="M3 6V8H8V10" stroke="currentColor" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round" />
           <path d="M13 6V8H8" stroke="currentColor" strokeWidth="1.33333" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "bell":
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" style={{ width, height }}>
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={stroke || "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke={stroke || "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "share":
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" style={{ width, height }}>
+          <circle cx="18" cy="5" r="3" stroke={stroke || color || "currentColor"} strokeWidth="2" />
+          <circle cx="6" cy="12" r="3" stroke={stroke || color || "currentColor"} strokeWidth="2" />
+          <circle cx="18" cy="19" r="3" stroke={stroke || color || "currentColor"} strokeWidth="2" />
+          <path d="M8.59 13.51L15.42 17.49" stroke={stroke || color || "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M15.41 6.51L8.59 10.49" stroke={stroke || color || "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "layers":
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" width={width || 24} height={height || 24} viewBox="0 0 24 24" fill="none" stroke={stroke || color || "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+          <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
+          <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
         </svg>
       );
     default:

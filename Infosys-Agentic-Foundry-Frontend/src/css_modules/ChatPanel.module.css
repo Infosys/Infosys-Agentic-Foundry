@@ -1,5 +1,5 @@
 /**
- * ChatPanel.module.css - Pipeline Chat Panel Styles
+ * ChatPanel.module.css - Workflow Chat Panel Styles
  * Compact, modern design using root CSS variables from index.css
  * Supports theme switching via CSS custom properties
  */
@@ -17,6 +17,19 @@
   font-family: var(--font-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Maximized - fullscreen overlay */
+.chatPanelMaximized {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  border-radius: 0;
+  border: none;
 }
 
 /* ============================================
@@ -360,6 +373,9 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  width: 140px;
+  min-width: 140px;
+  max-width: 140px;
 }
 
 /* Input Wrapper - Primary Focus */

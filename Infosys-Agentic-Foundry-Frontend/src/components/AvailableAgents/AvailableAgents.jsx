@@ -13,12 +13,15 @@ import { useMessage } from "../../Hooks/MessageContext";
 import FilterModal from "../commonComponents/FilterModal.jsx";
 import { useToolsAgentsService } from "../../services/toolService.js";
 import { debounce } from "lodash";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import { useActiveNavClick } from "../../events/navigationEvents";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import SVGIcons from "../../Icons/SVGIcons";
 import EmptyState from "../commonComponents/EmptyState.jsx";
+import ShareModal from "../commonComponents/ShareModal/ShareModal.jsx";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
+import useMultiSelect from "../../Hooks/useMultiSelect.js";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 
 const AvailableAgents = () => {
   const { loading: permissionsLoading, hasPermission } = usePermissions();
@@ -26,8 +29,8 @@ const AvailableAgents = () => {
   // Permission checks for CRUD operations - default to false when permissions not loaded
   const canReadAgents = typeof hasPermission === "function" ? hasPermission("read_access.agents") : false;
   const canAddAgents = typeof hasPermission === "function" ? hasPermission("add_access.agents") : false;
-  const canUpdateAgents = typeof hasPermission === "function" ? hasPermission("update_access.agents") : false;
   const canDeleteAgents = typeof hasPermission === "function" ? hasPermission("delete_access.agents") : false;
+  const canExportAgents = typeof hasPermission === "function" ? hasPermission("export_agents_access") : false;
 
   const [plusBtnClicked, setPlusBtnClicked] = useState(false);
   const [editAgentData, setEditAgentData] = useState("");
@@ -48,21 +51,40 @@ const AvailableAgents = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+
+  // Share modal state
+  const [shareModalData, setShareModalData] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false);
   const { addMessage, setShowPopup } = useMessage();
   const isLoadingRef = React.useRef(false);
   const [loader, setLoaderState] = useState(false);
   const [hasMore, setHasMore] = useState(true); // track if more pages are available
   const [createdBy, setCreatedBy] = useState("All"); // Created By filter state
+
+  // Multi-select delete state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: visibleData, idKey: "agentic_application_id" });
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const handleAddMessage = (message, type) => {
     addMessage(message, type);
   };
 
   // Get user info from cookies for Created By filter
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
+  const loggedInUserEmail = getEmailFromToken();
+  const userName = getUserNameFromToken();
+  const role = getRoleFromToken();
+  const isAdmin = role?.toLowerCase() === "admin";
 
   const { fetchData, deleteData } = useFetch();
-  const { getAgentsSearchByPageLimit, exportAgents, calculateDivs } = useToolsAgentsService();
+  const { getAgentsSearchByPageLimit, exportAgents, calculateDivs, deleteAgent: deleteAgentService } = useToolsAgentsService();
   const pageRef = useRef(1);
   const { handleError } = useErrorHandler();
 
@@ -106,7 +128,7 @@ const AvailableAgents = () => {
 
       // Use createdByToUse if provided, otherwise fall back to state
       const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
-      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : createdByValue === "System" ? "system" : undefined;
 
       const response = await getAgentsSearchByPageLimit({
         page: pageNumber,
@@ -171,13 +193,19 @@ const AvailableAgents = () => {
     }
   };
 
+  // Use the service-layer deleteAgent, which always uses array payload and bulk endpoint
   const deleteAgent = async (id, email, isAdmin = false) => {
     try {
-      const response = await deleteData(APIs.DELETE_AGENTS + id, {
-        user_email_id: email,
-        is_admin: isAdmin,
-      });
-      handleAddMessage(response.message, "success");
+      const payload = { user_email_id: email, is_admin: isAdmin };
+      // Always use array, even for single delete
+      const response = await deleteAgentService(payload, [id]);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          handleAddMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
       return true;
     } catch (error) {
       handleError(error);
@@ -204,7 +232,7 @@ const AvailableAgents = () => {
 
       // Use createdByToUse if provided, otherwise fall back to state
       const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
-      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : createdByValue === "System" ? "system" : undefined;
 
       // Use the API endpoint for search with tag and type filtering
       const response = await getAgentsSearchByPageLimit({
@@ -303,8 +331,8 @@ const AvailableAgents = () => {
       const selectedTypes = selectedAgentTypeRef.current || [];
       const singleTypeFilter = selectedTypes.length === 1 ? selectedTypes[0] : undefined;
 
-      // Pass created_by email when "Me" filter is selected
-      const createdByEmail = createdBy === "Me" ? loggedInUserEmail : undefined;
+      // Pass created_by value based on filter selection
+      const createdByEmail = createdBy === "Me" ? loggedInUserEmail : createdBy === "System" ? "system" : undefined;
 
       const res = await getAgentsSearchByPageLimit({
         page: nextPage,
@@ -452,8 +480,8 @@ const AvailableAgents = () => {
     try {
       // If only one type is selected, use server-side filtering via API
       if (types.length === 1) {
-        // Pass created_by email when "Me" filter is selected
-        const createdByEmail = createdBy === "Me" ? loggedInUserEmail : undefined;
+        // Pass created_by value based on filter selection
+        const createdByEmail = createdBy === "Me" ? loggedInUserEmail : createdBy === "System" ? "system" : undefined;
         const response = await getAgentsSearchByPageLimit({
           page: 1,
           limit: divsCount,
@@ -462,7 +490,7 @@ const AvailableAgents = () => {
           tags: selectedTags?.length > 0 ? selectedTags : undefined,
           created_by: createdByEmail,
         });
-        let sanitized = sanitizeAgentsResponse(response?.details);
+        const sanitized = sanitizeAgentsResponse(response?.details);
 
         setAgentsList(sanitized);
         setVisibleData(sanitized);
@@ -472,8 +500,8 @@ const AvailableAgents = () => {
       } else {
         // Multiple types selected - fetch larger dataset and filter client-side
         // API only supports single type, so we need to fetch all and filter
-        // Pass created_by email when "Me" filter is selected
-        const createdByEmail = createdBy === "Me" ? loggedInUserEmail : undefined;
+        // Pass created_by value based on filter selection
+        const createdByEmail = createdBy === "Me" ? loggedInUserEmail : createdBy === "System" ? "system" : undefined;
         const response = await getAgentsSearchByPageLimit({
           page: 1,
           limit: 1000, // Fetch more to ensure we get all matching agents
@@ -521,7 +549,7 @@ const AvailableAgents = () => {
     setExportLoading(true);
     setShowExportModal(false);
     try {
-      const userEmail = Cookies.get("email");
+      const userEmail = getEmailFromToken();
       // You can extend the exportAgents function to accept selectedFiles parameter
       // For now, we'll use the existing function and note that file selection could be added to the API
       // Accept exportAndDeploy as a separate argument
@@ -559,20 +587,67 @@ const AvailableAgents = () => {
     setEditAgentData(null);
   });
 
+  // Bulk delete handler for multi-select
+  const handleBulkDeleteAgents = async () => {
+    if (multiSelectIds.length === 0) return;
+    // Filter out items created by the current user (creator cannot delete own items)
+    const currentEmail = (loggedInUserEmail || "").trim().toLowerCase();
+    const ownItems = visibleData.filter((item) => multiSelectIds.includes(item.agentic_application_id) && (item.created_by || "").trim().toLowerCase() === currentEmail);
+    const deletableIds = multiSelectIds.filter((id) => {
+      const item = visibleData.find((d) => d.agentic_application_id === id);
+      return !item || (item.created_by || "").trim().toLowerCase() !== currentEmail;
+    });
+    if (ownItems.length > 0) {
+      addMessage(`${ownItems.length} agent(s) created by you were skipped. You cannot delete your own agents.`, "error");
+    }
+    if (deletableIds.length === 0) {
+      clearMultiSelection();
+      setShowBulkDeleteModal(false);
+      return;
+    }
+    setBulkDeleteLoading(true);
+    const userEmail = getEmailFromToken();
+    const userRole = getRoleFromToken();
+    const isAdmin = userRole?.toLowerCase() === "admin";
+    try {
+      const payload = {
+        user_email_id: userEmail,
+        is_admin: isAdmin,
+        agent_ids: deletableIds,
+      };
+      const response = await deleteData(APIs.DELETE_AGENTS, payload);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch (error) {
+      // silent catch
+    }
+    clearMultiSelection();
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    fetchAgents();
+  };
+
   if (permissionsLoading) {
     return <Loader />;
   }
-  // read_access guard removed — page always renders; card-level access control
-  // handles clickability and readOnly modal behavior.
 
   return (
     <div className={"pageContainer"}>
       {(loading || exportLoading) && <Loader />}
       <SubHeader
         onSearch={(value) => {
-          handleSearch(value, calculateDivs(visibleAgentsContainerRef, 200, 128, 40), 1);
+          // Use named constants for magic numbers
+          const AGENT_CARD_WIDTH = 200;
+          const AGENT_CARD_HEIGHT = 128;
+          const AGENT_CARD_MARGIN = 40;
+          handleSearch(value, calculateDivs(visibleAgentsContainerRef, AGENT_CARD_WIDTH, AGENT_CARD_HEIGHT, AGENT_CARD_MARGIN), 1);
         }}
-        onPlusClick={canAddAgents ? onPlusClick : undefined}
+        onPlusClick={canAddAgents ? onPlusClick : null}
         showPlusButton={canAddAgents}
         selectedTags={selectedTags}
         heading={"Agents"}
@@ -591,9 +666,15 @@ const AvailableAgents = () => {
         showCreatedByDropdown={true}
         createdBy={createdBy}
         onCreatedByChange={handleCreatedByChange}
-        onSecondaryButtonClick={canAddAgents ? handleExportSelected : undefined}
-        secondaryButtonLabel={canAddAgents ? "Export" : undefined}
-        secondaryButtonDisabled={canAddAgents ? selectedAgentIds.length === 0 : true}
+        onSecondaryButtonClick={canExportAgents ? handleExportSelected : null}
+        secondaryButtonLabel={canExportAgents ? "Export" : null}
+        secondaryButtonDisabled={selectedAgentIds.length === 0}
+        showSelectAll={canDeleteAgents && isAdmin && visibleData.length > 1}
+        isAllSelected={isAllSelected}
+        isPartiallySelected={isPartiallySelected}
+        onSelectAll={handleSelectAll}
+        selectedCount={multiSelectCount}
+        onDeleteSelected={canDeleteAgents && isAdmin ? () => setShowBulkDeleteModal(true) : null}
       />
 
       {/* Display total count summary */}
@@ -604,22 +685,16 @@ const AvailableAgents = () => {
         {visibleData?.length > 0 && (
           <DisplayCard1
             data={visibleData}
-            onCardClick={(canReadAgents || canUpdateAgents) ? (name, item) => setEditAgentData(item) : undefined}
-            onDeleteClick={canDeleteAgents ? async (name, item) => {
-              const userEmail = Cookies.get("email");
-              const userRole = Cookies.get("role");
-              const isAdmin = userRole.toLowerCase() === "admin";
-              const success = await deleteAgent(item.agentic_application_id, userEmail, isAdmin);
-              if (success) {
-                fetchAgents();
+            onCardClick={canReadAgents ? (name, item) => setEditAgentData(item) : null}
+            showDeleteButton={false}
+            showCheckbox={canDeleteAgents || canAddAgents || canExportAgents}
+            onSelectionChange={(name, checked) => {
+              handleMultiSelectChange(name, checked);
+              if (canAddAgents || canExportAgents) {
+                const agent = visibleData.find((a) => a.agentic_application_name === name);
+                if (agent) handleAgentSelect(agent.agentic_application_id, checked);
               }
-            } : undefined}
-            showDeleteButton={canDeleteAgents}
-            showCheckbox={canAddAgents}
-            onSelectionChange={canAddAgents ? (name, checked) => {
-              const agent = visibleData.find((a) => a.agentic_application_name === name);
-              if (agent) handleAgentSelect(agent.agentic_application_id, checked);
-            } : undefined}
+            }}
             cardNameKey="agentic_application_name"
             cardDescriptionKey="agentic_application_description"
             cardOwnerKey="created_by"
@@ -628,11 +703,15 @@ const AvailableAgents = () => {
             buttonIcon={<SVGIcons icon="message-square" width={20} height={16} color="var(--content-color)" />}
             className={styles.agentsList}
             contextType="agent"
-            selectedIds={selectedAgentIds}
+            selectedIds={multiSelectIds}
             idKey="agentic_application_id"
-            cardDisabled={!canReadAgents && !canUpdateAgents}
-            onCreateClick={canAddAgents ? onPlusClick : undefined}
+            onCreateClick={canAddAgents ? onPlusClick : null}
             showCreateCard={false}
+            hideActions={!canReadAgents}
+            onShareClick={(item) => {
+              setShareModalData(item);
+              setShowShareModal(true);
+            }}
           />
         )}
         {/* Display EmptyState when filters are active but no results */}
@@ -648,8 +727,8 @@ const AvailableAgents = () => {
               ...(searchTerm.trim() ? [`Search: ${searchTerm}`] : []),
             ]}
             onClearFilters={clearSearch}
-            onCreateClick={canAddAgents ? onPlusClick : undefined}
-            createButtonLabel={canAddAgents ? "New Agent" : undefined}
+            onCreateClick={canAddAgents ? onPlusClick : null}
+            createButtonLabel={canAddAgents ? "New Agent" : null}
           />
         )}
         {/* Display EmptyState when no data exists from backend (no filters applied) */}
@@ -657,8 +736,8 @@ const AvailableAgents = () => {
           <EmptyState
             message="No agents found"
             subMessage={canAddAgents ? "Get started by creating your first agent" : "No agents available"}
-            onCreateClick={canAddAgents ? onPlusClick : undefined}
-            createButtonLabel={canAddAgents ? "New Agent" : undefined}
+            onCreateClick={canAddAgents ? onPlusClick : null}
+            createButtonLabel={canAddAgents ? "New Agent" : null}
             showClearFilter={false}
           />
         )}
@@ -676,7 +755,7 @@ const AvailableAgents = () => {
             agentsListData={agentsListData?.filter((agent) => agent?.agentic_application_type === REACT_AGENT)}
             fetchAgents={fetchAgents}
             searchTerm={searchTerm}
-            readOnly={canReadAgents && !canUpdateAgents}
+            readOnly={!hasPermission("update_access.agents")}
           />
         </div>
       )}
@@ -691,6 +770,21 @@ const AvailableAgents = () => {
       />
 
       {showExportModal && <ExportFilesModal onClose={handleCloseExportModal} selectedAgentIds={selectedAgentIds} onExport={handleExportWithFiles} />}
+
+      <ShareModal
+        show={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        itemData={shareModalData}
+        entityType="agent"
+      />
+
+      {showBulkDeleteModal && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete ${multiSelectCount} selected agent(s)? This action cannot be undone.`}
+          onConfirm={handleBulkDeleteAgents}
+          setShowConfirmation={setShowBulkDeleteModal}
+        />
+      )}
     </div>
   );
 };

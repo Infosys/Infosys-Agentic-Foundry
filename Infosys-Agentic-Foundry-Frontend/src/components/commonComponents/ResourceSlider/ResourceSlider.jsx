@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+﻿import React, { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import styles from "./ResourceSlider.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
@@ -26,9 +26,15 @@ import { usePermissions } from "../../../context/PermissionsContext";
  * @param {string} props.initialTab - Initial tab ("tools" or "servers" or "agents")
  * @param {string} props.agentType - Type of agent (e.g., META_AGENT, PLANNER_META_AGENT)
  */
-const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelection, onClearAll, initialTab = "tools", agentType = "" }) => {
+const ResourceSlider = ({
+  isOpen, onClose, selectedResources = [], onSaveSelection, onClearAll, initialTab = "tools", agentType = "",
+  toolVersions = {}, onToolVersionChange,
+  availableDbConnections = [], selectedDbConnections = [], onDbConnectionsChange,
+}) => {
   // Check if this is a meta agent (requires agents instead of tools/servers)
   const isMetaAgent = agentType === META_AGENT || agentType === PLANNER_META_AGENT;
+  // const showDatabasesTab = !isMetaAgent && availableDbConnections.length > 0; // Data connectors tab hidden
+  const showDatabasesTab = false;
 
   // For meta agents, default to "agents" tab; otherwise use the provided initialTab
   const [resourceTab, setResourceTab] = useState(isMetaAgent ? "agents" : initialTab);
@@ -60,28 +66,22 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
   const { getKnowledgeBasesSearchByPageLimit } = useKnowledgeBaseService();
   const { hasPermission } = usePermissions();
 
-  // Permission checks for resource tabs
+  // Permission checks for resource tabs (used to show/hide preview eye icon)
   const canViewTools = hasPermission("read_access.tools", true);
-  const canViewServers = hasPermission("read_access.tools", true); // Servers use same permission as tools
+  const canViewServers = hasPermission("read_access.mcp_servers", true); // Servers use mcp_servers permission
   const canViewKnowledgeBases = hasPermission("knowledgebase_access", true);
   const canViewAgents = hasPermission("read_access.agents", true);
+  const canViewDataConnectors = hasPermission("data_connector_access", true);
 
-  // Determine the first visible tab (fallback when default tab is not accessible)
-  const getFirstVisibleTab = () => {
-    if (canViewTools) return "tools";
-    if (canViewServers) return "servers";
-    if (canViewKnowledgeBases) return "knowledgebases";
-    return null;
-  };
-
-  // Check if at least one tab is visible
-  const hasVisibleTabs = canViewTools || canViewServers || canViewKnowledgeBases;
+  // Internal DB connections state (synced on open)
+  const [internalDbConnections, setInternalDbConnections] = useState(selectedDbConnections);
 
   // Reset collapse state and internal selections when slider opens
   useEffect(() => {
     if (isOpen) {
       setIsSliderCollapsed(false);
       setInternalSelectedResources(selectedResources);
+      setInternalDbConnections(selectedDbConnections);
     }
   }, [isOpen]);
 
@@ -92,25 +92,43 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
     }
   }, [isMetaAgent, agentType]);
 
-  // Ensure resourceTab switches to a visible tab when permissions restrict access
-  useEffect(() => {
-    // Skip for meta agents (they only have agents tab)
-    if (isMetaAgent) return;
+  // Helper: check if current tab's resource type has read_access (used to show/hide eye icon)
+  const canPreviewCurrentTab = (() => {
+    if (isMetaAgent) return canViewAgents;
+    if (resourceTab === "tools") return canViewTools;
+    if (resourceTab === "servers") return canViewServers;
+    if (resourceTab === "knowledgebases") return canViewKnowledgeBases;
+    if (resourceTab === "databases") return false; // No preview for DB connections
+    return true;
+  })();
 
-    // Check if current tab is accessible
-    const isCurrentTabAccessible =
-      (resourceTab === "tools" && canViewTools) ||
-      (resourceTab === "servers" && canViewServers) ||
-      (resourceTab === "knowledgebases" && canViewKnowledgeBases);
-
-    // If current tab is not accessible, switch to first visible tab
-    if (!isCurrentTabAccessible && hasVisibleTabs) {
-      const firstVisibleTab = getFirstVisibleTab();
-      if (firstVisibleTab) {
-        setResourceTab(firstVisibleTab);
-      }
+  // ============ Database connections as resource items ============
+  const dbResourceItems = useMemo(() => {
+    if (resourceTab !== "databases") return [];
+    let items = availableDbConnections.map((conn) => ({
+      db_connection_name: conn.connection_name || conn.name,
+      name: conn.connection_name || conn.name,
+      type: "databases",
+      db_type: conn.connection_database_type || conn.type || "",
+    }));
+    // Filter by search
+    if (searchResourceQuery.trim()) {
+      const q = searchResourceQuery.toLowerCase().trim();
+      items = items.filter((item) =>
+        item.name.toLowerCase().includes(q) || item.db_type.toLowerCase().includes(q)
+      );
     }
-  }, [isMetaAgent, resourceTab, canViewTools, canViewServers, canViewKnowledgeBases, hasVisibleTabs]);
+    return items;
+  }, [availableDbConnections, resourceTab, searchResourceQuery]);
+
+  const isDbSelected = (connName) => internalDbConnections.includes(connName);
+
+  const toggleDbSelection = (connName) => {
+    if (isSliderCollapsed) setIsSliderCollapsed(false);
+    setInternalDbConnections((prev) =>
+      prev.includes(connName) ? prev.filter((n) => n !== connName) : [...prev, connName]
+    );
+  };
 
   /**
    * Get type filter options based on current resource tab
@@ -164,8 +182,13 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
     setInternalSelectedResources(selectedResources);
   }, [selectedResources]);
 
-  // Paginated fetch for resources (tools, servers, or agents)
+  // Paginated fetch for resources (tools, servers, or agents) â€” databases use local data
   const fetchResourcesPage = async (type, page = 1, append = false, search = "", filterTypes = []) => {
+    // Databases tab uses local data, no API fetch needed
+    if (type === "databases") {
+      setLoadingResources(false);
+      return;
+    }
     setLoadingResources(true);
     try {
       const limit = calculateDivs(resourcesContainerRef, 231, 70, 26);
@@ -226,7 +249,17 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
         });
       }
 
-      const items = response?.details || [];
+      let items = response?.details || [];
+
+      // For agents tab, exclude meta_agent, planner_meta_agent, and hybrid_agent types
+      // These agent types cannot be used as sub-agents
+      if (effectiveType === "agents") {
+        const excludedTypes = [META_AGENT, PLANNER_META_AGENT, HYBRID_AGENT];
+        items = items.filter(
+          (item) => !excludedTypes.includes(item.agentic_application_type)
+        );
+      }
+
 
       if (append) {
         setAllResources((prev) => (Array.isArray(prev) ? [...prev, ...items] : items));
@@ -267,6 +300,42 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, resourceTab]);
+
+  // Enrich selected resources with "versions" from API data when it loads
+  // (Selected tools from agent data may lack the versions array)
+  useEffect(() => {
+    if (filteredResources.length === 0 || resourceTab !== "tools") return;
+
+    // Build lookup: tool_id -> versions array from API data
+    const versionsMap = {};
+    filteredResources.forEach((r) => {
+      const id = r.tool_id || r.id;
+      if (id && Array.isArray(r.versions) && r.versions.length > 0) {
+        versionsMap[String(id)] = r.versions;
+      }
+    });
+
+    if (Object.keys(versionsMap).length === 0) return;
+
+    // Check if any selected resource is missing versions
+    const needsEnrichment = internalSelectedResources.some((r) => {
+      const id = r.tool_id || r.id;
+      return id && !r.versions && versionsMap[String(id)];
+    });
+
+    if (needsEnrichment) {
+      setInternalSelectedResources((prev) =>
+        prev.map((r) => {
+          const id = r.tool_id || r.id;
+          if (id && !r.versions && versionsMap[String(id)]) {
+            return { ...r, versions: versionsMap[String(id)] };
+          }
+          return r;
+        })
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredResources, resourceTab]);
 
   // Trigger search - reusable for Enter key and search icon click
   const triggerSearch = () => {
@@ -330,10 +399,22 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
         const selectedName = r.tool_name || r.agentic_application_name || r.name;
         return !(String(selectedId) === String(resourceId) || (selectedName && resourceName && selectedName === resourceName));
       }));
+      // Remove version entry when a tool is deselected
+      if (resourceTab === "tools" && onToolVersionChange) {
+        // eslint-disable-next-line no-void
+        onToolVersionChange(resourceId, void 0);
+      }
     } else {
       // Add type property based on current tab to enable proper grouping in ResourceAccordion
       const resourceWithType = { ...resource, type: resourceTab };
       setInternalSelectedResources([...internalSelectedResources, resourceWithType]);
+      // Auto-set default version (latest) when a tool with versions is selected
+      if (resourceTab === "tools" && resource.versions && Array.isArray(resource.versions) && resource.versions.length > 0 && onToolVersionChange) {
+        const defaultVersion = resource.versions[resource.versions.length - 1];
+        if (!toolVersions[resourceId]) {
+          onToolVersionChange(resourceId, defaultVersion);
+        }
+      }
     }
   };
 
@@ -445,8 +526,20 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
 
   // Handle save selection
   const handleSaveSelection = () => {
+    // Auto-populate default versions for selected tools that have versions but no entry in toolVersions
+    if (onToolVersionChange) {
+      internalSelectedResources.forEach((r) => {
+        const id = r.tool_id || r.id;
+        if (id && r.versions && Array.isArray(r.versions) && r.versions.length > 0 && !toolVersions[id]) {
+          onToolVersionChange(id, r.versions[r.versions.length - 1]);
+        }
+      });
+    }
     if (onSaveSelection) {
       onSaveSelection(internalSelectedResources);
+    }
+    if (onDbConnectionsChange) {
+      onDbConnectionsChange(internalDbConnections);
     }
     onClose();
   };
@@ -454,6 +547,7 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
   // Handle clear all - only clears internal state, parent is updated on save
   const handleClearAll = () => {
     setInternalSelectedResources([]);
+    setInternalDbConnections([]);
   };
 
   // Handle preview button click - opens ToolDetailModal
@@ -538,46 +632,40 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
               <SVGIcons icon="x" width={16} height={16} color="var(--text-primary)" />
             </button> */}
             <button className="closeBtn" aria-label="Close modal" onClick={onClose}>
-              ×
+              <SVGIcons icon="close-icon" width={16} height={16} />
             </button>
           </div>
 
-          {/* Tab Selector - Show Agents tab for meta agents, Tools/Servers/KnowledgeBases for others */}
+          {/* Tab Selector - Show Agents tab for meta agents, always show Tools/Servers/KnowledgeBases for others */}
           <div className={styles.tabContainer}>
             {isMetaAgent ? (
-              /* Meta Agent: Show only Agents tab if user has permission */
-              canViewAgents ? (
-                <button className={`${styles.tab} ${styles.tabActive}`} disabled>
-                  <SVGIcons icon="agent" width={16} height={16} />
-                  <span className={styles.tabLabel}>Agents</span>
-                </button>
-              ) : (
-                <span className={styles.noPermissionText}>No resources available</span>
-              )
-            ) : hasVisibleTabs ? (
-              /* Other Agents: Show Tools, Servers, and Knowledge Bases tabs based on permissions */
+              /* Meta Agent: Always show Agents tab */
+              <button className={`${styles.tab} ${styles.tabActive}`} disabled>
+                <SVGIcons icon="agent" width={16} height={16} />
+                <span className={styles.tabLabel}>Agents</span>
+              </button>
+            ) : (
+              /* Other Agents: Always show Tools, Servers, and Knowledge Bases tabs */
               <>
-                {canViewTools && (
-                  <button className={`${styles.tab} ${resourceTab === "tools" ? styles.tabActive : ""}`} onClick={() => handleTabChange("tools")}>
-                    <SVGIcons icon="wrench" width={16} height={16} />
-                    <span className={styles.tabLabel}>Tools</span>
-                  </button>
-                )}
-                {canViewServers && (
-                  <button className={`${styles.tab} ${resourceTab === "servers" ? styles.tabActive : ""}`} onClick={() => handleTabChange("servers")}>
-                    <SVGIcons icon="server" width={16} height={16} />
-                    <span className={styles.tabLabel}>Servers</span>
-                  </button>
-                )}
-                {canViewKnowledgeBases && (
-                  <button className={`${styles.tab} ${resourceTab === "knowledgebases" ? styles.tabActive : ""}`} onClick={() => handleTabChange("knowledgebases")}>
-                    <SVGIcons icon="knowledge-base" width={16} height={16} />
-                    <span className={styles.tabLabel}>Knowledge Bases</span>
+                <button className={`${styles.tab} ${resourceTab === "tools" ? styles.tabActive : ""}`} onClick={() => handleTabChange("tools")}>
+                  <SVGIcons icon="wrench" width={16} height={16} />
+                  <span className={styles.tabLabel}>Tools</span>
+                </button>
+                <button className={`${styles.tab} ${resourceTab === "servers" ? styles.tabActive : ""}`} onClick={() => handleTabChange("servers")}>
+                  <SVGIcons icon="server" width={16} height={16} />
+                  <span className={styles.tabLabel}>Servers</span>
+                </button>
+                <button className={`${styles.tab} ${resourceTab === "knowledgebases" ? styles.tabActive : ""}`} onClick={() => handleTabChange("knowledgebases")}>
+                  <SVGIcons icon="knowledge-base" width={16} height={16} />
+                  <span className={styles.tabLabel}>Knowledge Bases</span>
+                </button>
+                {showDatabasesTab && (
+                  <button className={`${styles.tab} ${resourceTab === "databases" ? styles.tabActive : ""}`} onClick={() => handleTabChange("databases")}>
+                    <SVGIcons icon="database" width={16} height={16} />
+                    <span className={styles.tabLabel}>Databases</span>
                   </button>
                 )}
               </>
-            ) : (
-              <span className={styles.noPermissionText}>No resources available</span>
             )}
           </div>
 
@@ -603,7 +691,7 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
                   onSearch={triggerSearch}
                 />
               </div>
-              {resourceTab !== "knowledgebases" && (
+              {resourceTab !== "knowledgebases" && resourceTab !== "databases" && (
                 <UnifiedFilterDropdown
                   typeOptions={getTypeOptions()}
                   selectedTypes={selectedTypes}
@@ -625,57 +713,117 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
           {/* Scrollable Resources List */}
           <div className={styles.resourcesListContainer} ref={resourcesContainerRef}>
             <div className={styles.resourcesGrid}>
-              {/* Use memoized sorted resources: selected items first */}
-              {sortedResources.map((resource) => {
-                const resourceId = resource.tool_id || resource.agentic_application_id || resource.id;
-                const isSelected = isResourceSelected(resource);
+              {resourceTab === "databases" ? (
+                /* Database connections list â€” local data, no API pagination */
+                <>
+                  {dbResourceItems.map((item) => {
+                    const selected = isDbSelected(item.db_connection_name);
+                    return (
+                      <div
+                        key={item.db_connection_name}
+                        className={`${styles.resourceItem} ${selected ? styles.resourceItemSelected : ""}`}
+                        onClick={() => toggleDbSelection(item.db_connection_name)}
+                      >
+                        <button
+                          type="button"
+                          className={styles.checkbox}
+                          role="checkbox"
+                          aria-checked={selected}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleDbSelection(item.db_connection_name);
+                          }}
+                        >
+                          {selected && (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          )}
+                        </button>
+                        <span className={styles.resourceItemName}>
+                          {item.name}
+                          {item.db_type && <span className={styles.dbTypeBadge}>{item.db_type}</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {dbResourceItems.length === 0 && (
+                    <div className={styles.emptyResourcesState}>
+                      {searchResourceQuery.trim() ? "No connections match your search." : "No database connections available."}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Standard resources: tools, servers, KB, agents */
+                <>
+                  {sortedResources.map((resource) => {
+                    const resourceId = resource.tool_id || resource.agentic_application_id || resource.id;
+                    const isSelected = isResourceSelected(resource);
 
-                return (
-                  <div key={resourceId} className={`${styles.resourceItem} ${isSelected ? styles.resourceItemSelected : ""}`} onClick={() => toggleResourceSelection(resource)}>
-                    <button
-                      type="button"
-                      className={styles.checkbox}
-                      role="checkbox"
-                      aria-checked={isSelected}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleResourceSelection(resource);
-                      }}>
-                      {isSelected && (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                          strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                      )}
-                    </button>
-                    {/* <span className={styles.resourceIcon}>
-                    <SVGIcons icon={isMetaAgent ? "agent" : resourceTab === "tools" ? "wrench" : "server"} width={16} height={16} />
-                  </span> */}
-                    <span className={styles.resourceItemName}>{resource.tool_name || resource.agentic_application_name || resource.name}</span>
-                    {resourceTab !== "knowledgebases" && (
-                      <button type="button" className={styles.previewButton} aria-label="Preview resource" onClick={(e) => handlePreview(e, resource)}>
-                        <SVGIcons icon="eye" width={16} height={16} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {loadingResources && <div className={styles.loadingState}>Loading more...</div>}
+                    return (
+                      <div key={resourceId} className={`${styles.resourceItem} ${isSelected ? styles.resourceItemSelected : ""}`} onClick={() => toggleResourceSelection(resource)}>
+                        <button
+                          type="button"
+                          className={styles.checkbox}
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleResourceSelection(resource);
+                          }}>
+                          {isSelected && (
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          )}
+                        </button>
+                        <span className={styles.resourceItemName}>{resource.tool_name || resource.agentic_application_name || resource.name}</span>
+                        {/* Version dropdown for tools that have versions - always visible */}
+                        {resourceTab === "tools" && resource.versions && Array.isArray(resource.versions) && resource.versions.length > 0 && (
+                          <select
+                            className={styles.versionSelect}
+                            value={toolVersions[resourceId] || resource.versions[resource.versions.length - 1]}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              if (onToolVersionChange) {
+                                onToolVersionChange(resourceId, e.target.value);
+                              }
+                            }}
+                            title="Select tool version"
+                          >
+                            {resource.versions.map((v) => (
+                              <option key={v} value={v}>{v}</option>
+                            ))}
+                          </select>
+                        )}
+                        {resourceTab !== "knowledgebases" && canPreviewCurrentTab && (
+                          <button type="button" className={styles.previewButton} aria-label="Preview resource" onClick={(e) => handlePreview(e, resource)}>
+                            <SVGIcons icon="eye" width={16} height={16} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {loadingResources && <div className={styles.loadingState}>Loading more...</div>}
+                  {!loadingResources && filteredResources.length === 0 && <div className={styles.emptyResourcesState}>No resources found</div>}
+                </>
+              )}
             </div>
-            {!loadingResources && filteredResources.length === 0 && <div className={styles.emptyResourcesState}>No resources found</div>}
           </div>
 
           {/* Slider Footer */}
           <div className={styles.sliderFooter}>
-            <div className={styles.selectedCount}>{internalSelectedResources.length} resources selected</div>
+            <div className={styles.selectedCount}>{internalSelectedResources.length + internalDbConnections.length} resources selected</div>
             <div className={styles.sliderFooterButtons}>
               <IAFButton type="primary" onClick={handleSaveSelection}>
                 Save Selection
@@ -694,11 +842,16 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
             setPreviewModalOpen(false);
             setPreviewResource(null);
           }}
-          description={
-            isMetaAgent
-              ? previewResource?.agentic_application_description || previewResource?.tool_description || previewResource?.description
-              : previewResource?.tool_description || previewResource?.description
-          }
+          description={(() => {
+            if (isMetaAgent) {
+              return previewResource?.agentic_application_description || previewResource?.tool_description || previewResource?.description;
+            }
+            // When a version is selected, don't pass description prop — let ToolDetailModal fetch version-specific one
+            const resourceId = previewResource?.tool_id || previewResource?.id;
+            const selectedVer = resourceId && toolVersions[resourceId];
+            if (selectedVer) return null;
+            return previewResource?.tool_description || previewResource?.description;
+          })()}
           endpoint={(() => {
             // Endpoint only for REMOTE/URL servers (mcp_type: "url")
             if (resourceTab === "servers") {
@@ -710,7 +863,12 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
             return undefined;
           })()}
           codeSnippet={(() => {
-            // Code snippet for tools OR LOCAL/FILE servers only (mcp_type: "file")
+            // When a version is selected, don't pass code prop — let ToolDetailModal fetch version-specific one
+            if (resourceTab === "tools") {
+              const resourceId = previewResource?.tool_id || previewResource?.id;
+              const selectedVer = resourceId && toolVersions[resourceId];
+              if (selectedVer) return null;
+            }
             if (previewResource?.code_snippet) return previewResource.code_snippet;
             if (resourceTab === "servers") {
               const mcpType = (previewResource?.mcp_type || "").toLowerCase();
@@ -718,7 +876,7 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
                 return getServerCodePreview(previewResource);
               }
             }
-            return undefined;
+            return null;
           })()}
           moduleName={(() => {
             // Module name for EXTERNAL/MODULE servers only (mcp_type: "module")
@@ -745,6 +903,10 @@ const ResourceSlider = ({ isOpen, onClose, selectedResources = [], onSaveSelecti
             // Hide modify for remote/external servers (mcp_type: "url" or "module") and for agents
             isMetaAgent || (resourceTab === "servers" && (previewResource?.mcp_type || "").toLowerCase() === "url")
           }
+          selectedVersion={(() => {
+            const resourceId = previewResource?.tool_id || previewResource?.id;
+            return resourceId ? toolVersions[resourceId] : undefined;
+          })()}
           useToolCardDescriptionStyle={true}
           onExpandSlider={(expanded) => setIsSliderExpanded(expanded)}
         />

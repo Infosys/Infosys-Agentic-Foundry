@@ -13,6 +13,9 @@ import { debounce } from "lodash";
 import CreateAccessKeyModal from "./CreateAccessKeyModal.jsx";
 import EditAccessKeyModal from "./EditAccessKeyModal.jsx";
 import SVGIcons from "../../Icons/SVGIcons.js";
+import { getDepartmentFromToken, getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
+import useMultiSelect from "../../Hooks/useMultiSelect";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 
 /**
  * ResourceDashboard Component
@@ -22,6 +25,14 @@ import SVGIcons from "../../Icons/SVGIcons.js";
  * @param {boolean} props.hideSubHeader - Hide internal SubHeader when used within Admin screen
  */
 export default function ResourceDashboard({ externalSearchTerm = "", hideSubHeader = false }) {
+  // No granular delete_access for resources in permissions structure — use role-based check
+  // Resource Dashboard is only visible to users with add_access.tools (NavBar gating)
+  // Guest users cannot delete; all other roles can
+  const role = getRoleFromToken();
+  const isGuest = role.toLowerCase() === "guest" || getUserNameFromToken() === "Guest";
+  const isAdmin = role.toLowerCase() === "admin";
+  const canDeleteResources = !isGuest;
+
   const [accessKeys, setAccessKeys] = useState([]);
   const [visibleData, setVisibleData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -41,6 +52,8 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
   const [usersLoading, setUsersLoading] = useState(false);
   const [accessKeyUsers, setAccessKeyUsers] = useState([]);
   const [selectedKeyForUsers, setSelectedKeyForUsers] = useState(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const listContainerRef = useRef(null);
   const pageRef = useRef(1);
   const isLoadingRef = useRef(false);
@@ -228,27 +241,44 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
     }
   };
 
+  // Refactored: Use array payload and bulk endpoint for access key delete
+  const deleteAccessKeys = async (accessKeys = []) => {
+    if (!Array.isArray(accessKeys) || accessKeys.length === 0) {
+      throw new Error("At least one access key is required");
+    }
+    const apiUrl = APIs.RD_DELETE_ACCESS_KEY.replace(/\/$/, "");
+    const payload = { access_keys: accessKeys };
+    return await deleteData(apiUrl, payload);
+  };
+
   // Handle delete click - directly delete without confirmation (Card component has built-in confirmation)
   const handleDeleteClick = async (cardName, item) => {
-    console.log("Delete clicked:", cardName, item);
     const accessKey = item.access_key || item.name || cardName;
-
     if (!accessKey) {
-      addMessage("Unable to delete - access key not found", "error");
       return;
     }
-
+    // Creator cannot delete their own access key
+    const creatorEmail = (item.created_by || "").trim().toLowerCase();
+    const currentUserEmail = getEmailFromToken().trim().toLowerCase();
+    if (creatorEmail && currentUserEmail && creatorEmail === currentUserEmail) {
+      addMessage("You cannot delete an access key that you created.", "error");
+      return;
+    }
     try {
-      const apiUrl = `${APIs.RD_DELETE_ACCESS_KEY}${encodeURIComponent(accessKey)}`;
-      await deleteData(apiUrl);
-      addMessage("Access key deleted successfully", "success");
+      // Use the bulk endpoint for single or multiple deletes
+      const response = await deleteAccessKeys([accessKey]);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
       // Refresh the list
       isLoadingRef.current = false;
       fetchAccessKeys(1, "");
     } catch (error) {
-      console.error("Error deleting access key:", error);
-      const errorMessage = extractErrorMessage(error).message || "Failed to delete access key";
-      addMessage(errorMessage, "error");
+      // silent catch
     }
   };
 
@@ -332,6 +362,49 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
   // Handle create button click
   const handleCreateClick = () => {
     setShowCreateModal(true);
+  };
+
+  // Multi-select state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: visibleData, idKey: "access_key" });
+
+  // Bulk delete handler — single API call
+  const handleBulkDeleteKeys = async () => {
+    if (multiSelectIds.length === 0) return;
+    setBulkDeleteLoading(true);
+
+    try {
+      const loggedInUserEmail = getEmailFromToken();
+      const departmentName = getDepartmentFromToken();
+      const payload = {
+        access_keys: multiSelectIds,
+        department_name: departmentName,
+        created_by: loggedInUserEmail,
+      };
+      const response = await deleteData(APIs.RD_DELETE_ACCESS_KEY.replace(/\/$/, ""), payload);
+
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch {
+      // silent catch
+    }
+    clearMultiSelection();
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    isLoadingRef.current = false;
+    fetchAccessKeys(1, "");
   };
 
   // Handle create access key submission
@@ -452,8 +525,10 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
                 contextType="resource"
                 showCreateCard={false}
                 onCreateClick={handleCreateClick}
-                showCheckbox={false}
-                showDeleteButton={true}
+                showCheckbox={canDeleteResources && isAdmin}
+                onSelectionChange={handleMultiSelectChange}
+                selectedIds={multiSelectIds}
+                showDeleteButton={canDeleteResources}
                 className="resource-cards"
               />
             )}
@@ -490,6 +565,12 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
             showPlusButton={true}
             onPlusClick={handleCreateClick}
             plusButtonLabel="New Access Key"
+            showSelectAll={canDeleteResources && isAdmin && visibleData.length > 1}
+            isAllSelected={isAllSelected}
+            isPartiallySelected={isPartiallySelected}
+            onSelectAll={handleSelectAll}
+            selectedCount={multiSelectCount}
+            onDeleteSelected={canDeleteResources && isAdmin ? () => setShowBulkDeleteModal(true) : null}
           />
 
           <SummaryLine visibleCount={visibleData.length} totalCount={totalCount} />
@@ -510,8 +591,11 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
                 contextType="resource"
                 showCreateCard={false}
                 onCreateClick={handleCreateClick}
-                showCheckbox={false}
-                showDeleteButton={true}
+                showCheckbox={canDeleteResources && isAdmin}
+                onSelectionChange={handleMultiSelectChange}
+                selectedIds={multiSelectIds}
+                idKey="access_key"
+                showDeleteButton={canDeleteResources}
                 className="resource-cards"
               />
             )}
@@ -536,6 +620,14 @@ export default function ResourceDashboard({ externalSearchTerm = "", hideSubHead
             )}
           </div>
         </div>
+      )}
+
+      {showBulkDeleteModal && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete ${multiSelectCount} selected access key(s)? This action cannot be undone.`}
+          onConfirm={handleBulkDeleteKeys}
+          setShowConfirmation={setShowBulkDeleteModal}
+        />
       )}
     </>
   );

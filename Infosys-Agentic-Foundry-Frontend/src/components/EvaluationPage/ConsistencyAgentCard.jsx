@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { getRoleFromToken } from "../../utils/jwtUtils";
 import styles from "../../css_modules/AvailableAgents.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { APIs } from "../../constant";
@@ -35,17 +36,23 @@ const ConsistencyAgentCard = ({ agent, onDelete, onEdit, onScore, isLoading, isL
     }
     setLoading(true);
     try {
-      const endpoint = `${APIs.CONSISTENCY_DELETE_AGENT}${agenticId}`;
-      const response = await deleteData(endpoint);
-      if (response && (response.status === 200 || response.status === "success" || response.deleted)) {
-        addMessage(response.message || "Agent deleted successfully!", "success");
-        setIsDeleteConfirm(false);
-        if (typeof onDelete === "function") {
-          await onDelete(agent);
+      const isAdmin = getRoleFromToken().toLowerCase() === "admin";
+      const payload = { agentic_application_ids: [agenticId], is_admin: isAdmin };
+      const response = await deleteData(APIs.CONSISTENCY_DELETE_AGENT, payload);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
         }
       }
+      setIsDeleteConfirm(false);
+      if (typeof onDelete === "function") {
+        await onDelete(agent);
+      }
     } catch (error) {
-      addMessage("Error during delete: " + (error?.message || error), "error");
+      const errorMsg = error?.response?.data?.detail || error?.response?.data?.message || error?.message;
+      if (errorMsg) addMessage(errorMsg, "error");
     } finally {
       setLoading(false);
     }

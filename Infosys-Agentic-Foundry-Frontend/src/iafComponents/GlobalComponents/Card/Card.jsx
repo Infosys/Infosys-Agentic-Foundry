@@ -5,8 +5,8 @@ import Description from "../Description";
 import Category from "../Type";
 import SVGIcons from "../../../Icons/SVGIcons";
 import DeleteModal from "../../../components/commonComponents/DeleteModal";
-import Cookies from "js-cookie";
 import { card_config } from "../../../constant";
+import { getDepartmentFromToken, getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../../utils/jwtUtils";
 import "./Card.css";
 
 // Helper function for agent type abbreviations (reusable for any type)
@@ -90,11 +90,14 @@ const Card = ({
   showDescription = true, // NEW: controls rendering of description
   onInfoClick, // NEW: callback for info button click
   buttonIcon, // NEW: icon to display in the button (for icon variant)
+  onShareClick, // NEW: callback for share button click
   enableHeaderClick = false, // NEW: enables header click to toggle checkbox
   onHeaderClick, // NEW: callback for header click
   footerButtonsConfig, // NEW: array of button configs for footer
   contextType = "default", // NEW: context type for default config (agent, tool, default)
   cardDisabled = false, // NEW: shows not-allowed cursor when user lacks access
+  healthStatus = null, // NEW: { status: 'healthy'|'unhealthy'|'unknown'|'checking', toolCount: number }
+  hideActions = false, // NEW: When true, hides all action icons/buttons on cards
 }) => {
   const [checked, setChecked] = useState(isSelected);
   // New states for complex delete functionality
@@ -104,12 +107,13 @@ const Card = ({
   const [errorMessage, setErrorMessage] = useState("");
   // State for simple delete confirmation flip
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [deleteVersion, setDeleteVersion] = useState("");
 
   // Get user info from cookies
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
-  const role = Cookies.get("role");
-  const loggedInDepartment = Cookies.get("department") || "";
+  const loggedInUserEmail = getEmailFromToken();
+  const userName = getUserNameFromToken();
+  const role = getRoleFromToken();
+  const loggedInDepartment = getDepartmentFromToken();
 
   // Determine department badge variant
   const getDepartmentBadgeVariant = () => {
@@ -132,20 +136,32 @@ const Card = ({
   }, [isSelected]);
 
   // Determine effective footer buttons config with unified logic
+  // When hideActions is true, suppress all action buttons
   let effectiveFooterButtons = footerButtonsConfig;
-  if (!effectiveFooterButtons) {
+  if (hideActions) {
+    effectiveFooterButtons = [];
+  } else if (!effectiveFooterButtons) {
     // Build from individual props if no config provided
     // Always respect explicit prop values - add buttons only when their prop is true
     effectiveFooterButtons = [];
     if (showDeleteButton) effectiveFooterButtons.push({ type: "delete", visible: true });
+    // Share icon only for admin role AND items from the logged-in user's department
+    const isAdminRole = role && role.toLowerCase() === "admin";
+    const isSameDepartment = loggedInDepartment && cardDepartment && cardDepartment.toLowerCase() === loggedInDepartment.toLowerCase();
+    if (typeof onShareClick === "function" && isAdminRole && isSameDepartment) effectiveFooterButtons.push({ type: "share", visible: true });
     if (showEditButton) effectiveFooterButtons.push({ type: "edit", visible: true });
     if (showChatButton) effectiveFooterButtons.push({ type: "chat", visible: true });
     if (showbutton) effectiveFooterButtons.push({ type: "view", visible: true });
     // Only fall back to contextType defaults if NO button props were explicitly handled
     // This ensures permission-based props (showDeleteButton=false) are respected
-    if (effectiveFooterButtons.length === 0 && !onDeleteClick && !onEditClick && !onButtonClick && !onChatClick) {
+    if (effectiveFooterButtons.length === 0 && !onDeleteClick && !onEditClick && !onButtonClick && !onChatClick && !onShareClick) {
       effectiveFooterButtons = card_config[contextType]?.footerButtons || card_config.default.footerButtons;
     }
+  } // closes the else-if (!effectiveFooterButtons) block
+
+  // When card is checked/selected, hide delete buttons on this card
+  if (checked && effectiveFooterButtons) {
+    effectiveFooterButtons = effectiveFooterButtons.filter((btn) => btn.type !== "delete");
   }
 
   // Updated for CheckBox component signature
@@ -193,17 +209,19 @@ const Card = ({
   const handleDeleteCancel = (e) => {
     e.stopPropagation();
     setShowDeleteConfirmation(false);
+    setDeleteVersion("");
   };
 
   const handleDeleteConfirm = (e) => {
     e.stopPropagation();
-    // Call the parent's delete callback with both cardName and cardData
+    // Call the parent's delete callback with cardName and cardData including selected version
     if (onDeleteClick) {
-      onDeleteClick(cardName, cardData);
+      onDeleteClick(cardName, { ...cardData, _deleteVersion: deleteVersion || null });
     }
     // Reset state after a brief delay to show the action
     setTimeout(() => {
       setShowDeleteConfirmation(false);
+      setDeleteVersion("");
     }, 300);
   };
 
@@ -213,6 +231,15 @@ const Card = ({
     }
     if (onEditClick) {
       onEditClick(cardData || { name: cardName, description: cardDescription });
+    }
+  };
+
+  const handleShareClick = (e) => {
+    if (e && typeof e.stopPropagation === "function") {
+      e.stopPropagation();
+    }
+    if (onShareClick) {
+      onShareClick(cardData);
     }
   };
 
@@ -274,6 +301,13 @@ const Card = ({
         className: "edit-button",
         handler: handleEditClick,
         visible: showEditButton,
+      },
+      share: {
+        icon: "share",
+        title: "Share",
+        className: "share-button",
+        handler: handleShareClick,
+        visible: typeof onShareClick === "function",
       },
     };
     const config = buttonConfigs[button.type] || {};
@@ -400,7 +434,7 @@ const Card = ({
 
       <div className={`card-container ${showDeleteConfirmation && !isListView ? "flipped" : ""}`}>
         <div
-          className={`card card-with-checkbox ${customLayout !== "default" ? `card-layout-${customLayout}` : ""} ${cardDisabled ? "not-allowed-card" : onCardClick || (isRecycleMode && onEditClick) ? "clickable-card" : ""
+          className={`card card-with-checkbox ${customLayout !== "default" ? `card-layout-${customLayout}` : ""} ${onCardClick || (isRecycleMode && onEditClick) ? "clickable-card" : "non-clickable-card"
             } ${isDeleteClicked ? "delete-mode" : ""} ${isRecycleMode ? "recycle-mode" : ""} ${isUnusedSection ? "unused-section" : ""} ${showDeleteConfirmation && isListView ? "show-inline-delete-confirmation" : ""
             } ${checked ? "selected" : ""}`}
           onClick={handleCardClick}
@@ -458,6 +492,14 @@ const Card = ({
                     />
                   )}
                   <Header name={getDisplayName()} onHeaderClick={handleHeaderClick} enableHeaderClick={enableHeaderClick} />
+                  {/* Version count badge - inline with tool name */}
+                  {(contextType === "tool" || contextType === "default") && (cardData?.version_count > 0) && (
+                    <div className="card-version-badge" title={`${cardData.version_count} version${cardData.version_count !== 1 ? "s" : ""}`}>
+                      <SVGIcons icon="layers" width={12} height={12} color="currentColor" />
+                      <span className="card-version-count">{cardData.version_count}</span>
+                      <span className="card-version-label">{cardData.version_count === 1 ? "version" : "versions"}</span>
+                    </div>
+                  )}
                   {showcheckbox && checkboxPosition === "right" && (
                     <CheckBox
                       checked={checked}
@@ -542,6 +584,41 @@ const Card = ({
                       {cardDepartment}
                     </span>
                   )}
+                  {/* Health Status Indicator for Remote Servers */}
+                  {healthStatus && (
+                    <span
+                      className={`health-status-wrapper health-status-${healthStatus.status}`}
+                      title={
+                        healthStatus.status === "healthy"
+                          ? `Server reachable (${healthStatus.toolCount} tool${healthStatus.toolCount !== 1 ? "s" : ""})`
+                          : healthStatus.status === "unhealthy"
+                            ? "Server unreachable"
+                            : healthStatus.status === "checking"
+                              ? "Checking server status..."
+                              : "Status unknown (timeout)"
+                      }
+                    >
+                      <span className={`health-icon ${healthStatus.status}`}>
+                        <SVGIcons
+                          icon={
+                            healthStatus.status === "healthy"
+                              ? "circle-check"
+                              : healthStatus.status === "unhealthy"
+                                ? "circle-x"
+                                : healthStatus.status === "checking"
+                                  ? "activity-pulse"
+                                  : "circle-x"
+                          }
+                          width={14}
+                          height={14}
+                          color="currentColor"
+                        />
+                      </span>
+                      {healthStatus.status === "healthy" && healthStatus.toolCount > 0 && (
+                        <span className="health-tool-count">{healthStatus.toolCount}</span>
+                      )}
+                    </span>
+                  )}
                   {/* Fixed right-aligned action area for configurable buttons */}
                   <div className="cardActionsContainer">
                     {/* Render buttons in reverse order for right-to-left display */}
@@ -604,10 +681,32 @@ const Card = ({
           <div className="card card-back delete-confirmation-card">
             <div className="delete-confirmation-content">
               <div className="delete-warning-icon">
-                <SVGIcons icon="warnings" width={48} height={48} fill="#dc2626" />
+                <SVGIcons icon="warnings" width={28} height={28} fill="#dc2626" />
               </div>
-              <h3 className="delete-confirmation-title">Delete {contextType === "server" ? "Server" : contextType === "agent" ? "Agent" : contextType === "group" ? "Group" : contextType === "role" ? "Role" : contextType === "department" ? "Department" : contextType === "pipeline" ? "Pipeline" : contextType === "resource" ? "Access Key" : contextType === "user" ? "User" : contextType === "knowledge base" ? "Knowledge Base" : "Tool"}?</h3>
+              <h3 className="delete-confirmation-title">Delete {contextType === "server" ? "Server" : contextType === "agent" ? "Agent" : contextType === "group" ? "Group" : contextType === "role" ? "Role" : contextType === "department" ? "Department" : contextType === "workflow" ? "Workflow" : contextType === "resource" ? "Access Key" : contextType === "user" ? "User" : contextType === "knowledge base" ? "Knowledge Base" : "Tool"}?</h3>
               <p className="delete-confirmation-message">This action cannot be undone.</p>
+
+              {/* Version dropdown for tools with versions */}
+              {(contextType === "tool" || contextType === "default") && cardData?.versions && cardData.versions.length > 0 && (
+                <div className="delete-version-dropdown">
+                  <select
+                    className="delete-version-select"
+                    value={deleteVersion}
+                    onChange={(e) => { e.stopPropagation(); setDeleteVersion(e.target.value); }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="">All Versions</option>
+                    {cardData.versions.map((v, idx) => {
+                      // Support both string versions ("v1") and object versions ({version: "v1", id: "..."})
+                      const label = typeof v === "string" ? v : (v?.version || v?.version_label || `v${idx + 1}`);
+                      const key = typeof v === "string" ? v : (v?.id || v?.version || idx);
+                      return (
+                        <option key={key} value={label}>{label}</option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
 
               <div className="delete-confirmation-actions">
                 <button onClick={handleDeleteCancel} className="delete-cancel-btn">

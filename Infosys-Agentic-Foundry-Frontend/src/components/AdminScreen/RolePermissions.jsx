@@ -11,36 +11,70 @@ const RolePermissions = () => {
       delete: false,
       execute_access: false
     },
-    agents: {
+    Agents: {
       create: false,
       update: false,
       read: false,
       delete: false,
+      execute_access: false,
+      export_agents_access: false
+    },
+    "MCP Servers": {
+      read: false,
+      create: false,
+      update: false,
+      delete: false,
       execute_access: false
     },
-    chat: {
+    Workflows: {
+      read: false,
+      create: false,
+      update: false,
+      delete: false,
+      execute_access: false
+    },
+    Chat: {
       execution_steps_access: false,
       tool_verifier_flag_access: false,
       plan_verifier_flag_access: false,
       evaluation: false
     },
-    vault: {
+    Vault: {
       vault_access: false
     },
     "Data Connectors": {
       data_connector_access: false
+    },
+    "Other Features": {
+      knowledgebase_access: false,
+      evaluation_access: false
     }
   });
 
   // Handle toggle changes
   const handleToggleChange = (category, permission) => {
-    setPermissions(prev => ({
-      ...prev,
-      [category]: {
+    setPermissions(prev => {
+      const newValue = !prev[category][permission];
+      const updatedCategory = {
         ...prev[category],
-        [permission]: !prev[category][permission]
+        [permission]: newValue
+      };
+
+      // When delete is enabled, also enable update
+      if (permission === "delete" && newValue && "update" in updatedCategory) {
+        updatedCategory.update = true;
       }
-    }));
+
+      // When update is disabled, also disable delete
+      if (permission === "update" && !newValue && "delete" in updatedCategory) {
+        updatedCategory.delete = false;
+      }
+
+      return {
+        ...prev,
+        [category]: updatedCategory
+      };
+    });
   };
 
   // Render toggle switch component

@@ -60,6 +60,10 @@ const combineNodeStatuses = (nodes) => {
       if (statusLower.includes("started&completed")) {
         events.push({ type: "start", name: nodeName, toolName: toolNameRaw, originalIndex: i, content: contentVal });
         events.push({ type: "complete", name: nodeName, originalIndex: i, content: contentVal });
+      } else if (statusLower.includes("failed") || statusLower.includes("error")) {
+        // Failed/error status: emit start (if not already open) + failed event
+        events.push({ type: "start", name: nodeName, toolName: toolNameRaw, originalIndex: i, content: contentVal });
+        events.push({ type: "failed", name: nodeName, content: contentVal, originalIndex: i });
       } else if (statusLower.includes("started")) {
         // Include content even for "started" status - content may arrive with the start event
         events.push({ type: "start", name: nodeName, toolName: toolNameRaw, originalIndex: i, content: contentVal });
@@ -128,6 +132,35 @@ const combineNodeStatuses = (nodes) => {
         if (event.content) {
           lastCompletedNode.parsedContents.push(event.content);
         }
+      }
+    } else if (event.type === "failed") {
+      // Handle failed nodes — mark the matching open node as Failed
+      const idx = openStack.findIndex((s) => s.name === event.name);
+      if (idx !== -1) {
+        const failedNode = openStack[idx];
+        failedNode.node.Status = "Failed";
+        if (event.content) {
+          failedNode.node.parsedContents.push(event.content);
+        }
+        lastCompletedNode = failedNode.node;
+        openStack.splice(idx, 1);
+      } else {
+        // No matching open node — create a standalone failed node
+        const newNode = {
+          "Node Name": event.name || "Node",
+          "Tool Name": event.toolName || null,
+          Status: "Failed",
+          parsedContents: event.content ? [event.content] : [],
+          children: [],
+          depth: openStack.length,
+        };
+        if (openStack.length > 0) {
+          const parent = openStack[openStack.length - 1];
+          parent.node.children.push(newNode);
+        } else {
+          result.push(newNode);
+        }
+        lastCompletedNode = newNode;
       }
     } else if (event.type === "complete") {
       const idx = openStack.findIndex((s) => s.name === event.name);
@@ -391,6 +424,7 @@ const TimelineStep = ({ node, index, totalSteps, isLast, expandedNodes, onToggle
   const toolName = node["Tool Name"] || null;
   let rawStatus = typeof node?.Status === "string" ? node.Status : "";
   if (rawStatus === "Started&Completed") rawStatus = "Completed";
+  const isFailed = rawStatus === "Failed";
 
   const contents = Array.isArray(node.parsedContents) ? node.parsedContents : [];
   const hasContent = contents.length > 0;
@@ -453,6 +487,8 @@ const TimelineStep = ({ node, index, totalSteps, isLast, expandedNodes, onToggle
         <div className={`${styles.timelineCircle} ${styles.timelineCircleSmall} ${isLast && isStreaming ? styles.timelineCircleActive : ""}`}>
           {isLast && isStreaming ? (
             <span className={styles.timelineSpinner} aria-hidden="true" />
+          ) : isFailed ? (
+            <span className={`${styles.timelineDot} ${styles.timelineDotFailed}`} aria-hidden="true" />
           ) : (
             <span className={styles.timelineDot} aria-hidden="true" />
           )}
@@ -468,7 +504,7 @@ const TimelineStep = ({ node, index, totalSteps, isLast, expandedNodes, onToggle
 
         {/* Status and Chevron on right side */}
         <div className={styles.timelineRight}>
-          <span className={`${styles.timelineStatus} ${rawStatus === "Completed" ? styles.statusCompleted : rawStatus === "Started" ? styles.statusStarted : ""}`}>
+          <span className={`${styles.timelineStatus} ${isFailed ? styles.statusFailed : rawStatus === "Completed" ? styles.statusCompleted : rawStatus === "Started" ? styles.statusStarted : ""}`}>
             {rawStatus || "Completed"}
           </span>
           {/* Hide chevron in showNamesOnly mode */}

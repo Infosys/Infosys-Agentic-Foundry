@@ -490,9 +490,13 @@
 
 .copiedText {
   position: absolute;
-  top: 16px;
+  top: 6px;
   right: 8px;
   font-size: 12px;
+  background: var(--card-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  z-index: 1107;
   visibility: hidden;
   opacity: 0;
   transition:
@@ -663,6 +667,166 @@
 .codeEditorWrapper > button,
 .codeEditorWrapper > .iconGroup {
   z-index: 1105;
+}
+
+/* Remote MCP endpoint row: same icon strip as code snippet (info → play → copy) but inline, not absolute */
+.remoteEndpointRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  position: relative;
+}
+
+.remoteEndpointFlexInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.remoteEndpointIconGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.remoteEndpointIconGroup .infoIcon,
+.remoteEndpointIconGroup .playIcon,
+.remoteEndpointIconGroup .copyIcon {
+  position: static;
+  top: auto;
+  right: auto;
+  left: auto;
+}
+
+/* ── Custom Headers – collapsible key-value rows ── */
+.optionalLabel {
+  font-weight: 400;
+  font-size: 0.85em;
+  color: var(--text-secondary, #6b7280);
+  margin-left: 4px;
+}
+
+.headersToggleRow {
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+  gap: 4px;
+}
+
+.headersToggleBtn {
+  background: none;
+  border: none;
+  color: var(--primary, #1976d2);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: opacity 0.15s;
+}
+
+.headersToggleBtn:hover {
+  opacity: 0.8;
+}
+
+.headersToggleBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.headersCard {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 8px;
+  background: var(--card-bg, #fafbfc);
+}
+
+.headersCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.headersCardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #222);
+}
+
+.headersInfoBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary, #6b7280);
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+
+.headersInfoBtn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.headersRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.headersNameInput {
+  flex: 0 0 45%;
+  min-width: 0;
+}
+
+.headersValueInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.headersRemoveBtn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  color: var(--text-secondary, #6b7280);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.headersRemoveBtn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.headersAddBtn {
+  background: none;
+  border: none;
+  color: var(--primary, #1976d2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 0;
+  margin-top: 4px;
+  transition: opacity 0.15s;
+}
+
+.headersAddBtn:hover {
+  opacity: 0.8;
+}
+
+.headersErrorText {
+  display: block;
+  color: #ef4444;
+  font-size: 0.82em;
+  margin-top: 6px;
 }
 
 .codeEditorContainer::-webkit-scrollbar {
@@ -1540,4 +1704,442 @@
 
 :global(:root[data-theme="light"]) .footerToggleLabel {
   color: var(--text-primary);
+}
+
+/* ============================================
+   Version Selector Styles (Code Snippet Area)
+   ============================================ */
+
+/* Inline version dropdown - positioned inside code editor header, left of action icons */
+.versionDropdownInline {
+  position: absolute;
+  top: 33px;
+  right: 108px;
+  z-index: 1200;
+  min-width: 110px;
+  max-width: 170px;
+}
+
+.versionDropdownTrigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: var(--card-bg, rgba(4, 28, 41, 0.5));
+  color: var(--text-primary, #fff);
+  font-size: 11px;
+  font-family: var(--font-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  height: 24px;
+}
+
+.versionDropdownTrigger:hover {
+  border-color: var(--accent);
+  background: rgba(55, 172, 234, 0.08);
+}
+
+.versionDropdownDisabled {
+  opacity: 0.5;
+  cursor: not-allowed !important;
+  border-style: dashed;
+}
+
+.versionDropdownDisabled:hover {
+  border-color: var(--border-color, rgba(255, 255, 255, 0.15));
+  background: var(--card-bg, rgba(4, 28, 41, 0.5));
+}
+
+.versionDropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--card-bg, #1a2332);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  padding: 4px;
+}
+
+.versionDropdownMenu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.versionDropdownMenu::-webkit-scrollbar-thumb {
+  background: var(--accent, #37acea);
+  border-radius: 4px;
+}
+
+.versionDropdownItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.versionDropdownItem:hover {
+  background: rgba(55, 172, 234, 0.12);
+}
+
+.versionDropdownItemActive {
+  background: rgba(55, 172, 234, 0.18);
+  border-left: 2px solid var(--accent, #37acea);
+}
+
+/* ── Rename-on-conflict dialog (recycle bin restore) ── */
+.renameOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(12px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(12px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000003;
+  animation: iafFadeIn var(--transition-fast, 150ms) ease;
+}
+
+.renameDialog {
+  background: var(--card-bg, white);
+  border: 1px solid var(--border-color, transparent);
+  border-radius: var(--radius-sm, 8px);
+  width: min(90%, 440px);
+  padding: 24px;
+  position: relative;
+  box-shadow: var(--shadow-elevated, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
+  animation: iafModalEnter var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  color: var(--header-color, #1a1a1a);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.renameTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--header-color, #1a1a1a);
+}
+
+.renameMessage {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #555);
+}
+
+.renameConflictInfo {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #777);
+  background: var(--hover-background, #f3f4f6);
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+
+.renameFieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.renameActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.versionItemLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+  font-family: var(--font-primary);
+}
+
+.versionItemDate {
+  font-size: 10px;
+  color: var(--content-color, rgba(255, 255, 255, 0.5));
+  font-family: var(--font-primary);
+}
+
+
+
+/* ============================================
+   Update Version Modal Styles
+   ============================================ */
+/* ============ Version Modal ============ */
+
+.vmOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(12px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(12px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000002;
+  animation: iafFadeIn var(--transition-fast, 150ms) ease;
+}
+
+.vmDialog {
+  background: var(--card-bg, white);
+  border: 1px solid var(--border-color, transparent);
+  border-radius: var(--radius-sm, 8px);
+  width: min(90%, 400px);
+  position: relative;
+  box-shadow: var(--shadow-elevated, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
+  animation: iafModalEnter var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  color: var(--header-color, #1a1a1a);
+}
+
+.vmCloseBtn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--hover-background, #f3f4f6);
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--content-color, #999);
+  transition:
+    background-color var(--transition-fast, 150ms) ease,
+    color var(--transition-fast, 150ms) ease;
+}
+
+.vmCloseBtn:hover {
+  background-color: var(--danger, #ef4444);
+  color: white;
+}
+
+.vmContent {
+  padding: 24px 24px 20px;
+}
+
+.vmQuestion {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--header-color);
+  font-family: var(--font-primary);
+  margin: 0 0 16px;
+  line-height: 1.4;
+}
+
+/* Radio buttons in a row */
+.vmRadioRow {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.vmRadioLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--header-color);
+  font-family: var(--font-primary);
+}
+
+.vmRadio {
+  accent-color: var(--accent, #37acea);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Input group shown when Yes is selected */
+.vmInputGroup {
+  margin-top: 16px;
+  animation: vmSlideIn var(--transition-fast, 150ms) ease;
+}
+
+.vmInputLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--content-color);
+  font-family: var(--font-primary);
+  margin-bottom: 6px;
+}
+
+.vmInput {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1.5px solid var(--border-color);
+  background: var(--input-bg, var(--card-bg));
+  color: var(--header-color);
+  font-size: 13px;
+  font-family: var(--font-primary);
+  outline: none;
+  box-sizing: border-box;
+  transition:
+    border-color var(--transition-fast, 150ms) ease,
+    box-shadow var(--transition-fast, 150ms) ease;
+}
+
+.vmInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light, rgba(55, 172, 234, 0.1));
+}
+
+.vmInput::placeholder {
+  color: var(--text-tertiary, var(--content-color));
+}
+
+/* Hint text shown when No is selected */
+.vmHint {
+  font-size: 13px;
+  color: var(--content-color);
+  font-family: var(--font-primary);
+  margin: 14px 0 0;
+  line-height: 1.4;
+}
+
+.vmHint strong {
+  color: var(--header-color);
+  font-weight: 600;
+}
+
+@keyframes vmSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Footer */
+.vmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Light mode overrides */
+:global(:root[data-theme="light"]) .versionDropdownTrigger {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #1a1a1a);
+}
+
+:global(:root[data-theme="light"]) .versionDropdownTrigger:hover {
+  border-color: var(--accent, #025d8a);
+  background: rgba(2, 93, 138, 0.06);
+}
+
+:global(:root[data-theme="light"]) .versionDropdownDisabled {
+  opacity: 0.5;
+}
+
+:global(:root[data-theme="light"]) .versionDropdownDisabled:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: var(--card-bg, #fff);
+}
+
+:global(:root[data-theme="light"]) .versionDropdownMenu {
+  background: var(--card-bg, #fff);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+:global(:root[data-theme="light"]) .versionDropdownItem:hover {
+  background: rgba(2, 93, 138, 0.08);
+}
+
+:global(:root[data-theme="light"]) .versionDropdownItemActive {
+  background: rgba(2, 93, 138, 0.12);
+  border-left-color: var(--accent, #025d8a);
+}
+
+/* Version modal uses CSS variables throughout, so light/dark is automatic.
+   No additional theme overrides needed. */
+
+/* ============ Restore Conflict Dialog (rename*) ============ */
+.renameOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(12px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(12px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000002;
+  animation: iafFadeIn var(--transition-fast, 150ms) ease;
+}
+
+.renameDialog {
+  background: var(--card-bg, white);
+  border: 1px solid var(--border-color, transparent);
+  border-radius: var(--radius-sm, 8px);
+  width: min(90%, 440px);
+  position: relative;
+  box-shadow: var(--shadow-elevated, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
+  animation: iafModalEnter var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  color: var(--header-color, #1a1a1a);
+}
+
+.renameTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--header-color);
+  font-family: var(--font-primary);
+  margin: 0;
+  padding: 20px 24px 0;
+}
+
+.renameMessage {
+  font-size: 13px;
+  color: var(--content-color);
+  font-family: var(--font-primary);
+  margin: 8px 0 0;
+  padding: 0 24px;
+  line-height: 1.5;
+}
+
+.renameFieldGroup {
+  padding: 16px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.renameActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border-color);
 }

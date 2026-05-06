@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import SubHeader from "../commonComponents/SubHeader.jsx";
 import styles from "./KnowledgeBase.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -13,6 +13,9 @@ import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import EmptyState from "../commonComponents/EmptyState.jsx";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
 import KnowledgeBaseForm from "./KnowledgeBaseForm.jsx";
+import ShareModal from "../commonComponents/ShareModal/ShareModal.jsx";
+import useMultiSelect from "../../Hooks/useMultiSelect";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 import { useActiveNavClick } from "../../events/navigationEvents";
 
 // Layout constants for card calculation
@@ -22,6 +25,13 @@ const CARD_GAP = 16;
 const DEBOUNCE_DELAY = 300;
 
 export default function KnowledgeBase() {
+  // No granular delete_access for KB in permissions structure — use role-based check
+  // Guest users cannot delete; all other roles with knowledgebase_access can
+  const role = getRoleFromToken();
+  const isGuest = role.toLowerCase() === "guest" || getUserNameFromToken() === "Guest";
+  const isAdmin = role.toLowerCase() === "admin";
+  const canDeleteKB = !isGuest;
+
   const { calculateDivs } = useToolsAgentsService();
   const { deleteKnowledgeBases } = useKnowledgeBaseService();
   const { fetchData } = useFetch();
@@ -29,7 +39,7 @@ export default function KnowledgeBase() {
   const { handleError, handleApiError, handleApiSuccess } = useErrorHandler();
 
   // User info
-  const loggedInUserEmail = Cookies.get("email");
+  const loggedInUserEmail = getEmailFromToken();
 
   // State
   const [loading, setLoading] = useState(false);
@@ -40,6 +50,12 @@ export default function KnowledgeBase() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [editKbData, setEditKbData] = useState(null);
+
+  // Share modal state
+  const [shareModalData, setShareModalData] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Refs
   const pageRef = useRef(1);
@@ -57,8 +73,6 @@ export default function KnowledgeBase() {
       documents: raw.list_of_documents || [],
       created_by: raw.created_by || "",
       created_on: raw.created_on || "",
-      is_public: raw.is_public || false,
-      shared_with_departments: raw.shared_with_departments || [],
       raw: raw,
     };
   }, []);
@@ -203,35 +217,17 @@ export default function KnowledgeBase() {
     try {
       const response = await deleteKnowledgeBases([item.kb_id || item.id], loggedInUserEmail);
 
-      // Check if any KBs failed to delete (error is in failed_kbs array)
-      if (response?.failed_kbs?.length > 0) {
-        const failedKb = response.failed_kbs[0];
-        const errorMsg = typeof failedKb?.error === "string"
-          ? failedKb.error
-          : "Failed to delete knowledge base. It may be in use by an application.";
-        addMessage(errorMsg, "error");
-        return;
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
       }
-
-      handleApiSuccess(response, {
-        fallbackMessage: `Knowledge Base "${item.name}" deleted successfully`,
-      });
 
       // Refresh the list
       getKnowledgeBases();
     } catch (error) {
-      // Check if backend returned failed_kbs structure in error response (400 status)
-      const failedKbs = error?.response?.data?.detail?.failed_kbs || error?.response?.data?.failed_kbs;
-
-      if (failedKbs?.length > 0) {
-        const failedKb = failedKbs[0];
-        const errorMsg = typeof failedKb?.error === "string"
-          ? failedKb.error
-          : "Failed to delete knowledge base. It may be in use by an application.";
-        addMessage(errorMsg, "error");
-        return;
-      }
-
       handleApiError(error, { context: "KnowledgeBase.handleDeleteClick" });
     }
   };
@@ -246,6 +242,55 @@ export default function KnowledgeBase() {
     setShowUpdateForm(false);
     setEditKbData(null);
   });
+
+  // Multi-select state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: visible, idKey: "kb_id" });
+
+  // Bulk delete handler — single API call
+  const handleBulkDeleteKBs = async () => {
+    if (multiSelectIds.length === 0) return;
+    // Filter out items created by the current user (creator cannot delete own items)
+    const currentEmail = (loggedInUserEmail || "").trim().toLowerCase();
+    const ownItems = visible.filter((item) => multiSelectIds.includes(item.kb_id) && (item.created_by || "").trim().toLowerCase() === currentEmail);
+    const deletableIds = multiSelectIds.filter((id) => {
+      const item = visible.find((d) => d.kb_id === id);
+      return !item || (item.created_by || "").trim().toLowerCase() !== currentEmail;
+    });
+    if (ownItems.length > 0) {
+      addMessage(`${ownItems.length} knowledge base(s) created by you were skipped. You cannot delete your own knowledge bases.`, "error");
+    }
+    if (deletableIds.length === 0) {
+      clearMultiSelection();
+      setShowBulkDeleteModal(false);
+      return;
+    }
+    setBulkDeleteLoading(true);
+    try {
+      const response = await deleteKnowledgeBases(deletableIds, loggedInUserEmail);
+
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch (error) {
+      handleApiError(error, { context: "KnowledgeBase.handleBulkDelete" });
+    }
+    clearMultiSelection();
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    getKnowledgeBases();
+  };
 
   return (
     <>
@@ -262,6 +307,12 @@ export default function KnowledgeBase() {
           onPlusClick={handleCreateClick}
           plusButtonLabel="New Knowledge Base"
           reverseButtons={true}
+          showSelectAll={canDeleteKB && isAdmin && visible.length > 1}
+          isAllSelected={isAllSelected}
+          isPartiallySelected={isPartiallySelected}
+          onSelectAll={handleSelectAll}
+          selectedCount={multiSelectCount}
+          onDeleteSelected={canDeleteKB && isAdmin ? () => setShowBulkDeleteModal(true) : null}
         />
 
         <SummaryLine visibleCount={visible.length} totalCount={totalCount} />
@@ -271,9 +322,12 @@ export default function KnowledgeBase() {
             <DisplayCard1
               data={visible}
               onCardClick={handleCardClick}
-              onDeleteClick={handleDeleteClick}
               onCreateClick={handleCreateClick}
-              showDeleteButton={true}
+              showDeleteButton={false}
+              showCheckbox={canDeleteKB && isAdmin}
+              onSelectionChange={handleMultiSelectChange}
+              selectedIds={multiSelectIds}
+              idKey="kb_id"
               showButton={false}
               showCreateCard={false}
               enableComplexDelete={false}
@@ -283,6 +337,10 @@ export default function KnowledgeBase() {
               contextType="knowledge base"
               className={styles.kbCardsGrid}
               isUnusedSection={true}
+              onShareClick={(item) => {
+                setShareModalData(item);
+                setShowShareModal(true);
+              }}
             />
           )}
 
@@ -335,6 +393,21 @@ export default function KnowledgeBase() {
             kbData={editKbData}
             onClose={handleUpdateFormClose}
             onSave={handleUpdateFormSave}
+          />
+        )}
+
+        <ShareModal
+          show={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          itemData={shareModalData}
+          entityType="knowledge base"
+        />
+
+        {showBulkDeleteModal && (
+          <ConfirmationModal
+            message={`Are you sure you want to delete ${multiSelectCount} selected knowledge base(s)? This action cannot be undone.`}
+            onConfirm={handleBulkDeleteKBs}
+            setShowConfirmation={setShowBulkDeleteModal}
           />
         )}
       </div>

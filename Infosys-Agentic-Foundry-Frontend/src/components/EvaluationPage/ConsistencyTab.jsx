@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { getRoleFromToken } from "../../utils/jwtUtils";
 import styles from "../GroundTruth/GroundTruth.module.css";
 import sliderStyles from "../commonComponents/ResourceSlider/ResourceSlider.module.css";
 import { APIs, agentTypesDropdown } from "../../constant";
@@ -15,10 +16,18 @@ import UploadBox from "../commonComponents/UploadBox";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import EmptyState from "../commonComponents/EmptyState";
+import useMultiSelect from "../../Hooks/useMultiSelect";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox";
+import subHeaderStyles from "../commonComponents/SubHeader.module.css";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
+import { usePermissions } from "../../context/PermissionsContext.jsx";
 
 const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch, selectedAgentTypes = [] }) => {
+  const { hasPermission } = usePermissions();
+  const canDeleteConsistency = typeof hasPermission === "function" ? hasPermission("delete_access.agents") : false;
+  const role = getRoleFromToken();
   // --- State setup for dropdowns and form ---
   const [formData, setFormData] = useState({
     model_name: "",
@@ -29,6 +38,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [models, setModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [agentsListData, setAgentsListData] = useState([]);
   const [agentType, setAgentType] = useState(agentTypesDropdown[0].value);
   const [agentListDropdown, setAgentListDropdown] = useState([]);
@@ -59,6 +69,8 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
   const { executeConsistencyEvaluation } = useConsistencyApi();
   const [availableAgents, setAvailableAgents] = useState([]);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editQueries, setEditQueries] = useState([]);
   const [forceUpdate, setForceUpdate] = useState(0);
@@ -744,35 +756,99 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     setIsEditMode(false);
   };
 
-  // New: Delete handler for ConsistencyAgentCard
+  // Delete handler for consistency agent
   const handleDeleteAgent = async (agent) => {
-    // Standup-style: get the right ID, fallback if needed
-    const agentId = agent?.agent_id || agent?.agentic_application_id;
-    if (!agentId) {
-      addMessage("Agent ID is required for delete.", "error");
-      return;
-    }
+    const agentId = agent?.agentic_application_id || agent?.agent_id;
+    if (!agentId) return;
     setDeleteLoading(true);
     startApiCall();
     try {
-      // DELETE to /evaluation/delete-agent/{agent_id} endpoint
-      const endpoint = `${APIs.CONSISTENCY_DELETE_AGENT}${agentId}`;
-      const response = await deleteData(endpoint);
-      if (response && (response.status === 200 || response.status === "success" || response.deleted)) {
-        addMessage(response.message || "Agent deleted successfully!", "success");
-        await fetchAvailableAgents(); // Always refresh the list after delete
-      } else {
-        addMessage("Failed to delete agent.", "error");
+      const isAdmin = getRoleFromToken().toLowerCase() === "admin";
+      const payload = { agentic_application_ids: [agentId], is_admin: isAdmin };
+      const response = await deleteData(APIs.CONSISTENCY_DELETE_AGENT, payload);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
       }
+      await fetchAvailableAgents();
     } catch (error) {
-      handleApiError(error, {
-        context: "agent_deletion",
-        customMessage: "Error deleting agent",
-      });
+      handleApiError(error, { context: "agent_deletion" });
     } finally {
       endApiCall();
       setDeleteLoading(false);
     }
+  };
+
+  // Client-side filtering of agents based on search value and agent type filter
+  const filteredAvailableAgents = availableAgents.filter((agent) => {
+    const agentName = agent.agentic_application_name || agent.agent_name || "";
+    const agentDescription = agent.agentic_application_description || agent.description || "";
+    const agentType = agent.agentic_application_type || agent.agent_type || agent.type || "";
+
+    // Agent type filter
+    if (selectedAgentTypes.length > 0 && !selectedAgentTypes.includes(agentType)) {
+      return false;
+    }
+
+    // Text search filter
+    if (searchValue && searchValue.trim()) {
+      const searchLower = searchValue.toLowerCase();
+      return agentName.toLowerCase().includes(searchLower) || agentDescription.toLowerCase().includes(searchLower) || agentType.toLowerCase().includes(searchLower);
+    }
+
+    return true;
+  });
+
+  // Mapped data for DisplayCard1 and useMultiSelect (shared to keep name/ID in sync)
+  const mappedFilteredAgents = filteredAvailableAgents.map((agent) => {
+    const resolvedId = agent.agent_id || agent.agentic_application_id || agent.id;
+    return {
+      ...agent,
+      agent_id: resolvedId,
+      agentic_application_id: resolvedId,
+      name: agent.agentic_application_name || agent.agent_name || "Unnamed Agent",
+      description: agent.agentic_application_description || agent.description || "Consistency evaluation agent",
+      type: agent.agentic_application_type || agent.agent_type || agent.type || "agent",
+    };
+  });
+
+  // Multi-select state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: mappedFilteredAgents, idKey: "agent_id" });
+
+  // Bulk delete handler
+  const handleBulkDeleteConsistency = async () => {
+    if (multiSelectIds.length === 0) return;
+    setBulkDeleteLoading(true);
+
+    try {
+      const isAdmin = getRoleFromToken().toLowerCase() === "admin";
+      const payload = { agentic_application_ids: multiSelectIds, is_admin: isAdmin };
+      const response = await deleteData(APIs.CONSISTENCY_DELETE_AGENT, payload);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch {
+      // silent catch
+    }
+    clearMultiSelection();
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    await fetchAvailableAgents();
   };
 
   // --- Fix: Always hit /evaluation/available_agents/ on mount ---
@@ -804,6 +880,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
   const hasLoadedAvailableAgents = useRef(false);
   useEffect(() => {
     const fetchModels = async () => {
+      setModelsLoading(true);
       startApiCall();
       try {
         const data = await fetchData(APIs.GET_MODELS);
@@ -829,6 +906,7 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
         });
         setModels([]);
       } finally {
+        setModelsLoading(false);
         endApiCall();
       }
     };
@@ -1605,26 +1683,6 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
     setSelectedAgentIndex(-1);
   };
 
-  // Client-side filtering of agents based on search value and agent type filter
-  const filteredAvailableAgents = availableAgents.filter((agent) => {
-    const agentName = agent.agentic_application_name || agent.agent_name || "";
-    const agentDescription = agent.agentic_application_description || agent.description || "";
-    const agentType = agent.agentic_application_type || agent.agent_type || agent.type || "";
-
-    // Agent type filter
-    if (selectedAgentTypes.length > 0 && !selectedAgentTypes.includes(agentType)) {
-      return false;
-    }
-
-    // Text search filter
-    if (searchValue && searchValue.trim()) {
-      const searchLower = searchValue.toLowerCase();
-      return agentName.toLowerCase().includes(searchLower) || agentDescription.toLowerCase().includes(searchLower) || agentType.toLowerCase().includes(searchLower);
-    }
-
-    return true;
-  });
-
   return (
     <div className={`consistencyContainer`}>
       {loading && <Loader />}
@@ -1882,7 +1940,31 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
         {/* Always show the agents list */}
         {!isEditMode && !isScoreView && (
           <>
-            <SummaryLine visibleCount={filteredAvailableAgents.length} totalCount={availableAgents.length} itemLabel="agents" />
+            {/* Summary + Delete button row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px" }}>
+              <SummaryLine visibleCount={filteredAvailableAgents.length} totalCount={availableAgents.length} itemLabel="agents" />
+              {multiSelectCount > 0 && canDeleteConsistency && (
+                <IAFButton
+                  type="primary"
+                  className={subHeaderStyles.deleteSelectedBtn}
+                  onClick={() => setShowBulkDeleteModal(true)}
+                  icon={<SVGIcons icon="trash" width={14} height={14} color="#fff" />}
+                >
+                  Delete ({multiSelectCount})
+                </IAFButton>
+              )}
+            </div>
+            {/* Select All row - above cards */}
+            {filteredAvailableAgents.length > 1 && canDeleteConsistency && <div className={subHeaderStyles.selectAllRow}>
+              <label className={subHeaderStyles.selectAllWrapper}>
+                <CheckBox
+                  checked={isAllSelected}
+                  indeterminate={isPartiallySelected}
+                  onChange={handleSelectAll}
+                />
+                <span className={subHeaderStyles.selectAllLabel}>Select All</span>
+              </label>
+            </div>}
             <div className={`listWrapper ${consistencyStyles.listWrapper}`}>
               {initialLoading ? (
                 <div className={consistencyStyles.loaderWrapper}>
@@ -1909,17 +1991,11 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
                 />
               ) : (
                 <DisplayCard1
-                  data={filteredAvailableAgents.map((agent) => ({
-                    ...agent,
-                    agentic_application_id: agent.agentic_application_id || agent.id,
-                    name: agent.agentic_application_name || agent.agent_name || "Unnamed Agent",
-                    description: agent.agentic_application_description || agent.description || "Consistency evaluation agent",
-                    type: agent.agentic_application_type || agent.agent_type || agent.type || "agent",
-                  }))}
+                  data={mappedFilteredAgents}
                   onCardClick={(cardName, item) => handleEditAgent(item)}
                   showButton={true}
                   onButtonClick={(cardName, item) => handleScoreAgent(item)}
-                  showDeleteButton={true}
+                  showDeleteButton={canDeleteConsistency}
                   onDeleteClick={(cardName, item) => handleDeleteAgent(item)}
                   cardNameKey="name"
                   cardDescriptionKey="description"
@@ -1927,10 +2003,21 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
                   contextType="consistency"
                   showCreateCard={false}
                   onCreateClick={handlePlusClick}
-                  idKey="agentic_application_id"
+                  idKey="agent_id"
+                  showCheckbox={canDeleteConsistency}
+                  onSelectionChange={handleMultiSelectChange}
+                  selectedIds={multiSelectIds}
                 />
               )}
             </div>
+
+            {showBulkDeleteModal && (
+              <ConfirmationModal
+                message={`Are you sure you want to delete ${multiSelectCount} selected consistency agent(s)? This action cannot be undone.`}
+                onConfirm={handleBulkDeleteConsistency}
+                setShowConfirmation={setShowBulkDeleteModal}
+              />
+            )}
           </>
         )}
 
@@ -1969,8 +2056,8 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
                               setModelSearchTerm(selectedModel.label);
                             }
                           }}
-                          placeholder="Select Model"
-                          disabled={loading}
+                          placeholder={modelsLoading ? "Loading models..." : "Select Model"}
+                          disabled={loading || modelsLoading}
                           showSearch={true}
                         />
                       </div>
@@ -2252,8 +2339,9 @@ const ConsistencyTab = ({ plusClickTrigger = 0, searchValue = "", onClearSearch,
                                 setModelSearchTerm(selectedModel.label);
                               }
                             }}
-                            placeholder="Select model"
+                            placeholder={modelsLoading ? "Loading models..." : "Select model"}
                             showSearch={true}
+                            disabled={modelsLoading}
                           />
                         </div>
                         <div className="formGroup">

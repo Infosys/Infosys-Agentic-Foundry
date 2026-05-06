@@ -1,0 +1,657 @@
+/* ── List Wrapper Override — flex column for table layout ── */
+.requestsListWrapper {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-content: stretch;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 16px;
+}
+
+/* ── Filter Bar — matches ResponseList.filterContainer ── */
+.filterBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0 0 0;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.filterButton {
+  padding: 6px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--content-color);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-primary);
+}
+
+.filterButton:hover {
+  background: var(--hover-background);
+  border-color: var(--app-primary-color);
+}
+
+.filterButtonActive {
+  background: var(--app-primary-color);
+  border-color: var(--app-primary-color);
+  color: var(--primary-button-color);
+}
+
+.filterButtonActive:hover {
+  background: var(--app-secondary-color);
+}
+
+/* ── Table Container — fills available height, vertical scroll ── */
+.tableContainer {
+  flex: 1;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  min-height: 0;
+  max-height: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, var(--border)) var(--scrollbar-track, transparent);
+}
+
+.tableContainer::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.tableContainer::-webkit-scrollbar-track {
+  background: var(--scrollbar-track, transparent);
+}
+
+.tableContainer::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, var(--border));
+  border-radius: 4px;
+}
+
+/* ── Table — matches AgentLearning.feedbackTable ── */
+.requestsTable {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  table-layout: fixed;
+}
+
+/* Table Header */
+.requestsTable thead {
+  background: var(--hover-background);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.requestsTable th {
+  padding: 12px 14px;
+  text-align: center;
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+}
+
+/* Column Widths — fixed widths with ellipsis overflow */
+.thSno {
+  width: 55px;
+  text-align: center;
+}
+
+.thDepartment {
+  width: 15%;
+}
+
+.thRole {
+  width: 10%;
+}
+
+.thStatus {
+  width: 10%;
+  text-align: center;
+}
+
+.thReviewedBy {
+  width: 18%;
+}
+
+.thReviewedAt {
+  width: 16%;
+}
+
+.thRequestedAt {
+  width: 16%;
+}
+
+.thReason {
+  width: 15%;
+}
+
+/* Shared ellipsis truncation for all td content */
+.cellText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* Table Body */
+.requestsTable tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.15s ease;
+}
+
+.requestsTable tbody tr:hover {
+  background: var(--hover-background);
+}
+
+.requestsTable tbody tr:last-child {
+  border-bottom: none;
+}
+
+.requestsTable td {
+  padding: 10px 14px;
+  vertical-align: middle;
+  text-align: center;
+}
+
+/* Cell Styles — all cells use single-line ellipsis */
+.tdSno {
+  text-align: center;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.tdDepartment {
+  font-weight: var(--font-weight-semibold);
+  color: var(--header-color);
+  text-align: center;
+}
+
+.tdRole {
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.tdStatus {
+  text-align: center;
+}
+
+.tdReviewedBy {
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.tdReviewedAt,
+.tdRequestedAt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+.tdReason {
+  color: var(--text-primary);
+  text-align: center;
+}
+
+/* ── Reason cell wrapper — text + expand icon ── */
+.reasonCellWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.rejectionText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #dc2626;
+  font-style: italic;
+  font-size: var(--font-size-xs);
+  max-width: calc(100% - 30px);
+}
+
+/* Expand icon button */
+.expandIconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  color: var(--content-color);
+  flex-shrink: 0;
+}
+
+.expandIconBtn:hover {
+  opacity: 1;
+}
+
+.expandIconBtn svg {
+  fill: var(--content-color);
+  stroke: var(--content-color);
+  color: var(--content-color);
+}
+
+/* ── Status Badge ── */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.statusApproved {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.statusPending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.statusRejected {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* ── Refreshing state ── */
+.refreshing {
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* ==========================================
+   Raise Request Modal
+   Matches app patterns: ExportFilesModal, WarningModal, Workflow Modal
+   Uses global CSS vars & keyframes from index.css
+   ========================================== */
+
+/* Overlay — same as ExportFilesModal / WarningModal */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: var(--backdrop-blur, blur(8px));
+  -webkit-backdrop-filter: var(--backdrop-blur, blur(8px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: iafFadeIn var(--transition-fast, 150ms) ease;
+}
+
+/* Modal Container — matches ExportFilesModal.modalContainer */
+.modalContainer {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg, 20px);
+  width: 90%;
+  max-width: 580px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-elevated, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--border-color, transparent);
+  animation: iafModalEnter var(--transition-normal, 250ms) var(--transition-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  overflow: hidden;
+}
+
+.submitting {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* ── Header — matches ExportFilesModal.modalHeader ── */
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color, var(--border));
+  background: var(--header-bg, transparent);
+  flex-shrink: 0;
+}
+
+.modalHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.modalTitle {
+  font-family: var(--font-secondary, var(--font-primary));
+  font-size: var(--font-size-lg, 18px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Close btn — matches ExportFilesModal.modalCloseBtn */
+.modalCloseBtn {
+  color: var(--header-color);
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm, 8px);
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.modalCloseBtn:hover {
+  background: var(--hover-background);
+}
+
+.modalCloseBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Body ── */
+.modalBody {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Department meta row ── */
+.deptMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.deptMetaText {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--content-color, var(--text-secondary));
+  text-transform: capitalize;
+  letter-spacing: 0.05em;
+}
+
+.clearAllBtn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--app-primary-color);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 8px);
+  transition: background-color var(--transition-fast, 150ms) ease;
+}
+
+.clearAllBtn:hover {
+  background: var(--accent-light, rgba(55, 172, 234, 0.1));
+}
+
+/* ── Selected chips ── */
+.selectedChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  background: var(--hover-background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 16px);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--text-primary);
+  transition: background-color var(--transition-fast, 150ms) ease;
+}
+
+.chip:hover {
+  background: var(--hover-background);
+}
+
+.chipRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-radius: 50%;
+  transition: all var(--transition-fast, 150ms) ease;
+  opacity: 0.6;
+  padding: 0;
+}
+
+.chipRemove:hover {
+  opacity: 1;
+  background: var(--hover-background);
+}
+
+/* ── Department list — matches ExportFilesModal.fileStructureContainer ── */
+.deptList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  height: 250px;
+  padding: 8px;
+  background: var(--input-bg, var(--menu-bg));
+  border: 1px solid var(--border-color, var(--border));
+  border-radius: var(--radius, 16px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, var(--border)) var(--scrollbar-track, transparent);
+}
+
+.deptList::-webkit-scrollbar {
+  width: 5px;
+}
+
+.deptList::-webkit-scrollbar-track {
+  background: var(--scrollbar-track, transparent);
+}
+
+.deptList::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, var(--border));
+  border-radius: 4px;
+}
+
+/* Department row — matches ExportFilesModal.fileItem */
+.deptItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--transition-fast, 150ms) ease;
+  font-family: var(--font-primary);
+  text-align: left;
+  width: 100%;
+}
+
+.deptItem:hover {
+  background: var(--hover-background);
+}
+
+.deptItemSelected {
+  background: var(--accent-light, rgba(55, 172, 234, 0.08));
+}
+
+.deptItemSelected:hover {
+  background: rgba(55, 172, 234, 0.12);
+}
+
+.deptItemDisabled {
+  opacity: var(--disabled-opacity, 0.5);
+  cursor: not-allowed;
+}
+
+.deptItemDisabled:hover {
+  background: transparent;
+}
+
+/* Department name — matches ExportFilesModal.fileName */
+.deptItemName {
+  flex: 1;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Department status labels ── */
+.deptStatusLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-semibold, 600);
+  padding: 3px 10px;
+  border-radius: 20px;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.deptStatusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.deptStatusApproved {
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--success, #16a34a);
+}
+
+.deptStatusPending {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning, #f59e0b);
+}
+
+.deptStatusRejected {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger, #ef4444);
+}
+
+.deptItemSkeleton {
+  padding: 14px 12px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--hover-background);
+}
+
+.deptEmptyMsg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 32px 16px;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm, 14px);
+  color: var(--content-color, var(--text-secondary));
+}
+
+/* ── Footer — matches ExportFilesModal.modalFooter ── */
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color, var(--border));
+  background: var(--card-bg);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.selectedCount {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--content-color, var(--text-secondary));
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .modalContainer {
+    width: 95%;
+    max-height: 90vh;
+  }
+
+  .modalHeader {
+    padding: 12px 16px;
+  }
+
+  .modalBody {
+    padding: 16px;
+  }
+
+  .modalFooter {
+    padding: 12px 16px;
+  }
+}

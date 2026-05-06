@@ -13,6 +13,7 @@ const AgentsEvaluator = ({ onResponse }) => {
   const [model2, setModel2] = useState("");
   const [response, setResponse] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const { addMessage } = useMessage();
   const hasInitialized = useRef(false);
   const { fetchData, postDataStream } = useFetch();
@@ -26,6 +27,7 @@ const AgentsEvaluator = ({ onResponse }) => {
 
   const fetchModels = async () => {
     setLoading(true);
+    setModelsLoading(true);
     try {
       const res = await fetchData(APIs.GET_MODELS);
       if (res.models && Array.isArray(res.models)) {
@@ -48,6 +50,7 @@ const AgentsEvaluator = ({ onResponse }) => {
       addMessage("Failed to fetch models", "error");
     } finally {
       setLoading(false);
+      setModelsLoading(false);
     }
   };
   useEffect(() => {
@@ -106,10 +109,10 @@ const AgentsEvaluator = ({ onResponse }) => {
                     options={modelOptions.filter((opt) => opt.value !== model2).map((opt) => opt.value)}
                     selected={model1}
                     onSelect={(value) => setModel1(value)}
-                    placeholder="Select Model 1"
+                    placeholder={modelsLoading ? "Loading models..." : "Select Model 1"}
                     showSearch={true}
                     width="100%"
-                    disabled={isStreaming}
+                    disabled={isStreaming || modelsLoading}
                   />
                 </div>
                 <div className={styles.modelField}>
@@ -118,10 +121,10 @@ const AgentsEvaluator = ({ onResponse }) => {
                     options={modelOptions.filter((opt) => opt.value !== model1).map((opt) => opt.value)}
                     selected={model2}
                     onSelect={(value) => setModel2(value)}
-                    placeholder="Select Model 2"
+                    placeholder={modelsLoading ? "Loading models..." : "Select Model 2"}
                     showSearch={true}
                     width="100%"
-                    disabled={isStreaming}
+                    disabled={isStreaming || modelsLoading}
                   />
                 </div>
               </div>

@@ -32,7 +32,7 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
     }
 
     const dynamicPermissions = {};
-    
+
     // Define known nested access categories
     const nestedAccessKeys = ["read_access", "add_access", "update_access", "delete_access", "execute_access"];
     const accessLabelMap = {
@@ -42,7 +42,7 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
       delete_access: "delete",
       execute_access: "execute_access",
     };
-    
+
     // Process nested access objects (e.g., read_access: { tools: true, agents: false })
     nestedAccessKeys.forEach((accessType) => {
       if (perms[accessType] && typeof perms[accessType] === "object") {
@@ -56,12 +56,20 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
         });
       }
     });
-    
-    // Process standalone boolean permissions
+
+    // Inject export_agents_access directly into the Agents category
+    if (typeof perms.export_agents_access === "boolean") {
+      if (!dynamicPermissions["Agents"]) {
+        dynamicPermissions["Agents"] = {};
+      }
+      dynamicPermissions["Agents"]["export_agents_access"] = Boolean(perms.export_agents_access);
+    }
+
+    // Process standalone boolean permissions (exclude export_agents_access since it's handled above)
     const standalonePermissions = Object.entries(perms).filter(
-      ([key, value]) => !nestedAccessKeys.includes(key) && typeof value === "boolean"
+      ([key, value]) => !nestedAccessKeys.includes(key) && key !== "export_agents_access" && typeof value === "boolean"
     );
-    
+
     // Dynamic category grouping - can be extended without code changes
     const categoryGroups = {
       // Chat-related permissions
@@ -74,8 +82,13 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
       data_connector_access: "Other Features",
       evaluation_access: "Other Features",
       ground_truth_access: "Other Features",
+      knowledgebase_access: "Other Features",
+      validator_access: "Chat",
+      file_context_access: "Chat",
+      canvas_view_access: "Chat",
+      context_access: "Chat",
     };
-    
+
     standalonePermissions.forEach(([permKey, permValue]) => {
       // Use predefined category or auto-generate from permission name
       let categoryName = categoryGroups[permKey];
@@ -86,13 +99,13 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
           .replace(/_/g, " ")
           .replace(/\b\w/g, (l) => l.toUpperCase());
       }
-      
+
       if (!dynamicPermissions[categoryName]) {
         dynamicPermissions[categoryName] = {};
       }
       dynamicPermissions[categoryName][permKey] = Boolean(permValue);
     });
-    
+
     return dynamicPermissions;
   }, []);
 
@@ -159,12 +172,12 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
     setPermissions((prev) => {
       const categoryPerms = prev[category] || {};
       const hasRead = "read" in categoryPerms;
-      
+
       // Enforce read-first rule: can't enable other permissions without read
       if (hasRead && permission !== "read" && !categoryPerms.read) {
         return prev;
       }
-      
+
       // If disabling read, disable all permissions in category
       if (permission === "read" && categoryPerms.read) {
         const resetCategory = Object.keys(categoryPerms).reduce((acc, key) => {
@@ -173,13 +186,26 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
         }, {});
         return { ...prev, [category]: resetCategory };
       }
-      
+
+      const newValue = !categoryPerms[permission];
+      const updatedCategory = {
+        ...categoryPerms,
+        [permission]: newValue,
+      };
+
+      // When delete is enabled, also enable update
+      if (permission === "delete" && newValue && "update" in categoryPerms) {
+        updatedCategory.update = true;
+      }
+
+      // When update is disabled, also disable delete
+      if (permission === "update" && !newValue && "delete" in categoryPerms) {
+        updatedCategory.delete = false;
+      }
+
       return {
         ...prev,
-        [category]: {
-          ...categoryPerms,
-          [permission]: !categoryPerms[permission],
-        },
+        [category]: updatedCategory,
       };
     });
   };
@@ -211,6 +237,9 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
         execute_access: "execute_access",
       };
 
+      // Known nested entity categories (only these go into nested access objects)
+      const nestedEntityCategories = ["tools", "agents", "mcp_servers", "workflows"];
+
       // Initialize access objects
       Object.values(accessMapping).forEach((key) => {
         payload[key] = {};
@@ -219,13 +248,14 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
       // Process each category
       Object.entries(permissions).forEach(([category, perms]) => {
         const entityKey = category.toLowerCase();
-        
+        const isNestedEntity = nestedEntityCategories.includes(entityKey);
+
         Object.entries(perms).forEach(([permKey, permValue]) => {
-          if (accessMapping[permKey]) {
-            // This is a nested access permission (Tools/Agents)
+          if (isNestedEntity && accessMapping[permKey]) {
+            // This is a nested access permission (Tools/Agents/MCP Servers/Workflows)
             payload[accessMapping[permKey]][entityKey] = Boolean(permValue);
           } else {
-            // This is a standalone boolean permission
+            // This is a standalone boolean permission (goes at top level)
             payload[permKey] = Boolean(permValue);
           }
         });
@@ -272,6 +302,12 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
       data_connector_access: "Data Connectors",
       evaluation_access: "Evaluation",
       ground_truth_access: "Ground Truth",
+      knowledgebase_access: "Knowledge Base",
+      export_agents_access: "Export Agents",
+      validator_access: "Validator",
+      file_context_access: "File Context",
+      canvas_view_access: "Canvas View",
+      context_access: "Context",
     };
     return labelMap[permission] || permission.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
   };
@@ -283,6 +319,9 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
     const iconMap = {
       tools: "fa-screwdriver-wrench",
       agents: "fa-robot",
+      mcp_servers: "server",
+      "mcp servers": "server",
+      workflows: "fa-project-diagram",
       chat: "nav-chat",
       "other features": "settings",
       vault: "vault-lock",
@@ -364,7 +403,7 @@ const PermissionManagement = ({ selectedRole, userDepartment }) => {
   return (
     <div className={styles.permissionsSectionWrapper}>
       {(loading || saveLoading) && <Loader />}
-      
+
       {loading ? (
         <div className={styles.loadingState}>
           <p>Loading permissions...</p>

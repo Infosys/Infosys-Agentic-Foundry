@@ -357,6 +357,31 @@
   color: var(--app-primary-color);
 }
 
+.timelineStatus.statusFailed {
+  color: #ef4444;
+}
+
+/* Failed step dot - red cross */
+.timelineDot.timelineDotFailed {
+  background: #ef4444;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.35);
+}
+
+.timelineDot.timelineDotFailed::after {
+  width: 8px;
+  height: 8px;
+  border: none;
+  transform: none;
+  background: transparent;
+  content: "✕";
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Chevron */
 .timelineChevron {
   display: flex;

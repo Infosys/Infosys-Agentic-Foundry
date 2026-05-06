@@ -74,7 +74,7 @@ describe("ChatPanel Component", () => {
   const defaultProps = {
     messages: [],
     setMessages: jest.fn(),
-    pipelineId: "test-pipeline-123",
+    workflowId: "test-workflow-123",
     models: ["gpt-4", "gpt-3.5-turbo", "claude-3"],
     onCodeUpdate: jest.fn(),
     onClose: jest.fn(),
@@ -204,7 +204,7 @@ describe("ChatPanel Component", () => {
         expect(mockPostData).toHaveBeenCalledWith(
           expect.any(String),
           expect.objectContaining({
-            pipeline_id: "test-pipeline-123",
+            workflow_id: "test-workflow-123",
             query: "Write a test function",
             model_name: "gpt-4",
           })

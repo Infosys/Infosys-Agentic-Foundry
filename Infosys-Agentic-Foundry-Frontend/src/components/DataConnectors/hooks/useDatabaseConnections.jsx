@@ -4,7 +4,8 @@ import { useDatabase } from "../context/DatabaseContext";
 import { useMessage } from "../../../Hooks/MessageContext";
 import { useDatabases } from "../service/databaseService.js";
 import useFetch from "../../../Hooks/useAxios.js";
-import Cookies from "js-cookie";
+import { getEmailFromToken } from "../../../utils/jwtUtils";
+import { encodePassword } from "../../../utils/encodeUtils";
 
 export const useDatabaseConnections = () => {
   // Use the database context
@@ -189,7 +190,13 @@ export const useDatabaseConnections = () => {
           payload.append("sql_file", "");
           payload.append("database", currentConnectionData.databaseName);
         }
-        payload.append("created_by", Cookies.get("email"));
+        payload.append("created_by", getEmailFromToken());
+        if (currentConnectionData.connection_description) {
+          payload.append("connection_description", currentConnectionData.connection_description);
+        }
+        if (currentConnectionData.blocked_sql_commands && currentConnectionData.blocked_sql_commands.length > 0) {
+          payload.append("blocked_sql_commands", JSON.stringify(currentConnectionData.blocked_sql_commands));
+        }
       } else if (
         (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "postgresql") ||
         (currentConnectionData.databaseType && currentConnectionData.databaseType.toLowerCase() === "mysql") ||
@@ -202,11 +209,17 @@ export const useDatabaseConnections = () => {
         payload.append("port", currentConnectionData.port);
         payload.append("username", currentConnectionData.username);
         // Only append if pwd it's provided and not empty
-        payload.append("user_pwd", currentConnectionData["user_pwd"]);
+        payload.append("user_pwd", encodePassword(currentConnectionData["user_pwd"]));
         payload.append("database", currentConnectionData.databaseName);
         payload.append("flag_for_insert_into_db_connections_table", "1");
         payload.append("sql_file", "");
-        payload.append("created_by", Cookies.get("email"));
+        payload.append("created_by", getEmailFromToken());
+        if (currentConnectionData.connection_description) {
+          payload.append("connection_description", currentConnectionData.connection_description);
+        }
+        if (currentConnectionData.blocked_sql_commands && currentConnectionData.blocked_sql_commands.length > 0) {
+          payload.append("blocked_sql_commands", JSON.stringify(currentConnectionData.blocked_sql_commands));
+        }
       }
       const apiUrl = APIs.CONNECT_DATABASE;
       try {
@@ -255,7 +268,7 @@ export const useDatabaseConnections = () => {
         name: connectionName,
         db_type: databaseType.toLowerCase(),
         flag: flag.toString(),
-        created_by: Cookies.get("email"),
+        created_by: getEmailFromToken(),
       };
       // Make the API call to disconnect
       const response = await postData(APIs.DISCONNECT_DATABASE, payload);
@@ -263,7 +276,7 @@ export const useDatabaseConnections = () => {
         // Refresh active connections to reflect the disconnection
         try {
           await fetchActiveConnections();
-        } catch (error) {}
+        } catch (error) { }
         // Refresh available connections immediately
         await updateConnectionsImmediate();
         // Clear selected connection
@@ -312,7 +325,7 @@ export const useDatabaseConnections = () => {
           payload.append("sql_file", "");
           payload.append("database", connectionData.databaseName || connectionData.database || connectionData.connection_database_name || "");
         }
-        payload.append("created_by", Cookies.get("email"));
+        payload.append("created_by", getEmailFromToken());
       } else if (dbTypeValue === "postgresql" || dbTypeValue === "mysql" || dbTypeValue === "mongodb") {
         payload = new FormData();
         payload.append("name", connectionData.connectionName || connectionData.name || connectionData.connection_name || "");
@@ -324,14 +337,14 @@ export const useDatabaseConnections = () => {
         payload.append("database", connectionData.databaseName || connectionData.database || connectionData.connection_database_name || "");
         payload.append("flag_for_insert_into_db_connections_table", flag);
         payload.append("sql_file", "");
-        payload.append("created_by", Cookies.get("email"));
+        payload.append("created_by", getEmailFromToken());
       }
       const apiUrl = APIs.CONNECT_DATABASE;
       const response = await postData(apiUrl, payload);
       if (response) {
         try {
           await fetchActiveConnections();
-        } catch {}
+        } catch { }
         await updateConnectionsImmediate();
         addMessage(response.message, "success");
         setIsConnected(flag === "1");
@@ -357,7 +370,7 @@ export const useDatabaseConnections = () => {
         payload.append("username", "");
         payload.append("user_pwd", "");
         payload.append("flag_for_insert_into_db_connections_table", "0");
-        payload.append("created_by", Cookies.get("email"));
+        payload.append("created_by", getEmailFromToken());
         if (connection.uploaded_file) {
           payload.append("sql_file", connection.uploaded_file);
           payload.append("database", "");
@@ -381,7 +394,7 @@ export const useDatabaseConnections = () => {
         payload.append("database", connection.connection_database_name);
         payload.append("flag_for_insert_into_db_connections_table", "0");
         payload.append("sql_file", "");
-        payload.append("created_by", Cookies.get("email"));
+        payload.append("created_by", getEmailFromToken());
       }
       // Basic validation (skip for FormData)
       if (!(payload instanceof FormData) && (isNaN(payload.port) || payload.port <= 0)) {
@@ -429,12 +442,12 @@ export const useDatabaseConnections = () => {
           // Refresh active connections to show the newly activated connection
           try {
             await fetchActiveConnections();
-          } catch (error) {}
+          } catch (error) { }
 
           // Refresh available connections to update the dropdown immediately
           try {
             await updateConnectionsImmediate();
-          } catch (error) {}
+          } catch (error) { }
 
           addMessage(response.message || `Connection "${connection.connection_name}" activated successfully!`, "success");
         } else {
@@ -474,14 +487,14 @@ export const useDatabaseConnections = () => {
         name: connectionName,
         db_type: databaseType.toLowerCase(),
         flag: flag.toString(),
-        created_by: Cookies.get("email"),
+        created_by: getEmailFromToken(),
       };
       const response = await postData(APIs.DISCONNECT_DATABASE, payload);
       if (response) {
         // Refresh active connections to reflect the deactivation
         try {
           await fetchActiveConnections();
-        } catch (error) {}
+        } catch (error) { }
         // Refresh available connections immediately
         await updateConnectionsImmediate();
         // Clear selected connection

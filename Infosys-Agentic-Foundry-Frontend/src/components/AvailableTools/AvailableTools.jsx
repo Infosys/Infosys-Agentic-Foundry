@@ -14,10 +14,15 @@ import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import { useActiveNavClick } from "../../events/navigationEvents";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useAuth } from "../../context/AuthContext";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 import EmptyState from "../commonComponents/EmptyState.jsx";
+import ShareModal from "../commonComponents/ShareModal/ShareModal.jsx";
 import GenerateServerModal from "./GenerateServerModal.jsx";
+import ImportModal from "./ImportModal.jsx";
+import ConflictResolutionModal from "./ConflictResolutionModal.jsx";
 import styles from "../../css_modules/AvailableTools.module.css";
+import useMultiSelect from "../../Hooks/useMultiSelect.js";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 
 const AvailableTools = () => {
   const { loading: permissionsLoading, hasPermission } = usePermissions();
@@ -44,27 +49,49 @@ const AvailableTools = () => {
   const [totalToolsCount, setTotalToolsCount] = useState(0);
   const [hasMore, setHasMore] = useState(true); // track if more pages are available
   const [selectedToolIds, setSelectedToolIds] = useState([]); // Selected tools for generate server
-  const [showGenerateModal, setShowGenerateModal] = useState(false); // Generate server modal
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+
+  // Share modal state
+  const [shareModalData, setShareModalData] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false); // Generate server modal
   const toolListContainerRef = useRef(null);
-  const { fetchData, postData } = useFetch();
+  const { fetchData, postData, deleteData } = useFetch();
   const pageRef = useRef(1);
   const [loader, setLoaderState] = useState(false);
   const isLoadingRef = React.useRef(false);
-  const { getToolsAndValidatorsPaginated, calculateDivs, deleteTool } = useToolsAgentsService();
+  const [exportLoading, setExportLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [pendingImportFile, setPendingImportFile] = useState(null);
+  const [pendingModelName, setPendingModelName] = useState("");
+  const [importResultData, setImportResultData] = useState(null);
+  const { getToolsAndValidatorsPaginated, calculateDivs, exportTools, importTools, importToolsPreview } = useToolsAgentsService();
   // Track validator tools fetched once (backend returns full list without pagination)
   const validatorToolsRef = useRef([]);
   const hasLoadedValidatorsOnce = useRef(false);
   const { handleError } = useErrorHandler();
 
-  // Additional state for Card component functionality
-  const [deleteModal, setDeleteModal] = useState(false);
-  const [toolToDelete, setToolToDelete] = useState(null);
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
-  const role = Cookies.get("role");
+  const loggedInUserEmail = getEmailFromToken();
+  const role = getRoleFromToken();
+  const isAdmin = role?.toLowerCase() === "admin";
 
   // Created By dropdown state
   const [createdBy, setCreatedBy] = useState("All");
+
+  // Multi-select delete state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: visibleData, idKey: "tool_id" });
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Helper to force re-fetch of validator tools on explicit refreshes (e.g. after adding a validator)
   const resetValidatorsCache = useCallback(() => {
@@ -136,7 +163,7 @@ const AvailableTools = () => {
       const { show_tools, show_validators } = getToolTypeParams(typesForSearch);
       // Use createdByToUse if provided, otherwise fall back to state
       const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
-      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : createdByValue === "System" ? "system" : undefined;
       const response = await getToolsAndValidatorsPaginated({
         page: pageNumber,
         limit: divsCount,
@@ -172,7 +199,7 @@ const AvailableTools = () => {
       const { show_tools, show_validators } = getToolTypeParams(toolTypeToUse);
       // Use createdByToUse if provided, otherwise fall back to state
       const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
-      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : createdByValue === "System" ? "system" : undefined;
       const response = await getToolsAndValidatorsPaginated({
         page: pageNumber,
         limit: divsCount,
@@ -296,8 +323,8 @@ const AvailableTools = () => {
       setIsLoadingMore(true);
       let newData = [];
       const { show_tools, show_validators } = getToolTypeParams(selectedToolType);
-      // Pass created_by email when "Me" filter is selected
-      const createdByEmail = createdBy === "Me" ? loggedInUserEmail : undefined;
+      // Pass created_by value based on filter selection
+      const createdByEmail = createdBy === "Me" ? loggedInUserEmail : createdBy === "System" ? "system" : undefined;
       if (searchTerm.trim()) {
         const res = await getToolsAndValidatorsPaginated({
           page: nextPage,
@@ -468,49 +495,6 @@ const AvailableTools = () => {
   if (permissionsLoading) {
     return <Loader />;
   }
-  // read_access guard removed — page always renders; card-level access control
-  // handles clickability and readOnly modal behavior.
-  const handleCardDelete = (toolName, item) => {
-    // Use item directly if provided, otherwise fallback to finding by name
-    const tool = item || visibleData.find((t) => (t.tool_name || t.name) === toolName);
-    if (tool) {
-      if (userName === "Guest") {
-        setDeleteModal(true);
-        setToolToDelete(tool);
-        return;
-      }
-      handleDeleteTool(tool);
-    }
-  };
-  const handleDeleteTool = async (tool) => {
-    if (!tool || (!tool.id && !tool.tool_id)) {
-      addMessage("Cannot delete tool: ID is missing", "error");
-      return;
-    }
-
-    const isAdmin = role && role?.toLowerCase() === "admin";
-    const emailId = userName === "Guest" ? tool.created_by : loggedInUserEmail;
-
-    const data = {
-      user_email_id: emailId,
-      is_admin: isAdmin,
-    };
-
-    try {
-      const toolId = tool.id || tool.tool_id;
-      const response = await deleteTool(data, toolId);
-
-      if (response?.is_delete) {
-        await fetchPaginatedTools(1);
-        addMessage("Tool deleted successfully", "success");
-      } else {
-        addMessage(response?.message || "Failed to delete tool", "error");
-      }
-    } catch (e) {
-      console.error("Delete error:", e);
-      addMessage("Error deleting tool", "error");
-    }
-  };
 
   // Tool selection handlers for Generate Server feature
   const handleToolSelect = (toolName, checked) => {
@@ -524,6 +508,173 @@ const AvailableTools = () => {
   const handleGenerateClick = () => {
     if (selectedToolIds.length === 0) return;
     setShowGenerateModal(true);
+  };
+
+  const handleExportTools = async () => {
+    if (selectedToolIds.length === 0) return;
+    setExportLoading(true);
+    try {
+      const blob = await exportTools(selectedToolIds);
+      if (!blob) throw new Error("Failed to export tools");
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tools_export.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      addMessage(`${selectedToolIds.length} tool${selectedToolIds.length !== 1 ? "s" : ""} exported successfully!`, "success");
+      setSelectedToolIds([]);
+    } catch (err) {
+      const errorMessage = err?.message || "Export failed";
+      addMessage(errorMessage, "error");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleImportTools = async (zipFile, modelName) => {
+    setImportLoading(true);
+    setShowImportModal(false);
+    try {
+      // Step 1: Call import-preview to check for conflicts
+      const previewResponse = await importToolsPreview(zipFile);
+      const previewResult = previewResponse?.result || previewResponse;
+
+      // If preview returned an error object (service catches errors and returns { message })
+      if (previewResult?.message && !previewResult?.tools && !previewResult?.has_conflicts) {
+        const errorDetail = previewResult?.detail || previewResult?.error || "";
+        const fullErrorMsg = errorDetail
+          ? `${previewResult.message} — ${errorDetail}`
+          : previewResult.message;
+        addMessage(fullErrorMsg, "error");
+        setImportLoading(false);
+        return;
+      }
+
+      if (previewResult?.has_conflicts) {
+        // Conflicts found — show conflict resolution modal
+        setPendingImportFile(zipFile);
+        setPendingModelName(modelName);
+        setPreviewData(previewResult);
+        setShowConflictModal(true);
+        setImportLoading(false);
+        return;
+      }
+
+      // No conflicts — proceed directly with import
+      await executeImport(zipFile, modelName, "create_new_tool");
+    } catch (err) {
+      const errorMessage = err?.message || err?.detail || "Import preview failed";
+      addMessage(errorMessage, "error");
+      setImportLoading(false);
+    }
+  };
+
+  // Called when user picks an option in the conflict modal
+  const handleConflictProceed = async (conflictResolution, nameOverrides = null) => {
+    // If user chose "skip", don't call import — just cancel
+    if (conflictResolution === "skip") {
+      setShowConflictModal(false);
+      addMessage("Import skipped by user.", "success");
+      setPendingImportFile(null);
+      setPendingModelName("");
+      setPreviewData(null);
+      return;
+    }
+
+    setShowConflictModal(false);
+    setImportLoading(true);
+    try {
+      await executeImport(pendingImportFile, pendingModelName, conflictResolution, nameOverrides);
+    } finally {
+      // Only clear pending data if previewData wasn't re-set by pending conflicts
+      // executeImport sets new previewData + showConflictModal when has_pending_conflicts
+      // We check importLoading — if still loading, modal was re-opened
+    }
+  };
+
+  // Shared import execution logic
+  const executeImport = async (zipFile, modelName, conflictResolution = "create_new_tool", nameOverrides = null) => {
+    try {
+      const createdBy = getEmailFromToken();
+      const response = await importTools(zipFile, modelName, createdBy, conflictResolution, nameOverrides);
+
+      // If service returned an error object instead of throwing
+      if (response?.message && !response?.status && !response?.result) {
+        addMessage(response.message, "error");
+        return;
+      }
+
+      // Check if validation failed — re-open conflict modal with validation errors
+      const resultData = response?.result || response || {};
+      if (resultData.validation_failed) {
+        const validationErrors = resultData.validation_errors || {};
+        // Build tools array for ConflictResolutionModal from validation errors
+        const toolsFromErrors = Object.entries(validationErrors).map(([toolName, info]) => ({
+          tool_name: info.original_name || toolName,
+          status: "needs_new_name",
+          requires_decision: true,
+          message: info.reason || "Please choose a different name.",
+          validationError: !info.valid ? info.reason : null,
+        }));
+        setPreviewData({
+          tools: toolsFromErrors,
+          has_conflicts: true,
+          conflicts_count: toolsFromErrors.length,
+          validationErrors: validationErrors,
+        });
+        setShowConflictModal(true);
+        setImportLoading(false);
+        addMessage(resultData.message || "Validation failed. Please fix the errors and try again.", "error");
+        return;
+      }
+
+      // Check if there are still pending conflicts (e.g. user entered a duplicate/invalid name)
+      const hasPending = resultData.has_pending_conflicts || response?.has_pending_conflicts;
+      const pendingList = resultData.pending_conflicts || response?.pending_conflicts;
+
+      if (hasPending && pendingList && pendingList.length > 0) {
+        // Re-open the conflict modal — wrap array into the shape the modal expects
+        setPreviewData({
+          tools: pendingList,
+          has_conflicts: true,
+          conflicts_count: pendingList.length,
+        });
+        setShowConflictModal(true);
+        setImportLoading(false);
+        return;
+      }
+
+      // No more conflicts — clear pending state
+      setPendingImportFile(null);
+      setPendingModelName("");
+      setPreviewData(null);
+
+      // Parse import response
+      const result = response?.result || response || {};
+      const imported = result.imported || [];
+      const failedItems = result.failed || [];
+      const mergedToExisting = result.merged_to_existing || [];
+
+      const importedCount = imported.length;
+      const failedCount = failedItems.length;
+      const mergedCount = mergedToExisting.length;
+
+      // Show detailed results in a dialog
+      setImportResultData(result);
+
+      // Refresh tools list to show newly imported / merged tools
+      if (importedCount > 0 || mergedCount > 0) {
+        handleRefresh();
+      }
+    } catch (err) {
+      const errorMessage = err?.message || err?.detail || "Import failed";
+      addMessage(errorMessage, "error");
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   // Check if any selected tool is a validator (validators can't be converted to MCP)
@@ -557,6 +708,42 @@ const AvailableTools = () => {
     }
   };
 
+  // Bulk delete handler for multi-select — single API call
+  const handleBulkDelete = async () => {
+    if (multiSelectIds.length === 0) return;
+    setBulkDeleteLoading(true);
+    const isAdmin = role && role?.toLowerCase() === "admin";
+
+    try {
+      const apiUrl = APIs.DELETE_TOOLS;
+      const payload = { tool_ids: multiSelectIds, is_admin: isAdmin, user_email_id: loggedInUserEmail, version: null };
+      const response = await deleteData(apiUrl, payload);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        } else {
+          addMessage(`${multiSelectIds.length} tool(s) deleted successfully`, "success");
+        }
+      } else if (typeof response === "string") {
+        addMessage(response, "error");
+      }
+    } catch (err) {
+      const errMsg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to delete selected tools. Please try again.";
+      addMessage(errMsg, "error");
+    } finally {
+      clearMultiSelection();
+      setShowBulkDeleteModal(false);
+      setBulkDeleteLoading(false);
+      await fetchPaginatedTools(1);
+    }
+  };
+
   return (
     <>
       {showForm && (
@@ -569,10 +756,10 @@ const AvailableTools = () => {
           fetchPaginatedTools={fetchPaginatedTools}
           hideServerTab={true}
           contextType="tools"
-          readOnly={canReadTools && !canUpdateTools}
+          readOnly={!isAddTool && !canUpdateTools}
         />
       )}
-      {loading && <Loader />}
+      {(loading || exportLoading || importLoading) && <Loader />}
       <div className={"pageContainer"}>
         <SubHeader
           heading={"Tools"}
@@ -597,6 +784,21 @@ const AvailableTools = () => {
           onSecondaryButtonClick={canAddTools ? handleGenerateClick : undefined}
           secondaryButtonDisabled={canAddTools ? (selectedToolIds.length === 0 || hasSelectedValidators) : true}
           secondaryButtonTitle={hasSelectedValidators ? "Validators cannot be converted to MCP" : ""}
+          tertiaryButtonLabel={canAddTools ? "Export" : undefined}
+          onTertiaryButtonClick={canAddTools ? handleExportTools : undefined}
+          tertiaryButtonDisabled={selectedToolIds.length === 0 || exportLoading}
+          tertiaryButtonTitle={selectedToolIds.length === 0 ? "Select tools to export" : ""}
+          quaternaryButtonLabel={canAddTools ? "Import" : undefined}
+          onQuaternaryButtonClick={canAddTools ? () => setShowImportModal(true) : undefined}
+          quaternaryButtonDisabled={importLoading}
+          quaternaryButtonTitle="Import tools from a zip file"
+          showSelectAll={canDeleteTools && isAdmin && visibleData.length > 1}
+          isAllSelected={isAllSelected}
+          isPartiallySelected={isPartiallySelected}
+          onSelectAll={handleSelectAll}
+          selectedCount={multiSelectCount}
+          onDeleteSelected={canDeleteTools && isAdmin ? () => setShowBulkDeleteModal(true) : null}
+          deleteSelectedLabel="Delete"
         />
 
         {/* Display total count summary */}
@@ -605,30 +807,31 @@ const AvailableTools = () => {
           {visibleData?.length > 0 && (
             <DisplayCard1
               data={visibleData}
-              // data={visibleData.map(tool => ({
-              //   ...tool,
-              //   created_by: tool.created_by || userName|| "Unknown"
-              // }))}
-              onCardClick={(canReadTools || canUpdateTools) ? (_cardName, item) => {
+              onCardClick={canReadTools ? (_cardName, item) => {
                 setEditTool(item);
                 setShowForm(true);
                 setIsAddTool(false);
               } : undefined}
-              onDeleteClick={canDeleteTools ? (cardName, item) => handleCardDelete(cardName, item) : undefined}
-              showDeleteButton={canDeleteTools}
               onInfoClick={() => { }}
               cardNameKey="tool_name"
               cardDescriptionKey="tool_description"
-              // cardOwnerKey="created_by"
               cardCategoryKey="type"
               contextType="tool"
               onCreateClick={canAddTools ? handlePlusIconClick : undefined}
               showCreateCard={false}
-              showCheckbox={canAddTools}
-              onSelectionChange={canAddTools ? handleToolSelect : undefined}
-              selectedIds={canAddTools ? selectedToolIds : []}
+              showCheckbox={canDeleteTools || canAddTools}
+              onSelectionChange={(name, checked) => {
+                // Update both multi-select (for delete) and tool select (for MCP conversion)
+                handleMultiSelectChange(name, checked);
+                if (canAddTools) handleToolSelect(name, checked);
+              }}
+              selectedIds={multiSelectIds}
               idKey="tool_id"
-              cardDisabled={!canReadTools && !canUpdateTools}
+              hideActions={!canReadTools}
+              onShareClick={(item) => {
+                setShareModalData(item);
+                setShowShareModal(true);
+              }}
             />
           )}
           {/* Display EmptyState when filters are active but no results */}
@@ -660,6 +863,30 @@ const AvailableTools = () => {
         </div>
       </div>
 
+      {showImportModal && (
+        <ImportModal
+          type="tools"
+          onClose={() => setShowImportModal(false)}
+          onImport={handleImportTools}
+          loading={importLoading}
+        />
+      )}
+
+      {showConflictModal && previewData && (
+        <ConflictResolutionModal
+          previewData={previewData}
+          validationErrors={previewData?.validationErrors || null}
+          onClose={() => {
+            setShowConflictModal(false);
+            setPreviewData(null);
+            setPendingImportFile(null);
+            setPendingModelName("");
+          }}
+          onProceed={handleConflictProceed}
+          loading={importLoading}
+        />
+      )}
+
       {showGenerateModal && (
         <GenerateServerModal
           onClose={() => setShowGenerateModal(false)}
@@ -668,6 +895,32 @@ const AvailableTools = () => {
           selectedCount={selectedToolIds.length}
         />
       )}
+
+      <ShareModal
+        show={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        itemData={shareModalData}
+        entityType="tool"
+      />
+
+      {showBulkDeleteModal && (
+        <ConfirmationModal
+          message={`Deleting the ${multiSelectCount} selected tool(s) will permanently remove all versions associated with them. Do you wish to proceed?`}
+          onConfirm={handleBulkDelete}
+          setShowConfirmation={setShowBulkDeleteModal}
+        />
+      )}
+
+      {importResultData && (
+        <ConfirmationModal
+          message={importResultData.message || "Import complete."}
+          onConfirm={() => setImportResultData(null)}
+          setShowConfirmation={() => setImportResultData(null)}
+          confirmLabel="OK"
+          hideCancel
+        />
+      )}
+
     </>
   );
 };

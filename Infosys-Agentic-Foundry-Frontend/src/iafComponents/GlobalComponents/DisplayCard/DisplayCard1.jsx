@@ -60,6 +60,9 @@ const DisplayCard1 = ({
   selectedIds = [], // NEW: Array of selected item IDs
   idKey = "id", // NEW: Key to use for item ID comparison
   cardDisabled = false, // NEW: shows not-allowed cursor when user lacks access
+  healthStatusMap = {}, // NEW: Map of serverId -> { status, toolCount } for health indicators
+  hideActions = false, // NEW: When true, hides all action icons/buttons on cards (e.g., when read_access is false)
+  onShareClick, // NEW: Callback for share button click
 }) => {
   // Helper function to safely get nested property values
   const getNestedValue = (obj, key) => {
@@ -140,16 +143,7 @@ const DisplayCard1 = ({
       if (value) return value;
     }
 
-    // Check shared_with_departments array (for servers)
-    const sharedDepartments = item?.shared_with_departments || item?.raw?.shared_with_departments;
-    if (Array.isArray(sharedDepartments) && sharedDepartments.length > 0) {
-      // Extract department name from array (could be strings or objects)
-      const firstDept = sharedDepartments[0];
-      if (typeof firstDept === "string") return firstDept;
-      if (typeof firstDept === "object" && firstDept?.department_name) return firstDept.department_name;
-    }
-
-    return "Default";
+    return "";
   };
 
   // Helper function to get card created on date
@@ -198,7 +192,7 @@ const DisplayCard1 = ({
     if (contextType === "group") return "New Group";
     if (contextType === "role") return "New Role";
     if (contextType === "department") return "New Department";
-    if (contextType === "pipeline") return "New Pipeline";
+    if (contextType === "workflow") return "New Workflow";
     if (contextType === "resource") return "New Access Key";
     if (contextType === "user") return "New User";
     if (contextType === "knowledge base") return "New Knowledge Base";
@@ -228,6 +222,8 @@ const DisplayCard1 = ({
           // Check if this item is selected
           const itemId = getNestedValue(item, idKey) || item.id || item.tool_id || item.agentic_application_id;
           const isSelected = selectedIds.includes(itemId);
+          // Get health status for this item (for servers)
+          const healthStatus = healthStatusMap[itemId] || null;
           return (
             <Card
               key={`card-${index}-${item.id || item.tool_id || item.agentic_application_id || index}`}
@@ -245,9 +241,9 @@ const DisplayCard1 = ({
               showChatButton={["group", "role", "department"].includes(contextType) ? false : showChatButton}
               onChatClick={() => onChatClick && onChatClick(cardName, item)}
               showDeleteButton={showDeleteButton}
-              onDeleteClick={() => onDeleteClick && onDeleteClick(cardName, item)}
+              onDeleteClick={onDeleteClick ? (name, cardDataFromCard) => onDeleteClick(name, cardDataFromCard || item) : undefined}
               skipDeleteConfirmation={skipDeleteConfirmation}
-              onCardClick={() => onCardClick && onCardClick(cardName, item)}
+              onCardClick={onCardClick ? () => onCardClick(cardName, item) : undefined}
               // Enhanced functionality props
               showEditButton={showEditButton}
               onEditClick={() => onEditClick && onEditClick(item)}
@@ -271,6 +267,9 @@ const DisplayCard1 = ({
               contextType={contextType}
               footerButtonsConfig={footerButtonsConfig}
               cardDisabled={cardDisabled}
+              healthStatus={healthStatus}
+              hideActions={hideActions}
+              onShareClick={onShareClick ? () => onShareClick(item) : undefined}
             />
           );
         })}

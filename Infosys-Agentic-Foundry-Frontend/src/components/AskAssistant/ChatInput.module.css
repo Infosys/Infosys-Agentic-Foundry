@@ -460,9 +460,11 @@
   border-radius: 12px;
   background: transparent;
   border: none;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
   height: auto;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Wrapper for @ Agent dropdown inside left controls - no border since parent has border */
@@ -860,6 +862,7 @@
   transition: border-color 0.15s, box-shadow 0.15s;
   flex: 1;
   min-height: 38px;
+  min-width: 200px;
   height: auto;
   position: relative;
 }
@@ -1937,9 +1940,21 @@
 /* Inline file chips for uploaded files */
 .filesPreviewInline {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   align-items: center;
+  overflow-x: auto;
+  max-width: 40vw;
+  scrollbar-width: thin;
+}
+
+.filesPreviewInline::-webkit-scrollbar {
+  height: 3px;
+}
+
+.filesPreviewInline::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 
 .fileChipCompact {
@@ -1953,6 +1968,7 @@
   font-size: 11px;
   color: var(--text-primary);
   max-width: 160px;
+  flex-shrink: 0;
 }
 
 .fileChipCompact svg {

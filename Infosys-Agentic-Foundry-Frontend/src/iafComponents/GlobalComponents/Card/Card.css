@@ -415,7 +415,52 @@
   flex: 1;
 }
 
-/* Node count chip for pipeline cards */
+/* Version count badge for tool cards */
+.card-version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(55, 172, 234, 0.15);
+  color: #37acea;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  border: 1px solid rgba(55, 172, 234, 0.3);
+  line-height: 1;
+  pointer-events: auto;
+  user-select: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: auto;
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.card-version-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-width 0.25s ease, opacity 0.2s ease;
+}
+
+.card-version-badge:hover .card-version-label {
+  max-width: 60px;
+  opacity: 1;
+}
+
+:root[data-theme="light"] .card-version-badge {
+  background: rgba(2, 93, 138, 0.1);
+  color: #025d8a;
+  border-color: rgba(2, 93, 138, 0.25);
+}
+
+.card-version-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Node count chip for workflow cards */
 .node-count-chip {
   display: inline-block;
   padding: 2px 14px;
@@ -432,12 +477,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding-top: 10px;
+  padding-top: 6px;
   padding-bottom: 0;
   margin-bottom: 0;
   /* border-top: 1px solid var(--color-border-subtle); */
   font-size: 12px;
   margin-top: auto;
+  flex-shrink: 0;
 }
 
 /* .card-badge {
@@ -461,7 +507,7 @@
 .card-badge {
   position: relative;
   top: 0;
-  padding: 6px 12px;
+  padding: 4px 10px;
   border-radius: 16px;
   border: 1px solid var(--badge-border, #6b72804d);
   background: var(--badge-bg, #6b72801a);
@@ -596,7 +642,9 @@
 /* Icon buttons - unified base with micro-interactions */
 .delete-button,
 .info-button,
-.chat-button {
+.chat-button,
+.share-button,
+.edit-button {
   margin-left: 0;
   width: 32px;
   height: 32px;
@@ -620,7 +668,9 @@
 
 .delete-button:active,
 .info-button:active,
-.chat-button:active {
+.chat-button:active,
+.share-button:active,
+.edit-button:active {
   transform: var(--active-scale, scale(0.92));
 }
 
@@ -676,6 +726,26 @@
 .chat-button svg {
   width: 16px;
   height: 16px;
+}
+
+.share-button {
+  color: var(--content-color);
+}
+
+.share-button:hover {
+  background-color: rgba(107, 114, 128, 0.12);
+  transform: scale(1.1);
+  color: var(--app-primary-color);
+}
+
+.edit-button {
+  color: var(--content-color);
+}
+
+.edit-button:hover {
+  background-color: rgba(107, 114, 128, 0.12);
+  transform: scale(1.1);
+  color: var(--app-primary-color);
 }
 
 /* Clickable card specific styles */
@@ -950,22 +1020,22 @@
   justify-content: center;
   text-align: center;
   width: 100%;
-  gap: 6px;
+  gap: 2px;
 }
 
 .delete-warning-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   background-color: #fff5f5;
   border-radius: 50%;
-  margin-bottom: 8px;
+  margin-bottom: 2px;
 }
 
 .delete-confirmation-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--header-color);
   margin: 0;
@@ -973,16 +1043,59 @@
 }
 
 .delete-confirmation-message {
-  font-size: 14px;
+  font-size: 12px;
   color: #6b7280;
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.3;
+}
+
+/* Version dropdown in delete confirmation */
+.delete-version-dropdown {
+  width: 100%;
+  max-width: 170px;
+  margin-top: 2px;
+}
+
+.delete-version-select {
+  width: 100%;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(55, 172, 234, 0.3);
+  background: var(--input-bg, rgba(255, 255, 255, 0.08));
+  color: var(--header-color, #fff);
+  font-size: 11px;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+  appearance: auto;
+}
+
+.delete-version-select:focus {
+  border-color: #37acea;
+  box-shadow: 0 0 0 2px rgba(55, 172, 234, 0.15);
+}
+
+.delete-version-select option {
+  background: var(--card-bg, #1a2236);
+  color: var(--header-color, #fff);
+}
+
+:root[data-theme="light"] .delete-version-select {
+  border-color: #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+}
+
+:root[data-theme="light"] .delete-version-select option {
+  background: #fff;
+  color: #374151;
 }
 
 .delete-confirmation-actions {
   display: flex;
-  gap: 12px;
-  margin-top: 8px;
+  gap: 10px;
+  margin-top: 4px;
   width: 100%;
   justify-content: center;
 }
@@ -1243,4 +1356,112 @@
 
 .listView .inline-delete-confirm-btn:hover {
   background-color: #b91c1c;
+}
+
+/* ========================================
+   Health Status Indicator Styles
+   ======================================== */
+
+/* Health status wrapper in card footer */
+.health-status-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+/* Health icon base styles */
+.health-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.health-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Healthy state - green */
+.health-status-wrapper.health-status-healthy {
+  background: rgba(22, 163, 74, 0.1);
+  color: #16a34a;
+}
+
+.health-icon.healthy {
+  color: #16a34a;
+}
+
+/* Unhealthy state - red */
+.health-status-wrapper.health-status-unhealthy {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.health-icon.unhealthy {
+  color: #dc2626;
+}
+
+/* Unknown state - gray */
+.health-status-wrapper.health-status-unknown {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+}
+
+.health-icon.unknown {
+  color: #9ca3af;
+}
+
+/* Checking state - pulsing blue */
+.health-status-wrapper.health-status-checking {
+  background: rgba(0, 115, 207, 0.1);
+  color: #0073cf;
+}
+
+.health-icon.checking {
+  color: #0073cf;
+  animation: healthIconPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes healthIconPulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Tool count display */
+.health-tool-count {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Dark theme adjustments */
+:root[data-theme="dark"] .health-status-wrapper.health-status-healthy {
+  background: rgba(22, 163, 74, 0.15);
+}
+
+:root[data-theme="dark"] .health-status-wrapper.health-status-unhealthy {
+  background: rgba(220, 38, 38, 0.15);
+}
+
+:root[data-theme="dark"] .health-status-wrapper.health-status-unknown {
+  background: rgba(107, 114, 128, 0.15);
+}
+
+:root[data-theme="dark"] .health-status-wrapper.health-status-checking {
+  background: rgba(0, 115, 207, 0.15);
 }

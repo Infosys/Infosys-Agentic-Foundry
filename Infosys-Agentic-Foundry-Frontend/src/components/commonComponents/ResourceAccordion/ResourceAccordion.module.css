@@ -168,7 +168,41 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 150px;
+  max-width: 180px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Version tag shown inline after tool name inside the pill */
+.versionTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold, 600);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  color: var(--accent, var(--app-primary-color, #0073cf));
+  background: var(--accent-light, rgba(0, 115, 207, 0.1));
+  border-radius: 8px;
+  white-space: nowrap;
+  line-height: 14px;
+  flex-shrink: 0;
+}
+
+/* Version badge shown next to tool pill */
+.versionBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium, 500);
+  font-family: var(--font-primary, "Inter", sans-serif);
+  color: var(--accent, var(--app-primary-color, #0073cf));
+  background: var(--accent-light, rgba(0, 115, 207, 0.1));
+  border-radius: 10px;
+  white-space: nowrap;
+  line-height: 16px;
 }
 
 /* Remove pill button */
@@ -195,6 +229,18 @@
   width: 10px;
   height: 10px;
   color: var(--muted, #6b7280) !important;
+}
+
+/* Restricted resource pill - no read access */
+.resourcePill.restricted {
+  cursor: not-allowed;
+  opacity: 0.6;
+  pointer-events: auto;
+}
+
+.resourcePill.restricted:hover {
+  border-color: var(--border, #e5e7eb);
+  background: var(--card-bg, #ffffff);
 }
 
 .removePillButton:hover svg {

@@ -479,8 +479,8 @@ const AgentLearning = ({ searchValue = "", selectedAgentTypes = [] }) => {
                     <div className={styles.cellCenter}>
                       <span
                         className={`${styles.statusBadge} ${feedback.status === "approve" ? styles.statusApproved :
-                            feedback.status === "reject" ? styles.statusRejected :
-                              styles.statusPending
+                          feedback.status === "reject" ? styles.statusRejected :
+                            styles.statusPending
                           }`}
                       >
                         {feedback.status === "approve" ? "Approved" :

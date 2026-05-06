@@ -897,3 +897,91 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Show Assistant button - matches nav item styling */
+.navButton {
+  display: flex;
+  gap: var(--spacing-unit);
+  align-items: center;
+  text-decoration: none;
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  text-align: left;
+  color: var(--navbar-icon-color);
+  transition: 
+    background-color var(--transition-fast, 150ms) ease,
+    color var(--transition-fast, 150ms) ease,
+    transform var(--transition-fast, 150ms) ease;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  margin: 0 10px;
+  border-radius: var(--radius);
+}
+
+.navButton:hover {
+  background-color: var(--hover-background);
+  transform: translateX(2px);
+}
+
+.navButton svg {
+  flex-shrink: 0;
+  stroke: var(--navbar-icon-color);
+  color: var(--navbar-icon-color);
+  transition: transform var(--transition-fast, 150ms) ease;
+}
+
+.navButton:hover svg {
+  transform: scale(1.1);
+}
+
+.navButton span {
+  font-family: var(--font-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.3;
+  color: var(--header-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Nav Icon Wrapper (for badge positioning) ── */
+.navIconWrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: normal;
+}
+
+/* Badge with count - always visible */
+.navBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+  box-sizing: border-box;
+}
+
+/* When nav is expanded (hovered), show full badge with count */
+.navCollapsed:hover .nav a .navBadge,
+.nav a .navBadge {
+  top: -6px;
+  right: -8px;
+}

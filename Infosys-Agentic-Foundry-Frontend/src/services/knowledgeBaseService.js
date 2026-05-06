@@ -6,7 +6,7 @@ import { APIs } from "../constant";
  * Provides methods for fetching and managing knowledge bases
  */
 export const useKnowledgeBaseService = () => {
-  const { fetchData, postData, putData, deleteData } = useFetch();
+  const { fetchData, postData, deleteData } = useFetch();
 
   /**
    * Map raw KB data to consistent format
@@ -104,30 +104,12 @@ export const useKnowledgeBaseService = () => {
     return await deleteData(APIs.KB_DELETE, payload);
   };
 
-  /**
-   * Update sharing settings (visibility & department sharing) for a knowledge base
-   * PUT /utility/knowledge-base/{kb_id}/sharing
-   * @param {string} kbId - The knowledge base ID
-   * @param {boolean} isPublic - Whether the KB should be publicly accessible to all departments
-   * @param {string[]} sharedWithDepartments - List of department names to share with
-   * @returns {Promise<Object>} Updated sharing information
-   */
-  const updateKnowledgeBaseSharing = async (kbId, isPublic, sharedWithDepartments = []) => {
-    const url = `${APIs.KB_UPDATE_SHARING}${encodeURIComponent(kbId)}/sharing`;
-    const payload = {
-      is_public: isPublic,
-      shared_with_departments: isPublic ? [] : sharedWithDepartments,
-    };
-    return await putData(url, payload);
-  };
-
   return {
     getKnowledgeBasesSearchByPageLimit,
     getKnowledgeBaseById,
     getKnowledgeBasesByIds,
     getKnowledgeBasesForAgent,
     deleteKnowledgeBases,
-    updateKnowledgeBaseSharing,
   };
 };
 

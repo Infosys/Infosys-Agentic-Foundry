@@ -22,6 +22,7 @@ const DataConnectorsContent = () => {
   const [showManagementModal, setShowManagementModal] = useState(false);
   const [selectedDatabase, setSelectedDatabase] = useState(null);
   const [managementDatabase, setManagementDatabase] = useState(null);
+  const [initialConnectionName, setInitialConnectionName] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
   const [isCrudExecuting, setIsCrudExecuting] = useState(false);
   const [sqlConnections, setSqlConnections] = useState([]);
@@ -40,6 +41,14 @@ const DataConnectorsContent = () => {
     loadAvailableConnections,
   } = useDatabaseConnections();
   const { getActiveMySQLConnections, getActivePostgresConnections, getActiveSQLiteConnections, getActiveMongoConnections, fetchActiveConnections } = useDatabase();
+
+  // Refresh both available connections and active connections (used after modal actions)
+  const refreshConnections = async () => {
+    await Promise.all([
+      loadAvailableConnections(),
+      fetchActiveConnections(),
+    ]);
+  };
 
   // Single useEffect for all initial data fetching - runs only once on mount
   useEffect(() => {
@@ -153,12 +162,14 @@ const DataConnectorsContent = () => {
   const handleRunClick = (database, event) => {
     event.stopPropagation(); // Prevent card click event
     setSelectedDatabase(database);
+    setInitialConnectionName("");
     setShowQueryModal(true);
   };
 
   const handleCrudClick = (database, event) => {
     event.stopPropagation(); // Prevent card click event
     setSelectedDatabase(database);
+    setInitialConnectionName("");
     setShowCrudModal(true);
   };
 
@@ -175,6 +186,37 @@ const DataConnectorsContent = () => {
     setShowManagementModal(false);
     setSelectedDatabase(null);
     setManagementDatabase(null);
+    setInitialConnectionName("");
+    // Refresh connection data so cards reflect any changes
+    refreshConnections();
+  };
+
+  // Called from Manage modal "Run" button per connection row
+  const handleOpenRunFromManage = (connectionName, connType) => {
+    // Close manage modal, then open the appropriate run modal with pre-selected connection
+    setShowManagementModal(false);
+    setInitialConnectionName(connectionName);
+    // Find the database config that matches this connection type
+    const dbConfig = databaseTypes.find((db) => db.id === connType || db.name.toLowerCase() === connType);
+    if (dbConfig) {
+      setSelectedDatabase(dbConfig);
+      if (connType === "mongodb") {
+        setShowCrudModal(true);
+      } else {
+        setShowQueryModal(true);
+      }
+    }
+  };
+
+  // Return from Run modal back to the Manage modal
+  const handleBackToManage = () => {
+    const prevDb = managementDatabase;
+    setShowQueryModal(false);
+    setShowCrudModal(false);
+    setSelectedDatabase(null);
+    setInitialConnectionName("");
+    setManagementDatabase(prevDb);
+    setShowManagementModal(true);
   };
 
   const handleRunQuery = async (queryData) => {
@@ -262,28 +304,18 @@ const DataConnectorsContent = () => {
                   <p className={styles.cardDescription}>{database.description}</p>
                   <div className={styles.cardFooter}>
                     <div className={styles.cardButtons}>
-                      {/* Run button: Show for all databases except MongoDB */}
-                      {database.id !== "mongodb" && (
-                        <>
-                          <IAFButton type="primary" onClick={(e) => handleRunClick(database, e)} className={styles.runbutton}>
-                            Run
-                          </IAFButton>
-                          <IAFButton type="primary" onClick={(e) => handleManagementClick(database, e)} className={styles.manageButtonSpacing}>
-                            Manage
-                          </IAFButton>
-                        </>
+                      {database.id === "mongodb" ? (
+                        <IAFButton type="primary" onClick={(e) => handleCrudClick(database, e)}>
+                          CRUD
+                        </IAFButton>
+                      ) : (
+                        <IAFButton type="primary" onClick={(e) => handleRunClick(database, e)}>
+                          Run
+                        </IAFButton>
                       )}
-                      {/* CRUD and Manage buttons: Show for MongoDB */}
-                      {database.id === "mongodb" && (
-                        <>
-                          <IAFButton type="primary" onClick={(e) => handleCrudClick(database, e)}>
-                            CRUD
-                          </IAFButton>
-                          <IAFButton type="primary" onClick={(e) => handleManagementClick(database, e)} className={styles.manageButtonSpacing}>
-                            Manage
-                          </IAFButton>
-                        </>
-                      )}
+                      <IAFButton type="primary" onClick={(e) => handleManagementClick(database, e)} className={styles.manageButtonSpacing}>
+                        Manage
+                      </IAFButton>
                     </div>
                   </div>
                 </div>
@@ -311,11 +343,13 @@ const DataConnectorsContent = () => {
           sqlConnections={sqlConnections}
           setSqlConnections={setSqlConnections}
           loadingSqlConnections={false}
+          initialConnectionName={initialConnectionName}
+          onBack={initialConnectionName ? handleBackToManage : undefined}
         />
       )}
 
       {/* CRUD Modal */}
-      {showCrudModal && selectedDatabase && <CrudModal database={selectedDatabase} onClose={handleCloseModal} onExecuteCrud={handleExecuteCrud} isExecuting={isCrudExecuting} />}
+      {showCrudModal && selectedDatabase && <CrudModal database={selectedDatabase} onClose={handleCloseModal} onExecuteCrud={handleExecuteCrud} isExecuting={isCrudExecuting} initialConnectionName={initialConnectionName} onBack={initialConnectionName ? handleBackToManage : undefined} />}
 
       {/* Connection Management Modal */}
       {showManagementModal && (
@@ -328,12 +362,9 @@ const DataConnectorsContent = () => {
               : availableConnections
           }
           isLoadingConnections={isLoadingConnections}
-          onDisconnect={hookHandleDisconnect}
-          onActivate={hookHandleActivateConnection}
-          isDisConnecting={isDisConnecting}
-          isActivating={isActivating}
           databaseType={managementDatabase ? managementDatabase.name : null}
-          onDeactivate={hookHandleDeactivate}
+          onOpenRun={handleOpenRunFromManage}
+          onConnectionsChanged={refreshConnections}
         />
       )}
 

@@ -7,14 +7,14 @@ import ConsistencyTab from "./ConsistencyTab";
 import SubHeader from "../commonComponents/SubHeader";
 import SVGIcons from "../../Icons/SVGIcons";
 import useFetch from "../../Hooks/useAxios";
-import { APIs, agentTypesDropdown, PIPELINE_AGENT } from "../../constant";
+import { APIs, agentTypesDropdown, WORKFLOW_AGENT } from "../../constant";
 import PageLayout from "../../iafComponents/GlobalComponents/PageLayout";
 import Loader from "../commonComponents/Loader";
 import styles from "./EvaluationPageNew.module.css";
 
-// Filter out pipeline agent type for Metrics section
+// Filter out workflow agent type for Metrics section
 const metricsAgentTypes = agentTypesDropdown.filter(
-  (type) => type.value !== PIPELINE_AGENT && type.value !== "pipeline"
+  (type) => type.value !== WORKFLOW_AGENT && type.value !== "workflow"
 );
 
 /**
@@ -327,7 +327,7 @@ const EvaluationPageNew = () => {
         onPlusClick={() => setConsistencyPlusTrigger((prev) => prev + 1)}
         showSearch={isConsistencyTab}
         leftContent={headerNav}
-        // Show agent type dropdown for Metrics section (excluding pipeline) and Consistency
+        // Show agent type dropdown for Metrics section (excluding workflow) and Consistency
         showAgentTypeDropdown={isMetricsSection || isConsistencyTab}
         agentTypes={isMetricsSection ? metricsAgentTypes : agentTypesDropdown}
         selectedAgentType={selectedAgentTypes}

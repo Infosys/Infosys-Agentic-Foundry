@@ -7,13 +7,12 @@ import { useMessage } from "../../Hooks/MessageContext";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import useFetch from "../../Hooks/useAxios.js";
 import { APIs } from "../../constant";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import styles from "./KnowledgeBaseForm.module.css";
 import { formatDateTimeWithTimezone } from "../../utils/timeFormatter";
-import Toggle from "../commonComponents/Toggle";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import { useKnowledgeBaseService } from "../../services/knowledgeBaseService";
-import DepartmentSelector from "../commonComponents/DepartmentSelector/DepartmentSelector";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 
 /**
  * KnowledgeBaseForm - Unified component for Create and Update Knowledge Base operations
@@ -27,15 +26,18 @@ import DepartmentSelector from "../commonComponents/DepartmentSelector/Departmen
  */
 const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) => {
   const isCreateMode = mode === "create";
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
-  const loggedInDepartment = Cookies.get("department") || "";
+  const loggedInUserEmail = getEmailFromToken();
+  const userName = getUserNameFromToken();
 
   const { addMessage } = useMessage();
   const { handleApiError, handleApiSuccess } = useErrorHandler();
   const { postData, fetchData } = useFetch();
-  const { updateKnowledgeBaseSharing } = useKnowledgeBaseService();
+  const { deleteKnowledgeBases } = useKnowledgeBaseService();
   const fileInputRef = useRef(null);
+  const isGuest = getRoleFromToken().toUpperCase() === "GUEST";
+  const canDeleteKB = !isGuest;
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const [formData, setFormData] = useState({
     name: kbData?.name || "",
@@ -45,36 +47,6 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
   const [removedDocuments, setRemovedDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-
-  // ============ Is Public & Shared Departments State ============
-  const [isPublic, setIsPublic] = useState(kbData?.is_public || false);
-  const [sharedDepartments, setSharedDepartments] = useState(kbData?.shared_with_departments || []);
-  const [departmentsList, setDepartmentsList] = useState([]);
-  const [departmentsLoading, setDepartmentsLoading] = useState(false);
-
-  // ============ Fetch Departments List ============
-  useEffect(() => {
-    const fetchDepartments = async () => {
-      setDepartmentsLoading(true);
-      try {
-        const response = await fetchData(APIs.GET_DEPARTMENTS_LIST);
-        if (response && Array.isArray(response)) {
-          setDepartmentsList(response.map((dept) => dept.department_name || dept.name || dept));
-        } else if (response?.departments && Array.isArray(response.departments)) {
-          setDepartmentsList(response.departments.map((dept) => dept.department_name || dept.name || dept));
-        } else {
-          setDepartmentsList([]);
-        }
-      } catch (err) {
-        console.error("Failed to fetch departments", err);
-        setDepartmentsList([]);
-      } finally {
-        setDepartmentsLoading(false);
-      }
-    };
-    fetchDepartments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Check if form is valid for submission (used for button disabled state)
   const isFormValid = useMemo(() => {
@@ -162,22 +134,10 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
 
     setLoading(true);
     try {
-      // ============ Handle Sharing Update (Update Mode) ============
-      // In update mode, use the dedicated PUT /utility/knowledge-base/{kb_id}/sharing endpoint
-      if (!isCreateMode && kbData?.kb_id) {
-        try {
-          await updateKnowledgeBaseSharing(kbData.kb_id, isPublic, sharedDepartments);
-        } catch (sharingError) {
-          handleApiError(sharingError, { context: "KnowledgeBaseForm.updateSharing" });
-          setLoading(false);
-          return;
-        }
-      }
-
-      // ============ Update Mode: No new files → sharing-only update is done ============
+      // ============ Update Mode: No new files → nothing to update ============
       if (!isCreateMode && files.length === 0) {
         handleApiSuccess(null, {
-          fallbackMessage: `Knowledge Base "${kbData?.name || formData.name}" sharing settings updated successfully`,
+          fallbackMessage: `Knowledge Base "${kbData?.name || formData.name}" updated successfully`,
         });
 
         if (onSave) {
@@ -187,8 +147,6 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
             documents: existingDocuments,
             created_by: kbData?.created_by || loggedInUserEmail,
             created_on: kbData?.created_on || new Date().toISOString(),
-            is_public: isPublic,
-            shared_with_departments: isPublic ? [] : sharedDepartments,
           });
         }
 
@@ -201,12 +159,6 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
       uploadFormData.append("session_id", `session_${Date.now()}`);
       uploadFormData.append("kb_name", formData.name.trim());
       uploadFormData.append("user_email", loggedInUserEmail);
-
-      // Add is_public and shared_with_departments for access control (create mode)
-      uploadFormData.append("is_public", isPublic);
-      if (!isPublic && sharedDepartments.length > 0) {
-        sharedDepartments.forEach((dept) => uploadFormData.append("shared_with_departments", dept));
-      }
 
       // For update mode, include KB ID and removed documents if available
       if (!isCreateMode && kbData?.kb_id) {
@@ -252,8 +204,6 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
           documents: [...existingDocuments, ...files.map((f) => f.name)],
           created_by: response?.created_by || loggedInUserEmail,
           created_on: response?.created_on || kbData?.created_on || new Date().toISOString(),
-          is_public: isPublic,
-          shared_with_departments: isPublic ? [] : sharedDepartments,
         });
       }
 
@@ -268,31 +218,45 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
     }
   };
 
+  // ============ Delete Knowledge Base from Modal ============
+  const handleDeleteKBFromModal = async () => {
+    const kbId = kbData?.kb_id;
+    if (!kbId) return;
+
+    try {
+      setLoading(true);
+      const response = await deleteKnowledgeBases([kbId], loggedInUserEmail);
+
+      if (response) {
+        const statusMsg = response.status_message || response.message || "Knowledge Base deleted successfully";
+        addMessage(statusMsg, "success");
+      }
+
+      setShowDeleteConfirm(false);
+      setLoading(false);
+      if (onSave) onSave();
+      onClose();
+    } catch (e) {
+      console.error("Delete KB error:", e);
+      addMessage("Failed to delete knowledge base", "error");
+      setLoading(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   const footer = (
     <div className={styles.footerContainer}>
-      {/* Left side: Access Control Toggle */}
-      <div className={styles.footerToggleItem}>
-        <Toggle
-          value={isPublic}
-          onChange={(e) => {
-            const newIsPublic = e.target.checked;
-            setIsPublic(newIsPublic);
-            if (newIsPublic) {
-              // When toggling to public, clear shared departments
-              setSharedDepartments([]);
-            }
-          }}
-        />
-        <span className={styles.footerToggleLabel}>
-          Visible to All Departments
-        </span>
-      </div>
-
       {/* Right side: Action Buttons */}
       <div className={styles.footerButtons}>
         <IAFButton type="secondary" onClick={onClose} disabled={loading}>
           Cancel
         </IAFButton>
+        {/* Delete Button - shown for non-guest roles in update mode */}
+        {!isCreateMode && canDeleteKB && (
+          <IAFButton type="primary" onClick={() => setShowDeleteConfirm(true)} disabled={loading}>
+            Delete
+          </IAFButton>
+        )}
         <IAFButton type="primary" onClick={handleSubmit} disabled={loading}>{/* disabled={loading || !isFormValid} */}
           {isCreateMode ? "Create Knowledge Base" : "Update"}
         </IAFButton>
@@ -305,104 +269,104 @@ const KnowledgeBaseForm = ({ mode = "create", kbData = null, onClose, onSave }) 
     : [{ label: "Created By", value: kbData?.created_by || "Unknown" }];
 
   return (
-    <FullModal
-      isOpen={true}
-      onClose={onClose}
-      title={isCreateMode ? "Create Knowledge Base" : `Edit: ${kbData?.name || "Knowledge Base"}`}
-      loading={loading}
-      headerInfo={headerInfo}
-      footer={footer}
-    >
-      <div className="form">
-        {/* Basic Information - Name and Departments inline */}
-        <div className="formSection">
-          <div className={styles.inlineFormRow}>
-            {/* Name Field - Inline Label and Input */}
-            <div className={styles.nameFieldContainer}>
-              <label className={styles.inlineLabel}>
-                Name <span className="required">*</span>
-              </label>
-              <textarea
-                name="name"
-                className={styles.nameTextarea}
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="Enter knowledge base name"
-                disabled={!isCreateMode}
-                readOnly={!isCreateMode}
-                rows={1}
-              />
+    <>
+      <FullModal
+        isOpen={true}
+        onClose={onClose}
+        title={isCreateMode ? "Create Knowledge Base" : `Edit: ${kbData?.name || "Knowledge Base"}`}
+        loading={loading}
+        headerInfo={headerInfo}
+        footer={footer}
+      >
+        <div className="form">
+          {/* Basic Information - Name and Departments inline */}
+          <div className="formSection">
+            <div className={styles.inlineFormRow}>
+              {/* Name Field - Inline Label and Input */}
+              <div className={styles.nameFieldContainer}>
+                <label className={styles.inlineLabel}>
+                  Name <span className="required">*</span>
+                </label>
+                <textarea
+                  name="name"
+                  className={styles.nameTextarea}
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter knowledge base name"
+                  disabled={!isCreateMode}
+                  readOnly={!isCreateMode}
+                  rows={1}
+                />
+              </div>
             </div>
+          </div>
 
-            {/* Departments - Using DepartmentSelector like Agent/Tool pages */}
-            {!isPublic && (
-              <DepartmentSelector
-                selectedDepartments={sharedDepartments}
-                onChange={setSharedDepartments}
-                departmentsList={departmentsList.filter(dept => dept !== loggedInDepartment)}
-                disabled={false}
-                loading={departmentsLoading}
-              />
+          {/* Documents Section */}
+          <div className="formSection">
+            <label className="label-desc">Documents {isCreateMode && <span className="required">*</span>}</label>
+
+            {/* Existing Documents (Update Mode - read only) */}
+            {!isCreateMode && existingDocuments.length > 0 && (
+              <div className={styles.existingDocuments}>
+                <p className={styles.existingDocsLabel}>Existing Documents ({existingDocuments.length})</p>
+                <div className={styles.documentsList}>
+                  {existingDocuments.map((doc, index) => (
+                    <div key={index} className={styles.documentItem}>
+                      <div className={styles.documentInfo}>
+                        <SVGIcons icon="file-default" width={16} height={16} color="var(--content-color)" />
+                        <span className={styles.documentName}>{doc}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Upload section - only in create mode */}
+            {isCreateMode && (
+              <>
+                <UploadBox
+                  files={files}
+                  isDragging={isDragging}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  onClick={handleUploadClick}
+                  onRemoveFile={handleRemoveFile}
+                  loading={loading}
+                  fileInputId="kb-file-input"
+                  acceptedFileTypes=".pdf,.txt,.md,.doc,.docx"
+                  supportedText="Supported: PDF, TXT, MD, DOC, DOCX"
+                  uploadText="Click to upload"
+                  dragDropText=" or drag and drop"
+                  multiple={true}
+                />
+
+                <input
+                  ref={fileInputRef}
+                  id="kb-file-input"
+                  type="file"
+                  multiple
+                  accept=".pdf,.txt,.md,.doc,.docx"
+                  onChange={handleFileInputChange}
+                  style={{ display: "none" }}
+                />
+              </>
             )}
           </div>
         </div>
+      </FullModal>
 
-        {/* Documents Section */}
-        <div className="formSection">
-          <label className="label-desc">Documents {isCreateMode && <span className="required">*</span>}</label>
-
-          {/* Existing Documents (Update Mode - read only) */}
-          {!isCreateMode && existingDocuments.length > 0 && (
-            <div className={styles.existingDocuments}>
-              <p className={styles.existingDocsLabel}>Existing Documents ({existingDocuments.length})</p>
-              <div className={styles.documentsList}>
-                {existingDocuments.map((doc, index) => (
-                  <div key={index} className={styles.documentItem}>
-                    <div className={styles.documentInfo}>
-                      <SVGIcons icon="file-default" width={16} height={16} color="var(--content-color)" />
-                      <span className={styles.documentName}>{doc}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Upload section - only in create mode */}
-          {isCreateMode && (
-            <>
-              <UploadBox
-                files={files}
-                isDragging={isDragging}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onClick={handleUploadClick}
-                onRemoveFile={handleRemoveFile}
-                loading={loading}
-                fileInputId="kb-file-input"
-                acceptedFileTypes=".pdf,.txt,.md,.doc,.docx"
-                supportedText="Supported: PDF, TXT, MD, DOC, DOCX"
-                uploadText="Click to upload"
-                dragDropText=" or drag and drop"
-                multiple={true}
-              />
-
-              <input
-                ref={fileInputRef}
-                id="kb-file-input"
-                type="file"
-                multiple
-                accept=".pdf,.txt,.md,.doc,.docx"
-                onChange={handleFileInputChange}
-                style={{ display: "none" }}
-              />
-            </>
-          )}
-        </div>
-      </div>
-    </FullModal>
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete "${kbData?.name || "this knowledge base"}"? This action cannot be undone.`}
+          onConfirm={handleDeleteKBFromModal}
+          setShowConfirmation={setShowDeleteConfirm}
+        />
+      )}
+    </>
   );
 };
 

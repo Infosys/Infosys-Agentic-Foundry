@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import Cookies from "js-cookie";
 import styles from "./AgentAssignment.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
 import useFetch from "../../Hooks/useAxios.js";
@@ -11,6 +10,7 @@ import Modal from "./commonComponents/Modal";
 import FormInput from "./commonComponents/FormInput";
 import Table from "./commonComponents/Table";
 import ActionButton from "./commonComponents/ActionButton";
+import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 
 const GroupAgentAssignment = () => {
   const [groups, setGroups] = useState([]);
@@ -64,7 +64,7 @@ const GroupAgentAssignment = () => {
   const { fetchData, postData, putData, deleteData } = useFetch();
 
   // Check if current user is admin (moved to top for consistent use)
-  const userRole = Cookies.get("role");
+  const userRole = getRoleFromToken();
   const isAdmin = userRole === "ADMIN" || userRole === "admin";
 
   // Filtered data based on search terms with safety checks
@@ -76,17 +76,17 @@ const GroupAgentAssignment = () => {
   const filteredUsers =
     Array.isArray(users) && users.length > 0
       ? users.filter((user) => {
-          if (!user) return false;
+        if (!user) return false;
 
-          // Check if user is already selected to avoid duplicates
-          const isAlreadySelected = selectedUsersForGroup.some((selected) => selected.email === user.email || selected.id === user.id);
+        // Check if user is already selected to avoid duplicates
+        const isAlreadySelected = selectedUsersForGroup.some((selected) => selected.email === user.email || selected.id === user.id);
 
-          if (isAlreadySelected) return false;
+        if (isAlreadySelected) return false;
 
-          // Filter by search term
-          const searchableText = `${user.name || ""} ${user.username || ""} ${user.email || ""}`.toLowerCase();
-          return searchableText.includes(userSearchTerm.toLowerCase());
-        })
+        // Filter by search term
+        const searchableText = `${user.name || ""} ${user.username || ""} ${user.email || ""}`.toLowerCase();
+        return searchableText.includes(userSearchTerm.toLowerCase());
+      })
       : [];
 
   const handleAgentDropdownToggle = () => {
@@ -179,8 +179,8 @@ const GroupAgentAssignment = () => {
     setLoading(true);
     try {
       // Get logged-in user's email and role
-      const currentUserEmail = Cookies.get("email");
-      const userRole = Cookies.get("role");
+      const currentUserEmail = getEmailFromToken();
+      const userRole = getRoleFromToken();
 
       if (!currentUserEmail) {
         addMessage("User email not found. Please log in again.", "error");
@@ -290,7 +290,7 @@ const GroupAgentAssignment = () => {
     try {
       let response;
       let source = [];
-      
+
       // Try paginated endpoint first, fallback to GET_DOMAINS
       try {
         const params = [];
@@ -306,7 +306,7 @@ const GroupAgentAssignment = () => {
         console.warn("Paginated endpoint not available, falling back to GET_DOMAINS");
         response = await fetchData(APIs.GET_DOMAINS);
       }
-      
+
       if (!response) return;
 
       // Expected response: { details: [...], total_count, total_pages } or { domains: [...] }
@@ -316,12 +316,12 @@ const GroupAgentAssignment = () => {
         // Apply client-side search if using fallback endpoint
         if (searchTerm && String(searchTerm).trim() !== "") {
           const term = String(searchTerm).toLowerCase().trim();
-          source = source.filter((domain) => 
+          source = source.filter((domain) =>
             (domain.domain_name || "").toLowerCase().includes(term) ||
             (domain.domain_description || "").toLowerCase().includes(term)
           );
         }
-        
+
         // Apply client-side pagination if using fallback endpoint
         const totalCount = response.total_count || response.total || source.length;
         if (!response.total_count && !response.total) {
@@ -329,7 +329,7 @@ const GroupAgentAssignment = () => {
           const startIndex = (pageNumber - 1) * pageSize;
           source = source.slice(startIndex, startIndex + pageSize);
         }
-        
+
         // Map domains to assignment rows for table
         const rows = source.map((domain) => ({
           id: domain.domain_name,
@@ -474,7 +474,7 @@ const GroupAgentAssignment = () => {
       return;
     }
 
-    const currentUserEmail = Cookies.get("email");
+    const currentUserEmail = getEmailFromToken();
     if (!currentUserEmail) {
       addMessage("User email not found. Please log in again.", "error");
       return;
@@ -530,7 +530,7 @@ const GroupAgentAssignment = () => {
       return;
     }
 
-    const currentUserEmail = Cookies.get("email");
+    const currentUserEmail = getEmailFromToken();
     if (!currentUserEmail) {
       addMessage("User email not found. Please log in again.", "error");
       return;

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import TextareaWithActions from "../commonComponents/TextareaWithActions";
-import Cookies from "js-cookie";
+import { getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 
 /**
  * CreateAccessKeyModal Component
@@ -15,8 +15,8 @@ export default function CreateAccessKeyModal({ onClose, onSubmit, loading }) {
     description: ""
   });
   const [errors, setErrors] = useState({});
-  const userName = Cookies.get("userName");
-  const userEmail = Cookies.get("email");
+  const userName = getUserNameFromToken();
+  const userEmail = getEmailFromToken();
 
   const handleChange = (e) => {
     const { name, value } = e.target;

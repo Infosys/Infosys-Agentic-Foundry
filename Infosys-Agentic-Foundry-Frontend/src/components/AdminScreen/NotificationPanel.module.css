@@ -1,0 +1,842 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  z-index: 100000;
+  animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ============================================
+   PANEL — slides in from right
+   ============================================ */
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  max-width: 92vw;
+  height: 100vh;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 100001;
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-lg);
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   HEADER — sticky top bar
+   ============================================ */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--panel-header-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+
+.headerTitle svg {
+  color: var(--accent);
+  stroke: var(--accent);
+}
+
+.headerBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--app-primary-color);
+  border-radius: 11px;
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.refreshBtn,
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refreshBtn:hover,
+.closeBtn:hover {
+  background: var(--hover-background);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.refreshBtn:active,
+.closeBtn:active {
+  transform: scale(0.95);
+}
+
+/* ============================================
+   CONTENT — scrollable area
+   ============================================ */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* ============================================
+   BULK SELECTION BAR
+   ============================================ */
+.bulkBar {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 4%, var(--card-bg));
+  flex-shrink: 0;
+  gap: 10px;
+  animation: fadeIn 0.2s ease;
+}
+
+.bulkBarTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.selectAllLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.selectAllLabel:hover {
+  color: var(--text-primary);
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--app-primary-color, var(--accent));
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* Selected card highlight */
+.requestCardSelected {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent) !important;
+  background: color-mix(in srgb, var(--accent) 5%, var(--secondary-bg)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+.content::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ============================================
+   EMPTY STATE
+   ============================================ */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 72px 24px;
+  color: var(--text-secondary);
+  gap: 6px;
+  text-align: center;
+}
+
+.emptyState svg {
+  opacity: 0.3;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 12px 0 0;
+}
+
+.emptySubtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.retryBtn {
+  margin-top: 14px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--gradient-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.retryBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow);
+}
+
+/* ============================================
+   SPINNER
+   ============================================ */
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--accent-light);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   REQUEST LIST
+   ============================================ */
+.requestList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ============================================
+   REQUEST CARD — glass card style
+   ============================================ */
+.requestCard {
+  background: var(--secondary-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: visible;
+  box-shadow: var(--shadow-card);
+}
+
+/* Subtle top-left glow accent */
+.requestCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60px;
+  height: 60px;
+  background: radial-gradient(
+    circle at top left,
+    var(--glow-color),
+    transparent 70%
+  );
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.requestCard:hover {
+  background: var(--hover-background);
+  border-color: var(--card-hover-border);
+  border-left-color: var(--accent);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
+}
+
+/* Top row: Avatar + Name + Status */
+.requestTop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--gradient-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-glow-primary);
+  letter-spacing: 0.5px;
+}
+
+.requestInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.userName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.1px;
+}
+
+.userEmail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status Badge — pill style */
+.statusBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  text-transform: capitalize;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+.statusPending {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
+}
+
+.statusApproved {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 25%, transparent);
+}
+
+.statusRejected {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+/* Meta info row */
+.requestMeta {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-subtle);
+  position: relative;
+  z-index: 1;
+}
+
+.metaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metaLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.metaValue {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ============================================
+   INLINE ACTION BUTTONS (right side of meta row)
+   ============================================ */
+.inlineActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Approve — green circle icon button */
+.inlineApproveBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid color-mix(in srgb, var(--success) 25%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: var(--success);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.inlineApproveBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--success);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-glow-success);
+}
+
+.inlineApproveBtn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.inlineApproveBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.inlineApproveBtn svg {
+  stroke: currentColor;
+  color: currentColor;
+}
+
+/* Reject — red circle icon button */
+.inlineRejectBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.inlineRejectBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-glow-danger);
+}
+
+.inlineRejectBtn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.inlineRejectBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.inlineRejectBtnActive {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  color: var(--danger);
+  box-shadow: var(--shadow-glow-danger);
+}
+
+.inlineRejectBtn svg {
+  stroke: currentColor;
+  color: currentColor;
+}
+
+/* ============================================
+   EXPANDED CARD STATE
+   ============================================ */
+.requestCardExpanded {
+  background: var(--hover-background);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+/* ============================================
+   REJECT STRIP — appears below card content
+   ============================================ */
+.rejectStrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 12%, transparent);
+  border-radius: var(--radius-sm, 8px);
+  animation: stripSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Approve Strip (role dropdown + confirm) ── */
+.approveStrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 12%, transparent);
+  border-radius: var(--radius-sm, 8px);
+  animation: stripSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 1;
+}
+
+.roleDropdownWrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.approveConfirmBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--success);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  letter-spacing: 0.2px;
+}
+
+.approveConfirmBtn:hover:not(:disabled) {
+  filter: brightness(0.9);
+  box-shadow: var(--shadow-glow-success);
+}
+
+.approveConfirmBtn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.approveConfirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.inlineApproveBtnActive {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  border-color: color-mix(in srgb, var(--success) 50%, transparent);
+  color: var(--success);
+  box-shadow: var(--shadow-glow-success);
+}
+
+@keyframes stripSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reasonInput {
+  flex: 1;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: all 0.2s ease;
+  min-width: 0;
+}
+
+.reasonInput::placeholder {
+  color: var(--text-tertiary);
+}
+
+.reasonInput:focus {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.reasonInput:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rejectConfirmBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--danger);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  letter-spacing: 0.2px;
+}
+
+.rejectConfirmBtn:hover:not(:disabled) {
+  filter: brightness(0.9);
+  box-shadow: var(--shadow-glow-danger);
+}
+
+.rejectConfirmBtn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.rejectConfirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rejectCancelBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.rejectCancelBtn:hover:not(:disabled) {
+  background: var(--hover-background);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.rejectCancelBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Button spinner for loading */
+.btnSpinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Legacy classes (kept for compat) */
+.actionToggleBtn,
+.actionPanel,
+.actionSection,
+.actionLabel,
+.optionalTag,
+.approveRow,
+.approveBtn,
+.rejectBtn,
+.rejectRow,
+.roleSelect,
+.actionDivider {
+  display: none;
+}
+
+/* ============================================
+   FLOATING NOTIFICATION BUTTON
+   ============================================ */
+.floatingNotifBtn {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  width: 54px;
+  height: 54px;
+  border-radius: var(--radius, 16px);
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-card);
+}
+
+.floatingNotifBtn:hover {
+  transform: translateY(-3px) scale(1.05);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.floatingNotifBtn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.floatingNotifBtn svg {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+  stroke: var(--accent);
+  transition: transform 0.2s ease;
+}
+
+.floatingNotifBtn:hover svg {
+  transform: rotate(-12deg);
+}
+
+/* Tooltip on hover */
+.floatingNotifBtn::after {
+  content: "Notifications";
+  position: absolute;
+  right: calc(100% + 12px);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(6px);
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
+  pointer-events: none;
+  letter-spacing: 0.2px;
+}
+
+.floatingNotifBtn:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+/* Badge count on floating button */
+.floatingBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2.5px solid var(--card-bg);
+  pointer-events: none;
+  animation: badgePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: var(--shadow-glow-danger);
+}
+
+@keyframes badgePop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.floatingNotifBtnHidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.5) translateY(10px);
+  pointer-events: none;
+}

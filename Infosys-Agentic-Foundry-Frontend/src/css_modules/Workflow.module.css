@@ -1,12 +1,12 @@
-/**
- * Pipeline CSS Module
+﻿/**
+ * Workflow CSS Module
  *
- * Modern, sleek styling for Pipeline components
+ * Modern, sleek styling for Workflow components
  * Supports both light and dark themes via CSS variables
  */
 
-/* ===== Pipeline Container ===== */
-.pipelineContainer {
+/* ===== Workflow Container ===== */
+.workflowContainer {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -16,8 +16,8 @@
   position: relative;
 }
 
-/* ===== Pipeline Header ===== */
-.pipelineHeader {
+/* ===== Workflow Header ===== */
+.workflowHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -27,7 +27,7 @@
   backdrop-filter: blur(12px);
 }
 
-.pipelineHeader h2 {
+.workflowHeader h2 {
   font: normal normal 600 16px/22px var(--font-primary);
   color: var(--header-color);
   margin: 0;
@@ -40,8 +40,8 @@
   align-items: center;
 }
 
-/* ===== Pipeline List View ===== */
-.pipelineListContainer {
+/* ===== Workflow List View ===== */
+.workflowListContainer {
   display: flex;
   flex-direction: column;
   height: 90vh;
@@ -53,18 +53,18 @@
   background-color: var(--dashboard-bg);
 }
 
-.pipelineListHeader {
+.workflowListHeader {
   display: flex;
   align-items: center;
   margin-bottom: 20px;
   width: 100%;
 }
 
-.pipelineListHeader > div {
+.workflowListHeader > div {
   width: 100%;
 }
 
-.pipelineGrid {
+.workflowGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   row-gap: 24px;
@@ -76,8 +76,8 @@
   padding-bottom: 8px;
 }
 
-/* ===== Pipeline Card Container (for flip animation) ===== */
-.pipelineCardContainer {
+/* ===== Workflow Card Container (for flip animation) ===== */
+.workflowCardContainer {
   perspective: 1000px;
   position: relative;
   width: 100%;
@@ -87,17 +87,17 @@
   transform-style: preserve-3d;
 }
 
-.pipelineCardContainer.flipped {
+.workflowCardContainer.flipped {
   transform: rotateY(180deg);
   transition: transform 0.9s ease-in-out;
 }
 
-.pipelineCardContainer.flipped > .pipelineCard:not(.pipelineCardBack) {
+.workflowCardContainer.flipped > .workflowCard:not(.workflowCardBack) {
   pointer-events: none;
 }
 
-/* ===== Pipeline Card ===== */
-.pipelineCard {
+/* ===== Workflow Card ===== */
+.workflowCard {
   transform-style: preserve-3d;
   background: var(--card-bg);
   box-shadow: var(--shadow, 0 1px 3px 0 rgba(0, 0, 0, 0.1));
@@ -126,24 +126,24 @@
   box-sizing: border-box;
 }
 
-.pipelineCard:hover:not(.pipelineCardBack) {
+.workflowCard:hover:not(.workflowCardBack) {
   transform: translateY(-5px);
   transition: all 0.2s ease;
   border-color: #bfdbfe;
 }
 
 /* Prevent hover on front card when flipped */
-.pipelineCardContainer.flipped .pipelineCard:not(.pipelineCardBack) {
+.workflowCardContainer.flipped .workflowCard:not(.workflowCardBack) {
   transform: rotateY(0deg) !important;
   pointer-events: none;
 }
 
-.pipelineCardContainer.flipped .pipelineCard:not(.pipelineCardBack):hover {
+.workflowCardContainer.flipped .workflowCard:not(.workflowCardBack):hover {
   transform: rotateY(0deg) !important;
 }
 
 /* Back side of card (delete confirmation) */
-.pipelineCardBack {
+.workflowCardBack {
   transform: rotateY(180deg) !important;
   transition: transform 0.9s ease-in-out;
   pointer-events: auto;
@@ -154,7 +154,7 @@
   padding: 4px;
 }
 
-.pipelineCardBack:hover {
+.workflowCardBack:hover {
   transform: rotateY(180deg) !important;
   border-color: var(--border-color);
 }
@@ -252,7 +252,7 @@
   background-color: #b91c1c;
 }
 
-.pipelineCard.selected {
+.workflowCard.selected {
   border: 1px solid var(--app-primary-color);
 }
 
@@ -308,14 +308,14 @@
   text-align: center;
 }
 
-.pipelineCardHeader {
+.workflowCardHeader {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 8px;
 }
 
-.pipelineCardTitle {
+.workflowCardTitle {
   font-family: var(--font-primary, "Inter", sans-serif);
   font-weight: var(--font-weight-bold, 700);
   font-size: var(--font-size-sm, 14px);
@@ -331,7 +331,7 @@
   margin: 0;
 }
 
-.pipelineCardDash {
+.workflowCardDash {
   width: 32px;
   height: 3px;
   background: linear-gradient(90deg, var(--app-primary-color) 0%, var(--app-secondary-color) 100%);
@@ -339,7 +339,7 @@
   margin-bottom: 10px;
 }
 
-.pipelineCardDescription {
+.workflowCardDescription {
   font-family: var(--font-primary, "Inter", sans-serif);
   font-weight: var(--font-weight-normal, 400);
   font-size: var(--font-size-xs, 12px);
@@ -358,7 +358,7 @@
   white-space: normal;
 }
 
-.pipelineCardMeta {
+.workflowCardMeta {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -371,7 +371,7 @@
   margin-top: auto;
 }
 
-.pipelineCardMetaItem {
+.workflowCardMetaItem {
   font-family: var(--font-primary, "Inter", sans-serif);
   font-size: var(--font-size-xs, 12px);
   color: var(--content-color);
@@ -380,7 +380,7 @@
   gap: 6px;
 }
 
-.pipelineCardActions {
+.workflowCardActions {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1493,7 +1493,7 @@
   color: var(--header-color);
 }
 
-.pipelineFooter {
+.workflowFooter {
   display: flex;
   justify-content: flex-end;
   padding: 10px 24px;
@@ -1620,14 +1620,14 @@
 }
 
 /* ===== Scrollbar Styles ===== */
-.pipelineGrid::-webkit-scrollbar,
+.workflowGrid::-webkit-scrollbar,
 .propertiesPanelContent::-webkit-scrollbar,
 .accessibleInputsList::-webkit-scrollbar,
 .dropdownOptionsList::-webkit-scrollbar {
   width: 6px;
 }
 
-.pipelineGrid::-webkit-scrollbar-track,
+.workflowGrid::-webkit-scrollbar-track,
 .propertiesPanelContent::-webkit-scrollbar-track,
 .accessibleInputsList::-webkit-scrollbar-track,
 .dropdownOptionsList::-webkit-scrollbar-track {
@@ -1635,7 +1635,7 @@
   border-radius: 3px;
 }
 
-.pipelineGrid::-webkit-scrollbar-thumb,
+.workflowGrid::-webkit-scrollbar-thumb,
 .propertiesPanelContent::-webkit-scrollbar-thumb,
 .accessibleInputsList::-webkit-scrollbar-thumb,
 .dropdownOptionsList::-webkit-scrollbar-thumb {
@@ -1643,7 +1643,7 @@
   border-radius: 3px;
 }
 
-.pipelineGrid::-webkit-scrollbar-thumb:hover,
+.workflowGrid::-webkit-scrollbar-thumb:hover,
 .propertiesPanelContent::-webkit-scrollbar-thumb:hover,
 .accessibleInputsList::-webkit-scrollbar-thumb:hover,
 .dropdownOptionsList::-webkit-scrollbar-thumb:hover {
@@ -1738,20 +1738,20 @@
 }
 
 @media (max-width: 1200px) {
-  .pipelineGrid {
+  .workflowGrid {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
 @media (max-width: 1024px) {
-  .pipelineGrid {
+  .workflowGrid {
     grid-template-columns: repeat(2, 1fr);
     gap: 20px;
   }
 }
 
 @media (max-width: 767px) {
-  .pipelineGrid {
+  .workflowGrid {
     grid-template-columns: 1fr;
     gap: 16px;
   }
@@ -1864,7 +1864,7 @@
 }
 
 /* ===== FullModal Integration ===== */
-.pipelineModalContent {
+.workflowModalContent {
   padding: 0;
   overflow: hidden;
   height: 100%;
@@ -1896,8 +1896,8 @@
  * File: src/iafComponents/GlobalComponents/FullModal/
  * 
  * Styles deprecated:
- * - .pipelineHeader (use FullModal title prop)
- * - .pipelineFooter (use FullModal footer prop)
+ * - .workflowHeader (use FullModal title prop)
+ * - .workflowFooter (use FullModal footer prop)
  * - .headerActions (handled by FullModal close button)
  * - .closeBtn (handled by FullModal showCloseButton prop)
  */

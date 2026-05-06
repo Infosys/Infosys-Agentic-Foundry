@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import styles from "./AdminScreenNew.module.css";
 import RoleAgentAssignment from "./RoleAgentAssignment.jsx";
 import SubHeader from "../commonComponents/SubHeader";
@@ -8,9 +8,43 @@ import DepartmentManagement from "./DepartmentManagement.jsx";
 import UserManagement from "./UserManagement.jsx";
 import InstallationTab from "./InstallationTab";
 import UserAssignmentUpdate from "./UserAssignmentUpdate";
+import NotificationPanel from "./NotificationPanel";
+import notifStyles from "./NotificationPanel.module.css";
+import ChatHistoryCleanup from "./ChatHistoryCleanup";
+import { APIs } from "../../constant";
+import useFetch from "../../Hooks/useAxios";
 
 const SuperAdminControl = () => {
   const [activeTab, setActiveTab] = useState("userAssignUpdate");
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Notification data — fetched once on mount and refreshable
+  const [notifRequests, setNotifRequests] = useState([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const { fetchData } = useFetch();
+
+  const loadNotifications = useCallback(async () => {
+    setNotifLoading(true);
+    try {
+      const response = await fetchData(APIs.GET_REGISTRATION_REQUESTS);
+      const list =
+        response?.requests ?? response?.data?.requests ?? (Array.isArray(response) ? response : []);
+      setNotifRequests(list);
+    } catch {
+      setNotifRequests([]);
+    } finally {
+      setNotifLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  const notifPendingCount = notifRequests.filter(
+    (r) => r.status?.toLowerCase() === "pending"
+  ).length;
 
   // Dropdown hover state for position calculation
   const [openDropdown, setOpenDropdown] = useState(null);
@@ -63,6 +97,14 @@ const SuperAdminControl = () => {
       children: [
         { key: "controlRole", label: "Role" },
         { key: "controlDepartment", label: "Department" },
+      ],
+    },
+    {
+      type: "section",
+      key: "maintenance",
+      label: "Maintenance",
+      children: [
+        { key: "chatHistoryCleanup", label: "Cleanup" },
       ],
     },
   ];
@@ -248,7 +290,31 @@ const SuperAdminControl = () => {
         {activeTab === "installationInstalled" && <InstallationTab searchValue={searchValue} type="installed" onClearSearch={clearSearch} />}
         {activeTab === "installationMissing" && <InstallationTab searchValue={searchValue} type="missing" onClearSearch={clearSearch} />}
         {activeTab === "installationPending" && <InstallationTab searchValue={searchValue} type="pending" onClearSearch={clearSearch} />}
+        {activeTab === "chatHistoryCleanup" && <ChatHistoryCleanup />}
       </PageLayout>
+
+      {/* Floating Notification Button */}
+      <button
+        type="button"
+        className={`${notifStyles.floatingNotifBtn} ${showNotifications ? notifStyles.floatingNotifBtnHidden : ""}`}
+        onClick={() => setShowNotifications(true)}
+        aria-label="Notifications"
+      >
+        <SVGIcons icon="bell" width={24} height={24} />
+        {notifPendingCount > 0 && (
+          <span className={notifStyles.floatingBadge}>{notifPendingCount}</span>
+        )}
+      </button>
+
+      {/* Notification Panel */}
+      {showNotifications && (
+        <NotificationPanel
+          onClose={() => setShowNotifications(false)}
+          requests={notifRequests}
+          loading={notifLoading}
+          onRefresh={loadNotifications}
+        />
+      )}
     </div>
   );
 };

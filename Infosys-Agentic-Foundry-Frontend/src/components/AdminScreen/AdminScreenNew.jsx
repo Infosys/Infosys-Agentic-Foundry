@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import styles from "./AdminScreenNew.module.css";
 import UserAssignmentUpdate from "./UserAssignmentUpdate";
 import RecycleBin from "./RecycleBin";
@@ -16,9 +16,41 @@ import GroupAgentAssignment from "./GroupAgentAssignment.jsx";
 import RoleAgentAssignment from "./RoleAgentAssignment.jsx";
 import UserManagement from "./UserManagement.jsx";
 import ResourceAllocationManagement from "./ResourceAllocationManagement.jsx";
+import NotificationPanel from "./NotificationPanel";
+import notifStyles from "./NotificationPanel.module.css";
+import { SystemUtilityContent } from "../SystemUtility/SystemUtility";
 
 const AdminScreenNew = () => {
   const [activeTab, setActiveTab] = useState("userManagement");
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Notification data — fetched once on mount and refreshable
+  const [notifRequests, setNotifRequests] = useState([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const { fetchData } = useFetch();
+
+  const loadNotifications = useCallback(async () => {
+    setNotifLoading(true);
+    try {
+      const response = await fetchData(APIs.GET_REGISTRATION_REQUESTS);
+      const list =
+        response?.requests ?? response?.data?.requests ?? (Array.isArray(response) ? response : []);
+      setNotifRequests(list);
+    } catch {
+      setNotifRequests([]);
+    } finally {
+      setNotifLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  const notifPendingCount = notifRequests.filter(
+    (r) => r.status?.toLowerCase() === "pending"
+  ).length;
 
   // Dropdown hover state for position calculation
   const [openDropdown, setOpenDropdown] = useState(null);
@@ -67,6 +99,18 @@ const AdminScreenNew = () => {
   const isRoleTab = activeTab === "controlRole";
   const isServersTab = activeTab === "recycleBinServers" || activeTab === "unusedServers";
   const isResourceTab = activeTab === "resourceManagement";
+  const isSystemUtilityTab = activeTab === "systemUtility";
+
+  // Hide FloatingChatBot when System Utility tab is active
+  useEffect(() => {
+    if (isSystemUtilityTab) {
+      window.dispatchEvent(new CustomEvent("floatingChatBot:hide"));
+    } else {
+      window.dispatchEvent(new CustomEvent("floatingChatBot:show"));
+    }
+    return () => window.dispatchEvent(new CustomEvent("floatingChatBot:show"));
+  }, [isSystemUtilityTab]);
+
   // Search enabled only for Installed and Pending modules (not Missing modules)
   const isInstallationTabWithSearch = activeTab === "installationInstalled" || activeTab === "installationPending";
   // Tabs that need search functionality (agents, tools, servers, installed/pending modules, user management, resource management, group, role)
@@ -171,7 +215,7 @@ const AdminScreenNew = () => {
       key: "user",
       label: "User",
       children: [
-        { key: "userAssignUpdate", label: "Assignment & Update" },
+        { key: "userAssignUpdate", label: "Update" },
         { key: "userManagement", label: "Management" },
       ],
     },
@@ -235,6 +279,14 @@ const AdminScreenNew = () => {
       key: "configurations",
       label: "Config",
       children: [{ key: "inference", label: "Inference" }],
+    },
+    {
+      type: "section",
+      key: "system",
+      label: "System",
+      children: [
+        { key: "systemUtility", label: "Utility" },
+      ],
     },
   ];
 
@@ -481,7 +533,33 @@ const AdminScreenNew = () => {
           />
         )}
         {activeTab === "inference" && <InferenceConfig />}
+        {activeTab === "systemUtility" && <SystemUtilityContent />}
       </PageLayout>
+
+      {/* Floating Notification Button - hidden on System Utility tab */}
+      {activeTab !== "systemUtility" && (
+        <button
+          type="button"
+          className={`${notifStyles.floatingNotifBtn} ${showNotifications ? notifStyles.floatingNotifBtnHidden : ""}`}
+          onClick={() => setShowNotifications(true)}
+          aria-label="Notifications"
+        >
+          <SVGIcons icon="bell" width={24} height={24} />
+          {notifPendingCount > 0 && (
+            <span className={notifStyles.floatingBadge}>{notifPendingCount}</span>
+          )}
+        </button>
+      )}
+
+      {/* Notification Panel */}
+      {showNotifications && (
+        <NotificationPanel
+          onClose={() => setShowNotifications(false)}
+          requests={notifRequests}
+          loading={notifLoading}
+          onRefresh={loadNotifications}
+        />
+      )}
     </div>
   );
 };
