@@ -166,7 +166,7 @@ Enable users to create custom tools through the conversational chat interface by
 ### 6.2 API Endpoints Required
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/tools/generate/pipeline/chat` | POST | Initiate tool creation from chat |
+| `/tools/generate/workflow/chat` | POST | Initiate tool creation from chat |
 
 
 ---

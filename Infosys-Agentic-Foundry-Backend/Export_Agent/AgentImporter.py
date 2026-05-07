@@ -61,6 +61,7 @@ class AgentImporter:
             "files":          {"imported": [], "skipped": [], "renamed": [], "failed": []},
             "mcp_tools":      {"imported": [], "skipped": [], "renamed": [], "failed": []},
             "tools":          {"imported": [], "skipped": [], "renamed": [], "failed": []},
+            "tool_versions":  {"imported": [], "skipped": [], "renamed": [], "failed": []},
             "worker_agents":  {"imported": [], "skipped": [], "renamed": [], "failed": []},
             "agents":         {"imported": [], "skipped": [], "renamed": [], "failed": []},
         }
@@ -90,9 +91,17 @@ class AgentImporter:
             worker_agents_data = self._parse_config_file(
                 os.path.join(backend_dir, 'worker_agents_config.py'), 'worker_agents'
             )
+            
+            # 3b. Parse tool versions config if exists
+            tool_versions_data = self._parse_config_file(
+                os.path.join(backend_dir, 'tool_versions_config.py'), 'tool_versions_data'
+            )
 
             # 4. Read actual tool code from tools_codes/*.py
             self._load_tool_codes(backend_dir, tools_data)
+            
+            # 4b. Load versioned tool codes
+            self._load_versioned_tool_codes(backend_dir, tool_versions_data)
 
             # 5. Resolve & import user-uploaded files ── FIRST
             uploads_dir = os.path.join(backend_dir, 'user_uploads')
@@ -118,8 +127,8 @@ class AgentImporter:
             # 8. Import MCP tools
             await self._import_mcp_tools(mcp_data, result)
 
-            # 9. Import regular tools
-            await self._import_regular_tools(regular_tools, result)
+            # 9. Import regular tools (with versions)
+            await self._import_regular_tools(regular_tools, result, tool_versions_data)
 
             # 10. Import worker agents (must come before meta agents)
             await self._import_agents_batch(worker_agents_data, result, label="worker_agents")
@@ -198,6 +207,36 @@ class AgentImporter:
                     tool_info['code_snippet'] = f.read()
             else:
                 log.warning(f"Tool code file not found: {full_path} (tool_id={tool_id})")
+
+    @staticmethod
+    def _load_versioned_tool_codes(backend_dir: str, tool_versions_data: Dict[str, Any]):
+        """
+        Load versioned tool code files (e.g., tools_codes/my_tool_v1.py) 
+        and replace the code_snippet path with actual code content.
+        """
+        if not tool_versions_data:
+            return
+            
+        for tool_id, versions_list in tool_versions_data.items():
+            if not versions_list:
+                continue
+            for version_info in versions_list:
+                code_ref = version_info.get('code_snippet', '')
+                if not code_ref:
+                    continue
+                    
+                # If code_snippet already looks like actual code, skip
+                stripped = code_ref.strip()
+                if stripped.startswith('def ') or stripped.startswith('async def ') or stripped.startswith('import ') or stripped.startswith('from '):
+                    continue
+                    
+                # Treat it as a relative path
+                full_path = os.path.join(backend_dir, code_ref)
+                if os.path.exists(full_path):
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        version_info['code_snippet'] = f.read()
+                else:
+                    log.warning(f"Versioned tool code file not found: {full_path} (tool_id={tool_id}, version={version_info.get('version')})")
 
     # ===================================================================== #
     #                    FILE CONFLICT RESOLUTION                           #
@@ -460,7 +499,7 @@ class AgentImporter:
     # ===================================================================== #
 
     async def _import_regular_tools(
-        self, tools_data: Dict[str, Any], result: Dict
+        self, tools_data: Dict[str, Any], result: Dict, tool_versions_data: Dict[str, Any] = None
     ):
         """Import regular (non-MCP) tools with ID-first, name-second conflict checks."""
         for tool_id, tool_info in tools_data.items():
@@ -485,6 +524,16 @@ class AgentImporter:
                     continue
 
                 # ── Step 2: Name check ──
+                import re
+                # Validate tool name format (no _v1, _v2 pattern)
+                if re.search(r'_v\d+$', tool_name, re.IGNORECASE):
+                    result["tools"]["failed"].append({
+                        "tool_id": tool_id,
+                        "tool_name": tool_name,
+                        "message": f"Invalid tool name '{tool_name}': Names ending with _v1, _v2, etc. are reserved for version files. Please rename the function in the export.",
+                    })
+                    continue
+                
                 existing_by_name = await self.tool_service.tool_repo.get_tool_record(
                     tool_name=tool_name
                 )
@@ -492,22 +541,14 @@ class AgentImporter:
                     tool_name=tool_name
                 )
                 if existing_by_name or name_in_recycle:
-                    tool_name = await self._find_available_tool_name(original_name)
-                    log.info(f"Tool name conflict resolved: '{original_name}' -> '{tool_name}'")
-
-                    # Rename the function definition inside the code
-                    code = tool_info.get('code_snippet', '')
-                    if code:
-                        renamed = self._rename_function_in_code(code, original_name, tool_name)
-                        if renamed:
-                            tool_info['code_snippet'] = renamed
-
-                    result["tools"]["renamed"].append({
+                    # Return error instead of auto-renaming
+                    conflict_location = "recycle bin" if name_in_recycle else "tool table"
+                    result["tools"]["failed"].append({
                         "tool_id": tool_id,
-                        "original_name": original_name,
-                        "new_name": tool_name,
-                        "message": f"Tool renamed from '{original_name}' to '{tool_name}'.",
+                        "tool_name": tool_name,
+                        "message": f"Tool '{tool_name}' already exists in {conflict_location}. Please rename the function in the export file and re-import. Names ending with _v1, _v2, etc. are reserved for version files.",
                     })
+                    continue
 
                 # ── Step 3: Save ──
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -532,6 +573,16 @@ class AgentImporter:
                             "tool_name": tool_name,
                             "message": "Tool imported successfully.",
                         })
+                    
+                    # ── Step 4: Import tool versions ──
+                    if tool_versions_data and tool_id in tool_versions_data:
+                        await self._import_tool_versions(
+                            tool_id=tool_id,
+                            tool_name=tool_name,
+                            original_name=original_name,
+                            versions_list=tool_versions_data[tool_id],
+                            result=result
+                        )
                 else:
                     result["tools"]["failed"].append({
                         "tool_id": tool_id,
@@ -544,6 +595,74 @@ class AgentImporter:
                 result["tools"]["failed"].append({
                     "tool_id": tool_id,
                     "tool_name": tool_name,
+                    "message": str(e),
+                })
+
+    async def _import_tool_versions(
+        self,
+        tool_id: str,
+        tool_name: str,
+        original_name: str,
+        versions_list: List[Dict[str, Any]],
+        result: Dict
+    ):
+        """
+        Import all versions for a tool into the tool_versions_table.
+        
+        Args:
+            tool_id: The tool ID
+            tool_name: The (possibly renamed) tool name
+            original_name: The original tool name from export
+            versions_list: List of version dictionaries
+            result: Result dict to track import status
+        """
+        if not hasattr(self.tool_service, 'tool_version_repo') or not self.tool_service.tool_version_repo:
+            log.warning(f"Tool version repository not available, skipping versions for tool '{tool_id}'")
+            return
+        
+        for version_info in versions_list:
+            version = version_info.get('version', 'v1')
+            code_snippet = version_info.get('code_snippet', '')
+            tool_description = version_info.get('tool_description', '')
+            model_name = version_info.get('model_name', '')
+            updated_by = version_info.get('updated_by', self.created_by)
+            
+            # If tool was renamed, rename function in versioned code too
+            if tool_name != original_name and code_snippet:
+                renamed_code = self._rename_function_in_code(code_snippet, original_name, tool_name)
+                if renamed_code:
+                    code_snippet = renamed_code
+            
+            try:
+                version_id = await self.tool_service.tool_version_repo.create_version(
+                    tool_id=tool_id,
+                    version=version,
+                    code_snippet=code_snippet,
+                    tool_description=tool_description,
+                    model_name=model_name,
+                    updated_by=updated_by
+                )
+                
+                if version_id:
+                    result["tool_versions"]["imported"].append({
+                        "tool_id": tool_id,
+                        "tool_name": tool_name,
+                        "version": version,
+                        "message": f"Tool version '{version}' imported successfully.",
+                    })
+                else:
+                    result["tool_versions"]["skipped"].append({
+                        "tool_id": tool_id,
+                        "tool_name": tool_name,
+                        "version": version,
+                        "message": f"Tool version '{version}' already exists or failed to create.",
+                    })
+            except Exception as e:
+                log.error(f"Error importing version '{version}' for tool '{tool_id}': {e}")
+                result["tool_versions"]["failed"].append({
+                    "tool_id": tool_id,
+                    "tool_name": tool_name,
+                    "version": version,
                     "message": str(e),
                 })
 
@@ -575,6 +694,16 @@ class AgentImporter:
                     continue
 
                 # ── Step 2: Name check ──
+                import re
+                # Validate MCP tool name format (no _v1, _v2 pattern)
+                if re.search(r'_v\d+$', tool_name, re.IGNORECASE):
+                    result["mcp_tools"]["failed"].append({
+                        "tool_id": tool_id,
+                        "tool_name": tool_name,
+                        "message": f"Invalid MCP tool name '{tool_name}': Names ending with _v1, _v2, etc. are reserved for version files. Please rename the tool in the export.",
+                    })
+                    continue
+                
                 existing_by_name = await self.mcp_tool_service.mcp_tool_repo.get_mcp_tool_record(
                     tool_name=tool_name
                 )
@@ -582,14 +711,14 @@ class AgentImporter:
                     tool_name=tool_name
                 )
                 if existing_by_name or name_in_recycle:
-                    tool_name = await self._find_available_mcp_name(original_name)
-                    log.info(f"MCP tool name conflict resolved: '{original_name}' -> '{tool_name}'")
-                    result["mcp_tools"]["renamed"].append({
+                    # Return error instead of auto-renaming
+                    conflict_location = "recycle bin" if name_in_recycle else "MCP tool table"
+                    result["mcp_tools"]["failed"].append({
                         "tool_id": tool_id,
-                        "original_name": original_name,
-                        "new_name": tool_name,
-                        "message": f"MCP tool renamed from '{original_name}' to '{tool_name}'.",
+                        "tool_name": tool_name,
+                        "message": f"MCP tool '{tool_name}' already exists in {conflict_location}. Please rename the tool in the export file and re-import. Names ending with _v1, _v2, etc. are reserved for version files.",
                     })
+                    continue
 
                 # ── Step 3: Save ──
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -729,9 +858,19 @@ class AgentImporter:
 
                 success = await self.agent_service.agent_repo.save_agent_record(agent_data)
                 if success:
-                    # ── Create tool-agent mappings ──
+                    # ── Create tool-agent mappings with version support ──
                     tools_list = json.loads(agent_data["tools_id"])
                     is_meta = agent_info.get('agentic_application_type', '') in meta_type_values
+                    
+                    # Get tools_with_versions mapping from exported agent data
+                    # This contains {tool_id, tool_version} for each tool
+                    tools_with_versions = agent_info.get('tools_with_versions', [])
+                    tool_version_map = {}
+                    for twv in tools_with_versions:
+                        tid = twv.get('tool_id')
+                        tver = twv.get('tool_version', 'v1')
+                        if tid:
+                            tool_version_map[tid] = tver
 
                     for associated_id in tools_list:
                         try:
@@ -746,11 +885,14 @@ class AgentImporter:
                                 associated_created_by = tool[0]["created_by"] if tool else None
 
                             if associated_created_by:
+                                # Use version from tools_with_versions if available, else default to v1
+                                tool_version = tool_version_map.get(associated_id, 'v1')
                                 await self.tool_service.tool_agent_mapping_repo.assign_tool_to_agent_record(
                                     tool_id=associated_id,
                                     agentic_application_id=agent_id,
                                     tool_created_by=associated_created_by,
                                     agentic_app_created_by=self.created_by,
+                                    tool_version=tool_version,
                                 )
                         except Exception as mapping_err:
                             log.warning(

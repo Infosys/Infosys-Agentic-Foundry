@@ -1,7 +1,7 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+import ast
 import os
 import re
-import os
 import json
 import time
 import asyncio
@@ -12,6 +12,7 @@ from functools import partial
 from datetime import datetime
 from copy import deepcopy
 from abc import ABC, abstractmethod
+from openai import APIConnectionError
 from typing_extensions import TypedDict
 from typing import Any, List, Dict, Optional, Annotated, Union, Literal
 from fastapi import HTTPException
@@ -27,18 +28,23 @@ from langgraph.graph import START, END
 from langgraph.graph.state import CompiledStateGraph, StateGraph
 from langgraph.types import StreamWriter
 from src.utils.helper_functions import get_timestamp
+from src.utils.errors import LLMInfrastructureError
+from src.utils.llm_error_handler import handle_llm_errors
 from src.inference.inference_utils import InferenceUtils
 
 from src.database.kafka_handler import create_kafka_topic,kafka_worker
 
 from src.schemas import AgentInferenceRequest, AdminConfigLimits
 from src.config.constants import AgentType
-from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department
+from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department, current_request_headers
 from src.decorators.tool_access import resource_access, require_role, authorized_tool, current_tool_user, get_tool_user_context
 from src.auth.models import UserRole
+from src.utils.sandbox import get_sandbox_builtins, get_sandbox_extras
 from telemetry_wrapper import logger as log, update_session_context
 from src.utils.phoenix_manager import ensure_project_registered, traced_project_context, log_trace_context
 from src.storage import get_storage_client
+
+from src.utils.kafka_manager import KafkaManager
 
 # Define common TypedDict for state if applicable to all workflows
 class BaseWorkflowState(TypedDict):
@@ -101,50 +107,122 @@ class BaseAgentInference(ABC):
             except Exception as e:
                 log.info(f"Warning: Storage configuration error: {e}")
 
-    async def _get_react_agent_as_executor_agent(self,
-                                                 llm: Any,
-                                                 system_prompt: str,
-                                                 checkpointer: Any = None,
-                                                 tool_ids: List[str] = [],
-                                                 interrupt_tool: bool = False,
-                                                 knowledgebase_names: str = None,
-                                                 message_queue: bool = False,
-                                                 session_id: str = None,
-                                                 use_shell_memory: bool = True,
-                                                 agent_id: str = None,
-                                                 context_flag: bool = True,
-                                                 file_context_management_flag: bool = False
-                                                ) -> Any:
+    # ================================================================== #
+    #  Kafka MCP tool wrapper  (static, lives on the LangGraph base class)
+    # ================================================================== #
+
+    @staticmethod
+    def _make_kafka_mcp_tool(
+        mcp_tool: StructuredTool,
+        mcp_server_id: str,
+        kafka_mgr: KafkaManager,
+    ) -> StructuredTool:
         """
-        Helper method to create a React agent as an executor agent with tools loaded dynamically.
-        This function now supports loading both Python code-based tools and MCP tools.
+        Wrap a live MCP ``StructuredTool`` so that invocation is dispatched
+        to a remote Kafka worker instead of being executed locally.
+
+        Preserves ``name``, ``description``, and ``args_schema`` from the
+        original MCP tool.  The ``mcp_server_id`` is sent as the ``tool_id``
+        in every Kafka message so the worker can fetch the correct MCP config
+        from the DB and connect to the right server.
+
+        Args:
+            mcp_tool: The ``StructuredTool`` returned by the MCP client.
+            mcp_server_id: Database PK of the MCP server definition
+                           (prefixed with ``mcp_``).
+            kafka_mgr: A :class:`KafkaManager` instance.
+
+        Returns:
+            A new ``StructuredTool`` whose ``coroutine`` publishes to Kafka
+            and waits for the worker response.
+        """
+        import uuid
+        from tool_worker.kafka_tool_listener import (
+            create_response_consumer,
+            collect_responses,
+        )
+
+        tool_name = mcp_tool.name
+
+        async def _kafka_mcp_dispatch(**kwargs) -> str:
+            tool_call_id = uuid.uuid4().hex
+            consumer = create_response_consumer(kafka_mgr)
+            try:
+                kafka_mgr.send_tool_request(
+                    tool_call_id=tool_call_id,
+                    tool_id=mcp_server_id,
+                    tool_name=tool_name,
+                    args=kwargs,
+                )
+                results = await collect_responses(consumer, [tool_call_id])
+                response = results.get(tool_call_id)
+
+                if response is None:
+                    return f"[Kafka timeout] No response received for {tool_name}"
+                if response.get("status") != "success":
+                    return f"[Kafka error] {response.get('result', 'Unknown error')}"
+                return str(response.get("result", ""))
+            finally:
+                try:
+                    consumer.close()
+                except Exception:
+                    pass
+
+        return StructuredTool(
+            name=mcp_tool.name,
+            description=mcp_tool.description,
+            args_schema=mcp_tool.args_schema,
+            coroutine=_kafka_mcp_dispatch,
+        )
+
+    # ================================================================== #
+    #  Kafka-worker-aware executor agent builder
+    # ================================================================== #
+
+    async def _get_react_agent_as_executor_agent(
+        self,
+        llm: Any,
+        system_prompt: str,
+        checkpointer: Any = None,
+        tool_ids: List[str] = [],
+        tool_versions: Dict[str, str] = None,  # Map of tool_id -> version
+        interrupt_tool: bool = False,
+        knowledgebase_names: str = None,
+        use_kafka_tool_worker: bool = False,
+        session_id: str = None,
+        use_shell_memory: bool = True,
+        agent_id: str = None,
+        context_flag: bool = True,
+        file_context_management_flag: bool = False
+    ) -> Any:
+        """
+        Create a React agent with tools loaded dynamically.
+
+        When ``use_kafka_tool_worker=True`` every Python / MCP tool loaded
+        from the database is transparently wrapped so that invocations are
+        dispatched to a remote Kafka worker instead of being executed in the
+        main process.  Built-in tools (memory, knowledgebase, shell) are
+        always executed locally.
         
         Args:
-            session_id: Session ID to bind to message_queue tools for filtering Kafka results.
-            use_shell_memory: If True, use AgentShell single-tool interface (DEFAULT, recommended).
-            agent_id: Agent ID for memory isolation (required for memory tools).
-            context_flag: If False, NO memory/context management (no tools, no conversation fetch).
-            file_context_management_flag: If True (and context_flag=True), use file-based context 
-                                         with run_shell_command tool instead of DB conversation fetch.
-        
-        Context Management Logic:
-            - context_flag=False: No memory tools, no conversation fetching (completely disabled)
-            - context_flag=True, file_context_management_flag=False: Traditional DB-based context (fetch past conversations)
-            - context_flag=True, file_context_management_flag=True: File-based context with run_shell_command tool
-        
-        Memory Tool Options (only if context_flag=True AND file_context_management_flag=True):
-            1. use_shell_memory=True (DEFAULT): Single `run_shell_command` tool with Unix-like interface
-               - Commands: ls, cd, cat, grep, find, echo, semgrep (semantic search)
-               - Minimal context footprint, powerful file operations
-            2. use_shell_memory=False: Database-backed manage_memory + search_memory
+            tool_versions: Optional dict mapping tool_id -> version (e.g., 'v1', 'v2').
+                          If provided, loads versioned code from tool_versions_table.
         """
+        log.info(f"[{session_id}] _get_react_agent_as_executor_agent called | agent_id={agent_id}, tool_count={len(tool_ids)}, kafka={use_kafka_tool_worker}, shell_memory={use_shell_memory}, context_flag={context_flag}, file_context_mgmt={file_context_management_flag}")
+        # Initialize tool_versions if not provided
+        if tool_versions is None:
+            tool_versions = {}
+            
         # local_var for exec() context, including secrets handlers and access control decorators
         local_var = {
+            "__builtins__": get_sandbox_builtins(),
+            **get_sandbox_extras(),
             "get_user_secrets": get_user_secrets,
             "current_user_email": current_user_email,
             "current_user_department": current_user_department,
             "get_public_secrets": get_public_key,
             "get_group_secrets": get_group_secrets,
+            "current_request_headers": current_request_headers,
             # Tool access control decorators - available for tool creators
             "resource_access": resource_access,
             "require_role": require_role,
@@ -162,36 +240,38 @@ class BaseAgentInference(ABC):
         
         agent_shell = None  # Will hold AgentShell instance
         memory_loaded = False
-        
+
         if not context_flag:
-            log.info("⏭️ Skipping memory tools (context_flag=False) - no context management")
+            log.info(f"[{session_id}] Skipping memory tools (context_flag=False) - no context management")
             memory_loaded = True  # Skip memory loading
         elif not file_context_management_flag:
-            log.info("⏭️ Skipping memory tools (file_context_management_flag=False) - using traditional DB context")
+            log.info(f"[{session_id}] Skipping memory tools (file_context_management_flag=False) - using traditional DB context")
             memory_loaded = True  # Skip memory loading, will use DB-based conversation fetch
-        
+
         # Option 1: AgentShell - Single tool with Unix-like interface (RECOMMENDED)
         # Only when context_flag=True AND file_context_management_flag=True
         if not memory_loaded and use_shell_memory and agent_id and session_id:
             try:
                 from src.memory.agent_shell.tools import get_shell_tools_for_session
                 
-                # Get user email from context variable for hierarchical storage
+                # Get user email and department from context variables for hierarchical storage
                 user_email = current_user_email.get(None)
-                
+                user_department = current_user_department.get("General")
+
                 agent_shell, shell_tools = get_shell_tools_for_session(
                     agent_id=agent_id,
                     session_id=session_id,
                     user_email=user_email,
-                    workspace_root="./agent_workspaces"
+                    workspace_root="./agent_workspaces",
+                    department=user_department
                 )
                 tool_list.extend(shell_tools)
                 memory_loaded = True
-                log.info(f"✅ AgentShell loaded for user={user_email}, agent={agent_id}, session={session_id[:12]}... (1 tool: run_shell_command)")
-                log.info(f"   📁 Workspace: {agent_shell.shell_root}")
-                log.info(f"   🔍 Commands: ls, cd, cat, grep, find, echo, semgrep (semantic search)")
+                log.info(f"[{session_id}] ✅ AgentShell loaded for user={user_email}, agent={agent_id}, session={session_id[:12]}... (1 tool: run_shell_command)")
+                log.info(f"[{session_id}]    📁 Workspace: {agent_shell.shell_root}")
+                log.info(f"[{session_id}]    🔍 Commands: ls, cd, cat, grep, find, echo, semgrep (semantic search)")
             except Exception as e:
-                log.warning(f"Failed to load AgentShell, falling back to database memory: {e}")
+                log.warning(f"[{session_id}] Failed to load AgentShell, falling back to database memory: {e}")
                 use_shell_memory = False
         
         # Option 2: Database-backed memory (fallback when AgentShell fails)
@@ -203,189 +283,146 @@ class BaseAgentInference(ABC):
                 embedding_model=self.inference_utils.embedding_model
             )
             tool_list.append(search_memory_tool)
-            log.info(f"✅ Database memory tools loaded (2 tools: manage_memory, search_memory)")
+            log.info(f"[{session_id}] Database memory tools loaded (2 tools: manage_memory, search_memory)")
 
         # Add knowledgebase retriever tool if knowledgebase_names is provided
         if knowledgebase_names:
             try:
                 from src.utils.knowledgebase import knowledgebase_retriever
                 tool_list.append(knowledgebase_retriever)
-                log.info(f"Knowledgebase retriever tool added for KB: {knowledgebase_names}")
+                log.info(f"[{session_id}] Knowledgebase retriever tool added for KB: {knowledgebase_names}")
             except Exception as e:
-                log.error(f"Error loading knowledgebase_retriever tool: {e}")
+                log.error(f"[{session_id}] Error loading knowledgebase_retriever tool: {e}")
 
-        mcp_server_ids = []
+        # ========== DATABASE TOOLS AUTO-INJECTION ==========
+        db_connection_names = getattr(self, '_db_connection_names', None)
+        if db_connection_names:
+            try:
+                from src.inference.database_tools_integration import get_database_tools_for_injection
+                db_tools = get_database_tools_for_injection(db_connection_names)
+                log.info(f"Database tools auto-injected for connections: {db_connection_names}")
 
-        # Creating kafka topic for dynamic results
-        if message_queue:
-            res=create_kafka_topic('dynamic_results')
-            
+                # Also load run_shell_command so agent can read schema files
+                if not any(hasattr(t, 'name') and t.name == 'run_shell_command' for t in tool_list):
+                    try:
+                        from src.memory.agent_shell.tools import get_shell_tools_for_session
+                        user_email = current_user_email.get(None)
+                        user_department = current_user_department.get("General")
+                        agent_shell, shell_tools = get_shell_tools_for_session(
+                            agent_id=agent_id,
+                            session_id=session_id,
+                            user_email=user_email,
+                            workspace_root="./agent_workspaces",
+                            department=user_department
+                        )
+                        tool_list.extend(shell_tools)
+                    except Exception as e:
+                        log.warning(f"Failed to load run_shell_command for db schema access: {e}")
+
+                tool_list.extend(db_tools)
+            except Exception as e:
+                log.error(f"Error loading database tools: {e}")
+
+        # ========== KAFKA SETUP (only when use_kafka_tool_worker=True) ==========
+        kafka_mgr = None
+        if use_kafka_tool_worker:
+            from src.utils.kafka_manager import KafkaManager as _KafkaManager
+            from tool_worker.tool_wrappers import make_kafka_tool
+            kafka_mgr = _KafkaManager()
+
+        # ========== PYTHON TOOLS ==========
+        mcp_server_ids: List[str] = []
+
         for tool_id in tool_ids:
             if tool_id.startswith("mcp_"):
                 mcp_server_ids.append(tool_id)
+                log.debug(f"[{session_id}] Deferred MCP tool: {tool_id}")
                 continue
 
             try:
-                original_tool_id = tool_id  # Store original tool_id before modification
-                
-                # For message_queue, first load and register the ORIGINAL tool for Kafka worker
-                if message_queue:
-                    log.info(f"Loading ORIGINAL tool for Kafka worker registration: {original_tool_id}")
-                    original_tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=original_tool_id, message_queue_implementation=False)
-                    if original_tool_record:
-                        original_tool_record = original_tool_record[0]
-                        original_codes = original_tool_record["code_snippet"]
-                        original_tool_name = original_tool_record["tool_name"]
-                        
-                        log.debug(f"Debug: About to register original tool with name: '{original_tool_name}'")
-                        log.debug(f"Debug: Original tool code snippet (first 200 chars): {original_codes[:200]}...")
-                        
-                        # Execute original tool code to get the function
-                        exec(original_codes, local_var)
-                        original_func = local_var[original_tool_name]
-                        
-                        log.debug(f"Debug: Successfully extracted function from local_var['{original_tool_name}']: {original_func}")
-                        
-                        # Register the original function for Kafka worker to use
-                        from src.database.kafka_handler import register_function
-                        register_function(original_tool_name, original_func)
-                        log.info(f"✅ Registered original tool '{original_tool_name}' for Kafka worker execution")
-                    else:
-                        log.warning(f"Original tool record for ID {original_tool_id} not found for registration.")
-                    
-                    # Now switch to load the message_queue version
-                    tool_id += '_message_queue'
-                    
-                log.info(f"Loading Python tool for ID: {tool_id} - CACHE LOG")
-                tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=tool_id,message_queue_implementation=message_queue)
-                log.info(f"Python tool reading completed for ID: {tool_id} - CACHE LOG")
-                if tool_record:
-                    tool_record = tool_record[0]
-                    codes = tool_record["code_snippet"]
-                    tool_name = tool_record["tool_name"]
-                    log.info(f"code for message queue tool:{codes}")
+                log.info(f"[{session_id}] Loading Python tool for ID: {tool_id}")
 
-                    log.info(f"Tool name: {tool_name}")
-                    # Creating kafka topic
-                    if message_queue:
-                        if tool_name.endswith('_message_queue'):
-                            res=create_kafka_topic(tool_name[:-14])
-                            if res: 
-                                worker_thread = threading.Thread(target=kafka_worker, args=(tool_name[:-14],), daemon=True)
-                                worker_thread.start()
-                                time.sleep(3)  # Give the worker some time to start
-                                log.info(f"Worker thread started for topic: {tool_name[:-14]}")
-                            else:
-                                raise HTTPException(status_code=500, detail="Failed to create Kafka topic.")
-                        else:
-                            res=create_kafka_topic(tool_name)
-                            if res:
-                                worker_thread = threading.Thread(target=kafka_worker, args=(tool_name,), daemon=True)
-                                worker_thread.start()
-                                time.sleep(3)  # Give the worker some time to start
-                                log.info(f"Worker thread started for topic: {tool_name}")
-                            else:
-                                log.error(f"Failed to create Kafka topic for tool: {tool_name}")
-                                raise HTTPException(status_code=500, detail="Failed to create Kafka topic.")
-
-                    exec(codes, local_var)
-                    loaded_tool = local_var[tool_name]
-                    
-                                       # For message_queue tools, inject session_id into the tool's execution context
-                    if message_queue and session_id:
-                        # Store session_id in the local_var context so the tool can access it
-                        # The message_queue tool already has session_id as a parameter with default None
-                        # We need to make it always use our session_id
-                        
-                        # Get the original function
-                        if hasattr(loaded_tool, 'func'):
-                            original_func = loaded_tool.func
-                            tool_name_attr = loaded_tool.name
-                            tool_desc = loaded_tool.description
-                        else:
-                            original_func = loaded_tool
-                            tool_name_attr = getattr(loaded_tool, 'name', tool_name)
-                            tool_desc = getattr(loaded_tool, 'description', '')
-                        
-                        # Get the original function's signature to extract parameter info (excluding session_id)
-                        import inspect
-                        from functools import wraps
-                        from pydantic import create_model, Field
-                        from typing import get_type_hints
-                        
-                        sig = inspect.signature(original_func)
-                        params_without_session = {
-                            name: param for name, param in sig.parameters.items() 
-                            if name != 'session_id'
-                        }
-                        
-                        # Build a Pydantic model for the args schema (excluding session_id)
-                        type_hints = {}
-                        try:
-                            type_hints = get_type_hints(original_func)
-                        except Exception:
-                            pass
-                        
-                        field_definitions = {}
-                        for param_name, param in params_without_session.items():
-                            param_type = type_hints.get(param_name, str)
-                            if param.default is inspect.Parameter.empty:
-                                field_definitions[param_name] = (param_type, ...)
-                            else:
-                                field_definitions[param_name] = (param_type, param.default)
-                        
-                        # Create dynamic Pydantic model for args schema
-                        ArgsSchema = create_model(f'{tool_name_attr}Schema', **field_definitions)
-                        
-                        # Create a wrapper function that injects session_id
-                        captured_session_id = session_id  # Capture in closure
-                        captured_func = original_func      # Capture in closure
-                        
-                        def make_wrapper(func, sid):
-                            """Factory to create wrapper with proper closure"""
-                            @wraps(func)
-                            def wrapper(**kwargs):
-                                kwargs['session_id'] = sid
-                                return func(**kwargs)
-                            return wrapper
-                        
-                        wrapper_func = make_wrapper(captured_func, captured_session_id)
-                        
-                        # Copy the original function's signature (minus session_id) to the wrapper
-                        # This is needed for StructuredTool to build the correct schema
-                        wrapper_func.__name__ = original_func.__name__
-                        wrapper_func.__doc__ = original_func.__doc__
-                        
-                        # Create new StructuredTool with the wrapper and explicit args_schema
-                        loaded_tool = StructuredTool.from_function(
-                            func=wrapper_func,
-                            name=tool_name_attr,
-                            description=tool_desc,
-                            args_schema=ArgsSchema
-                        )
-                        log.info(f"Bound session_id '{session_id}' to tool '{tool_name}'")
-                    
-                    tool_list.append(loaded_tool)
-                else:
-                    log.warning(f"Python tool record for ID {tool_id} not found.")
+                # Get tool metadata from tool_table
+                tool_record = await self.tool_service.tool_repo.get_tool_record(
+                    tool_id=tool_id, message_queue_implementation=False,
+                )
+                if not tool_record:
+                    log.warning(f"[{session_id}] Python tool record for ID {tool_id} not found.")
                     raise HTTPException(status_code=404, detail=f"Python tool record for ID {tool_id} not found.")
+
+                tool_record = tool_record[0]
+                tool_name = tool_record["tool_name"]
+                log.info(f"[{session_id}] Loading Python tool: {tool_name} (id={tool_id})")
+
+                # ========== VERSIONED CODE LOADING ==========
+                # Check if we have a version mapping for this tool
+                target_version = tool_versions.get(tool_id, 'v1')
+                codes = None
+                
+                # Try to load versioned code from tool_versions_table
+                if self.tool_service.tool_version_repo:
+                    try:
+                        version_record = await self.tool_service.tool_version_repo.get_version(
+                            tool_id=tool_id, 
+                            version=target_version
+                        )
+                        if version_record and version_record.get('code_snippet'):
+                            codes = version_record['code_snippet']
+                            log.info(f"✅ Loaded versioned code for tool '{tool_name}' version '{target_version}'")
+                    except Exception as e:
+                        log.warning(f"Could not load versioned code for {tool_id} v{target_version}: {e}")
+                
+                # Fallback to tool_table.code_snippet if versioned code not found
+                if not codes:
+                    codes = tool_record.get("code_snippet", "")
+                    log.info(f"Using fallback code_snippet from tool_table for tool '{tool_name}'")
+                
+                log.info(f"Loading Python tool: {tool_name} (version: {target_version})")
+
+                exec(codes, local_var)
+                loaded_tool = local_var[tool_name]
+                if loaded_tool is None:
+                    raise KeyError(f"No callable found in code_snippet for tool '{tool_name}' (id={tool_id})")
+                if not callable(loaded_tool):
+                    raise TypeError(
+                        f"Resolved object for tool '{tool_name}' (id={tool_id}) is not callable: "
+                        f"{type(loaded_tool).__name__}"
+                    )
+
+                if use_kafka_tool_worker:
+                    # Wrap → Kafka dispatch (preserves signature via functools.wraps)
+                    loaded_tool = make_kafka_tool(
+                        original_func=loaded_tool,
+                        tool_id=tool_id,
+                        kafka_mgr=kafka_mgr,
+                        tool_version=target_version,
+                    )
+                    log.info(f"[{session_id}] Wrapped Python tool '{tool_name}' version '{target_version}' for Kafka dispatch")
+
+                tool_list.append(loaded_tool)
+                log.debug(f"[{session_id}] Python tool '{tool_name}' added to tool_list")
 
             except HTTPException:
                 raise # Re-raise HTTPExceptions directly
             except Exception as e:
-                log.error(f"Error occurred while loading tool {tool_id}: {e}")
+                log.error(f"[{session_id}] Error occurred while loading tool {tool_id}: {e}")
                 raise HTTPException(status_code=500, detail=f"Error occurred while loading tool {tool_id}: {e}")
 
+        # ========== MCP TOOLS (per-server loading for provenance) ==========
         if mcp_server_ids:
+            log.info(f"[{session_id}] Loading MCP tools from {len(mcp_server_ids)} server(s): {mcp_server_ids}")
+
             try:
                 mcp_server_details = await self.mcp_tool_service.get_live_mcp_tools_from_servers(tool_ids=mcp_server_ids)
                 mcp_live_tools: List[StructuredTool] = mcp_server_details.get("all_live_tools", [])
                 if mcp_live_tools:
                     tool_list.extend(mcp_live_tools)
-
+                    log.info(f"[{session_id}] Loaded {len(mcp_live_tools)} MCP tools (non-Kafka mode)")
             except Exception as e:
-                log.error(f"Error occurred while loading tools from MCP servers {mcp_server_ids}: {e}")
+                log.error(f"[{session_id}] Error occurred while loading tools from MCP servers {mcp_server_ids}: {e}")
                 raise HTTPException(status_code=500, detail=f"Error occurred while loading tools from MCP servers {mcp_server_ids}: {e}")
+
+
 
         # NOTE: Context management prompt is NOT auto-injected.
         # Include run_shell_command instructions directly in your agent's system prompt if needed.
@@ -404,58 +441,135 @@ class BaseAgentInference(ABC):
                     
                     if user_data:
                         user_info_section = f"""
-## Current User Information
-You are currently assisting the following user:
-- **Email:** {user_data.get('mail_id', user_email)}
-- **Name:** {user_data.get('user_name', 'Unknown')}
-- **Role:** {user_data.get('role', 'User')}
+    ## Current User Information
+    You are currently assisting the following user:
+    - **Email:** {user_data.get('mail_id', user_email)}
+    - **Name:** {user_data.get('user_name', 'Unknown')}
+    - **Role:** {user_data.get('role', 'User')}
 
-Please personalize your responses appropriately for this user.
-#Always greet user by their Name for general calls
-"""
+    Please personalize your responses appropriately for this user.
+    #Always greet user by their Name for general calls
+    """
                         system_prompt = f"{system_prompt}\n{user_info_section}"
-                        log.info(f"✅ Injected user info into system prompt for: {user_email}")
+                        log.info(f"[{session_id}] Injected user info into system prompt for: {user_email}")
                     else:
                         # Fallback: just inject email
                         user_info_section = f"""
-## Current User Information
-You are currently assisting: {user_email}
-"""
+    ## Current User Information
+    You are currently assisting: {user_email}
+    """
                         system_prompt = f"{system_prompt}\n{user_info_section}"
-                        log.info(f"✅ Injected user email into system prompt: {user_email}")
+                        log.info(f"[{session_id}] Injected user email into system prompt: {user_email}")
                 except Exception as e:
-                    log.warning(f"Could not fetch full user details, using email only: {e}")
+                    log.warning(f"[{session_id}] Could not fetch full user details, using email only: {e}")
                     user_info_section = f"""
-## Current User Information
-You are currently assisting: {user_email}
-"""
+    ## Current User Information
+    You are currently assisting: {user_email}
+    """
                     system_prompt = f"{system_prompt}\n{user_info_section}"
         except Exception as e:
-            log.warning(f"Could not inject user info into system prompt: {e}")
+            log.warning(f"[{session_id}] Could not inject user info into system prompt: {e}")
 
+        # ========== BUILD REACT AGENT ==========
         interrupt_before = ["tools"] if interrupt_tool and tool_list else None
+        log.info(f"[{session_id}] [AGENT_CREATE] Creating react agent with {len(tool_list)} tools: {[t.name if hasattr(t, 'name') else str(t)[:30] for t in tool_list]}")
+        
+        # Add detailed DB tools instruction if database tools are available
+        # NOTE: Schema and sample data are now PRE-LOADED from cache into the prompt
+        # Only database_query_tool is available as a tool
+        db_connection_names = getattr(self, '_db_connection_names', None)
+        if db_connection_names:
+            # The cached schema and sample data are already injected via inject_database_tools_into_config
+            # This is a fallback instruction in case caching wasn't set up
+            db_tools_instruction = f"""
+
+## DATABASE QUERY CAPABILITY
+
+You have access to query the following database connections: {db_connection_names}
+
+### Available Tool:
+- **database_query_tool(connection_name, query, limit=100)** - Execute SELECT queries
+
+### HOW TO USE:
+1. **Review the PRE-LOADED DATABASE SCHEMA above** - it contains all tables, columns, and data types
+2. **Review the PRE-LOADED SAMPLE DATA** - it shows example values from key tables
+3. **Write your SELECT query** using the exact table and column names from the schema
+4. **Execute**: `database_query_tool(connection_name="{db_connection_names[0]}", query="SELECT ...")`
+
+### IMPORTANT:
+- The schema is ALREADY LOADED above - DO NOT say you need to discover it
+- Only operations NOT in the connection's blocked commands list are allowed
+- Use the sample data to understand data formats and values
+- ALWAYS execute the tool to get real data - never guess or hallucinate
+"""
+            system_prompt = f"{system_prompt}\n{db_tools_instruction}"
+        
+        # Debug: Log final tool list before creating agent
+        log.info(f"Final tool_list before create_react_agent: {len(tool_list)} tools")
+        
+        # FIX: Prepend clear tool instructions when database tools are available
+        # This ensures the LLM knows the correct workflow: read schema -> execute query
+        if db_connection_names and tool_list:
+            connections_list = ", ".join(db_connection_names)
+            db_tool_header = f"""## DATABASE QUERY WORKFLOW
+
+You have access to query these databases: {connections_list}
+
+### AVAILABLE TOOLS:
+1. **run_shell_command** - Read files (schema, samples) from /databases/{{connection_name}}/
+2. **database_query_tool** - Execute SQL SELECT queries
+
+### REQUIRED WORKFLOW (Follow these steps IN ORDER):
+
+**STEP 1: Read the schema file**
+```
+run_shell_command(command="cat /databases/{db_connection_names[0]}/schema.md")
+```
+
+**STEP 2: (Optional) Read sample data for reference**
+```
+run_shell_command(command="cat /databases/{db_connection_names[0]}/samples.md")
+```
+
+**STEP 3: Execute your query**
+```
+database_query_tool(connection_name="{db_connection_names[0]}", query="SELECT ... FROM ...")
+```
+
+**STEP 4: If query fails, read samples.md and retry**
+If your query returns an error (e.g., column not found, syntax error):
+```
+run_shell_command(command="cat /databases/{db_connection_names[0]}/samples.md")
+```
+→ Review the sample data to understand actual column names, data formats, and values
+→ Then rewrite and execute your query with corrected syntax
+
+### IMPORTANT RULES:
+- ALWAYS read schema.md FIRST before writing any query
+- Use exact table and column names from the schema
+- If query fails, read samples.md to understand data formats, then retry
+- NEVER say you don't have tools - you have run_shell_command and database_query_tool
+
+---
+
+"""
+            system_prompt = db_tool_header + system_prompt
+            log.info(f"[DB_TOOLS] Prepended database workflow instructions to system prompt")
+        
         try:
-            if message_queue:
-                executor_agent = create_react_agent(
-                llm,
-                tools=tool_list,
-                checkpointer=checkpointer,
-                interrupt_after=["tools"],
-                prompt=system_prompt
-            )
-            else:
-                executor_agent = create_react_agent(
+            executor_agent = create_react_agent(
                 llm,
                 tools=tool_list,
                 checkpointer=checkpointer,
                 interrupt_before=interrupt_before,
                 prompt=system_prompt
-                )
+            )
+            log.info(f"[{session_id}] React agent created successfully")
             # Return executor_agent, tool_list, and memory instance (shell)
             return executor_agent, tool_list, agent_shell
 
         except Exception as e:
-            log.error(f"Error occurred while creating agent executor: {e}")
+            log.error(f"[{session_id}] Error occurred while creating agent executor: {e}")
             raise HTTPException(status_code=500, detail=f"Error occurred while creating agent executor: {e}")
 
     @staticmethod
@@ -493,19 +607,35 @@ You are currently assisting: {user_email}
             dict: A dictionary containing the system prompt and tool information.
         """
         # Retrieve agent details from the database
-        log.info("Retrieving agent details - CACHE LOG")
+        log.info(f"Retrieving agent details for agent_id={agentic_application_id}")
         result = await self.agent_service.agent_repo.get_agent_record(agentic_application_id=agentic_application_id)
-        log.info("Retrieved agent details successfully - CACHE LOG")
+        log.info(f"Agent details retrieved successfully for agent_id={agentic_application_id}")
         if not result:
             log.error(f"Agentic Application ID {agentic_application_id} not found.")
             raise HTTPException(status_code=404, detail=f"Agentic Application ID {agentic_application_id} not found.")
         result = result[0]
+
+        # Fetch tool-agent mappings to get version info
+        tools_with_versions = {}
+        try:
+            mappings = await self.tool_service.tool_agent_mapping_repo.get_tool_agent_mappings_record(
+                agentic_application_id=agentic_application_id
+            )
+            for mapping in mappings:
+                tool_id = mapping.get('tool_id')
+                tool_version = mapping.get('tool_version', 'v1')
+                if tool_id:
+                    tools_with_versions[tool_id] = tool_version
+            log.info(f"Tool versions for agent {agentic_application_id}: {tools_with_versions}")
+        except Exception as e:
+            log.warning(f"Could not fetch tool versions: {e}. Defaulting to v1 for all tools.")
 
         agent_config = {
             "AGENT_ID": result["agentic_application_id"],
             "AGENT_NAME": result["agentic_application_name"],
             "SYSTEM_PROMPT": json.loads(result["system_prompt"]),
             "TOOLS_INFO": json.loads(result["tools_id"]),
+            "TOOLS_WITH_VERSIONS": tools_with_versions,  # Map of tool_id -> version
             "AGENT_DESCRIPTION": result["agentic_application_description"],
             "AGENT_TYPE": result['agentic_application_type']
         }
@@ -515,7 +645,7 @@ You are currently assisting: {user_email}
     # Abstract Methods
 
     @abstractmethod
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer, tool_interrupt_flag: bool = False, message_queue: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False) -> Any:
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer, tool_interrupt_flag: bool = False, use_kafka_tool_worker: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False) -> Any:
         """
         Abstract method to build and compile the LangGraph chains for a specific agent type.
         
@@ -550,41 +680,45 @@ You are currently assisting: {user_email}
         tool_result: str = None
         ):
         try:
-            # Determine which stream to use based on conditions
-            if not is_plan_approved and not tool_feedback:
-                temp = app.astream(invocation_input, config=config, stream_mode="custom")
-                async for state in temp:
-                    yield state
-            elif is_plan_approved == "yes":
-                async for state in app.astream(Command(resume="yes"), config=config,stream_mode="custom"):
-                    yield state
-            elif is_plan_approved == "no" and not plan_feedback:
-                async for state in app.astream(Command(resume="no"), config=config,stream_mode="custom"):
-                    yield state
-            elif message_queue and tool_result:
-                async for state in app.astream(Command(resume=tool_result), config=config,stream_mode="custom"):
-                    yield state        
-            elif is_plan_approved == "no" and plan_feedback is not None:
-                async for state in app.astream(Command(resume=plan_feedback), config=config,stream_mode="custom"):
-                    yield state
-            elif tool_feedback is not None:
-                async for state in app.astream(Command(resume=tool_feedback), config=config,stream_mode="custom"):
-                    yield state
-            else:
-                yield {"error": "Invalid parameters provided for astream."}
+            async with handle_llm_errors(session_id):
+                # Determine which stream to use based on conditions
+                if not is_plan_approved and not tool_feedback:
+                    temp = app.astream(invocation_input, config=config, stream_mode="custom")
+                    async for state in temp:
+                        yield state
+                elif is_plan_approved == "yes":
+                    async for state in app.astream(Command(resume="yes"), config=config,stream_mode="custom"):
+                        yield state
+                elif is_plan_approved == "no" and not plan_feedback:
+                    async for state in app.astream(Command(resume="no"), config=config,stream_mode="custom"):
+                        yield state
+                elif message_queue and tool_result:
+                    async for state in app.astream(Command(resume=tool_result), config=config,stream_mode="custom"):
+                        yield state        
+                elif is_plan_approved == "no" and plan_feedback is not None:
+                    async for state in app.astream(Command(resume=plan_feedback), config=config,stream_mode="custom"):
+                        yield state
+                elif tool_feedback is not None:
+                    async for state in app.astream(Command(resume=tool_feedback), config=config,stream_mode="custom"):
+                        yield state
+                else:
+                    yield {"error": "Invalid parameters provided for astream."}
         
         except GraphRecursionError as e:
             # LangGraph hit recursion limit during streaming; return controlled error
-            log.error(f"GraphRecursionError during streaming: {e}")
+            log.error(f"[{session_id}] GraphRecursionError during streaming: {e}")
             yield {
                 "error": "Agent hit recursion limit and was stopped.",
                 "error_type": "GRAPH_RECURSION_LIMIT",
                 "details": str(e),
             }
         
+        except LLMInfrastructureError as e:
+            raise # re-raising the error
+        
         except Exception as e:
-            log.info(f"Error during streaming: {e}")
-            yield {"error": "Having error in astream " + str(e)}
+            log.error(f"[{session_id}] Error during streaming: {e}", exc_info=True)
+            raise
 
     @staticmethod
     async def _ainvoke(
@@ -594,21 +728,23 @@ You are currently assisting: {user_email}
                     *,
                     is_plan_approved: Literal["yes", "no", None] = None,
                     plan_feedback: str = None,
-                    tool_feedback: str = None
+                    tool_feedback: str = None,
+                    session_id: str = None
                 ):
         """
         Asynchronously invokes the agent application with the provided input and configuration.
         """
-        if not is_plan_approved and not tool_feedback:
-            return await app.ainvoke(invocation_input, config=config)
-        if is_plan_approved == 'yes':
-            return await app.ainvoke(Command(resume='yes'), config=config)
-        if is_plan_approved == 'no' and not plan_feedback:
-            return await app.ainvoke(Command(resume='no'), config=config)
-        if is_plan_approved == 'no' and plan_feedback is not None:
-            return await app.ainvoke(Command(resume=plan_feedback), config=config)
-        if tool_feedback is not None:
-            return await app.ainvoke(Command(resume=tool_feedback), config=config)
+        async with handle_llm_errors(session_id):
+            if not is_plan_approved and not tool_feedback:
+                return await app.ainvoke(invocation_input, config=config)
+            if is_plan_approved == 'yes':
+                return await app.ainvoke(Command(resume='yes'), config=config)
+            if is_plan_approved == 'no' and not plan_feedback:
+                return await app.ainvoke(Command(resume='no'), config=config)
+            if is_plan_approved == 'no' and plan_feedback is not None:
+                return await app.ainvoke(Command(resume=plan_feedback), config=config)
+            if tool_feedback is not None:
+                return await app.ainvoke(Command(resume=tool_feedback), config=config)
         return {"error": "Invalid parameters provided for ainvoke."}
 
     async def _generate_response(
@@ -635,24 +771,25 @@ You are currently assisting: {user_email}
                                 validator_flag: bool = False,
                                 mentioned_agent_id: str = None,
                                 interrupt_items: List[str] = None,
-                                message_queue: bool = False,
+                                use_kafka_tool_worker: bool = False,
                                 inference_config: AdminConfigLimits = AdminConfigLimits(),
                                 department_name: str = None
                             ):
         if not plan_verifier_flag:
             is_plan_approved = plan_feedback = None
 
+        log.info(f"[{session_id}] _generate_response started | agent_id={agentic_application_id}, model={model_name}, streaming={enable_streaming_flag}, eval_flag={evaluation_flag}, validator_flag={validator_flag}, kafka={use_kafka_tool_worker}")
         llm = await self.model_service.get_llm_model(model_name=model_name, temperature=temperature)
         agent_resp = {}
 
-        log.debug("Building agent and chains")
+        log.debug(f"[{session_id}] Building agent and chains")
         async with await self.chat_service.get_checkpointer_context_manager() as checkpointer:
             chains = await self._build_agent_and_chains(
                 llm, 
                 agent_config, 
                 checkpointer, 
                 tool_interrupt_flag=tool_interrupt_flag,
-                message_queue=message_queue,
+                use_kafka_tool_worker=use_kafka_tool_worker,
                 session_id=session_id,
                 agent_id=agentic_application_id,
                 context_flag=context_flag,
@@ -661,9 +798,9 @@ You are currently assisting: {user_email}
             if reset_conversation:
                 try:
                     await self.chat_service.delete_session(agentic_application_id, session_id)
-                    log.info(f"Conversation history for session {session_id} has been reset.")
+                    log.info(f"[{session_id}] Conversation history reset for agent_id={agentic_application_id}")
                 except Exception as e:
-                    log.error(f"Error occurred while resetting conversation: {e}")
+                    log.error(f"[{session_id}] Error occurred while resetting conversation: {e}")
 
             flags_and_config = {
                 "plan_verifier_flag": plan_verifier_flag,
@@ -673,22 +810,23 @@ You are currently assisting: {user_email}
                 "file_context_management_flag": file_context_management_flag,
                 "evaluation_flag": evaluation_flag,
                 "validator_flag": validator_flag,
-                "message_queue": message_queue,
+                "message_queue": False,
                 "inference_config": inference_config
             }
-            log.debug("Building workflow")
+            log.debug(f"[{session_id}] Building workflow")
             workflow = await self._build_workflow(chains, flags_and_config)
-            log.debug("Workflow built successfully")
+            log.debug(f"[{session_id}] Workflow built successfully")
             app = workflow.compile(checkpointer=checkpointer)
-            log.debug("Workflow compiled successfully")
+            log.debug(f"[{session_id}] Workflow compiled successfully")
             # Configuration for the workflow
             thread_id = await self.chat_service._get_thread_id(agentic_application_id, session_id)
             graph_config = await self.chat_service._get_thread_config(thread_id)
 
-            log.info(f"Invoking executor agent for query: {query}\n with Session ID: {session_id} and Agent Id: {agentic_application_id}")
+            log.info(f"[{session_id}] Invoking executor agent for query: {query}\n with Session ID: {session_id} and Agent Id: {agentic_application_id}")
             
             # Use the context-aware traced context manager to prevent trace mixing
             log_trace_context(f"before_agent_invocation_session_{session_id}")
+
             async with traced_project_context(project_name):
                 log_trace_context(f"inside_traced_context_session_{session_id}")
                 try:
@@ -725,11 +863,11 @@ You are currently assisting: {user_email}
                         else:
                             agent_resp = {}
                         if not agent_resp:
-                            log.warning(f"unable to retrive response for this Session Id")
+                            log.warning(f"[{session_id}] Unable to retrieve response from checkpointer")
                         yield agent_resp
 
 
-                        log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
+                        log.info(f"[{session_id}] Agent streaming invocation completed for agent_id={agentic_application_id}")
                     else:
                         agent_resp = await self._ainvoke(
                             app,
@@ -737,15 +875,19 @@ You are currently assisting: {user_email}
                             config=graph_config,
                             is_plan_approved=is_plan_approved,
                             plan_feedback=plan_feedback,
-                            tool_feedback=tool_feedback
+                            tool_feedback=tool_feedback,
+                            session_id=session_id
                         )
 
                         log.info(f"Agent invoked successfully for query: {query} with session ID: {session_id}")
                         yield agent_resp
 
+                except LLMInfrastructureError as e:
+                    raise # Already handled, propagete up
+
                 except GraphRecursionError as e:
                     # LangGraph hit recursion limit; return controlled error
-                    log.error(f"GraphRecursionError during inference: {e}")
+                    log.error(f"[{session_id}] GraphRecursionError during inference for agent_id={agentic_application_id}: {e}")
                     agent_resp = {
                         "error": "Agent hit recursion limit and was stopped.",
                         "error_type": "GRAPH_RECURSION_LIMIT",
@@ -754,17 +896,8 @@ You are currently assisting: {user_email}
                     yield agent_resp
 
                 except Exception as e:
-                    await checkpointer.setup()
-                    response = await checkpointer.aget(graph_config)
-
-                    if response.get("channel_values", {}).get("executor_messages", None):
-                        error_trace = response["channel_values"]["executor_messages"][-1]
-                        agent_resp = {"error": f"Error Occurred while inferencing: {e}\nError Trace:\n{error_trace}"}
-                    else:
-                        agent_resp = {"error": f"Error Occurred while inferencing: {e}"}
-                    
-                    log.error(agent_resp.get("error", "Unknown error occurred during agent inference."))
-                    yield agent_resp
+                    log.error(f"[{session_id}] Error during agent inference: {e}", exc_info=True)
+                    raise
                 
                 finally:
                     log_trace_context(f"after_agent_invocation_session_{session_id}")
@@ -776,7 +909,8 @@ You are currently assisting: {user_email}
                   agent_config: Optional[Union[dict, None]] = None,
                   insert_into_eval_flag: bool = True,
                   role: str = None,
-                  department_name: str = None
+                  department_name: str = None,
+                  use_kafka_tool_worker: bool = False
                 ) -> Any:
         """
         Runs the Agent inference workflow.
@@ -786,11 +920,13 @@ You are currently assisting: {user_email}
         """
         start_time = time.monotonic()
         agentic_application_id = inference_request.agentic_application_id
+        session_id = inference_request.session_id
+        log.info(f"[{session_id}] BaseAgentInference.run started | agent_id={agentic_application_id}, eval_flag={insert_into_eval_flag}, role={role}, department={department_name}, kafka={use_kafka_tool_worker}")
         if not agent_config:
             try:
                 agent_config = await self._get_agent_config(agentic_application_id)
             except Exception as e:
-                log.error(f"Error occurred while retrieving agent configuration: {e}")
+                log.error(f"[{session_id}] Error occurred while retrieving agent configuration for agent_id={agentic_application_id}: {e}")
                 raise HTTPException(status_code=500, detail=f"Error occurred while retrieving agent configuration: {str(e)}")
 
         try:
@@ -893,6 +1029,42 @@ Always prioritize accuracy: if the knowledge base provides specific information,
                 except Exception as e:
                     log.warning(f"Error fetching knowledge bases for agent '{agentic_application_id}': {e}")
 
+            # Fetch database connections for agent and auto-inject database query tool
+            db_connection_names = None
+            log.info(f"[DB_TOOLS_CHECK] Agent type: {agent_config.get('AGENT_TYPE')}, checking for db_connection_names...")
+            if agent_config["AGENT_TYPE"] in ["react_agent", "react_critic_agent", "planner_executor_agent", "planner_executor_critic_agent"]:
+                try:
+                    from src.inference.database_tools_integration import (
+                        get_db_connections_for_agent,
+                        inject_database_tools_into_config
+                    )
+                    
+                    log.info(f"[DB_TOOLS_CHECK] Calling get_db_connections_for_agent({agentic_application_id})...")
+                    db_connection_names = await get_db_connections_for_agent(agentic_application_id)
+                    log.info(f"[DB_TOOLS_CHECK] Result: {db_connection_names}")
+                    
+                    if db_connection_names:
+                        # Store for tool loading in _get_react_agent_as_executor_agent
+                        self._db_connection_names = db_connection_names
+                        log.info(f"Database connections configured for agent '{agentic_application_id}': {db_connection_names}")
+                        
+                        agent_config['DB_CONNECTION_NAMES'] = db_connection_names
+                        
+                        # Inject database query tool and system prompt instructions
+                        # Agent will use run_shell_command to read schema/sample files from /databases/{conn}/
+                        agent_config = inject_database_tools_into_config(
+                            agent_config, 
+                            db_connection_names,
+                            agent_id=agentic_application_id
+                        )
+                        
+                        log.info(f"[DB_TOOLS_CHECK] Database connections configured for agent: {db_connection_names}")
+                    else:
+                        log.info(f"[DB_TOOLS_CHECK] No db_connection_names returned")
+                except Exception as e:
+                    log.warning(f"[DB_TOOLS_CHECK] Error fetching database connections for agent '{agentic_application_id}': {e}")
+                    import traceback
+                    log.warning(f"[DB_TOOLS_CHECK] Traceback: {traceback.format_exc()}")
 
             # Generate response using the React agent workflow
             try:
@@ -918,39 +1090,43 @@ Always prioritize accuracy: if the knowledge base provides specific information,
                     enable_streaming_flag=enable_streaming_flag,
                     mentioned_agent_id=mentioned_agent_id,
                     interrupt_items=interrupt_items,
+                    use_kafka_tool_worker=use_kafka_tool_worker,
                     inference_config=inference_config,
                     department_name=department_name
                 ):
                     if "executor_messages" not in response:
                         yield response
+
+            except LLMInfrastructureError as e:
+                # Map error types to user-friendly messages
+                ERROR_MESSAGES = ["rate_limit","context_length","content_policy","connection_error","invalid_credentials","bad_request","service_unavailable","timeout","api_error"]
+                
+                error_message = str(e) if e.type in ERROR_MESSAGES else f"An error occurred: {str(e)}"
+                log.warning(f"[{session_id}] {e.type} error for agent_id={agentic_application_id}: {e}")
+                
+                # Response with error_type for UI team
+                response = {
+                    "response": error_message,
+                    "error": str(e),
+                    "error_type": e.type,  # <-- UI team can use this
+                    "executor_messages": [
+                        HumanMessage(content=query),
+                        AIMessage(content=error_message)
+                    ]
+                }
+                update_session_context(response=error_message)
+                yield response
+                return
+                    
             except Exception as e:
                 error_str = str(e).lower()
                 error_message = None
                 
-                # Check for rate limit errors
-                if any(keyword in error_str for keyword in ["rate limit", "ratelimit", "429", "too many requests", "quota exceeded", "requests per minute"]):
-                    error_message = "I apologize, but the service is currently experiencing high demand. The rate limit has been exceeded. Please wait a moment and try again."
-                    log.warning(f"Rate limit error encountered: {e}")
                 
-                # Check for request limit errors
-                elif any(keyword in error_str for keyword in ["request limit", "max requests", "request quota"]):
-                    error_message = "The maximum number of requests has been reached. Please try again later or contact support if this persists."
-                    log.warning(f"Request limit error encountered: {e}")
-                
-                # Check for context length/token limit errors
-                elif any(keyword in error_str for keyword in ["context length", "token limit", "max tokens", "context_length_exceeded", "maximum context", "too long", "reduce the length"]):
-                    error_message = "The conversation has become too long and exceeds the context limit. Please start a new conversation or reduce the length of your message."
-                    log.warning(f"Context limit error encountered: {e}")
-                
-                # Check for content policy/jailbreak errors
-                elif any(keyword in error_str for keyword in ["content policy", "jailbreak", "content filter", "unsafe content", "policy violation", "content management", "responsible ai"]):
-                    error_message = "Your request could not be processed as it may violate content policies. Please rephrase your question and ensure it follows acceptable use guidelines."
-                    log.warning(f"Content policy/jailbreak error encountered: {e}")
                 
                 # Generic error fallback
-                else:
-                    error_message = f"An error occurred while processing your request: {str(e)}"
-                    log.error(f"Unexpected error during response generation: {e}")
+                error_message = f"An error occurred while processing your request: {str(e)}"
+                log.error(f"[{session_id}] Unexpected error during response generation for agent_id={agentic_application_id}: {e}")
                 
                 # Create error response with AIMessage
                 response = {
@@ -992,13 +1168,16 @@ Always prioritize accuracy: if the knowledge base provides specific information,
                     time_start = time.monotonic()
                     asyncio.create_task(self.evaluation_service.log_evaluation_data(session_id, agentic_application_id, agent_config, response_evaluation, model_name))
                     time_end = time.monotonic()
-                    log.info(f"Time taken to log evaluation data asynchronously: {time_end - time_start:.2f} seconds")
+                    log.info(f"[{session_id}] Evaluation data logging task created | time_to_dispatch={time_end - time_start:.4f}s")
                 except Exception as e:
-                    log.error(f"Error Occurred while inserting into evaluation data: {e}")
+                    log.error(f"[{session_id}] Error Occurred while inserting into evaluation data for agent_id={agentic_application_id}: {e}")
             end_time = time.monotonic()
             time_taken = end_time - start_time
-            log.info(f"Time taken for inference: {time_taken:.2f} seconds")
-            response["executor_messages"][-1]["response_time"] = time_taken
+            log.info(f"[{session_id}] Inference completed | agent_id={agentic_application_id}, time_taken={time_taken:.2f}s")
+            
+            # Safely set response_time - only if executor_messages contains dicts (not AIMessage objects)
+            if response.get("executor_messages") and isinstance(response["executor_messages"][-1], dict):
+                response["executor_messages"][-1]["response_time"] = time_taken
             
             
             # Filter entire response based on user role permissions
@@ -1012,11 +1191,12 @@ Always prioritize accuracy: if the knowledge base provides specific information,
 
         except Exception as e:
             # Catch any unhandled exceptions and raise a 500 internal server error
-            log.error(f"Error Occurred in agent inference: {e}")
-            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+            log.error(f"[{session_id}] Unhandled error in agent inference for agent_id={agentic_application_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Internal Server Error in run method of Langgraph inference: {str(e)}")
 
     async def update_response_time(self, agent_id: str, session_id: str, start_time: float, time_stamp: Any):
         """Updates the response time in the last executor message for the given session."""
+        log.debug(f"[{session_id}] Updating response time for agent_id={agent_id}")
         try:
             async with await self.chat_service.get_checkpointer_context_manager() as checkpointer:
                 thread_id = await self.chat_service._get_thread_id(agent_id, session_id)
@@ -1032,11 +1212,80 @@ Always prioritize accuracy: if the knowledge base provides specific information,
                         "start_timestamp": time_stamp.isoformat()
                     }
                     ], role="response_time")})
-                log.info(f"Updated response time for session {session_id} of agent {agent_id}: {response_time} seconds")
+                log.info(f"[{session_id}] Response time updated | agent_id={agent_id}, response_time={response_time:.2f}s")
                 return response_time
         except Exception as e:
-            log.error(f"Error occurred while updating response time: {e}")
-        
+            log.error(f"[{session_id}] Error occurred while updating response time for agent_id={agent_id}: {e}")
+
+    async def update_token_usage_in_graph(
+        self,
+        agent_id: str,
+        session_id: str,
+        token_records: List[Dict],
+    ) -> None:
+        """Inject per-query token/cost totals into the LangGraph checkpoint.
+
+        Works identically to update_response_time: a minimal START→END graph is
+        compiled against the SAME checkpointer and thread_id, and aupdate_state
+        appends a sentinel ChatMessage(role='token_usage') to executor_messages.
+        segregate_conversation() strips the sentinel and exposes the totals to
+        callers without showing it as a conversation turn.
+        """
+        if not token_records:
+            log.info(f"⏭️  [TokenUsageGraph] No token records to inject for session={session_id} — skipping")
+            return
+        try:
+            log.info(
+                f"🔄 [TokenUsageGraph] Injecting {len(token_records)} LLM call record(s) "
+                f"into checkpoint for session={session_id}"
+            )
+            async with await self.chat_service.get_checkpointer_context_manager() as checkpointer:
+                thread_id = await self.chat_service._get_thread_id(agent_id, session_id)
+                graph_config = await self.chat_service._get_thread_config(thread_id)
+                workflow = StateGraph(BaseWorkflowState)
+                workflow.add_edge(START, END)
+                app = workflow.compile(checkpointer=checkpointer)
+
+                total_prompt     = sum(r.get('prompt_tokens', 0)     for r in token_records)
+                total_completion = sum(r.get('completion_tokens', 0) for r in token_records)
+                total_tokens     = sum(r.get('total_tokens', 0)      for r in token_records)
+                total_cached     = sum(r.get('cached_tokens', 0)     for r in token_records)
+
+                log.info(
+                    f"📊 [TokenUsageGraph] Aggregated totals — "
+                    f"prompt={total_prompt}, completion={total_completion}, "
+                    f"cached={total_cached}, total={total_tokens}"
+                )
+                for i, r in enumerate(token_records, 1):
+                    log.info(
+                        f"    Call {i}: model={r.get('model')}, "
+                        f"prompt={r.get('prompt_tokens')}, "
+                        f"completion={r.get('completion_tokens')}, "
+                        f"total={r.get('total_tokens')}, "
+                        f"category={r.get('call_category')}/{r.get('call_sub_category')}"
+                    )
+
+                await app.aupdate_state(
+                    config=graph_config,
+                    values={"executor_messages": ChatMessage(
+                        content=[{
+                            "prompt_tokens":     total_prompt,
+                            "completion_tokens": total_completion,
+                            "total_tokens":      total_tokens,
+                            "cached_tokens":     total_cached,
+                            "llm_calls":         token_records,
+                        }],
+                        role="token_usage",
+                    )},
+                )
+                log.info(
+                    f"✅ [TokenUsageGraph] Sentinel written to checkpoint: "
+                    f"session={session_id}, agent={agent_id}, "
+                    f"total_tokens={total_tokens}, llm_calls={len(token_records)}"
+                )
+        except Exception as e:
+            log.error(f"❌ [TokenUsageGraph] Error injecting token usage into graph: {e}", exc_info=True)
+
 
 class BaseMetaTypeAgentInference(BaseAgentInference):
     """
@@ -1054,6 +1303,7 @@ class BaseMetaTypeAgentInference(BaseAgentInference):
                                                                  system_prompts: str,
                                                                  checkpointer: Any = None,
                                                                  tool_ids: List[str] = [],
+                                                                 tool_versions: Dict[str, str] = None,
                                                                  interrupt_tool: bool = False,
                                                                  writer_holder: dict = None
                                                                  ) -> Any:
@@ -1100,6 +1350,7 @@ class BaseMetaTypeAgentInference(BaseAgentInference):
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
                                         tool_ids=tool_ids,
+                                        tool_versions=tool_versions,  # Pass tool version mapping
                                         interrupt_tool=interrupt_tool
                                     )
         critic_chain_json, critic_chain_str = await self._get_chains(llm, critic_system_prompt)
@@ -1527,6 +1778,7 @@ Critique Points:
                                                           system_prompts: str,
                                                           checkpointer: Any = None,
                                                           tool_ids: List[str] = [],
+                                                          tool_versions: Dict[str, str] = None,
                                                           interrupt_tool: bool = False,
                                                           writer_holder: dict = None
                                                           ) -> Any:
@@ -1539,6 +1791,7 @@ Critique Points:
             system_prompts: Dictionary of system prompts for each agent role
             checkpointer: Optional checkpointer for state persistence
             tool_ids: List of tool IDs to load
+            tool_versions: Optional dict mapping tool_id -> version (e.g., 'v1', 'v2')
             interrupt_tool: Whether to enable tool interruption
             writer_holder: A mutable dict that will hold the StreamWriter reference
         """
@@ -1570,6 +1823,7 @@ Critique Points:
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
                                         tool_ids=tool_ids,
+                                        tool_versions=tool_versions,  # Pass tool version mapping
                                         interrupt_tool=interrupt_tool
                                     )
         response_gen_chain_json, response_gen_chain_str = await self._get_chains(llm, response_generator_system_prompt)
@@ -1786,6 +2040,7 @@ Final Response from Executor Agent:
                                                       system_prompts: str,
                                                       checkpointer: Any = None,
                                                       tool_ids: List[str] = [],
+                                                      tool_versions: Dict[str, str] = None,
                                                       interrupt_tool: bool = False,
                                                       writer_holder: dict = None
                                                       ) -> Any:
@@ -1798,6 +2053,7 @@ Final Response from Executor Agent:
             system_prompts: Dictionary of system prompts for each agent role
             checkpointer: Optional checkpointer for state persistence
             tool_ids: List of tool IDs to load
+            tool_versions: Optional dict mapping tool_id -> version (e.g., 'v1', 'v2')
             interrupt_tool: Whether to enable tool interruption
             writer_holder: A mutable dict that will hold the StreamWriter reference
         """
@@ -1827,6 +2083,7 @@ Final Response from Executor Agent:
                                         system_prompt=executor_system_prompt,
                                         checkpointer=checkpointer,
                                         tool_ids=tool_ids,
+                                        tool_versions=tool_versions,  # Pass tool version mapping
                                         interrupt_tool=interrupt_tool
                                     )
         critic_chain_json, critic_chain_str = await self._get_chains(llm, critic_system_prompt)
@@ -2155,9 +2412,9 @@ Response:
                     return f"Worker agent '{agent_name}' completed but returned no response."
 
             except Exception as e:
-                log.error(f"Error during streaming execution of worker agent '{agent_name}': {e}")
-                safe_write({"error": f"Error during execution of agent '{agent_name}': {e}"})
-                return f"Error during execution of agent '{agent_name}': {e}"
+                log.error(f"Error during streaming execution of worker agent '{agent_name}': {e}", exc_info=True)
+                safe_write({"Node Name": f"Worker Agent: {agent_name} Thinking..", "Status": "Failed"})
+                raise
         
         handoff_tool.name = agent_name
         handoff_tool.description = tool_description
@@ -2199,12 +2456,14 @@ Response:
                 from src.utils.secrets_handler import current_user_email
                 
                 user_email = current_user_email.get(None)
+                user_department = current_user_department.get("General")
                 
                 agent_shell, shell_tools = get_shell_tools_for_session(
                     agent_id=agent_id,
                     session_id=session_id,
                     user_email=user_email,
-                    workspace_root="./agent_workspaces"
+                    workspace_root="./agent_workspaces",
+                    department=user_department
                 )
                 worker_agents_as_tools_list.extend(shell_tools)
                 log.info(f"✅ AgentShell loaded for meta/supervisor agent: user={user_email}, agent={agent_id[:12]}...")
@@ -2234,6 +2493,7 @@ Response:
             worker_agent_description = worker_agent_config.get("AGENT_DESCRIPTION")
             worker_agent_system_prompt = worker_agent_config.get("SYSTEM_PROMPT")
             worker_agent_tool_ids = worker_agent_config.get("TOOLS_INFO")
+            worker_agent_tool_versions = worker_agent_config.get("TOOLS_WITH_VERSIONS", {})  # Get tool versions
             worker_agent_name = worker_agent_config.get("AGENT_NAME")
             worker_agent_name = await self.agent_service.agent_service_utils._normalize_agent_name(worker_agent_name)
 
@@ -2241,13 +2501,15 @@ Response:
                 worker_agent, _, _ = await self._get_react_agent_as_executor_agent(
                                         llm=llm,
                                         system_prompt=worker_agent_system_prompt.get("SYSTEM_PROMPT_REACT_AGENT", ""),
-                                        tool_ids=worker_agent_tool_ids
+                                        tool_ids=worker_agent_tool_ids,
+                                        tool_versions=worker_agent_tool_versions  # Pass tool version mapping
                                     )
             elif worker_agent_type == AgentType.PLANNER_EXECUTOR_CRITIC_AGENT:
                 worker_agent, _, _ = await self._get_planner_executor_critic_agent_as_worker_agent(
                     llm=llm,
                     system_prompts=worker_agent_system_prompt,
                     tool_ids=worker_agent_tool_ids,
+                    tool_versions=worker_agent_tool_versions,  # Pass tool version mapping
                     writer_holder=writer_holder  # Pass the shared writer_holder for streaming
                 )
             elif worker_agent_type == AgentType.PLANNER_EXECUTOR_AGENT:
@@ -2255,6 +2517,7 @@ Response:
                     llm=llm,
                     system_prompts=worker_agent_system_prompt,
                     tool_ids=worker_agent_tool_ids,
+                    tool_versions=worker_agent_tool_versions,  # Pass tool version mapping
                     writer_holder=writer_holder  # Pass the shared writer_holder for streaming
                 )
             elif worker_agent_type == AgentType.REACT_CRITIC_AGENT:
@@ -2262,6 +2525,7 @@ Response:
                     llm=llm,
                     system_prompts=worker_agent_system_prompt,
                     tool_ids=worker_agent_tool_ids,
+                    tool_versions=worker_agent_tool_versions,  # Pass tool version mapping
                     writer_holder=writer_holder  # Pass the shared writer_holder for streaming
                 )
             else:
@@ -2292,3 +2556,4 @@ Response:
         except Exception as e:
             log.error(f"Error occurred while creating meta agent: {e}")
             raise HTTPException(status_code=500, detail=f"Error occurred while creating meta agent\nError: {e}")
+

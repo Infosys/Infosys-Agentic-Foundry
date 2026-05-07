@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
 from src.auth.models import (
-    User, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
+    User, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, SuperAdminRegisterRequest,
     UpdatePasswordRequest, GrantApprovalPermissionRequest, ApprovalPermissionResponse,
     RevokeApprovalPermissionRequest, UserRole, Permission, RefreshTokenRequest, RefreshTokenResponse,
     RoleListResponse, AssignRoleDepartmentRequest, AssignRoleDepartmentResponse, UpdateUserRoleRequest,
     SetUserActiveStatusRequest, UserActiveStatusResponse,
-    AdminResetPasswordRequest, AdminResetPasswordResponse, ChangePasswordRequest, ChangePasswordResponse
+    AdminResetPasswordRequest, AdminResetPasswordResponse, ChangePasswordRequest, ChangePasswordResponse,
+    RegistrationApproveRequest, RegistrationRejectRequest, RegistrationRequestResponse,
+    DepartmentAccessRequest
 )
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
@@ -78,7 +80,7 @@ async def register(
 @router.post("/register-superadmin", response_model=RegisterResponse)
 async def register_superadmin(
     request: Request,
-    register_data: RegisterRequest,
+    register_data: SuperAdminRegisterRequest,
     auth_service: AuthService = Depends(get_auth_service)
 ):
     """
@@ -129,6 +131,122 @@ async def assign_role_department(
         success=result["success"],
         message=result["message"]
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REGISTRATION REQUEST APPROVAL ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/request-department-access", response_model=RegisterResponse)
+async def request_department_access(
+    request: Request,
+    access_data: DepartmentAccessRequest,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """Request access to additional departments. User must be logged in."""
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+    return await auth_service.request_department_access(
+        email_id=current_user.email,
+        department_names=access_data.department_names,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+
+@router.get("/my-requests", response_model=dict)
+async def get_my_requests(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """Get all department access requests for the logged-in user (pending, approved, rejected)."""
+    result = await auth_service.get_my_requests(current_user.email)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Failed to fetch requests"))
+    return result
+
+
+@router.get("/registration-requests", response_model=dict)
+async def get_registration_requests(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Get pending registration requests.
+    Admin sees requests for their departments, SuperAdmin sees all.
+    """
+    if current_user.role not in ["SuperAdmin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only SuperAdmin or Admin can view registration requests")
+
+    result = await auth_service.get_pending_registrations(current_user)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Failed to fetch requests"))
+    return result
+
+
+@router.patch("/registration-requests/approve")
+async def approve_registration_request(
+    request: Request,
+    approve_data: RegistrationApproveRequest,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Approve one or more pending registration requests with a single role assignment.
+    Admin can approve for their departments, SuperAdmin for any department.
+    Accepts a list of request_ids and assigns the same role to all.
+    """
+    if current_user.role not in ["SuperAdmin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only SuperAdmin or Admin can approve registrations")
+
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    result = await auth_service.bulk_approve_registration(
+        request_ids=approve_data.request_ids,
+        role=approve_data.role,
+        current_user=current_user,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+
+@router.patch("/registration-requests/reject")
+async def reject_registration_request(
+    request: Request,
+    reject_data: RegistrationRejectRequest,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    """
+    Reject one or more pending registration requests with an optional reason.
+    Admin can reject for their departments, SuperAdmin for any department.
+    Accepts a list of request_ids and applies the same rejection reason to all.
+    """
+    if current_user.role not in ["SuperAdmin", "Admin"]:
+        raise HTTPException(status_code=403, detail="Only SuperAdmin or Admin can reject registrations")
+
+    ip_address = get_client_ip(request)
+    user_agent = get_user_agent(request)
+
+    result = await auth_service.bulk_reject_registration(
+        request_ids=reject_data.request_ids,
+        current_user=current_user,
+        rejection_reason=reject_data.rejection_reason,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
 
 
 @router.get("/guest-login", response_model=LoginResponse)

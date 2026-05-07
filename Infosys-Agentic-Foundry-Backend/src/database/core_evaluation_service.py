@@ -1027,12 +1027,12 @@ class CoreRobustnessEvaluationService:
                 item[score_col] = 0.0
         return dataset
 
-    async def run_full_robustness_pipeline(self, agentic_id: str):
+    async def run_full_robustness_workflow(self, agentic_id: str):
         """
         Runs the entire robustness evaluation process for a single agent.
         This is a high-level orchestration method for background tasks.
         """
-        log.info(f"Starting full robustness pipeline for agent: {agentic_id}")
+        log.info(f"Starting full robustness workflow for agent: {agentic_id}")
         
         try:
             # MODULAR CHANGE: Uses the injected service
@@ -1063,16 +1063,16 @@ class CoreRobustnessEvaluationService:
             )
             await self.consistency_service.update_robustness_timestamp(agentic_id)
 
-            log.info(f"✅ Full robustness pipeline for agent '{agentic_id}' completed successfully.")
+            log.info(f"✅ Full robustness workflow for agent '{agentic_id}' completed successfully.")
         except Exception as e:
-            log.error(f"Error in robustness pipeline for agent {agentic_id}: {e}", exc_info=True)
-            raise Exception(f"Robustness pipeline failed for agent {agentic_id}: {str(e)}")
+            log.error(f"Error in robustness workflow for agent {agentic_id}: {e}", exc_info=True)
+            raise Exception(f"Robustness workflow failed for agent {agentic_id}: {str(e)}")
 
     # You would also keep the execute_and_save_robustness_run method here
     # as the entry point for the "approve" endpoint.
     async def execute_and_save_robustness_run(self, agent_id: str, dataset: list):
         """
-        The main pipeline method for the 'approve' endpoint: takes a pre-generated
+        The main workflow method for the 'approve' endpoint: takes a pre-generated
         dataset, runs the agent, scores, and saves.
         """
         try:
@@ -1093,10 +1093,10 @@ class CoreRobustnessEvaluationService:
             )
             await self.consistency_service.update_robustness_timestamp(agent_id)
 
-            log.info(f"✅ Approved robustness pipeline for agent '{agent_id}' completed successfully.")
+            log.info(f"✅ Approved robustness workflow for agent '{agent_id}' completed successfully.")
         except Exception as e:
-            log.error(f"Error in approved robustness pipeline for agent {agent_id}: {e}", exc_info=True)
-            raise Exception(f"Approved robustness pipeline failed for agent {agent_id}: {str(e)}")
+            log.error(f"Error in approved robustness workflow for agent {agent_id}: {e}", exc_info=True)
+            raise Exception(f"Approved robustness workflow failed for agent {agent_id}: {str(e)}")
 
         
     async def perform_robustness_reevaluation(
@@ -1149,7 +1149,7 @@ class CoreRobustnessEvaluationService:
                     await self.consistency_service.update_column_by_row_id(table_name, "query", new_queries)
                     await self.consistency_service.update_column_by_row_id(table_name, "category", new_categories)
 
-            # --- The rest of the pipeline ---
+            # --- The rest of the workflow ---
             
             df = await self.consistency_service.get_full_data_as_dataframe(table_name)
             if df.empty:

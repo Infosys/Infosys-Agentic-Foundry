@@ -4,12 +4,16 @@ import sys
 import asyncio
 import uvicorn
 import argparse
+import time
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.utils.helper_functions import resolve_and_get_additional_no_proxys
 os.environ["NO_PROXY"] = resolve_and_get_additional_no_proxys()
@@ -21,11 +25,12 @@ from src.api.app_container import app_container
 from src.api import (
     mcp_conversion_router, tool_router, agent_router, chat_router, evaluation_router, feedback_learning_router,
     secrets_router, tag_router, utility_router, data_connector_router, user_agent_access_router,
-    group_router, group_keys_router, pipeline_router
+    group_router, group_keys_router, workflow_router
 )
 from src.api.admin_config_endpoints import router as admin_config_router
 from src.api.resource_dashboard_endpoints import router as resource_dashboard_router
 from src.api.resource_allocation_endpoints import router as resource_allocation_router
+from src.api.token_usage_report_endpoints import router as token_usage_report_router
 from src.api.evaluation_endpoints import cleanup_old_files
 
 from src.auth.middleware import AuditMiddleware, AuthenticationMiddleware
@@ -40,6 +45,40 @@ from telemetry_wrapper import logger as log
 
 
 load_dotenv()
+
+
+# --- Request Timing Middleware ---
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to measure and log the total request processing time.
+    Logs the time from when the request arrives to when the response is sent.
+    """
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.perf_counter()
+        
+        # Process the request
+        response = await call_next(request)
+        
+        # Calculate total time
+        process_time = time.perf_counter() - start_time
+        
+        # Format time in appropriate unit
+        if process_time < 1:
+            time_str = f"{process_time * 1000:.2f}ms"
+        else:
+            time_str = f"{process_time:.2f}s"
+        
+        # Add timing header to response
+        response.headers["X-Process-Time"] = time_str
+        
+        # Log the request timing
+        log.info(
+            f"⏱️ [Request Timing] {request.method} {request.url.path} | "
+            f"Status: {response.status_code} | Duration: {time_str}"
+        )
+        
+        return response
+
 
 # Set Phoenix collector endpoint
 os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "")
@@ -61,6 +100,27 @@ async def lifespan(app: FastAPI):
     try:
         await app_container.initialize_services()
         
+        # Register token usage logging hook for direct Azure OpenAI calls
+        import os
+        use_litellm_proxy = os.getenv("USE_LITELLM_PROXY_FLAG", "false").lower() == "true"
+        log.info(f"🔧 FastAPI Lifespan: USE_LITELLM_PROXY_FLAG={use_litellm_proxy}")
+        
+        from src.models.azure_ai_model_service import register_post_completion_hook, token_usage_logging_hook
+        register_post_completion_hook(token_usage_logging_hook)
+        log.info("✅ FastAPI Lifespan: Token usage logging hook registered successfully.")
+
+        # Initialize the standalone tracker (DB pool + cost service).
+        # Must run here (inside lifespan) where the event loop is active — NOT at
+        # ModelService.__init__ time which runs during module import with no loop.
+        from litellm_standalone_tracker import register_tracker_hooks
+        await register_tracker_hooks()
+        log.info("✅ FastAPI Lifespan: Standalone token tracker initialized.")
+        
+        if not use_litellm_proxy:
+            log.info("📊 FastAPI Lifespan: Direct Azure OpenAI calls will log token usage via hook system")
+        else:
+            log.info("📊 FastAPI Lifespan: LiteLLM proxy will handle token usage logging")
+        
         # Create background tasks
         asyncio.create_task(cleanup_old_files())
         log.info("FastAPI Lifespan: Cleanup task created.")
@@ -76,6 +136,27 @@ async def lifespan(app: FastAPI):
             log.info("PRODUCTION MODE: Security features enabled, API documentation disabled")
         else:
             log.info("DEVELOPMENT MODE: API documentation available at /docs")
+        
+        # Start the file server in a separate thread if enabled (with delay to ensure uvicorn message shows first)
+        try:
+            from src.file_server.file_server import start_file_server_thread, FILE_SERVER_ENABLED
+            import time
+            import threading
+            
+            if FILE_SERVER_ENABLED:
+                def delayed_file_server_start():
+                    """Start file server after a small delay so main uvicorn message appears first"""
+                    time.sleep(1)  # Wait for uvicorn to print its startup message
+                    start_file_server_thread()
+                
+                # Start the delayed launcher in a separate thread
+                launcher_thread = threading.Thread(target=delayed_file_server_start, daemon=True, name="FileServerLauncher")
+                launcher_thread.start()
+                log.info("FastAPI Lifespan: File server scheduled to start")
+        except ImportError as e:
+            log.warning(f"FastAPI Lifespan: File server module not available: {e}")
+        except Exception as e:
+            log.error(f"FastAPI Lifespan: Error scheduling file server: {e}")
         
         log.info("FastAPI Lifespan: Application startup complete. FastAPI is ready to serve requests.")
 
@@ -162,6 +243,9 @@ if IS_PRODUCTION:
         )
 
 
+# Add Request Timing Middleware first (wraps all other middlewares)
+app.add_middleware(RequestTimingMiddleware)
+
 app.add_middleware(CustomGZipMiddleware, minimum_size=500, compresslevel=5)
 
 # Various routers for different functionalities
@@ -176,7 +260,7 @@ app.include_router(feedback_learning_router)
 app.include_router(secrets_router)
 app.include_router(tag_router)
 app.include_router(utility_router)
-app.include_router(pipeline_router)
+app.include_router(workflow_router)
 app.include_router(admin_config_router)
 app.include_router(data_connector_router)
 app.include_router(mcp_conversion_router)
@@ -185,6 +269,7 @@ app.include_router(group_router)
 app.include_router(group_keys_router)
 app.include_router(resource_dashboard_router)  # Resource Dashboard for access key management
 app.include_router(resource_allocation_router)  # Resource Allocation Management (admin only)
+app.include_router(token_usage_report_router)   # Token Usage & Cost Excel export
 
 
 # Configure CORS
@@ -192,8 +277,12 @@ origins = [
     os.getenv("UI_CORS_IP", ""),
     os.getenv("UI_CORS_IP_WITH_PORT", ""),
     "http://127.0.0.1", # Allow 127.0.0.1
+    "*",
     "http://127.0.0.1:3000", #If your frontend runs on port 3000
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "http://127.0.0.1:3001", #If your frontend runs on port 3000
+    "http://localhost:3001",
+
 ]
 
 
@@ -211,6 +300,7 @@ app.add_middleware(
 # Add ProxyHeadersMiddleware to trust X-Forwarded-Proto and X-Forwarded-For headers
 # This ensures FastAPI uses HTTPS in redirect URLs when behind a reverse proxy
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=origins)
+
 
 
 # Health check endpoint

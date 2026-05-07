@@ -6,6 +6,19 @@ from src.config.constants import FrameworkType, ModelNames
 _DEFAULT_FRAMEWORK_TYPE = FrameworkType.LANGGRAPH
 
 
+class M2MInferenceRequest(BaseModel):
+    """
+    Pydantic model representing a unified agent inference request.
+    This model captures all necessary details for invoking an agent
+    in a machine-to-machine (M2M) context.
+    """
+    query: str = Field("", description="The user's primary query for the M2M inference request.")
+    agentic_application_id: str = Field(..., description="The unique ID of the agentic application to invoke.")
+    model_name: str = Field(..., description="The name of the LLM model to be used for this inference run.")
+    reset_conversation: bool = Field(False, description="If true, the conversation history for this session will be reset before inference.")
+    framework_type: FrameworkType = Field(_DEFAULT_FRAMEWORK_TYPE, description="The framework type of the agent (e.g., 'langgraph', 'google_adk', 'pure_python').")
+
+
 class AgentInferenceRequest(BaseModel):
     """
     Pydantic model representing a unified agent inference request.
@@ -46,7 +59,7 @@ class AgentInferenceRequest(BaseModel):
     enable_streaming_flag: Optional[bool] = False
     context_flag: Optional[bool] = True
     file_context_management_flag: Optional[bool] = Field(False, description="When True (and context_flag is True), uses file-based context with run_shell_command tool instead of fetching past conversations.")
-    is_pipeline_call: Optional[bool] = False
+    is_workflow_call: Optional[bool] = False
     
     # --- Model Parameters ---
     temperature: Optional[float] = Field(0, description="Temperature parameter for LLM model (0.0-1.0) - controls randomness in responses")

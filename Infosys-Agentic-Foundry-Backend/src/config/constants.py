@@ -59,10 +59,10 @@ class ConnectionPoolSize(StrEnum):
                 main_db_max_size=None
             ),
             ConnectionPoolSize.MEDIUM: PoolSizeConfig(
-                min_size=12,
-                max_size=15,
-                main_db_min_size=17,
-                main_db_max_size=20
+                min_size=8,
+                max_size=10,
+                main_db_min_size=None,
+                main_db_max_size=None
             ),
             ConnectionPoolSize.HIGH: PoolSizeConfig(
                 min_size=18,
@@ -157,6 +157,16 @@ class FrameworkType(StrEnum):
     @classmethod
     def get_default(cls) -> "FrameworkType":
         return cls.LANGGRAPH
+    
+    @property
+    def code(self) -> str:
+        """Returns a three-letter code for this framework type"""
+        code_mapping = {
+            FrameworkType.LANGGRAPH: "lang",
+            FrameworkType.PURE_PYTHON: "pytn",
+            FrameworkType.GOOGLE_ADK: "gadk",
+        }
+        return code_mapping.get(self)
 
 
 # ============================================================================
@@ -240,6 +250,8 @@ class TableNames(StrEnum):
     TAG = "tags_table"
     # Tools
     TOOL = "tool_table"
+    TOOL_VERSIONS = "tool_versions_table"
+    RECYCLE_TOOL_VERSIONS = "recycle_tool_versions"
     MCP_TOOL = "mcp_tool_table"
     RECYCLE_TOOL = "recycle_tool"
     RECYCLE_MCP_TOOL= "recycle_mcp_tool"
@@ -250,7 +262,7 @@ class TableNames(StrEnum):
     TAG_TOOL_MAPPING = "tag_tool_mapping_table"
     TAG_AGENTIC_APP_MAPPING = "tag_agentic_app_mapping_table"
     TOOL_AGENT_MAPPING = "tool_agent_mapping_table"
-    AGENT_PIPELINE_MAPPING = "agent_pipeline_mapping_table"
+    AGENT_WORKFLOW_MAPPING = "agent_workflow_mapping_table"
     # Langgraph State Memory Tables
     CHECKPOINTS = "checkpoints"
     CHECKPOINT_BLOBS = "checkpoint_blobs"
@@ -270,10 +282,10 @@ class TableNames(StrEnum):
     EXPORT_AGENT = "export_agent"
     # Python Based Agents State Memory Tables
     AGENT_CHAT_STATE_HISTORY = "agent_chat_state_history_table"
-    # Pipelines
-    PIPELINES = "pipelines_table"
-    PIPELINES_RUN = "pipelines_run"
-    PIPELINE_STEPS = "pipeline_steps"
+    # Workflows
+    WORKFLOWS = "workflows_table"
+    WORKFLOWS_RUN = "workflows_run"
+    WORKFLOW_STEPS = "workflow_steps"
     # Knowledge Base
     KNOWLEDGEBASE = "knowledgebase_table"
     AGENT_KNOWLEDGEBASE_MAPPING = "agent_knowledgebase_mapping_table"
@@ -292,6 +304,14 @@ class TableNames(StrEnum):
     AGENT_DEPARTMENT_SHARING = "agent_department_sharing"
     MCP_TOOL_DEPARTMENT_SHARING = "mcp_tool_department_sharing"
     KB_DEPARTMENT_SHARING = "kb_department_sharing"
+    WORKFLOW_DEPARTMENT_SHARING = "workflow_department_sharing"
+    # Registration Requests
+    REGISTRATION_REQUESTS = "registration_requests"
+    # Query-level token & cost tracking
+    QUERY_TOKEN_USAGE = "query_token_usage"
+    # Standalone LiteLLM token usage logs and model cost lookup
+    TOKEN_USAGE_LOGS = "token_usage_logs"
+    MODEL_COSTS = "model_costs"
 
 
 # ============================================================================
@@ -301,5 +321,55 @@ class TableNames(StrEnum):
 class ModelNames(StrEnum):
     GPT_4O = "gpt-4o"
     GPT_5_CHAT = "gpt-5-chat"
+
+
+# ============================================================================
+# Kafka Configuration
+# ============================================================================
+
+class KafkaTopics(StrEnum):
+    TOOL_REQUESTS = "iaf_tool_call_requests"
+    TOOL_RESPONSES = "iaf_tool_call_responses"
+    AGENT_REQUESTS = "iaf_agent_call_requests"
+
+
+@dataclass(frozen=True)
+class KafkaDefaults:
+    """Default configuration values for Kafka"""
+    # Connection
+    BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+
+    # Topic configuration
+    DEFAULT_NUM_PARTITIONS: int = int(os.getenv("KAFKA_DEFAULT_PARTITIONS", 10))
+    AGENT_REQUESTS_NUM_PARTITIONS: int = int(os.getenv("KAFKA_AGENT_REQUESTS_PARTITIONS", 10))
+    DEFAULT_REPLICATION_FACTOR: int = int(os.getenv("KAFKA_REPLICATION_FACTOR", 1))
+
+    # Producer
+    PRODUCER_ACKS: str = "all"
+    PRODUCER_RETRIES: int = 3
+    PRODUCER_BATCH_SIZE: int = 16384    # 16KB
+    PRODUCER_LINGER_MS: int = 10
+
+    # Consumer
+    CONSUMER_GROUP_TOOL_WORKERS: str = "tool-executor-workers"
+    CONSUMER_GROUP_AGENT_WORKERS: str = "agent-executor-workers"
+    CONSUMER_MAX_POLL_RECORDS: int = min(int(os.getenv("WORKER_MAX_PARALLEL_EXECUTIONS", 10)), 10)
+    CONSUMER_POLL_TIMEOUT_MS: int = 5000
+    CONSUMER_FETCH_MIN_BYTES: int = 1
+    CONSUMER_FETCH_MAX_WAIT_MS: int = 500
+
+    # Worker
+    WORKER_MAX_PARALLEL_EXECUTIONS: int = int(os.getenv("WORKER_MAX_PARALLEL_EXECUTIONS", 10))
+    WORKER_TOOL_EXECUTION_TIMEOUT: int = 300  # seconds
+    WORKER_AGENT_EXECUTION_TIMEOUT: int = 1800  # seconds
+    WORKER_IDLE_SLEEP_SECONDS: float = 5  # sleep between empty polls
+
+    # Recovery — for detecting and re-queuing tasks stuck in 'processing' after a worker crash
+    RECOVERY_LOOKBACK_HOURS: float = float(os.getenv("RECOVERY_LOOKBACK_HOURS", "24"))  # 24 = 24 hours
+    RECOVERY_RECHECK_MINUTES: float = float(os.getenv("RECOVERY_RECHECK_MINUTES", "30"))  # delay before rechecking
+
+    # Listener
+    LISTENER_POLL_TIMEOUT_MS: int = 3000
+    LISTENER_DEFAULT_TIMEOUT: int = 300  # seconds (5 minutes)
 
 

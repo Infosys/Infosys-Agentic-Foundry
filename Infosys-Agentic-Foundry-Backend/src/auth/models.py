@@ -3,6 +3,7 @@ import re
 from typing import Optional, List, Dict
 from pydantic import BaseModel, Field, field_validator, Field
 from datetime import datetime
+import base64
 
 
 class UserRole(str, Enum):
@@ -33,12 +34,12 @@ class Permission(str, Enum):
     DELETE_AGENTS = "delete_agents"
     EXECUTE_AGENTS = "execute_agents"
     
-    # Pipeline permissions
-    READ_PIPELINES = "read_pipelines"
-    CREATE_PIPELINES = "create_pipelines"
-    UPDATE_PIPELINES = "update_pipelines"
-    DELETE_PIPELINES = "delete_pipelines"
-    EXECUTE_PIPELINES = "execute_pipelines"
+    # Workflow permissions
+    READ_WORKFLOWS = "read_workflows"
+    CREATE_WORKFLOWS = "create_workflows"
+    UPDATE_WORKFLOWS = "update_workflows"
+    DELETE_WORKFLOWS = "delete_workflows"
+    EXECUTE_WORKFLOWS = "execute_workflows"
     
     # User management permissions
     MANAGE_USERS = "manage_users"
@@ -57,9 +58,9 @@ class Permission(str, Enum):
 # Role-based permission mapping
 ROLE_PERMISSIONS = {
     UserRole.USER: [
-        # Users can read and execute pipelines for testing
-        Permission.READ_PIPELINES,
-        Permission.EXECUTE_PIPELINES,
+        # Users can read and execute workflows for testing
+        Permission.READ_WORKFLOWS,
+        Permission.EXECUTE_WORKFLOWS,
         Permission.READ_AGENTS,
         Permission.EXECUTE_AGENTS,
     ],
@@ -74,11 +75,11 @@ ROLE_PERMISSIONS = {
         Permission.UPDATE_AGENTS,
         Permission.EXECUTE_AGENTS,
         Permission.DELETE_AGENTS,
-        Permission.READ_PIPELINES,
-        Permission.CREATE_PIPELINES,
-        Permission.UPDATE_PIPELINES,
-        Permission.DELETE_PIPELINES,
-        Permission.EXECUTE_PIPELINES
+        Permission.READ_WORKFLOWS,
+        Permission.CREATE_WORKFLOWS,
+        Permission.UPDATE_WORKFLOWS,
+        Permission.DELETE_WORKFLOWS,
+        Permission.EXECUTE_WORKFLOWS
     ],
     UserRole.ADMIN: [
         Permission.READ_TOOLS,
@@ -91,11 +92,11 @@ ROLE_PERMISSIONS = {
         Permission.UPDATE_AGENTS,
         Permission.DELETE_AGENTS,
         Permission.EXECUTE_AGENTS,
-        Permission.READ_PIPELINES,
-        Permission.CREATE_PIPELINES,
-        Permission.UPDATE_PIPELINES,
-        Permission.DELETE_PIPELINES,
-        Permission.EXECUTE_PIPELINES,
+        Permission.READ_WORKFLOWS,
+        Permission.CREATE_WORKFLOWS,
+        Permission.UPDATE_WORKFLOWS,
+        Permission.DELETE_WORKFLOWS,
+        Permission.EXECUTE_WORKFLOWS,
         Permission.MANAGE_USERS,
         Permission.VIEW_ALL_USERS,
         Permission.VIEW_AUDIT_LOGS,
@@ -112,11 +113,11 @@ ROLE_PERMISSIONS = {
         Permission.UPDATE_AGENTS,
         Permission.DELETE_AGENTS,
         Permission.EXECUTE_AGENTS,
-        Permission.READ_PIPELINES,
-        Permission.CREATE_PIPELINES,
-        Permission.UPDATE_PIPELINES,
-        Permission.DELETE_PIPELINES,
-        Permission.EXECUTE_PIPELINES,
+        Permission.READ_WORKFLOWS,
+        Permission.CREATE_WORKFLOWS,
+        Permission.UPDATE_WORKFLOWS,
+        Permission.DELETE_WORKFLOWS,
+        Permission.EXECUTE_WORKFLOWS,
         Permission.MANAGE_USERS,
         Permission.VIEW_ALL_USERS,
         Permission.APPROVE_AGENTS,
@@ -170,6 +171,15 @@ class LoginRequest(BaseModel):
     password: str
     department_name: Optional[str] = None
 
+    @field_validator('password')
+    @classmethod
+    def decode_password(cls, v: str) -> str:
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        return v
+
 
 class LoginResponse(BaseModel):
     approval: bool
@@ -206,6 +216,82 @@ class RegisterRequest(BaseModel):
     email_id: str
     password: str
     user_name: str
+    department_names: List[str] = Field(..., min_length=1, description="List of department names the user wants to join")
+    
+    @field_validator('email_id')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
+        return v
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
+
+    @field_validator('user_name')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        if not re.match(r'^[a-zA-Z0-9 ]+$', v):
+            raise ValueError('Username must contain only alphanumeric characters and spaces')
+        return v.strip()
+
+    @field_validator('department_names')
+    @classmethod
+    def validate_department_names(cls, v: List[str]) -> List[str]:
+        cleaned = list(set(d.strip() for d in v if d.strip()))
+        if not cleaned:
+            raise ValueError('At least one department name is required')
+        return cleaned
+
+
+class SuperAdminRegisterRequest(BaseModel):
+    email_id: str
+    password: str
+    user_name: str
+
+    @field_validator('email_id')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
+        return v
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
 
     @field_validator('user_name')
     @classmethod
@@ -218,6 +304,20 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     approval: bool
     message: str
+    pending_departments: Optional[List[str]] = None
+
+
+class DepartmentAccessRequest(BaseModel):
+    """Request to join additional departments (used by logged-in users)"""
+    department_names: List[str] = Field(..., min_length=1, description="List of department names the user wants to join")
+
+    @field_validator('department_names')
+    @classmethod
+    def validate_department_names(cls, v: List[str]) -> List[str]:
+        cleaned = list(set(d.strip() for d in v if d.strip()))
+        if not cleaned:
+            raise ValueError('At least one department name is required')
+        return cleaned
 
 
 class AssignRoleDepartmentRequest(BaseModel):
@@ -229,6 +329,36 @@ class AssignRoleDepartmentRequest(BaseModel):
 class AssignRoleDepartmentResponse(BaseModel):
     success: bool
     message: str
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REGISTRATION APPROVAL MODELS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RegistrationApproveRequest(BaseModel):
+    """Request for admin to approve one or more registration requests by assigning a single role"""
+    request_ids: List[int] = Field(..., description="List of registration request IDs to approve")
+    role: str = Field(..., description="Role to assign to all the users in their department")
+
+
+class RegistrationRejectRequest(BaseModel):
+    """Request for admin to reject one or more registration requests"""
+    request_ids: List[int] = Field(..., description="List of registration request IDs to reject")
+    rejection_reason: Optional[str] = Field(None, description="Reason for rejection")
+
+
+class RegistrationRequestResponse(BaseModel):
+    """Response model for a single registration request"""
+    id: int
+    email_id: str
+    user_name: str
+    department_name: str
+    status: str
+    assigned_role: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class GrantApprovalPermissionRequest(BaseModel):
@@ -252,6 +382,35 @@ class UpdatePasswordRequest(BaseModel):
     new_password: Optional[str] = Field(None, description="New password for the user")
     role: Optional[str] = None
     department_name: Optional[str] = None
+
+    @field_validator('email_id')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
+        return v
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
     
 
 class UpdateUserRoleRequest(BaseModel):
@@ -259,6 +418,35 @@ class UpdateUserRoleRequest(BaseModel):
     new_role: Optional[str] = Field(None, description="New role to assign within the department")
     department_name: Optional[str] = Field(None, description="Department to update role in. Required for SuperAdmin, optional for Admin (defaults to admin's department).")
     temporary_password: Optional[str] = Field(None, description="Temporary password to set for the user. User will be required to change on next login.")
+
+    @field_validator('email_id')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
+        return v
+
+    @field_validator('temporary_password')
+    @classmethod
+    def validate_temporary_password(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
 
 
 # User Enable/Disable Models
@@ -287,9 +475,11 @@ class RoleModel(BaseModel):
 
 
 class AccessPermission(BaseModel):
-    """Permission structure for tools and agents"""
+    """Permission structure for tools, agents, mcp_servers and workflows"""
     tools: bool = False
     agents: bool = False
+    mcp_servers: bool = False
+    workflows: bool = False
 
 
 class RoleAccessModel(BaseModel):
@@ -312,6 +502,7 @@ class RoleAccessModel(BaseModel):
     file_context_access: Optional[bool] = None
     canvas_view_access: Optional[bool] = None
     context_access: Optional[bool] = None
+    export_agents_access: Optional[bool] = None
     created_at: datetime
     updated_at: datetime
     created_by: Optional[str] = None
@@ -343,6 +534,7 @@ class SetRolePermissionsRequest(BaseModel):
     file_context_access: Optional[bool] = None
     canvas_view_access: Optional[bool] = None
     context_access: Optional[bool] = None
+    export_agents_access: Optional[bool] = None
 
 
 class UpdateRolePermissionsRequest(BaseModel):
@@ -365,6 +557,7 @@ class UpdateRolePermissionsRequest(BaseModel):
     file_context_access: Optional[bool] = None
     canvas_view_access: Optional[bool] = None
     context_access: Optional[bool] = None
+    export_agents_access: Optional[bool] = None
 
 
 class GetRolePermissionsRequest(BaseModel):
@@ -509,6 +702,33 @@ class AdminResetPasswordRequest(BaseModel):
     email_id: str = Field(..., description="Target user's email (mail_id)")
     temporary_password: str = Field(..., description="Temporary password to set for the user")
 
+    @field_validator('email_id')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', v):
+            raise ValueError('Invalid email format. Please provide a valid email address (e.g. user@example.com)')
+        return v
+
+    @field_validator('temporary_password')
+    @classmethod
+    def validate_temporary_password(cls, v: str) -> str:
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
+
 
 class AdminResetPasswordResponse(BaseModel):
     """Response model for SuperAdmin PWD reset"""
@@ -522,6 +742,34 @@ class ChangePasswordRequest(BaseModel):
     """Request model for user to change their own PWD"""
     current_password: str = Field(..., description="Current password for verification")
     new_password: str = Field(..., description="New password to set")
+
+    @field_validator('current_password')
+    @classmethod
+    def decode_current_password(cls, v: str) -> str:
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        return v
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        try:
+            v = base64.b64decode(v).decode('utf-8')
+        except Exception:
+            raise ValueError('Password must be base64 encoded')
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('Password must contain at least one digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
 
 
 class ChangePasswordResponse(BaseModel):

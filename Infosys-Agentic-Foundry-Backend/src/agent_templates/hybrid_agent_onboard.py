@@ -1,5 +1,5 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-from typing import Dict
+from typing import Dict, Optional, List
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers.string import StrOutputParser
 from src.prompts.prompts import hybrid_agent_system_prompt_generator_prompt
@@ -24,7 +24,8 @@ class HybridAgentOnboard(BaseAgentOnboard):
 
     async def _generate_system_prompt(self, agent_name: str, agent_goal: str,
                                       workflow_description: str,
-                                      tool_or_worker_agents_prompt: str, llm) -> Dict[str, str]:
+                                      tool_or_worker_agents_prompt: str, llm,
+                                      db_connection_names: Optional[List[str]] = None) -> Dict[str, str]:
         """
         Generates a system prompt for the Hybrid Agent using the provided parameters and LLM model.
         """

@@ -10,18 +10,15 @@ from fastapi import HTTPException
 from src.database.services import ChatService
 from src.inference.inference_utils import InferenceUtils
 from src.schemas import AgentInferenceRequest
-from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets
+from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department, current_request_headers
+from src.decorators.tool_access import resource_access, require_role, authorized_tool, current_tool_user, get_tool_user_context
+from src.utils.sandbox import get_sandbox_builtins, get_sandbox_extras
 
 from telemetry_wrapper import logger as log
 
 from src.storage import get_storage_client
 
 load_dotenv()
-
-
-
-
-
 
 
 
@@ -109,16 +106,30 @@ class AbstractBaseInference(ABC):
         )
         return [manage_memory_tool, search_memory_tool]
 
-    async def _get_tools_instances(self, tool_ids: List[str] = []) -> list:
+    async def _get_tools_instances(self, tool_ids: List[str] = [], tool_versions: Dict[str, str] = None) -> list:
         """
         Retrieves tool instances based on the provided tool IDs.
+        
+        Args:
+            tool_ids: List of tool IDs to load
+            tool_versions: Optional dict mapping tool_id -> version (e.g., 'v1', 'v2').
+                          If provided, loads versioned code from tool_versions_table.
         """
         # local_var for exec() context, including secrets handlers
         local_var = {
+            "__builtins__": get_sandbox_builtins(),
+            **get_sandbox_extras(),
             "get_user_secrets": get_user_secrets,
             "current_user_email": current_user_email,
+            "current_user_department": current_user_department,
             "get_public_secrets": get_public_key,
-            "get_group_secrets": get_group_secrets
+            "get_group_secrets": get_group_secrets,
+            "resource_access": resource_access,
+            "require_role": require_role,
+            "authorized_tool": authorized_tool,
+            "current_tool_user": current_tool_user,
+            "get_tool_user_context": get_tool_user_context,
+            "current_request_headers": current_request_headers,
         }
         # if self.storage_provider:
         #     self._initialize_storage_client()
@@ -128,6 +139,9 @@ class AbstractBaseInference(ABC):
         # else:
         #     local_var["open"] = open  # Use Python's built-in open as fallback
 
+        # Initialize tool_versions if not provided
+        if tool_versions is None:
+            tool_versions = {}
 
         tool_list: List[Callable] = []
         mcp_server_ids: List[str] = []
@@ -138,13 +152,36 @@ class AbstractBaseInference(ABC):
                     mcp_server_ids.append(tool_id)
                     continue
 
-                log.info(f"Loading Python tool for ID: {tool_id} - CACHE LOG")
+                log.info(f"Loading Python tool for ID: {tool_id}")
                 tool_record = await self.tool_service.tool_repo.get_tool_record(tool_id=tool_id, message_queue_implementation=False)
-                log.info(f"Python tool reading completed for ID: {tool_id} - CACHE LOG")
+                log.info(f"Python tool reading completed for ID: {tool_id}")
                 if tool_record:
                     tool_record = tool_record[0]
-                    codes = tool_record["code_snippet"]
                     tool_name = tool_record["tool_name"]
+                    
+                    # ========== VERSIONED CODE LOADING ==========
+                    # Check if we have a version mapping for this tool
+                    target_version = tool_versions.get(tool_id, 'v1')
+                    codes = None
+                    
+                    # Try to load versioned code from tool_versions_table
+                    if self.tool_service.tool_version_repo:
+                        try:
+                            version_record = await self.tool_service.tool_version_repo.get_version(
+                                tool_id=tool_id, 
+                                version=target_version
+                            )
+                            if version_record and version_record.get('code_snippet'):
+                                codes = version_record['code_snippet']
+                                log.info(f"✅ Loaded versioned code for tool '{tool_name}' version '{target_version}'")
+                        except Exception as e:
+                            log.warning(f"Could not load versioned code for {tool_id} v{target_version}: {e}")
+                    
+                    # Fallback to tool_table.code_snippet if versioned code not found
+                    if not codes:
+                        codes = tool_record.get("code_snippet", "")
+                        log.info(f"Using fallback code_snippet from tool_table for tool '{tool_name}'")
+                    
                     exec(codes, local_var)
                     tool_list.append(local_var[tool_name])
                 else:
@@ -174,9 +211,9 @@ class AbstractBaseInference(ABC):
             dict: A dictionary containing the system prompt and tool information.
         """
         # Retrieve agent details from the database
-        log.info("Retrieving agent details - CACHE LOG")
+        log.info("Retrieving agent details")
         result = await self.agent_service.agent_repo.get_agent_record(agentic_application_id=agentic_application_id)
-        log.info("Retrieved agent details successfully - CACHE LOG")
+        log.info("Retrieved agent details successfully")
         if not result:
             log.error(f"Agentic Application ID {agentic_application_id} not found.")
             raise HTTPException(status_code=404, detail=f"Agentic Application ID {agentic_application_id} not found.")
@@ -190,10 +227,26 @@ class AbstractBaseInference(ABC):
                 log.error(f"Error parsing validation criteria for Agentic Application ID {agentic_application_id}: {e}")
                 validation_criteria = []
 
+        # Fetch tool-agent mappings to get version info
+        tools_with_versions = {}
+        try:
+            mappings = await self.tool_service.tool_agent_mapping_repo.get_tool_agent_mappings_record(
+                agentic_application_id=agentic_application_id
+            )
+            for mapping in mappings:
+                tool_id = mapping.get('tool_id')
+                tool_version = mapping.get('tool_version', 'v1')
+                if tool_id:
+                    tools_with_versions[tool_id] = tool_version
+            log.info(f"Tool versions for agent {agentic_application_id}: {tools_with_versions}")
+        except Exception as e:
+            log.warning(f"Could not fetch tool versions: {e}. Defaulting to v1 for all tools.")
+
         agent_config = {
             "AGENT_NAME": result["agentic_application_name"],
             "SYSTEM_PROMPT": json.loads(result["system_prompt"]),
             "TOOLS_INFO": json.loads(result["tools_id"]),
+            "TOOLS_WITH_VERSIONS": tools_with_versions,  # Map of tool_id -> version
             "AGENT_DESCRIPTION": result["agentic_application_description"],
             "WORKFLOW_DESCRIPTION": result["agentic_application_workflow_description"],
             "AGENT_TYPE": result['agentic_application_type'],
@@ -221,6 +274,8 @@ class AbstractBaseInference(ABC):
             
             # local_var for exec() context, including secrets handlers
             local_var = {
+                "__builtins__": get_sandbox_builtins(),
+                **get_sandbox_extras(),
                 "get_user_secrets": get_user_secrets,
                 "current_user_email": current_user_email,
                 "get_public_secrets": get_public_key
@@ -241,7 +296,7 @@ class AbstractBaseInference(ABC):
                 return None
             
             # Execute the tool code to define the function
-            exec(tool_code, {"__builtins__": __builtins__, **local_var}, local_var)
+            exec(tool_code, {"__builtins__": get_sandbox_builtins(), **get_sandbox_extras(), **local_var}, local_var)
             
             # Find the validator function (should have _validator in the name or be the only function)
             validator_function = local_var.get(tool_name)

@@ -39,21 +39,24 @@ class ConversationCleanup:
     Handles cleanup of old conversation data with backup to recycle database
     """
     
-    def __init__(self, main_db_config: Dict[str, str], recycle_db_config: Dict[str, str]):
+    def __init__(self, main_db_config: Dict[str, str], recycle_db_config: Dict[str, str], feedback_db_config: Dict[str, str] = None):
         """
         Initialize the cleanup handler
         
         Args:
             main_db_config: Database configuration for main database
             recycle_db_config: Database configuration for recycle database
+            feedback_db_config: Database configuration for feedback_learning database (optional, defaults to main_db_config)
         """
         self.main_db_config = main_db_config
         self.recycle_db_config = recycle_db_config
+        self.feedback_db_config = feedback_db_config if feedback_db_config else main_db_config
         self.main_conn = None
         self.recycle_conn = None
+        self.feedback_conn = None
         
     def connect_databases(self):
-        """Connect to both main and recycle databases"""
+        """Connect to main, recycle, and feedback databases"""
         try:
             # Connect to main database
             self.main_conn = psycopg2.connect(**self.main_db_config)
@@ -64,6 +67,11 @@ class ConversationCleanup:
             self.recycle_conn = psycopg2.connect(**self.recycle_db_config)
             self.recycle_conn.autocommit = False
             logger.info("Connected to recycle database successfully")
+            
+            # Connect to feedback_learning database
+            self.feedback_conn = psycopg2.connect(**self.feedback_db_config)
+            self.feedback_conn.autocommit = False
+            logger.info(f"Connected to feedback database ({self.feedback_db_config.get('dbname')}) successfully")
             
         except Exception as e:
             logger.error(f"Error connecting to databases: {e}")
@@ -77,6 +85,9 @@ class ConversationCleanup:
         if self.recycle_conn:
             self.recycle_conn.close()
             logger.info("Recycle database connection closed")
+        if self.feedback_conn:
+            self.feedback_conn.close()
+            logger.info("Feedback database connection closed")
             
     def create_recycle_tables(self):
         """Create recycle tables if they don't exist"""
@@ -456,23 +467,26 @@ class ConversationCleanup:
             main_cursor.execute(f"DELETE FROM {TableNames.CHECKPOINT_BLOBS.value} WHERE thread_id = %s", (thread_id,))
             blobs_deleted = main_cursor.rowcount
             
-            # Delete feedback/learning records for this agent
-            # First, get all response_ids associated with this agent
-            main_cursor.execute(f"""
-                SELECT response_id FROM {TableNames.AGENT_FEEDBACK.value}
-                WHERE agent_id = %s
-            """, (agentic_application_id,))
-            
-            response_ids = [row[0] for row in main_cursor.fetchall()]
+            # Delete feedback/learning records for this agent from feedback database
             feedback_deleted = 0
-            
-            if response_ids:
-                # Delete from feedback_response table (CASCADE will handle agent_feedback)
-                main_cursor.execute(f"""
-                    DELETE FROM {TableNames.FEEDBACK_LEARNING.value}
-                    WHERE response_id = ANY(%s)
-                """, (response_ids,))
-                feedback_deleted = main_cursor.rowcount
+            try:
+                feedback_cursor = self.feedback_conn.cursor()
+                feedback_cursor.execute(f"""
+                    SELECT response_id FROM {TableNames.AGENT_FEEDBACK.value}
+                    WHERE agent_id = %s
+                """, (agentic_application_id,))
+                
+                response_ids = [row[0] for row in feedback_cursor.fetchall()]
+                
+                if response_ids:
+                    # Delete from feedback_response table (CASCADE will handle agent_feedback)
+                    feedback_cursor.execute(f"""
+                        DELETE FROM {TableNames.FEEDBACK_LEARNING.value}
+                        WHERE response_id = ANY(%s)
+                    """, (response_ids,))
+                    feedback_deleted = feedback_cursor.rowcount
+            except Exception as fb_err:
+                logger.warning(f"Error deleting feedback data (may not exist in feedback DB): {fb_err}")
             
             logger.info(f"Deleted from main database - Summary: {summary_deleted}, "
                        f"Long-term: {longterm_deleted}, Checkpoints: {checkpoints_deleted}, "
@@ -532,12 +546,16 @@ class ConversationCleanup:
                             # Commit transactions
                             self.main_conn.commit()
                             self.recycle_conn.commit()
+                            if self.feedback_conn:
+                                self.feedback_conn.commit()
                             
                             logger.info(f"Successfully processed: {agentic_application_id}, {session_id}")
                         except Exception as inner_e:
                             # Rollback on error
                             self.main_conn.rollback()
                             self.recycle_conn.rollback()
+                            if self.feedback_conn:
+                                self.feedback_conn.rollback()
                             raise inner_e
                     else:
                         logger.info(f"[DRY RUN] Would process: {agentic_application_id}, {session_id}")
@@ -550,6 +568,8 @@ class ConversationCleanup:
                         try:
                             self.main_conn.rollback()
                             self.recycle_conn.rollback()
+                            if self.feedback_conn:
+                                self.feedback_conn.rollback()
                         except:
                             pass
                     logger.error(f"Error processing {agentic_application_id}, {session_id}: {e}")
@@ -774,55 +794,55 @@ class ConversationCleanup:
             
             # Delete old agents
             recycle_cursor.execute(f"""
-                SELECT agentic_application_id, updated_on
+                SELECT agentic_application_id, deleted_at
                 FROM {TableNames.RECYCLE_AGENT.value}
-                WHERE updated_on < %s
-                ORDER BY updated_on
+                WHERE deleted_at < %s
+                ORDER BY deleted_at
             """, (cutoff_date,))
             
             agent_records_to_delete = recycle_cursor.fetchall()
             logger.info(f"Found {len(agent_records_to_delete)} agents for permanent deletion")
             
-            for agentic_application_id, updated_on in agent_records_to_delete:
+            for agentic_application_id, deleted_at in agent_records_to_delete:
                 if not dry_run:
                     try:
                         recycle_cursor.execute(f"""
                             DELETE FROM {TableNames.RECYCLE_AGENT.value}
-                            WHERE agentic_application_id = %s AND updated_on = %s
-                        """, (agentic_application_id, updated_on))
+                            WHERE agentic_application_id = %s AND deleted_at = %s
+                        """, (agentic_application_id, deleted_at))
                         deleted_counts["agents"] += recycle_cursor.rowcount
-                        logger.info(f"Permanently deleted agent: {agentic_application_id} (updated on: {updated_on})")
+                        logger.info(f"Permanently deleted agent: {agentic_application_id} (deleted at: {deleted_at})")
                     except Exception as e:
                         logger.error(f"Error permanently deleting agent {agentic_application_id}: {e}")
                         continue
                 else:
-                    logger.info(f"[DRY RUN] Would permanently delete agent: {agentic_application_id} (updated on: {updated_on})")
+                    logger.info(f"[DRY RUN] Would permanently delete agent: {agentic_application_id} (deleted at: {deleted_at})")
             
             # Delete old tools
             recycle_cursor.execute(f"""
-                SELECT tool_id, updated_on
+                SELECT tool_id, deleted_at
                 FROM {TableNames.RECYCLE_TOOL.value}
-                WHERE updated_on < %s
-                ORDER BY updated_on
+                WHERE deleted_at < %s
+                ORDER BY deleted_at
             """, (cutoff_date,))
             
             tool_records_to_delete = recycle_cursor.fetchall()
             logger.info(f"Found {len(tool_records_to_delete)} tools for permanent deletion")
             
-            for tool_id, updated_on in tool_records_to_delete:
+            for tool_id, deleted_at in tool_records_to_delete:
                 if not dry_run:
                     try:
                         recycle_cursor.execute(f"""
                             DELETE FROM {TableNames.RECYCLE_TOOL.value}
-                            WHERE tool_id = %s AND updated_on = %s
-                        """, (tool_id, updated_on))
+                            WHERE tool_id = %s AND deleted_at = %s
+                        """, (tool_id, deleted_at))
                         deleted_counts["tools"] += recycle_cursor.rowcount
-                        logger.info(f"Permanently deleted tool: {tool_id} (updated on: {updated_on})")
+                        logger.info(f"Permanently deleted tool: {tool_id} (deleted at: {deleted_at})")
                     except Exception as e:
                         logger.error(f"Error permanently deleting tool {tool_id}: {e}")
                         continue
                 else:
-                    logger.info(f"[DRY RUN] Would permanently delete tool: {tool_id} (updated on: {updated_on})")
+                    logger.info(f"[DRY RUN] Would permanently delete tool: {tool_id} (deleted at: {deleted_at})")
             
             # Delete old MCP tools
             recycle_cursor.execute(f"""
@@ -902,6 +922,8 @@ def main():
     db_user = os.getenv("POSTGRESQL_USER", "postgres")
     db_password = os.getenv("POSTGRESQL_PASSWORD", "postgres")
     main_db_name = os.getenv("DATABASE", "iaf_database")
+    feedback_db_name = os.getenv("FEEDBACK_LEARNING_DB_NAME", "feedback_learning")
+    recycle_db_name = os.getenv("RECYCLE_DB_NAME", args.recycle_db)
 
     # Use command line argument if provided, otherwise fall back to env variable
     if args.recycle_retention_days is not None:
@@ -919,7 +941,15 @@ def main():
     }
 
     recycle_db_config = {
-        "dbname": args.recycle_db,
+        "dbname": recycle_db_name,
+        "user": db_user,
+        "password": db_password,
+        "host": db_host,
+        "port": db_port
+    }
+
+    feedback_db_config = {
+        "dbname": feedback_db_name,
         "user": db_user,
         "password": db_password,
         "host": db_host,
@@ -927,12 +957,13 @@ def main():
     }
 
     logger.info(f"Using main database: {main_db_name}")
-    logger.info(f"Using recycle database: {args.recycle_db}")
+    logger.info(f"Using recycle database: {recycle_db_name}")
+    logger.info(f"Using feedback database: {feedback_db_name}")
     logger.info(f"Database host: {db_host}:{db_port}")
     logger.info(f"Recycle retention period: {recycle_retention_days} days")
 
     try:
-        cleanup_handler = ConversationCleanup(main_db_config, recycle_db_config)
+        cleanup_handler = ConversationCleanup(main_db_config, recycle_db_config, feedback_db_config)
 
         # First, permanently delete "insidetable" records from main database (no recycle)
         logger.info("Step 1: Permanently deleting 'insidetable' records from main database...")

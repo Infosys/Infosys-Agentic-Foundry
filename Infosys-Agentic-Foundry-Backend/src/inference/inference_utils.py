@@ -3,6 +3,8 @@ import re
 import ast
 import json
 import os
+import asyncio
+import functools
 from copy import deepcopy
 from typing import List, Dict, Tuple, Union, Any, Optional
 from pydantic import BaseModel, Field
@@ -37,12 +39,17 @@ from telemetry_wrapper import logger as log, update_session_context
 # Import the Redis-PostgreSQL manager
 from src.database.redis_postgres_manager import RedisPostgresManager, TimedRedisPostgresManager, create_manager_from_env, create_timed_manager_from_env
 from src.utils.secrets_handler import current_user_email
+from src.utils.sandbox import get_sandbox_builtins, get_sandbox_extras
+from src.config import cache_config as _cache_config
 
 # Initialize the global manager
 _global_manager = None
 
 async def get_global_manager():
-    """Get or create the global RedisPostgresManager instance (async)"""
+    """Get or create the global RedisPostgresManager instance (async).
+    Returns None immediately if ENABLE_CACHING is False."""
+    if not _cache_config.ENABLE_CACHING:
+        return None
     global _global_manager
     if _global_manager is None and RedisPostgresManager is not None:
         try:
@@ -432,7 +439,10 @@ Output:
             """
             user_id = agent_id if agent_id else current_user_email.get("user_123")
             try:
-                query_embedding = embedding_model.encode(query, convert_to_tensor=True)
+                _loop = asyncio.get_event_loop()
+                query_embedding = await _loop.run_in_executor(
+                    None, functools.partial(embedding_model.encode, query, convert_to_tensor=True)
+                )
                 manager = await get_global_manager()
                 if manager:
                     records = await manager.get_records_by_category(user_id, limit=50)
@@ -447,21 +457,33 @@ Output:
                         
                         if stored_query.strip():
                             # Calculate query-to-query similarity
-                            query_embedding_for_query = embedding_model.encode(stored_query, convert_to_tensor=True)
-                            query_similarity = float(util.cos_sim(query_embedding, query_embedding_for_query))
+                            query_embedding_for_query = await _loop.run_in_executor(
+                                None, functools.partial(embedding_model.encode, stored_query, convert_to_tensor=True)
+                            )
+                            query_similarity = float(await _loop.run_in_executor(
+                                None, util.cos_sim, query_embedding, query_embedding_for_query
+                            ))
                             
                             # Calculate query-to-response similarity
                             if stored_response.strip():
-                                response_embedding = embedding_model.encode(stored_response[:200], convert_to_tensor=True)  # Truncate response
-                                response_similarity = float(util.cos_sim(query_embedding, response_embedding))
+                                response_embedding = await _loop.run_in_executor(
+                                    None, functools.partial(embedding_model.encode, stored_response[:200], convert_to_tensor=True)
+                                )  # Truncate response
+                                response_similarity = float(await _loop.run_in_executor(
+                                    None, util.cos_sim, query_embedding, response_embedding
+                                ))
                             else:
                                 response_similarity = 0.0
                             
                             # Combined score: 70% query + 30% response
                             similarity = 0.7 * query_similarity + 0.3 * response_similarity
                         else:
-                            item_embedding = embedding_model.encode(content, convert_to_tensor=True)
-                            similarity = float(util.cos_sim(query_embedding, item_embedding))
+                            item_embedding = await _loop.run_in_executor(
+                                None, functools.partial(embedding_model.encode, content, convert_to_tensor=True)
+                            )
+                            similarity = float(await _loop.run_in_executor(
+                                None, util.cos_sim, query_embedding, item_embedding
+                            ))
                         scored_results.append({
                             'key': record_data.get('memory_key', record.id),
                             'content': content,
@@ -730,7 +752,7 @@ Output:
                 local_namespace = {}
                 
                 # Execute the tool code to define the function
-                exec(tool_code, {"__builtins__": __builtins__}, local_namespace)
+                exec(tool_code, {"__builtins__": get_sandbox_builtins(), **get_sandbox_extras()}, local_namespace)
                 
                 # Find the validator function (should have _validator in the name or be the only function)
                 validator_function = None
@@ -1019,13 +1041,20 @@ Output:
             log.debug(f"Extracted {len(scenario_texts)} scenario texts for embedding")
             
             # Encode query and scenarios using SBERT
-            query_embedding = self.embedding_model.encode(query, convert_to_tensor=True)
-            scenario_embeddings = self.embedding_model.encode(scenario_texts, convert_to_tensor=True)
+            _loop = asyncio.get_event_loop()
+            query_embedding = await _loop.run_in_executor(
+                None, functools.partial(self.embedding_model.encode, query, convert_to_tensor=True)
+            )
+            scenario_embeddings = await _loop.run_in_executor(
+                None, functools.partial(self.embedding_model.encode, scenario_texts, convert_to_tensor=True)
+            )
             
             # Calculate cosine similarities using remote utility
             similarities = []
             for scenario_emb in scenario_embeddings:
-                sim_score = util.cos_sim(query_embedding, scenario_emb)
+                sim_score = await _loop.run_in_executor(
+                    None, util.cos_sim, query_embedding, scenario_emb
+                )
                 similarities.append(sim_score)
             
             # Set threshold for semantic similarity
@@ -1416,8 +1445,9 @@ class EpisodicMemoryManager:
         try:
             cutoff = datetime.now() - timedelta(days=self.RETENTION_DAYS)
             manager = await get_global_manager()
-            if manager:
-                records = await manager.get_records_by_category(self.user_id, limit=100)
+            if not manager:
+                return
+            records = await manager.get_records_by_category(self.user_id, limit=100)
             expired_keys = []
             for item in records:
                 if item.id.startswith('item_') and item.data:
@@ -1525,8 +1555,9 @@ class EpisodicMemoryManager:
                 log.error(f"Cross-encoder failed: {e}, falling back to bi-encoder scores")
                 return [{"candidate": cands[i], "score": cands[i]['score'], "bi_score": cands[i]['score']} for i in range(len(cands))]
 
-        scored_pos = rerank_with_cross_encoder(positive_cands)
-        scored_neg = rerank_with_cross_encoder(negative_cands)
+        _loop = asyncio.get_event_loop()
+        scored_pos = await _loop.run_in_executor(None, rerank_with_cross_encoder, positive_cands)
+        scored_neg = await _loop.run_in_executor(None, rerank_with_cross_encoder, negative_cands)
 
         # Filter by relevance threshold and update usage statistics for qualifying examples
         qualified_pos = []
@@ -1566,8 +1597,9 @@ class EpisodicMemoryManager:
     
     async def update_example_usage_statistics(self, key: str, relevance_score: float):
         manager = await get_global_manager()
-        if manager:
-            records = await manager.get_records_by_category(self.user_id, limit=100)
+        if not manager:
+            return
+        records = await manager.get_records_by_category(self.user_id, limit=100)
         for item in records:
             if item.id == key:
                 usage = item.data.get('total_usage_count', 0)

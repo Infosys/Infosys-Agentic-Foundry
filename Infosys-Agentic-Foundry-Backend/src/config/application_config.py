@@ -128,6 +128,8 @@ class ApplicationConfig:
     # Model Server URL for Embeddings and Encoders using remote model server
     model_server_url: str = field(default_factory=lambda: os.getenv("MODEL_SERVER_URL", "").strip())
 
+    server_name: str = field(default_factory=lambda: os.getenv("SERVER_NAME", "default"))
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

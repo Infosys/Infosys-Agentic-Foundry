@@ -199,7 +199,7 @@ async def add_role_to_department(
                 
                 if role_name_lower in ("admin", "developer"):
                     # Admin and Developer get all permissions
-                    all_true = AccessPermission(tools=True, agents=True)
+                    all_true = AccessPermission(tools=True, agents=True, mcp_servers=True, workflows=True)
                     permissions_request = SetRolePermissionsRequest(
                         department_name=department_name,
                         role_name=role_request.role_name,
@@ -219,13 +219,14 @@ async def add_role_to_department(
                         validator_access=True,
                         file_context_access=True,
                         canvas_view_access=True,
-                        context_access=True
+                        context_access=True,
+                        export_agents_access=True
                     )
                 elif role_name_lower == "user":
                     # User gets only agent read access and agent execute access
-                    read_perm = AccessPermission(tools=False, agents=True)
-                    execute_perm = AccessPermission(tools=False, agents=True)
-                    no_perm = AccessPermission(tools=False, agents=False)
+                    read_perm = AccessPermission(tools=False, agents=True, mcp_servers=False, workflows=False)
+                    execute_perm = AccessPermission(tools=False, agents=True, mcp_servers=False, workflows=False)
+                    no_perm = AccessPermission(tools=False, agents=False, mcp_servers=False, workflows=False)
                     permissions_request = SetRolePermissionsRequest(
                         department_name=department_name,
                         role_name=role_request.role_name,
@@ -245,7 +246,8 @@ async def add_role_to_department(
                         validator_access=False,
                         file_context_access=False,
                         canvas_view_access=False,
-                        context_access=False
+                        context_access=False,
+                        export_agents_access=False
                     )
                 else:
                     permissions_request = None

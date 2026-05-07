@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 import pytz
 from typing import List, Optional, Literal, Dict, Any, Union, get_origin, get_args, Tuple, Set
 from enum import Enum
+
+from src.database.repositories import ToolDepartmentSharingRepository
 try:
     from dataclasses import is_dataclass, fields, MISSING
 except Exception:  # pragma: no cover
@@ -21,22 +23,23 @@ except Exception:  # pragma: no cover
     def fields(x):
         return []
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, Query, File, Form, Body
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
 
 from src.tools.tool_validation import graph
 from src.schemas import (
     ToolData, AddToolRequest, UpdateToolRequest, DeleteToolRequest, TagIdName, ExecuteRequest, ExecuteResponse,
-    ParamInfo, McpToolUpdateRequest, McpToolTestRequest, McpToolTestResponse, InlineMcpRequest,
-    InlineMcpIntrospectResponse, InlineMcpExecuteResponse, InlineMcpErrorResponse, ToolGenerationPipelineRequest, SaveCodeVersionRequest,
+    ParamInfo, McpToolUpdateRequest, McpRemoteUrlUpdateRequest, McpModuleUpdateRequest, McpToolTestRequest, McpToolTestResponse, InlineMcpRequest, InlineRemoteMcpRequest,
+    InlineMcpIntrospectResponse, InlineMcpExecuteResponse, InlineMcpErrorResponse, ToolGenerationWorkflowRequest, SaveCodeVersionRequest,
     SwitchVersionRequest, UpdateVersionLabelRequest, DeleteVersionRequest, ToolGenerationConversationHistoryRequest,
     ExportToolsRequest, ExportMcpToolsRequest
 )
-from src.database.services import ToolService, McpToolService, PipelineService, ToolGenerationCodeVersionService, ToolGenerationConversationHistoryService
+from src.database.services import ToolService, McpToolService, WorkflowService, ToolGenerationCodeVersionService, ToolGenerationConversationHistoryService
 from src.tools.tool_export_import_service import ToolExportImportService
-from src.inference.pipeline_inference import PipelineInference
+from src.inference.workflow_inference import WorkflowInference
 
 from src.api.dependencies import ServiceProvider # The dependency provider
-from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department
+from src.utils.secrets_handler import get_user_secrets, current_user_email, get_public_key, get_group_secrets, current_user_department, current_request_headers
 from src.auth.dependencies import get_current_user, setup_tool_user_context
 from src.auth.models import User, UserRole
 from src.config.constants import DatabaseName
@@ -50,6 +53,7 @@ from src.utils.phoenix_manager import ensure_project_registered, traced_project_
 from src.auth.authorization_service import AuthorizationService
 from src.auth.models import UserRole, User
 from src.auth.dependencies import get_current_user
+from src.utils.sandbox import get_sandbox_builtins, get_sandbox_extras
 from dotenv import load_dotenv
 
 
@@ -83,25 +87,12 @@ def _compile_and_exec_code(code: str) -> tuple[dict, Optional[str]]:
     except SyntaxError as e:
         return {}, f"Syntax error: {e.msg} at line {e.lineno}"
     
-    # Create restricted globals - need to include __import__ and other essentials for FastMCP
-    safe_builtins = {
-        "len": len, "range": range, "min": min, "max": max, "sum": sum, 
-        "abs": abs, "enumerate": enumerate, "isinstance": isinstance,
-        "str": str, "int": int, "float": float, "bool": bool, "list": list,
-        "dict": dict, "tuple": tuple, "set": set, "type": type, "getattr": getattr,
-        "setattr": setattr, "hasattr": hasattr, "callable": callable,
-        "__import__": __import__, "object": object, "super": super,
-        "property": property, "classmethod": classmethod, "staticmethod": staticmethod,
-        "Exception": Exception, "ValueError": ValueError, "TypeError": TypeError,
-        "AttributeError": AttributeError, "KeyError": KeyError, "IndexError": IndexError,
-        # Added for inline MCP sandbox completeness (previously present before revert):
-        # 'sorted' is commonly used in user snippets; '__build_class__' required for class/Enum definitions.
-        "sorted": sorted,
-        "__build_class__": __build_class__,
-    }
+    # Create restricted globals - use sandbox builtins for import/env/file restrictions
+    safe_builtins = get_sandbox_builtins()
     exec_globals = {
         "__name__": "__inline_mcp__",
-        "__builtins__": safe_builtins
+        "__builtins__": safe_builtins,
+        **get_sandbox_extras()
     }
     
     try:
@@ -699,9 +690,7 @@ async def add_tool_endpoint(
         status = await tool_service.create_tool(
             tool_data=tool_data_dict, 
             force_add=add_tool_request.force_add, 
-            is_validator=add_tool_request.is_validator,
-            is_public=add_tool_request.is_public if add_tool_request.is_public else False,
-            shared_with_departments=add_tool_request.shared_with_departments
+            is_validator=add_tool_request.is_validator
         )
         log.debug(f"Tool creation status: {status}")
 
@@ -756,7 +745,8 @@ async def add_tool_with_file_endpoint(
     """
 
     # Check permissions first
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools"):
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools", user_department):
         raise HTTPException(status_code=403, detail="You don't have permission to create tools. Only admins and developers can perform this action")
     
     user_id = request.cookies.get("user_id")
@@ -835,10 +825,7 @@ async def add_tool_message_queue_endpoint(
         - tag_ids: Optional comma-separated string or list of tag IDs for the tool.
         - force_add: Force add flag for bypassing certain validations.
         - is_validator: Indicates if the tool is a validator tool.
-        - is_public: Whether the tool should be public (accessible to all departments).
-        - shared_with_departments: List of department names to share the tool with.
-
-    Returns:
+        - is_public: Whether the tool should be public (accessible to all departments).\n        - shared_with_departments: List of department names to share the tool with.\n\n    Returns:
     -------
     dict
         A dictionary containing the status of the operation.
@@ -894,8 +881,7 @@ async def add_tool_message_queue_endpoint(
         "tag_ids": tag_ids_list,
         "department_name": user_data.department_name
     }
-    
-    
+
     update_session_context(
         model_used=add_tool_request.model_name,
         tags=tag_ids_list,
@@ -916,9 +902,7 @@ async def add_tool_message_queue_endpoint(
         message_queue_status = await tool_service.create_tool_for_message_queue(
             tool_data=tool_data_dict, 
             force_add=add_tool_request.force_add, 
-            is_validator=add_tool_request.is_validator,
-            is_public=add_tool_request.is_public if add_tool_request.is_public else False,
-            shared_with_departments=add_tool_request.shared_with_departments
+            is_validator=add_tool_request.is_validator
         )
         log.debug(f"Message queue tool creation status: {message_queue_status}")
 
@@ -966,6 +950,46 @@ async def get_all_tools_endpoint(request: Request, tool_service: ToolService = D
     return tools
 
 
+@router.get("/get/system-tools")
+async def get_system_tools_endpoint(
+    request: Request,
+    tool_name: Optional[str] = Query(None, description="Filter by tool name. If provided, returns only the matching tool."),
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves all system-onboarded tools (created_by = 'system') from the tool table.
+    Optionally filters by tool name to return a specific tool.
+
+    Parameters:
+    ----------
+    tool_name : str, optional
+        The name of the tool to filter by. If provided, returns only the matching tool.
+
+    Returns:
+    -------
+    list
+        A list of tools that were onboarded by the system during startup.
+        If no system tools are found, raises an HTTPException with status code 404.
+    """
+    # Check permissions first - use user's department for department-wise permission check
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    tools = await tool_service.get_system_tools(tool_name=tool_name)
+
+    if not tools:
+        detail = f"No system tool found with name '{tool_name}'" if tool_name else "No system tools found"
+        raise HTTPException(status_code=404, detail=detail)
+    return tools
+
+
 @router.get("/get/{tool_id}")
 async def get_tool_by_id_endpoint(request: Request, tool_id: str, tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
@@ -1005,8 +1029,101 @@ async def get_tool_by_id_endpoint(request: Request, tool_id: str, tool_service: 
     return tool
 
 
+@router.get("/{tool_id}/versions")
+async def get_tool_versions_endpoint(
+    request: Request,
+    tool_id: str,
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves list of version strings for a tool.
+
+    Parameters:
+    ----------
+    tool_id : str
+        The ID of the tool.
+
+    Returns:
+    -------
+    List[str]
+        A list of version strings (e.g., ['v1', 'v2', 'v3', 'v4']).
+    """
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(tool_id=tool_id, user_session=user_session, user_id=user_id)
+
+    result = await tool_service.get_tool_versions(tool_id)
+    
+    if result is None:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    
+    update_session_context(tool_id='Unassigned')
+    return result
+
+
+@router.get("/{tool_id}/versions/{version}")
+async def get_tool_version_code_endpoint(
+    request: Request,
+    tool_id: str,
+    version: str,
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves the code snippet and details for a specific version of a tool.
+    Used by UI to preview tool code when user selects a version from dropdown.
+
+    Parameters:
+    ----------
+    tool_id : str
+        The ID of the tool.
+    version : str
+        The version string (e.g., 'v1', 'v2').
+
+    Returns:
+    -------
+    dict
+        Version details including code_snippet, tool_description, updated_by, updated_date.
+    """
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(tool_id=tool_id, user_session=user_session, user_id=user_id)
+
+    # Verify tool exists
+    tool_record = await tool_service.get_tool(tool_id=tool_id)
+    if not tool_record:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    
+    # Get version details from tool_version_repo
+    if not tool_service.tool_version_repo:
+        raise HTTPException(status_code=500, detail="Tool versioning not available")
+    
+    version_data = await tool_service.tool_version_repo.get_version(tool_id, version)
+    
+    if not version_data:
+        raise HTTPException(status_code=404, detail=f"Version '{version}' not found for this tool")
+    
+    update_session_context(tool_id='Unassigned')
+    
+    return {
+        "code_snippet": version_data.get("code_snippet", ""),
+        "tool_description": version_data.get("tool_description", "")
+    }
+
+
 @router.post("/get/by-list")
-async def get_tools_by_list_endpoint(request: Request, tool_ids: List[str], tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
+async def get_tools_by_list_endpoint(request: Request, tool_ids: List[str], tool_service: ToolService = Depends(ServiceProvider.get_tool_service), mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service), authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """Retrieves tools by a list of IDs."""
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
@@ -1018,37 +1135,37 @@ async def get_tools_by_list_endpoint(request: Request, tool_ids: List[str], tool
     
     tools = []
     servers = []
-    servers = []
     for tool_id in tool_ids:
-        if user_data.role == UserRole.SUPER_ADMIN:
-            tool = await tool_service.get_tool(tool_id=tool_id)
-        else:
-            tool = await tool_service.get_tool(tool_id=tool_id, department_name=user_data.department_name)
-        
-        if tool:
-            tool_data = tool[0]  # get_tool returns a list
-            
-            limited_tool = {
-                "tool_id": tool_data.get("tool_id"),
-                "tool_name": tool_data.get("tool_name"), 
-                "tags": tool_data.get("tags", [])
-            }
-            if tool_id.startswith("mcp_"):
-                servers.append(limited_tool)
+        if tool_id.startswith("mcp_"):
+            # Use MCP tool service for MCP tools
+            if user_data.role == UserRole.SUPER_ADMIN:
+                tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id)
             else:
-                tools.append(limited_tool)
+                tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id, department_name=user_data.department_name)
             
-            # if has_full_permission:
-            #     # User has full permission, return complete tool data
-            #     tools.append(tool_data)
-            # else:
-            #     # User doesn't have full permission, return only limited fields
-            #     limited_tool = {
-            #         "tool_id": tool_data.get("tool_id"),
-            #         "tool_name": tool_data.get("tool_name"), 
-            #         "tags": tool_data.get("tags", [])
-            #     }
-            #     tools.append(limited_tool)
+            if tool:
+                tool_data = tool[0]
+                limited_tool = {
+                    "tool_id": tool_data.get("tool_id"),
+                    "tool_name": tool_data.get("tool_name"), 
+                    "tags": tool_data.get("tags", [])
+                }
+                servers.append(limited_tool)
+        else:
+            # Use regular tool service for regular tools
+            if user_data.role == UserRole.SUPER_ADMIN:
+                tool = await tool_service.get_tool(tool_id=tool_id)
+            else:
+                tool = await tool_service.get_tool(tool_id=tool_id, department_name=user_data.department_name)
+            
+            if tool:
+                tool_data = tool[0]
+                limited_tool = {
+                    "tool_id": tool_data.get("tool_id"),
+                    "tool_name": tool_data.get("tool_name"), 
+                    "tags": tool_data.get("tags", [])
+                }
+                tools.append(limited_tool)
     
     return {
         "tools": tools,
@@ -1285,8 +1402,8 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
             user_id=user_data.username,
             is_admin=is_admin,
             is_validator=update_request.is_validator,
-            is_public=update_request.is_public,
-            shared_with_departments=update_request.shared_with_departments
+            version=update_request.version,
+            create_new_version=update_request.create_new_version
         )
 
     if response["is_update"]:
@@ -1322,10 +1439,10 @@ async def update_tool_endpoint(request: Request, tool_id: str, update_request: U
     return response
 
 
-@router.delete("/delete/{tool_id}")
-async def delete_tool_endpoint(request: Request, tool_id: str, delete_request: DeleteToolRequest, tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
+@router.delete("/delete")
+async def delete_tool_endpoint(request: Request, delete_request: DeleteToolRequest, tool_service: ToolService = Depends(ServiceProvider.get_tool_service), authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
-    Deletes a tool by its ID.
+    Deletes one or more tools by their IDs.
     
     Access Control:
     - Admins can delete any tool
@@ -1334,15 +1451,13 @@ async def delete_tool_endpoint(request: Request, tool_id: str, delete_request: D
 
     Parameters:
     ----------
-    id : str
-        The ID of the tool to be deleted.
     request : DeleteToolRequest
-        The request body containing the user email ID and admin status.
+        The request body containing the user email ID, admin status, and list of tool IDs to delete.
 
     Returns:
     -------
     dict
-        A dictionary containing the status of the deletion operation.
+        A dictionary containing the results of each deletion operation.
     """
     
     if user_data.role == UserRole.SUPER_ADMIN:
@@ -1356,50 +1471,77 @@ async def delete_tool_endpoint(request: Request, tool_id: str, delete_request: D
     # Check basic operation permission first
     user_department = user_data.department_name 
     if not await authorization_server.check_operation_permission(user_id, user_data.role, "delete", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to delete tools.")
-    
-    # Respect superadmin: do not pass department_name when user is SUPER_ADMIN
-    if user_data.role == UserRole.SUPER_ADMIN:
-        previous_value = await tool_service.get_tool(tool_id=tool_id)
-    else:
-        previous_value = await tool_service.get_tool(tool_id=tool_id, department_name=user_data.department_name)
+        raise HTTPException(status_code=403, detail="You don't have permission to delete tools. Only admins and developers can perform this action")
 
-    if not previous_value:
-        raise HTTPException(status_code=404, detail="Tool not found")
-    previous_value = previous_value[0]
-    
-    # Check if user's department owns this tool (public tools can only be deleted by owning department)
-    tool_department = previous_value.get("department_name")
-    if tool_department and tool_department != user_data.department_name:
-        raise HTTPException(
-            status_code=403, 
-            detail=f"You cannot delete this tool. It belongs to department '{tool_department}'. Only users from the owning department can delete it."
-        )
-    
     is_admin = False
     if delete_request.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN, department_name=user_data.department_name)
-    is_creator = (previous_value.get("created_by") == user_data.username)
-    if not (is_admin or is_creator):
-        log.warning(f"User {user_id} attempted to delete tool without admin privileges or creator access")
-        raise HTTPException(status_code=403, detail="Admin privileges or tool creator access required to delete this tool")
-    
-    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id, action_on='tool', action_type='delete', previous_value=previous_value)
-    status = await tool_service.delete_tool(
-        tool_id=tool_id,
-        user_id=user_data.username,
-        is_admin=is_admin
+
+    if len(delete_request.tool_ids) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple tools at once. Please delete one tool at a time.")
+
+    results = []
+    for tool_id in delete_request.tool_ids:
+        # Respect superadmin: do not pass department_name when user is SUPER_ADMIN
+        if user_data.role == UserRole.SUPER_ADMIN:
+            previous_value = await tool_service.get_tool(tool_id=tool_id)
+        else:
+            previous_value = await tool_service.get_tool(tool_id=tool_id, department_name=user_data.department_name)
+
+        if not previous_value:
+            results.append({"tool_id": tool_id, "tool_name": None, "is_delete": False, "message": "Tool not found"})
+            continue
+        previous_value = previous_value[0]
+        tool_name = previous_value.get("tool_name")
+
+        # Check if user's department owns this tool (public tools can only be deleted by owning department)
+        tool_department = previous_value.get("department_name")
+        if tool_department and tool_department != user_data.department_name:
+            results.append({"tool_id": tool_id, "tool_name": tool_name, "is_delete": False, "message": f"You cannot delete this tool. It belongs to department '{tool_department}'. Only users from the owning department can delete it."})
+            continue
+
+        is_creator = (previous_value.get("created_by") == user_data.username)
+        if not (is_admin or is_creator):
+            log.warning(f"User {user_id} attempted to delete tool {tool_id} without admin privileges or creator access")
+            results.append({"tool_id": tool_id, "tool_name": tool_name, "is_delete": False, "message": "Admin privileges or tool creator access required to delete this tool"})
+            continue
+
+        update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id, action_on='tool', action_type='delete', previous_value=previous_value)
+        status = await tool_service.delete_tool(
+            tool_id=tool_id,
+            user_id=user_data.username,
+            is_admin=is_admin,
+            version=delete_request.version  # Pass version for version-specific deletion
+        )
+        status["status_message"] = status.get("message", "")
+        status["tool_name"] = tool_name
+        update_session_context(tool_id='Unassigned',action_on='Unassigned', action_type='Unassigned',previous_value='Unassigned') # Telemetry context clear
+        if not status.get("is_delete"):
+            agents = []
+            for res in status.get('details', []):
+                if res.get('agentic_application_name'):
+                    agents.append(res.get('agentic_application_name'))
+            error_msg = f"Tool delete failed: {status['message']} with names: {agents}" if agents != [] else f"Tool delete failed: {status['message']}"
+            log.error(error_msg)
+            status["tool_id"] = tool_id
+            results.append(status)
+            continue
+
+        status["tool_id"] = tool_id
+        results.append(status)
+        
+    response: Dict[str, List[str]] = {}
+    for res in results:
+        tool_name = res.get("tool_name") or res.get("tool_id", "unknown")
+        reason = "Successfully deleted tools" if res.get("is_delete") else res.get("message", "Delete failed")
+        response.setdefault(reason, []).append(tool_name)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(tool_names)}"
+        for reason, tool_names in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted tools")
     )
-    status["status_message"] = status.get("message", "")
-    update_session_context(tool_id='Unassigned',action_on='Unassigned', action_type='Unassigned',previous_value='Unassigned') # Telemetry context clear
-    if not status.get("is_delete"):
-        agents = []
-        for res in status.get('details', []):
-            if res.get('agentic_application_name'):
-                agents.append(res.get('agentic_application_name'))
-        log.error(f"Tool delete failed: {status['message']} with names: {agents}" if agents!=[] else f"Tool delete failed: {status['message']}")
-        raise HTTPException(status_code=400, detail=f"Tool delete failed: {status['message']} with names: {agents}" if agents!=[] else f"Tool delete failed: {status['message']}")
-    return status
+
+    return {"results": results, "status_message": status_message}
 
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute(request: Request, execute_request: ExecuteRequest, authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user), tool_context: ToolUserContext = Depends(setup_tool_user_context)):
@@ -1470,17 +1612,20 @@ async def execute(request: Request, execute_request: ExecuteRequest, authorizati
     # --- Get all function parameters to inform the user ---
     try:
         global_ns = {
+            "__builtins__": get_sandbox_builtins(),
+            **get_sandbox_extras(),
             "get_user_secrets": get_user_secrets,
             "current_user_email": current_user_email,
             "current_user_department": current_user_department,
             "get_public_secrets": get_public_key,
             "get_group_secrets": get_group_secrets,
-            # Tool access control decorators
+            "current_request_headers": current_request_headers,
+            # Tool access control decorators - available for tool creators
             "resource_access": resource_access,
             "require_role": require_role,
             "authorized_tool": authorized_tool,
             "current_tool_user": current_tool_user,
-            "get_tool_user_context": get_tool_user_context,
+            "get_tool_user_context": get_tool_user_context
         }
         # storage_client=BaseAgentInference.storage_client
 
@@ -1641,16 +1786,14 @@ async def add_mcp_tool_endpoint(
         created_by: str = Form(..., description="The email ID of the user creating the MCP tool."),
         
         # Optional fields for different MCP types
-        mcp_url: Optional[str] = Form(None, description="The URL of the MCP server (required if mcp_type is 'url')."),
-        headers: Optional[str] = Form(None, description="Optional: JSON string of HTTP headers for 'url' type MCP server. Values can be literal strings or vault references (  e.g., \"{'Content-Type': 'application/json', 'Authorization': 'VAULT::MY_API_KEY_SECRET_NAME', 'X-Custom-ID': 'VAULT::ANOTHER_SECRET', 'X-Literal-Value': 'some-fixed-string'}\"  )."),
-        mcp_module_name: Optional[str] = Form(None, description="The Python module name for the MCP server (required if mcp_type is 'module')."),
+        mcp_url: Optional[str] = Form(None, description="The URL of the MCP server (required if mcp_type is 'url'). Supports VAULT:: references for sensitive values in query parameters (e.g., 'https://mcp.example.com/mcp?apikey=VAULT::MY_API_KEY_SECRET'). The vault reference is resolved at runtime so the actual secret is never stored in the URL."),
+        headers: Optional[str] = Form(None, description="Optional: JSON string of HTTP headers for 'url' type MCP server. Values can be literal strings or vault references (  e.g., \"{'Content-Type': 'application/json', 'Authorization': 'VAULT::MY_API_KEY_SECRET_NAME', 'X-Custom-ID': 'VAULT::ANOTHER_SECRET', 'X-Literal-Value': 'some-fixed-string'}\"  ). Vault references are resolved at runtime from the user's secret store."),
+        mcp_module_name: Optional[str] = Form(None, description="The module/package name for the MCP server (required if mcp_type is 'module'). For Python: e.g., 'msmcp_azure'. For Node.js: e.g., '@playwright/mcp@latest'."),
+        mcp_command: Optional[str] = Form(None, description="Optional: The runtime command to use for 'module' type MCP servers. Examples: 'npx' (for Node.js packages), 'node', or an absolute path to an executable. If not provided, auto-detects Python module executables."),
         code_content: Optional[str] = Form(None, description="The Python code content for the MCP server (required if mcp_type is 'file' and no file is uploaded)."),
         mcp_file: Union[UploadFile, str, None] = File(None, description="Optional: Upload a .py file for 'file' type MCP tools (required if mcp_type is 'file' and code_content is empty)."),
 
         tag_ids: List[str] = Form(None, description="Optional list of tag IDs for the tool."),
-        is_public: Optional[bool] = Form(False, description="Whether the MCP tool should be public (accessible to all departments)."),
-        shared_with_departments: Optional[str] = Form(None, description="Comma-separated list of department names to share the MCP tool with."),
-        
 
         mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
         authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
@@ -1670,13 +1813,20 @@ async def add_mcp_tool_endpoint(
     
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to create tools.")
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to create MCP servers.")
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
 
     final_code_content = code_content
+    # Decode base64-encoded code_content from frontend
+    if final_code_content:
+        try:
+            import base64 as _b64
+            final_code_content = _b64.b64decode(final_code_content).decode('utf-8')
+        except Exception:
+            pass  # If not base64, use as-is (backward compatibility)
     if mcp_type == "file":
         if mcp_file:
             if not mcp_file.filename.endswith(".py"):
@@ -1703,35 +1853,9 @@ async def add_mcp_tool_endpoint(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"Invalid 'headers' field: {e}")
 
-    # Convert shared_with_departments from comma-separated string to list
-    shared_depts_list = None
-    if shared_with_departments:
-        shared_depts_list = [d.strip() for d in shared_with_departments.split(',') if d.strip()]
-    
-    # Validate: is_public and shared_with_departments are mutually exclusive
-    if is_public and shared_depts_list:
-        raise HTTPException(
-            status_code=400, 
-            detail="Cannot set both 'is_public' and 'shared_with_departments'. A public MCP tool is already accessible to all departments."
-        )
-
     update_session_context(user_session=user_session, user_id=user_id)
     try:
-        if user_data.role == UserRole.SUPER_ADMIN:
-            status = await mcp_tool_service.create_mcp_tool(
-                tool_name=tool_name.strip(),
-                tool_description=tool_description.strip(),
-                mcp_type=mcp_type,
-                created_by=created_by,
-                tag_ids=tag_ids,
-                mcp_url=mcp_url,
-                headers=parsed_headers,
-                mcp_module_name=mcp_module_name,
-                code_content=final_code_content,
-                is_public=is_public
-            )
-        else:
-            status = await mcp_tool_service.create_mcp_tool(
+        status = await mcp_tool_service.create_mcp_tool(
             tool_name=tool_name.strip(),
             tool_description=tool_description.strip(),
             mcp_type=mcp_type,
@@ -1740,10 +1864,9 @@ async def add_mcp_tool_endpoint(
             mcp_url=mcp_url,
             headers=parsed_headers,
             mcp_module_name=mcp_module_name,
+            mcp_command=mcp_command,
             code_content=final_code_content,
-            department_name=user_data.department_name,
-            shared_with_departments=shared_depts_list,
-            is_public=is_public
+            department_name=user_data.department_name
         )
 
     except Exception as e:
@@ -1784,8 +1907,8 @@ async def get_all_mcp_tools_endpoint(request: Request, mcp_tool_service: McpTool
     """
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view MCP servers.")
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
@@ -1804,6 +1927,46 @@ async def get_all_mcp_tools_endpoint(request: Request, mcp_tool_service: McpTool
         raise HTTPException(status_code=500, detail=f"Error retrieving all MCP tools: {str(e)}")
 
 
+@router.get("/mcp/get/system-servers")
+async def get_system_mcp_tools_endpoint(
+    request: Request,
+    tool_name: Optional[str] = Query(None, description="Filter by MCP server name. If provided, returns only the matching server."),
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves all system-onboarded MCP tool (server definition) records (created_by = 'system').
+    Optionally filters by tool name to return a specific MCP server.
+
+    Parameters:
+    ----------
+    tool_name : str, optional
+        The name of the MCP server to filter by. If provided, returns only the matching server.
+
+    Returns:
+    -------
+    list
+        A list of MCP tools that were onboarded by the system during startup.
+        If no system MCP tools are found, raises an HTTPException with status code 404.
+    """
+    # Check permissions first
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    mcp_tools = await mcp_tool_service.get_system_mcp_tools(tool_name=tool_name)
+
+    if not mcp_tools:
+        detail = f"No system MCP server found with name '{tool_name}'" if tool_name else "No system MCP tools found"
+        raise HTTPException(status_code=404, detail=detail)
+    return mcp_tools
+
+
 @router.get("/mcp/get/{tool_id}")
 async def get_mcp_tool_by_id_endpoint(
         request: Request,
@@ -1817,8 +1980,8 @@ async def get_mcp_tool_by_id_endpoint(
     """
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view MCP servers.")
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
@@ -1939,8 +2102,8 @@ async def update_mcp_tool_endpoint(
     
     # Check basic operation permission first
     user_department = user_data.department_name 
-    if not await authorization_server.check_operation_permission(user_id, user_data.role, "update", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to update tools.")
+    if not await authorization_server.check_operation_permission(user_id, user_data.role, "update", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to update MCP servers.")
     
     try:
         if user_data.role == UserRole.SUPER_ADMIN:
@@ -1971,14 +2134,6 @@ async def update_mcp_tool_endpoint(
         log.warning(f"User {user_id} attempted to update MCP tool without admin privileges or creator access")
         raise HTTPException(status_code=403, detail="Admin privileges or tool creator access required to update this MCP tool")
     
-    # Validate: is_public and shared_with_departments are mutually exclusive
-    effective_is_public = update_request_data.is_public if update_request_data.is_public is not None else existing_tool[0].get("is_public", False)
-    if effective_is_public and update_request_data.shared_with_departments:
-        raise HTTPException(
-            status_code=400, 
-            detail="Cannot set 'shared_with_departments' when MCP tool is public. A public tool is already accessible to all departments."
-        )
-    
     update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id)
 
     try:
@@ -1988,9 +2143,7 @@ async def update_mcp_tool_endpoint(
             is_admin=is_admin,
             tool_description=update_request_data.tool_description,
             code_content=update_request_data.code_content,
-            updated_tag_id_list=update_request_data.updated_tag_id_list,
-            shared_with_departments=update_request_data.shared_with_departments,
-            is_public=update_request_data.is_public,
+            updated_tag_id_list=update_request_data.updated_tag_id_list
         )
         status["status_message"] = status.get("message", "")
 
@@ -2034,17 +2187,202 @@ async def update_mcp_tool_endpoint(
     return result
 
 
-@router.delete("/mcp/delete/{tool_id}")
+@router.put("/mcp/update-remote-url/{tool_id}")
+async def update_mcp_remote_url_endpoint(
+    request: Request,
+    tool_id: str,
+    body: McpRemoteUrlUpdateRequest,
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user),
+):
+    """
+    Updates the remote MCP **URL** and/or **HTTP headers** for **URL-type** MCP servers (`mcp_url_*`).
+
+    Does not change Python code (`mcp_file_*`) or module MCPs. Use **`PUT /tools/mcp/update/{tool_id}`**
+    for description/tags/file code updates.
+
+    Same access pattern as **`PUT /tools/mcp/update/{tool_id}`**: department ownership, creator or admin,
+    and **`update`** on **`mcp_servers`**. Non-admins cannot change URL/headers if the tool is bound to any agent.
+    """
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to update MCP tools.")
+
+    user_id = user_data.email
+    user_session = request.cookies.get("user_session")
+    user_department = user_data.department_name
+    if not await authorization_server.check_operation_permission(
+        user_id, user_data.role, "update", "mcp_servers", user_department
+    ):
+        raise HTTPException(status_code=403, detail="You don't have permission to update MCP servers.")
+
+    try:
+        if user_data.role == UserRole.SUPER_ADMIN:
+            existing_tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id)
+        else:
+            existing_tool = await mcp_tool_service.get_mcp_tool(
+                tool_id=tool_id, department_name=user_data.department_name
+            )
+        if not existing_tool:
+            raise HTTPException(status_code=404, detail=f"MCP tool with ID '{tool_id}' not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error retrieving MCP tool for remote URL update: {e}")
+        raise HTTPException(status_code=500, detail="Error checking tool permissions")
+
+    tool_department = existing_tool[0].get("department_name")
+    if tool_department and tool_department != user_data.department_name:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"You cannot update this MCP tool. It belongs to department '{tool_department}'. "
+                "Only users from the owning department can update it."
+            ),
+        )
+
+    is_admin = False
+    if body.is_admin:
+        is_admin = await authorization_server.has_role(
+            user_email=user_id, required_role=UserRole.ADMIN, department_name=user_data.department_name
+        )
+    is_creator = existing_tool[0].get("created_by") == user_data.username
+    if not (is_admin or is_creator):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin privileges or tool creator access required to update this MCP tool.",
+        )
+
+    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id)
+    try:
+        status = await mcp_tool_service.update_mcp_remote_url_config(
+            tool_id=tool_id,
+            user_id=user_data.username,
+            is_admin=is_admin,
+            mcp_url=body.mcp_url,
+            headers=body.headers,
+        )
+        status["status_message"] = status.get("message", "")
+    except Exception as e:
+        log.error(f"Error updating remote MCP URL for '{tool_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating remote MCP URL: {e}")
+    finally:
+        update_session_context(tool_id="Unassigned")
+
+    if not status.get("is_update"):
+        message = status.get("message", "")
+        if "Permission denied" in message:
+            raise HTTPException(status_code=403, detail=message)
+        if status.get("bound_agents"):
+            raise HTTPException(status_code=400, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+
+    return status
+
+
+@router.put("/mcp/update-module-config/{tool_id}")
+async def update_mcp_module_config_endpoint(
+    request: Request,
+    tool_id: str,
+    body: McpModuleUpdateRequest,
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user),
+):
+    """
+    Updates the **module name** and/or **command** for **module-type** MCP servers (`mcp_module_*`).
+
+    Does not change Python code (`mcp_file_*`) or URL MCPs. Use **`PUT /tools/mcp/update/{tool_id}`**
+    for description/tags/file code updates, or **`PUT /tools/mcp/update-remote-url/{tool_id}`** for URL updates.
+
+    Same access pattern as other MCP update endpoints: department ownership, creator or admin,
+    and **`update`** on **`mcp_servers`**. Non-admins cannot change module config if the tool is bound to any agent.
+    """
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to update MCP tools.")
+
+    user_id = user_data.email
+    user_session = request.cookies.get("user_session")
+    user_department = user_data.department_name
+    if not await authorization_server.check_operation_permission(
+        user_id, user_data.role, "update", "mcp_servers", user_department
+    ):
+        raise HTTPException(status_code=403, detail="You don't have permission to update MCP servers.")
+
+    try:
+        if user_data.role == UserRole.SUPER_ADMIN:
+            existing_tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id)
+        else:
+            existing_tool = await mcp_tool_service.get_mcp_tool(
+                tool_id=tool_id, department_name=user_data.department_name
+            )
+        if not existing_tool:
+            raise HTTPException(status_code=404, detail=f"MCP tool with ID '{tool_id}' not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error retrieving MCP tool for module config update: {e}")
+        raise HTTPException(status_code=500, detail="Error checking tool permissions")
+
+    tool_department = existing_tool[0].get("department_name")
+    if tool_department and tool_department != user_data.department_name:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"You cannot update this MCP tool. It belongs to department '{tool_department}'. "
+                "Only users from the owning department can update it."
+            ),
+        )
+
+    is_admin = False
+    if body.is_admin:
+        is_admin = await authorization_server.has_role(
+            user_email=user_id, required_role=UserRole.ADMIN, department_name=user_data.department_name
+        )
+    is_creator = existing_tool[0].get("created_by") == user_data.username
+    if not (is_admin or is_creator):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin privileges or tool creator access required to update this MCP tool.",
+        )
+
+    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id)
+    try:
+        status = await mcp_tool_service.update_mcp_module_config(
+            tool_id=tool_id,
+            user_id=user_data.username,
+            is_admin=is_admin,
+            mcp_module_name=body.mcp_module_name,
+            mcp_command=body.mcp_command,
+        )
+        status["status_message"] = status.get("message", "")
+    except Exception as e:
+        log.error(f"Error updating module MCP config for '{tool_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating module MCP config: {e}")
+    finally:
+        update_session_context(tool_id="Unassigned")
+
+    if not status.get("is_update"):
+        message = status.get("message", "")
+        if "Permission denied" in message:
+            raise HTTPException(status_code=403, detail=message)
+        if status.get("bound_agents"):
+            raise HTTPException(status_code=400, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+
+    return status
+
+
+@router.delete("/mcp/delete")
 async def delete_mcp_tool_endpoint(
         request: Request,
-        tool_id: str,
         delete_request_data: DeleteToolRequest,
         mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
         authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
         user_data: User = Depends(get_current_user)
     ):
     """
-    Deletes an MCP tool (server definition) by moving it to the recycle bin.
+    Deletes one or more MCP tools (server definitions) by moving them to the recycle bin.
     
     Access Control:
     - Admins can delete any MCP tool
@@ -2062,64 +2400,93 @@ async def delete_mcp_tool_endpoint(
     
     # Check basic operation permission first
     user_department = user_data.department_name 
-    if not await authorization_server.check_operation_permission(user_id, user_data.role, "delete", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to delete tools.")
+    if not await authorization_server.check_operation_permission(user_id, user_data.role, "delete", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to delete MCP servers.")
    
-    try:
-        if user_data.role == UserRole.SUPER_ADMIN:
-            existing_tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id)
-        else:
-            existing_tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id, department_name=user_data.department_name)
-        if not existing_tool:
-            raise HTTPException(status_code=404, detail=f"MCP tool with ID '{tool_id}' not found")
-    except HTTPException:
-        raise  # Re-raise HTTP exceptions (like 404) without wrapping them
-    except Exception as e:
-        log.error(f"Error retrieving MCP tool for authorization check: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error checking tool permissions")
-    
-    previous_value = existing_tool[0]
-    
-    # Check if user's department owns this tool (public/shared tools can only be deleted by owning department)
-    tool_department = previous_value.get("department_name")
-    if tool_department and tool_department != user_data.department_name:
-        raise HTTPException(
-            status_code=403, 
-            detail=f"You cannot delete this MCP tool. It belongs to department '{tool_department}'. Only users from the owning department can delete it."
-        )
-    
     is_admin = False
     if delete_request_data.is_admin:
         is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN, department_name=user_data.department_name)
-    is_creator = (existing_tool[0].get("created_by") == user_data.username)
-    if not (is_admin or is_creator):
-        log.warning(f"User {user_id} attempted to delete MCP tool without admin privileges or creator access")
-        raise HTTPException(status_code=403, detail="Admin privileges or tool creator access required to delete this MCP tool")
-    
-    update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id, action_on='mcp_tool', action_type='delete', previous_value=previous_value)
-    status = await mcp_tool_service.delete_mcp_tool(
-        tool_id=tool_id,
-        user_id=user_data.username,
-        is_admin=is_admin
-    )
-    status["status_message"] = status.get("message", "")
-    update_session_context(tool_id='Unassigned', action_on='Unassigned', action_type='Unassigned', previous_value='Unassigned')  # Telemetry context clear
 
-    if not status.get("is_delete"):
-        # Check for permission denied errors - return 403 instead of 400
-        message = status.get("message", "")
-        if "Permission denied" in message:
-            raise HTTPException(status_code=403, detail=message)
+    # Only admins can delete multiple MCP tools at once; non-admins must delete one at a time
+    if len(delete_request_data.tool_ids) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple MCP servers at once. Please delete one MCP server at a time.")
+
+    results = []
+    for tool_id in delete_request_data.tool_ids:
+        try:
+            if user_data.role == UserRole.SUPER_ADMIN:
+                existing_tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id)
+            else:
+                existing_tool = await mcp_tool_service.get_mcp_tool(tool_id=tool_id, department_name=user_data.department_name)
+            if not existing_tool:
+                results.append({"tool_id": tool_id, "is_delete": False, "message": f"MCP tool with ID '{tool_id}' not found"})
+                continue
+        except Exception as e:
+            log.error(f"Error retrieving MCP tool for authorization check: {str(e)}")
+            results.append({"tool_id": tool_id, "is_delete": False, "message": "Error checking tool permissions"})
+            continue
         
-        agents = []
-        for res in status.get('details', []):
-            if res.get('agentic_application_name'):
-                agents.append(res.get('agentic_application_name'))
-        if agents:
-            log.error(f"MCP tool delete failed: {status['message']} with names: {agents}")
-            raise HTTPException(status_code=400, detail=f"MCP tool delete failed: {status['message']} with names: {agents}")
-        raise HTTPException(status_code=400, detail=status.get("message"))
-    return status
+        previous_value = existing_tool[0]
+        tool_name = previous_value.get("tool_name")
+
+        # Check if user's department owns this tool (public/shared tools can only be deleted by owning department)
+        tool_department = previous_value.get("department_name")
+        if tool_department and tool_department != user_data.department_name:
+            results.append({"tool_id": tool_id, "tool_name": tool_name, "is_delete": False, "message": f"You cannot delete this MCP tool. It belongs to department '{tool_department}'. Only users from the owning department can delete it."})
+            continue
+
+        is_creator = (previous_value.get("created_by") == user_data.username)
+        if not (is_admin or is_creator):
+            log.warning(f"User {user_id} attempted to delete MCP tool {tool_id} without admin privileges or creator access")
+            results.append({"tool_id": tool_id, "tool_name": tool_name, "is_delete": False, "message": "Admin privileges or tool creator access required to delete this MCP tool"})
+            continue
+        
+        update_session_context(user_session=user_session, user_id=user_id, tool_id=tool_id, action_on='mcp_tool', action_type='delete', previous_value=previous_value)
+        status = await mcp_tool_service.delete_mcp_tool(
+            tool_id=tool_id,
+            user_id=user_data.username,
+            is_admin=is_admin
+        )
+        status["status_message"] = status.get("message", "")
+        status["tool_name"] = tool_name
+        update_session_context(tool_id='Unassigned', action_on='Unassigned', action_type='Unassigned', previous_value='Unassigned')  # Telemetry context clear
+
+        if not status.get("is_delete"):
+            # Check for permission denied errors
+            message = status.get("message", "")
+            if "Permission denied" in message:
+                status["tool_id"] = tool_id
+                results.append(status)
+                continue
+            
+            agents = []
+            for res in status.get('details', []):
+                if res.get('agentic_application_name'):
+                    agents.append(res.get('agentic_application_name'))
+            if agents:
+                log.error(f"MCP tool delete failed: {status['message']} with names: {agents}")
+                status["message"] = f"MCP tool delete failed: {status['message']} with names: {agents}"
+            else:
+                log.error(f"MCP tool delete failed: {status.get('message')}")
+            status["tool_id"] = tool_id
+            results.append(status)
+            continue
+
+        status["tool_id"] = tool_id
+        results.append(status)
+
+    response: Dict[str, List[str]] = {}
+    for res in results:
+        tool_name = res.get("tool_name") or res.get("tool_id", "unknown")
+        reason = "Successfully deleted MCP servers" if res.get("is_delete") else res.get("message", "Delete failed")
+        response.setdefault(reason, []).append(tool_name)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(tool_names)}"
+        for reason, tool_names in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted MCP servers")
+    )
+
+    return {"results": results, "status_message": status_message}
 
 
 @router.get("/mcp/get/live-tool-details/{tool_id}")
@@ -2136,8 +2503,8 @@ async def get_live_mcp_tool_details_endpoint(
     """
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view MCP servers.")
     
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
@@ -2188,8 +2555,8 @@ async def test_mcp_tools_endpoint(
     """
     # Check permissions first
     user_department = current_user.department_name 
-    if not await authorization_service.check_operation_permission(current_user.email, current_user.role, "execute", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to execute tools.")
+    if not await authorization_service.check_operation_permission(current_user.email, current_user.role, "execute", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to execute MCP servers.")
     
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=current_user.email, tool_id=tool_id)
@@ -2261,8 +2628,8 @@ async def run_inline_mcp_endpoint(
     """
     # Check permissions first
     user_department = current_user.department_name 
-    if not await authorization_service.check_operation_permission(current_user.email, current_user.role, "execute", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to execute tools.")
+    if not await authorization_service.check_operation_permission(current_user.email, current_user.role, "execute", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to execute MCP servers.")
     
     user_session = request.cookies.get("user_session")
     update_session_context(
@@ -2413,6 +2780,51 @@ async def run_inline_mcp_endpoint(
         return _resp([], None, f"Unexpected error: {e}", False)
 
 
+@router.post("/inline-mcp/run-remote")
+async def run_inline_remote_mcp_endpoint(
+    request: Request,
+    body: InlineRemoteMcpRequest,
+    current_user: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    tool_context: ToolUserContext = Depends(setup_tool_user_context),
+):
+    """
+    Execute MCP tools against a remote streamable-HTTP server without registering it.
+
+    Same permission as inline MCP: **execute** on **mcp_servers** for the user's department.
+    Response includes **phase** (validation, header_resolution, connection, introspection,
+    resolution, await_args, execution, completed) plus optional argument conversion metadata.
+    """
+    user_department = current_user.department_name
+    if not await authorization_service.check_operation_permission(
+        current_user.email, current_user.role, "execute", "mcp_servers", user_department
+    ):
+        raise HTTPException(status_code=403, detail="You don't have permission to execute MCP servers.")
+
+    user_session = request.cookies.get("user_session")
+    phase_hint = "introspect"
+    if body.tool_name:
+        phase_hint = "execute" if body.arguments else "await_args"
+    update_session_context(
+        user_session=user_session,
+        user_id=current_user.email,
+        action_type="inline_mcp_remote",
+        action_on=phase_hint,
+    )
+    try:
+        return await mcp_tool_service.run_inline_remote_mcp(
+            endpoint=body.endpoint,
+            tool_name=body.tool_name,
+            arguments=body.arguments,
+            timeout_sec=body.timeout_sec,
+            auth_uuid=body.auth_uuid,
+            headers=body.headers,
+        )
+    finally:
+        update_session_context(tool_id="Unassigned")
+
+
 # Recycle bin requires modification with proper login/authentication functionality
 
 @router.get("/recycle-bin/get")
@@ -2452,6 +2864,8 @@ async def restore_tool_endpoint(
     request: Request, 
     tool_id: str, 
     user_email_id: str = Query(...), 
+    new_name: Optional[str] = Query(None, description="New name to use if the original name conflicts with an active tool."),
+    action: Optional[str] = Query(None, description="Action to take on conflict: 'add_version' to add as new version, 'create_new_tool' to create as new tool, 'skip' to skip restoration."),
     tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
     authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user)
@@ -2474,14 +2888,17 @@ async def restore_tool_endpoint(
         log.warning(f"User {user_email_id} attempted to restore tool without admin privileges")
         raise HTTPException(status_code=403, detail="Admin privileges required to restore tools")
 
-    if user_data.role == UserRole.SUPER_ADMIN:
-        result = await tool_service.restore_tool(tool_id=tool_id)
-    else:
-        result = await tool_service.restore_tool(tool_id=tool_id, department_name=user_data.department_name)
+    result = await tool_service.restore_tool(tool_id=tool_id, department_name=user_data.department_name, new_name=new_name, action=action)
 
     result["status_message"] = result.get("message", "")
-    if not result.get("is_restored"):
-        raise HTTPException(status_code=400, detail=result.get("message"))
+    
+    # If there's a name conflict with options, return 409 with the options for user to choose
+    if result.get("name_conflict") and result.get("options"):
+        return JSONResponse(status_code=409, content=result)
+    
+    if not result.get("is_restored") and not result.get("skipped"):
+        status_code = 409 if result.get("name_conflict") else 400
+        raise HTTPException(status_code=status_code, detail=result)
     return result
 
 
@@ -2521,6 +2938,138 @@ async def delete_tool_from_recycle_bin_endpoint(
     return result
 
 
+# --- Tool Version Recycle Bin Endpoints ---
+
+@router.get("/recycle-bin/versions/{tool_id}")
+async def get_deleted_versions_for_tool_endpoint(
+    request: Request,
+    tool_id: str,
+    user_email_id: str = Query(...),
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Gets all deleted versions for a specific tool from the recycle bin.
+    
+    Use this to see which versions of a tool have been deleted and can be restored.
+    """
+    user_department = user_data.department_name
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    
+    if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
+        log.warning(f"User {user_email_id} attempted to access version recycle bin without admin privileges")
+        raise HTTPException(status_code=403, detail="Admin privileges required to access version recycle bin")
+
+    deleted_versions = await tool_service.get_deleted_versions_for_tool(tool_id)
+    
+    if not deleted_versions:
+        raise HTTPException(status_code=404, detail=f"No deleted versions found for tool '{tool_id}'")
+    
+    return {
+        "tool_id": tool_id,
+        "deleted_versions": deleted_versions,
+        "count": len(deleted_versions)
+    }
+
+
+@router.get("/recycle-bin/versions")
+async def get_all_deleted_versions_endpoint(
+    request: Request,
+    user_email_id: str = Query(...),
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Gets all deleted versions from the recycle bin across all tools.
+    """
+    user_department = user_data.department_name
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view tools.")
+    
+    if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
+        log.warning(f"User {user_email_id} attempted to access version recycle bin without admin privileges")
+        raise HTTPException(status_code=403, detail="Admin privileges required to access version recycle bin")
+
+    deleted_versions = await tool_service.get_all_deleted_versions()
+    
+    if not deleted_versions:
+        raise HTTPException(status_code=404, detail="No deleted versions found in recycle bin")
+    
+    return {
+        "deleted_versions": deleted_versions,
+        "count": len(deleted_versions)
+    }
+
+
+@router.post("/recycle-bin/versions/restore/{tool_id}/{version}")
+async def restore_deleted_version_endpoint(
+    request: Request,
+    tool_id: str,
+    version: str,
+    user_email_id: str = Query(...),
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Restores a specific deleted version from the recycle bin.
+    
+    Args:
+        tool_id: The tool ID.
+        version: The version to restore (e.g., 'v5').
+    """
+    user_department = user_data.department_name
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "update", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to update tools.")
+    
+    if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
+        log.warning(f"User {user_email_id} attempted to restore version without admin privileges")
+        raise HTTPException(status_code=403, detail="Admin privileges required to restore versions")
+
+    result = await tool_service.restore_deleted_version(tool_id, version)
+    
+    if not result.get("is_restored"):
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    
+    return result
+
+
+@router.delete("/recycle-bin/versions/permanent-delete/{tool_id}/{version}")
+async def permanently_delete_version_from_recycle_bin_endpoint(
+    request: Request,
+    tool_id: str,
+    version: str,
+    user_email_id: str = Query(...),
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Permanently deletes a specific version from the recycle bin.
+    
+    Args:
+        tool_id: The tool ID.
+        version: The version to permanently delete (e.g., 'v5').
+    """
+    user_department = user_data.department_name
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "delete", "tools", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to delete tools.")
+    
+    if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
+        log.warning(f"User {user_email_id} attempted to permanently delete version without admin privileges")
+        raise HTTPException(status_code=403, detail="Admin privileges required to permanently delete versions")
+
+    result = await tool_service.permanently_delete_version_from_recycle_bin(tool_id, version)
+    
+    if not result.get("is_deleted"):
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    
+    return result
+
+
 # --- MCP Recycle Bin Endpoints ---
 
 @router.get("/mcp/recycle-bin/get")
@@ -2534,8 +3083,8 @@ async def get_all_mcp_tools_from_recycle_bin_endpoint(
     """Retrieves all MCP tools from the recycle bin."""
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view tools. Only admins and developers can perform this action")
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view MCP servers. Only admins and developers can perform this action")
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
@@ -2559,6 +3108,7 @@ async def restore_mcp_tool_endpoint(
     request: Request,
     tool_id: str,
     user_email_id: str = Query(...),
+    new_name: Optional[str] = Query(None, description="New name to use if the original name conflicts with an active MCP tool."),
     mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
     authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user)
@@ -2566,24 +3116,25 @@ async def restore_mcp_tool_endpoint(
     """Restores an MCP tool from the recycle bin."""
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "update", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to restore tools. Only admins and developers can perform this action")
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "update", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to restore MCP servers. Only admins and developers can perform this action")
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
     
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to restore MCP tools.")
+
     if not await authorization_server.has_role(user_email=user_email_id, required_role=UserRole.ADMIN, department_name=user_data.department_name):
         log.warning(f"User {user_email_id} attempted to restore MCP tool without admin privileges")
         raise HTTPException(status_code=403, detail="Admin privileges required to restore MCP tools")
 
-    if user_data.role == UserRole.SUPER_ADMIN:
-        result = await mcp_tool_service.restore_mcp_tool_from_recycle_bin(tool_id=tool_id)
-    else:
-        result = await mcp_tool_service.restore_mcp_tool_from_recycle_bin(tool_id=tool_id, department_name=user_data.department_name)
+    result = await mcp_tool_service.restore_mcp_tool_from_recycle_bin(tool_id=tool_id, department_name=user_data.department_name, new_name=new_name)
     result["status_message"] = result.get("message", "")
     if not result.get("is_restored"):
-        raise HTTPException(status_code=400, detail=result.get("message"))
+        status_code = 409 if result.get("name_conflict") else 400
+        raise HTTPException(status_code=status_code, detail=result)
     return result
 
 
@@ -2599,8 +3150,8 @@ async def delete_mcp_tool_from_recycle_bin_endpoint(
     """Permanently deletes an MCP tool from the recycle bin."""
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "delete", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to delete tools. Only admins and developers can perform this action")
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "delete", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to delete MCP servers. Only admins and developers can perform this action")
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
@@ -2617,9 +3168,11 @@ async def delete_mcp_tool_from_recycle_bin_endpoint(
         status = await mcp_tool_service.permanent_delete_mcp_tool_from_recycle_bin(tool_id=tool_id, department_name=user_data.department_name)
     update_session_context(tool_id='Unassigned', action_on='Unassigned', action_type='Unassigned')
     
-    if not status.get("is_deleted"):
+    if not status.get("is_deleted") and not status.get("is_delete"):
         log.error(f"MCP tool permanent delete failed: {status.get('message')}")
         raise HTTPException(status_code=400, detail=status.get("message"))
+    # Normalise key to match the rest of the API
+    status["is_delete"] = status.get("is_deleted", False) or status.get("is_delete", False)
     return status
 # EXPORT:EXCLUDE:END
 
@@ -2731,8 +3284,8 @@ async def get_unused_mcp_tools_endpoint(
     """
     # Check permissions first
     user_department = user_data.department_name 
-    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "tools", user_department):
-        raise HTTPException(status_code=403, detail="You don't have permission to view tools. Only admins and developers can perform this action")
+    if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "read", "mcp_servers", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view MCP servers. Only admins and developers can perform this action")
     
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
@@ -2961,7 +3514,7 @@ async def get_pending_modules_endpoint(
         )
 
 # ============================================================================
-# Tool Generation Pipeline Endpoint (NLP to Tool Generator)
+# Tool Generation Workflow Endpoint (NLP to Tool Generator)
 # ============================================================================
 
 
@@ -3090,18 +3643,18 @@ def _find_latest_code_snippet_from_history(history: list) -> dict:
     return None
 
 
-@router.post("/generate/pipeline/chat")
-async def tool_generation_pipeline_chat(
+@router.post("/generate/workflow/chat")
+async def tool_generation_workflow_chat(
     request: Request,
-    payload: ToolGenerationPipelineRequest,
-    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service),
-    pipeline_inference: PipelineInference = Depends(ServiceProvider.get_pipeline_inference),
+    payload: ToolGenerationWorkflowRequest,
+    workflow_service: WorkflowService = Depends(ServiceProvider.get_workflow_service),
+    workflow_inference: WorkflowInference = Depends(ServiceProvider.get_workflow_inference),
     code_version_service: ToolGenerationCodeVersionService = Depends(ServiceProvider.get_tool_generation_code_version_service),
     conversation_history_service: ToolGenerationConversationHistoryService = Depends(ServiceProvider.get_tool_generation_conversation_history_service),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Chat with the tool generation pipeline agent (NLP to Tool Generator).
+    Chat with the tool generation workflow agent (NLP to Tool Generator).
     
     Returns a simplified response with only two keys:
     - message: The text response from the agent
@@ -3113,7 +3666,7 @@ async def tool_generation_pipeline_chat(
        - If selected_code is provided: Include both current_code (full context) and selected_code (focus area)
        - If only current_code is provided: Include full code context
        - Otherwise: Use plain query
-    2. Run pipeline inference
+    2. Run workflow inference
     3. Extract message and code_snippet from response
     4. Auto-save code version and get version_number
     5. Return simplified {message, code_snippet, version_number} response
@@ -3172,7 +3725,7 @@ session_id: {payload.session_id}
         try:
             await conversation_history_service.save_user_message(
                 session_id=payload.session_id,
-                pipeline_id=payload.pipeline_id,
+                workflow_id=payload.workflow_id,
                 message=payload.query,
                 code_snippet=payload.current_code,  # Store the current code context
                 created_by=current_user.email,
@@ -3185,18 +3738,18 @@ session_id: {payload.session_id}
         except Exception as conv_error:
             log.warning(f"Failed to save user message to conversation history: {conv_error}")
         
-        # Step 2: Run pipeline inference
+        # Step 2: Run workflow inference
         # Hardcoded temperature for deterministic code generation
         temperature = 0.0
         
         original_response = None
         
-        async for event in pipeline_inference.run_pipeline(
-            pipeline_id=payload.pipeline_id,
+        async for event in workflow_inference.run_workflow(
+            workflow_id=payload.workflow_id,
             session_id=payload.session_id,
             model_name=payload.model_name,
             input_query=input_query,
-            project_name=f"tool_gen_{payload.pipeline_id}",
+            project_name=f"tool_gen_{payload.workflow_id}",
             reset_conversation=payload.reset_conversation,
             plan_verifier_flag=False,
             is_plan_approved=None,
@@ -3214,7 +3767,7 @@ session_id: {payload.session_id}
                 original_response = event
         
         if not original_response:
-            raise HTTPException(status_code=500, detail="No response from pipeline agent")
+            raise HTTPException(status_code=500, detail="No response from workflow agent")
         
         # Step 2: Extract message and code_snippet from response
         executor_messages = original_response.get("executor_messages", [])
@@ -3271,7 +3824,7 @@ session_id: {payload.session_id}
                 try:
                     save_result = await code_version_service.save_version(
                         session_id=payload.session_id,
-                        pipeline_id=payload.pipeline_id,
+                        workflow_id=payload.workflow_id,
                         code_snippet=code_snippet,
                         created_by=current_user.email,
                         label=None,
@@ -3290,8 +3843,8 @@ session_id: {payload.session_id}
                 log.info(f"No code_snippet in current response, checking history for session '{payload.session_id}'")
                 
                 # Get chat history
-                history = await pipeline_service.get_pipeline_conversation_history(
-                    pipeline_id=payload.pipeline_id,
+                history = await workflow_service.get_workflow_conversation_history(
+                    workflow_id=payload.workflow_id,
                     session_id=payload.session_id,
                     role="admin"
                 )
@@ -3315,7 +3868,7 @@ session_id: {payload.session_id}
         try:
             await conversation_history_service.save_assistant_message(
                 session_id=payload.session_id,
-                pipeline_id=payload.pipeline_id,
+                workflow_id=payload.workflow_id,
                 message=message,
                 code_snippet=code_snippet,
                 metadata={
@@ -3336,7 +3889,7 @@ session_id: {payload.session_id}
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"Error in tool generation pipeline chat: {e}", exc_info=True)
+        log.error(f"Error in tool generation workflow chat: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3361,7 +3914,7 @@ async def save_code_version(
     try:
         result = await code_version_service.save_version(
             session_id=payload.session_id,
-            pipeline_id=payload.pipeline_id,
+            workflow_id=payload.workflow_id,
             code_snippet=payload.code_snippet,
             created_by=current_user.email,
             label=payload.label,
@@ -3620,7 +4173,7 @@ async def get_version_count(
 async def get_conversation_history(
     request: Request,
     session_id: str,
-    pipeline_id: Optional[str] = None,
+    workflow_id: Optional[str] = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     include_code: bool = Query(default=True),
@@ -3634,7 +4187,7 @@ async def get_conversation_history(
     
     **Parameters:**
     - session_id: Session identifier
-    - pipeline_id: Optional pipeline identifier to filter by specific pipeline
+    - workflow_id: Optional workflow identifier to filter by specific workflow
     - limit: Maximum number of messages to return (1-200, default: 50)
     - offset: Number of messages to skip (for pagination)
     - include_code: Whether to include code snippets in response (default: True)
@@ -3642,7 +4195,7 @@ async def get_conversation_history(
     try:
         result = await conversation_history_service.get_conversation_history(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             limit=limit,
             offset=offset,
             include_code=include_code
@@ -3659,7 +4212,7 @@ async def get_conversation_history(
 async def get_latest_code(
     request: Request,
     session_id: str,
-    pipeline_id: Optional[str] = None,
+    workflow_id: Optional[str] = None,
     conversation_history_service: ToolGenerationConversationHistoryService = Depends(ServiceProvider.get_tool_generation_conversation_history_service),
     current_user: User = Depends(get_current_user)
 ):
@@ -3671,7 +4224,7 @@ async def get_latest_code(
     try:
         result = await conversation_history_service.get_latest_code(
             session_id=session_id,
-            pipeline_id=pipeline_id
+            workflow_id=workflow_id
         )
         
         return result
@@ -3685,7 +4238,7 @@ async def get_latest_code(
 async def clear_conversation_history(
     request: Request,
     session_id: str,
-    pipeline_id: Optional[str] = None,
+    workflow_id: Optional[str] = None,
     conversation_history_service: ToolGenerationConversationHistoryService = Depends(ServiceProvider.get_tool_generation_conversation_history_service),
     code_version_service: ToolGenerationCodeVersionService = Depends(ServiceProvider.get_tool_generation_code_version_service),
     current_user: User = Depends(get_current_user)
@@ -3694,12 +4247,12 @@ async def clear_conversation_history(
     Clear conversation history for a session.
     
     **Warning:** This permanently deletes all conversation messages for the session.
-    Optionally filter by pipeline_id to clear only specific pipeline conversations.
+    Optionally filter by workflow_id to clear only specific workflow conversations.
     """
     try:
         result = await conversation_history_service.clear_conversation(
             session_id=session_id,
-            pipeline_id=pipeline_id
+            workflow_id=workflow_id
         )
         clear_session_versions(request=request, 
                                session_id=session_id, 
@@ -3722,7 +4275,7 @@ async def clear_conversation_history(
 async def get_conversation_message_count(
     request: Request,
     session_id: str,
-    pipeline_id: Optional[str] = None,
+    workflow_id: Optional[str] = None,
     conversation_history_service: ToolGenerationConversationHistoryService = Depends(ServiceProvider.get_tool_generation_conversation_history_service),
     current_user: User = Depends(get_current_user)
 ):
@@ -3734,11 +4287,11 @@ async def get_conversation_message_count(
     try:
         count = await conversation_history_service.get_message_count(
             session_id=session_id,
-            pipeline_id=pipeline_id
+            workflow_id=workflow_id
         )
         return {
             "session_id": session_id,
-            "pipeline_id": pipeline_id,
+            "workflow_id": workflow_id,
             "message_count": count
         }
         
@@ -3752,130 +4305,71 @@ async def get_conversation_message_count(
 # Tool Sharing Endpoints (Admin Only)
 # ============================================================================
 
-@router.post("/{tool_id}/share")
-async def share_tool_with_departments(
+class UpdateToolSharingRequest(BaseModel):
+    """Request model for updating tool visibility and sharing settings."""
+    is_public: bool = None
+    shared_with_departments: List[str] = None
+
+
+@router.put("/{tool_id}/sharing")
+async def update_tool_sharing_endpoint(
     request: Request,
     tool_id: str,
-    target_departments: List[str],
+    body: UpdateToolSharingRequest,
     current_user: User = Depends(get_current_user),
-    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
-    tool_sharing_repo = Depends(ServiceProvider.get_tool_sharing_repo)
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service)
 ):
     """
-    Share a tool with one or more departments.
-    Only Admins of the tool's department or SuperAdmins can share tools.
-    
-    Args:
-        tool_id: The ID of the tool to share
-        target_departments: List of department names to share with
-        
+    Update the visibility (is_public) and/or department sharing for a tool.
+    Only Admins of the tool's department or SuperAdmins can update sharing settings.
+
+    Parameters:
+    - tool_id: The tool ID
+    - is_public: Whether the tool should be publicly accessible to all departments
+    - shared_with_departments: List of department names to share the tool with (replaces existing sharing)
+
     Returns:
-        Dict with sharing results
+    - Updated sharing information
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    
-    # Check if user is Admin or SuperAdmin
+
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
-        raise HTTPException(
-            status_code=403,
-            detail="Only Admins can share tools with other departments"
-        )
-    
-    # Get the tool to verify it exists and get its department
-    tool_records = await tool_service.get_tool(tool_id=tool_id)
-    if not tool_records:
-        raise HTTPException(status_code=404, detail=f"Tool not found with ID: {tool_id}")
-    
-    tool = tool_records[0]
-    source_department = tool.get('department_name', 'General')
-    
-    # If Admin, verify they are admin of the tool's department
-    if current_user.role == UserRole.ADMIN:
-        if current_user.department_name != source_department:
-            raise HTTPException(
-                status_code=403,
-                detail=f"You can only share tools from your own department ({current_user.department_name})"
-            )
-    
-    # Share the tool
-    result = await tool_sharing_repo.share_tool_with_multiple_departments(
-        tool_id=tool_id,
-        tool_name=tool.get('tool_name', ''),
-        source_department=source_department,
-        target_departments=target_departments,
-        shared_by=current_user.email
-    )
-    
-    log.info(f"Tool '{tool_id}' sharing result: {result}")
-    return {
-        "message": f"Tool shared with {result['success_count']} department(s)",
-        "tool_id": tool_id,
-        "tool_name": tool.get('tool_name'),
-        "source_department": source_department,
-        **result
-    }
+        raise HTTPException(status_code=403, detail="Only Admins can update tool sharing settings")
 
+    if body.is_public is None and body.shared_with_departments is None:
+        raise HTTPException(status_code=400, detail="At least one of 'is_public' or 'shared_with_departments' must be provided.")
 
-@router.delete("/{tool_id}/share/{target_department}")
-async def unshare_tool_from_department(
-    request: Request,
-    tool_id: str,
-    target_department: str,
-    current_user: User = Depends(get_current_user),
-    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
-    tool_sharing_repo = Depends(ServiceProvider.get_tool_sharing_repo)
-):
-    """
-    Remove sharing of a tool from a specific department.
-    Only Admins of the tool's department or SuperAdmins can unshare tools.
-    """
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
-    
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
+    if body.is_public and body.shared_with_departments:
         raise HTTPException(
-            status_code=403,
-            detail="Only Admins can unshare tools"
-        )
-    
-    tool_records = await tool_service.get_tool(tool_id=tool_id)
-    if not tool_records:
-        raise HTTPException(status_code=404, detail=f"Tool not found with ID: {tool_id}")
-    
-    tool = tool_records[0]
-    source_department = tool.get('department_name', 'General')
-    
-    if current_user.role == UserRole.ADMIN and current_user.department_name != source_department:
-        raise HTTPException(
-            status_code=403,
-            detail=f"You can only manage sharing for tools from your own department"
-        )
-    
-    success = await tool_sharing_repo.unshare_tool_from_department(tool_id, target_department)
-    
-    if success:
-        return {
-            "message": f"Tool '{tool.get('tool_name')}' unshared from department '{target_department}'",
-            "tool_id": tool_id,
-            "target_department": target_department
-        }
-    else:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Tool was not shared with department '{target_department}'"
+            status_code=400,
+            detail="Cannot set both 'is_public' and 'shared_with_departments'. A public tool is already accessible to all departments."
         )
 
+    try:
+        result = await tool_service.update_tool_sharing(
+            tool_id=tool_id,
+            user_email=current_user.email,
+            department_name=current_user.department_name,
+            is_public=body.is_public,
+            shared_with_departments=body.shared_with_departments
+        )
+        return {"message": "Tool sharing settings updated successfully", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error updating tool sharing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating tool sharing: {str(e)}")
 
-@router.get("/{tool_id}/sharing")
+
+@router.get("/{tool_id}/sharing-info")
 async def get_tool_sharing_info(
     request: Request,
     tool_id: str,
     current_user: User = Depends(get_current_user),
     tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
-    tool_sharing_repo = Depends(ServiceProvider.get_tool_sharing_repo)
+    tool_sharing_repo: ToolDepartmentSharingRepository = Depends(ServiceProvider.get_tool_sharing_repo)
 ):
     """
     Get information about which departments a tool is shared with.
@@ -3898,7 +4392,7 @@ async def get_tool_sharing_info(
         "tool_name": tool.get('tool_name'),
         "owner_department": tool.get('department_name', 'General'),
         "is_public": tool.get('is_public', False),
-        "shared_with": shared_departments
+        "shared_with": [d.get('target_department') for d in shared_departments if d.get('target_department')]
     }
 
 
@@ -3907,7 +4401,7 @@ async def get_tools_shared_with_my_department(
     request: Request,
     current_user: User = Depends(get_current_user),
     tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
-    tool_sharing_repo = Depends(ServiceProvider.get_tool_sharing_repo)
+    tool_sharing_repo: ToolDepartmentSharingRepository = Depends(ServiceProvider.get_tool_sharing_repo)
 ):
     """
     Get all tools that are shared with the current user's department.
@@ -3949,121 +4443,62 @@ async def get_tools_shared_with_my_department(
 # MCP Tool Sharing Endpoints (Admin Only)
 # ============================================================================
 
-@router.post("/mcp/{mcp_tool_id}/share")
-async def share_mcp_tool_with_departments(
+class UpdateMcpToolSharingRequest(BaseModel):
+    """Request model for updating MCP tool visibility and sharing settings."""
+    is_public: bool = None
+    shared_with_departments: List[str] = None
+
+
+@router.put("/mcp/{mcp_tool_id}/sharing")
+async def update_mcp_tool_sharing_endpoint(
     request: Request,
     mcp_tool_id: str,
-    target_departments: List[str],
+    body: UpdateMcpToolSharingRequest,
     current_user: User = Depends(get_current_user),
-    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
-    mcp_tool_sharing_repo = Depends(ServiceProvider.get_mcp_tool_sharing_repo)
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service)
 ):
     """
-    Share an MCP tool with one or more departments.
-    Only Admins of the MCP tool's department or SuperAdmins can share MCP tools.
-    
-    Args:
-        mcp_tool_id: The ID of the MCP tool to share
-        target_departments: List of department names to share with
-        
+    Update the visibility (is_public) and/or department sharing for an MCP tool.
+    Only Admins of the MCP tool's department or SuperAdmins can update sharing settings.
+
+    Parameters:
+    - mcp_tool_id: The MCP tool ID
+    - is_public: Whether the MCP tool should be publicly accessible to all departments
+    - shared_with_departments: List of department names to share the MCP tool with (replaces existing sharing)
+
     Returns:
-        Dict with sharing results
+    - Updated sharing information
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
-    
-    # Check if user is Admin or SuperAdmin
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
-        raise HTTPException(
-            status_code=403,
-            detail="Only Admins can share MCP tools with other departments"
-        )
-    
-    # Get the MCP tool to verify it exists and get its department
-    tool_records = await mcp_tool_service.get_mcp_tool(tool_id=mcp_tool_id)
-    if not tool_records:
-        raise HTTPException(status_code=404, detail=f"MCP tool not found with ID: {mcp_tool_id}")
-    
-    tool = tool_records[0]
-    source_department = tool.get('department_name', 'General')
-    
-    # If Admin, verify they are admin of the MCP tool's department
-    if current_user.role == UserRole.ADMIN:
-        if current_user.department_name != source_department:
-            raise HTTPException(
-                status_code=403,
-                detail=f"You can only share MCP tools from your own department ({current_user.department_name})"
-            )
-    
-    # Share the MCP tool
-    result = await mcp_tool_sharing_repo.share_mcp_tool_with_multiple_departments(
-        mcp_tool_id=mcp_tool_id,
-        mcp_tool_name=tool.get('tool_name', ''),
-        source_department=source_department,
-        target_departments=target_departments,
-        shared_by=current_user.email
-    )
-    
-    log.info(f"MCP tool '{mcp_tool_id}' sharing result: {result}")
-    return {
-        "message": f"MCP tool shared with {result['success_count']} department(s)",
-        "mcp_tool_id": mcp_tool_id,
-        "tool_name": tool.get('tool_name'),
-        "source_department": source_department,
-        **result
-    }
 
-
-@router.delete("/mcp/{mcp_tool_id}/share/{target_department}")
-async def unshare_mcp_tool_from_department(
-    request: Request,
-    mcp_tool_id: str,
-    target_department: str,
-    current_user: User = Depends(get_current_user),
-    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
-    mcp_tool_sharing_repo = Depends(ServiceProvider.get_mcp_tool_sharing_repo)
-):
-    """
-    Remove sharing of an MCP tool from a specific department.
-    Only Admins of the MCP tool's department or SuperAdmins can unshare MCP tools.
-    """
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id)
-    
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
-        raise HTTPException(
-            status_code=403,
-            detail="Only Admins can unshare MCP tools"
-        )
-    
-    tool_records = await mcp_tool_service.get_mcp_tool(tool_id=mcp_tool_id)
-    if not tool_records:
-        raise HTTPException(status_code=404, detail=f"MCP tool not found with ID: {mcp_tool_id}")
-    
-    tool = tool_records[0]
-    source_department = tool.get('department_name', 'General')
-    
-    if current_user.role == UserRole.ADMIN and current_user.department_name != source_department:
-        raise HTTPException(
-            status_code=403,
-            detail=f"You can only manage sharing for MCP tools from your own department"
-        )
-    
-    success = await mcp_tool_sharing_repo.unshare_mcp_tool_from_department(mcp_tool_id, target_department)
-    
-    if success:
-        return {
-            "message": f"MCP tool '{tool.get('tool_name')}' unshared from department '{target_department}'",
-            "mcp_tool_id": mcp_tool_id,
-            "target_department": target_department
-        }
-    else:
+        raise HTTPException(status_code=403, detail="Only Admins can update MCP tool sharing settings")
+
+    if body.is_public is None and body.shared_with_departments is None:
+        raise HTTPException(status_code=400, detail="At least one of 'is_public' or 'shared_with_departments' must be provided.")
+
+    if body.is_public and body.shared_with_departments:
         raise HTTPException(
             status_code=400,
-            detail=f"MCP tool was not shared with department '{target_department}' or unsharing failed"
+            detail="Cannot set both 'is_public' and 'shared_with_departments'. A public MCP tool is already accessible to all departments."
         )
+
+    try:
+        result = await mcp_tool_service.update_mcp_tool_sharing(
+            tool_id=mcp_tool_id,
+            user_email=current_user.email,
+            department_name=current_user.department_name,
+            is_public=body.is_public,
+            shared_with_departments=body.shared_with_departments
+        )
+        return {"message": "MCP tool sharing settings updated successfully", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error updating MCP tool sharing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating MCP tool sharing: {str(e)}")
 
 
 @router.get("/mcp/{mcp_tool_id}/sharing-info")
@@ -4091,9 +4526,9 @@ async def get_mcp_tool_sharing_info(
     return {
         "mcp_tool_id": mcp_tool_id,
         "tool_name": tool.get('tool_name'),
-        "source_department": tool.get('department_name', 'General'),
-        "shared_with": shared_departments,
-        "shared_count": len(shared_departments)
+        "owner_department": tool.get('department_name', 'General'),
+        "is_public": tool.get('is_public', False),
+        "shared_with": [d.get('target_department') for d in shared_departments if d.get('target_department')]
     }
 
 
@@ -4127,7 +4562,7 @@ async def get_mcp_tools_shared_with_department(
     }
 
 
-@router.get("/mcp/shared-with-my-department")
+@router.get("/mcp/shared-with-me")
 async def get_mcp_tools_shared_with_my_department(
     request: Request,
     current_user: User = Depends(get_current_user),
@@ -4230,36 +4665,37 @@ async def export_tools_endpoint(
     )
 
 
-@router.post("/import")
-async def import_tools_endpoint(
+@router.post("/import-preview")
+async def preview_import_tools_endpoint(
     request: Request,
-    model_name: str = Form(..., description="The LLM model name for docstring generation."),
-    created_by: str = Form(..., description="The email ID of the user importing the tools."),
-    zip_file: UploadFile = File(..., description="The .zip file containing .py tool files to import."),
+    zip_file: UploadFile = File(..., description="The .zip file containing .py tool files to preview."),
     export_import_service: ToolExportImportService = Depends(ServiceProvider.get_tool_export_import_service),
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user),
 ):
     """
-    Imports tools from a .zip file. Each .py file in the zip is treated as one tool.
-
-    Handles name conflicts by appending _V1, _V2, etc.
-    Generates docstrings only for tools that don't already have one.
-    Uses force_add=True to bypass graph validation.
+    Preview what will happen when importing tools from a .zip file.
+    
+    This endpoint analyzes the zip contents and checks for conflicts WITHOUT
+    actually importing anything. The UI should:
+    1. Call this endpoint first when user uploads a zip file
+    2. If has_conflicts=False: proceed to call /import directly
+    3. If has_conflicts=True: show a modal asking user to choose action for each conflict
+    4. Then call /import with the user's conflict_resolution choice
 
     Parameters:
     ----------
-    model_name : str
-        The LLM model name for docstring generation.
-    created_by : str
-        The email ID of the user importing the tools.
     zip_file : UploadFile
-        The .zip file containing .py files.
+        The .zip file containing .py files to preview.
 
     Returns:
     -------
     dict
-        Summary with imported/failed tool details.
+        - has_conflicts: bool - True if any tool needs user decision
+        - tools: List of tool analysis with status and options
+        - conflicts_count: Number of tools requiring decision
+        - ready_count: Number of tools ready to import directly
+        - skip_count: Number of tools that will be skipped (identical code)
     """
     if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools", user_data.department_name):
         raise HTTPException(status_code=403, detail="You don't have permission to import tools. Only admins and developers can perform this action.")
@@ -4274,11 +4710,103 @@ async def import_tools_endpoint(
         raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {str(e)}")
 
     try:
+        result = await export_import_service.preview_import_tools(
+            zip_buffer=zip_buffer,
+            department_name=user_data.department_name,
+        )
+    except Exception as e:
+        log.error(f"Error previewing import: {e}")
+        raise HTTPException(status_code=500, detail=f"Error previewing import: {str(e)}") from e
+
+    return {"status": "success", "result": result}
+
+
+@router.post("/import")
+async def import_tools_endpoint(
+    request: Request,
+    model_name: str = Form(..., description="The LLM model name for docstring generation."),
+    created_by: str = Form(..., description="The email ID of the user importing the tools."),
+    conflict_resolution: str = Form("create_new_tool", description="How to handle tool name conflicts: 'create_new_tool' (default) returns error asking for new name via name_overrides. 'create_new_version' adds conflicting code as new version to existing tool."),
+    name_overrides: Optional[str] = Form(None, description="JSON string mapping original function names to user-provided new names. Example: {\"old_func\": \"new_func\"}. Used when a previous import returned needs_new_name=true. Names ending with _v1, _v2 etc. are not allowed."),
+    zip_file: UploadFile = File(..., description="The .zip file containing .py tool files to import."),
+    export_import_service: ToolExportImportService = Depends(ServiceProvider.get_tool_export_import_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user),
+):
+    """
+    Imports tools from a .zip file. Each .py file in the zip is treated as one tool.
+
+    Handles name conflicts based on conflict_resolution parameter:
+    - "create_new_tool" (default): Returns error with needs_new_name=true, asking user to provide 
+      a new name via name_overrides parameter. Names ending with _v1, _v2, etc. are reserved and rejected.
+    - "create_new_version": Adds conflicting code as new version to existing tool.
+
+    Validates all names in name_overrides BEFORE importing. If any name is invalid,
+    returns validation_failed=true with detailed errors per name. No tools are imported
+    until all names are valid.
+
+    Uses O(m+n) hashing algorithm for efficient version comparison when importing
+    versions to existing tools.
+
+    Parameters:
+    ----------
+    model_name : str
+        The LLM model name for docstring generation.
+    created_by : str
+        The email ID of the user importing the tools.
+    conflict_resolution : str
+        How to handle conflicts: "create_new_tool" or "create_new_version"
+    name_overrides : str (optional)
+        JSON string mapping original function names to user-provided new names.
+        Example: {"Hello_Calculator": "My_Calculator"}
+    zip_file : UploadFile
+        The .zip file containing .py files.
+
+    Returns:
+    -------
+    dict
+        Summary with imported/failed/merged tool details.
+        If validation_failed=true, contains validation_errors with per-name error details.
+    """
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "create", "tools", user_data.department_name):
+        raise HTTPException(status_code=403, detail="You don't have permission to import tools. Only admins and developers can perform this action.")
+
+    if not zip_file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Only .zip files are accepted.")
+
+    # Validate conflict_resolution parameter
+    valid_resolutions = ["create_new_tool", "create_new_version"]
+    if conflict_resolution not in valid_resolutions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid conflict_resolution: '{conflict_resolution}'. Must be one of: {valid_resolutions}"
+        )
+
+    try:
+        file_content = await zip_file.read()
+        zip_buffer = io.BytesIO(file_content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {str(e)}")
+
+    # Parse name_overrides JSON string if provided
+    parsed_name_overrides = None
+    if name_overrides:
+        try:
+            import json
+            parsed_name_overrides = json.loads(name_overrides)
+            if not isinstance(parsed_name_overrides, dict):
+                raise HTTPException(status_code=400, detail="name_overrides must be a JSON object mapping original names to new names.")
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in name_overrides: {str(e)}")
+
+    try:
         result = await export_import_service.import_tools(
             zip_buffer=zip_buffer,
             model_name=model_name.strip(),
             created_by=created_by.strip(),
             department_name=user_data.department_name,
+            conflict_resolution=conflict_resolution,
+            name_overrides=parsed_name_overrides,
         )
     except Exception as e:
         log.error(f"Error importing tools: {e}")

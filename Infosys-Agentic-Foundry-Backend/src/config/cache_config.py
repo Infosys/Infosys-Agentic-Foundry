@@ -22,8 +22,8 @@ if ENABLE_CACHING:
             db=int(os.getenv("REDIS_DB", 0)),
             password=os.getenv("REDIS_PASSWORD"),
             max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", 20)),
-            socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT", 2.0)),
-            socket_connect_timeout=float(os.getenv("REDIS_CONNECT_TIMEOUT", 2.0)),
+            socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT", 0.5)),
+            socket_connect_timeout=float(os.getenv("REDIS_CONNECT_TIMEOUT", 0.5)),
             decode_responses=True,
         )
         # Client that draws from the pool

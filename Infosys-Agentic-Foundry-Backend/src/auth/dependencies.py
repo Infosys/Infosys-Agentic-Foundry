@@ -110,7 +110,6 @@ async def get_user_info_from_request(request: Request) -> Optional[User]:
         auth_header = request.headers.get("Authorization")
         log.info("JWT is checking")
         auth_service = get_auth_service(request)
-        log.info(f"Authorization header: {auth_header}")
         if not auth_header or not auth_header.startswith("Bearer "):
             return None
         token = auth_header.split(" ", 1)[1]

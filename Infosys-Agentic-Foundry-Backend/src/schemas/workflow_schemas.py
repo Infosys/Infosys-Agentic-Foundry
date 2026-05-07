@@ -2,6 +2,7 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any, Literal, Union
 from datetime import datetime
+from enum import Enum
 
 
 # --- Node Configuration Models ---
@@ -16,10 +17,10 @@ class AccessibleInputConfig(BaseModel):
     input_keys: List[str] = Field(..., description="List of input keys accessible at this node")
 
 class AgentNodeConfig(BaseModel):
-    """Configuration for an agent node in the pipeline."""
+    """Configuration for an agent node in the workflow."""
     agent_id: str = Field(..., description="IAF Agent ID to be used at this node")
-    tool_verifier: bool = Field(False, description="If true, pipeline pauses before this agent for user confirmation")
-    plan_verifier: bool = Field(False, description="If true, pipeline pauses after this agent for user confirmation of plan")
+    tool_verifier: bool = Field(False, description="If true, workflow pauses before this agent for user confirmation")
+    plan_verifier: bool = Field(False, description="If true, workflow pauses after this agent for user confirmation of plan")
     accessible_inputs: AccessibleInputConfig = Field(["all"], description="Configuration for accessible inputs at this node")
     
 
@@ -90,8 +91,8 @@ class ConditionNodeConfig(BaseModel):
     """
     condition: str = Field(..., description="Text condition for deciding next node")
 
-class PipelineNode(BaseModel):
-    """Represents a node in the pipeline graph."""
+class WorkflowNode(BaseModel):
+    """Represents a node in the workflow graph."""
     node_id: str = Field(..., description="Unique identifier for the node")
     node_type: Literal["input", "agent", "output", "condition"] = Field(..., description="Type of node: 'input' for start, 'agent' for IAF agents")
     node_name: str = Field(..., description="Display name of the node")
@@ -100,54 +101,69 @@ class PipelineNode(BaseModel):
     config: Optional[Union[AgentNodeConfig, InputConfigSchema, OutputConfigSchema, ConditionNodeConfig]] = Field(None, description="Node-specific configuration")
 
 
-class PipelineEdge(BaseModel):
+class WorkflowEdge(BaseModel):
     """Represents a connection between nodes."""
     edge_id: str = Field(..., description="Unique identifier for the edge")
     source_node_id: str = Field(..., description="ID of the source node")
     target_node_id: str = Field(..., description="ID of the target node")
     
+ 
+# --- Workflow Definition Models ---
 
-# --- Pipeline Definition Models ---
-
-class PipelineDefinition(BaseModel):
-    """Complete pipeline graph definition."""
-    nodes: List[PipelineNode] = Field(..., description="List of all nodes in the pipeline")
-    edges: List[PipelineEdge] = Field(..., description="List of all edges connecting nodes")
-
-
-class PipelineCreateRequest(BaseModel):
-    """Request schema for creating a new pipeline."""
-    pipeline_name: str = Field(..., description="Name of the pipeline")
-    pipeline_description: Optional[str] = Field("", description="Description of the pipeline")
-    pipeline_definition: PipelineDefinition = Field(..., description="The complete graph definition")
-    created_by: str = Field(..., description="Email of the user creating the pipeline")
+class WorkflowDefinition(BaseModel):
+    """Complete workflow graph definition."""
+    nodes: List[WorkflowNode] = Field(..., description="List of all nodes in the workflow")
+    edges: List[WorkflowEdge] = Field(..., description="List of all edges connecting nodes")
 
 
-class PipelineUpdateRequest(BaseModel):
-    """Request schema for updating an existing pipeline."""
-    pipeline_name: Optional[str] = Field(None, description="New name for the pipeline")
-    pipeline_description: Optional[str] = Field(None, description="New description")
-    pipeline_definition: Optional[PipelineDefinition] = Field(None, description="Updated graph definition")
+class WorkflowCreateRequest(BaseModel):
+    """Request schema for creating a new workflow."""
+    workflow_name: str = Field(..., description="Name of the workflow")
+    workflow_description: Optional[str] = Field("", description="Description of the workflow")
+    workflow_definition: WorkflowDefinition = Field(..., description="The complete graph definition")
+    created_by: str = Field(..., description="Email of the user creating the workflow")
+
+
+class WorkflowUpdateRequest(BaseModel):
+    """Request schema for updating an existing workflow."""
+    workflow_name: Optional[str] = Field(None, description="New name for the workflow")
+    workflow_description: Optional[str] = Field(None, description="New description")
+    workflow_definition: Optional[WorkflowDefinition] = Field(None, description="Updated graph definition")
     is_active: Optional[bool] = Field(None, description="Active status")
+
+
+class DeleteWorkflowRequest(BaseModel):
+    """Schema for deleting one or more workflows."""
+    user_email_id: str = Field(..., description="The email ID of the user requesting the deletion.")
+    is_admin: bool = Field(False, description="Indicates if the user has admin privileges.")
+    workflow_ids: List[str] = Field(..., description="List of workflow IDs to delete.")
 
 
 
 # --- Response Models ---
 
-class PipelineResponse(BaseModel):
-    """Response schema for pipeline operations."""
-    pipeline_id: str
-    pipeline_name: str
-    pipeline_description: Optional[str]
-    pipeline_definition: PipelineDefinition
+class WorkflowSharingRequest(BaseModel):
+    """Request schema for sharing a workflow with departments."""
+    target_departments: List[str] = Field(..., description="List of department names to share the workflow with")
+
+
+class WorkflowResponse(BaseModel):
+    """Response schema for workflow operations."""
+    workflow_id: str
+    workflow_name: str
+    workflow_description: Optional[str]
+    workflow_definition: WorkflowDefinition
     created_by: str
     created_at: datetime
     updated_at: datetime
     is_active: bool
+    is_public: Optional[bool] = False
+    is_shared: Optional[bool] = False
+    shared_with_departments: Optional[List[str]] = None
 
 
-class PipelineListResponse(BaseModel):
-    """Response schema for listing pipelines."""
-    pipelines: List[PipelineResponse]
+class WorkflowListResponse(BaseModel):
+    """Response schema for listing workflows."""
+    workflows: List[WorkflowResponse]
     total_count: int
 

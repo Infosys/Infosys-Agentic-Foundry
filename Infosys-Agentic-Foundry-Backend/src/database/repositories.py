@@ -1,13 +1,14 @@
-# © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
+﻿# © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import os
 import uuid
 import json
 import re
+import asyncio
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import asyncpg
 import difflib
-from typing import List, Dict, Any, Optional, Union, Literal, Tuple
+from typing import List, Dict, Any, Optional, Union, Literal, Tuple, Callable, TypeVar
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from src.config.constants import TableNames, DatabaseName
 from src.config.application_config import app_config
@@ -16,6 +17,14 @@ from src.config.cache_config import EXPIRY_TIME, ENABLE_CACHING
 from telemetry_wrapper import logger as log
 from src.utils.secrets_handler import current_user_email
 from src.auth.models import User, UserRole
+
+# Type variable for generic return types
+T = TypeVar('T')
+
+# Database operation configuration
+DB_TIMEOUT_SECONDS = float(os.getenv('DB_TIMEOUT_SECONDS', '30'))  # Default 30 seconds timeout
+DB_MAX_RETRIES = int(os.getenv('DB_MAX_RETRIES', '3'))  # Default 3 retries
+DB_RETRY_DELAY_SECONDS = float(os.getenv('DB_RETRY_DELAY_SECONDS', '10'))  # Default 10 seconds delay between retries
 
 # --- Base Repository ---
 
@@ -39,6 +48,95 @@ class BaseRepository:
         self.pool = pool
         self.login_pool = login_pool
         self.table_name = table_name
+
+    async def _execute_with_retry(
+        self,
+        operation: Callable,
+        *args,
+        timeout: float = DB_TIMEOUT_SECONDS,
+        max_retries: int = DB_MAX_RETRIES,
+        retry_delay: float = DB_RETRY_DELAY_SECONDS,
+        operation_name: str = "database operation",
+        **kwargs
+    ) -> T:
+        """
+        Execute a database operation with timeout and retry mechanism.
+        
+        Args:
+            operation: The async callable to execute (e.g., conn.fetch, conn.execute)
+            *args: Positional arguments to pass to the operation
+            timeout: Timeout in seconds for each attempt (default: DB_TIMEOUT_SECONDS)
+            max_retries: Maximum number of retry attempts (default: DB_MAX_RETRIES)
+            retry_delay: Delay in seconds between retries (default: DB_RETRY_DELAY_SECONDS)
+            operation_name: Name of the operation for logging purposes
+            **kwargs: Keyword arguments to pass to the operation
+            
+        Returns:
+            The result of the database operation
+            
+        Raises:
+            asyncio.TimeoutError: If all retry attempts fail due to timeout
+            Exception: If all retry attempts fail due to other errors
+        """
+        last_exception = None
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                result = await asyncio.wait_for(
+                    operation(*args, **kwargs),
+                    timeout=timeout
+                )
+                return result
+            except asyncio.TimeoutError as e:
+                last_exception = e
+                log.warning(
+                    f"[DB Timeout] {operation_name} timed out after {timeout}s "
+                    f"(attempt {attempt}/{max_retries})"
+                )
+            except (asyncpg.PostgresConnectionError, asyncpg.InterfaceError, ConnectionError) as e:
+                last_exception = e
+                log.warning(
+                    f"[DB Connection Error] {operation_name} failed with connection error: {str(e)} "
+                    f"(attempt {attempt}/{max_retries})"
+                )
+            except Exception as e:
+                # For non-retryable errors, raise immediately
+                if not isinstance(e, (asyncpg.PostgresError,)):
+                    raise
+                last_exception = e
+                log.warning(
+                    f"[DB Error] {operation_name} failed: {str(e)} "
+                    f"(attempt {attempt}/{max_retries})"
+                )
+            
+            # Wait before retrying (but not after the last attempt)
+            if attempt < max_retries:
+                log.info(f"[DB Retry] Waiting {retry_delay}s before retry...")
+                await asyncio.sleep(retry_delay)
+        
+        # All retries exhausted
+        log.error(
+            f"[DB Failed] {operation_name} failed after {max_retries} attempts. "
+            f"Last error: {str(last_exception)}"
+        )
+        raise last_exception
+
+    # Convenience wrapper methods for database operations with retry
+    async def _fetch(self, conn, query: str, *args, operation_name: str = "fetch", **kwargs):
+        """Execute conn.fetch with retry mechanism."""
+        return await self._execute_with_retry(conn.fetch, query, *args, operation_name=operation_name, **kwargs)
+    
+    async def _fetchrow(self, conn, query: str, *args, operation_name: str = "fetchrow", **kwargs):
+        """Execute conn.fetchrow with retry mechanism."""
+        return await self._execute_with_retry(conn.fetchrow, query, *args, operation_name=operation_name, **kwargs)
+    
+    async def _fetchval(self, conn, query: str, *args, operation_name: str = "fetchval", **kwargs):
+        """Execute conn.fetchval with retry mechanism."""
+        return await self._execute_with_retry(conn.fetchval, query, *args, operation_name=operation_name, **kwargs)
+    
+    async def _db_execute(self, conn, query: str, *args, operation_name: str = "execute", **kwargs):
+        """Execute conn.execute with retry mechanism."""
+        return await self._execute_with_retry(conn.execute, query, *args, operation_name=operation_name, **kwargs)
 
     async def _transform_emails_to_usernames(self, rows: List[Dict], email_fields: List[str]) -> List[Dict]:
         """
@@ -65,9 +163,11 @@ class BaseRepository:
         email_to_username = {}
         if emails:
             async with self.login_pool.acquire() as conn:
-                user_records = await conn.fetch(
+                user_records = await self._execute_with_retry(
+                    conn.fetch,
                     f"SELECT mail_id, user_name FROM {TableNames.LOGIN_CREDENTIAL.value} WHERE mail_id = ANY($1)",
-                    list(emails)
+                    list(emails),
+                    operation_name="transform_emails_to_usernames"
                 )
                 email_to_username = {r['mail_id']: r['user_name'] for r in user_records}
         
@@ -120,11 +220,11 @@ class TagRepository(BaseRepository, CacheableRepository):
             ]
 
             async with self.pool.acquire() as conn:
-                await conn.execute(create_statement)
+                await self._execute_with_retry(conn.execute, create_statement, operation_name="create_tags_table")
 
                 # Migration: Ensure UNIQUE constraint exists on tag_name (for existing tables)
                 try:
-                    await conn.execute(f"""
+                    await self._execute_with_retry(conn.execute, f"""
                         DO $$ BEGIN
                         IF NOT EXISTS (
                             SELECT 1 FROM pg_constraint 
@@ -144,7 +244,7 @@ class TagRepository(BaseRepository, CacheableRepository):
                     VALUES ($1, $2, 'system@infosys.com')
                     ON CONFLICT (tag_name) DO NOTHING
                     """
-                    await conn.execute(insert_query, str(uuid.uuid4()), default_tag)
+                    await self._execute_with_retry(conn.execute, insert_query, str(uuid.uuid4()), default_tag, operation_name="insert_default_tag")
 
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
@@ -168,7 +268,7 @@ class TagRepository(BaseRepository, CacheableRepository):
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(insert_statement, tag_id, tag_name.strip(), created_by)
+                await self._execute_with_retry(conn.execute, insert_statement, tag_id, tag_name.strip(), created_by, operation_name="insert_tag_record")
             await self.invalidate_all_method_cache("get_tag_record")
             await self.invalidate_all_method_cache("get_all_tag_records")
             log.info(f"Tag record '{tag_name}' inserted successfully.")
@@ -191,7 +291,7 @@ class TagRepository(BaseRepository, CacheableRepository):
         query = f"SELECT * FROM {self.table_name} ORDER BY tag_name ASC"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await self._execute_with_retry(conn.fetch, query, operation_name="get_all_tag_records")
             log.info(f"Retrieved {len(rows)} tag records from '{self.table_name}'.")
             updated_rows = [dict(row) for row in rows]
             await self._transform_emails_to_usernames(updated_rows, ['created_by'])
@@ -218,7 +318,7 @@ class TagRepository(BaseRepository, CacheableRepository):
             query += "tag_id = $1"
             param = tag_id
         elif tag_name:
-            query += "tag_name = $1"
+            query += "LOWER(tag_name) = LOWER($1)"
             param = tag_name
         else:
             log.warning("No tag_id or tag_name provided to get_tag_record.")
@@ -226,7 +326,7 @@ class TagRepository(BaseRepository, CacheableRepository):
 
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(query, param)
+                row = await self._execute_with_retry(conn.fetchrow, query, param, operation_name="get_tag_record")
             if row:
                 log.info(f"Tag record '{tag_id or tag_name}' retrieved successfully.")
                 row = dict(row)
@@ -254,7 +354,7 @@ class TagRepository(BaseRepository, CacheableRepository):
         update_statement = f"UPDATE {self.table_name} SET tag_name = $1 WHERE tag_id = $2 AND created_by = $3"
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(update_statement, new_tag_name, tag_id, created_by)
+                result = await self._execute_with_retry(conn.execute, update_statement, new_tag_name, tag_id, created_by, operation_name="update_tag_record")
             await self.invalidate_all_method_cache("get_tag_record")
             await self.invalidate_all_method_cache("get_all_tag_records")
             if result != "UPDATE 0":
@@ -281,7 +381,7 @@ class TagRepository(BaseRepository, CacheableRepository):
         delete_statement = f"DELETE FROM {self.table_name} WHERE tag_id = $1 AND created_by = $2"
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(delete_statement, tag_id, created_by)
+                result = await self._execute_with_retry(conn.execute, delete_statement, tag_id, created_by, operation_name="delete_tag_record")
             await self.invalidate_all_method_cache("get_tag_record")
             await self.invalidate_all_method_cache("get_all_tag_records")
             if result != "DELETE 0":
@@ -333,7 +433,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
             );
             """
             async with self.pool.acquire() as conn:
-                await conn.execute(create_statement)
+                await self._execute_with_retry(conn.execute, create_statement, operation_name="create_tag_tool_mapping_table")
             log.info(f"Table '{self.table_name}' created successfully or already exists (without tool_id FK).")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -356,7 +456,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(insert_statement, tag_id, tool_id)
+                await self._execute_with_retry(conn.execute, insert_statement, tag_id, tool_id, operation_name="assign_tag_to_tool_record")
             await self.invalidate_all_method_cache("get_tool_tag_mappings")
             await self.invalidate_all_method_cache("get_tags_by_tool_id_records")
             log.info(f"Mapping tag '{tag_id}' to tool '{tool_id}' inserted successfully.")
@@ -382,7 +482,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
         """
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(delete_statement, tag_id, tool_id)
+                result = await self._execute_with_retry(conn.execute, delete_statement, tag_id, tool_id, operation_name="remove_tag_from_tool_record")
             if result != "DELETE 0":
                 log.info(f"Mapping tag '{tag_id}' from tool '{tool_id}' removed successfully.")
                 await self.invalidate_all_method_cache("get_tool_tag_mappings")
@@ -406,7 +506,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
         query = f"SELECT tag_id, tool_id FROM {self.table_name};"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await self._execute_with_retry(conn.fetch, query, operation_name="get_tool_tag_mappings")
             log.info(f"Retrieved {len(rows)} tool-tag mappings from '{self.table_name}'.")
             return [dict(row) for row in rows]
         except Exception as e:
@@ -427,7 +527,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
         query = f"SELECT tag_id FROM {self.table_name} WHERE tool_id = $1;"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, tool_id)
+                rows = await self._execute_with_retry(conn.fetch, query, tool_id, operation_name="get_tags_by_tool_id_records")
             log.info(f"Retrieved {len(rows)} tag IDs for tool '{tool_id}'.")
             return [row['tag_id'] for row in rows]
         except Exception as e:
@@ -447,7 +547,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
         delete_statement = f"DELETE FROM {self.table_name} WHERE tool_id = $1;"
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(delete_statement, tool_id)
+                result = await self._execute_with_retry(conn.execute, delete_statement, tool_id, operation_name="delete_all_tags_for_tool")
             if result != "DELETE 0": 
                 await self.invalidate_all_method_cache("get_tool_tag_mappings")
                 await self.invalidate_all_method_cache("get_tags_by_tool_id_records")
@@ -477,7 +577,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
                   AND kcu.column_name = 'tool_id'
                   AND tc.constraint_type = 'FOREIGN KEY';
                 """
-                constraint_record = await conn.fetchrow(constraint_query)
+                constraint_record = await self._execute_with_retry(conn.fetchrow, constraint_query, operation_name="get_tool_id_fk_constraint")
 
                 if constraint_record:
                     constraint_name = constraint_record['constraint_name']
@@ -485,7 +585,7 @@ class TagToolMappingRepository(BaseRepository, CacheableRepository):
                     ALTER TABLE {self.table_name}
                     DROP CONSTRAINT {constraint_name};
                     """
-                    await conn.execute(drop_fk_statement)
+                    await self._execute_with_retry(conn.execute, drop_fk_statement, operation_name="drop_tool_id_fk_constraint")
                     await self.invalidate_all_method_cache("get_tool_tag_mappings")
                     log.info(f"Successfully dropped foreign key constraint '{constraint_name}' on '{self.table_name}.tool_id'.")
                     return True
@@ -556,7 +656,7 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(insert_statement, tag_id, agentic_application_id)
+                await self._execute_with_retry(conn.execute, insert_statement, tag_id, agentic_application_id, operation_name="assign_tag_to_agent_record")
             await self.invalidate_all_method_cache("get_agent_tag_mappings")
             await self.invalidate_all_method_cache("get_tags_by_agent_id_records")
             log.info(f"Mapping tag '{tag_id}' to agent '{agentic_application_id}' inserted successfully.")
@@ -582,7 +682,7 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
         """
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(delete_statement, tag_id, agentic_application_id)
+                result = await self._execute_with_retry(conn.execute, delete_statement, tag_id, agentic_application_id, operation_name="remove_tag_from_agent_record")
             if result != "DELETE 0":
                 log.info(f"Mapping tag '{tag_id}' from agent '{agentic_application_id}' removed successfully.")
                 await self.invalidate_all_method_cache("get_agent_tag_mappings")
@@ -606,7 +706,7 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
         query = f"SELECT tag_id, agentic_application_id FROM {self.table_name};"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
+                rows = await self._execute_with_retry(conn.fetch, query, operation_name="get_agent_tag_mappings")
             log.info(f"Retrieved {len(rows)} agent-tag mappings from '{self.table_name}'.")
             return [dict(row) for row in rows]
         except Exception as e:
@@ -627,7 +727,7 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
         query = f"SELECT tag_id FROM {self.table_name} WHERE agentic_application_id = $1;"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, agent_id)
+                rows = await self._execute_with_retry(conn.fetch, query, agent_id, operation_name="get_tags_by_agent_id_records")
             log.info(f"Retrieved {len(rows)} tag IDs for agent '{agent_id}'.")
             return [row['tag_id'] for row in rows]
         except Exception as e:
@@ -647,7 +747,7 @@ class TagAgentMappingRepository(BaseRepository, CacheableRepository):
         delete_statement = f"DELETE FROM {self.table_name} WHERE agentic_application_id = $1;"
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(delete_statement, agent_id)
+                result = await self._execute_with_retry(conn.execute, delete_statement, agent_id, operation_name="delete_all_tags_for_agent")
             if result != "DELETE 0":
                 await self.invalidate_all_method_cache("get_agent_tag_mappings")
                 await self.invalidate_all_method_cache("get_tags_by_agent_id_records")
@@ -733,7 +833,14 @@ class ToolRepository(BaseRepository, CacheableRepository):
                     f"DO $$ BEGIN "
                     f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tool_name_department_name_key UNIQUE (tool_name, department_name); "
-                    f"END IF; END $$;"
+                    f"END IF; END $$;",
+                    # Migration: Remove old versioning columns (data now in tool_versions_table)
+                    f"ALTER TABLE {self.table_name} DROP COLUMN IF EXISTS versioning",
+                    f"ALTER TABLE {self.table_name} DROP COLUMN IF EXISTS current_version",
+                    f"ALTER TABLE {self.table_name} DROP COLUMN IF EXISTS version_number",
+                    f"ALTER TABLE {self.table_name} DROP COLUMN IF EXISTS is_latest",
+                    f"ALTER TABLE {self.table_name} DROP COLUMN IF EXISTS base_tool_name",
+                    f"ALTER TABLE {self.table_name} DROP COLUMN IF EXISTS versions"
                 ]
 
                 for stmt in alter_statements:
@@ -746,6 +853,7 @@ class ToolRepository(BaseRepository, CacheableRepository):
     async def save_tool_record(self, tool_data: Dict[str, Any]) -> bool:
         """
         Inserts a new tool record into the tool table.
+        Note: Versioning is now handled by separate tool_versions_table.
 
         Args:
             tool_data (Dict[str, Any]): A dictionary containing the tool data.
@@ -811,7 +919,7 @@ class ToolRepository(BaseRepository, CacheableRepository):
             if not message_queue_implementation:
                 if tool_name.endswith('_message_queue'):
                     tool_name = tool_name[:-14]
-            where_clauses.append(f"tool_name = ${len(params)+1}")
+            where_clauses.append(f"LOWER(tool_name) = LOWER(${len(params)+1})")
             params.append(tool_name)
         else:
             log.warning("No tool_id or tool_name provided to get_tool_record.")
@@ -1292,6 +1400,756 @@ class ToolRepository(BaseRepository, CacheableRepository):
                 return False
         except Exception as e:
             log.error(f"ERROR REPOSITORY: Error updating last_used for tool '{tool_name}': {e}")
+            return False
+
+    async def update_tool_visibility(self, tool_id: str, is_public: bool) -> bool:
+        """
+        Updates the is_public flag for a tool.
+
+        Args:
+            tool_id (str): The tool ID.
+            is_public (bool): Whether the tool should be publicly accessible.
+
+        Returns:
+            bool: True if updated, False if tool not found.
+        """
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET is_public = $1, updated_on = CURRENT_TIMESTAMP
+        WHERE tool_id = $2
+        RETURNING tool_id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(update_statement, is_public, tool_id)
+            await self.invalidate_all_method_cache("get_tool_record")
+            if result:
+                log.info(f"Tool '{tool_id}' visibility updated to is_public={is_public}")
+                return True
+            else:
+                log.warning(f"Tool '{tool_id}' not found for visibility update")
+                return False
+        except Exception as e:
+            log.error(f"Error updating tool visibility for '{tool_id}': {e}")
+            raise
+
+    # ============================================================================
+    # Tool Versioning Methods (Deprecated - Use ToolVersionRepository instead)
+    # These methods are kept for backward compatibility but the new
+    # ToolVersionRepository should be used for all versioning operations.
+    # ============================================================================
+
+
+# --- ToolVersionRepository ---
+
+class ToolVersionRepository(BaseRepository, CacheableRepository):
+    """
+    Repository for the 'tool_versions_table'. 
+    Handles versioned tool code storage in a normalized table structure.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.TOOL_VERSIONS.value):
+        """
+        Initializes the ToolVersionRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the tool versions table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'tool_versions_table' in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                tool_id TEXT NOT NULL,
+                version VARCHAR(20) NOT NULL,
+                code_snippet TEXT,
+                tool_description TEXT,
+                model_name TEXT,
+                updated_by TEXT,
+                updated_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (tool_id, version),
+                FOREIGN KEY (tool_id) REFERENCES {TableNames.TOOL.value}(tool_id) ON DELETE CASCADE
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                
+                # Create indexes for faster lookups
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_tool_id ON {self.table_name} (tool_id)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_version ON {self.table_name} (tool_id, version)"
+                )
+                
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def migrate_from_json_versioning(self, tool_repo) -> Dict[str, Any]:
+        """
+        Migrates existing versioning data from the JSON column to the new table.
+        
+        Args:
+            tool_repo: The ToolRepository instance to fetch tool records.
+            
+        Returns:
+            Dict with migration statistics.
+        """
+        migrated = 0
+        failed = 0
+        skipped = 0
+        
+        try:
+            # Get all tools with versioning data
+            query = f"""
+            SELECT tool_id, tool_name, versioning, tool_description
+            FROM {TableNames.TOOL.value}
+            WHERE versioning IS NOT NULL AND versioning != '{{}}'::jsonb
+            """
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query)
+                
+                for row in rows:
+                    tool_id = row['tool_id']
+                    versioning = row['versioning']
+                    
+                    if isinstance(versioning, str):
+                        import json
+                        versioning = json.loads(versioning)
+                    
+                    if not versioning:
+                        skipped += 1
+                        continue
+                    
+                    for version_key, version_data in versioning.items():
+                        # Check if already exists
+                        existing = await conn.fetchrow(
+                            f"SELECT id FROM {self.table_name} WHERE tool_id = $1 AND version = $2",
+                            tool_id, version_key
+                        )
+                        
+                        if existing:
+                            skipped += 1
+                            continue
+                        
+                        try:
+                            await conn.execute(f"""
+                                INSERT INTO {self.table_name} 
+                                (tool_id, version, code_snippet, tool_description, model_name, updated_by, updated_date)
+                                VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                            """,
+                                tool_id,
+                                version_key,
+                                version_data.get('code_snippet', ''),
+                                version_data.get('tool_description', row.get('tool_description', '')),
+                                version_data.get('model_name', ''),
+                                version_data.get('updated_by', 'migration')
+                            )
+                            migrated += 1
+                        except Exception as e:
+                            log.error(f"Error migrating version {version_key} for tool {tool_id}: {e}")
+                            failed += 1
+                            
+            log.info(f"Migration completed: {migrated} migrated, {skipped} skipped, {failed} failed")
+            return {"migrated": migrated, "skipped": skipped, "failed": failed}
+        except Exception as e:
+            log.error(f"Error during migration: {e}")
+            return {"migrated": migrated, "skipped": skipped, "failed": failed, "error": str(e)}
+
+    async def create_version(
+        self,
+        tool_id: str,
+        version: str,
+        code_snippet: str,
+        tool_description: str = "",
+        model_name: str = "",
+        updated_by: str = ""
+    ) -> Optional[str]:
+        """
+        Creates a new version record for a tool.
+        
+        Args:
+            tool_id: The tool ID.
+            version: Version string (e.g., 'v1', 'v2').
+            code_snippet: The tool code.
+            tool_description: Description of the tool.
+            model_name: The model used to generate/update.
+            updated_by: User who created this version.
+            
+        Returns:
+            The version ID if created successfully, None otherwise.
+        """
+        insert_statement = f"""
+        INSERT INTO {self.table_name} 
+        (tool_id, version, code_snippet, tool_description, model_name, updated_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(
+                    insert_statement,
+                    tool_id, version, code_snippet, tool_description, model_name, updated_by
+                )
+            if result:
+                await self.invalidate_all_method_cache("get_version")
+                await self.invalidate_all_method_cache("get_all_versions")
+                log.info(f"Created version '{version}' for tool '{tool_id}'")
+                return str(result['id'])
+            return None
+        except asyncpg.UniqueViolationError:
+            log.warning(f"Version '{version}' already exists for tool '{tool_id}'")
+            return None
+        except Exception as e:
+            log.error(f"Error creating version '{version}' for tool '{tool_id}': {e}")
+            return None
+
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="ToolVersionRepository")
+    async def get_version(self, tool_id: str, version: str) -> Optional[Dict[str, Any]]:
+        """
+        Gets a specific version of a tool.
+        
+        Args:
+            tool_id: The tool ID.
+            version: Version string (e.g., 'v1').
+            
+        Returns:
+            The version record or None if not found.
+        """
+        query = f"""
+        SELECT id, tool_id, version, code_snippet, tool_description, model_name, updated_by, updated_date, created_at
+        FROM {self.table_name}
+        WHERE tool_id = $1 AND version = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, tool_id, version)
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            log.error(f"Error getting version '{version}' for tool '{tool_id}': {e}")
+            return None
+
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="ToolVersionRepository")
+    async def get_all_versions(self, tool_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all versions of a tool.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            List of version records ordered by version number.
+        """
+        query = f"""
+        SELECT id, tool_id, version, code_snippet, tool_description, model_name, updated_by, updated_date, created_at
+        FROM {self.table_name}
+        WHERE tool_id = $1
+        ORDER BY CAST(SUBSTRING(version FROM 2) AS INTEGER) ASC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, tool_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting all versions for tool '{tool_id}': {e}")
+            return []
+
+    async def update_version(
+        self,
+        tool_id: str,
+        version: str,
+        code_snippet: str = None,
+        tool_description: str = None,
+        model_name: str = None,
+        updated_by: str = None
+    ) -> bool:
+        """
+        Updates an existing version of a tool.
+        
+        Args:
+            tool_id: The tool ID.
+            version: Version string to update.
+            code_snippet: New code snippet (optional).
+            tool_description: New description (optional).
+            model_name: New model name (optional).
+            updated_by: User who updated this version.
+            
+        Returns:
+            True if updated successfully, False otherwise.
+        """
+        # Build dynamic update statement
+        updates = ["updated_date = CURRENT_TIMESTAMP"]
+        params = []
+        param_count = 0
+        
+        if code_snippet is not None:
+            param_count += 1
+            updates.append(f"code_snippet = ${param_count}")
+            params.append(code_snippet)
+            
+        if tool_description is not None:
+            param_count += 1
+            updates.append(f"tool_description = ${param_count}")
+            params.append(tool_description)
+            
+        if model_name is not None:
+            param_count += 1
+            updates.append(f"model_name = ${param_count}")
+            params.append(model_name)
+            
+        if updated_by is not None:
+            param_count += 1
+            updates.append(f"updated_by = ${param_count}")
+            params.append(updated_by)
+        
+        # Add tool_id and version to params
+        param_count += 1
+        tool_id_param = param_count
+        params.append(tool_id)
+        
+        param_count += 1
+        version_param = param_count
+        params.append(version)
+        
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET {', '.join(updates)}
+        WHERE tool_id = ${tool_id_param} AND version = ${version_param}
+        RETURNING id
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(update_statement, *params)
+            if result:
+                await self.invalidate_all_method_cache("get_version")
+                await self.invalidate_all_method_cache("get_all_versions")
+                log.info(f"Updated version '{version}' for tool '{tool_id}'")
+                return True
+            log.warning(f"Version '{version}' not found for tool '{tool_id}'")
+            return False
+        except Exception as e:
+            log.error(f"Error updating version '{version}' for tool '{tool_id}': {e}")
+            return False
+
+    async def delete_version(self, tool_id: str, version: str) -> Dict[str, Any]:
+        """
+        Deletes a specific version of a tool.
+        Cannot delete the last remaining version.
+        
+        Args:
+            tool_id: The tool ID.
+            version: Version string to delete.
+            
+        Returns:
+            Dict with success status and message.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Check version count
+                count_result = await conn.fetchrow(
+                    f"SELECT COUNT(*) as count FROM {self.table_name} WHERE tool_id = $1",
+                    tool_id
+                )
+                
+                if not count_result or count_result['count'] == 0:
+                    return {"success": False, "message": f"No versions found for tool '{tool_id}'"}
+                
+                if count_result['count'] <= 1:
+                    return {"success": False, "message": "Cannot delete the last remaining version"}
+                
+                # Check if version exists
+                existing = await conn.fetchrow(
+                    f"SELECT id FROM {self.table_name} WHERE tool_id = $1 AND version = $2",
+                    tool_id, version
+                )
+                
+                if not existing:
+                    return {"success": False, "message": f"Version '{version}' not found"}
+                
+                # Delete the version
+                result = await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE tool_id = $1 AND version = $2",
+                    tool_id, version
+                )
+                
+            if result == "DELETE 1":
+                await self.invalidate_all_method_cache("get_version")
+                await self.invalidate_all_method_cache("get_all_versions")
+                log.info(f"Deleted version '{version}' for tool '{tool_id}'")
+                return {"success": True, "message": f"Successfully deleted version '{version}'"}
+            return {"success": False, "message": "Failed to delete version"}
+        except Exception as e:
+            log.error(f"Error deleting version '{version}' for tool '{tool_id}': {e}")
+            return {"success": False, "message": str(e)}
+
+    async def get_version_count(self, tool_id: str) -> int:
+        """
+        Gets the count of versions for a tool.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            Number of versions.
+        """
+        query = f"SELECT COUNT(*) as count FROM {self.table_name} WHERE tool_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(query, tool_id)
+            return result['count'] if result else 0
+        except Exception as e:
+            log.error(f"Error getting version count for tool '{tool_id}': {e}")
+            return 0
+
+    async def get_version_list(self, tool_id: str) -> List[str]:
+        """
+        Gets a list of version strings for a tool.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            List of version strings (e.g., ['v1', 'v2', 'v3']).
+        """
+        query = f"SELECT version FROM {self.table_name} WHERE tool_id = $1 ORDER BY CAST(SUBSTRING(version FROM 2) AS INTEGER) ASC"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, tool_id)
+            return [row['version'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting version list for tool '{tool_id}': {e}")
+            return []
+
+    async def get_next_version_number(self, tool_id: str) -> str:
+        """
+        Gets the next version number for a tool.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            The next version key (e.g., 'v3' if v1 and v2 exist).
+        """
+        query = f"SELECT version FROM {self.table_name} WHERE tool_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, tool_id)
+            
+            if not rows:
+                return "v1"
+            
+            # Find the highest version number
+            max_version = 0
+            for row in rows:
+                version = row['version']
+                if version.startswith('v') and version[1:].isdigit():
+                    version_num = int(version[1:])
+                    if version_num > max_version:
+                        max_version = version_num
+            
+            return f"v{max_version + 1}"
+        except Exception as e:
+            log.error(f"Error getting next version for tool '{tool_id}': {e}")
+            return "v1"
+
+    async def delete_all_versions(self, tool_id: str) -> bool:
+        """
+        Deletes all versions for a tool (used when deleting the tool itself).
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            True if deleted successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE tool_id = $1",
+                    tool_id
+                )
+            await self.invalidate_all_method_cache("get_version")
+            await self.invalidate_all_method_cache("get_all_versions")
+            log.info(f"Deleted all versions for tool '{tool_id}'")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting all versions for tool '{tool_id}': {e}")
+            return False
+
+
+# --- ToolVersionRecycleBinRepository ---
+
+class ToolVersionRecycleBinRepository(BaseRepository):
+    """
+    Repository for the 'recycle_tool_versions' table.
+    Stores deleted tool versions for potential recovery.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.RECYCLE_TOOL_VERSIONS.value):
+        """
+        Initializes the ToolVersionRecycleBinRepository.
+
+        Args:
+            pool (asyncpg.Pool): The asyncpg connection pool.
+            login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
+            table_name (str): The name of the recycle tool versions table.
+        """
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """
+        Creates the 'recycle_tool_versions' table in PostgreSQL if it does not exist.
+        """
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                original_version_id UUID,
+                tool_id TEXT NOT NULL,
+                tool_name TEXT,
+                version VARCHAR(20) NOT NULL,
+                code_snippet TEXT,
+                tool_description TEXT,
+                model_name TEXT,
+                updated_by TEXT,
+                updated_date TIMESTAMPTZ,
+                created_at TIMESTAMPTZ,
+                deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                deleted_by TEXT
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                
+                # Create indexes for faster lookups
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_tool_id ON {self.table_name} (tool_id)"
+                )
+                
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def move_version_to_recycle_bin(
+        self,
+        version_data: Dict[str, Any],
+        tool_name: str,
+        deleted_by: str = ""
+    ) -> Optional[str]:
+        """
+        Moves a version record to the recycle bin.
+        
+        Args:
+            version_data: The version data from tool_versions_table.
+            tool_name: The name of the tool (for easier identification).
+            deleted_by: User who deleted this version.
+            
+        Returns:
+            The recycle bin record ID if successful, None otherwise.
+        """
+        insert_statement = f"""
+        INSERT INTO {self.table_name} 
+        (original_version_id, tool_id, tool_name, version, code_snippet, tool_description, 
+         model_name, updated_by, updated_date, created_at, deleted_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(
+                    insert_statement,
+                    version_data.get('id'),
+                    version_data.get('tool_id'),
+                    tool_name,
+                    version_data.get('version'),
+                    version_data.get('code_snippet', ''),
+                    version_data.get('tool_description', ''),
+                    version_data.get('model_name', ''),
+                    version_data.get('updated_by', ''),
+                    version_data.get('updated_date'),
+                    version_data.get('created_at'),
+                    deleted_by
+                )
+            if result:
+                log.info(f"Moved version '{version_data.get('version')}' for tool '{tool_name}' to recycle bin")
+                return str(result['id'])
+            return None
+        except Exception as e:
+            log.error(f"Error moving version to recycle bin: {e}")
+            return None
+
+    async def move_all_versions_to_recycle_bin(
+        self,
+        versions: List[Dict[str, Any]],
+        tool_name: str,
+        deleted_by: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Moves all versions of a tool to the recycle bin.
+        
+        Args:
+            versions: List of version data dictionaries.
+            tool_name: The name of the tool.
+            deleted_by: User who deleted these versions.
+            
+        Returns:
+            Dict with moved count and any errors.
+        """
+        moved = 0
+        errors = []
+        
+        for version_data in versions:
+            result = await self.move_version_to_recycle_bin(version_data, tool_name, deleted_by)
+            if result:
+                moved += 1
+            else:
+                errors.append(version_data.get('version', 'unknown'))
+        
+        return {
+            "moved": moved,
+            "total": len(versions),
+            "errors": errors
+        }
+
+    async def get_deleted_versions_for_tool(self, tool_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all deleted versions for a specific tool from the recycle bin.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            List of deleted version records.
+        """
+        query = f"""
+        SELECT id, original_version_id, tool_id, tool_name, version, code_snippet, 
+               tool_description, model_name, updated_by, updated_date, created_at, 
+               deleted_at, deleted_by
+        FROM {self.table_name}
+        WHERE tool_id = $1
+        ORDER BY version ASC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, tool_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting deleted versions for tool '{tool_id}': {e}")
+            return []
+
+    async def get_all_deleted_versions(self) -> List[Dict[str, Any]]:
+        """
+        Gets all deleted versions from the recycle bin.
+        
+        Returns:
+            List of all deleted version records.
+        """
+        query = f"""
+        SELECT id, original_version_id, tool_id, tool_name, version, code_snippet, 
+               tool_description, model_name, updated_by, updated_date, created_at, 
+               deleted_at, deleted_by
+        FROM {self.table_name}
+        ORDER BY deleted_at DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting all deleted versions: {e}")
+            return []
+
+    async def restore_version(self, recycle_bin_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Gets a specific version from the recycle bin for restoration.
+        
+        Args:
+            recycle_bin_id: The recycle bin record ID.
+            
+        Returns:
+            The version data for restoration, or None if not found.
+        """
+        query = f"""
+        SELECT id, original_version_id, tool_id, tool_name, version, code_snippet, 
+               tool_description, model_name, updated_by, updated_date, created_at
+        FROM {self.table_name}
+        WHERE id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, recycle_bin_id)
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            log.error(f"Error getting version from recycle bin: {e}")
+            return None
+
+    async def restore_all_versions_for_tool(self, tool_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all versions for a tool from the recycle bin for restoration.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            List of version data for restoration.
+        """
+        return await self.get_deleted_versions_for_tool(tool_id)
+
+    async def delete_version_from_recycle_bin(self, recycle_bin_id: str) -> bool:
+        """
+        Permanently deletes a version from the recycle bin.
+        
+        Args:
+            recycle_bin_id: The recycle bin record ID.
+            
+        Returns:
+            True if deleted successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE id = $1",
+                    recycle_bin_id
+                )
+            return result == "DELETE 1"
+        except Exception as e:
+            log.error(f"Error deleting version from recycle bin: {e}")
+            return False
+
+    async def delete_all_versions_for_tool_from_recycle_bin(self, tool_id: str) -> bool:
+        """
+        Permanently deletes all versions for a tool from the recycle bin.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            True if deleted successfully, False otherwise.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE tool_id = $1",
+                    tool_id
+                )
+            log.info(f"Deleted all versions for tool '{tool_id}' from recycle bin")
+            return True
+        except Exception as e:
+            log.error(f"Error deleting versions from recycle bin for tool '{tool_id}': {e}")
             return False
 
 
@@ -2138,7 +2996,7 @@ class AgentDepartmentSharingRepository(BaseRepository):
     """
     Repository for managing agent sharing across departments.
     Handles sharing agents from one department to specific other departments.
-    When an agent is shared, its tools are automatically shared too.
+    Each resource (agent, tool, MCP tool, KB) must be shared individually by its ID.
     """
 
     def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT_DEPARTMENT_SHARING.value):
@@ -2151,21 +3009,6 @@ class AgentDepartmentSharingRepository(BaseRepository):
             table_name (str): The name of the agent department sharing table.
         """
         super().__init__(pool, login_pool, table_name)
-        self.tool_sharing_repo = None  # Will be set by app_container for cascade sharing
-        self.mcp_tool_sharing_repo = None  # Will be set by app_container for MCP tools cascade sharing
-        self.kb_sharing_repo = None  # Will be set by app_container for KB cascade sharing
-
-    def set_tool_sharing_repo(self, tool_sharing_repo):
-        """Sets the tool sharing repository for cascade sharing."""
-        self.tool_sharing_repo = tool_sharing_repo
-
-    def set_mcp_tool_sharing_repo(self, mcp_tool_sharing_repo):
-        """Sets the MCP tool sharing repository for cascade sharing of MCP tools."""
-        self.mcp_tool_sharing_repo = mcp_tool_sharing_repo
-
-    def set_kb_sharing_repo(self, kb_sharing_repo):
-        """Sets the KB sharing repository for cascade sharing of knowledge bases."""
-        self.kb_sharing_repo = kb_sharing_repo
 
     async def create_table_if_not_exists(self):
         """
@@ -2204,13 +3047,11 @@ class AgentDepartmentSharingRepository(BaseRepository):
         agentic_application_name: str,
         source_department: str, 
         target_department: str, 
-        shared_by: str,
-        tools_info: List[Dict[str, str]] = None,
-        mcp_tools_info: List[Dict[str, str]] = None,
-        kbs_info: List[Dict[str, str]] = None
+        shared_by: str
     ) -> Dict[str, Any]:
         """
-        Shares an agent with a specific department. Also shares all the agent's tools (both regular and MCP) and knowledge bases.
+        Shares an agent with a specific department.
+        Only the agent itself is shared — sub-resources (tools, MCP tools, KBs) must be shared individually by their IDs.
 
         Args:
             agentic_application_id (str): The ID of the agent to share.
@@ -2218,12 +3059,9 @@ class AgentDepartmentSharingRepository(BaseRepository):
             source_department (str): The department that owns the agent.
             target_department (str): The department to share the agent with.
             shared_by (str): The admin email who is sharing the agent.
-            tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's regular tools.
-            mcp_tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's MCP tools.
-            kbs_info (List[Dict[str, str]]): List of dicts with 'kb_id' and 'kb_name' for agent's knowledge bases.
 
         Returns:
-            Dict[str, Any]: Result with agent sharing status and tools sharing details.
+            Dict[str, Any]: Result with agent sharing status.
         """
         if source_department == target_department:
             log.warning(f"Cannot share agent '{agentic_application_id}' with its own department '{source_department}'.")
@@ -2239,81 +3077,9 @@ class AgentDepartmentSharingRepository(BaseRepository):
                 await conn.execute(insert_statement, agentic_application_id, agentic_application_name, source_department, target_department, shared_by)
             log.info(f"Agent '{agentic_application_name}' ({agentic_application_id}) shared with department '{target_department}' by '{shared_by}'.")
             
-            # Cascade: share all agent's regular tools with the same department
-            tools_shared = 0
-            tools_failed = []
-            if tools_info and self.tool_sharing_repo:
-                for tool in tools_info:
-                    tool_id = tool.get('tool_id')
-                    tool_name = tool.get('tool_name', '')
-                    tool_dept = tool.get('department_name', source_department)
-                    if tool_id:
-                        success = await self.tool_sharing_repo.share_tool_with_department(
-                            tool_id=tool_id,
-                            tool_name=tool_name,
-                            source_department=tool_dept,
-                            target_department=target_department,
-                            shared_by=shared_by
-                        )
-                        if success:
-                            tools_shared += 1
-                        else:
-                            tools_failed.append(tool_id)
-                log.info(f"Cascade shared {tools_shared} regular tools for agent '{agentic_application_id}' with department '{target_department}'.")
-            
-            # Cascade: share all agent's MCP tools with the same department
-            mcp_tools_shared = 0
-            mcp_tools_failed = []
-            if mcp_tools_info and self.mcp_tool_sharing_repo:
-                for mcp_tool in mcp_tools_info:
-                    mcp_tool_id = mcp_tool.get('tool_id')
-                    mcp_tool_name = mcp_tool.get('tool_name', '')
-                    mcp_tool_dept = mcp_tool.get('department_name', source_department)
-                    if mcp_tool_id:
-                        success = await self.mcp_tool_sharing_repo.share_mcp_tool_with_department(
-                            mcp_tool_id=mcp_tool_id,
-                            mcp_tool_name=mcp_tool_name,
-                            source_department=mcp_tool_dept,
-                            target_department=target_department,
-                            shared_by=shared_by
-                        )
-                        if success:
-                            mcp_tools_shared += 1
-                        else:
-                            mcp_tools_failed.append(mcp_tool_id)
-                log.info(f"Cascade shared {mcp_tools_shared} MCP tools for agent '{agentic_application_id}' with department '{target_department}'.")
-            
-            # Cascade: share all agent's knowledge bases with the same department
-            kbs_shared = 0
-            kbs_failed = []
-            if kbs_info and self.kb_sharing_repo:
-                for kb in kbs_info:
-                    kb_id = kb.get('kb_id')
-                    kb_name = kb.get('kb_name', '')
-                    kb_dept = kb.get('department_name', source_department)
-                    if kb_id:
-                        success = await self.kb_sharing_repo.share_kb_with_department(
-                            knowledgebase_id=kb_id,
-                            knowledgebase_name=kb_name,
-                            source_department=kb_dept,
-                            target_department=target_department,
-                            shared_by=shared_by
-                        )
-                        if success:
-                            kbs_shared += 1
-                        else:
-                            kbs_failed.append(kb_id)
-                log.info(f"Cascade shared {kbs_shared} knowledge bases for agent '{agentic_application_id}' with department '{target_department}'.")
-            
             return {
                 "success": True,
-                "agent_shared": True,
-                "tools_shared_count": tools_shared,
-                "tools_failed": tools_failed,
-                "mcp_tools_shared_count": mcp_tools_shared,
-                "mcp_tools_failed": mcp_tools_failed,
-                "kbs_shared_count": kbs_shared,
-                "kbs_failed": kbs_failed
+                "agent_shared": True
             }
         except Exception as e:
             log.error(f"Error sharing agent '{agentic_application_id}' with department '{target_department}': {e}")
@@ -2325,13 +3091,11 @@ class AgentDepartmentSharingRepository(BaseRepository):
         agentic_application_name: str,
         source_department: str, 
         target_departments: List[str], 
-        shared_by: str,
-        tools_info: List[Dict[str, str]] = None,
-        mcp_tools_info: List[Dict[str, str]] = None,
-        kbs_info: List[Dict[str, str]] = None
+        shared_by: str
     ) -> Dict[str, Any]:
         """
-        Shares an agent with multiple departments at once. Also shares all agent's tools (both regular and MCP) and knowledge bases.
+        Shares an agent with multiple departments at once.
+        Only the agent itself is shared — sub-resources (tools, MCP tools, KBs) must be shared individually by their IDs.
 
         Args:
             agentic_application_id (str): The ID of the agent to share.
@@ -2339,18 +3103,12 @@ class AgentDepartmentSharingRepository(BaseRepository):
             source_department (str): The department that owns the agent.
             target_departments (List[str]): List of departments to share the agent with.
             shared_by (str): The admin email who is sharing the agent.
-            tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's regular tools.
-            mcp_tools_info (List[Dict[str, str]]): List of dicts with 'tool_id' and 'tool_name' for agent's MCP tools.
-            kbs_info (List[Dict[str, str]]): List of dicts with 'kb_id' and 'kb_name' for agent's knowledge bases.
 
         Returns:
             Dict[str, Any]: Result with success count and any failures.
         """
         success_count = 0
         failures = []
-        total_tools_shared = 0
-        total_mcp_tools_shared = 0
-        total_kbs_shared = 0
 
         for target_dept in target_departments:
             if target_dept == source_department:
@@ -2362,25 +3120,16 @@ class AgentDepartmentSharingRepository(BaseRepository):
                 agentic_application_name,
                 source_department, 
                 target_dept, 
-                shared_by,
-                tools_info,
-                mcp_tools_info,
-                kbs_info
+                shared_by
             )
             if result.get("success"):
                 success_count += 1
-                total_tools_shared += result.get("tools_shared_count", 0)
-                total_mcp_tools_shared += result.get("mcp_tools_shared_count", 0)
-                total_kbs_shared += result.get("kbs_shared_count", 0)
             else:
                 failures.append({"department": target_dept, "reason": result.get("reason", "Failed to share")})
 
         return {
             "success_count": success_count,
             "total_requested": len(target_departments),
-            "total_tools_shared": total_tools_shared,
-            "total_mcp_tools_shared": total_mcp_tools_shared,
-            "total_kbs_shared": total_kbs_shared,
             "failures": failures
         }
 
@@ -2532,6 +3281,202 @@ class AgentDepartmentSharingRepository(BaseRepository):
             log.error(f"Error checking if agent '{agentic_application_id}' is shared with department '{department_name}': {e}")
             return False
  
+
+# --- WorkflowDepartmentSharingRepository ---
+
+class WorkflowDepartmentSharingRepository(BaseRepository):
+    """
+    Repository for managing workflow sharing across departments.
+    Handles sharing workflows from one department to specific other departments.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.WORKFLOW_DEPARTMENT_SHARING.value):
+        super().__init__(pool, login_pool, table_name)
+
+    async def create_table_if_not_exists(self):
+        """Creates the 'workflow_department_sharing' table if it does not exist."""
+        try:
+            create_statement = f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id SERIAL PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                workflow_name TEXT NOT NULL,
+                source_department TEXT NOT NULL,
+                target_department TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (workflow_id, target_department),
+                FOREIGN KEY (workflow_id) REFERENCES {TableNames.WORKFLOWS.value}(workflow_id) ON DELETE CASCADE
+            );
+            """
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_statement)
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_workflow_id ON {self.table_name} (workflow_id)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_target_dept ON {self.table_name} (target_department)"
+                )
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+
+    async def share_workflow_with_department(
+        self,
+        workflow_id: str,
+        workflow_name: str,
+        source_department: str,
+        target_department: str,
+        shared_by: str
+    ) -> bool:
+        """Shares a workflow with a specific department."""
+        if source_department == target_department:
+            log.warning(f"Cannot share workflow '{workflow_id}' with its own department '{source_department}'.")
+            return False
+
+        insert_statement = f"""
+        INSERT INTO {self.table_name} (workflow_id, workflow_name, source_department, target_department, shared_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (workflow_id, target_department) DO UPDATE SET workflow_name = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(insert_statement, workflow_id, workflow_name, source_department, target_department, shared_by)
+            log.info(f"Workflow '{workflow_name}' ({workflow_id}) shared with department '{target_department}' by '{shared_by}'.")
+            return True
+        except Exception as e:
+            log.error(f"Error sharing workflow '{workflow_id}' with department '{target_department}': {e}")
+            return False
+
+    async def share_workflow_with_multiple_departments(
+        self,
+        workflow_id: str,
+        workflow_name: str,
+        source_department: str,
+        target_departments: List[str],
+        shared_by: str
+    ) -> Dict[str, Any]:
+        """Shares a workflow with multiple departments at once."""
+        success_count = 0
+        failures = []
+
+        for target_dept in target_departments:
+            if target_dept == source_department:
+                failures.append({"department": target_dept, "reason": "Cannot share with own department"})
+                continue
+            success = await self.share_workflow_with_department(
+                workflow_id, workflow_name, source_department, target_dept, shared_by
+            )
+            if success:
+                success_count += 1
+            else:
+                failures.append({"department": target_dept, "reason": "Failed to share"})
+
+        return {
+            "success_count": success_count,
+            "total_requested": len(target_departments),
+            "failures": failures
+        }
+
+    async def unshare_workflow_from_department(self, workflow_id: str, target_department: str) -> bool:
+        """Removes sharing of a workflow from a specific department."""
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE workflow_id = $1 AND target_department = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, workflow_id, target_department)
+            if result != "DELETE 0":
+                log.info(f"Workflow '{workflow_id}' unshared from department '{target_department}'.")
+                return True
+            else:
+                log.warning(f"Workflow '{workflow_id}' was not shared with department '{target_department}'.")
+                return False
+        except Exception as e:
+            log.error(f"Error unsharing workflow '{workflow_id}' from department '{target_department}': {e}")
+            return False
+
+    async def unshare_workflow_from_all_departments(self, workflow_id: str) -> int:
+        """Removes all sharing for a workflow."""
+        delete_statement = f"""
+        DELETE FROM {self.table_name}
+        WHERE workflow_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_statement, workflow_id)
+            count = int(result.split()[-1]) if result else 0
+            log.info(f"Removed {count} sharing records for workflow '{workflow_id}'.")
+            return count
+        except Exception as e:
+            log.error(f"Error removing all sharing for workflow '{workflow_id}': {e}")
+            return 0
+
+    async def get_shared_departments_for_workflow(self, workflow_id: str) -> List[Dict[str, Any]]:
+        """Gets all departments a workflow is shared with."""
+        query = f"""
+        SELECT workflow_name, target_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE workflow_id = $1
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, workflow_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting shared departments for workflow '{workflow_id}': {e}")
+            return []
+
+    async def get_workflows_shared_with_department(self, department_name: str) -> List[str]:
+        """Gets all workflow IDs that are shared with a specific department."""
+        query = f"""
+        SELECT workflow_id
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [row['workflow_id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting workflows shared with department '{department_name}': {e}")
+            return []
+
+    async def get_workflows_shared_with_department_details(self, department_name: str) -> List[Dict[str, Any]]:
+        """Gets all workflows shared with a department with full details."""
+        query = f"""
+        SELECT workflow_id, workflow_name, source_department, shared_by, shared_on
+        FROM {self.table_name}
+        WHERE LOWER(target_department) = LOWER($1)
+        ORDER BY shared_on DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error getting workflows shared with department '{department_name}': {e}")
+            return []
+
+    async def is_workflow_shared_with_department(self, workflow_id: str, department_name: str) -> bool:
+        """Checks if a workflow is shared with a specific department."""
+        query = f"""
+        SELECT EXISTS (
+            SELECT 1
+            FROM {self.table_name}
+            WHERE workflow_id = $1 AND LOWER(target_department) = LOWER($2)
+        )
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(query, workflow_id, department_name)
+            return result
+        except Exception as e:
+            log.error(f"Error checking if workflow '{workflow_id}' is shared with department '{department_name}': {e}")
+            return False
+
 
 # --- McpToolRepository ---
 
@@ -2692,7 +3637,7 @@ class McpToolRepository(BaseRepository):
             where_clauses.append(f"tool_id = ${len(params)+1}")
             params.append(tool_id)
         elif tool_name:
-            where_clauses.append(f"tool_name = ${len(params)+1}")
+            where_clauses.append(f"LOWER(tool_name) = LOWER(${len(params)+1})")
             params.append(tool_name)
         else:
             log.warning("No tool_id or tool_name provided to get_mcp_tool_record.")
@@ -3081,6 +4026,36 @@ class McpToolRepository(BaseRepository):
             log.error(f"Traceback: {traceback.format_exc()}")
             return False
 
+    async def update_mcp_tool_visibility(self, tool_id: str, is_public: bool) -> bool:
+        """
+        Updates the is_public flag for an MCP tool.
+
+        Args:
+            tool_id (str): The MCP tool ID.
+            is_public (bool): Whether the MCP tool should be publicly accessible.
+
+        Returns:
+            bool: True if updated, False if MCP tool not found.
+        """
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET is_public = $1, updated_on = CURRENT_TIMESTAMP
+        WHERE tool_id = $2
+        RETURNING tool_id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(update_statement, is_public, tool_id)
+            if result:
+                log.info(f"MCP tool '{tool_id}' visibility updated to is_public={is_public}")
+                return True
+            else:
+                log.warning(f"MCP tool '{tool_id}' not found for visibility update")
+                return False
+        except Exception as e:
+            log.error(f"Error updating MCP tool visibility for '{tool_id}': {e}")
+            raise
+
 
 # --- ToolAgentMappingRepository ---
 
@@ -3113,17 +4088,60 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
                 agentic_application_id TEXT,
                 tool_created_by TEXT,
                 agentic_app_created_by TEXT,
+                tool_version TEXT DEFAULT 'v1',
                 -- FOREIGN KEY(tool_id) REFERENCES {TableNames.TOOL.value}(tool_id) ON DELETE RESTRICT, -- REMOVED
                 FOREIGN KEY(agentic_application_id) REFERENCES {TableNames.AGENT.value}(agentic_application_id) ON DELETE CASCADE
             );
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                # Add tool_version column if it doesn't exist (migration for existing tables)
+                await conn.execute(f"""
+                    ALTER TABLE {self.table_name} 
+                    ADD COLUMN IF NOT EXISTS tool_version TEXT DEFAULT 'v1'
+                """)
+                # Set default version for existing mappings that don't have it
+                await conn.execute(f"""
+                    UPDATE {self.table_name} 
+                    SET tool_version = 'v1' 
+                    WHERE tool_version IS NULL
+                """)
+                
+                # Check if unique constraint exists
+                constraint_check = await conn.fetchval(f"""
+                    SELECT COUNT(*) FROM pg_constraint 
+                    WHERE conname = '{self.table_name}_unique_mapping'
+                """)
+                
+                if constraint_check == 0:
+                    # Remove any duplicate rows before adding constraint
+                    await conn.execute(f"""
+                        DELETE FROM {self.table_name} a
+                        USING {self.table_name} b
+                        WHERE a.ctid < b.ctid
+                        AND a.tool_id = b.tool_id
+                        AND a.agentic_application_id = b.agentic_application_id
+                        AND COALESCE(a.tool_version, 'v1') = COALESCE(b.tool_version, 'v1')
+                    """)
+                    
+                    # Add unique constraint to prevent duplicate mappings
+                    try:
+                        await conn.execute(f"""
+                            ALTER TABLE {self.table_name} 
+                            ADD CONSTRAINT {self.table_name}_unique_mapping 
+                            UNIQUE (tool_id, agentic_application_id, tool_version)
+                        """)
+                        log.info(f"Added unique constraint '{self.table_name}_unique_mapping' successfully.")
+                    except Exception as constraint_error:
+                        log.warning(f"Could not add unique constraint: {constraint_error}")
+                else:
+                    log.info(f"Unique constraint '{self.table_name}_unique_mapping' already exists.")
+                    
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
 
-    async def assign_tool_to_agent_record(self, tool_id: str, agentic_application_id: str, tool_created_by: str, agentic_app_created_by: str) -> bool:
+    async def assign_tool_to_agent_record(self, tool_id: str, agentic_application_id: str, tool_created_by: str, agentic_app_created_by: str, tool_version: str = "v1") -> bool:
         """
         Inserts a mapping between a tool/worker_agent and an agent.
 
@@ -3132,33 +4150,40 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
             agentic_application_id (str): The ID of the agentic application.
             tool_created_by (str): The creator of the tool/worker agent.
             agentic_app_created_by (str): The creator of the agentic application.
+            tool_version (str): The version of the tool to bind (e.g., 'v1', 'v2'). Defaults to 'v1'.
 
         Returns:
             bool: True if the mapping was inserted successfully, False otherwise.
         """
         insert_statement = f"""
-        INSERT INTO {self.table_name} (tool_id, agentic_application_id, tool_created_by, agentic_app_created_by)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO {self.table_name} (tool_id, agentic_application_id, tool_created_by, agentic_app_created_by, tool_version)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (tool_id, agentic_application_id, tool_version) DO NOTHING
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(insert_statement, tool_id, agentic_application_id, tool_created_by, agentic_app_created_by)
+                result = await conn.execute(insert_statement, tool_id, agentic_application_id, tool_created_by, agentic_app_created_by, tool_version)
             await self.invalidate_all_method_cache("get_tool_agent_mappings_record")
             await self.invalidate_all_method_cache("get_agent_record", namespace="AgentRepository")
-            log.info(f"Mapping tool/agent '{tool_id}' to agent '{agentic_application_id}' inserted successfully.")
+            # Check if row was actually inserted (not a duplicate)
+            if result == "INSERT 0 0":
+                log.info(f"Mapping tool/agent '{tool_id}' (version: {tool_version}) to agent '{agentic_application_id}' already exists, skipped.")
+            else:
+                log.info(f"Mapping tool/agent '{tool_id}' (version: {tool_version}) to agent '{agentic_application_id}' inserted successfully.")
             return True
         except Exception as e:
             log.error(f"Error assigning tool/agent '{tool_id}' to agent '{agentic_application_id}': {e}")
             return False
 
     @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="ToolAgentMappingRepository")
-    async def get_tool_agent_mappings_record(self, tool_id: Optional[str] = None, agentic_application_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_tool_agent_mappings_record(self, tool_id: Optional[str] = None, agentic_application_id: Optional[str] = None, tool_version: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieves raw tool-agent mappings by tool_id or agentic_application_id.
 
         Args:
             tool_id (Optional[str]): The ID of the tool or worker agent to filter by.
             agentic_application_id (Optional[str]): The ID of the agentic application to filter by.
+            tool_version (Optional[str]): The version of the tool to filter by.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each representing a tool-agent mapping.
@@ -3167,7 +4192,7 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
         where_clause = []
         values = []
 
-        filters = {"tool_id": tool_id, "agentic_application_id": agentic_application_id}
+        filters = {"tool_id": tool_id, "agentic_application_id": agentic_application_id, "tool_version": tool_version}
         for idx, (field, value) in enumerate((f for f in filters.items() if f[1] is not None), start=1):
             where_clause.append(f"{field} = ${idx}")
             values.append(value)
@@ -3186,13 +4211,47 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
             log.error(f"Error retrieving tool-agent mappings: {e}")
             return []
 
-    async def remove_tool_from_agent_record(self, tool_id: Optional[str] = None, agentic_application_id: Optional[str] = None) -> bool:
+    async def update_tool_version_in_mapping(self, tool_id: str, agentic_application_id: str, new_version: str) -> bool:
+        """
+        Updates the tool version in an existing tool-agent mapping.
+
+        Args:
+            tool_id (str): The ID of the tool.
+            agentic_application_id (str): The ID of the agent.
+            new_version (str): The new version to set (e.g., 'v2').
+
+        Returns:
+            bool: True if updated successfully, False otherwise.
+        """
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET tool_version = $1
+        WHERE tool_id = $2 AND agentic_application_id = $3
+        RETURNING tool_id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(update_statement, new_version, tool_id, agentic_application_id)
+            if result:
+                await self.invalidate_all_method_cache("get_tool_agent_mappings_record")
+                await self.invalidate_all_method_cache("get_agent_record", namespace="AgentRepository")
+                log.info(f"Updated tool '{tool_id}' version to '{new_version}' for agent '{agentic_application_id}'")
+                return True
+            else:
+                log.warning(f"No mapping found for tool '{tool_id}' and agent '{agentic_application_id}'")
+                return False
+        except Exception as e:
+            log.error(f"Error updating tool version in mapping: {e}")
+            return False
+
+    async def remove_tool_from_agent_record(self, tool_id: Optional[str] = None, agentic_application_id: Optional[str] = None, tool_version: Optional[str] = None) -> bool:
         """
         Removes a mapping between a tool/worker_agent and an agent.
 
         Args:
             tool_id (Optional[str]): The ID of the tool or worker agent to remove.
             agentic_application_id (Optional[str]): The ID of the agentic application to remove the mapping from.
+            tool_version (Optional[str]): The specific tool version to remove. If not provided, removes all versions.
 
         Returns:
             bool: True if the mapping was removed successfully, False otherwise.
@@ -3201,7 +4260,7 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
         where_clause = []
         values = []
 
-        filters = {"tool_id": tool_id, "agentic_application_id": agentic_application_id}
+        filters = {"tool_id": tool_id, "agentic_application_id": agentic_application_id, "tool_version": tool_version}
         for idx, (field, value) in enumerate((f for f in filters.items() if f[1] is not None), start=1):
             where_clause.append(f"{field} = ${idx}")
             values.append(value)
@@ -3214,7 +4273,7 @@ class ToolAgentMappingRepository(BaseRepository, CacheableRepository):
                 if result != "DELETE 0":
                     await self.invalidate_all_method_cache("get_tool_agent_mappings_record")
                     await self.invalidate_all_method_cache("get_agent_record", namespace="AgentRepository")
-                    log.info(f"Mapping tool/agent '{tool_id}' from agent '{agentic_application_id}' removed successfully.")
+                    log.info(f"Mapping tool/agent '{tool_id}' (version: {tool_version}) from agent '{agentic_application_id}' removed successfully.")
                     return True
                 else:
                     log.warning(f"Mapping tool/agent '{tool_id}' from agent '{agentic_application_id}' not found, no deletion performed.")
@@ -3298,14 +4357,14 @@ class RecycleToolRepository(BaseRepository):
                 created_by TEXT,
                 created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 is_public BOOLEAN DEFAULT FALSE,
                 status TEXT DEFAULT 'pending',
                 comments TEXT,
                 approved_at TIMESTAMPTZ,
                 approved_by TEXT,
-                CHECK (status IN ('pending', 'approved', 'rejected')),
-                UNIQUE (tool_name, department_name)
+                CHECK (status IN ('pending', 'approved', 'rejected'))
             );
             """
             async with self.pool.acquire() as conn:
@@ -3318,6 +4377,7 @@ class RecycleToolRepository(BaseRepository):
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS approved_by TEXT",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN created_on TYPE TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN updated_on TYPE TIMESTAMPTZ",
                     f"ALTER TABLE {self.table_name} ALTER COLUMN last_used TYPE TIMESTAMPTZ",
@@ -3326,14 +4386,20 @@ class RecycleToolRepository(BaseRepository):
                     f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_status_check') THEN "
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')); "
                     f"END IF; END $$;",
-                    # Migration: Drop old unique constraint on tool_name only, add composite unique on (tool_name, department_name)
+                    # Migration: Drop old single-column unique constraint
                     f"DO $$ BEGIN "
                     f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_key') THEN "
                     f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_key; "
                     f"END IF; END $$;",
+                    # Migration: Drop composite unique constraint — recycle bin identifies by ID only
                     f"DO $$ BEGIN "
-                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
-                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tool_name_department_name_key UNIQUE (tool_name, department_name); "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_department_name_key; "
+                    f"END IF; END $$;",
+                    # Migration: Drop manually-named composite variant
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_name_department_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_name_department_key; "
                     f"END IF; END $$;"
                 ]
 
@@ -3354,7 +4420,7 @@ class RecycleToolRepository(BaseRepository):
         Returns:
             bool: True if the tool exists, False otherwise.
         """
-        query = f"SELECT EXISTS(SELECT 1 FROM {self.table_name} WHERE tool_id = $1 OR tool_name = $2)"
+        query = f"SELECT EXISTS(SELECT 1 FROM {self.table_name} WHERE tool_id = $1 OR LOWER(tool_name) = LOWER($2))"
         try:
             async with self.pool.acquire() as conn:
                 exists = await conn.fetchval(query, tool_id, tool_name)
@@ -3376,15 +4442,24 @@ class RecycleToolRepository(BaseRepository):
             bool: True if the record was inserted/updated successfully, False otherwise.
         """
         insert_query = f"""
-        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by, created_on, updated_on, last_used, department_name, is_public, status, comments, approved_at, approved_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, $8, $9, $10, $11, $12, $13, $14)
+        INSERT INTO {self.table_name} (tool_id, tool_name, tool_description, code_snippet, model_name, created_by, created_on, updated_on, deleted_at, last_used, department_name, is_public, status, comments, approved_at, approved_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (tool_id) DO UPDATE SET 
-            updated_on = CURRENT_TIMESTAMP,
+            tool_name = EXCLUDED.tool_name,
             tool_description = EXCLUDED.tool_description,
             code_snippet = EXCLUDED.code_snippet,
+            model_name = EXCLUDED.model_name,
+            created_by = EXCLUDED.created_by,
+            created_on = EXCLUDED.created_on,
+            last_used = EXCLUDED.last_used,
+            department_name = EXCLUDED.department_name,
             is_public = EXCLUDED.is_public,
             status = EXCLUDED.status,
-            comments = EXCLUDED.comments;
+            comments = EXCLUDED.comments,
+            approved_at = EXCLUDED.approved_at,
+            approved_by = EXCLUDED.approved_by,
+            updated_on = CURRENT_TIMESTAMP,
+            deleted_at = CURRENT_TIMESTAMP;
         """
         try:
             async with self.pool.acquire() as conn:
@@ -3443,7 +4518,7 @@ class RecycleToolRepository(BaseRepository):
         if department_name:
             query += " WHERE department_name = $1"
             params.append(department_name)
-        query += " ORDER BY created_on DESC"
+        query += " ORDER BY deleted_at DESC"
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
@@ -3487,6 +4562,11 @@ class RecycleToolRepository(BaseRepository):
 
         if where_clauses:
             query += " WHERE " + " AND ".join(where_clauses)
+
+        # When looking up by name (which may have duplicates in the recycle bin),
+        # return the most recently deleted record to make the result deterministic.
+        if not tool_id:
+            query += " ORDER BY deleted_at DESC LIMIT 1"
 
         try:
             async with self.pool.acquire() as conn:
@@ -3545,8 +4625,7 @@ class RecycleMcpToolRepository(BaseRepository):
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 department_name TEXT DEFAULT 'General',
-                CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')),
-                UNIQUE (tool_name, department_name)
+                CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected'))
             );
             """
             async with self.pool.acquire() as conn:
@@ -3555,17 +4634,25 @@ class RecycleMcpToolRepository(BaseRepository):
                 await conn.execute(
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'"
                 )
-                # Migration: Drop old unique constraint on tool_name only, add composite unique on (tool_name, department_name)
+                # Migration: Drop old single-column unique constraint
                 await conn.execute(
                     f"DO $$ BEGIN "
                     f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_key') THEN "
                     f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_key; "
                     f"END IF; END $$;"
                 )
+                # Migration: Drop composite unique constraint — recycle bin identifies by ID only
                 await conn.execute(
                     f"DO $$ BEGIN "
-                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
-                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_tool_name_department_name_key UNIQUE (tool_name, department_name); "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_tool_name_department_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_tool_name_department_name_key; "
+                    f"END IF; END $$;"
+                )
+                # Migration: Drop manually-named composite variant
+                await conn.execute(
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_name_department_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_name_department_key; "
                     f"END IF; END $$;"
                 )
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
@@ -3583,7 +4670,7 @@ class RecycleMcpToolRepository(BaseRepository):
         Returns:
             bool: True if the MCP tool exists, False otherwise.
         """
-        query = f"SELECT EXISTS(SELECT 1 FROM {self.table_name} WHERE tool_id = $1 OR tool_name = $2)"
+        query = f"SELECT EXISTS(SELECT 1 FROM {self.table_name} WHERE tool_id = $1 OR LOWER(tool_name) = LOWER($2))"
         try:
             async with self.pool.acquire() as conn:
                 exists = await conn.fetchval(query, tool_id, tool_name)
@@ -3611,13 +4698,19 @@ class RecycleMcpToolRepository(BaseRepository):
             created_by, created_on, updated_on, deleted_at, department_name
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, $13)
         ON CONFLICT (tool_id) DO UPDATE SET 
-            deleted_at = CURRENT_TIMESTAMP,
-            updated_on = CURRENT_TIMESTAMP,
+            tool_name = EXCLUDED.tool_name,
             tool_description = EXCLUDED.tool_description,
             mcp_config = EXCLUDED.mcp_config,
             is_public = EXCLUDED.is_public,
             status = EXCLUDED.status,
-            comments = EXCLUDED.comments;
+            comments = EXCLUDED.comments,
+            approved_at = EXCLUDED.approved_at,
+            approved_by = EXCLUDED.approved_by,
+            created_by = EXCLUDED.created_by,
+            created_on = EXCLUDED.created_on,
+            department_name = EXCLUDED.department_name,
+            updated_on = CURRENT_TIMESTAMP,
+            deleted_at = CURRENT_TIMESTAMP;
         """
         try:
             async with self.pool.acquire() as conn:
@@ -3739,6 +4832,11 @@ class RecycleMcpToolRepository(BaseRepository):
         if where_clauses:
             query += " WHERE " + " AND ".join(where_clauses)
 
+        # When looking up by name (which may have duplicates in the recycle bin),
+        # return the most recently deleted record to make the result deterministic.
+        if not tool_id:
+            query += " ORDER BY deleted_at DESC LIMIT 1"
+
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(query, *params)
@@ -3825,6 +4923,7 @@ class AgentRepository(BaseRepository, CacheableRepository):
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS validation_criteria JSONB DEFAULT '[]'",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS welcome_message TEXT DEFAULT 'Hello, how can I help you?'",
                     f"UPDATE {self.table_name} SET welcome_message = 'Hello, how can I help you?' WHERE welcome_message IS NULL",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS db_connection_names JSONB DEFAULT '[]'",
                     f"DO $$ BEGIN "
                     f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_status_check') THEN "
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected')); "
@@ -3904,8 +5003,8 @@ class AgentRepository(BaseRepository, CacheableRepository):
             bool: True if the agent was inserted successfully, False if a unique violation occurred or on other error.
         """
         insert_statement = f"""
-        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, department_name, created_on, updated_on, validation_criteria, welcome_message, is_public)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, department_name, created_on, updated_on, validation_criteria, welcome_message, db_connection_names, is_public)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         """
         try:
             async with self.pool.acquire() as conn:
@@ -3925,6 +5024,7 @@ class AgentRepository(BaseRepository, CacheableRepository):
                     agent_data["updated_on"],
                     agent_data.get("validation_criteria", "[]"),
                     agent_data.get("welcome_message", "Hello, how can I help you?"),
+                    agent_data.get("db_connection_names", "[]"),
                     agent_data.get("is_public", False)
                 )
             await self.invalidate_all_method_cache("get_agent_record")
@@ -3971,7 +5071,10 @@ class AgentRepository(BaseRepository, CacheableRepository):
         param_idx = 1
         for field, value in filters.items():
             if value not in (None, ""):
-                where_clauses.append(f"{field} = ${param_idx}")
+                if field == "agentic_application_name":
+                    where_clauses.append(f"LOWER({field}) = LOWER(${param_idx})")
+                else:
+                    where_clauses.append(f"{field} = ${param_idx}")
                 params.append(value)
                 param_idx += 1
 
@@ -4661,7 +5764,38 @@ class AgentRepository(BaseRepository, CacheableRepository):
         except Exception as e:
             log.error(f"Error finding agents using validator '{validator_tool_id}': {e}")
             return []
-        
+
+    async def update_agent_visibility(self, agent_id: str, is_public: bool) -> bool:
+        """
+        Updates the is_public flag for an agent.
+
+        Args:
+            agent_id (str): The agent ID (agentic_application_id).
+            is_public (bool): Whether the agent should be publicly accessible.
+
+        Returns:
+            bool: True if updated, False if agent not found.
+        """
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET is_public = $1, updated_on = CURRENT_TIMESTAMP
+        WHERE agentic_application_id = $2
+        RETURNING agentic_application_id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(update_statement, is_public, agent_id)
+            await self.invalidate_all_method_cache("get_agent_record")
+            await self.invalidate_all_method_cache("get_agents_details_for_chat_records")
+            if result:
+                log.info(f"Agent '{agent_id}' visibility updated to is_public={is_public}")
+                return True
+            else:
+                log.warning(f"Agent '{agent_id}' not found for visibility update")
+                return False
+        except Exception as e:
+            log.error(f"Error updating agent visibility for '{agent_id}': {e}")
+            raise
 
 
 # --- RecycleAgentRepository ---
@@ -4702,8 +5836,8 @@ class RecycleAgentRepository(BaseRepository):
                 created_by TEXT,
                 created_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 updated_on TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (agentic_application_name, department_name)
+                deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
             """
 
@@ -4712,14 +5846,21 @@ class RecycleAgentRepository(BaseRepository):
                 alter_statements = [
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS last_used TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
-                    # Migration: Drop old unique constraint on agentic_application_name only, add composite unique on (agentic_application_name, department_name)
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
+                    # Migration: Drop old single-column unique constraint
                     f"DO $$ BEGIN "
                     f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_agentic_application_name_key') THEN "
                     f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_agentic_application_name_key; "
                     f"END IF; END $$;",
+                    # Migration: Drop composite unique constraint — recycle bin identifies by ID only
+                    # Drop both possible names: explicit name and Postgres auto-generated name
                     f"DO $$ BEGIN "
-                    f"IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_name_department_key') THEN "
-                    f"ALTER TABLE {self.table_name} ADD CONSTRAINT {self.table_name}_name_department_key UNIQUE (agentic_application_name, department_name); "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_name_department_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_name_department_key; "
+                    f"END IF; END $$;",
+                    f"DO $$ BEGIN "
+                    f"IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{self.table_name}_agentic_application_name_department_name_key') THEN "
+                    f"ALTER TABLE {self.table_name} DROP CONSTRAINT {self.table_name}_agentic_application_name_department_name_key; "
                     f"END IF; END $$;"
                 ]
                 for stmt in alter_statements:
@@ -4739,7 +5880,7 @@ class RecycleAgentRepository(BaseRepository):
         Returns:
             bool: True if the agent exists, False otherwise.
         """
-        query = f"SELECT EXISTS(SELECT 1 FROM {self.table_name} WHERE agentic_application_id = $1 OR agentic_application_name = $2)"
+        query = f"SELECT EXISTS(SELECT 1 FROM {self.table_name} WHERE agentic_application_id = $1 OR LOWER(agentic_application_name) = LOWER($2))"
         try:
             async with self.pool.acquire() as conn:
                 exists = await conn.fetchval(query, agentic_application_id, agentic_application_name)
@@ -4760,9 +5901,22 @@ class RecycleAgentRepository(BaseRepository):
             bool: True if the record was inserted successfully, False otherwise.
         """
         insert_query = f"""
-        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, created_on, last_used, department_name)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        ON CONFLICT (agentic_application_id) DO NOTHING;
+        INSERT INTO {self.table_name} (agentic_application_id, agentic_application_name, agentic_application_description, agentic_application_workflow_description, agentic_application_type, model_name, system_prompt, tools_id, created_by, created_on, deleted_at, last_used, department_name)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, $11, $12)
+        ON CONFLICT (agentic_application_id) DO UPDATE SET
+            agentic_application_name = EXCLUDED.agentic_application_name,
+            agentic_application_description = EXCLUDED.agentic_application_description,
+            agentic_application_workflow_description = EXCLUDED.agentic_application_workflow_description,
+            agentic_application_type = EXCLUDED.agentic_application_type,
+            model_name = EXCLUDED.model_name,
+            system_prompt = EXCLUDED.system_prompt,
+            tools_id = EXCLUDED.tools_id,
+            created_by = EXCLUDED.created_by,
+            created_on = EXCLUDED.created_on,
+            last_used = EXCLUDED.last_used,
+            department_name = EXCLUDED.department_name,
+            deleted_at = CURRENT_TIMESTAMP,
+            updated_on = CURRENT_TIMESTAMP;
         """
         try:
             async with self.pool.acquire() as conn:
@@ -4816,7 +5970,7 @@ class RecycleAgentRepository(BaseRepository):
         if department_name:
             query += " WHERE department_name = $1"
             params.append(department_name)
-        query += " ORDER BY created_on DESC"
+        query += " ORDER BY deleted_at DESC"
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
@@ -4860,6 +6014,11 @@ class RecycleAgentRepository(BaseRepository):
 
         if where_clauses:
             query += " WHERE " + " AND ".join(where_clauses)
+
+        # When looking up by name (which may have duplicates in the recycle bin),
+        # return the most recently deleted record to make the result deterministic.
+        if not agentic_application_id:
+            query += " ORDER BY deleted_at DESC LIMIT 1"
 
         try:
             async with self.pool.acquire() as conn:
@@ -7626,41 +8785,42 @@ async def get_all_pending_modules(pool: asyncpg.Pool) -> List[Dict[str, Any]]:
         return [dict(row) for row in rows]
 
 
-# --- Pipeline Repository ---
+# --- Workflow Repository ---
 
-class PipelineRepository(BaseRepository, CacheableRepository):
+class WorkflowRepository(BaseRepository, CacheableRepository):
     """
-    Repository for the 'pipelines_table'. Handles direct database interactions for agent pipelines.
+    Repository for the 'workflows_table'. Handles direct database interactions for agent workflows.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.PIPELINES.value):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.WORKFLOWS.value):
         """
-        Initializes the PipelineRepository.
+        Initializes the WorkflowRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
             login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
-            table_name (str): The name of the pipelines table.
+            table_name (str): The name of the workflows table.
         """
         super().__init__(pool, login_pool, table_name)
 
     async def create_table_if_not_exists(self):
         """
-        Creates the 'pipelines_table' in PostgreSQL if it does not exist.
+        Creates the 'workflows_table' in PostgreSQL if it does not exist.
         """
         try:
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
-                pipeline_id TEXT PRIMARY KEY,
-                pipeline_name TEXT NOT NULL,
-                pipeline_description TEXT,
-                pipeline_definition JSONB NOT NULL,
+                workflow_id TEXT PRIMARY KEY,
+                workflow_name TEXT NOT NULL,
+                workflow_description TEXT,
+                workflow_definition JSONB NOT NULL,
                 created_by TEXT NOT NULL,
                 department_name TEXT DEFAULT 'General',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 is_active BOOLEAN DEFAULT TRUE,
-                CONSTRAINT uq_pipeline_name_department UNIQUE (pipeline_name, department_name)
+                is_public BOOLEAN DEFAULT FALSE,
+                CONSTRAINT uq_workflow_name_department UNIQUE (workflow_name, department_name)
             );
             """
             
@@ -7670,9 +8830,11 @@ class PipelineRepository(BaseRepository, CacheableRepository):
                 # ALTER statements to add columns/indexes if table already exists
                 alter_statements = [
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name TEXT DEFAULT 'General'",
-                    f"CREATE INDEX IF NOT EXISTS idx_pipelines_created_by ON {self.table_name}(created_by)",
-                    f"CREATE INDEX IF NOT EXISTS idx_pipelines_is_active ON {self.table_name}(is_active)",
-                    f"CREATE INDEX IF NOT EXISTS idx_pipelines_department_name ON {self.table_name}(department_name)",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT FALSE",
+                    f"CREATE INDEX IF NOT EXISTS idx_workflows_created_by ON {self.table_name}(created_by)",
+                    f"CREATE INDEX IF NOT EXISTS idx_workflows_is_active ON {self.table_name}(is_active)",
+                    f"CREATE INDEX IF NOT EXISTS idx_workflows_department_name ON {self.table_name}(department_name)",
+                    f"CREATE INDEX IF NOT EXISTS idx_workflows_is_public ON {self.table_name}(is_public)",
                 ]
                 
                 for stmt in alter_statements:
@@ -7681,17 +8843,17 @@ class PipelineRepository(BaseRepository, CacheableRepository):
                     except Exception as alter_error:
                         log.warning(f"ALTER statement warning for '{self.table_name}': {alter_error}")
                 
-                # Migration: Rename duplicate pipeline names within departments (must run before adding unique constraint)
-                await self._migrate_duplicate_pipeline_names(conn)
+                # Migration: Rename duplicate workflow names within departments (must run before adding unique constraint)
+                await self._migrate_duplicate_workflow_names(conn)
                 
-                # Add unique constraint on (pipeline_name, department_name)
+                # Add unique constraint on (workflow_name, department_name)
                 try:
                     await conn.execute(f"""
                         ALTER TABLE {self.table_name} 
-                        ADD CONSTRAINT uq_pipeline_name_department 
-                        UNIQUE (pipeline_name, department_name)
+                        ADD CONSTRAINT uq_workflow_name_department 
+                        UNIQUE (workflow_name, department_name)
                     """)
-                    log.info(f"Unique constraint on (pipeline_name, department_name) added to '{self.table_name}'")
+                    log.info(f"Unique constraint on (workflow_name, department_name) added to '{self.table_name}'")
                 except Exception as constraint_error:
                     # Constraint may already exist
                     if "already exists" not in str(constraint_error).lower():
@@ -7701,21 +8863,21 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
 
-    async def _migrate_duplicate_pipeline_names(self, conn):
+    async def _migrate_duplicate_workflow_names(self, conn):
         """
-        Migration to rename duplicate pipeline names within each department.
+        Migration to rename duplicate workflow names within each department.
         Appends _dupl_1, _dupl_2, etc. to duplicates.
         """
         try:
-            # Find duplicates: pipelines with same name in same department
+            # Find duplicates: workflows with same name in same department
             find_duplicates_query = f"""
-            SELECT pipeline_id, pipeline_name, department_name,
-                   ROW_NUMBER() OVER (PARTITION BY pipeline_name, department_name ORDER BY created_at) as rn
+            SELECT workflow_id, workflow_name, department_name,
+                   ROW_NUMBER() OVER (PARTITION BY workflow_name, department_name ORDER BY created_at) as rn
             FROM {self.table_name}
-            WHERE (pipeline_name, department_name) IN (
-                SELECT pipeline_name, department_name
+            WHERE (workflow_name, department_name) IN (
+                SELECT workflow_name, department_name
                 FROM {self.table_name}
-                GROUP BY pipeline_name, department_name
+                GROUP BY workflow_name, department_name
                 HAVING COUNT(*) > 1
             )
             """
@@ -7723,131 +8885,136 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             rows = await conn.fetch(find_duplicates_query)
             
             if not rows:
-                log.debug("No duplicate pipeline names found.")
+                log.debug("No duplicate workflow names found.")
                 return
             
             # Update duplicates (skip rn=1 as that's the original)
             updated_count = 0
             for row in rows:
                 if row['rn'] > 1:
-                    new_name = f"{row['pipeline_name']}_dupl_{row['rn'] - 1}"
+                    new_name = f"{row['workflow_name']}_dupl_{row['rn'] - 1}"
                     update_query = f"""
                     UPDATE {self.table_name}
-                    SET pipeline_name = $1, updated_at = CURRENT_TIMESTAMP
-                    WHERE pipeline_id = $2
+                    SET workflow_name = $1, updated_at = CURRENT_TIMESTAMP
+                    WHERE workflow_id = $2
                     """
-                    await conn.execute(update_query, new_name, row['pipeline_id'])
+                    await conn.execute(update_query, new_name, row['workflow_id'])
                     updated_count += 1
-                    log.info(f"Renamed duplicate pipeline '{row['pipeline_name']}' to '{new_name}' (ID: {row['pipeline_id']})")
+                    log.info(f"Renamed duplicate workflow '{row['workflow_name']}' to '{new_name}' (ID: {row['workflow_id']})")
             
             if updated_count > 0:
-                log.info(f"Migration complete: Renamed {updated_count} duplicate pipeline names.")
+                log.info(f"Migration complete: Renamed {updated_count} duplicate workflow names.")
                 
         except Exception as e:
-            log.warning(f"Pipeline name migration warning: {e}")
+            log.warning(f"Workflow name migration warning: {e}")
 
-    async def check_pipeline_name_exists(
+    async def check_workflow_name_exists(
         self,
-        pipeline_name: str,
+        workflow_name: str,
         department_name: str,
-        exclude_pipeline_id: Optional[str] = None
+        exclude_workflow_id: Optional[str] = None
     ) -> bool:
         """
-        Check if a pipeline with the given name already exists in the department.
+        Check if a workflow with the given name already exists in the department.
         
         Args:
-            pipeline_name: Name to check
+            workflow_name: Name to check
             department_name: Department to check within
-            exclude_pipeline_id: Pipeline ID to exclude (for update operations)
+            exclude_workflow_id: Workflow ID to exclude (for update operations)
             
         Returns:
             bool: True if name exists, False otherwise
         """
         query = f"""
         SELECT COUNT(*) FROM {self.table_name}
-        WHERE LOWER(pipeline_name) = LOWER($1) AND department_name = $2
+        WHERE LOWER(workflow_name) = LOWER($1) AND department_name = $2
         """
-        params = [pipeline_name.strip(), department_name]
+        params = [workflow_name.strip(), department_name]
         
-        if exclude_pipeline_id:
-            query += " AND pipeline_id != $3"
-            params.append(exclude_pipeline_id)
+        if exclude_workflow_id:
+            query += " AND workflow_id != $3"
+            params.append(exclude_workflow_id)
         
         try:
             async with self.pool.acquire() as conn:
                 count = await conn.fetchval(query, *params)
                 return count > 0
         except Exception as e:
-            log.error(f"Error checking pipeline name existence: {e}")
+            log.error(f"Error checking workflow name existence: {e}")
             return False
 
-    async def insert_pipeline(
+    async def insert_workflow(
         self,
-        pipeline_id: str,
-        pipeline_name: str,
-        pipeline_description: str,
-        pipeline_definition: dict,
+        workflow_id: str,
+        workflow_name: str,
+        workflow_description: str,
+        workflow_definition: dict,
         created_by: str,
-        department_name: str = None
+        department_name: str = None,
+        is_public: bool = False
     ) -> bool:
         """
-        Inserts a new pipeline record.
+        Inserts a new workflow record.
 
         Args:
-            pipeline_id: Unique identifier for the pipeline
-            pipeline_name: Name of the pipeline
-            pipeline_description: Description of the pipeline
-            pipeline_definition: JSON definition of nodes and edges
+            workflow_id: Unique identifier for the workflow
+            workflow_name: Name of the workflow
+            workflow_description: Description of the workflow
+            workflow_definition: JSON definition of nodes and edges
             created_by: Email of the creator
-            department_name: Department name for the pipeline
+            department_name: Department name for the workflow
+            is_public: Whether the workflow should be publicly accessible
 
         Returns:
             bool: True if successful, False otherwise
         """
         insert_statement = f"""
         INSERT INTO {self.table_name} 
-        (pipeline_id, pipeline_name, pipeline_description, pipeline_definition, created_by, department_name)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        (workflow_id, workflow_name, workflow_description, workflow_definition, created_by, department_name, is_public)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         """
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     insert_statement,
-                    pipeline_id,
-                    pipeline_name.strip(),
-                    pipeline_description,
-                    json.dumps(pipeline_definition),
+                    workflow_id,
+                    workflow_name.strip(),
+                    workflow_description,
+                    json.dumps(workflow_definition),
                     created_by,
-                    department_name
+                    department_name,
+                    is_public
                 )
-            await self.invalidate_all_method_cache("get_pipeline")
-            await self.invalidate_all_method_cache("get_all_pipelines")
-            log.info(f"Pipeline '{pipeline_name}' inserted successfully with ID: {pipeline_id}")
+            await self.invalidate_all_method_cache("get_workflow")
+            await self.invalidate_all_method_cache("get_all_workflows")
+            log.info(f"Workflow '{workflow_name}' inserted successfully with ID: {workflow_id}")
             return {"success": True}
         except asyncpg.UniqueViolationError as e:
             error_str = str(e).lower()
-            if "uq_pipeline_name_department" in error_str or "pipeline_name" in error_str:
-                log.warning(f"Pipeline with name '{pipeline_name}' already exists in department '{department_name}'.")
-                return {"success": False, "error": "duplicate_name", "message": f"A pipeline with name '{pipeline_name}' already exists in this department."}
+            if "uq_workflow_name_department" in error_str or "workflow_name" in error_str:
+                log.warning(f"Workflow with name '{workflow_name}' already exists in department '{department_name}'.")
+                return {"success": False, "error": "duplicate_name", "message": f"A workflow with name '{workflow_name}' already exists in this department."}
             else:
-                log.warning(f"Pipeline with ID '{pipeline_id}' already exists.")
-                return {"success": False, "error": "duplicate_id", "message": f"Pipeline with ID '{pipeline_id}' already exists."}
+                log.warning(f"Workflow with ID '{workflow_id}' already exists.")
+                return {"success": False, "error": "duplicate_id", "message": f"Workflow with ID '{workflow_id}' already exists."}
         except Exception as e:
-            log.error(f"Error inserting pipeline '{pipeline_name}': {e}")
+            log.error(f"Error inserting workflow '{workflow_name}': {e}")
             return {"success": False, "error": "unknown", "message": str(e)}
 
-    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="PipelineRepository")
-    async def get_all_pipelines(self, created_by: Optional[str] = None, is_active: Optional[bool] = None, department_name: str = None) -> List[Dict[str, Any]]:
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="WorkflowRepository")
+    async def get_all_workflows(self, created_by: Optional[str] = None, is_active: Optional[bool] = None, department_name: str = None, shared_workflow_ids: List[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves all pipeline records with optional filtering.
+        Retrieves all workflow records with optional filtering.
+        When department_name is specified, also includes public workflows and shared workflows.
 
         Args:
             created_by: Filter by creator email
             is_active: Filter by active status
             department_name: Filter by department name
+            shared_workflow_ids: List of workflow IDs shared with this department
 
         Returns:
-            List of pipeline dictionaries
+            List of workflow dictionaries
         """
         query = f"SELECT * FROM {self.table_name} WHERE 1=1"
         params = []
@@ -7864,79 +9031,88 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             param_idx += 1
         
         if department_name:
-            query += f" AND department_name = ${param_idx}"
-            params.append(department_name)
-            param_idx += 1
+            if shared_workflow_ids:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE OR workflow_id = ANY(${param_idx + 1}))"
+                params.append(department_name)
+                params.append(shared_workflow_ids)
+                param_idx += 2
+            else:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE)"
+                params.append(department_name)
+                param_idx += 1
         
         query += " ORDER BY updated_at DESC"
         
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
-            log.info(f"Retrieved {len(rows)} pipeline records.")
+            log.info(f"Retrieved {len(rows)} workflow records.")
             result = []
             for row in rows:
                 row_dict = dict(row)
-                if isinstance(row_dict.get('pipeline_definition'), str):
-                    row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+                if isinstance(row_dict.get('workflow_definition'), str):
+                    row_dict['workflow_definition'] = json.loads(row_dict['workflow_definition'])
                 result.append(row_dict)
             await self._transform_emails_to_usernames(result, ['created_by'])
             return result
         except Exception as e:
-            log.error(f"Error retrieving pipelines: {e}")
+            log.error(f"Error retrieving workflows: {e}")
             return []
 
-    async def get_pipeline_by_name(self, pipeline_name: str) -> Optional[Dict[str, Any]]:
+    async def get_workflow_by_name(self, workflow_name: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieves a single pipeline record by its exact name.
+        Retrieves a single workflow record by its exact name.
 
         Args:
-            pipeline_name: The exact pipeline name to look up
+            workflow_name: The exact workflow name to look up
 
         Returns:
-            Pipeline dictionary if found, None otherwise
+            Workflow dictionary if found, None otherwise
         """
-        query = f"SELECT * FROM {self.table_name} WHERE pipeline_name = $1 LIMIT 1"
+        query = f"SELECT * FROM {self.table_name} WHERE workflow_name = $1 LIMIT 1"
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(query, pipeline_name)
+                row = await conn.fetchrow(query, workflow_name)
             if not row:
                 return None
             row_dict = dict(row)
-            if isinstance(row_dict.get('pipeline_definition'), str):
-                row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+            if isinstance(row_dict.get('workflow_definition'), str):
+                row_dict['workflow_definition'] = json.loads(row_dict['workflow_definition'])
             await self._transform_emails_to_usernames([row_dict], ['created_by'])
-            log.info(f"Pipeline '{pipeline_name}' retrieved successfully.")
+            log.info(f"Workflow '{workflow_name}' retrieved successfully.")
             return row_dict
         except Exception as e:
-            log.error(f"Error retrieving pipeline by name '{pipeline_name}': {e}")
+            log.error(f"Error retrieving workflow by name '{workflow_name}': {e}")
             return None
 
-    async def get_total_pipeline_count(
+    async def get_total_workflow_count(
         self,
         search_value: str = '',
         created_by: Optional[str] = None,
         is_active: Optional[bool] = None,
-        department_name: str = None
+        department_name: str = None,
+        shared_workflow_ids: List[str] = None
     ) -> int:
         """
-        Gets the total count of pipelines matching the search criteria.
+        Gets the total count of workflows matching the search criteria.
+        When department_name is specified, includes public and shared workflows.
 
         Args:
-            search_value: Search string to match against pipeline name
+            search_value: Search string to match against workflow name
             created_by: Filter by creator email
             is_active: Filter by active status
             department_name: Filter by department name
+            shared_workflow_ids: List of workflow IDs shared with this department
 
         Returns:
-            int: Total count of matching pipelines
+            int: Total count of matching workflows
         """
         query = f"SELECT COUNT(*) FROM {self.table_name} WHERE 1=1"
         params = []
         param_idx = 1
         
         if search_value:
-            query += f" AND pipeline_name ILIKE ${param_idx}"
+            query += f" AND workflow_name ILIKE ${param_idx}"
             params.append(f"%{search_value}%")
             param_idx += 1
         
@@ -7951,40 +9127,49 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             param_idx += 1
         
         if department_name:
-            query += f" AND department_name = ${param_idx}"
-            params.append(department_name)
-            param_idx += 1
+            if shared_workflow_ids:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE OR workflow_id = ANY(${param_idx + 1}))"
+                params.append(department_name)
+                params.append(shared_workflow_ids)
+                param_idx += 2
+            else:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE)"
+                params.append(department_name)
+                param_idx += 1
         
         try:
             async with self.pool.acquire() as conn:
                 count = await conn.fetchval(query, *params)
             return count or 0
         except Exception as e:
-            log.error(f"Error getting pipeline count: {e}")
+            log.error(f"Error getting workflow count: {e}")
             return 0
 
-    async def get_pipelines_by_search_or_page(
+    async def get_workflows_by_search_or_page(
         self,
         search_value: str = '',
         limit: int = 20,
         page: int = 1,
         created_by: Optional[str] = None,
         is_active: Optional[bool] = None,
-        department_name: str = None
+        department_name: str = None,
+        shared_workflow_ids: List[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Retrieves pipelines with pagination and search filtering.
+        Retrieves workflows with pagination and search filtering.
+        When department_name is specified, includes public and shared workflows.
 
         Args:
-            search_value: Search string to match against pipeline name
+            search_value: Search string to match against workflow name
             limit: Number of results per page
             page: Page number (1-indexed)
             created_by: Filter by creator email
             is_active: Filter by active status
             department_name: Filter by department name
+            shared_workflow_ids: List of workflow IDs shared with this department
 
         Returns:
-            List of pipeline dictionaries
+            List of workflow dictionaries
         """
         offset = limit * max(0, page - 1)
         query = f"SELECT * FROM {self.table_name} WHERE 1=1"
@@ -7992,7 +9177,7 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         param_idx = 1
         
         if search_value:
-            query += f" AND pipeline_name ILIKE ${param_idx}"
+            query += f" AND workflow_name ILIKE ${param_idx}"
             params.append(f"%{search_value}%")
             param_idx += 1
         
@@ -8007,9 +9192,15 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             param_idx += 1
         
         if department_name:
-            query += f" AND department_name = ${param_idx}"
-            params.append(department_name)
-            param_idx += 1
+            if shared_workflow_ids:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE OR workflow_id = ANY(${param_idx + 1}))"
+                params.append(department_name)
+                params.append(shared_workflow_ids)
+                param_idx += 2
+            else:
+                query += f" AND (department_name = ${param_idx} OR is_public = TRUE)"
+                params.append(department_name)
+                param_idx += 1
         
         query += f" ORDER BY updated_at DESC LIMIT ${param_idx} OFFSET ${param_idx + 1}"
         params.extend([limit, offset])
@@ -8017,36 +9208,37 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, *params)
-            log.info(f"Retrieved {len(rows)} pipelines for search '{search_value}' page {page}.")
+            log.info(f"Retrieved {len(rows)} workflows for search '{search_value}' page {page}.")
             result = []
             for row in rows:
                 row_dict = dict(row)
-                if isinstance(row_dict.get('pipeline_definition'), str):
-                    row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+                if isinstance(row_dict.get('workflow_definition'), str):
+                    row_dict['workflow_definition'] = json.loads(row_dict['workflow_definition'])
                 result.append(row_dict)
             await self._transform_emails_to_usernames(result, ['created_by'])
             return result
         except Exception as e:
-            log.error(f"Error retrieving pipelines by search/page: {e}")
+            log.error(f"Error retrieving workflows by search/page: {e}")
             return []
 
-    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="PipelineRepository")
-    async def get_pipeline(self, pipeline_id: str, department_name: str = None) -> Optional[Dict[str, Any]]:
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="WorkflowRepository")
+    async def get_workflow(self, workflow_id: str, department_name: str = None) -> Optional[Dict[str, Any]]:
         """
-        Retrieves a single pipeline by ID.
+        Retrieves a single workflow by ID.
+        When department_name is specified, also returns the workflow if it's public.
 
         Args:
-            pipeline_id: The pipeline ID
-            department_name: Filter by department name
+            workflow_id: The workflow ID
+            department_name: Filter by department name (also includes public workflows)
 
         Returns:
-            Pipeline dictionary or None if not found
+            Workflow dictionary or None if not found
         """
-        query = f"SELECT * FROM {self.table_name} WHERE pipeline_id = $1"
-        params = [pipeline_id]
+        query = f"SELECT * FROM {self.table_name} WHERE workflow_id = $1"
+        params = [workflow_id]
         
         if department_name:
-            query += " AND department_name = $2"
+            query += " AND (department_name = $2 OR is_public = TRUE)"
             params.append(department_name)
         
         try:
@@ -8054,34 +9246,34 @@ class PipelineRepository(BaseRepository, CacheableRepository):
                 row = await conn.fetchrow(query, *params)
             if row:
                 row_dict = dict(row)
-                if isinstance(row_dict.get('pipeline_definition'), str):
-                    row_dict['pipeline_definition'] = json.loads(row_dict['pipeline_definition'])
+                if isinstance(row_dict.get('workflow_definition'), str):
+                    row_dict['workflow_definition'] = json.loads(row_dict['workflow_definition'])
                 await self._transform_emails_to_usernames([row_dict], ['created_by'])
-                log.info(f"Pipeline '{pipeline_id}' retrieved successfully.")
+                log.info(f"Workflow '{workflow_id}' retrieved successfully.")
                 return row_dict
             else:
-                log.info(f"Pipeline '{pipeline_id}' not found.")
+                log.info(f"Workflow '{workflow_id}' not found.")
                 return None
         except Exception as e:
-            log.error(f"Error retrieving pipeline '{pipeline_id}': {e}")
+            log.error(f"Error retrieving workflow '{workflow_id}': {e}")
             return None
 
-    async def update_pipeline(
+    async def update_workflow(
         self,
-        pipeline_id: str,
-        pipeline_name: Optional[str] = None,
-        pipeline_description: Optional[str] = None,
-        pipeline_definition: Optional[dict] = None,
+        workflow_id: str,
+        workflow_name: Optional[str] = None,
+        workflow_description: Optional[str] = None,
+        workflow_definition: Optional[dict] = None,
         is_active: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
-        Updates a pipeline record.
+        Updates a workflow record.
 
         Args:
-            pipeline_id: The pipeline ID to update
-            pipeline_name: New name (optional)
-            pipeline_description: New description (optional)
-            pipeline_definition: New definition (optional)
+            workflow_id: The workflow ID to update
+            workflow_name: New name (optional)
+            workflow_description: New description (optional)
+            workflow_definition: New definition (optional)
             is_active: New active status (optional)
 
         Returns:
@@ -8091,19 +9283,19 @@ class PipelineRepository(BaseRepository, CacheableRepository):
         params = []
         param_idx = 1
         
-        if pipeline_name is not None:
-            updates.append(f"pipeline_name = ${param_idx}")
-            params.append(pipeline_name.strip())
+        if workflow_name is not None:
+            updates.append(f"workflow_name = ${param_idx}")
+            params.append(workflow_name.strip())
             param_idx += 1
         
-        if pipeline_description is not None:
-            updates.append(f"pipeline_description = ${param_idx}")
-            params.append(pipeline_description)
+        if workflow_description is not None:
+            updates.append(f"workflow_description = ${param_idx}")
+            params.append(workflow_description)
             param_idx += 1
         
-        if pipeline_definition is not None:
-            updates.append(f"pipeline_definition = ${param_idx}")
-            params.append(json.dumps(pipeline_definition))
+        if workflow_definition is not None:
+            updates.append(f"workflow_definition = ${param_idx}")
+            params.append(json.dumps(workflow_definition))
             param_idx += 1
         
         if is_active is not None:
@@ -8112,102 +9304,131 @@ class PipelineRepository(BaseRepository, CacheableRepository):
             param_idx += 1
         
         if not updates:
-            log.warning("No fields to update for pipeline.")
+            log.warning("No fields to update for workflow.")
             return {"success": False, "error": "no_fields", "message": "No fields to update."}
         
         updates.append("updated_at = CURRENT_TIMESTAMP")
-        params.append(pipeline_id)
+        params.append(workflow_id)
         
         update_statement = f"""
         UPDATE {self.table_name}
         SET {', '.join(updates)}
-        WHERE pipeline_id = ${param_idx}
+        WHERE workflow_id = ${param_idx}
         """
         
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(update_statement, *params)
-            await self.invalidate_all_method_cache("get_pipeline")
-            await self.invalidate_all_method_cache("get_all_pipelines")
+            await self.invalidate_all_method_cache("get_workflow")
+            await self.invalidate_all_method_cache("get_all_workflows")
             if result != "UPDATE 0":
-                log.info(f"Pipeline '{pipeline_id}' updated successfully.")
+                log.info(f"Workflow '{workflow_id}' updated successfully.")
                 return {"success": True}
             else:
-                log.warning(f"Pipeline '{pipeline_id}' not found, no update performed.")
-                return {"success": False, "error": "not_found", "message": f"Pipeline '{pipeline_id}' not found."}
+                log.warning(f"Workflow '{workflow_id}' not found, no update performed.")
+                return {"success": False, "error": "not_found", "message": f"Workflow '{workflow_id}' not found."}
         except asyncpg.UniqueViolationError as e:
             error_str = str(e).lower()
-            if "uq_pipeline_name_department" in error_str or "pipeline_name" in error_str:
-                log.warning(f"Cannot update pipeline '{pipeline_id}': name '{pipeline_name}' already exists in department.")
-                return {"success": False, "error": "duplicate_name", "message": f"A pipeline with name '{pipeline_name}' already exists in this department."}
+            if "uq_workflow_name_department" in error_str or "workflow_name" in error_str:
+                log.warning(f"Cannot update workflow '{workflow_id}': name '{workflow_name}' already exists in department.")
+                return {"success": False, "error": "duplicate_name", "message": f"A workflow with name '{workflow_name}' already exists in this department."}
             else:
-                log.error(f"Unique violation error updating pipeline '{pipeline_id}': {e}")
+                log.error(f"Unique violation error updating workflow '{workflow_id}': {e}")
                 return {"success": False, "error": "duplicate", "message": str(e)}
         except Exception as e:
-            log.error(f"Error updating pipeline '{pipeline_id}': {e}")
+            log.error(f"Error updating workflow '{workflow_id}': {e}")
             return {"success": False, "error": "unknown", "message": str(e)}
 
-    async def delete_pipeline(self, pipeline_id: str) -> bool:
+    async def delete_workflow(self, workflow_id: str) -> bool:
         """
-        Deletes a pipeline record.
+        Deletes a workflow record.
 
         Args:
-            pipeline_id: The pipeline ID to delete
+            workflow_id: The workflow ID to delete
 
         Returns:
             bool: True if successful, False otherwise
         """
-        delete_statement = f"DELETE FROM {self.table_name} WHERE pipeline_id = $1"
+        delete_statement = f"DELETE FROM {self.table_name} WHERE workflow_id = $1"
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(delete_statement, pipeline_id)
-            await self.invalidate_all_method_cache("get_pipeline")
-            await self.invalidate_all_method_cache("get_all_pipelines")
+                result = await conn.execute(delete_statement, workflow_id)
+            await self.invalidate_all_method_cache("get_workflow")
+            await self.invalidate_all_method_cache("get_all_workflows")
             if result != "DELETE 0":
-                log.info(f"Pipeline '{pipeline_id}' deleted successfully.")
+                log.info(f"Workflow '{workflow_id}' deleted successfully.")
                 return True
             else:
-                log.warning(f"Pipeline '{pipeline_id}' not found, no deletion performed.")
+                log.warning(f"Workflow '{workflow_id}' not found, no deletion performed.")
                 return False
         except Exception as e:
-            log.error(f"Error deleting pipeline '{pipeline_id}': {e}")
+            log.error(f"Error deleting workflow '{workflow_id}': {e}")
+            return False
+
+    async def update_workflow_visibility(self, workflow_id: str, is_public: bool) -> bool:
+        """
+        Updates the is_public flag for a workflow.
+
+        Args:
+            workflow_id: The workflow ID to update
+            is_public: Whether the workflow should be public
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        update_statement = f"""
+        UPDATE {self.table_name}
+        SET is_public = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE workflow_id = $2
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_statement, is_public, workflow_id)
+            await self.invalidate_all_method_cache("get_workflow")
+            await self.invalidate_all_method_cache("get_all_workflows")
+            if result != "UPDATE 0":
+                log.info(f"Workflow '{workflow_id}' visibility updated to is_public={is_public}.")
+                return True
+            return False
+        except Exception as e:
+            log.error(f"Error updating workflow '{workflow_id}' visibility: {e}")
             return False
 
 
-# --- AgentPipelineMappingRepository ---
+# --- AgentWorkflowMappingRepository ---
 
-class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
+class AgentWorkflowMappingRepository(BaseRepository, CacheableRepository):
     """
-    Repository for the 'agent_pipeline_mapping_table'. Handles direct database interactions for agent-pipeline mappings.
-    Similar to ToolAgentMappingRepository, but maps agents to pipelines.
+    Repository for the 'agent_workflow_mapping_table'. Handles direct database interactions for agent-workflow mappings.
+    Similar to ToolAgentMappingRepository, but maps agents to workflows.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT_PIPELINE_MAPPING.value):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.AGENT_WORKFLOW_MAPPING.value):
         """
-        Initializes the AgentPipelineMappingRepository.
+        Initializes the AgentWorkflowMappingRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
             login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
-            table_name (str): The name of the agent-pipeline mapping table.
+            table_name (str): The name of the agent-workflow mapping table.
         """
         super().__init__(pool, login_pool, table_name)
 
     async def create_table_if_not_exists(self):
         """
-        Creates the 'agent_pipeline_mapping_table' if it does not exist.
+        Creates the 'agent_workflow_mapping_table' if it does not exist.
         NOTE: The FOREIGN KEY to agent_table is intentionally removed here
-              to allow mapping of pipeline IDs (worker pipelines) as 'agentic_application_id'.
+              to allow mapping of workflow IDs (worker workflows) as 'agentic_application_id'.
         """
         try:
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 agentic_application_id TEXT,
-                pipeline_id TEXT,
+                workflow_id TEXT,
                 agent_created_by TEXT,
-                pipeline_created_by TEXT,
+                workflow_created_by TEXT,
                 -- FOREIGN KEY(agentic_application_id) REFERENCES {TableNames.AGENT.value}(agentic_application_id) ON DELETE RESTRICT, -- REMOVED
-                FOREIGN KEY(pipeline_id) REFERENCES {TableNames.PIPELINES.value}(pipeline_id) ON DELETE CASCADE
+                FOREIGN KEY(workflow_id) REFERENCES {TableNames.WORKFLOWS.value}(workflow_id) ON DELETE CASCADE
             );
             """
             async with self.pool.acquire() as conn:
@@ -8216,56 +9437,56 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
 
-    async def assign_agent_to_pipeline_record(self, agentic_application_id: str, pipeline_id: str, agent_created_by: str, pipeline_created_by: str) -> bool:
+    async def assign_agent_to_workflow_record(self, agentic_application_id: str, workflow_id: str, agent_created_by: str, workflow_created_by: str) -> bool:
         """
-        Inserts a mapping between an agent/worker_pipeline and a pipeline.
+        Inserts a mapping between an agent/worker_workflow and a workflow.
 
         Args:
-            agentic_application_id (str): The ID of the agent or worker pipeline.
-            pipeline_id (str): The ID of the pipeline.
-            agent_created_by (str): The creator of the agent/worker pipeline.
-            pipeline_created_by (str): The creator of the pipeline.
+            agentic_application_id (str): The ID of the agent or worker workflow.
+            workflow_id (str): The ID of the workflow.
+            agent_created_by (str): The creator of the agent/worker workflow.
+            workflow_created_by (str): The creator of the workflow.
 
         Returns:
             bool: True if the mapping was inserted successfully, False otherwise.
         """
         insert_statement = f"""
-        INSERT INTO {self.table_name} (agentic_application_id, pipeline_id, agent_created_by, pipeline_created_by)
+        INSERT INTO {self.table_name} (agentic_application_id, workflow_id, agent_created_by, workflow_created_by)
         VALUES ($1, $2, $3, $4)
         """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(insert_statement, agentic_application_id, pipeline_id, agent_created_by, pipeline_created_by)
-            await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
-            await self.invalidate_all_method_cache("get_pipeline", namespace="PipelineRepository")
-            log.info(f"Mapping agent/pipeline '{agentic_application_id}' to pipeline '{pipeline_id}' inserted successfully.")
+                await conn.execute(insert_statement, agentic_application_id, workflow_id, agent_created_by, workflow_created_by)
+            await self.invalidate_all_method_cache("get_agent_workflow_mappings_record")
+            await self.invalidate_all_method_cache("get_workflow", namespace="WorkflowRepository")
+            log.info(f"Mapping agent/workflow '{agentic_application_id}' to workflow '{workflow_id}' inserted successfully.")
             return True
         except Exception as e:
-            log.error(f"Error assigning agent/pipeline '{agentic_application_id}' to pipeline '{pipeline_id}': {e}")
+            log.error(f"Error assigning agent/workflow '{agentic_application_id}' to workflow '{workflow_id}': {e}")
             return False
 
-    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="AgentPipelineMappingRepository")
-    async def get_agent_pipeline_mappings_record(self, agentic_application_id: Optional[str] = None, pipeline_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    @CacheableRepository.cache(ttl=EXPIRY_TIME, namespace="AgentWorkflowMappingRepository")
+    async def get_agent_workflow_mappings_record(self, agentic_application_id: Optional[str] = None, workflow_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves agent-pipeline mappings by agentic_application_id or pipeline_id, including pipeline_name.
+        Retrieves agent-workflow mappings by agentic_application_id or workflow_id, including workflow_name.
 
         Args:
-            agentic_application_id (Optional[str]): The ID of the agent or worker pipeline to filter by.
-            pipeline_id (Optional[str]): The ID of the pipeline to filter by.
+            agentic_application_id (Optional[str]): The ID of the agent or worker workflow to filter by.
+            workflow_id (Optional[str]): The ID of the workflow to filter by.
 
         Returns:
-            List[Dict[str, Any]]: A list of dictionaries, each representing an agent-pipeline mapping with pipeline_name.
+            List[Dict[str, Any]]: A list of dictionaries, each representing an agent-workflow mapping with workflow_name.
         """
         select_statement = f"""
-            SELECT apm.agentic_application_id, apm.pipeline_id, apm.agent_created_by, apm.pipeline_created_by, 
-                   p.pipeline_name 
+            SELECT apm.agentic_application_id, apm.workflow_id, apm.agent_created_by, apm.workflow_created_by, 
+                   p.workflow_name 
             FROM {self.table_name} apm
-            LEFT JOIN {TableNames.PIPELINES.value} p ON apm.pipeline_id = p.pipeline_id
+            LEFT JOIN {TableNames.WORKFLOWS.value} p ON apm.workflow_id = p.workflow_id
         """
         where_clause = []
         values = []
 
-        filters = {"apm.agentic_application_id": agentic_application_id, "apm.pipeline_id": pipeline_id}
+        filters = {"apm.agentic_application_id": agentic_application_id, "apm.workflow_id": workflow_id}
         for idx, (field, value) in enumerate((f for f in filters.items() if f[1] is not None), start=1):
             where_clause.append(f"{field} = ${idx}")
             values.append(value)
@@ -8276,21 +9497,21 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(select_statement, *values)
-            log.info(f"Retrieved {len(rows)} agent-pipeline mappings from '{self.table_name}'.")
+            log.info(f"Retrieved {len(rows)} agent-workflow mappings from '{self.table_name}'.")
             updated_rows = [dict(row) for row in rows]
-            await self._transform_emails_to_usernames(updated_rows, ['agent_created_by', 'pipeline_created_by'])
+            await self._transform_emails_to_usernames(updated_rows, ['agent_created_by', 'workflow_created_by'])
             return updated_rows
         except Exception as e:
-            log.error(f"Error retrieving agent-pipeline mappings: {e}")
+            log.error(f"Error retrieving agent-workflow mappings: {e}")
             return []
 
-    async def remove_agent_from_pipeline_record(self, agentic_application_id: Optional[str] = None, pipeline_id: Optional[str] = None) -> bool:
+    async def remove_agent_from_workflow_record(self, agentic_application_id: Optional[str] = None, workflow_id: Optional[str] = None) -> bool:
         """
-        Removes a mapping between an agent/worker_pipeline and a pipeline.
+        Removes a mapping between an agent/worker_workflow and a workflow.
 
         Args:
-            agentic_application_id (Optional[str]): The ID of the agent or worker pipeline to remove.
-            pipeline_id (Optional[str]): The ID of the pipeline to remove the mapping from.
+            agentic_application_id (Optional[str]): The ID of the agent or worker workflow to remove.
+            workflow_id (Optional[str]): The ID of the workflow to remove the mapping from.
 
         Returns:
             bool: True if the mapping was removed successfully, False otherwise.
@@ -8299,7 +9520,7 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
         where_clause = []
         values = []
 
-        filters = {"agentic_application_id": agentic_application_id, "pipeline_id": pipeline_id}
+        filters = {"agentic_application_id": agentic_application_id, "workflow_id": workflow_id}
         for idx, (field, value) in enumerate((f for f in filters.items() if f[1] is not None), start=1):
             where_clause.append(f"{field} = ${idx}")
             values.append(value)
@@ -8310,23 +9531,23 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
                 async with self.pool.acquire() as conn:
                     result = await conn.execute(delete_statement, *values)
                 if result != "DELETE 0":
-                    await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
-                    await self.invalidate_all_method_cache("get_pipeline", namespace="PipelineRepository")
-                    log.info(f"Mapping agent/pipeline '{agentic_application_id}' from pipeline '{pipeline_id}' removed successfully.")
+                    await self.invalidate_all_method_cache("get_agent_workflow_mappings_record")
+                    await self.invalidate_all_method_cache("get_workflow", namespace="WorkflowRepository")
+                    log.info(f"Mapping agent/workflow '{agentic_application_id}' from workflow '{workflow_id}' removed successfully.")
                     return True
                 else:
-                    log.warning(f"Mapping agent/pipeline '{agentic_application_id}' from pipeline '{pipeline_id}' not found, no deletion performed.")
+                    log.warning(f"Mapping agent/workflow '{agentic_application_id}' from workflow '{workflow_id}' not found, no deletion performed.")
                     return False
             except Exception as e:
-                log.error(f"Error removing agent/pipeline mapping: {e}")
+                log.error(f"Error removing agent/workflow mapping: {e}")
                 return False
-        log.warning("No criteria provided to remove_agent_from_pipeline_record, no action taken.")
+        log.warning("No criteria provided to remove_agent_from_workflow_record, no action taken.")
         return False
 
     async def drop_agent_id_fk_constraint(self):
         """
-        Dynamically finds and drops the foreign key constraint on agent_pipeline_mapping_table.agentic_application_id.
-        This is crucial for allowing pipeline IDs (worker pipelines) to be stored in the 'agentic_application_id' column.
+        Dynamically finds and drops the foreign key constraint on agent_workflow_mapping_table.agentic_application_id.
+        This is crucial for allowing workflow IDs (worker workflows) to be stored in the 'agentic_application_id' column.
         """
         try:
             async with self.pool.acquire() as conn:
@@ -8349,7 +9570,7 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
                     DROP CONSTRAINT {constraint_name};
                     """
                     await conn.execute(drop_fk_statement)
-                    await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
+                    await self.invalidate_all_method_cache("get_agent_workflow_mappings_record")
                     log.info(f"Successfully dropped foreign key constraint '{constraint_name}' on '{self.table_name}.agentic_application_id'.")
                     return True
                 else:
@@ -8360,12 +9581,12 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
             log.error(f"Error attempting to drop foreign key constraint on '{self.table_name}.agentic_application_id': {e}")
             return False
 
-    async def migrate_pipelines_to_agent_mappings(self) -> Dict[str, Any]:
+    async def migrate_workflows_to_agent_mappings(self) -> Dict[str, Any]:
         """
-        Migration function that scans all pipelines, extracts agent IDs from pipeline_definition,
-        and creates agent-pipeline mappings in agent_pipeline_mapping_table.
+        Migration function that scans all workflows, extracts agent IDs from workflow_definition,
+        and creates agent-workflow mappings in agent_workflow_mapping_table.
         
-        This extracts agent IDs from the 'nodes' array in pipeline_definition JSONB where
+        This extracts agent IDs from the 'nodes' array in workflow_definition JSONB where
         each node has a 'data' object containing 'agent_id' or 'agentic_application_id'.
         
         Skips agents that don't exist in the agent_table.
@@ -8374,13 +9595,13 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
         Updates the file after successful migration.
         
         Returns:
-            Dict with migration stats: total_pipelines, mappings_created, mappings_skipped, agents_not_found, errors
+            Dict with migration stats: total_workflows, mappings_created, mappings_skipped, agents_not_found, errors
         """
-        MIGRATION_ID = "pipeline_agent_mapping_v1"
+        MIGRATION_ID = "workflow_agent_mapping_v1"
         MIGRATION_INFO_FILE = "migration-info.json"
         
         stats = {
-            "total_pipelines": 0,
+            "total_workflows": 0,
             "mappings_created": 0,
             "mappings_skipped": 0,
             "agents_not_found": 0,
@@ -8399,29 +9620,29 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
             log.warning(f"Could not read migration-info file: {e}. Proceeding with migration.")
         
         try:
-            # Fetch all pipelines with their definitions
-            fetch_pipelines_query = f"""
-                SELECT pipeline_id, pipeline_name, pipeline_definition, created_by 
-                FROM {TableNames.PIPELINES.value}
+            # Fetch all workflows with their definitions
+            fetch_workflows_query = f"""
+                SELECT workflow_id, workflow_name, workflow_definition, created_by 
+                FROM {TableNames.WORKFLOWS.value}
             """
             
             async with self.pool.acquire() as conn:
-                pipelines = await conn.fetch(fetch_pipelines_query)
+                workflows = await conn.fetch(fetch_workflows_query)
             
-            stats["total_pipelines"] = len(pipelines)
-            log.info(f"Migration: Found {len(pipelines)} pipelines to process.")
+            stats["total_workflows"] = len(workflows)
+            log.info(f"Migration: Found {len(workflows)} workflows to process.")
             
-            for pipeline in pipelines:
-                pipeline_id = pipeline['pipeline_id']
-                pipeline_created_by = pipeline['created_by']
-                pipeline_definition = pipeline['pipeline_definition']
+            for workflow in workflows:
+                workflow_id = workflow['workflow_id']
+                workflow_created_by = workflow['created_by']
+                workflow_definition = workflow['workflow_definition']
                 
-                # Extract agent IDs from pipeline_definition nodes
+                # Extract agent IDs from workflow_definition nodes
                 agent_ids = set()
-                if isinstance(pipeline_definition, str):
-                    pipeline_definition = json.loads(pipeline_definition)
-                if pipeline_definition and isinstance(pipeline_definition, dict):
-                    nodes = pipeline_definition.get('nodes', [])
+                if isinstance(workflow_definition, str):
+                    workflow_definition = json.loads(workflow_definition)
+                if workflow_definition and isinstance(workflow_definition, dict):
+                    nodes = workflow_definition.get('nodes', [])
                     for node in nodes:
                         if isinstance(node, dict) and node.get('node_type') == 'agent':
                             data = node.get('config', {})
@@ -8444,20 +9665,20 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
                         
                         if not agent_exists:
                             stats["agents_not_found"] += 1
-                            log.warning(f"Migration: Agent '{agent_id}' not found in database, skipping mapping to pipeline '{pipeline_id}'")
+                            log.warning(f"Migration: Agent '{agent_id}' not found in database, skipping mapping to workflow '{workflow_id}'")
                             continue
                         
                         # Check if mapping already exists
                         check_query = f"""
                             SELECT 1 FROM {self.table_name} 
-                            WHERE agentic_application_id = $1 AND pipeline_id = $2
+                            WHERE agentic_application_id = $1 AND workflow_id = $2
                         """
                         async with self.pool.acquire() as conn:
-                            existing = await conn.fetchrow(check_query, agent_id, pipeline_id)
+                            existing = await conn.fetchrow(check_query, agent_id, workflow_id)
                         
                         if existing:
                             stats["mappings_skipped"] += 1
-                            log.debug(f"Migration: Mapping already exists for agent '{agent_id}' -> pipeline '{pipeline_id}'")
+                            log.debug(f"Migration: Mapping already exists for agent '{agent_id}' -> workflow '{workflow_id}'")
                             continue
                         
                         # Get the actual agent creator from agent_table
@@ -8468,26 +9689,26 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
                         async with self.pool.acquire() as conn:
                             agent_record = await conn.fetchrow(agent_creator_query, agent_id)
                         
-                        agent_created_by = agent_record['created_by'] if agent_record and agent_record['created_by'] else pipeline_created_by
+                        agent_created_by = agent_record['created_by'] if agent_record and agent_record['created_by'] else workflow_created_by
                         
                         # Insert new mapping
                         insert_query = f"""
-                            INSERT INTO {self.table_name} (agentic_application_id, pipeline_id, agent_created_by, pipeline_created_by)
+                            INSERT INTO {self.table_name} (agentic_application_id, workflow_id, agent_created_by, workflow_created_by)
                             VALUES ($1, $2, $3, $4)
                         """
                         async with self.pool.acquire() as conn:
-                            await conn.execute(insert_query, agent_id, pipeline_id, agent_created_by, pipeline_created_by)
+                            await conn.execute(insert_query, agent_id, workflow_id, agent_created_by, workflow_created_by)
                         
                         stats["mappings_created"] += 1
-                        log.info(f"Migration: Created mapping for agent '{agent_id}' -> pipeline '{pipeline_id}'")
+                        log.info(f"Migration: Created mapping for agent '{agent_id}' -> workflow '{workflow_id}'")
                         
                     except Exception as e:
-                        error_msg = f"Error creating mapping for agent '{agent_id}' -> pipeline '{pipeline_id}': {str(e)}"
+                        error_msg = f"Error creating mapping for agent '{agent_id}' -> workflow '{workflow_id}': {str(e)}"
                         stats["errors"].append(error_msg)
                         log.error(f"Migration: {error_msg}")
             
             # Invalidate cache after migration
-            await self.invalidate_all_method_cache("get_agent_pipeline_mappings_record")
+            await self.invalidate_all_method_cache("get_agent_workflow_mappings_record")
             
             # Update migration-info file to mark this migration as completed
             try:
@@ -8521,35 +9742,557 @@ class AgentPipelineMappingRepository(BaseRepository, CacheableRepository):
             log.error(f"Migration: {error_msg}")
             return stats
 
-
-# --- Pipeline Run Repository ---
-
-class PipelineRunRepository(BaseRepository):
-    """
-    Repository for the 'pipelines' run table.
-    Handles direct database interactions for pipeline run tracking.
-    """
-
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.PIPELINES_RUN.value):
+    async def migrate_pipeline_to_workflow_schema(self) -> Dict[str, Any]:
         """
-        Initializes the PipelineRunRepository.
+        One-time migration: moves data from old 'pipeline' tables/columns to 'workflow'.
+
+        Handles every possible state:
+        - If only old table exists → ALTER TABLE RENAME + column renames.
+        - If BOTH old and new tables exist (e.g. new empty table was created by
+          CREATE TABLE IF NOT EXISTS before this migration could rename the old one)
+          → merge rows from old into new, resolve unique-constraint duplicates
+            by keeping the older authoritative row, then DROP the old table.
+        - If only new table exists → nothing to do (already migrated).
+
+        Also renames columns, constraints, indexes, and JSONB keys.
+
+        Guarded by migration-info.json — runs once per database.
+        """
+        MIGRATION_ID = "pipeline_to_workflow_schema_v1"
+        MIGRATION_INFO_FILE = "migration-info.json"
+
+        stats = {
+            "tables_renamed": 0,
+            "rows_migrated": 0,
+            "old_tables_dropped": 0,
+            "columns_renamed": 0,
+            "constraints_renamed": 0,
+            "indexes_renamed": 0,
+            "jsonb_keys_renamed": 0,
+            "skipped": 0,
+            "errors": []
+        }
+
+        try:
+            if os.path.exists(MIGRATION_INFO_FILE):
+                with open(MIGRATION_INFO_FILE, 'r') as f:
+                    migration_info = json.load(f)
+                if MIGRATION_ID in migration_info.get("completed_migrations", []):
+                    log.info(f"Migration '{MIGRATION_ID}' already completed. Skipping.")
+                    return {"skipped": True, "reason": f"Migration '{MIGRATION_ID}' already completed"}
+        except Exception as e:
+            log.warning(f"Could not read migration-info file: {e}. Proceeding with migration.")
+
+        log.info(f"Running '{MIGRATION_ID}' schema migration …")
+
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    async def table_exists(tbl: str) -> bool:
+                        return await conn.fetchval(
+                            "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                            "WHERE table_schema='public' AND table_name=$1)", tbl
+                        )
+                    async def column_exists(tbl: str, col: str) -> bool:
+                        return await conn.fetchval(
+                            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+                            "WHERE table_name=$1 AND column_name=$2)", tbl, col
+                        )
+                    async def constraint_exists(tbl: str, con: str) -> bool:
+                        return await conn.fetchval(
+                            "SELECT EXISTS(SELECT 1 FROM information_schema.table_constraints "
+                            "WHERE table_name=$1 AND constraint_name=$2)", tbl, con
+                        )
+                    async def index_exists(idx: str) -> bool:
+                        return await conn.fetchval(
+                            "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname=$1)", idx
+                        )
+                    async def rename_columns(tbl: str, col_pairs: list):
+                        """Rename columns on a table if the old name exists and new doesn't."""
+                        for old_col, new_col in col_pairs:
+                            if await column_exists(tbl, old_col) and not await column_exists(tbl, new_col):
+                                await conn.execute(f'ALTER TABLE "{tbl}" RENAME COLUMN "{old_col}" TO "{new_col}"')
+                                stats["columns_renamed"] += 1
+                                log.info(f"    Renamed column {tbl}.{old_col} → {new_col}")
+                    old_tbl, new_tbl = "pipelines_table", "workflows_table"
+                    col_renames = [
+                        ("pipeline_id", "workflow_id"),
+                        ("pipeline_name", "workflow_name"),
+                        ("pipeline_description", "workflow_description"),
+                        ("pipeline_definition", "workflow_definition"),
+                    ]
+                    if await table_exists(old_tbl):
+                        if await table_exists(new_tbl):
+                            log.info(f"  Both '{old_tbl}' and '{new_tbl}' exist — merging …")
+                            dup_rows = await conn.fetch(f"""
+                                SELECT w.workflow_id AS new_id, p.pipeline_id AS old_id,
+                                       w.workflow_name
+                                FROM "{new_tbl}" w
+                                INNER JOIN "{old_tbl}" p
+                                    ON w.workflow_name = p.pipeline_name
+                                   AND COALESCE(w.department_name, 'General')
+                                     = COALESCE(p.department_name, 'General')
+                                WHERE w.workflow_id != p.pipeline_id
+                            """)
+                            for dup in dup_rows:
+                                new_id, old_id = dup['new_id'], dup['old_id']
+                                log.info(f"    Dedup '{dup['workflow_name']}': drop new_id={new_id}, keep old_id={old_id}")
+                                if await table_exists("agent_workflow_mapping_table"):
+                                    await conn.execute(
+                                        "DELETE FROM agent_workflow_mapping_table WHERE workflow_id = $1", new_id
+                                    )
+                                    log.info(f"    Removed mapping rows for duplicate new_id={new_id}")
+
+                            for dup in dup_rows:
+                                await conn.execute(f'DELETE FROM "{new_tbl}" WHERE workflow_id = $1', dup['new_id'])
+                                stats["rows_migrated"] += 1
+
+                            result = await conn.execute(f"""
+                                INSERT INTO "{new_tbl}" (
+                                    workflow_id, workflow_name, workflow_description,
+                                    workflow_definition, created_by, department_name,
+                                    created_at, updated_at, is_active, is_public
+                                )
+                                SELECT
+                                    pipeline_id, pipeline_name, pipeline_description,
+                                    pipeline_definition, created_by, department_name,
+                                    created_at, updated_at, is_active, is_public
+                                FROM "{old_tbl}"
+                                WHERE pipeline_id NOT IN (SELECT workflow_id FROM "{new_tbl}")
+                            """)
+                            count = int(result.split()[-1]) if result else 0
+                            stats["rows_migrated"] += count
+                            log.info(f"    Copied {count} rows from '{old_tbl}'.")
+                            await conn.execute(f'DROP TABLE "{old_tbl}" CASCADE')
+                            stats["old_tables_dropped"] += 1
+                            log.info(f"    Dropped '{old_tbl}'.")
+                        else:
+                            log.info(f"  Renaming '{old_tbl}' → '{new_tbl}' …")
+                            await conn.execute(f'ALTER TABLE "{old_tbl}" RENAME TO "{new_tbl}"')
+                            stats["tables_renamed"] += 1
+                            await rename_columns(new_tbl, col_renames)
+                    else:
+                        log.info(f"  '{old_tbl}' does not exist — nothing to do.")
+                        stats["skipped"] += 1
+
+                    old_tbl, new_tbl = "agent_pipeline_mapping_table", "agent_workflow_mapping_table"
+                    col_renames = [
+                        ("pipeline_id", "workflow_id"),
+                        ("pipeline_created_by", "workflow_created_by"),
+                    ]
+                    if await table_exists(old_tbl):
+                        if await table_exists(new_tbl):
+                            log.info(f"  Both '{old_tbl}' and '{new_tbl}' exist — merging …")
+                            result = await conn.execute(f"""
+                                INSERT INTO "{new_tbl}" (
+                                    agentic_application_id, workflow_id,
+                                    agent_created_by, workflow_created_by
+                                )
+                                SELECT
+                                    agentic_application_id, pipeline_id,
+                                    agent_created_by, pipeline_created_by
+                                FROM "{old_tbl}" AS old
+                                WHERE NOT EXISTS (
+                                    SELECT 1 FROM "{new_tbl}" AS new
+                                    WHERE new.agentic_application_id = old.agentic_application_id
+                                      AND new.workflow_id = old.pipeline_id
+                                )
+                            """)
+                            count = int(result.split()[-1]) if result else 0
+                            stats["rows_migrated"] += count
+                            log.info(f"    Copied {count} rows from '{old_tbl}'.")
+                            await conn.execute(f'DROP TABLE "{old_tbl}" CASCADE')
+                            stats["old_tables_dropped"] += 1
+                            log.info(f"    Dropped '{old_tbl}'.")
+                        else:
+                            log.info(f"  Renaming '{old_tbl}' → '{new_tbl}' …")
+                            await conn.execute(f'ALTER TABLE "{old_tbl}" RENAME TO "{new_tbl}"')
+                            stats["tables_renamed"] += 1
+                            await rename_columns(new_tbl, col_renames)
+                    else:
+                        log.info(f"  '{old_tbl}' does not exist — nothing to do.")
+                        stats["skipped"] += 1
+                    old_tbl, new_tbl = "pipelines_run", "workflows_run"
+                    if await table_exists(old_tbl):
+                        if await table_exists(new_tbl):
+                            log.info(f"  Both '{old_tbl}' and '{new_tbl}' exist — merging …")
+                            result = await conn.execute(f"""
+                                INSERT INTO "{new_tbl}" (
+                                    id, workflow_id, session_id, user_query,
+                                    final_response, status, response_time,
+                                    created_at, completed_at
+                                )
+                                SELECT
+                                    id, pipeline_id, session_id, user_query,
+                                    final_response, status, response_time,
+                                    created_at, completed_at
+                                FROM "{old_tbl}"
+                                WHERE id NOT IN (SELECT id FROM "{new_tbl}")
+                            """)
+                            count = int(result.split()[-1]) if result else 0
+                            stats["rows_migrated"] += count
+                            log.info(f"    Copied {count} rows from '{old_tbl}'.")
+                            await conn.execute(f'DROP TABLE "{old_tbl}" CASCADE')
+                            stats["old_tables_dropped"] += 1
+                            log.info(f"    Dropped '{old_tbl}'.")
+                        else:
+                            log.info(f"  Renaming '{old_tbl}' → '{new_tbl}' …")
+                            await conn.execute(f'ALTER TABLE "{old_tbl}" RENAME TO "{new_tbl}"')
+                            stats["tables_renamed"] += 1
+                            await rename_columns(new_tbl, [("pipeline_id", "workflow_id")])
+                    else:
+                        log.info(f"  '{old_tbl}' does not exist — nothing to do.")
+                        stats["skipped"] += 1
+
+                    old_tbl, new_tbl = "pipeline_steps", "workflow_steps"
+                    if await table_exists(old_tbl):
+                        if await table_exists(new_tbl):
+                            log.info(f"  Both '{old_tbl}' and '{new_tbl}' exist — merging …")
+                            result = await conn.execute(f"""
+                                INSERT INTO "{new_tbl}" (
+                                    id, workflow_id, step_order, agent_id,
+                                    step_data, created_at
+                                )
+                                SELECT
+                                    id, pipeline_id, step_order, agent_id,
+                                    step_data, created_at
+                                FROM "{old_tbl}"
+                                WHERE id NOT IN (SELECT id FROM "{new_tbl}")
+                            """)
+                            count = int(result.split()[-1]) if result else 0
+                            stats["rows_migrated"] += count
+                            log.info(f"    Copied {count} rows from '{old_tbl}'.")
+                            await conn.execute(f'DROP TABLE "{old_tbl}" CASCADE')
+                            stats["old_tables_dropped"] += 1
+                            log.info(f"    Dropped '{old_tbl}'.")
+                        else:
+                            log.info(f"  Renaming '{old_tbl}' → '{new_tbl}' …")
+                            await conn.execute(f'ALTER TABLE "{old_tbl}" RENAME TO "{new_tbl}"')
+                            stats["tables_renamed"] += 1
+                            await rename_columns(new_tbl, [("pipeline_id", "workflow_id")])
+                    else:
+                        log.info(f"  '{old_tbl}' does not exist — nothing to do.")
+                        stats["skipped"] += 1
+
+                    old_tbl, new_tbl = "pipeline_department_sharing", "workflow_department_sharing"
+                    col_renames = [
+                        ("pipeline_id", "workflow_id"),
+                        ("pipeline_name", "workflow_name"),
+                    ]
+                    if await table_exists(old_tbl):
+                        if await table_exists(new_tbl):
+                            log.info(f"  Both '{old_tbl}' and '{new_tbl}' exist — merging …")
+                            result = await conn.execute(f"""
+                                INSERT INTO "{new_tbl}" (
+                                    workflow_id, workflow_name, source_department,
+                                    target_department, shared_by, shared_on
+                                )
+                                SELECT
+                                    pipeline_id, pipeline_name, source_department,
+                                    target_department, shared_by, shared_on
+                                FROM "{old_tbl}" AS old
+                                WHERE NOT EXISTS (
+                                    SELECT 1 FROM "{new_tbl}" AS new
+                                    WHERE new.workflow_id = old.pipeline_id
+                                      AND new.target_department = old.target_department
+                                )
+                            """)
+                            count = int(result.split()[-1]) if result else 0
+                            stats["rows_migrated"] += count
+                            log.info(f"    Copied {count} rows from '{old_tbl}'.")
+                            await conn.execute(f'DROP TABLE "{old_tbl}" CASCADE')
+                            stats["old_tables_dropped"] += 1
+                            log.info(f"    Dropped '{old_tbl}'.")
+                        else:
+                            log.info(f"  Renaming '{old_tbl}' → '{new_tbl}' …")
+                            await conn.execute(f'ALTER TABLE "{old_tbl}" RENAME TO "{new_tbl}"')
+                            stats["tables_renamed"] += 1
+                            await rename_columns(new_tbl, col_renames)
+                    else:
+                        log.info(f"  '{old_tbl}' does not exist — already handled.")
+                        stats["skipped"] += 1
+
+                    for tbl in ["tool_generation_code_versions", "tool_generation_conversation_history"]:
+                        if await table_exists(tbl):
+                            await rename_columns(tbl, [("pipeline_id", "workflow_id")])
+                    column_fixups = {
+                        "workflows_table": [
+                            ("pipeline_id", "workflow_id"),
+                            ("pipeline_name", "workflow_name"),
+                            ("pipeline_description", "workflow_description"),
+                            ("pipeline_definition", "workflow_definition"),
+                        ],
+                        "agent_workflow_mapping_table": [
+                            ("pipeline_id", "workflow_id"),
+                            ("pipeline_created_by", "workflow_created_by"),
+                        ],
+                        "workflows_run": [("pipeline_id", "workflow_id")],
+                        "workflow_steps": [("pipeline_id", "workflow_id")],
+                        "workflow_department_sharing": [
+                            ("pipeline_id", "workflow_id"),
+                            ("pipeline_name", "workflow_name"),
+                        ],
+                    }
+                    for tbl, cols in column_fixups.items():
+                        if await table_exists(tbl):
+                            await rename_columns(tbl, cols)
+                    for tbl, old_con, new_con in [
+                        ("workflows_table", "uq_pipeline_name_department", "uq_workflow_name_department"),
+                    ]:
+                        if await table_exists(tbl) and await constraint_exists(tbl, old_con) and not await constraint_exists(tbl, new_con):
+                            await conn.execute(f'ALTER TABLE "{tbl}" RENAME CONSTRAINT "{old_con}" TO "{new_con}"')
+                            stats["constraints_renamed"] += 1
+                            log.info(f"  Renamed constraint {tbl}.{old_con} → {new_con}")
+
+                    for old_idx, new_idx in [
+                        ("idx_workflow_steps_pipeline", "idx_workflow_steps_workflow"),
+                        ("idx_conv_history_session_pipeline", "idx_conv_history_session_workflow"),
+                        ("idx_code_versions_pipeline_id", "idx_code_versions_workflow_id"),
+                        ("idx_conv_history_pipeline_id", "idx_conv_history_workflow_id"),
+                        ("idx_pipeline_steps_order", "idx_workflow_steps_order"),
+                        ("idx_pipeline_steps_pipeline", "idx_workflow_steps_workflow_id"),
+                        ("pipeline_steps_pkey", "workflow_steps_pkey"),
+                        ("idx_pipelines_pipeline_session", "idx_workflows_workflow_session"),
+                        ("idx_pipelines_session", "idx_workflows_session"),
+                        ("idx_pipelines_status", "idx_workflows_status"),
+                        ("pipelines_run_pkey", "workflows_run_pkey"),
+                    ]:
+                        if await index_exists(old_idx) and not await index_exists(new_idx):
+                            await conn.execute(f'ALTER INDEX "{old_idx}" RENAME TO "{new_idx}"')
+                            stats["indexes_renamed"] += 1
+                            log.info(f"  Renamed index {old_idx} → {new_idx}")
+
+            try:
+                async with self.login_pool.acquire() as login_conn:
+                    ra_exists = await login_conn.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema='public' AND table_name='role_access')"
+                    )
+                    if ra_exists:
+                        for field in ["read_access", "add_access", "update_access", "delete_access", "execute_access"]:
+                            try:
+                                result = await login_conn.execute(f"""
+                                    UPDATE role_access
+                                       SET {field} = ({field} - 'pipelines') || jsonb_build_object('workflows', {field}->'pipelines')
+                                     WHERE {field} ? 'pipelines'
+                                """)
+                                count = int(result.split()[-1]) if result else 0
+                                if count > 0:
+                                    stats["jsonb_keys_renamed"] += count
+                                    log.info(f"  JSONB key rename role_access.{field}: pipelines → workflows ({count} rows)")
+                            except Exception as exc:
+                                log.debug(f"  JSONB key rename skip for {field}: {exc}")
+                    else:
+                        log.debug("  role_access table not found in login DB — skipping JSONB key rename")
+            except Exception as exc:
+                log.warning(f"  Could not update JSONB keys in role_access: {exc}")
+
+            try:
+                migration_info = {"completed_migrations": []}
+                if os.path.exists(MIGRATION_INFO_FILE):
+                    with open(MIGRATION_INFO_FILE, 'r') as f:
+                        migration_info = json.load(f)
+
+                if "completed_migrations" not in migration_info:
+                    migration_info["completed_migrations"] = []
+
+                if MIGRATION_ID not in migration_info["completed_migrations"]:
+                    migration_info["completed_migrations"].append(MIGRATION_ID)
+
+                migration_info[MIGRATION_ID] = {
+                    "completed_at": datetime.now().isoformat(),
+                    "stats": stats
+                }
+
+                with open(MIGRATION_INFO_FILE, 'w') as f:
+                    json.dump(migration_info, f, indent=2)
+                log.info(f"Migration '{MIGRATION_ID}' marked as completed in {MIGRATION_INFO_FILE}")
+            except Exception as e:
+                log.warning(f"Could not update migration-info file: {e}")
+
+            log.info(f"'{MIGRATION_ID}' schema migration complete. Stats: {stats}")
+            return stats
+
+        except Exception as e:
+            error_msg = f"Migration '{MIGRATION_ID}' failed: {str(e)}"
+            stats["errors"].append(error_msg)
+            log.error(error_msg)
+            return stats
+
+    async def migrate_ppl_to_wf_prefix(self) -> Dict[str, Any]:
+        """
+        One-time migration: updates all workflow IDs from 'ppl_' prefix to 'wf_' prefix.
+
+        Updates workflow_id values in all relevant tables:
+        - workflows_table (primary key)
+        - workflows_run (references workflow_id, no FK constraint)
+        - workflow_steps (references workflow_id, no FK constraint)
+        - agent_workflow_mapping_table (FK → workflows_table)
+        - workflow_department_sharing (FK → workflows_table)
+        - tool_generation_code_versions (references workflow_id)
+        - tool_generation_conversation_history (references workflow_id)
+
+        FK constraints on agent_workflow_mapping_table and workflow_department_sharing
+        are temporarily dropped and re-added because they have ON DELETE CASCADE
+        but NOT ON UPDATE CASCADE.
+
+        Guarded by migration-info.json — runs once per database.
+        """
+        MIGRATION_ID = "ppl_to_wf_prefix_v1"
+        MIGRATION_INFO_FILE = "migration-info.json"
+
+        stats = {
+            "rows_updated": 0,
+            "tables_updated": [],
+            "errors": []
+        }
+
+        try:
+            if os.path.exists(MIGRATION_INFO_FILE):
+                with open(MIGRATION_INFO_FILE, 'r') as f:
+                    migration_info = json.load(f)
+                if MIGRATION_ID in migration_info.get("completed_migrations", []):
+                    log.info(f"Migration '{MIGRATION_ID}' already completed. Skipping.")
+                    return {"skipped": True, "reason": f"Migration '{MIGRATION_ID}' already completed"}
+        except Exception as e:
+            log.warning(f"Could not read migration-info file: {e}. Proceeding with migration.")
+
+        log.info(f"Running '{MIGRATION_ID}' workflow ID prefix migration …")
+
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+
+                    async def table_exists(tbl: str) -> bool:
+                        return await conn.fetchval(
+                            "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                            "WHERE table_schema='public' AND table_name=$1)", tbl
+                        )
+
+                    async def get_fk_constraint_name(child_tbl: str, parent_tbl: str) -> str:
+                        """Find the FK constraint name linking child_tbl.workflow_id → parent_tbl."""
+                        return await conn.fetchval("""
+                            SELECT tc.constraint_name
+                            FROM information_schema.table_constraints tc
+                            JOIN information_schema.key_column_usage kcu
+                                ON tc.constraint_name = kcu.constraint_name
+                            JOIN information_schema.constraint_column_usage ccu
+                                ON tc.constraint_name = ccu.constraint_name
+                            WHERE tc.constraint_type = 'FOREIGN KEY'
+                              AND tc.table_name = $1
+                              AND ccu.table_name = $2
+                              AND kcu.column_name = 'workflow_id'
+                        """, child_tbl, parent_tbl)
+                    dropped_fks = []
+                    fk_tables_with_constraint = [
+                        "agent_workflow_mapping_table",
+                        "workflow_department_sharing",
+                    ]
+                    for child_tbl in fk_tables_with_constraint:
+                        if await table_exists(child_tbl):
+                            fk_name = await get_fk_constraint_name(child_tbl, "workflows_table")
+                            if fk_name:
+                                await conn.execute(f'ALTER TABLE "{child_tbl}" DROP CONSTRAINT "{fk_name}"')
+                                dropped_fks.append((child_tbl, fk_name))
+                                log.info(f"  Temporarily dropped FK constraint '{fk_name}' on '{child_tbl}'")
+
+                    all_tables = [
+                        "workflows_table",
+                        "workflows_run",
+                        "workflow_steps",
+                        "agent_workflow_mapping_table",
+                        "workflow_department_sharing",
+                        "tool_generation_code_versions",
+                        "tool_generation_conversation_history",
+                    ]
+
+                    for tbl in all_tables:
+                        if await table_exists(tbl):
+                            has_col = await conn.fetchval(
+                                "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+                                "WHERE table_name=$1 AND column_name='workflow_id')", tbl
+                            )
+                            if has_col:
+                                result = await conn.execute(f"""
+                                    UPDATE "{tbl}"
+                                    SET workflow_id = 'wf_' || substring(workflow_id FROM 5)
+                                    WHERE workflow_id LIKE 'ppl_%%'
+                                """)
+                                count = int(result.split()[-1]) if result else 0
+                                if count > 0:
+                                    stats["rows_updated"] += count
+                                    stats["tables_updated"].append(f"{tbl}: {count} rows")
+                                    log.info(f"  Updated {count} workflow_id values in '{tbl}' (ppl_ → wf_)")
+
+                    for child_tbl, fk_name in dropped_fks:
+                        await conn.execute(f"""
+                            ALTER TABLE "{child_tbl}"
+                            ADD CONSTRAINT "{fk_name}"
+                            FOREIGN KEY (workflow_id) REFERENCES workflows_table(workflow_id) ON DELETE CASCADE
+                        """)
+                        log.info(f"  Re-added FK constraint '{fk_name}' on '{child_tbl}'")
+
+            try:
+                migration_info = {"completed_migrations": []}
+                if os.path.exists(MIGRATION_INFO_FILE):
+                    with open(MIGRATION_INFO_FILE, 'r') as f:
+                        migration_info = json.load(f)
+
+                if "completed_migrations" not in migration_info:
+                    migration_info["completed_migrations"] = []
+
+                if MIGRATION_ID not in migration_info["completed_migrations"]:
+                    migration_info["completed_migrations"].append(MIGRATION_ID)
+
+                migration_info[MIGRATION_ID] = {
+                    "completed_at": datetime.now().isoformat(),
+                    "stats": stats
+                }
+
+                with open(MIGRATION_INFO_FILE, 'w') as f:
+                    json.dump(migration_info, f, indent=2)
+                log.info(f"Migration '{MIGRATION_ID}' marked as completed in {MIGRATION_INFO_FILE}")
+            except Exception as e:
+                log.warning(f"Could not update migration-info file: {e}")
+
+            log.info(f"'{MIGRATION_ID}' prefix migration complete. Stats: {stats}")
+            return stats
+
+        except Exception as e:
+            error_msg = f"Migration '{MIGRATION_ID}' failed: {str(e)}"
+            stats["errors"].append(error_msg)
+            log.error(error_msg)
+            return stats
+
+
+# --- Workflow Run Repository ---
+
+class WorkflowRunRepository(BaseRepository):
+    """
+    Repository for the 'workflows' run table.
+    Handles direct database interactions for workflow run tracking.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.WORKFLOWS_RUN.value):
+        """
+        Initializes the WorkflowRunRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
             login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
-            table_name (str): The name of the pipelines run table.
+            table_name (str): The name of the workflows run table.
         """
         super().__init__(pool, login_pool, table_name)
 
     async def create_table_if_not_exists(self) -> None:
         """
-        Creates the 'pipelines' run table in PostgreSQL if it does not exist.
+        Creates the 'workflows' run table in PostgreSQL if it does not exist.
         """
         try:
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 id TEXT PRIMARY KEY,
-                pipeline_id TEXT,
+                workflow_id TEXT,
                 session_id TEXT,
                 user_query TEXT NOT NULL,
                 final_response TEXT,
@@ -8558,9 +10301,9 @@ class PipelineRunRepository(BaseRepository):
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 completed_at TIMESTAMP WITH TIME ZONE
             );
-            CREATE INDEX IF NOT EXISTS idx_pipelines_status ON {self.table_name}(status);
-            CREATE INDEX IF NOT EXISTS idx_pipelines_session ON {self.table_name}(session_id);
-            CREATE INDEX IF NOT EXISTS idx_pipelines_pipeline_session ON {self.table_name}(pipeline_id, session_id);
+            CREATE INDEX IF NOT EXISTS idx_workflows_status ON {self.table_name}(status);
+            CREATE INDEX IF NOT EXISTS idx_workflows_session ON {self.table_name}(session_id);
+            CREATE INDEX IF NOT EXISTS idx_workflows_workflow_session ON {self.table_name}(workflow_id, session_id);
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
@@ -8568,14 +10311,14 @@ class PipelineRunRepository(BaseRepository):
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
 
-    async def create_run(self, run_id: str, user_query: str, pipeline_id: str = None, session_id: str = None, status: str = "pending") -> bool:
+    async def create_run(self, run_id: str, user_query: str, workflow_id: str = None, session_id: str = None, status: str = "pending") -> bool:
         """
-        Insert a run record into pipelines table.
+        Insert a run record into workflows table.
 
         Args:
             run_id: Unique identifier for this run
             user_query: The user's input query
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
             session_id: The user session ID for conversation tracking
             status: Initial status (default: pending)
 
@@ -8586,17 +10329,17 @@ class PipelineRunRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    f"INSERT INTO {self.table_name}(id, pipeline_id, session_id, user_query, status, created_at) VALUES($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) ON CONFLICT(id) DO NOTHING",
+                    f"INSERT INTO {self.table_name}(id, workflow_id, session_id, user_query, status, created_at) VALUES($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) ON CONFLICT(id) DO NOTHING",
                     run_id,
-                    pipeline_id,
+                    workflow_id,
                     session_id,
                     user_query,
                     status,
                 )
-            log.info(f"Pipeline run '{run_id}' created successfully with status '{status}'.")
+            log.info(f"Workflow run '{run_id}' created successfully with status '{status}'.")
             return True
         except Exception as e:
-            log.error(f"Error creating pipeline run '{run_id}': {e}")
+            log.error(f"Error creating workflow run '{run_id}': {e}")
             return False
 
     async def update_status(self, run_id: str, status: str, final_response: Optional[str] = None, response_time: Optional[float] = None) -> bool:
@@ -8629,15 +10372,15 @@ class PipelineRunRepository(BaseRepository):
                         run_id,
                         status,
                     )
-            log.info(f"Pipeline run '{run_id}' status updated to '{status}'.")
+            log.info(f"Workflow run '{run_id}' status updated to '{status}'.")
             return True
         except Exception as e:
-            log.error(f"Error updating pipeline run status for '{run_id}': {e}")
+            log.error(f"Error updating workflow run status for '{run_id}': {e}")
             return False
 
     async def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get a pipeline run by ID.
+        Get a workflow run by ID.
 
         Args:
             run_id: The run ID to retrieve
@@ -8653,33 +10396,33 @@ class PipelineRunRepository(BaseRepository):
                 return dict(row)
             return None
         except Exception as e:
-            log.error(f"Error retrieving pipeline run '{run_id}': {e}")
+            log.error(f"Error retrieving workflow run '{run_id}': {e}")
             return None
 
-    async def get_runs_by_session(self, pipeline_id: str, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_runs_by_session(self, workflow_id: str, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        Get pipeline runs by pipeline_id and session_id for conversation history.
+        Get workflow runs by workflow_id and session_id for conversation history.
 
         Args:
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
             session_id: The user session ID
             limit: Maximum number of records to return
 
         Returns:
             List of run dictionaries ordered by created_at descending
         """
-        query = f"SELECT * FROM {self.table_name} WHERE pipeline_id = $1 AND session_id = $2 AND status = 'completed' ORDER BY created_at DESC LIMIT $3"
+        query = f"SELECT * FROM {self.table_name} WHERE workflow_id = $1 AND session_id = $2 AND status = 'completed' ORDER BY created_at DESC LIMIT $3"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, pipeline_id, session_id, limit)
+                rows = await conn.fetch(query, workflow_id, session_id, limit)
             return [dict(row) for row in rows]
         except Exception as e:
-            log.error(f"Error retrieving pipeline runs by session '{session_id}': {e}")
+            log.error(f"Error retrieving workflow runs by session '{session_id}': {e}")
             return []
 
     async def get_runs_by_status(self, status: str, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        Get pipeline runs by status.
+        Get workflow runs by status.
 
         Args:
             status: The status to filter by
@@ -8694,58 +10437,58 @@ class PipelineRunRepository(BaseRepository):
                 rows = await conn.fetch(query, status, limit)
             return [dict(row) for row in rows]
         except Exception as e:
-            log.error(f"Error retrieving pipeline runs by status '{status}': {e}")
+            log.error(f"Error retrieving workflow runs by status '{status}': {e}")
             return []
 
-    async def delete_runs_by_session(self, pipeline_id: str, session_id: str) -> bool:
+    async def delete_runs_by_session(self, workflow_id: str, session_id: str) -> bool:
         """
-        Delete all pipeline runs for a given pipeline_id and session_id.
+        Delete all workflow runs for a given workflow_id and session_id.
 
         Args:
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
             session_id: The user session ID
 
         Returns:
             bool: True if successful, False otherwise
         """
-        query = f"DELETE FROM {self.table_name} WHERE pipeline_id = $1 AND session_id = $2"
+        query = f"DELETE FROM {self.table_name} WHERE workflow_id = $1 AND session_id = $2"
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(query, pipeline_id, session_id)
-            log.info(f"Pipeline runs deleted for pipeline '{pipeline_id}' and session '{session_id}'.")
+                await conn.execute(query, workflow_id, session_id)
+            log.info(f"Workflow runs deleted for workflow '{workflow_id}' and session '{session_id}'.")
             return True
         except Exception as e:
-            log.error(f"Error deleting pipeline runs for session '{session_id}': {e}")
+            log.error(f"Error deleting workflow runs for session '{session_id}': {e}")
             return False
 
-    async def get_run_ids_by_session(self, pipeline_id: str, session_id: str) -> List[str]:
+    async def get_run_ids_by_session(self, workflow_id: str, session_id: str) -> List[str]:
         """
-        Get all run IDs for a given pipeline_id and session_id.
+        Get all run IDs for a given workflow_id and session_id.
 
         Args:
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
             session_id: The user session ID
 
         Returns:
             List of run IDs
         """
-        query = f"SELECT id FROM {self.table_name} WHERE pipeline_id = $1 AND session_id = $2"
+        query = f"SELECT id FROM {self.table_name} WHERE workflow_id = $1 AND session_id = $2"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, pipeline_id, session_id)
+                rows = await conn.fetch(query, workflow_id, session_id)
             return [row['id'] for row in rows]
         except Exception as e:
             log.error(f"Error getting run IDs for session '{session_id}': {e}")
             return []
 
-    async def get_sessions_by_user_and_pipeline(self, user_email: str, pipeline_id: str) -> List[Dict[str, Any]]:
+    async def get_sessions_by_user_and_workflow(self, user_email: str, workflow_id: str) -> List[Dict[str, Any]]:
         """
-        Get distinct sessions for a user and pipeline.
+        Get distinct sessions for a user and workflow.
         Session IDs typically contain the user email (e.g., "user@example.com_sessionname").
 
         Args:
             user_email: The user's email address
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
 
         Returns:
             List of dicts with session_id and latest timestamp
@@ -8753,54 +10496,54 @@ class PipelineRunRepository(BaseRepository):
         query = f"""
             SELECT DISTINCT session_id, MAX(created_at) as latest_timestamp
             FROM {self.table_name}
-            WHERE pipeline_id = $1 AND session_id LIKE $2 AND status = 'completed'
+            WHERE workflow_id = $1 AND session_id LIKE $2 AND status = 'completed'
             GROUP BY session_id
             ORDER BY latest_timestamp DESC
         """
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, pipeline_id, f"{user_email}%")
+                rows = await conn.fetch(query, workflow_id, f"{user_email}%")
             return [dict(row) for row in rows]
         except Exception as e:
-            log.error(f"Error getting sessions for user '{user_email}' and pipeline '{pipeline_id}': {e}")
+            log.error(f"Error getting sessions for user '{user_email}' and workflow '{workflow_id}': {e}")
             return []
 
 
-# --- Pipeline Steps Repository ---
+# --- Workflow Steps Repository ---
 
-class PipelineStepsRepository(BaseRepository):
+class WorkflowStepsRepository(BaseRepository):
     """
-    Repository for the 'pipeline_steps' table.
-    Handles direct database interactions for pipeline step tracking.
+    Repository for the 'workflow_steps' table.
+    Handles direct database interactions for workflow step tracking.
     """
 
-    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.PIPELINE_STEPS.value):
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool, table_name: str = TableNames.WORKFLOW_STEPS.value):
         """
-        Initializes the PipelineStepsRepository.
+        Initializes the WorkflowStepsRepository.
 
         Args:
             pool (asyncpg.Pool): The asyncpg connection pool.
             login_pool (asyncpg.Pool): The asyncpg connection pool for login-related operations.
-            table_name (str): The name of the pipeline steps table.
+            table_name (str): The name of the workflow steps table.
         """
         super().__init__(pool, login_pool, table_name)
 
     async def create_table_if_not_exists(self) -> None:
         """
-        Creates the 'pipeline_steps' table in PostgreSQL if it does not exist.
+        Creates the 'workflow_steps' table in PostgreSQL if it does not exist.
         """
         try:
             create_statement = f"""
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 id TEXT PRIMARY KEY,
-                pipeline_id TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
                 step_order INT NOT NULL,
                 agent_id TEXT,
                 step_data JSONB,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE INDEX IF NOT EXISTS idx_pipeline_steps_pipeline ON {self.table_name}(pipeline_id);
-            CREATE INDEX IF NOT EXISTS idx_pipeline_steps_order ON {self.table_name}(step_order);
+            CREATE INDEX IF NOT EXISTS idx_workflow_steps_workflow ON {self.table_name}(workflow_id);
+            CREATE INDEX IF NOT EXISTS idx_workflow_steps_order ON {self.table_name}(step_order);
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
@@ -8810,11 +10553,11 @@ class PipelineStepsRepository(BaseRepository):
 
     async def add_step(self, run_id: str, step_order: int, agent_id: str, step_data: dict) -> bool:
         """
-        Insert a step record for a pipeline run.
+        Insert a step record for a workflow run.
 
         Args:
-            run_id: The pipeline run ID (foreign key to pipelines table)
-            step_order: The order/sequence of this step in the pipeline
+            run_id: The workflow run ID (foreign key to workflows table)
+            step_order: The order/sequence of this step in the workflow
             agent_id: The agent ID that executed this step
             step_data: JSON data containing step execution details
 
@@ -8826,30 +10569,30 @@ class PipelineStepsRepository(BaseRepository):
             step_id = str(uuid.uuid4())
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    f"INSERT INTO {self.table_name}(id, pipeline_id, step_order, agent_id, step_data) VALUES($1, $2, $3, $4, $5)",
+                    f"INSERT INTO {self.table_name}(id, workflow_id, step_order, agent_id, step_data) VALUES($1, $2, $3, $4, $5)",
                     step_id,
                     run_id,
                     step_order,
                     agent_id,
                     json.dumps(step_data) if step_data is not None else json.dumps({}),
                 )
-            log.info(f"Pipeline step added for run '{run_id}' with order {step_order}.")
+            log.info(f"Workflow step added for run '{run_id}' with order {step_order}.")
             return True
         except Exception as e:
-            log.error(f"Error adding pipeline step for run '{run_id}': {e}")
+            log.error(f"Error adding workflow step for run '{run_id}': {e}")
             return False
 
     async def get_steps_by_run(self, run_id: str) -> List[Dict[str, Any]]:
         """
-        Get all steps for a pipeline run.
+        Get all steps for a workflow run.
 
         Args:
-            run_id: The pipeline run ID
+            run_id: The workflow run ID
 
         Returns:
             List of step dictionaries ordered by step_order
         """
-        query = f"SELECT * FROM {self.table_name} WHERE pipeline_id = $1 ORDER BY step_order ASC"
+        query = f"SELECT * FROM {self.table_name} WHERE workflow_id = $1 ORDER BY step_order ASC"
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(query, run_id)
@@ -8861,7 +10604,7 @@ class PipelineStepsRepository(BaseRepository):
                 result.append(row_dict)
             return result
         except Exception as e:
-            log.error(f"Error retrieving pipeline steps for run '{run_id}': {e}")
+            log.error(f"Error retrieving workflow steps for run '{run_id}': {e}")
             return []
 
     async def get_step(self, step_id: str) -> Optional[Dict[str, Any]]:
@@ -8885,20 +10628,20 @@ class PipelineStepsRepository(BaseRepository):
                 return row_dict
             return None
         except Exception as e:
-            log.error(f"Error retrieving pipeline step '{step_id}': {e}")
+            log.error(f"Error retrieving workflow step '{step_id}': {e}")
             return None
 
     async def get_latest_step_order(self, run_id: str) -> int:
         """
-        Get the latest step order for a pipeline run.
+        Get the latest step order for a workflow run.
 
         Args:
-            run_id: The pipeline run ID
+            run_id: The workflow run ID
 
         Returns:
             int: The latest step order, or 0 if no steps exist
         """
-        query = f"SELECT MAX(step_order) FROM {self.table_name} WHERE pipeline_id = $1"
+        query = f"SELECT MAX(step_order) FROM {self.table_name} WHERE workflow_id = $1"
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(query, run_id)
@@ -8909,22 +10652,22 @@ class PipelineStepsRepository(BaseRepository):
 
     async def delete_steps_by_run(self, run_id: str) -> bool:
         """
-        Delete all steps for a pipeline run.
+        Delete all steps for a workflow run.
 
         Args:
-            run_id: The pipeline run ID
+            run_id: The workflow run ID
 
         Returns:
             bool: True if successful, False otherwise
         """
-        query = f"DELETE FROM {self.table_name} WHERE pipeline_id = $1"
+        query = f"DELETE FROM {self.table_name} WHERE workflow_id = $1"
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(query, run_id)
-            log.info(f"Pipeline steps deleted for run '{run_id}'.")
+            log.info(f"Workflow steps deleted for run '{run_id}'.")
             return True
         except Exception as e:
-            log.error(f"Error deleting pipeline steps for run '{run_id}': {e}")
+            log.error(f"Error deleting workflow steps for run '{run_id}': {e}")
             return False
 
 
@@ -9109,10 +10852,10 @@ class KnowledgebaseRepository(BaseRepository):
     async def get_knowledgebase_by_name(self, kb_name: str, department_name: str = None) -> Optional[Dict[str, Any]]:
         """Retrieve a specific knowledgebase record by name, optionally filtered by department."""
         if department_name:
-            select_statement = f"SELECT * FROM {self.table_name} WHERE knowledgebase_name = $1 AND department_name = $2"
+            select_statement = f"SELECT * FROM {self.table_name} WHERE LOWER(knowledgebase_name) = LOWER($1) AND department_name = $2"
             params = [kb_name, department_name]
         else:
-            select_statement = f"SELECT * FROM {self.table_name} WHERE knowledgebase_name = $1"
+            select_statement = f"SELECT * FROM {self.table_name} WHERE LOWER(knowledgebase_name) = LOWER($1)"
             params = [kb_name]
         
         try:
@@ -9438,7 +11181,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 version_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
-                pipeline_id TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
                 version_number INTEGER NOT NULL,
                 code_snippet TEXT NOT NULL,
                 label TEXT,
@@ -9448,13 +11191,24 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 metadata JSONB DEFAULT '{{}}'::jsonb
             );
-            CREATE INDEX IF NOT EXISTS idx_code_versions_session_id ON {self.table_name}(session_id);
-            CREATE INDEX IF NOT EXISTS idx_code_versions_pipeline_id ON {self.table_name}(pipeline_id);
-            CREATE INDEX IF NOT EXISTS idx_code_versions_session_version ON {self.table_name}(session_id, version_number);
-            CREATE INDEX IF NOT EXISTS idx_code_versions_is_current ON {self.table_name}(session_id, is_current);
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                # Migration: rename old pipeline_id column to workflow_id if it exists
+                await conn.execute(f"""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'pipeline_id')
+                           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'workflow_id')
+                        THEN
+                            ALTER TABLE {self.table_name} RENAME COLUMN pipeline_id TO workflow_id;
+                        END IF;
+                    END $$;
+                """)
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_session_id ON {self.table_name}(session_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_workflow_id ON {self.table_name}(workflow_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_session_version ON {self.table_name}(session_id, version_number)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_is_current ON {self.table_name}(session_id, is_current)")
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -9462,7 +11216,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
     async def save_code_version(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         code_snippet: str,
         created_by: str,
         label: Optional[str] = None,
@@ -9478,7 +11232,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             code_snippet: The code to save
             created_by: Email of the creator
             label: Optional label for the version (e.g., "Initial version", "Added error handling")
@@ -9537,7 +11291,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
         
         insert_statement = f"""
         INSERT INTO {self.table_name} 
-        (version_id, session_id, pipeline_id, version_number, code_snippet, label, is_auto_saved, is_current, created_by, metadata)
+        (version_id, session_id, workflow_id, version_number, code_snippet, label, is_auto_saved, is_current, created_by, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9)
         RETURNING version_id, version_number, created_at
         """
@@ -9556,7 +11310,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
                         insert_statement,
                         version_id,
                         session_id,
-                        pipeline_id,
+                        workflow_id,
                         version_number,
                         code_snippet,
                         label,
@@ -9593,7 +11347,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
         Returns:
             List of version dictionaries ordered by version_number descending
         """
-        columns = "version_id, session_id, pipeline_id, version_number, label, is_auto_saved, is_current, created_by, created_at, metadata"
+        columns = "version_id, session_id, workflow_id, version_number, label, is_auto_saved, is_current, created_by, created_at, metadata"
         if include_code:
             columns += ", code_snippet"
         
@@ -9905,7 +11659,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 message_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
-                pipeline_id TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
                 role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                 message TEXT NOT NULL,
                 code_snippet TEXT,
@@ -9913,13 +11667,23 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 metadata JSONB DEFAULT '{{}}'::jsonb
             );
-            CREATE INDEX IF NOT EXISTS idx_conv_history_session_id ON {self.table_name}(session_id);
-            CREATE INDEX IF NOT EXISTS idx_conv_history_pipeline_id ON {self.table_name}(pipeline_id);
-            CREATE INDEX IF NOT EXISTS idx_conv_history_session_pipeline ON {self.table_name}(session_id, pipeline_id);
-            CREATE INDEX IF NOT EXISTS idx_conv_history_created_at ON {self.table_name}(created_at);
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                await conn.execute(f"""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'pipeline_id')
+                           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'workflow_id')
+                        THEN
+                            ALTER TABLE {self.table_name} RENAME COLUMN pipeline_id TO workflow_id;
+                        END IF;
+                    END $$;
+                """)
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_session_id ON {self.table_name}(session_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_workflow_id ON {self.table_name}(workflow_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_session_workflow ON {self.table_name}(session_id, workflow_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_created_at ON {self.table_name}(created_at)")
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -9927,7 +11691,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def save_message(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         role: str,
         message: str,
         code_snippet: Optional[str] = None,
@@ -9939,7 +11703,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             role: 'user' or 'assistant'
             message: The message content
             code_snippet: Optional code snippet associated with this message
@@ -9953,9 +11717,9 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
         
         query = f"""
             INSERT INTO {self.table_name} 
-            (message_id, session_id, pipeline_id, role, message, code_snippet, created_by, metadata)
+            (message_id, session_id, workflow_id, role, message, code_snippet, created_by, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+            RETURNING message_id, session_id, workflow_id, role, message, code_snippet, created_by, created_at, metadata
         """
         
         try:
@@ -9964,7 +11728,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
                     query,
                     message_id,
                     session_id,
-                    pipeline_id,
+                    workflow_id,
                     role,
                     message,
                     code_snippet,
@@ -9988,7 +11752,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_conversation_history(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
         include_code: bool = True
@@ -9998,7 +11762,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
 
         Args:
             session_id: The user's session ID
-            pipeline_id: Optional filter by pipeline ID
+            workflow_id: Optional filter by workflow ID
             limit: Maximum number of messages to return
             offset: Number of messages to skip (for pagination)
             include_code: Whether to include code snippets in response
@@ -10007,19 +11771,19 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
             List of conversation messages ordered by timestamp (oldest first)
         """
         if include_code:
-            select_fields = "message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata"
+            select_fields = "message_id, session_id, workflow_id, role, message, code_snippet, created_by, created_at, metadata"
         else:
-            select_fields = "message_id, session_id, pipeline_id, role, message, created_by, created_at, metadata"
+            select_fields = "message_id, session_id, workflow_id, role, message, created_by, created_at, metadata"
         
-        if pipeline_id:
+        if workflow_id:
             query = f"""
                 SELECT {select_fields}
                 FROM {self.table_name}
-                WHERE session_id = $1 AND pipeline_id = $2
+                WHERE session_id = $1 AND workflow_id = $2
                 ORDER BY created_at ASC
                 LIMIT $3 OFFSET $4
             """
-            params = [session_id, pipeline_id, limit, offset]
+            params = [session_id, workflow_id, limit, offset]
         else:
             query = f"""
                 SELECT {select_fields}
@@ -10052,31 +11816,31 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_latest_messages(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         count: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Gets the latest N messages for a session/pipeline.
+        Gets the latest N messages for a session/workflow.
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             count: Number of latest messages to return
 
         Returns:
             List of messages (most recent last)
         """
         query = f"""
-            SELECT message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+            SELECT message_id, session_id, workflow_id, role, message, code_snippet, created_by, created_at, metadata
             FROM {self.table_name}
-            WHERE session_id = $1 AND pipeline_id = $2
+            WHERE session_id = $1 AND workflow_id = $2
             ORDER BY created_at DESC
             LIMIT $3
         """
         
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, session_id, pipeline_id, count)
+                rows = await conn.fetch(query, session_id, workflow_id, count)
             
             result = []
             for row in rows:
@@ -10097,21 +11861,21 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def clear_conversation_history(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> bool:
         """
         Clears conversation history for a session.
 
         Args:
             session_id: The session ID
-            pipeline_id: Optional pipeline ID - if provided, only clears for that pipeline
+            workflow_id: Optional workflow ID - if provided, only clears for that workflow
 
         Returns:
             True if successful, False otherwise
         """
-        if pipeline_id:
-            query = f"DELETE FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
-            params = [session_id, pipeline_id]
+        if workflow_id:
+            query = f"DELETE FROM {self.table_name} WHERE session_id = $1 AND workflow_id = $2"
+            params = [session_id, workflow_id]
         else:
             query = f"DELETE FROM {self.table_name} WHERE session_id = $1"
             params = [session_id]
@@ -10119,7 +11883,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(query, *params)
-            log.info(f"Conversation history cleared for session '{session_id}'" + (f" pipeline '{pipeline_id}'" if pipeline_id else ""))
+            log.info(f"Conversation history cleared for session '{session_id}'" + (f" workflow '{workflow_id}'" if workflow_id else ""))
             return True
         except Exception as e:
             log.error(f"Error clearing conversation history for session '{session_id}': {e}")
@@ -10128,21 +11892,21 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_message_count(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> int:
         """
         Gets the total number of messages for a session.
 
         Args:
             session_id: The session ID
-            pipeline_id: Optional pipeline ID filter
+            workflow_id: Optional workflow ID filter
 
         Returns:
             Number of messages
         """
-        if pipeline_id:
-            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
-            params = [session_id, pipeline_id]
+        if workflow_id:
+            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1 AND workflow_id = $2"
+            params = [session_id, workflow_id]
         else:
             query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1"
             params = [session_id]
@@ -10158,28 +11922,28 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_latest_code_snippet(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Gets the latest code snippet from conversation history.
 
         Args:
             session_id: The user's session ID
-            pipeline_id: Optional filter by pipeline ID
+            workflow_id: Optional filter by workflow ID
 
         Returns:
             Dict with code_snippet, message_id, and timestamp, or None if not found
         """
-        if pipeline_id:
+        if workflow_id:
             query = f"""
                 SELECT message_id, code_snippet, created_at
                 FROM {self.table_name}
-                WHERE session_id = $1 AND pipeline_id = $2 
+                WHERE session_id = $1 AND workflow_id = $2 
                     AND code_snippet IS NOT NULL AND code_snippet != ''
                 ORDER BY created_at DESC
                 LIMIT 1
             """
-            params = [session_id, pipeline_id]
+            params = [session_id, workflow_id]
         else:
             query = f"""
                 SELECT message_id, code_snippet, created_at
@@ -10284,7 +12048,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 version_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
-                pipeline_id TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
                 version_number INTEGER NOT NULL,
                 code_snippet TEXT NOT NULL,
                 label TEXT,
@@ -10294,13 +12058,23 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 metadata JSONB DEFAULT '{{}}'::jsonb
             );
-            CREATE INDEX IF NOT EXISTS idx_code_versions_session_id ON {self.table_name}(session_id);
-            CREATE INDEX IF NOT EXISTS idx_code_versions_pipeline_id ON {self.table_name}(pipeline_id);
-            CREATE INDEX IF NOT EXISTS idx_code_versions_session_version ON {self.table_name}(session_id, version_number);
-            CREATE INDEX IF NOT EXISTS idx_code_versions_is_current ON {self.table_name}(session_id, is_current);
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                await conn.execute(f"""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'pipeline_id')
+                           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'workflow_id')
+                        THEN
+                            ALTER TABLE {self.table_name} RENAME COLUMN pipeline_id TO workflow_id;
+                        END IF;
+                    END $$;
+                """)
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_session_id ON {self.table_name}(session_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_workflow_id ON {self.table_name}(workflow_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_session_version ON {self.table_name}(session_id, version_number)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_code_versions_is_current ON {self.table_name}(session_id, is_current)")
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -10308,7 +12082,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
     async def save_code_version(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         code_snippet: str,
         created_by: str,
         label: Optional[str] = None,
@@ -10324,7 +12098,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             code_snippet: The code to save
             created_by: Email of the creator
             label: Optional label for the version (e.g., "Initial version", "Added error handling")
@@ -10383,7 +12157,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
         
         insert_statement = f"""
         INSERT INTO {self.table_name} 
-        (version_id, session_id, pipeline_id, version_number, code_snippet, label, is_auto_saved, is_current, created_by, metadata)
+        (version_id, session_id, workflow_id, version_number, code_snippet, label, is_auto_saved, is_current, created_by, metadata)
         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9)
         RETURNING version_id, version_number, created_at
         """
@@ -10402,7 +12176,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
                         insert_statement,
                         version_id,
                         session_id,
-                        pipeline_id,
+                        workflow_id,
                         version_number,
                         code_snippet,
                         label,
@@ -10439,7 +12213,7 @@ class ToolGenerationCodeVersionRepository(BaseRepository):
         Returns:
             List of version dictionaries ordered by version_number descending
         """
-        columns = "version_id, session_id, pipeline_id, version_number, label, is_auto_saved, is_current, created_by, created_at, metadata"
+        columns = "version_id, session_id, workflow_id, version_number, label, is_auto_saved, is_current, created_by, created_at, metadata"
         if include_code:
             columns += ", code_snippet"
         
@@ -10751,7 +12525,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
             CREATE TABLE IF NOT EXISTS {self.table_name} (
                 message_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
-                pipeline_id TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
                 role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                 message TEXT NOT NULL,
                 code_snippet TEXT,
@@ -10759,13 +12533,23 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 metadata JSONB DEFAULT '{{}}'::jsonb
             );
-            CREATE INDEX IF NOT EXISTS idx_conv_history_session_id ON {self.table_name}(session_id);
-            CREATE INDEX IF NOT EXISTS idx_conv_history_pipeline_id ON {self.table_name}(pipeline_id);
-            CREATE INDEX IF NOT EXISTS idx_conv_history_session_pipeline ON {self.table_name}(session_id, pipeline_id);
-            CREATE INDEX IF NOT EXISTS idx_conv_history_created_at ON {self.table_name}(created_at);
             """
             async with self.pool.acquire() as conn:
                 await conn.execute(create_statement)
+                await conn.execute(f"""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'pipeline_id')
+                           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{self.table_name}' AND column_name = 'workflow_id')
+                        THEN
+                            ALTER TABLE {self.table_name} RENAME COLUMN pipeline_id TO workflow_id;
+                        END IF;
+                    END $$;
+                """)
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_session_id ON {self.table_name}(session_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_workflow_id ON {self.table_name}(workflow_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_session_workflow ON {self.table_name}(session_id, workflow_id)")
+                await conn.execute(f"CREATE INDEX IF NOT EXISTS idx_conv_history_created_at ON {self.table_name}(created_at)")
             log.info(f"Table '{self.table_name}' created successfully or already exists.")
         except Exception as e:
             log.error(f"Error creating table '{self.table_name}': {e}")
@@ -10773,7 +12557,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def save_message(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         role: str,
         message: str,
         code_snippet: Optional[str] = None,
@@ -10785,7 +12569,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             role: 'user' or 'assistant'
             message: The message content
             code_snippet: Optional code snippet associated with this message
@@ -10799,9 +12583,9 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
         
         query = f"""
             INSERT INTO {self.table_name} 
-            (message_id, session_id, pipeline_id, role, message, code_snippet, created_by, metadata)
+            (message_id, session_id, workflow_id, role, message, code_snippet, created_by, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+            RETURNING message_id, session_id, workflow_id, role, message, code_snippet, created_by, created_at, metadata
         """
         
         try:
@@ -10810,7 +12594,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
                     query,
                     message_id,
                     session_id,
-                    pipeline_id,
+                    workflow_id,
                     role,
                     message,
                     code_snippet,
@@ -10834,7 +12618,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_conversation_history(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
         include_code: bool = True
@@ -10844,7 +12628,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
 
         Args:
             session_id: The user's session ID
-            pipeline_id: Optional filter by pipeline ID
+            workflow_id: Optional filter by workflow ID
             limit: Maximum number of messages to return
             offset: Number of messages to skip (for pagination)
             include_code: Whether to include code snippets in response
@@ -10853,19 +12637,19 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
             List of conversation messages ordered by timestamp (oldest first)
         """
         if include_code:
-            select_fields = "message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata"
+            select_fields = "message_id, session_id, workflow_id, role, message, code_snippet, created_by, created_at, metadata"
         else:
-            select_fields = "message_id, session_id, pipeline_id, role, message, created_by, created_at, metadata"
+            select_fields = "message_id, session_id, workflow_id, role, message, created_by, created_at, metadata"
         
-        if pipeline_id:
+        if workflow_id:
             query = f"""
                 SELECT {select_fields}
                 FROM {self.table_name}
-                WHERE session_id = $1 AND pipeline_id = $2
+                WHERE session_id = $1 AND workflow_id = $2
                 ORDER BY created_at ASC
                 LIMIT $3 OFFSET $4
             """
-            params = [session_id, pipeline_id, limit, offset]
+            params = [session_id, workflow_id, limit, offset]
         else:
             query = f"""
                 SELECT {select_fields}
@@ -10898,31 +12682,31 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_latest_messages(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         count: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Gets the latest N messages for a session/pipeline.
+        Gets the latest N messages for a session/workflow.
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             count: Number of latest messages to return
 
         Returns:
             List of messages (most recent last)
         """
         query = f"""
-            SELECT message_id, session_id, pipeline_id, role, message, code_snippet, created_by, created_at, metadata
+            SELECT message_id, session_id, workflow_id, role, message, code_snippet, created_by, created_at, metadata
             FROM {self.table_name}
-            WHERE session_id = $1 AND pipeline_id = $2
+            WHERE session_id = $1 AND workflow_id = $2
             ORDER BY created_at DESC
             LIMIT $3
         """
         
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, session_id, pipeline_id, count)
+                rows = await conn.fetch(query, session_id, workflow_id, count)
             
             result = []
             for row in rows:
@@ -10943,21 +12727,21 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def clear_conversation_history(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> bool:
         """
         Clears conversation history for a session.
 
         Args:
             session_id: The session ID
-            pipeline_id: Optional pipeline ID - if provided, only clears for that pipeline
+            workflow_id: Optional workflow ID - if provided, only clears for that workflow
 
         Returns:
             True if successful, False otherwise
         """
-        if pipeline_id:
-            query = f"DELETE FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
-            params = [session_id, pipeline_id]
+        if workflow_id:
+            query = f"DELETE FROM {self.table_name} WHERE session_id = $1 AND workflow_id = $2"
+            params = [session_id, workflow_id]
         else:
             query = f"DELETE FROM {self.table_name} WHERE session_id = $1"
             params = [session_id]
@@ -10965,7 +12749,7 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(query, *params)
-            log.info(f"Conversation history cleared for session '{session_id}'" + (f" pipeline '{pipeline_id}'" if pipeline_id else ""))
+            log.info(f"Conversation history cleared for session '{session_id}'" + (f" workflow '{workflow_id}'" if workflow_id else ""))
             return True
         except Exception as e:
             log.error(f"Error clearing conversation history for session '{session_id}': {e}")
@@ -10974,21 +12758,21 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_message_count(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> int:
         """
         Gets the total number of messages for a session.
 
         Args:
             session_id: The session ID
-            pipeline_id: Optional pipeline ID filter
+            workflow_id: Optional workflow ID filter
 
         Returns:
             Number of messages
         """
-        if pipeline_id:
-            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1 AND pipeline_id = $2"
-            params = [session_id, pipeline_id]
+        if workflow_id:
+            query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1 AND workflow_id = $2"
+            params = [session_id, workflow_id]
         else:
             query = f"SELECT COUNT(*) FROM {self.table_name} WHERE session_id = $1"
             params = [session_id]
@@ -11004,28 +12788,28 @@ class ToolGenerationConversationHistoryRepository(BaseRepository):
     async def get_latest_code_snippet(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Gets the latest code snippet from conversation history.
 
         Args:
             session_id: The user's session ID
-            pipeline_id: Optional filter by pipeline ID
+            workflow_id: Optional filter by workflow ID
 
         Returns:
             Dict with code_snippet, message_id, and timestamp, or None if not found
         """
-        if pipeline_id:
+        if workflow_id:
             query = f"""
                 SELECT message_id, code_snippet, created_at
                 FROM {self.table_name}
-                WHERE session_id = $1 AND pipeline_id = $2 
+                WHERE session_id = $1 AND workflow_id = $2 
                     AND code_snippet IS NOT NULL AND code_snippet != ''
                 ORDER BY created_at DESC
                 LIMIT 1
             """
-            params = [session_id, pipeline_id]
+            params = [session_id, workflow_id]
         else:
             query = f"""
                 SELECT message_id, code_snippet, created_at
@@ -11416,6 +13200,7 @@ class UserAgentAccessRepository(BaseRepository):
                 - agent_description: Description of the agent
                 - agent_created_by: Who created the agent
                 - tool_id: ID of the tool bound to the agent
+                - tool_version: Version of the tool bound to the agent
                 - tool_name: Name of the tool
                 - tool_description: Description of the tool
                 - tool_created_by: Who created the tool
@@ -11433,6 +13218,7 @@ class UserAgentAccessRepository(BaseRepository):
                         a.agentic_application_description as agent_description,
                         a.created_by as agent_created_by,
                         tam.tool_id,
+                        tam.tool_version,
                         t.tool_name,
                         t.tool_description,
                         t.created_by as tool_created_by
@@ -11462,6 +13248,7 @@ class UserAgentAccessRepository(BaseRepository):
                     "agent_description": row['agent_description'],
                     "agent_created_by": row['agent_created_by'],
                     "tool_id": row['tool_id'],
+                    "tool_version": row.get('tool_version', 'v1'),
                     "tool_name": row['tool_name'],
                     "tool_description": row['tool_description'],
                     "tool_created_by": row['tool_created_by']
@@ -11497,6 +13284,7 @@ class UserAgentAccessRepository(BaseRepository):
                 - agent_created_by: Who created the agent
                 - tools: List of tools bound to this agent, each containing:
                     - tool_id: ID of the tool
+                    - tool_version: Version of the tool
                     - tool_name: Name of the tool
                     - tool_description: Description of the tool
                     - tool_created_by: Who created the tool
@@ -11525,12 +13313,14 @@ class UserAgentAccessRepository(BaseRepository):
                 if item['tool_id']:
                     tool_info = {
                         "tool_id": item['tool_id'],
+                        "tool_version": item.get('tool_version', 'v1'),
                         "tool_name": item['tool_name'],
                         "tool_description": item['tool_description'],
                         "tool_created_by": item['tool_created_by']
                     }
-                    # Avoid duplicates
-                    if tool_info not in summary[key]['tools']:
+                    # Avoid duplicates (check tool_id and tool_version)
+                    existing_ids = [(t['tool_id'], t.get('tool_version', 'v1')) for t in summary[key]['tools']]
+                    if (tool_info['tool_id'], tool_info['tool_version']) not in existing_ids:
                         summary[key]['tools'].append(tool_info)
             
             result = list(summary.values())
@@ -11717,7 +13507,7 @@ class GroupRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    f"SELECT COUNT(*) FROM {self.table_name} WHERE LOWER(group_name) = LOWER($1) AND department_name = $2",
                     group_name, department_name
                 )
                 return result > 0
@@ -11771,7 +13561,7 @@ class GroupRepository(BaseRepository):
             Dict[str, Any]: Group information or empty dict if not found.
         """
         try:
-            query = f"SELECT * FROM {self.table_name} WHERE group_name = $1"
+            query = f"SELECT * FROM {self.table_name} WHERE LOWER(group_name) = LOWER($1)"
             params: List[Any] = [group_name]
 
             # Only include department_name condition when a non-empty value is provided
@@ -11873,7 +13663,7 @@ class GroupRepository(BaseRepository):
             params.append(group_name)
             params.append(department_name)
             
-            query = f"UPDATE {self.table_name} SET {', '.join(update_fields)} WHERE group_name = ${param_count} AND department_name = ${param_count + 1}"
+            query = f"UPDATE {self.table_name} SET {', '.join(update_fields)} WHERE LOWER(group_name) = LOWER(${param_count}) AND department_name = ${param_count + 1}"
             
             async with self.pool.acquire() as conn:
                 result = await conn.execute(query, *params)
@@ -11903,7 +13693,7 @@ class GroupRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
-                    f"DELETE FROM {self.table_name} WHERE group_name = $1 AND department_name = $2",
+                    f"DELETE FROM {self.table_name} WHERE LOWER(group_name) = LOWER($1) AND department_name = $2",
                     group_name, department_name
                 )
                 
@@ -12453,7 +14243,7 @@ class GroupSecretsRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    f"SELECT * FROM {self.table_name} WHERE group_name = $1 AND department_name = $2 AND key_name = $3",
+                    f"SELECT * FROM {self.table_name} WHERE LOWER(group_name) = LOWER($1) AND department_name = $2 AND LOWER(key_name) = LOWER($3)",
                     group_name, department_name, key_name
                 )
             
@@ -12488,7 +14278,7 @@ class GroupSecretsRepository(BaseRepository):
                     f"""
                     UPDATE {self.table_name} 
                     SET encrypted_value = $4, updated_at = CURRENT_TIMESTAMP 
-                    WHERE group_name = $1 AND department_name = $2 AND key_name = $3
+                    WHERE LOWER(group_name) = LOWER($1) AND department_name = $2 AND LOWER(key_name) = LOWER($3)
                     """,
                     group_name, department_name, key_name, encrypted_value
                 )
@@ -12519,7 +14309,7 @@ class GroupSecretsRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
-                    f"DELETE FROM {self.table_name} WHERE group_name = $1 AND department_name = $2 AND key_name = $3",
+                    f"DELETE FROM {self.table_name} WHERE LOWER(group_name) = LOWER($1) AND department_name = $2 AND LOWER(key_name) = LOWER($3)",
                     group_name, department_name, key_name
                 )
             
@@ -12580,7 +14370,7 @@ class GroupSecretsRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(
-                    f"SELECT COUNT(*) FROM {self.table_name} WHERE group_name = $1 AND department_name = $2 AND key_name = $3",
+                    f"SELECT COUNT(*) FROM {self.table_name} WHERE LOWER(group_name) = LOWER($1) AND department_name = $2 AND LOWER(key_name) = LOWER($3)",
                     group_name, department_name, key_name
                 )
                 return result > 0
@@ -12731,10 +14521,10 @@ class ToolAccessKeyMappingRepository(BaseRepository):
             Dict with tool_id, tool_name, access_keys, department_name or None if not found
         """
         if department_name:
-            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE tool_name = $1 AND department_name = $2"
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE LOWER(tool_name) = LOWER($1) AND department_name = $2"
             params = (tool_name, department_name)
         else:
-            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE tool_name = $1"
+            query = f"SELECT tool_id, tool_name, access_keys, department_name FROM {self.table_name} WHERE LOWER(tool_name) = LOWER($1)"
             params = (tool_name,)
         try:
             async with self.pool.acquire() as conn:
@@ -13075,14 +14865,14 @@ class AccessKeyDefinitionsRepository:
             query = f"""
             SELECT access_key, department_name, created_by, created_at, description
             FROM {self.table_name}
-            WHERE access_key = $1 AND department_name = $2
+            WHERE LOWER(access_key) = LOWER($1) AND department_name = $2
             """
             params = [access_key, department_name]
         else:
             query = f"""
             SELECT access_key, department_name, created_by, created_at, description
             FROM {self.table_name}
-            WHERE access_key = $1
+            WHERE LOWER(access_key) = LOWER($1)
             """
             params = [access_key]
         
@@ -13197,3 +14987,793 @@ class AccessKeyDefinitionsRepository:
         except Exception as e:
             log.error(f"Error updating access key '{access_key}': {e}")
             return {"success": False, "error": str(e)}
+
+
+# --- Task Registry Repository ---
+
+
+class TaskRegistryRepository(BaseRepository):
+    """
+    Repository for M2M task lifecycle tracking.
+    Provides efficient O(1) lookup by task_id and batch queries by batch_id.
+    """
+
+    TABLE_NAME = "task_registry"
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool):
+        super().__init__(pool, login_pool, table_name=self.TABLE_NAME)
+
+    async def create_table(self):
+        """Creates the task_registry table if it doesn't exist."""
+        create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {self.TABLE_NAME} (
+            task_id TEXT PRIMARY KEY,
+            batch_id TEXT,
+            agentic_application_id TEXT NOT NULL,
+            user_session_id TEXT NOT NULL,
+            status TEXT DEFAULT 'queued',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            started_at TIMESTAMPTZ,
+            completed_at TIMESTAMPTZ,
+            response_time_ms FLOAT,
+            error_message TEXT,
+            query TEXT,
+            model_name TEXT,
+            created_by TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_registry_batch ON {self.TABLE_NAME}(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_task_registry_status ON {self.TABLE_NAME}(status);
+        CREATE INDEX IF NOT EXISTS idx_task_registry_agent ON {self.TABLE_NAME}(agentic_application_id);
+        CREATE INDEX IF NOT EXISTS idx_task_registry_created_at ON {self.TABLE_NAME}(created_at DESC);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_sql)
+            log.info(f"Table '{self.TABLE_NAME}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.TABLE_NAME}': {e}")
+            raise
+
+    async def register_task(
+        self,
+        task_id: str,
+        agentic_application_id: str,
+        user_session_id: str,
+        query: str = None,
+        model_name: str = None,
+        batch_id: str = None,
+        created_by: str = None
+    ) -> bool:
+        """
+        Registers a new task in the registry with 'queued' status.
+        
+        Args:
+            task_id: Unique task identifier
+            agentic_application_id: The agent or workflow ID
+            user_session_id: The user's original session ID (short)
+            query: The inference query
+            model_name: The model being used
+            batch_id: Optional batch identifier for grouped tasks
+            created_by: The user who created the task
+            
+        Returns:
+            bool: True if successful
+        """
+        insert_sql = f"""
+        INSERT INTO {self.TABLE_NAME} 
+        (task_id, batch_id, agentic_application_id, user_session_id, status, query, model_name, created_by)
+        VALUES ($1, $2, $3, $4, 'queued', $5, $6, $7)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    insert_sql, 
+                    task_id, batch_id, agentic_application_id, 
+                    user_session_id, query, model_name, created_by
+                )
+            log.info(f"Task '{task_id}' registered successfully.")
+            return True
+        except Exception as e:
+            log.error(f"Error registering task '{task_id}': {e}")
+            return False
+
+    async def update_task_started(
+        self,
+        task_id: str
+    ) -> bool:
+        """
+        Updates task status to 'processing' when worker begins processing.
+        
+        Args:
+            task_id: The task identifier
+            
+        Returns:
+            bool: True if successful
+        """
+        update_sql = f"""
+        UPDATE {self.TABLE_NAME}
+        SET status = 'processing', started_at = NOW()
+        WHERE task_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_sql, task_id)
+            return "UPDATE 1" in result
+        except Exception as e:
+            log.error(f"Error updating task '{task_id}' to processing: {e}")
+            return False
+
+    async def update_task_completed(
+        self,
+        task_id: str,
+        response_time_ms: float = None
+    ) -> bool:
+        """
+        Updates task status to 'completed' with timing information.
+        
+        Args:
+            task_id: The task identifier
+            response_time_ms: Total processing time in milliseconds
+            
+        Returns:
+            bool: True if successful
+        """
+        update_sql = f"""
+        UPDATE {self.TABLE_NAME}
+        SET status = 'completed', completed_at = NOW(), response_time_ms = $2
+        WHERE task_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_sql, task_id, response_time_ms)
+            log.info(f"Task '{task_id}' marked as completed.")
+            return "UPDATE 1" in result
+        except Exception as e:
+            log.error(f"Error updating task '{task_id}' to completed: {e}")
+            return False
+
+    async def update_task_failed(
+        self,
+        task_id: str,
+        error_message: str = None
+    ) -> bool:
+        """
+        Updates task status to 'failed' with error details.
+        
+        Args:
+            task_id: The task identifier
+            error_message: The error message/description
+            
+        Returns:
+            bool: True if successful
+        """
+        update_sql = f"""
+        UPDATE {self.TABLE_NAME}
+        SET status = 'failed', completed_at = NOW(), error_message = $2
+        WHERE task_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_sql, task_id, error_message)
+            log.error(f"Task '{task_id}' marked as failed: {error_message}")
+            return "UPDATE 1" in result
+        except Exception as e:
+            log.error(f"Error updating task '{task_id}' to failed: {e}")
+            return False
+    
+    async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a task by its ID.
+        
+        Args:
+            task_id: The task identifier
+            
+        Returns:
+            Dict with task details or None if not found
+        """
+        select_sql = f"SELECT * FROM {self.TABLE_NAME} WHERE task_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(select_sql, task_id)
+            if row:
+                return dict(row)
+            return None
+        except Exception as e:
+            log.error(f"Error fetching task '{task_id}': {e}")
+            return None
+
+    async def get_batch_tasks(self, batch_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all tasks belonging to a batch.
+        
+        Args:
+            batch_id: The batch identifier
+            
+        Returns:
+            List of task dictionaries
+        """
+        select_sql = f"""
+        SELECT * FROM {self.TABLE_NAME} 
+        WHERE batch_id = $1 
+        ORDER BY created_at ASC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_sql, batch_id)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching batch '{batch_id}': {e}")
+            return []
+
+    async def get_tasks_by_agent(
+        self, 
+        agentic_application_id: str, 
+        limit: int = 100,
+        status: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves tasks for a specific agent/workflow.
+        
+        Args:
+            agentic_application_id: The agent or workflow ID
+            limit: Maximum number of tasks to return
+            status: Optional status filter
+            
+        Returns:
+            List of task dictionaries
+        """
+        if status:
+            select_sql = f"""
+            SELECT * FROM {self.TABLE_NAME} 
+            WHERE agentic_application_id = $1 AND status = $2
+            ORDER BY created_at DESC
+            LIMIT $3
+            """
+            params = (agentic_application_id, status, limit)
+        else:
+            select_sql = f"""
+            SELECT * FROM {self.TABLE_NAME} 
+            WHERE agentic_application_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """
+            params = (agentic_application_id, limit)
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_sql, *params)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching tasks for agent '{agentic_application_id}': {e}")
+            return []
+
+    async def get_tasks_by_user(
+        self,
+        created_by: str,
+        limit: int = 100,
+        status: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves tasks created by a specific user.
+        
+        Args:
+            created_by: The user identifier
+            limit: Maximum number of tasks to return
+            status: Optional status filter
+            
+        Returns:
+            List of task dictionaries
+        """
+        if status:
+            select_sql = f"""
+            SELECT * FROM {self.TABLE_NAME} 
+            WHERE created_by = $1 AND status = $2
+            ORDER BY created_at DESC
+            LIMIT $3
+            """
+            params = (created_by, status, limit)
+        else:
+            select_sql = f"""
+            SELECT * FROM {self.TABLE_NAME} 
+            WHERE created_by = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """
+            params = (created_by, limit)
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(select_sql, *params)
+            return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching tasks for user '{created_by}': {e}")
+            return []
+
+    async def get_batch_summary(self, batch_id: str) -> Dict[str, Any]:
+        """
+        Gets aggregated status summary for a batch.
+        
+        Args:
+            batch_id: The batch identifier
+            
+        Returns:
+            Dict with counts by status and timing info
+        """
+        summary_sql = f"""
+        SELECT 
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE status = 'queued') as queued,
+            COUNT(*) FILTER (WHERE status = 'processing') as processing,
+            COUNT(*) FILTER (WHERE status = 'completed') as completed,
+            COUNT(*) FILTER (WHERE status = 'failed') as failed,
+            AVG(response_time_ms) FILTER (WHERE status = 'completed') as avg_response_time_ms,
+            MIN(created_at) as batch_started_at,
+            MAX(completed_at) as batch_completed_at
+        FROM {self.TABLE_NAME}
+        WHERE batch_id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(summary_sql, batch_id)
+            if row:
+                return {
+                    "batch_id": batch_id,
+                    "total": row["total"],
+                    "queued": row["queued"],
+                    "processing": row["processing"],
+                    "completed": row["completed"],
+                    "failed": row["failed"],
+                    "avg_response_time_ms": float(row["avg_response_time_ms"]) if row["avg_response_time_ms"] else None,
+                    "batch_started_at": str(row["batch_started_at"]) if row["batch_started_at"] else None,
+                    "batch_completed_at": str(row["batch_completed_at"]) if row["batch_completed_at"] else None,
+                    "is_complete": row["queued"] == 0 and row["processing"] == 0
+                }
+            return {"batch_id": batch_id, "total": 0, "error": "Batch not found"}
+        except Exception as e:
+            log.error(f"Error fetching batch summary for '{batch_id}': {e}")
+            return {"batch_id": batch_id, "error": str(e)}
+
+    async def get_recovery_time_window(self, lookback_hours: float, offset_minutes: float = 0) -> Optional[Dict[str, Any]]:
+        """
+        Gets a time window from the DB clock for recovery queries.
+        
+        Args:
+            lookback_hours: How far back from the offset to look (e.g., 24 = 24 hours)
+            offset_minutes: How many minutes to offset from NOW() (e.g., 15 means window ends at NOW()-15min)
+            
+        Returns:
+            Dict with 'window_start' and 'window_end' timestamps, or None on error
+        """
+        lookback_minutes = int(lookback_hours * 60)
+        total_start_minutes = lookback_minutes + int(offset_minutes)
+        sql = f"""
+        SELECT NOW() - INTERVAL '{total_start_minutes} minutes' AS window_start,
+               NOW() - INTERVAL '{int(offset_minutes)} minutes' AS window_end
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(sql)
+            if row:
+                return {"window_start": row["window_start"], "window_end": row["window_end"]}
+            return None
+        except Exception as e:
+            log.error(f"Error getting recovery time window: {e}")
+            return None
+
+    async def claim_stuck_processing_tasks(
+        self,
+        window_start,
+        window_end
+    ) -> List[Dict[str, Any]]:
+        """
+        Atomically finds and claims tasks stuck in 'processing' within a time window.
+        Sets status to 'failed' and returns the claimed tasks with their details.
+        
+        This is atomic — if two workers run this concurrently, each task is only
+        claimed by one worker (the UPDATE only affects rows with status='processing').
+        
+        Args:
+            window_start: Start of the time window (from DB clock)
+            window_end: End of the time window (from DB clock)
+            
+        Returns:
+            List of claimed task dictionaries with full details for re-publishing
+        """
+        update_sql = f"""
+        UPDATE {self.TABLE_NAME}
+        SET status = 'failed',
+            completed_at = NOW(),
+            error_message = 'Auto-recovered: worker crash detected'
+        WHERE status = 'processing'
+        AND started_at >= $1
+        AND started_at <= $2
+        RETURNING task_id, agentic_application_id, user_session_id, query, model_name, started_at
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(update_sql, window_start, window_end)
+            claimed = [dict(row) for row in rows]
+            if claimed:
+                log.warning(f"Claimed {len(claimed)} stuck tasks for recovery (window: {window_start} to {window_end})")
+            return claimed
+        except Exception as e:
+            log.error(f"Error claiming stuck processing tasks: {e}")
+            return []
+
+    async def reset_tasks_to_queued(self, task_ids: List[str]) -> int:
+        """
+        Resets claimed tasks back to 'queued' status after re-publishing to Kafka.
+        
+        Args:
+            task_ids: List of task IDs to reset
+            
+        Returns:
+            Number of tasks reset
+        """
+        if not task_ids:
+            return 0
+        
+        update_sql = f"""
+        UPDATE {self.TABLE_NAME}
+        SET status = 'queued',
+            started_at = NULL,
+            completed_at = NULL,
+            error_message = NULL
+        WHERE task_id = ANY($1)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(update_sql, task_ids)
+            count = int(result.split()[-1]) if result else 0
+            if count > 0:
+                log.info(f"Reset {count} recovered tasks back to 'queued'")
+            return count
+        except Exception as e:
+            log.error(f"Error resetting tasks to queued: {e}")
+            return 0
+
+    async def cleanup_old_tasks(self, days_old: int = 30) -> int:
+        """
+        Removes tasks older than specified days.
+        
+        Args:
+            days_old: Number of days after which to delete tasks
+            
+        Returns:
+            Number of deleted tasks
+        """
+        delete_sql = f"""
+        DELETE FROM {self.TABLE_NAME}
+        WHERE created_at < NOW() - INTERVAL '{days_old} days'
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(delete_sql)
+            # Parse "DELETE X" to get count
+            count = int(result.split()[-1]) if result else 0
+            log.info(f"Cleaned up {count} tasks older than {days_old} days.")
+            return count
+        except Exception as e:
+            log.error(f"Error cleaning up old tasks: {e}")
+            return 0
+
+
+# --- QueryTokenUsageRepository ---
+
+class QueryTokenUsageRepository(BaseRepository):
+    """
+    Persists one row per user query, capturing aggregated token counts, cost,
+    and a per-call breakdown for every LLM call that happened within that query.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool,
+                 table_name: str = TableNames.QUERY_TOKEN_USAGE.value):
+        super().__init__(pool, login_pool, table_name=table_name)
+
+    async def create_table_if_not_exists(self) -> None:
+        create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id               SERIAL PRIMARY KEY,
+            user_id          TEXT,
+            agent_id         TEXT,
+            agent_name       TEXT,
+            session_id       TEXT NOT NULL,
+            query            TEXT,
+            prompt_tokens    INTEGER     DEFAULT 0,
+            completion_tokens INTEGER    DEFAULT 0,
+            cached_tokens    INTEGER     DEFAULT 0,
+            total_tokens     INTEGER     DEFAULT 0,
+            prompt_cost      NUMERIC(18, 8) DEFAULT 0,
+            completion_cost  NUMERIC(18, 8) DEFAULT 0,
+            cached_cost      NUMERIC(18, 8) DEFAULT 0,
+            total_cost       NUMERIC(18, 8) DEFAULT 0,
+            total_llm_calls  INTEGER     DEFAULT 0,
+            llm_calls        JSONB       DEFAULT '[]'::jsonb,
+            created_at       TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS agent_name TEXT;
+        ALTER TABLE {self.table_name} ALTER COLUMN created_at TYPE TIMESTAMP WITH TIME ZONE USING created_at AT TIME ZONE 'UTC';
+        CREATE INDEX IF NOT EXISTS idx_query_token_usage_session
+            ON {self.table_name} (session_id);
+        CREATE INDEX IF NOT EXISTS idx_query_token_usage_agent
+            ON {self.table_name} (agent_id);
+        CREATE INDEX IF NOT EXISTS idx_query_token_usage_user
+            ON {self.table_name} (user_id);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_sql)
+            log.info(f"✅ QueryTokenUsageRepository: table '{self.table_name}' ready.")
+        except Exception as e:
+            log.error(f"❌ QueryTokenUsageRepository: failed to create table: {e}", exc_info=True)
+
+    async def insert(
+        self,
+        session_id: str,
+        user_id: Optional[str],
+        agent_id: Optional[str],
+        agent_name: Optional[str],
+        query: Optional[str],
+        token_records: List[Dict],
+    ) -> None:
+        """
+        Aggregate token_records and write one summary row to query_token_usage.
+
+        Each entry in token_records is expected to carry:
+            model, prompt_tokens, completion_tokens, cached_tokens, total_tokens,
+            prompt_cost, completion_cost, cached_cost, total_cost,
+            call_category, call_sub_category, status
+        """
+        if not token_records:
+            return
+
+        prompt_tokens    = sum(r.get("prompt_tokens",    0) for r in token_records)
+        completion_tokens = sum(r.get("completion_tokens", 0) for r in token_records)
+        cached_tokens    = sum(r.get("cached_tokens",    0) for r in token_records)
+        total_tokens     = sum(r.get("total_tokens",     0) for r in token_records)
+        prompt_cost      = sum(r.get("prompt_cost",      0.0) for r in token_records)
+        completion_cost  = sum(r.get("completion_cost",  0.0) for r in token_records)
+        cached_cost      = sum(r.get("cached_cost",      0.0) for r in token_records)
+        total_cost       = sum(r.get("total_cost",       0.0) for r in token_records)
+
+        insert_sql = f"""
+        INSERT INTO {self.table_name} (
+            user_id, agent_id, agent_name, session_id, query,
+            prompt_tokens, completion_tokens, cached_tokens, total_tokens,
+            prompt_cost, completion_cost, cached_cost, total_cost,
+            total_llm_calls, llm_calls
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    insert_sql,
+                    user_id, agent_id, agent_name, session_id, query,
+                    prompt_tokens, completion_tokens, cached_tokens, total_tokens,
+                    round(prompt_cost, 8), round(completion_cost, 8),
+                    round(cached_cost, 8), round(total_cost, 8),
+                    len(token_records), json.dumps(token_records),
+                )
+            log.info(
+                f"✅ [QueryTokenUsage] Inserted row: session={session_id}, "
+                f"agent={agent_id} ({agent_name}), total_tokens={total_tokens}, "
+                f"total_cost=${total_cost:.8f}, llm_calls={len(token_records)}"
+            )
+        except Exception as e:
+            log.error(f"❌ [QueryTokenUsage] Failed to insert row: {e}", exc_info=True)
+
+    async def get_report_data(
+        self,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+    ) -> List[Dict]:
+        """Return rows from query_token_usage matching the given filters."""
+        conditions = []
+        params: List[Any] = []
+        idx = 1
+
+        if user_id:
+            conditions.append(f"user_id = ${idx}")
+            params.append(user_id)
+            idx += 1
+        if agent_id:
+            conditions.append(f"agent_id = ${idx}")
+            params.append(agent_id)
+            idx += 1
+        if agent_name:
+            conditions.append(f"agent_name ILIKE ${idx}")
+            params.append(f"%{agent_name}%")
+            idx += 1
+        if date_from:
+            conditions.append(f"created_at >= ${idx}")
+            params.append(date_from)
+            idx += 1
+        if date_to:
+            conditions.append(f"created_at <= ${idx}")
+            params.append(date_to)
+            idx += 1
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        sql = f"""
+            SELECT id, user_id, agent_id, agent_name, session_id, query,
+                   prompt_tokens, completion_tokens, cached_tokens, total_tokens,
+                   prompt_cost, completion_cost, cached_cost, total_cost,
+                   total_llm_calls, llm_calls, created_at
+            FROM {self.table_name}
+            {where}
+            ORDER BY created_at DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql, *params)
+            return [dict(r) for r in rows]
+        except Exception as e:
+            log.error(f"❌ [QueryTokenUsage] get_report_data failed: {e}", exc_info=True)
+            return []
+
+
+# --- TokenUsageLogsRepository ---
+
+class TokenUsageLogsRepository(BaseRepository):
+    """
+    Access to the token_usage_logs table written by the standalone LiteLLM
+    tracker.  Handles table creation at startup and read-only report queries.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool,
+                 table_name: str = TableNames.TOKEN_USAGE_LOGS.value):
+        super().__init__(pool, login_pool, table_name=table_name)
+
+    async def create_table_if_not_exists(self) -> None:
+        """
+        Create the token_usage_logs table and supporting indexes if they do not
+        already exist.  This is the full schema expected by
+        litellm_standalone_tracker.py (new schema with categorization columns).
+        """
+        create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id                     SERIAL PRIMARY KEY,
+            timestamp              TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            agent_id               TEXT,
+            agent_name             TEXT,
+            model_name             TEXT,
+            session_id             TEXT,
+            user_id                TEXT,
+            request_id             TEXT,
+            prompt_tokens          INTEGER        DEFAULT 0,
+            completion_tokens      INTEGER        DEFAULT 0,
+            total_tokens           INTEGER        DEFAULT 0,
+            cached_tokens          INTEGER        DEFAULT 0,
+            prompt_tokens_cost     NUMERIC(18, 8) DEFAULT 0,
+            completion_tokens_cost NUMERIC(18, 8) DEFAULT 0,
+            cached_tokens_cost     NUMERIC(18, 8) DEFAULT 0,
+            total_cost             NUMERIC(18, 8) DEFAULT 0,
+            status                 TEXT,
+            error_message          TEXT,
+            call_category          TEXT,
+            call_sub_category      TEXT,
+            call_operation         TEXT,
+            tool_id                TEXT,
+            tool_name              TEXT,
+            evaluation_type        TEXT,
+            agent_type             TEXT,
+            agent_component        TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_token_usage_logs_timestamp
+            ON {self.table_name} (timestamp);
+        CREATE INDEX IF NOT EXISTS idx_token_usage_logs_agent_id
+            ON {self.table_name} (agent_id);
+        CREATE INDEX IF NOT EXISTS idx_token_usage_logs_user_id
+            ON {self.table_name} (user_id);
+        CREATE INDEX IF NOT EXISTS idx_token_usage_logs_session
+            ON {self.table_name} (session_id);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_sql)
+            log.info(f"✅ TokenUsageLogsRepository: table '{self.table_name}' ready.")
+        except Exception as e:
+            log.error(f"❌ TokenUsageLogsRepository: failed to create table: {e}", exc_info=True)
+
+    async def get_report_data(
+        self,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        model: Optional[str] = None,
+    ) -> List[Dict]:
+        """Return rows from token_usage_logs matching the given filters."""
+        conditions = []
+        params: List[Any] = []
+        idx = 1
+
+        if user_id:
+            conditions.append(f"user_id = ${idx}")
+            params.append(user_id)
+            idx += 1
+        if agent_id:
+            conditions.append(f"CAST(agent_id AS TEXT) = ${idx}")
+            params.append(str(agent_id))
+            idx += 1
+        if agent_name:
+            conditions.append(f"agent_name ILIKE ${idx}")
+            params.append(f"%{agent_name}%")
+            idx += 1
+        if model:
+            conditions.append(f"model_name ILIKE ${idx}")
+            params.append(f"%{model}%")
+            idx += 1
+        if date_from:
+            conditions.append(f"timestamp >= ${idx}")
+            params.append(date_from)
+            idx += 1
+        if date_to:
+            conditions.append(f"timestamp <= ${idx}")
+            params.append(date_to)
+            idx += 1
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        sql = f"""
+            SELECT timestamp, agent_id, agent_name, model_name, session_id, user_id,
+                   prompt_tokens, completion_tokens, total_tokens, cached_tokens,
+                   prompt_tokens_cost, completion_tokens_cost, cached_tokens_cost, total_cost,
+                   status, call_category, call_sub_category, call_operation,
+                   tool_name, agent_type, agent_component
+            FROM {self.table_name}
+            {where}
+            ORDER BY timestamp DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql, *params)
+            return [dict(r) for r in rows]
+        except Exception as e:
+            log.error(f"❌ [TokenUsageLogs] get_report_data failed: {e}", exc_info=True)
+            return []
+
+
+# --- ModelCostsRepository ---
+
+class ModelCostsRepository(BaseRepository):
+    """
+    Manages the model_costs table used by the standalone LiteLLM tracker to
+    look up per-token pricing for each model.  Handles table creation at startup;
+    the tracker itself performs the INSERT / UPDATE operations.
+    """
+
+    def __init__(self, pool: asyncpg.Pool, login_pool: asyncpg.Pool,
+                 table_name: str = TableNames.MODEL_COSTS.value):
+        super().__init__(pool, login_pool, table_name=table_name)
+
+    async def create_table_if_not_exists(self) -> None:
+        """
+        Create the model_costs table if it does not already exist.
+        Columns mirror the INSERT / UPDATE statements in
+        litellm_standalone_tracker.py.
+        """
+        create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id                          SERIAL PRIMARY KEY,
+            name                        TEXT UNIQUE NOT NULL,
+            model_name                  TEXT,
+            model_version               TEXT,
+            provider_key                TEXT,
+            input_cost_per_token        NUMERIC(20, 10) DEFAULT 0,
+            output_cost_per_token       NUMERIC(20, 10) DEFAULT 0,
+            cache_read_input_token_cost NUMERIC(20, 10) DEFAULT 0,
+            updated_at                  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_model_costs_name
+            ON {self.table_name} (name);
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_sql)
+            log.info(f"✅ ModelCostsRepository: table '{self.table_name}' ready.")
+        except Exception as e:
+            log.error(f"❌ ModelCostsRepository: failed to create table: {e}", exc_info=True)

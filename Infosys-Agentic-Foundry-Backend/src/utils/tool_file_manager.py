@@ -32,9 +32,19 @@ class ToolFileManager:
         self.file_manager = FileManager()
         log.info(f"ToolFileManager initialized with base directory: {self.base_directory}")
     
-    def _sanitize_filename(self, tool_name: str) -> str:
-        """Convert tool_name to valid filename with .py extension."""
+    def _sanitize_filename(self, tool_name: str, version: Optional[str] = None) -> str:
+        """Convert tool_name to valid filename with .py extension.
+        
+        Args:
+            tool_name: The name of the tool
+            version: Optional version string (e.g., 'v1', 'v2'). If provided, creates versioned filename.
+        
+        Returns:
+            Filename like 'addition_v1.py' or 'addition.py' if no version
+        """
         sanitized = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in tool_name)
+        if version:
+            return f"{sanitized}_{version}.py"
         return f"{sanitized}.py"
     
     def _format_datetime(self, dt: Optional[datetime]) -> str:
@@ -53,9 +63,13 @@ class ToolFileManager:
             return repr(s)
         return f'"""{s}"""'
     
-    async def create_tool_file(self, tool_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_tool_file(self, tool_data: Dict[str, Any], version: Optional[str] = "v1") -> Dict[str, Any]:
         """
         Create a .py file for the tool with code.
+        
+        Args:
+            tool_data: Dictionary containing tool information including tool_name and code_snippet
+            version: Version string (e.g., 'v1', 'v2'). Creates versioned filename like 'addition_v1.py'
         """
         try:
             tool_name = tool_data.get('tool_name')
@@ -65,7 +79,7 @@ class ToolFileManager:
                     "file_path": "",
                     "message": "tool_name is required to create tool file"
                 }
-            filename = self._sanitize_filename(tool_name)
+            filename = self._sanitize_filename(tool_name, version)
             file_path = self.base_directory / filename
             file_content = self._generate_file_content(tool_data)
 
@@ -111,10 +125,14 @@ class ToolFileManager:
         content = f'''{code_snippet}'''
         return content
     
-    async def update_tool_file(self, tool_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_tool_file(self, tool_data: Dict[str, Any], version: Optional[str] = "v1") -> Dict[str, Any]:
         """
         Update existing tool file by overwriting with new data.
         If file doesn't exist (old tools), create it during update.
+        
+        Args:
+            tool_data: Dictionary containing tool information
+            version: Version string (e.g., 'v1', 'v2'). Creates/updates versioned file.
         """
         tool_name = tool_data.get('tool_name')
         if not tool_name:
@@ -124,24 +142,24 @@ class ToolFileManager:
                 "message": "tool_name is required to update tool file"
             }
         
-        filename = self._sanitize_filename(tool_name)
+        filename = self._sanitize_filename(tool_name, version)
 
-        file_exists = await self.tool_file_exists(tool_name)
+        file_exists = await self.tool_file_exists(tool_name, version)
 
         if not file_exists and STORAGE_PROVIDER!='':
             file_exists= await self.file_manager.cloud_file_search(filename,storage_provider=STORAGE_PROVIDER)
         
-        result = await self.create_tool_file(tool_data)
+        result = await self.create_tool_file(tool_data, version)
         
         if result.get("success"):
             if not file_exists:
-                log.info(f"Created file for tool '{tool_name}' during update")
+                log.info(f"Created file for tool '{tool_name}' version '{version}' during update")
                 if STORAGE_PROVIDER!='':
                     result["message"] = f"Tool file created in {STORAGE_PROVIDER} for tool during update at {result.get('upload_identifier')}"
                 else:
                     result["message"] = f"Tool file created for tool during update at {result.get('file_path')}"
             else:
-                log.info(f"Updated existing file for tool '{tool_name}'")
+                log.info(f"Updated existing file for tool '{tool_name}' version '{version}'")
                 if STORAGE_PROVIDER!="":
                     result["message"] = f"Tool file updated successfully in {STORAGE_PROVIDER} at {result.get('upload_identifier')}"
                 else:
@@ -149,12 +167,17 @@ class ToolFileManager:
 
         return result
     
-    async def delete_tool_file(self, tool_name: str) -> Dict[str, Any]:
+    async def delete_tool_file(self, tool_name: str, version: Optional[str] = None) -> Dict[str, Any]:
         """
-        Delete tool file by tool_name. Called when tool is deleted and moved to recycle bin.
+        Delete tool file by tool_name and optional version.
+        
+        Args:
+            tool_name: Name of the tool
+            version: If provided, deletes specific version file (e.g., 'addition_v1.py').
+                     If None, deletes the base file (e.g., 'addition.py') for backwards compatibility.
         """
         try:
-            filename = self._sanitize_filename(tool_name)
+            filename = self._sanitize_filename(tool_name, version)
             file_path = self.base_directory / filename
             if file_path.exists():
                 if STORAGE_PROVIDER!="":
@@ -215,6 +238,39 @@ class ToolFileManager:
                 "message": f"Failed to delete tool file: {str(e)}"
             }
     
+    async def delete_all_version_files(self, tool_name: str, versions: list) -> Dict[str, Any]:
+        """
+        Delete all version files for a tool.
+        
+        Args:
+            tool_name: Name of the tool
+            versions: List of versions to delete (e.g., ['v1', 'v2', 'v3'])
+        
+        Returns:
+            Dictionary with success status and deleted files info
+        """
+        deleted_files = []
+        failed_files = []
+        
+        for version in versions:
+            result = await self.delete_tool_file(tool_name, version)
+            if result.get("success"):
+                deleted_files.append(f"{tool_name}_{version}.py")
+            else:
+                failed_files.append(f"{tool_name}_{version}.py")
+        
+        # Also try to delete the base file (without version) for backwards compatibility
+        base_result = await self.delete_tool_file(tool_name, None)
+        if base_result.get("success"):
+            deleted_files.append(f"{tool_name}.py")
+        
+        return {
+            "success": len(failed_files) == 0,
+            "deleted_files": deleted_files,
+            "failed_files": failed_files,
+            "message": f"Deleted {len(deleted_files)} files, {len(failed_files)} failed"
+        }
+    
     async def restore_tool_file(self, tool_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Restore tool file when tool is restored from recycle bin.
@@ -248,6 +304,59 @@ class ToolFileManager:
                 "file_path": "",
                 "message": f"Failed to restore tool file: {str(e)}"
             }
+
+    async def restore_tool_file_for_version(
+        self, 
+        tool_data: Dict[str, Any], 
+        version: str, 
+        code_snippet: str
+    ) -> Dict[str, Any]:
+        """
+        Restore a specific version file when tool is restored from recycle bin.
+        
+        Args:
+            tool_data: Dictionary containing tool information including tool_name
+            version: Version string (e.g., 'v1', 'v2')
+            code_snippet: The code snippet for this specific version
+            
+        Returns:
+            Dictionary with success status and file path
+        """
+        try:
+            tool_name = tool_data.get('tool_name')
+            if not tool_name:
+                return {
+                    "success": False,
+                    "file_path": "",
+                    "message": "tool_name is required to restore tool file"
+                }
+            
+            # Create versioned file data
+            versioned_tool_data = {
+                'tool_name': tool_name,
+                'code_snippet': code_snippet
+            }
+            
+            result = await self.create_tool_file(versioned_tool_data, version)
+            
+            if result.get("success"):
+                log.info(f"Successfully restored tool file for: {tool_name} version {version}")
+                return {
+                    "success": True,
+                    "file_path": result.get("file_path", ""),
+                    "message": f"Tool file restored successfully for version {version}"
+                }
+            else:
+                log.error(f"Failed to restore tool file for: {tool_name} version {version}")
+                return result
+                
+        except Exception as e:
+            log.error(f"Error restoring tool file for tool_name {tool_data.get('tool_name')} version {version}: {e}")
+            return {
+                "success": False,
+                "file_path": "",
+                "message": f"Failed to restore tool file: {str(e)}"
+            }
     
     async def get_tool_file_path(self, tool_name: str) -> Optional[str]:
         """Get file path for tool's .py file (returns None if doesn't exist)."""
@@ -258,9 +367,9 @@ class ToolFileManager:
             return str(file_path)
         return None
     
-    async def tool_file_exists(self, tool_name: str) -> bool:
-        """Check if tool file exists by tool_name."""
-        filename = self._sanitize_filename(tool_name)
+    async def tool_file_exists(self, tool_name: str, version: Optional[str] = None) -> bool:
+        """Check if tool file exists by tool_name and optional version."""
+        filename = self._sanitize_filename(tool_name, version)
         file_path = self.base_directory / filename
         return file_path.exists()
     

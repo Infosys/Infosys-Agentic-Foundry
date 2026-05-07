@@ -11,7 +11,7 @@ from utils.postgres_vector_store_jsonb import PostgresVectorStoreJSONB
 from utils.remote_model_client import get_remote_models
 from workers.embed_processor import EmbeddingProcessor
 
-load_dotenv()
+load_dotenv(override=True)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

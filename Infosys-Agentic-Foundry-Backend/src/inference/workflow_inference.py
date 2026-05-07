@@ -1,6 +1,6 @@
 from src.inference.abstract_base_inference import AbstractBaseInference
 from src.inference.inference_utils import InferenceUtils
-from src.database.services import PipelineService
+from src.database.services import WorkflowService
 from typing import Dict, List, Any, Optional, AsyncGenerator, Tuple, Literal, Set
 from dataclasses import dataclass, field
 from fastapi import HTTPException
@@ -18,11 +18,11 @@ from telemetry_wrapper import logger as log
 
 
 # =============================================================================
-# ENUMS AND DATA CLASSES FOR PIPELINE EXECUTION
+# ENUMS AND DATA CLASSES FOR WORKFLOW EXECUTION
 # =============================================================================
 
 class NodeStatus(Enum):
-    """Status of a node in the pipeline execution."""
+    """Status of a node in the workflow execution."""
     PENDING = "pending"
     READY = "ready"
     RUNNING = "running"
@@ -85,8 +85,8 @@ class NodeState:
 
 
 @dataclass
-class PipelineState:
-    """Single state container for entire pipeline - simplified."""
+class WorkflowState:
+    """Single state container for entire workflow - simplified."""
     nodes: Dict[str, NodeState] = field(default_factory=dict)
     edges: Dict[str, List[str]] = field(default_factory=dict)  # source -> [targets]
     input_dict: Dict[str, Any] = field(default_factory=dict)
@@ -209,10 +209,10 @@ def _serialize_messages(messages: Any) -> Any:
 
 @dataclass
 class ExecutionContext:
-    """Holds the context for a pipeline execution."""
+    """Holds the context for a workflow execution."""
     execution_id: str
-    pipeline_id: str
-    pipeline_definition: Dict[str, Any]
+    workflow_id: str
+    workflow_definition: Dict[str, Any]
     session_id: str
     model_name: str
     input_query: str
@@ -233,11 +233,11 @@ class ExecutionContext:
     
     def get_nodes(self) -> List[Dict]:
         """Get list of nodes from definition."""
-        return self.pipeline_definition.get('nodes', [])
+        return self.workflow_definition.get('nodes', [])
     
     def get_edges(self) -> List[Dict]:
         """Get list of edges from definition."""
-        return self.pipeline_definition.get('edges', [])
+        return self.workflow_definition.get('edges', [])
     
     def get_node(self, node_id: str) -> Optional[Dict]:
         """Get a specific node by ID."""
@@ -295,9 +295,9 @@ class ExecutionContext:
         return {k: v for k, v in self.input_data.items() if k in input_keys}
 
 
-class PipelineInference(AbstractBaseInference):
+class WorkflowInference(AbstractBaseInference):
     """
-    Pipeline inference engine with parallel execution support.
+    Workflow inference engine with parallel execution support.
     
     Execution Rules:
     - Condition node with multiple outgoing edges → LLM picks ONE path
@@ -316,17 +316,17 @@ class PipelineInference(AbstractBaseInference):
     
     def __init__(self, 
         inference_utils: InferenceUtils,        
-        pipeline_service: PipelineService,
+        workflow_service: WorkflowService,
         centralized_agent_inference: CentralizedAgentInference
     ):
         super().__init__(inference_utils)
-        self.pipeline_service = pipeline_service
+        self.workflow_service = workflow_service
         self.centralized_agent_inference = centralized_agent_inference
 
     async def _get_mcp_tools_instances(self, tool_ids: List[str] = []) -> list:
         """
         Retrieves MCP tool instances based on the provided tool IDs.
-        Pipeline uses centralized_agent_inference for tool handling.
+        Workflow uses centralized_agent_inference for tool handling.
         
         Args:
             tool_ids (List[str], optional): List of tool IDs. Defaults to [].
@@ -361,7 +361,7 @@ class PipelineInference(AbstractBaseInference):
 
     async def _format_output(self, output: Any, output_schema: str, llm: Any) -> Any:
         """
-        Format the pipeline output according to the specified schema.
+        Format the workflow output according to the specified schema.
         
         Args:
             output: The output to format
@@ -372,7 +372,7 @@ class PipelineInference(AbstractBaseInference):
             Any: The formatted output (JSON if applicable)
         """
         prompt = OUTPUT_FORMATTING_PROMPT.format(
-            pipeline_outputs=output,
+            workflow_outputs=output,
             output_schema=output_schema
         )
         response = await llm.ainvoke(prompt)
@@ -450,12 +450,12 @@ class PipelineInference(AbstractBaseInference):
         # raise ValueError(f"Could not parse JSON from response: {response_text[:200]}...")
         return cleaned
 
-    def _build_pipeline_maps(self, pipeline_definition: Dict) -> tuple:
+    def _build_workflow_maps(self, workflow_definition: Dict) -> tuple:
         """
-        Build lookup maps from pipeline definition for efficient access.
+        Build lookup maps from workflow definition for efficient access.
         
         Args:
-            pipeline_definition: The pipeline definition containing nodes and edges
+            workflow_definition: The workflow definition containing nodes and edges
             
         Returns:
             tuple: (node_map, node_name_map, edges_by_source, edges_by_target)
@@ -464,8 +464,8 @@ class PipelineInference(AbstractBaseInference):
                 - edges_by_source: Dict mapping source_node_id to list of target_node_ids
                 - edges_by_target: Dict mapping target_node_id to list of source_node_ids
         """
-        nodes = pipeline_definition.get('nodes', [])
-        edges = pipeline_definition.get('edges', [])
+        nodes = workflow_definition.get('nodes', [])
+        edges = workflow_definition.get('edges', [])
         
         node_map = {node['node_id']: node for node in nodes}
         node_name_map = {node['node_id']: node.get('node_name', node['node_id']) for node in nodes}
@@ -496,9 +496,9 @@ class PipelineInference(AbstractBaseInference):
         edges_by_source: Dict[str, List[str]],
         edges_by_target: Dict[str, List[str]],
         input_query: str
-    ) -> PipelineState:
+    ) -> WorkflowState:
         """Initialize execution context with node states for parallel execution."""
-        ctx = PipelineState()
+        ctx = WorkflowState()
         ctx.input_dict["query"] = input_query
         ctx.edges = edges_by_source  # Store edges for propagation
         
@@ -569,18 +569,18 @@ class PipelineInference(AbstractBaseInference):
         
         return input_dict.copy()
 
-    def _find_node_by_type(self, pipeline_definition: Dict, node_type: str) -> Optional[Dict]:
+    def _find_node_by_type(self, workflow_definition: Dict, node_type: str) -> Optional[Dict]:
         """
-        Find the first node of a given type in the pipeline definition.
+        Find the first node of a given type in the workflow definition.
         
         Args:
-            pipeline_definition: The pipeline definition containing nodes
+            workflow_definition: The workflow definition containing nodes
             node_type: The type of node to find ('input', 'output', 'agent', 'condition')
             
         Returns:
             Optional[Dict]: The node dict if found, None otherwise
         """
-        for node in pipeline_definition.get('nodes', []):
+        for node in workflow_definition.get('nodes', []):
             if node.get('node_type') == node_type:
                 return node
         return None
@@ -593,7 +593,7 @@ class PipelineInference(AbstractBaseInference):
         step_data: Dict[str, Any]
     ) -> None:
         """
-        Record a pipeline step with error handling.
+        Record a workflow step with error handling.
         
         Args:
             execution_id: The execution/run ID
@@ -602,7 +602,7 @@ class PipelineInference(AbstractBaseInference):
             step_data: The step data to record
         """
         try:
-            await self.pipeline_service.add_pipeline_step(
+            await self.workflow_service.add_workflow_step(
                 run_id=execution_id,
                 step_order=step_order,
                 agent_id=agent_id,
@@ -620,7 +620,7 @@ class PipelineInference(AbstractBaseInference):
         error: str = None
     ) -> None:
         """
-        Update pipeline run status with error handling.
+        Update workflow run status with error handling.
         
         Args:
             execution_id: The execution/run ID
@@ -639,7 +639,7 @@ class PipelineInference(AbstractBaseInference):
             if error is not None:
                 kwargs["error"] = error
             
-            await self.pipeline_service.update_pipeline_run_status(execution_id, **kwargs)
+            await self.workflow_service.update_workflow_run_status(execution_id, **kwargs)
         except Exception as e:
             log.warning(f"Failed to update run status to '{status}': {e}")
 
@@ -734,8 +734,8 @@ class PipelineInference(AbstractBaseInference):
                   **kwargs
                 ) -> Any:
         """
-        Run the pipeline inference using the inference request.
-        This wraps run_pipeline for compatibility with the abstract interface.
+        Run the workflow inference using the inference request.
+        This wraps run_workflow for compatibility with the abstract interface.
         
         Args:
             inference_request (AgentInferenceRequest): The agent inference request object.
@@ -743,11 +743,11 @@ class PipelineInference(AbstractBaseInference):
             **kwargs: Additional keyword arguments.
             
         Returns:
-            Any: The result of the pipeline execution.
+            Any: The result of the workflow execution.
         """
-        # Extract parameters from inference_request and call run_pipeline
-        async for output in self.run_pipeline(
-            pipeline_id=inference_request.agentic_application_id,
+        # Extract parameters from inference_request and call run_workflow
+        async for output in self.run_workflow(
+            workflow_id=inference_request.agentic_application_id,
             session_id=inference_request.session_id,
             model_name=inference_request.model_name,
             input_query=inference_request.query,
@@ -762,13 +762,14 @@ class PipelineInference(AbstractBaseInference):
             evaluation_flag=inference_request.evaluation_flag,
             validator_flag=inference_request.validator_flag,
             temperature=inference_request.temperature,
+            chat_file_upload=inference_request.uploaded_files,
             role=inference_request.role
         ):
             yield output
 
-    async def run_pipeline(
+    async def run_workflow(
         self, 
-        pipeline_id: str,
+        workflow_id: str,
         session_id: str,
         model_name: str,
         input_query: str,
@@ -783,14 +784,15 @@ class PipelineInference(AbstractBaseInference):
         evaluation_flag: bool = False,
         validator_flag: bool = False,
         temperature: float = 0.0,
+        chat_file_upload: Optional[List[str]] = None,
         role: str = "user",
         max_parallel_agents: int = None
         ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Run the pipeline with parallel execution support.
+        Run the workflow with parallel execution support.
         
         Args:
-            pipeline_id (str): The ID of the pipeline to run.
+            workflow_id (str): The ID of the workflow to run.
             session_id (str): The session ID for user context.
             model_name (str): The model name to use for inference.
             input_query (str): The input query string.
@@ -804,7 +806,7 @@ class PipelineInference(AbstractBaseInference):
             max_parallel_agents (int): Max concurrent agent executions (default: 3, max: 5)
             
         Yields:
-            AsyncGenerator[Dict[str, Any], None]: Yields output data from the pipeline execution.
+            AsyncGenerator[Dict[str, Any], None]: Yields output data from the workflow execution.
         
         Execution Rules:
             - Condition node → LLM picks ONE path (conditional)
@@ -814,40 +816,47 @@ class PipelineInference(AbstractBaseInference):
         start_time = time.monotonic()
         execution_id = str(uuid.uuid4())
         
+        # Append attached file info to input_query so all workflow nodes see the files
+        if chat_file_upload:
+            base_dir = "user_uploads"
+            files_info = "\n".join([f"- {base_dir}/{f}" for f in chat_file_upload])
+            input_query = f"{input_query}\n\n[Attached files:\n{files_info}]" if input_query else f"[Attached files:\n{files_info}]"
+            log.info(f"Workflow {workflow_id}: Appended {len(chat_file_upload)} attached file(s) to input query")
+        
         # Validate and set parallel limit
         if max_parallel_agents is None:
             max_parallel_agents = self.DEFAULT_PARALLEL_AGENTS
         max_parallel_agents = min(max_parallel_agents, self.MAX_PARALLEL_AGENTS)
         
-        log.info(f"Starting pipeline {pipeline_id} with max_parallel_agents={max_parallel_agents}")
+        log.info(f"Starting workflow {workflow_id} with max_parallel_agents={max_parallel_agents}")
         
         # Create a run record
         try:
-            await self.pipeline_service.create_pipeline_run(
+            await self.workflow_service.create_workflow_run(
                 execution_id, 
                 input_query, 
-                pipeline_id=pipeline_id,
+                workflow_id=workflow_id,
                 session_id=session_id,
                 status="pending"
             )
         except Exception as e:
-            log.warning(f"Failed to create pipeline run record: {e}")
+            log.warning(f"Failed to create workflow run record: {e}")
 
-        # Get LLM and pipeline definition
+        # Get LLM and workflow definition
         llm = await self.model_service.get_llm_model(model_name=model_name, temperature=temperature)
-        pipeline = await self.pipeline_service.get_pipeline(pipeline_id)
-        if not pipeline:
-            raise HTTPException(status_code=404, detail=f"Pipeline '{pipeline_id}' not found.")
+        workflow = await self.workflow_service.get_workflow(workflow_id)
+        if not workflow:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found.")
         
         # Build efficient lookup maps (now includes edges_by_target for fan-in)
-        node_map, node_name_map, edges_by_source, edges_by_target = self._build_pipeline_maps(
-            pipeline['pipeline_definition']
+        node_map, node_name_map, edges_by_source, edges_by_target = self._build_workflow_maps(
+            workflow['workflow_definition']
         )
         
         # Find the input node using helper method
-        input_node = self._find_node_by_type(pipeline['pipeline_definition'], 'input')
+        input_node = self._find_node_by_type(workflow['workflow_definition'], 'input')
         if not input_node:
-            raise HTTPException(status_code=400, detail="Pipeline has no input node defined.")
+            raise HTTPException(status_code=400, detail="Workflow has no input node defined.")
         
         # Initialize execution context for parallel execution
         ctx = self._initialize_execution_context(node_map, edges_by_source, edges_by_target, input_query)
@@ -898,7 +907,7 @@ class PipelineInference(AbstractBaseInference):
                     ]
                     
                     if completed_outputs:
-                        log.info(f"Pipeline completed. Outputs reached: {completed_outputs}")
+                        log.info(f"Workflow completed. Outputs reached: {completed_outputs}")
                         break
                     
                     # Check for stuck state
@@ -907,7 +916,7 @@ class PipelineInference(AbstractBaseInference):
                         if not state.is_completed and nid not in ctx.skipped_nodes
                     ]
                     if pending:
-                        log.warning(f"Pipeline may be stuck. Pending nodes: {pending}")
+                        log.warning(f"Workflow may be stuck. Pending nodes: {pending}")
                     break
                 
                 # Separate condition nodes from others
@@ -1239,22 +1248,22 @@ class PipelineInference(AbstractBaseInference):
             
             # Format response with conversation history
             try:
-                conversation_history = await self.pipeline_service.format_pipeline_response_with_history(
+                conversation_history = await self.workflow_service.format_workflow_response_with_history(
                     current_response=current_response,
-                    pipeline_id=pipeline_id,
+                    workflow_id=workflow_id,
                     session_id=session_id,
                     role=role,
                     response_time=response_time
                 )
                 yield {"executor_messages": conversation_history}
             except Exception as e:
-                log.error(f"Error formatting pipeline conversation history: {e}")
+                log.error(f"Error formatting workflow conversation history: {e}")
                 yield current_response
                 
         except Exception as e:
-            log.error(f"Pipeline execution error: {e}", exc_info=True)
+            log.error(f"Workflow execution error: {e}", exc_info=True)
             await self._update_run_status(execution_id, status="failed", error=str(e))
-            raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Workflow execution failed: {str(e)}")
 
     # =========================================================================
     # CONDITION NODE EXECUTION
@@ -1263,7 +1272,7 @@ class PipelineInference(AbstractBaseInference):
     async def _execute_condition_node(
         self,
         node_id: str,
-        ctx: PipelineState,
+        ctx: WorkflowState,
         node_map: Dict,
         edges_by_source: Dict,
         llm: Any,
@@ -1318,11 +1327,9 @@ class PipelineInference(AbstractBaseInference):
                 selected_node_id = next_node_ids[0]
         
         except Exception as e:
-            log.error(f"Condition evaluation failed: {e}")
-            # On failure, default to first option
-            if next_node_ids:
-                selected_node_id = next_node_ids[0]
+            log.error(f"Condition evaluation failed: {e}", exc_info=True)
             yield {"Node Name": "Evaluating Condition", "Status": "Failed", "Error": str(e)}
+            raise
         
         # Mark condition as completed
         ctx.mark_completed(node_id, condition_input)
@@ -1365,7 +1372,7 @@ class PipelineInference(AbstractBaseInference):
     def _mark_branch_skipped(
         self,
         node_id: str,
-        ctx: PipelineState,
+        ctx: WorkflowState,
         node_map: Dict,
         edges_by_source: Dict
     ):
@@ -1386,7 +1393,7 @@ class PipelineInference(AbstractBaseInference):
     async def _execute_node_streaming(
         self,
         node_id: str,
-        ctx: PipelineState,
+        ctx: WorkflowState,
         node_map: Dict,
         edges_by_source: Dict,
         llm: Any,
@@ -1477,7 +1484,7 @@ class PipelineInference(AbstractBaseInference):
         except Exception as e:
             # NODE LEVEL FAILURE HANDLING
             error_msg = str(e)
-            log.error(f"Node {node_name} execution failed: {error_msg}")
+            log.error(f"Node {node_name} execution failed: {error_msg}", exc_info=True)
             
             ctx.mark_failed(node_id, error_msg)
             
@@ -1499,8 +1506,7 @@ class PipelineInference(AbstractBaseInference):
                 "step_order": step_order
             }
             
-            # Propagate error to successors
-            ctx.propagate(node_id, f"[ERROR from {node_name}: {error_msg}]")
+            raise
 
     # =========================================================================
     # NODE EXECUTION (PARALLEL - non-streaming)
@@ -1509,7 +1515,7 @@ class PipelineInference(AbstractBaseInference):
     async def _execute_node_parallel(
         self,
         node_id: str,
-        ctx: PipelineState,
+        ctx: WorkflowState,
         node_map: Dict,
         edges_by_source: Dict,
         llm: Any,
@@ -1619,7 +1625,7 @@ class PipelineInference(AbstractBaseInference):
         agent_input = self._build_agent_input(accessible_inputs, input_dict)
         updated_query = self._build_query_with_inputs_extended(input_query, agent_input, merged_inputs)
         
-        # Build unique thread ID (stable across pipeline runs for conversation continuity)
+        # Build unique thread ID (stable across workflow runs for conversation continuity)
         node_thread_id = f"{session_id}_{node['node_id']}"
         
         inference_request = AgentInferenceRequest(
@@ -1670,7 +1676,7 @@ class PipelineInference(AbstractBaseInference):
         agent_input = self._build_agent_input(accessible_inputs, input_dict)
         updated_query = self._build_query_with_inputs_extended(input_query, agent_input, merged_inputs)
         
-        # Build unique thread ID (stable across pipeline runs for conversation continuity)
+        # Build unique thread ID (stable across workflow runs for conversation continuity)
         node_thread_id = f"{session_id}_{node['node_id']}"
         
         inference_request = AgentInferenceRequest(
@@ -1753,7 +1759,7 @@ class PipelineInference(AbstractBaseInference):
         self,
         input_query: str,
         final_response: Any,
-        ctx: PipelineState
+        ctx: WorkflowState
     ) -> Dict[str, Any]:
         """Build response with parts and execution metadata."""
         # Handle multiple outputs
@@ -1835,9 +1841,9 @@ class PipelineInference(AbstractBaseInference):
                 }]
             }
 
-    async def resume_pipeline(
+    async def resume_workflow(
         self,
-        pipeline_id: str,
+        workflow_id: str,
         session_id: str,
         model_name: str,
         execution_id: str,
@@ -1852,10 +1858,10 @@ class PipelineInference(AbstractBaseInference):
         role: str = "user"
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Resume a paused pipeline execution.
+        Resume a paused workflow execution.
         
         Args:
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             session_id: The session ID
             model_name: The model name
             execution_id: The execution ID from the paused state
@@ -1870,7 +1876,7 @@ class PipelineInference(AbstractBaseInference):
             role: User role
             
         Yields:
-            Pipeline execution events
+            Workflow execution events
         """
         async def get_next_node(condition: str, next_node_ids: List[str], llm: Any) -> str:
             prompt = f"""
@@ -1891,19 +1897,19 @@ Format the following output into {format_type} format: {output}
 
         llm = await self.model_service.get_llm_model(model_name=model_name, temperature=temperature)
         
-        pipeline = await self.pipeline_service.get_pipeline(pipeline_id)
-        if not pipeline:
-            raise HTTPException(status_code=404, detail=f"Pipeline '{pipeline_id}' not found.")
+        workflow = await self.workflow_service.get_workflow(workflow_id)
+        if not workflow:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found.")
         
         # Get the paused node
         paused_node = None
-        for node in pipeline['pipeline_definition'].get('nodes', []):
+        for node in workflow['workflow_definition'].get('nodes', []):
             if node['node_id'] == paused_node_id:
                 paused_node = node
                 break
         
         if not paused_node:
-            raise HTTPException(status_code=400, detail=f"Paused node '{paused_node_id}' not found in pipeline.")
+            raise HTTPException(status_code=400, detail=f"Paused node '{paused_node_id}' not found in workflow.")
         
         node_state = node_states.get(paused_node_id, {})
         pause_type = node_state.get('status')
@@ -1964,7 +1970,8 @@ Format the following output into {format_type} format: {output}
                         plan_verifier_flag=True,
                         is_plan_approved=is_plan_approved,
                         plan_feedback=plan_feedback if is_plan_approved == 'no' else None,
-                        tool_verifier_flag=tool_verifier
+                        tool_verifier_flag=tool_verifier,
+                        uploaded_files=None
                     )
                 elif current_pause_type == 'paused_tool_verifier':
                     inference_request = AgentInferenceRequest(
@@ -1977,7 +1984,8 @@ Format the following output into {format_type} format: {output}
                         enable_streaming_flag=False,
                         context_flag=context_flag,
                         tool_verifier_flag=True,
-                        tool_feedback=tool_feedback
+                        tool_feedback=tool_feedback,
+                        uploaded_files=None
                     )
                 else:
                     # Fresh execution for subsequent nodes
@@ -2005,7 +2013,8 @@ Format the following output into {format_type} format: {output}
                         enable_streaming_flag=False,
                         context_flag=context_flag,
                         tool_verifier_flag=tool_verifier,
-                        plan_verifier_flag=plan_verifier
+                        plan_verifier_flag=plan_verifier,
+                        uploaded_files=None
                     )
                 
                 async for response in self.centralized_agent_inference.run(
@@ -2075,7 +2084,7 @@ Format the following output into {format_type} format: {output}
                 # Record step entry for resumed execution
                 try:
                     # Get latest step order from service
-                    latest_step_order = await self.pipeline_service.get_latest_step_order(execution_id)
+                    latest_step_order = await self.workflow_service.get_latest_step_order(execution_id)
                     step_order_val = latest_step_order + 1
                     step_payload = {
                         "node_type": "agent",
@@ -2087,7 +2096,7 @@ Format the following output into {format_type} format: {output}
                     }
                     if isinstance(agent_response, dict) and agent_response.get('executor_messages'):
                         step_payload["executor_messages"] = _serialize_messages(agent_response.get('executor_messages'))
-                    await self.pipeline_service.add_pipeline_step(
+                    await self.workflow_service.add_workflow_step(
                         run_id=execution_id,
                         step_order=step_order_val,
                         agent_id=agent_id,
@@ -2099,7 +2108,7 @@ Format the following output into {format_type} format: {output}
             # Find next node
             next_node_ids = []
             condition_met = ""
-            for edge in pipeline['pipeline_definition'].get('edges', []):
+            for edge in workflow['workflow_definition'].get('edges', []):
                 if edge['source_node_id'] == current_node_id:
                     next_node_ids = edge['target_node_id']
                     condition_met = edge.get('condition', "")
@@ -2109,11 +2118,11 @@ Format the following output into {format_type} format: {output}
                 # No more nodes, return final response
                 try:
                     safe_final = final_response if isinstance(final_response, str) else json.dumps(final_response)
-                    await self.pipeline_service.update_pipeline_run_status(execution_id, status="completed", final_response=safe_final)
+                    await self.workflow_service.update_workflow_run_status(execution_id, status="completed", final_response=safe_final)
                 except Exception:
                     pass
                 yield {
-                    'event_type': 'pipeline_completed',
+                    'event_type': 'workflow_completed',
                     'execution_id': execution_id,
                     'response': final_response,
                     'node_states': node_states,
@@ -2132,7 +2141,7 @@ Format the following output into {format_type} format: {output}
                 next_node_id = next_node_ids[0]
             
             # Find the next node object
-            for node in pipeline['pipeline_definition'].get('nodes', []):
+            for node in workflow['workflow_definition'].get('nodes', []):
                 if node['node_id'] == next_node_id:
                     start_node = node
                     break

@@ -20,6 +20,9 @@ class UpdateGroupRequest(BaseModel):
     add_agents: Optional[List[str]] = Field(None, description="List of agent IDs to add to group")
     remove_agents: Optional[List[str]] = Field(None, description="List of agent IDs to remove from group")
 
+class DeleteGroupsRequest(BaseModel):
+    """Schema for deleting one or more groups."""
+    group_names: List[str] = Field(..., description="List of group names to delete")
 
 class AddUsersRequest(BaseModel):
     """Request model for adding users to a group."""
@@ -102,7 +105,6 @@ class GroupUpdateResponse(GroupOperationResponse):
     added_agents: Optional[List[str]] = None
     removed_agents: Optional[List[str]] = None
     description_updated: bool = False
-
 
 class GetGroupsByUserResponse(BaseModel):
     """Response model for getting groups by user."""

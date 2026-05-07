@@ -113,6 +113,9 @@ Follow a logical, step-by-step reasoning process to ensure the output is precise
 4. **Tools:**
    {tool_prompt}
 
+5. **Database Connections (if configured):**
+   {db_connections_info}
+
 ---
 
 ### CRITICAL: File-Based Memory System
@@ -121,6 +124,11 @@ The agent has access to a **Unix-like shell** via the `run_shell_command` tool. 
 
 #### Directory Structure:
 ```
+/databases/                 → Database metadata files (SHARED across ALL agents - READ-ONLY)
+  └── {{connection_name}}/
+      ├── schema.md         → Database schema (tables, columns, relationships)
+      └── samples.md        → Sample data from each table
+
 /user/                      → User preferences (shared across ALL agents for this user)
   └── preferences.md        → Display settings, language, units, notification preferences
 
@@ -140,6 +148,9 @@ The agent has access to a **Unix-like shell** via the `run_shell_command` tool. 
       └── full.md           → Full conversation history
 ```
 
+#### Database Schema Access (if configured):
+{db_schema_access_instructions}
+
 #### IMPORTANT: Domain-Specific Facts
 The `/agent/facts/` directory should contain files **relevant to the agent's purpose**:
 
@@ -149,8 +160,9 @@ The `/agent/facts/` directory should contain files **relevant to the agent's pur
 - **Code Assistant:** `preferred_languages.md`, `code_styles.md`, `project_context.md`
 - **Customer Service:** `customer_info.md`, `ticket_history.md`, `escalation_rules.md`
 - **Travel Agent:** `destinations.md`, `travel_preferences.md`, `booking_info.md`
+- **Database Agent:** Read schema from `/databases/{{conn}}/schema.md` before writing queries
 
-**Generate relevant fact files based on {agent_goal}**
+**Generate relevant fact files based on {{agent_goal}}**
 
 #### Key Shell Commands:
 - `cat /path/to/file.md` - Read file contents
@@ -215,7 +227,7 @@ This checks if there's an ongoing multi-turn conversation waiting for user input
 #### Step 4: Define Information Storage Strategy
 When user provides NEW information relevant to this agent's domain, store it immediately.
 
-**IMPORTANT:** Generate storage examples that are RELEVANT to the agent's goal ({agent_goal}).
+**IMPORTANT:** Generate storage examples that are RELEVANT to the agent's goal ({{agent_goal}}).
 Do NOT use generic examples like api_keys or locations unless they are relevant to this agent.
 
 **Example for a Math Agent:**
@@ -275,7 +287,7 @@ Command: echo "action: ACTION_NAME\\nwaiting_for: WHAT_IS_NEEDED\\ncontext: RELE
 **Memory Management Guidelines**
 - When to read from memory (always, before any action)
 - When to write to memory (user provides new information)
-- IMPORTANT: All examples must be relevant to the agent's goal: {agent_goal}
+- IMPORTANT: All examples must be relevant to the agent's goal: {{agent_goal}}
 - How to handle pending context (multi-turn conversations)
 
 **Step-by-Step Task Description**
@@ -291,7 +303,7 @@ Command: echo "action: ACTION_NAME\\nwaiting_for: WHAT_IS_NEEDED\\ncontext: RELE
 ---
 
 **CRITICAL INSTRUCTION FOR GENERATION:**
-1. ALL examples in the generated prompt MUST be relevant to the agent's goal: "{agent_goal}"
+1. ALL examples in the generated prompt MUST be relevant to the agent's goal: "{{agent_goal}}"
 2. Do NOT use generic examples like "api_keys.md", "locations.md", "user_info.md" unless they are directly relevant to the agent's purpose.
 3. For a Math Agent, use examples like: `calculation_history.md`, `preferred_precision.md`, `formulas.md`
 4. For a Weather Agent, use examples like: `api_keys.md`, `locations.md`, `weather_preferences.md`
@@ -2082,8 +2094,8 @@ The lesson should be:
 
 Return only the lesson text without any additional formatting or explanation.
 """
-# Below prompts are used for agentic pipelines
-CONDITION_EVALUATION_PROMPT = """You are a routing decision engine for an agent pipeline system.
+# Below prompts are used for agentic workflows
+CONDITION_EVALUATION_PROMPT = """You are a routing decision engine for an agent workflow system.
 
 Given an agent's response and a routing condition with multiple possible target nodes, determine which target node to route to.
 
@@ -2104,7 +2116,7 @@ Given an agent's response and a routing condition with multiple possible target 
 2. Evaluate the routing condition against the available target nodes
 3. The condition describes how to choose between target nodes
 4. If condition contains "END" or similar termination keywords, check if the response indicates completion
-5. Return the ID of the single best target node to proceed to, or "END" if pipeline should terminate
+5. Return the ID of the single best target node to proceed to, or "END" if workflow should terminate
 
 ## Output Format:
 Return a JSON object with the following structure:
@@ -2117,18 +2129,18 @@ Return ONLY the JSON object, no additional text."""
 
 
 
-OUTPUT_FORMATTING_PROMPT = """You are an output formatting assistant for an agent pipeline system.
+OUTPUT_FORMATTING_PROMPT = """You are an output formatting assistant for an agent workflow system.
 
-Given the accumulated outputs from a pipeline execution, format the final response.
+Given the accumulated outputs from a workflow execution, format the final response.
 
-## Pipeline Outputs:
-{pipeline_outputs}
+## Workflow Outputs:
+{workflow_outputs}
 
 ## Output Schema (if provided):
 {output_schema}
 
 ## Instructions:
-1. Analyze all the outputs from the pipeline nodes
+1. Analyze all the outputs from the workflow nodes
 2. If an output schema is provided, format the response according to that schema
 3. If no schema is provided, return a well-structured string summary
 4. Ensure the response is clear, concise, and includes key information from all nodes

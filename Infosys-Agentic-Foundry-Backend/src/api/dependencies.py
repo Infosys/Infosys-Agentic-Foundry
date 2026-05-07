@@ -10,10 +10,12 @@ from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentService, ChatService, ModelService,
-    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService, PipelineService, VMManagementService,
+    FeedbackLearningService, EvaluationService, ExportService, ConsistencyService, WorkflowService, VMManagementService,
     KnowledgebaseService, UserAgentAccessService, 
-    GroupService, GroupSecretsService, ConsistencyService, RoleAccessService, DepartmentService
+    GroupService, GroupSecretsService, ConsistencyService, RoleAccessService, DepartmentService,
+    TaskRegistryService
 )
+from src.database.repositories import QueryTokenUsageRepository, TokenUsageLogsRepository
 from src.database.admin_config_service import AdminConfigService
 from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 # EXPORT:EXCLUDE:START
@@ -22,7 +24,7 @@ from src.agent_templates.base_agent_onboard import BaseAgentOnboard, BaseMetaTyp
 from src.inference.base_agent_inference import BaseAgentInference, BaseMetaTypeAgentInference
 from src.inference.python_based_inference.base_python_based_agent_inference import BasePythonBasedAgentInference
 from src.inference.google_adk_inference.base_agent_gadk_inference import BaseAgentGADKInference
-from src.inference.pipeline_inference import PipelineInference
+from src.inference.workflow_inference import WorkflowInference
 from src.inference.centralized_agent_inference import CentralizedAgentInference
 from src.tools.tool_export_import_service import ToolExportImportService
 from src.utils.file_manager import FileManager
@@ -79,6 +81,18 @@ class ServiceProvider:
         if app_container.model_service is None:
             raise HTTPException(status_code=500, detail="ModelService not initialized.")
         return app_container.model_service
+
+    @staticmethod
+    def get_query_token_usage_repo() -> QueryTokenUsageRepository:
+        if app_container.query_token_usage_repo is None:
+            raise HTTPException(status_code=500, detail="QueryTokenUsageRepository not initialized.")
+        return app_container.query_token_usage_repo
+
+    @staticmethod
+    def get_token_usage_logs_repo() -> TokenUsageLogsRepository:
+        if app_container.token_usage_logs_repo is None:
+            raise HTTPException(status_code=500, detail="TokenUsageLogsRepository not initialized.")
+        return app_container.token_usage_logs_repo
 
     @staticmethod
     def get_feedback_learning_service() -> FeedbackLearningService:
@@ -251,24 +265,24 @@ class ServiceProvider:
         return app_container.vm_management_service
 
     @staticmethod
-    def get_pipeline_service() -> PipelineService:
+    def get_workflow_service() -> WorkflowService:
         """
-        Returns the PipelineService instance for pipeline management operations.
-        This is used to handle pipeline CRUD and execution management.
+        Returns the WorkflowService instance for workflow management operations.
+        This is used to handle workflow CRUD and execution management.
         """
-        if app_container.pipeline_service is None:
-            raise HTTPException(status_code=500, detail="PipelineService not initialized.")
-        return app_container.pipeline_service
+        if app_container.workflow_service is None:
+            raise HTTPException(status_code=500, detail="WorkflowService not initialized.")
+        return app_container.workflow_service
 
     @staticmethod
-    def get_pipeline_inference() -> PipelineInference:
+    def get_workflow_inference() -> WorkflowInference:
         """
-        Returns the PipelineInference instance for executing pipelines.
-        This is used to orchestrate agent pipeline execution with HITL support.
+        Returns the WorkflowInference instance for executing workflows.
+        This is used to orchestrate agent workflow execution with HITL support.
         """
-        if app_container.pipeline_inference is None:
-            raise HTTPException(status_code=500, detail="PipelineInference not initialized.")
-        return app_container.pipeline_inference
+        if app_container.workflow_inference is None:
+            raise HTTPException(status_code=500, detail="WorkflowInference not initialized.")
+        return app_container.workflow_inference
 
     @staticmethod
     def get_tool_generation_code_version_service():
@@ -329,6 +343,16 @@ class ServiceProvider:
         if app_container.group_secrets_service is None:
             raise HTTPException(status_code=500, detail="GroupSecretsService not initialized.")
         return app_container.group_secrets_service
+    
+    @staticmethod
+    def get_task_registry_service() -> TaskRegistryService:
+        """
+        Returns the TaskRegistryService instance for M2M async task tracking.
+        This is used to register, track, and query async background tasks.
+        """
+        if app_container.task_registry_service is None:
+            raise HTTPException(status_code=500, detail="TaskRegistryService not initialized.")
+        return app_container.task_registry_service
     
     @staticmethod
     def get_role_access_service() -> RoleAccessService:
@@ -429,4 +453,23 @@ class ServiceProvider:
         if app_container.kb_sharing_repo is None:
             raise HTTPException(status_code=500, detail="KbDepartmentSharingRepository not initialized.")
         return app_container.kb_sharing_repo
+
+    @staticmethod
+    def get_kafka_manager():
+        """
+        Returns the Kafka Manager instance for communicating with Kafka Queue
+        """
+        if app_container.kafka_manager is None:
+            raise HTTPException(status_code=500, detail="KafkaManager not initialized.")
+        return app_container.kafka_manager    
+
+    @staticmethod
+    def get_workflow_sharing_repo():
+        """
+        Returns the WorkflowDepartmentSharingRepository instance for workflow sharing across departments.
+        This is used to manage sharing workflows between different departments.
+        """
+        if app_container.workflow_sharing_repo is None:
+            raise HTTPException(status_code=500, detail="WorkflowDepartmentSharingRepository not initialized.")
+        return app_container.workflow_sharing_repo
 

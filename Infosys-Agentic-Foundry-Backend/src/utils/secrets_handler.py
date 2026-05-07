@@ -14,6 +14,7 @@ from telemetry_wrapper import logger as log
 current_user_email: ContextVar[str] = ContextVar("current_user_email")
 current_user_department:  ContextVar[str] = ContextVar("current_user_department")
 current_user_role : ContextVar[str] = ContextVar("current_user_role")
+current_request_headers: ContextVar[dict] = ContextVar("current_request_headers", default={})
 
 class PublicKeysManager:
     """
@@ -107,12 +108,24 @@ class PublicKeysManager:
             
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
+                    # Case-insensitive duplicate check before insert
+                    cur.execute("""
+                        SELECT COUNT(*) FROM public_keys
+                        WHERE LOWER(key_name) = LOWER(%s) AND
+                              (department_name = %s OR (department_name IS NULL AND %s IS NULL))
+                    """, (key_name, department_name, department_name))  # CASE-INSENSITIVE FIX
+                    if cur.fetchone()[0] > 0:
+                        dept_info = f" in department '{department_name}'" if department_name else ""
+                        raise ValueError(f"Public key '{key_name}' already exists{dept_info}")
+
                     cur.execute("""
                         INSERT INTO public_keys (key_name, encrypted_value, description, created_by, department_name)
                         VALUES (%s, %s, %s, %s, %s)
                     """, (key_name, encrypted_value, description, created_by, department_name))
                     conn.commit()
             return True
+        except ValueError:
+            raise
         except Exception as e:
             # Check if it's a duplicate key error
             if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
@@ -157,9 +170,9 @@ class PublicKeysManager:
                     cur.execute(f"""
                         UPDATE public_keys 
                         SET {', '.join(update_fields)}
-                        WHERE key_name = %s AND 
+                        WHERE LOWER(key_name) = LOWER(%s) AND 
                               (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                    """, params)
+                    """, params)  # CASE-INSENSITIVE FIX
                     
                     if cur.rowcount == 0:
                         dept_info = f" in department '{department_name}'" if department_name else ""
@@ -191,9 +204,9 @@ class PublicKeysManager:
                     cur.execute("""
                         SELECT encrypted_value 
                         FROM public_keys 
-                        WHERE key_name = %s AND 
+                        WHERE LOWER(key_name) = LOWER(%s) AND 
                               (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                    """, (key_name, department_name, department_name))
+                    """, (key_name, department_name, department_name))  # CASE-INSENSITIVE FIX
                     
                     result = cur.fetchone()
                     if result:
@@ -220,13 +233,13 @@ class PublicKeysManager:
             with self._get_db_connection() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     if key_names:
-                        placeholders = ','.join(['%s'] * len(key_names))
+                        placeholders = ','.join(['LOWER(%s)'] * len(key_names))  # CASE-INSENSITIVE FIX
                         cur.execute(f"""
                             SELECT key_name, encrypted_value 
                             FROM public_keys 
-                            WHERE key_name IN ({placeholders}) AND 
+                            WHERE LOWER(key_name) IN ({placeholders}) AND 
                                   (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                        """, key_names + [department_name, department_name])
+                        """, key_names + [department_name, department_name])  # CASE-INSENSITIVE FIX
                     else:
                         cur.execute("""
                             SELECT key_name, encrypted_value 
@@ -254,9 +267,9 @@ class PublicKeysManager:
                 with conn.cursor() as cur:
                     cur.execute("""
                         DELETE FROM public_keys 
-                        WHERE key_name = %s AND 
+                        WHERE LOWER(key_name) = LOWER(%s) AND 
                               (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                    """, (key_name, department_name, department_name))
+                    """, (key_name, department_name, department_name))  # CASE-INSENSITIVE FIX
                     conn.commit()
                     return cur.rowcount > 0
         except Exception as e:
@@ -444,12 +457,24 @@ class UserSecretsManager:
             
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
+                    # Case-insensitive duplicate check before insert
+                    cur.execute("""
+                        SELECT COUNT(*) FROM user_secrets
+                        WHERE user_email = %s AND LOWER(secret_name) = LOWER(%s) AND
+                              (department_name = %s OR (department_name IS NULL AND %s IS NULL))
+                    """, (user_email, key_name, department_name, department_name))  # CASE-INSENSITIVE FIX
+                    if cur.fetchone()[0] > 0:
+                        dept_info = f" and department '{department_name}'" if department_name else ""
+                        raise ValueError(f"Secret '{key_name}' already exists for user '{user_email}'{dept_info}")
+
                     cur.execute("""
                         INSERT INTO user_secrets (user_email, secret_name, encrypted_value, department_name)
                         VALUES (%s, %s, %s, %s)
                     """, (user_email, key_name, encrypted_value, department_name))
                     conn.commit()
             return True
+        except ValueError:
+            raise
         except Exception as e:
             # Check if it's a duplicate key error
             if "duplicate key" in str(e).lower() or "unique constraint" in str(e).lower():
@@ -482,9 +507,9 @@ class UserSecretsManager:
                     cur.execute("""
                         UPDATE user_secrets 
                         SET encrypted_value = %s, updated_at = CURRENT_TIMESTAMP
-                        WHERE user_email = %s AND secret_name = %s AND 
+                        WHERE user_email = %s AND LOWER(secret_name) = LOWER(%s) AND 
                               (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                    """, (encrypted_value, user_email, key_name, department_name, department_name))
+                    """, (encrypted_value, user_email, key_name, department_name, department_name))  # CASE-INSENSITIVE FIX
                     
                     if cur.rowcount == 0:
                         dept_info = f" and department '{department_name}'" if department_name else ""
@@ -517,9 +542,9 @@ class UserSecretsManager:
                     cur.execute("""
                         SELECT encrypted_value 
                         FROM user_secrets 
-                        WHERE user_email = %s AND secret_name = %s AND 
+                        WHERE user_email = %s AND LOWER(secret_name) = LOWER(%s) AND 
                               (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                    """, (user_email, key_name, department_name, department_name))
+                    """, (user_email, key_name, department_name, department_name))  # CASE-INSENSITIVE FIX
                     
                     result = cur.fetchone()
                     if result:
@@ -547,13 +572,13 @@ class UserSecretsManager:
             with self._get_db_connection() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     if key_names:
-                        placeholders = ','.join(['%s'] * len(key_names))
+                        placeholders = ','.join(['LOWER(%s)'] * len(key_names))  # CASE-INSENSITIVE FIX
                         cur.execute(f"""
                             SELECT secret_name, encrypted_value 
                             FROM user_secrets 
-                            WHERE user_email = %s AND secret_name IN ({placeholders}) AND 
+                            WHERE user_email = %s AND LOWER(secret_name) IN ({placeholders}) AND 
                                   (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                        """, [user_email] + key_names + [department_name, department_name])
+                        """, [user_email] + key_names + [department_name, department_name])  # CASE-INSENSITIVE FIX
                     else:
                         cur.execute("""
                             SELECT secret_name, encrypted_value 
@@ -582,9 +607,9 @@ class UserSecretsManager:
                 with conn.cursor() as cur:
                     cur.execute("""
                         DELETE FROM user_secrets 
-                        WHERE user_email = %s AND secret_name = %s AND 
+                        WHERE user_email = %s AND LOWER(secret_name) = LOWER(%s) AND 
                               (department_name = %s OR (department_name IS NULL AND %s IS NULL))
-                    """, (user_email, key_name, department_name, department_name))
+                    """, (user_email, key_name, department_name, department_name))  # CASE-INSENSITIVE FIX
                     conn.commit()
                     return cur.rowcount > 0
         except Exception as e:
@@ -1013,8 +1038,8 @@ def group_exists_sync(group_name: str, department_name: str = None) -> bool:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT COUNT(*) FROM groups 
-                    WHERE group_name = %s AND department_name = %s
-                """, (group_name, department_name))
+                    WHERE LOWER(group_name) = LOWER(%s) AND department_name = %s
+                """, (group_name, department_name))  # CASE-INSENSITIVE FIX
                 
                 result = cur.fetchone()
                 exists = result[0] > 0 if result else False
@@ -1047,9 +1072,9 @@ def check_user_group_access_sync(user_email: str, group_name: str, department_na
                 cur.execute("""
                     SELECT user_emails
                     FROM groups 
-                    WHERE group_name = %s 
+                    WHERE LOWER(group_name) = LOWER(%s) 
                     AND department_name = %s 
-                """, (group_name, department_name))
+                """, (group_name, department_name))  # CASE-INSENSITIVE FIX
                 
                 result = cur.fetchone()
                 
@@ -1085,10 +1110,10 @@ def get_group_secret_sync(group_name: str, key_name: str, user_email: str, depar
                 cur.execute("""
                     SELECT encrypted_value 
                     FROM group_secrets 
-                    WHERE group_name = %s 
+                    WHERE LOWER(group_name) = LOWER(%s) 
                     AND department_name = %s
-                    AND key_name = %s
-                """, (group_name, department_name, key_name))
+                    AND LOWER(key_name) = LOWER(%s)
+                """, (group_name, department_name, key_name))  # CASE-INSENSITIVE FIX
                 
                 secret_result = cur.fetchone()
                 if not secret_result:
@@ -1179,6 +1204,4 @@ def get_group_secrets(group_name: str, key_name: str, default_value=None):
         
     except Exception as e:
         log.error(f"Error in get_group_secrets for {group_name}.{key_name}: {e}")
-        return default_value if default_value is not None else "" 
-    
-
+        return default_value if default_value is not None else ""

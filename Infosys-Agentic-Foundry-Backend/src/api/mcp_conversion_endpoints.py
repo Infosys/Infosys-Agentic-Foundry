@@ -237,7 +237,7 @@ async def process_conversion(
     # Department-based permission check
     user_department = user_data.department_name
     if not await authorization_service.check_operation_permission(
-        user_data.email, user_data.role, "create", "tools", user_department
+        user_data.email, user_data.role, "create", "mcp_servers", user_department
     ):
         raise HTTPException(status_code=403, detail="You don't have permission to create MCP servers.")
     
@@ -289,9 +289,9 @@ async def process_conversion(
     # 2. Metadata Generation
     meta = await llm_generate_metadata(all_funcs, body.server_name, body.server_description)
 
-    # Check if server name already exists
+    # Check if server name already exists (case-insensitive)
     for existing_server in existing_tools:
-        if existing_server.get("tool_name") == meta["name"]:
+        if existing_server.get("tool_name", "").lower() == meta["name"].lower():
             raise HTTPException(
                 status_code=400,
                 detail=f"Server name '{meta['name']}' already exists. Please choose a different name."

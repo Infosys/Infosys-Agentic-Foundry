@@ -6,6 +6,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from google.adk.models.lite_llm import LiteLlm
 
 from src.models.azure_ai_model_service import AzureAIModelService
+from src.models.guardrail_aware_llm import (
+    GuardrailAzureChatOpenAI,
+    GuardrailChatOpenAI,
+    GuardrailError,
+    TokenLoggingAzureChatOpenAI
+)
 from src.database.repositories import ChatStateHistoryManagerRepository
 from src.config.constants import ModelNames
 from telemetry_wrapper import logger as log
@@ -24,6 +30,15 @@ class ModelService:
         self.chat_state_history_manager = chat_state_history_manager
 
         self._loaded_models: Dict[str, Union[AzureChatOpenAI, ChatOpenAI, ChatGoogleGenerativeAI]] = {} # Cache for loaded LLM instances
+
+        # LiteLLM Proxy configuration (for guardrails and token tracking)
+        self.use_litellm_proxy = os.getenv("USE_LITELLM_PROXY_FLAG", "false").lower() == "true"
+        self.litellm_endpoint = os.getenv("LITELLM_ENDPOINT", None)
+        self.litellm_api_key = os.getenv("LITELLM_API_KEY", None)
+        self.litellm_api_version = os.getenv("LITELLM_API_VERSION", None)
+        self.litellm_models = []
+        if self.use_litellm_proxy and self.litellm_endpoint and self.litellm_api_key:
+            self.litellm_models = self.convert_string_to_list(os.getenv("LITELLM_MODELS", ""))
 
         # Azure OpenAI configuration
         self.__azure_api_key = os.getenv("AZURE_OPENAI_API_KEY", None)
@@ -66,11 +81,21 @@ class ModelService:
 
         # Get all available models
         default_model_name = os.getenv("DEFAULT_MODEL_NAME", ModelNames.GPT_4O.value)
-        self.available_models = self.azure_openai_models + self.azure_openai_gpt_5_models + self.google_genai_models + self.gpt_oss_models + self.openai_models
+        self.available_models = self.litellm_models + self.azure_openai_models + self.azure_openai_gpt_5_models + self.google_genai_models + self.gpt_oss_models + self.openai_models
+        self.available_models = list(set(self.available_models))
         # self.available_models.sort()
         if default_model_name in self.available_models:
             self.available_models.remove(default_model_name)
             self.available_models.insert(0, default_model_name)
+        
+        # Note: standalone tracker initialization (register_tracker_hooks) is intentionally
+        # NOT called here. ModelService.__init__ runs at module import time before any
+        # event loop is active, so asyncio.create_task() would raise RuntimeError.
+        # register_tracker_hooks() is instead called from main.py lifespan() where the
+        # event loop is guaranteed to be running.
+        
+        if self.use_litellm_proxy:
+            log.info(f"LiteLLM Proxy enabled - using guardrail-aware wrappers. Endpoint: {self.litellm_endpoint}")
 
 
     @property
@@ -101,7 +126,26 @@ class ModelService:
         Returns an instance of AzureAIModelService.
         """
         client_gpt, client_gpt_5 = None, None
+        
+        # If using LiteLLM proxy, use unified configuration
+        if os.getenv("USE_LITELLM_PROXY_FLAG", "false").lower() == "true":
+            api_key = os.getenv("LITELLM_API_KEY", None)
+            api_base = os.getenv("LITELLM_ENDPOINT", None)
+            api_version = os.getenv("LITELLM_API_VERSION", None)
+            
+            if (self.azure_openai_models or self.azure_openai_gpt_5_models) and api_key and api_base and api_version:
+                log.info(f"Initializing AzureAIModelService with LiteLLM endpoint: {api_base}")
+                client_gpt = AzureAIModelService(
+                    api_key=api_key,
+                    api_base=api_base,
+                    api_version=api_version,
+                    model=(self.azure_openai_models + self.azure_openai_gpt_5_models)[0] if (self.azure_openai_models or self.azure_openai_gpt_5_models) else None,
+                    chat_history_manager=self.chat_state_history_manager
+                )
+                client_gpt_5 = client_gpt
+                return client_gpt, client_gpt_5
 
+        # Standard Azure OpenAI configuration (when not using LiteLLM proxy)
         if self.azure_openai_models and self.__azure_api_key and self.__azure_api_base and self.__azure_api_version:
             client_gpt = AzureAIModelService(
                 api_key=self.__azure_api_key,
@@ -124,22 +168,40 @@ class ModelService:
     async def _load_llm_instance(self, model_name: str, temperature: float = 0) -> AzureChatOpenAI | ChatOpenAI | ChatGoogleGenerativeAI:
         """
         Internal helper to load an LLM instance based on its name.
-        (Logic moved from your original load_model function)
+        Uses guardrail wrappers when LiteLLM proxy is enabled.
         """
+        
+        # Check if using LiteLLM proxy with guardrails
+        if self.use_litellm_proxy and self.litellm_endpoint:
+            if model_name in self.litellm_models:
+                api_key = self.litellm_api_key or "dummy-key"
+                if "gpt-5" in model_name:
+                    temperature = 1
+                
+                log.info(f"Loading model via LiteLLM proxy with guardrails: {model_name}")
+                return GuardrailAzureChatOpenAI(
+                    openai_api_key=api_key,
+                    azure_endpoint=self.litellm_endpoint,
+                    openai_api_version=self.litellm_api_version or "",
+                    azure_deployment=model_name,
+                    temperature=temperature,
+                    max_tokens=None,
+                )
 
+        # Original Azure OpenAI configuration
         if model_name in self.azure_openai_models:
             if not self.__azure_api_key or not self.__azure_api_base or not self.__azure_api_version:
                 log.error("Azure model's environment variable is not set.")
                 raise ValueError("Azure model's is not set in environment variables.")
 
-            log.info(f"Loading OpenAI model: {model_name}")
-            return AzureChatOpenAI(
+            log.info(f"Loading Azure OpenAI model with token logging: {model_name}")
+            return TokenLoggingAzureChatOpenAI(
                 openai_api_key=self.__azure_api_key,
                 azure_endpoint=self.__azure_api_base,
                 openai_api_version=self.__azure_api_version,
                 azure_deployment=model_name,
                 temperature=temperature,
-                max_retries=10,
+                max_retries=0,
                 max_tokens=None,
             )
 
@@ -150,8 +212,8 @@ class ModelService:
                 log.error("Azure GPT-5 model's environment variable is not set.")
                 raise ValueError("Azure GPT-5 model's is not set in environment variables.")
 
-            log.info(f"Loading OpenAI model: {model_name}")
-            return AzureChatOpenAI(
+            log.info(f"Loading Azure OpenAI GPT-5 model with token logging: {model_name}")
+            return TokenLoggingAzureChatOpenAI(
                 openai_api_key=self.__azure_gpt_5_api_key,
                 azure_endpoint=self.__azure_gpt_5_api_base,
                 openai_api_version=self.__azure_gpt_5_api_version,
@@ -185,6 +247,20 @@ class ModelService:
             log.info(f"Loading Google Generative AI model: {model_name}")
             return ChatGoogleGenerativeAI(
                 api_key=self.__gemini_api_key,
+                model=model_name,
+                temperature=temperature,
+                max_retries=10
+            )
+
+        if model_name in self.openai_models:
+            if not self.__openai_api_key:
+                log.error("OPENAI_API_KEY environment variable is not set.")
+                raise ValueError("OPENAI_API_KEY is not set in environment variables.")
+
+            log.info(f"Loading OpenAI model: {model_name}")
+            return ChatOpenAI(
+                api_key=self.__openai_api_key,
+                base_url=self.__openai_base_url,
                 model=model_name,
                 temperature=temperature,
                 max_retries=10
@@ -231,7 +307,7 @@ class ModelService:
         else:
             log.debug(f"Model '{model_name}' retrieved from cache.")
         return self._loaded_models[model_name]
-
+    
     async def get_llm_model_using_python(self, model_name: str, temperature: float = 0) -> AzureAIModelService:
         """
         Creates and returns an LLM model instance using Python implementation.
@@ -254,6 +330,23 @@ class ModelService:
         """
         Creates and returns an LiteLLM model instance using Google ADK.
         """
+        # Check if using LiteLLM proxy with guardrails
+        if self.use_litellm_proxy and self.litellm_endpoint:
+            if model_name in self.litellm_models:
+                api_key = self.litellm_api_key or "dummy-key"
+                if "gpt-5" in model_name:
+                    temperature = 1
+
+                log.info(f"Loading model via LiteLLM proxy for Google ADK: {model_name}")
+                return LiteLlm(
+                    model=model_name,
+                    api_key=api_key,
+                    api_base=self.litellm_endpoint,
+                    api_version=self.litellm_api_version or "",
+                    temperature=0
+                )
+                    
+
         if model_name in self.azure_openai_models:
             if not self.__azure_api_key or not self.__azure_api_base or not self.__azure_api_version:
                 log.error("Azure model's environment variable is not set.")
@@ -282,6 +375,19 @@ class ModelService:
                 api_base=self.__azure_gpt_5_api_base,
                 api_version=self.__azure_gpt_5_api_version,
                 temperature=1,
+            )
+
+        if model_name in self.openai_models:
+            if not self.__openai_api_key:
+                log.error("OPENAI_API_KEY environment variable is not set.")
+                raise ValueError("OPENAI_API_KEY is not set in environment variables.")
+
+            log.info(f"Loading OpenAI model using Google ADK: {model_name}")
+            return LiteLlm(
+                model=f"openai/{model_name}",
+                api_key=self.__openai_api_key,
+                api_base=self.__openai_base_url,
+                temperature=temperature,
             )
 
         if model_name in self.gpt_oss_models:

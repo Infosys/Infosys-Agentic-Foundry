@@ -44,13 +44,13 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
         super().__init__(inference_utils)
 
 
-    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False, message_queue: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False):
+    async def _build_agent_and_chains(self, llm, agent_config, checkpointer = None, tool_interrupt_flag: bool = False, use_kafka_tool_worker: bool = False, session_id: str = None, agent_id: str = None, context_flag: bool = True, file_context_management_flag: bool = False):
         """
         Builds the agent and chains for the Meta workflow.
         Returns writer_holder to enable streaming in handoff tools.
         
         Args:
-            message_queue: Not used by meta agent, included for interface compatibility.
+            use_kafka_tool_worker: Not used by meta agent, included for interface compatibility.
             session_id: Session ID for shell workspace (required if file_context_management_flag=True).
             agent_id: Agent ID for shell workspace (required if file_context_management_flag=True).
             context_flag: If False, no memory tools will be added.
@@ -64,8 +64,12 @@ class MetaAgentInference(BaseMetaTypeAgentInference):
         if file_context_management_flag:
             # Try to load file-context prompt from file (using agent_name, same as onboard)
             safe_agent_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in agent_name)
+            from src.utils.secrets_handler import current_user_department
+            from src.inference.database_tools_cache import get_file_context_prompts_dir
+            user_department = current_user_department.get("General")
+            prompts_dir = str(get_file_context_prompts_dir(user_department))
             file_context_prompt_path = os.path.join(
-                "agent_workspaces", "file_context_prompts", f"{safe_agent_name}_file_context_prompt.md"
+                prompts_dir, f"{safe_agent_name}_file_context_prompt.md"
             )
             if os.path.exists(file_context_prompt_path):
                 with open(file_context_prompt_path, "r", encoding="utf-8") as f:
@@ -375,10 +379,9 @@ User Query:
                             final_content_parts.extend(msg["agent"]["messages"])
 
             except Exception as e:
-                error = f"Error Occurred in Meta Agent: {e}"
                 writer({"Node Name": "Meta Agent Thinking...", "Status": "Failed"})
-                log.error(error, exc_info=True) # exc_info=True gives you the full traceback in logs
-                return {"errors": error}
+                log.error(f"Error Occurred in Meta Agent: {e}", exc_info=True)
+                raise
 
             # Fallback handling if agent produced no messages
             if not final_content_parts:
@@ -767,15 +770,8 @@ User Query:
                 }
             except Exception as e:
                 writer({"Node Name": "Evaluating Response", "Status": "Failed"})
-                log.error(f"Evaluator agent failed for session {state['session_id']}: {e}")
-                writer({"raw": {"evaluator_error": str(e)}, "content": "Evaluator agent failed due to an error."})
-                return {
-                    "evaluation_score": 0.3,
-                    "evaluation_feedback": f"Evaluation failed due to error: {str(e)}",
-                    "evaluation_attempts": state.get("evaluation_attempts", 0) + 1,
-                    "executor_messages": ChatMessage(content=f"Evaluation failed: {str(e)}", role="evaluator-error"),
-                    "is_tool_interrupted": False
-                }
+                log.error(f"Evaluator agent failed for session {state['session_id']}: {e}", exc_info=True)
+                raise
 
        
         async def evaluator_decision(state: MetaWorkflowState):
@@ -1011,21 +1007,9 @@ User Query:
                 }
 
             except Exception as e:
-                log.error(f"Validator agent failed for session {state['session_id']}: {e}")
-                writer({"raw": {"Validation Error": str(e)}, "content": f"Validation failed due to error: {str(e)}"})
                 writer({"Node Name": "Validating Response", "Status": "Failed"})
-
-                exec_msg = ChatMessage(
-                    content=f"Validation failed: {str(e)}",
-                    role="validator-error"
-                )
-                return {
-                    "validation_score": 0.3,
-                    "validation_feedback": f"Validation failed due to error: {str(e)}",
-                    "validation_attempts": validation_attempts,
-                    "is_tool_interrupted": False,
-                    "executor_messages": exec_msg
-                }
+                log.error(f"Validator agent failed for session {state['session_id']}: {e}", exc_info=True)
+                raise
 
 
       

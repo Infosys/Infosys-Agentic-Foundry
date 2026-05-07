@@ -69,22 +69,20 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
     async def _get_python_based_agent_instance(self,
                                 llm: BaseAIModelService,
                                 system_prompt: str,
-                                tool_ids: List[str] = []
+                                tool_ids: List[str] = [],
+                                tool_versions: Dict[str, str] = None
                             ) -> Tuple[BaseAIModelService, Optional[List[Callable]]]:
         """
         Helper method to create a Python-based agent instance with tools loaded dynamically.
         This function supports loading both Python code-based tools and MCP tools.
+        
+        Args:
+            tool_versions: Optional dict mapping tool_id -> version (e.g., 'v1', 'v2').
+                          If provided, loads versioned code from tool_versions_table.
         """
-        # local_var for exec() context, including secrets handlers
-        local_var = {
-            "get_user_secrets": get_user_secrets,
-            "current_user_email": current_user_email,
-            "get_public_secrets": get_public_key,
-            "get_group_secrets": get_group_secrets
-        }
 
         tool_list: List[Union[Callable, MCPToolAdapter]] = []
-        tool_list: List[Union[Callable, MCPToolAdapter]] = await self._get_tools_instances(tool_ids=tool_ids)
+        tool_list: List[Union[Callable, MCPToolAdapter]] = await self._get_tools_instances(tool_ids=tool_ids, tool_versions=tool_versions)
         memory_management_tools = await self._get_memory_management_tools_instances()
         tool_list.extend(memory_management_tools)
 
@@ -571,6 +569,6 @@ class BasePythonBasedAgentInference(AbstractBaseInference):
 
         except Exception as e:
             # Catch any unhandled exceptions and raise a 500 internal server error
-            log.error(f"Error Occurred in agent inference: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+            log.error(f"Error Occurred in agent inference in run method of Python based inference: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Internal Server Error in run method of Python based inference: {str(e)}")
 

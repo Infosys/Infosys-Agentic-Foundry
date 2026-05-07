@@ -12,6 +12,12 @@ migration-info.json
 *.db-wal
 
 .env.example
+litellm_backend/config.yaml
+litellm_backend/constants.py
+litellm_backend/outputs/
+litellm_backend/*copy.py
+
+model_cost.json
 
 *.ipynb
 *.zip
@@ -35,9 +41,11 @@ uploaded_sqlite_dbs/
 temp_previews/
 responses_temp/
 outputs/
+agent_worker_loggss/
 sdlc/
 endor/
 Hugging_face/
+faiss_index/
 all-MiniLM-L6-v2 (3)/
 bge-reranker-large/
 endor/
@@ -59,3 +67,10 @@ test_mcp_recycle_bin.py
 !user_uploads/customer_loyalty_agent_database.db
 !user_uploads/production_demand_forecast.csv
 !user_uploads/production_manufacturing.db
+
+reports/
+logs.log
+AgentOS
+skills
+agent_workspaces
+AgentPro_Win_20260406

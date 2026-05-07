@@ -61,7 +61,7 @@ class MultiDBConnectionManager:
             user_department = current_user_department.get()  # Default to General
             
             # Check if connection exists in user's department
-            check_query = text(f"SELECT 1 FROM {self.table_name} WHERE connection_name = :name AND department_name = :dept LIMIT 1")
+            check_query = text(f"SELECT 1 FROM {self.table_name} WHERE LOWER(connection_name) = LOWER(:name) AND department_name = :dept LIMIT 1")
             exists = session.execute(check_query, {"name": connection_name, "dept": user_department}).fetchone()
             
             if not exists:
@@ -76,7 +76,7 @@ class MultiDBConnectionManager:
                        connection_port, connection_username, connection_password, 
                        connection_database_name, connection_created_by, department_name
                 FROM {self.table_name}
-                WHERE connection_name = :name AND department_name = :dept
+                WHERE LOWER(connection_name) = LOWER(:name) AND department_name = :dept
             """)
             
             result = session.execute(fetch_query, {"name": connection_name, "dept": user_department})
@@ -396,6 +396,8 @@ class MultiDBConnectionRepository:
                 await conn.execute(create_statement)
                 alter_statements = [
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS connection_created_by TEXT",
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS blocked_sql_commands TEXT",  # JSON array of blocked SQL keywords
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS connection_description TEXT",  # Description of the connection
                     f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS department_name VARCHAR(255) DEFAULT 'General'",
                     f"ALTER TABLE {self.table_name} DROP CONSTRAINT IF EXISTS {self.table_name}_connection_name_key",
                     f"ALTER TABLE {self.table_name} ADD CONSTRAINT unique_connection_department UNIQUE (connection_name, department_name)"
@@ -438,11 +440,21 @@ class MultiDBConnectionRepository:
                 connection_password,
                 connection_database_name,
                 connection_created_by,
+                blocked_sql_commands,
+                connection_description,
                 department_name
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """
 
             # Extract values from connection_data for insertion
+            # Handle blocked_sql_commands as JSON string
+            blocked_cmds = connection_data.get("blocked_sql_commands")
+            if blocked_cmds and isinstance(blocked_cmds, list):
+                import json
+                blocked_cmds = json.dumps(blocked_cmds)
+            elif not blocked_cmds:
+                blocked_cmds = None
+                
             values = (
                 connection_data.get("connection_id"),
                 connection_data.get("connection_name"),
@@ -453,6 +465,8 @@ class MultiDBConnectionRepository:
                 connection_data.get("connection_password"),
                 connection_data.get("connection_database_name"),
                 connection_data.get("connection_created_by"),
+                blocked_cmds,
+                connection_data.get("connection_description"),
                 connection_data.get("department_name", "General")
             )
 
@@ -486,7 +500,7 @@ class MultiDBConnectionRepository:
 
     async def check_connection_name_exists(self, name: str, department_name: str = None) -> bool:
         try:
-            query = f"SELECT 1 FROM {self.table_name} WHERE connection_name = $1 AND department_name = $2 LIMIT 1"
+            query = f"SELECT 1 FROM {self.table_name} WHERE LOWER(connection_name) = LOWER($1) AND department_name = $2 LIMIT 1"
             async with self.pool.acquire() as connection:
                 result = await connection.fetchrow(query, name, department_name)
             return result is not None
@@ -496,7 +510,7 @@ class MultiDBConnectionRepository:
 
     async def delete_connection_by_name(self, name: str, department_name: str = "General"):
         try:
-            delete_query = f"DELETE FROM {self.table_name} WHERE connection_name = $1 AND department_name = $2"
+            delete_query = f"DELETE FROM {self.table_name} WHERE LOWER(connection_name) = LOWER($1) AND department_name = $2"
             async with self.pool.acquire() as connection:
                 result = await connection.execute(delete_query, name, department_name)
 
@@ -511,7 +525,7 @@ class MultiDBConnectionRepository:
                 SELECT connection_name, connection_database_type, connection_host,
                     connection_port, connection_username, connection_password,connection_database_name,connection_created_by,department_name
                 FROM {self.table_name}
-                WHERE connection_name = $1 AND department_name = $2
+                WHERE LOWER(connection_name) = LOWER($1) AND department_name = $2
             """
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(query, connection_name, department_name)
@@ -527,7 +541,8 @@ class MultiDBConnectionRepository:
                 "username": row["connection_username"],
                 "password": row["connection_password"],
                 "database": row["connection_database_name"],
-                "created_by": row["connection_created_by"]
+                "created_by": row["connection_created_by"],
+                "department_name": row["department_name"]  # Required for SQLite path resolution
             }
 
             return config
@@ -605,6 +620,70 @@ class MultiDBConnectionRepository:
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    async def get_blocked_sql_commands(self, connection_name: str) -> list:
+        """
+        Get the blocked SQL commands for a specific connection.
+        
+        Args:
+            connection_name: Name of the database connection
+            
+        Returns:
+            List of blocked SQL keywords/commands for this connection,
+            or None if no custom blocked commands are configured
+        """
+        import json
+        try:
+            query = f"""
+                SELECT blocked_sql_commands
+                FROM {self.table_name}
+                WHERE connection_name = $1
+            """
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, connection_name)
+
+            if not row or not row["blocked_sql_commands"]:
+                return None  # No custom blocked commands, use defaults
+            
+            blocked_cmds = row["blocked_sql_commands"]
+            if isinstance(blocked_cmds, str):
+                return json.loads(blocked_cmds)
+            return blocked_cmds
+
+        except Exception as e:
+            log.warning(f"Error fetching blocked commands for {connection_name}: {e}")
+            return None
+
+    async def update_blocked_sql_commands(self, connection_name: str, blocked_commands: list) -> dict:
+        """
+        Update the blocked SQL commands for a specific connection.
+        
+        Args:
+            connection_name: Name of the database connection
+            blocked_commands: List of SQL keywords to block (e.g., ["DELETE", "DROP", "TRUNCATE"])
+            
+        Returns:
+            Dict with status of the operation
+        """
+        import json
+        try:
+            blocked_json = json.dumps(blocked_commands) if blocked_commands else None
+            
+            query = f"""
+                UPDATE {self.table_name}
+                SET blocked_sql_commands = $1
+                WHERE connection_name = $2
+            """
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, blocked_json, connection_name)
+                
+            if "UPDATE 0" in result:
+                return {"success": False, "error": f"Connection '{connection_name}' not found"}
+                
+            return {"success": True, "message": f"Blocked commands updated for {connection_name}"}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def _get_user_department(self) -> str:
         """Get current user's department from context, default to 'General'"""
@@ -689,5 +768,4 @@ class MultiDBConnectionRepository:
             return {"connections": connections, "department": department_name}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-
  

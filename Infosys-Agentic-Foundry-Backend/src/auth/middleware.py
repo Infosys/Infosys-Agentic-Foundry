@@ -4,7 +4,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from src.auth.dependencies import get_user_info_from_request, get_client_ip, get_user_agent
 from telemetry_wrapper import logger as log, update_session_context
 from typing import Set
-from src.utils.secrets_handler import current_user_email, current_user_department, current_user_role
+from src.utils.secrets_handler import current_user_email, current_user_department, current_user_role, current_request_headers
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     """Middleware to handle authentication for all requests"""
@@ -31,11 +31,14 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, exclude_paths: Set[str] = None):
         super().__init__(app)
+        self.PUBLIC_ENDPOINTS = set(self.__class__.PUBLIC_ENDPOINTS)
         if exclude_paths:
             self.PUBLIC_ENDPOINTS.update(exclude_paths)
     
     async def dispatch(self, request: Request, call_next):
         """Process each request through authentication middleware"""
+        # Setting custom headers in ContextVar for use in services and tools
+        current_request_headers.set(dict(request.headers))
         
         # Skip authentication for public endpoints
         if self._is_public_endpoint(request.url.path):
@@ -44,7 +47,6 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             if user_info and user_info.email:
                 current_user_email.set(user_info.email)
             else:
-                current_user_email.set("anonymous")    
                 current_user_email.set("anonymous")
             return await call_next(request)
         log.info("about to call options")
@@ -52,13 +54,6 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             response = await call_next(request)
             log.info(f"OPTIONS response status: {response.status_code}")
-            log.info(f"OPTIONS response headers: {dict(response.headers)}")
-            body = b""
-            async for chunk in response.body_iterator:
-                body += chunk
-            log.info(f"OPTIONS response body: {body.decode('utf-8', errors='replace')}")
-            # Reconstruct the response since body_iterator is consumed
-            # response = Response(content=body, status_code=response.status_code, headers=dict(response.headers))
             return response
         log.info("about to validate")
         try:
@@ -73,17 +68,6 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             log.info(f"user details: {user_info}")
             # Set user context in request state
             request.state.user = user_info
-            body = await request.body()
-            body_data = {}
-            # Parse JSON manually
-            if body and request.headers.get("content-type") == "application/json":
-                try:
-                    import json
-                    body_data = json.loads(body.decode())
-                    # Now you have access to: body_data["message"], body_data["metadata"], etc.
-                except:
-                    body_data = {}
-            log.info(f"Query Parameters {body_data}")
             # Update session context for telemetry (remove user_session, use JWT token if needed)
             update_session_context(
                 user_id=user_info.email,
@@ -150,7 +134,6 @@ class AuditMiddleware(BaseHTTPMiddleware):
         
         # Log request
         log.info(f"API Request: {method} {path} - User: {user_id} - IP: {ip_address} - Status: {response.status_code}")
-        log.info(f"Request Body: {request.body}")
         log.info(f"Request Path: {request.scope.get('path_params', {})}")
 
         # Log response status

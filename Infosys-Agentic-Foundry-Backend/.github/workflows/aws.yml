@@ -1,4 +1,4 @@
-# name: CI/CD Pipeline to EKS 
+# name: CI/CD Workflow to EKS 
  
 # on:
 #   push:

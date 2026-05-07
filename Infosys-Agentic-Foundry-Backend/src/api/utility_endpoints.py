@@ -2,16 +2,18 @@
 import os
 import json
 import shutil
+import asyncio
 import asyncpg
 import psycopg2
 import requests
 import re
-from typing import List, Dict
+from datetime import datetime, timezone, timedelta
+from typing import List, Dict, Optional
 from pathlib import Path
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 import azure.cognitiveservices.speech as speechsdk
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -21,7 +23,7 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain_pymupdf4llm import PyMuPDF4LLMLoader
 
 from src.auth.authorization_service import AuthorizationService
-from src.database.services import KnowledgebaseService, ModelService, VMManagementService
+from src.database.services import KnowledgebaseService, ModelService, VMManagementService, ToolService, AgentService, WorkflowService, McpToolService
 from src.utils.file_manager import FileManager
 from src.utils.tool_file_manager import ToolFileManager
 from src.api.dependencies import ServiceProvider # The dependency provider
@@ -44,6 +46,7 @@ from src.auth.dependencies import get_current_user
 
 from src.schemas import VMConnectionRequest
 from src.utils.tool_code_dependency_analyzer import ToolCodeDependencyExtractor
+from src.config.application_config import app_config
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -214,48 +217,71 @@ async def download_file_endpoint(request: Request, filename: str = Query(...), s
     else:
         return await file_manager.download_file_from_storage(filename=filename, storage_provider=STORAGE_PROVIDER)
 
+
+class DeleteFilesRequest(BaseModel):
+    """Schema for deleting one or more user-uploaded files."""
+    file_paths: List[str]
+
 @router.delete("/files/user-uploads/delete/")
-async def delete_file_endpoint(request: Request, file_path: str, file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
+async def delete_file_endpoint(request: Request, delete_request: DeleteFilesRequest, file_manager: FileManager = Depends(ServiceProvider.get_file_manager)):
     user_id = request.cookies.get("user_id")
-    
     user_session = request.cookies.get("user_session")
-    
-    file_name=Path(file_path).name
-
     update_session_context(user_session=user_session, user_id=user_id)
-    
-    file_name=Path(file_path).name
 
-    if STORAGE_PROVIDER=="":
-        user_department = current_user_department.get()
-        if not user_department:
-            raise HTTPException(status_code=400, detail="User department not found")
-        
-        # Normalize the file path and ensure it's within the user's department
-        file_path = file_path.strip().lstrip("/\\")  # Remove leading slashes
-        
-        # Block deletion of root-level (universal) files — they are shared across all departments
-        # A root-level file has no path separator (e.g. "report.csv" vs "dept/report.csv")
-        if os.sep not in file_path and "/" not in file_path:
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied: Universal files (root-level files shared across departments) cannot be deleted."
-            )
-        
-        # Always ensure the file path is within the user's department
-        if not file_path.startswith(user_department):
-            # Prepend department if not already there
-            department_file_path = os.path.join(user_department, file_path)
-        else:
-            department_file_path = file_path
-        
-        # Additional security check - ensure the final path still starts with department
-        if not department_file_path.startswith(user_department):
-            raise HTTPException(status_code=403, detail="Access denied: Cannot delete files outside your department")
-        
-        return await file_manager.delete_file(file_path=department_file_path)
-    else:
-        return await file_manager.delete_file_from_storage(file_name=file_name, storage_provider=STORAGE_PROVIDER)
+    if not delete_request.file_paths:
+        raise HTTPException(status_code=400, detail="'file_paths' must be provided and cannot be empty.")
+
+    results = []
+    for file_path in delete_request.file_paths:
+        file_name = Path(file_path).name
+        try:
+            if STORAGE_PROVIDER == "":
+                user_department = current_user_department.get()
+                if not user_department:
+                    results.append({"file_path": file_path, "is_delete": False, "message": "User department not found"})
+                    continue
+
+                # Normalize the file path and ensure it's within the user's department
+                normalized_path = file_path.strip().lstrip("/\\")
+
+                # Block deletion of root-level (universal) files
+                if os.sep not in normalized_path and "/" not in normalized_path:
+                    results.append({"file_path": file_path, "is_delete": False, "message": "Access denied: Universal files (root-level files shared across departments) cannot be deleted."})
+                    continue
+
+                # Always ensure the file path is within the user's department
+                if not normalized_path.startswith(user_department):
+                    department_file_path = os.path.join(user_department, normalized_path)
+                else:
+                    department_file_path = normalized_path
+
+                # Additional security check
+                if not department_file_path.startswith(user_department):
+                    results.append({"file_path": file_path, "is_delete": False, "message": "Access denied: Cannot delete files outside your department"})
+                    continue
+
+                delete_result = await file_manager.delete_file(file_path=department_file_path)
+                results.append({"file_path": file_path, "is_delete": True, "message": f"File '{file_name}' deleted successfully"})
+            else:
+                delete_result = await file_manager.delete_file_from_storage(file_name=file_name, storage_provider=STORAGE_PROVIDER)
+                results.append({"file_path": file_path, "is_delete": True, "message": f"File '{file_name}' deleted successfully from storage"})
+
+        except Exception as e:
+            log.error(f"Error deleting file '{file_path}': {str(e)}")
+            results.append({"file_path": file_path, "is_delete": False, "message": f"Error deleting file: {str(e)}"})
+
+    response: Dict[str, List[str]] = {}
+    for res in results:
+        name = Path(res.get("file_path", "unknown")).name
+        reason = "Successfully deleted files" if res.get("is_delete") else res.get("message", "Delete failed")
+        response.setdefault(reason, []).append(name)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(file_names)}"
+        for reason, file_names in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted files")
+    )
+
+    return {"results": results, "status_message": status_message}
 
 ## ==========================================================
 
@@ -308,8 +334,6 @@ async def upload_knowledge_base_documents_endpoint(
         session_id: str = Form(...),
         kb_name: str = Form(...),
         user_email: str = Form(...),
-        is_public: bool = Form(False),
-        shared_with_departments: str = Form(None),
         files: List[UploadFile] = File(...),
         file_manager: FileManager = Depends(ServiceProvider.get_file_manager),
         knowledgebase_service: KnowledgebaseService = Depends(ServiceProvider.get_knowledgebase_service),
@@ -323,8 +347,6 @@ async def upload_knowledge_base_documents_endpoint(
     - session_id: Session ID for tracking
     - kb_name: Knowledge base name
     - user_email: Email of the user uploading the documents
-    - is_public: Whether the KB should be publicly accessible to all departments (default: false)
-    - shared_with_departments: Comma-separated list of department names to share the KB with
     - files: List of uploaded documents (PDF, DOCX, PPTX, TXT, HTML, XLSX)
 
     Returns:
@@ -367,25 +389,11 @@ async def upload_knowledge_base_documents_endpoint(
                 safe_name = "unnamed_file.bin"
             sanitized_filenames.append(safe_name)
         
-        # Parse shared_with_departments from comma-separated string to list
-        departments_list = None
-        if shared_with_departments:
-            departments_list = [d.strip() for d in shared_with_departments.split(',') if d.strip()]
-        
-        # Validate: is_public and shared_with_departments are mutually exclusive
-        if is_public and departments_list:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot set both 'is_public' and 'shared_with_departments'. A public knowledge base is already accessible to all departments."
-            )
-        
         kb_status = await knowledgebase_service.create_knowledgebase(
             kb_name=kb_name,
             list_of_documents=sanitized_filenames,
             created_by=user_email,
-            department_name=user_data.department_name,
-            is_public=is_public,
-            shared_with_departments=departments_list
+            department_name=user_data.department_name
         )
         kb_id = kb_status.get("knowledgebase_id", "")
         
@@ -455,8 +463,6 @@ async def upload_knowledge_base_documents_endpoint(
             "kb_name": kb_name,
             "kb_id": kb_id,
             "department_name": user_data.department_name,
-            "is_public": is_public,
-            "shared_with_departments": departments_list or [],
             "upload_results": upload_results,
             "is_new": kb_status.get("is_created", False)
         }
@@ -531,6 +537,96 @@ async def update_kb_sharing_endpoint(
     except Exception as e:
         log.error(f"Error updating KB sharing: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error updating KB sharing: {str(e)}")
+
+
+# ============================================================================
+# Knowledge Base Sharing Endpoints (Admin Only)
+# ============================================================================
+
+
+@router.get("/knowledge-base/{kb_id}/sharing-info")
+async def get_kb_sharing_info(
+    request: Request,
+    kb_id: str,
+    knowledgebase_service: KnowledgebaseService = Depends(ServiceProvider.get_knowledgebase_service),
+    kb_sharing_repo=Depends(ServiceProvider.get_kb_sharing_repo),
+    current_user: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    Get information about which departments a knowledge base is shared with.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    has_access = await authorization_service.check_knowledgebase_access(current_user.role, current_user.department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access knowledge base endpoints.")
+
+    kb = await knowledgebase_service.get_knowledgebase_by_id(kb_id)
+    if not kb:
+        raise HTTPException(status_code=404, detail=f"Knowledge base not found with ID: {kb_id}")
+
+    shared_departments = await kb_sharing_repo.get_shared_departments_for_kb(kb_id)
+
+    return {
+        "kb_id": kb_id,
+        "kb_name": kb.get('knowledgebase_name'),
+        "owner_department": kb.get('department_name', 'General'),
+        "is_public": kb.get('is_public', False),
+        "shared_with": [d.get('target_department') for d in shared_departments if d.get('target_department')]
+    }
+
+
+@router.get("/knowledge-base/shared-with-me")
+async def get_kbs_shared_with_my_department(
+    request: Request,
+    knowledgebase_service: KnowledgebaseService = Depends(ServiceProvider.get_knowledgebase_service),
+    kb_sharing_repo=Depends(ServiceProvider.get_kb_sharing_repo),
+    current_user: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    Get all knowledge bases that are shared with the current user's department.
+    Returns KBs shared via sharing table (not including public KBs).
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    has_access = await authorization_service.check_knowledgebase_access(current_user.role, current_user.department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to access knowledge base endpoints.")
+
+    department = current_user.department_name or 'General'
+
+    # Get detailed sharing info
+    shared_kb_details = await kb_sharing_repo.get_kbs_shared_with_department_details(department)
+
+    if not shared_kb_details:
+        return {
+            "department": department,
+            "shared_knowledge_bases": [],
+            "count": 0
+        }
+
+    # Enrich with full KB details
+    shared_kbs = []
+    for detail in shared_kb_details:
+        kb = await knowledgebase_service.get_knowledgebase_by_id(detail.get('knowledgebase_id'))
+        if kb:
+            kb['is_shared'] = True
+            kb['source_department'] = detail.get('source_department')
+            kb['shared_by'] = detail.get('shared_by')
+            kb['shared_on'] = str(detail.get('shared_on')) if detail.get('shared_on') else None
+            shared_kbs.append(kb)
+
+    return {
+        "department": department,
+        "shared_knowledge_bases": shared_kbs,
+        "count": len(shared_kbs)
+    }
 
 
 @router.get("/knowledge-base/list")
@@ -781,21 +877,21 @@ async def delete_knowledgebases(
         required_role=UserRole.ADMIN, 
         department_name=user_data.department_name
     )
+
+    # Only admins can delete multiple knowledgebases at once; non-admins must delete one at a time
+    if len(delete_request.kb_ids) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple knowledgebases at once. Please delete one knowledgebase at a time.")
     
-    deleted_kbs = []
-    failed_kbs = []
+    results = []
     
     for kb_id in delete_request.kb_ids:
+        kb_data = None
         try:
             # Get KB details from database with original email
             kb_data = await knowledgebase_service.knowledgebase_repo.get_knowledgebase_by_id(kb_id=kb_id)
             
             if not kb_data:
-                failed_kbs.append({
-                    "kb_id": kb_id,
-                    "kb_name": "Unknown",
-                    "error": "Knowledgebase not found"
-                })
+                results.append({"kb_id": kb_id, "kb_name": None, "is_delete": False, "message": "Knowledgebase not found"})
                 continue
             
             kb_name = kb_data.get("knowledgebase_name", "Unknown")
@@ -804,11 +900,7 @@ async def delete_knowledgebases(
             
             # Check if user's department owns this knowledgebase
             if kb_department != user_data.department_name:
-                failed_kbs.append({
-                    "kb_id": kb_id,
-                    "kb_name": kb_name,
-                    "error": f"You cannot delete this knowledgebase. It belongs to department '{kb_department}'. Only users from the owning department can delete it."
-                })
+                results.append({"kb_id": kb_id, "kb_name": kb_name, "is_delete": False, "message": f"You cannot delete this knowledgebase. It belongs to department '{kb_department}'. Only users from the owning department can delete it."})
                 log.warning(f"User {user_id} from department '{user_data.department_name}' attempted to delete KB {kb_id} from department '{kb_department}'")
                 continue
             
@@ -822,11 +914,7 @@ async def delete_knowledgebases(
                 if agent_count > 3:
                     agent_list += f" and {agent_count - 3} more"
                 
-                failed_kbs.append({
-                    "kb_id": kb_id,
-                    "kb_name": kb_name,
-                    "error": f"This knowledgebase is being used by {agent_count} application(s): {agent_list}. Please remove it from these applications before deleting."
-                })
+                results.append({"kb_id": kb_id, "kb_name": kb_name, "is_delete": False, "message": f"This knowledgebase is being used by {agent_count} application(s): {agent_list}. Please remove it from these applications before deleting."})
                 log.warning(f"Cannot delete KB {kb_id}: used by {agent_count} agent(s)")
                 continue
             
@@ -834,72 +922,39 @@ async def delete_knowledgebases(
             is_creator = (kb_creator == user_data.username)
             if not (is_admin or is_creator):
                 log.warning(f"User {user_id} attempted to delete KB {kb_id} without admin privileges or creator access")
-                failed_kbs.append({
-                    "kb_id": kb_id,
-                    "kb_name": kb_name,
-                    "error": "Admin privileges or knowledgebase creator access required to delete this knowledgebase"
-                })
+                results.append({"kb_id": kb_id, "kb_name": kb_name, "is_delete": False, "message": "Admin privileges or knowledgebase creator access required to delete this knowledgebase"})
                 continue
             
             # Delete from database
             delete_result = await knowledgebase_service.delete_knowledgebase(kb_id=kb_id)
             
             if delete_result.get("deleted"):
-                deleted_kbs.append({
-                    "kb_id": kb_id,
-                    "kb_name": kb_name
-                })
+                results.append({"kb_id": kb_id, "kb_name": kb_name, "is_delete": True, "message": f"Knowledgebase '{kb_name}' deleted successfully"})
                 log.info(f"Successfully deleted knowledgebase {kb_id} ({kb_name}) by {user_id}")
             else:
-                failed_kbs.append({
-                    "kb_id": kb_id,
-                    "kb_name": kb_name,
-                    "error": "Failed to delete from database"
-                })
+                results.append({"kb_id": kb_id, "kb_name": kb_name, "is_delete": False, "message": "Failed to delete from database"})
                 
         except Exception as e:
             log.error(f"Error deleting knowledgebase {kb_id}: {e}", exc_info=True)
-            failed_kbs.append({
+            results.append({
                 "kb_id": kb_id,
-                "kb_name": kb_data.get("knowledgebase_name", "Unknown") if kb_data else "Unknown",
-                "error": str(e)
+                "kb_name": kb_data.get("knowledgebase_name", "Unknown") if kb_data else None,
+                "is_delete": False,
+                "message": str(e)
             })
     
-    # If all deletions failed, return 400 or appropriate error
-    if len(failed_kbs) == len(delete_request.kb_ids) and len(failed_kbs) > 0:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "All knowledgebase deletions failed",
-                "failed_kbs": failed_kbs,
-                "total_requested": len(delete_request.kb_ids),
-                "total_failed": len(failed_kbs)
-            }
-        )
-    
-    # If some failed, return 400 error with details
-    if len(failed_kbs) > 0:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "Some knowledgebases could not be deleted",
-                "deleted_kbs": deleted_kbs,
-                "failed_kbs": failed_kbs,
-                "total_requested": len(delete_request.kb_ids),
-                "total_deleted": len(deleted_kbs),
-                "total_failed": len(failed_kbs)
-            }
-        )
-    
-    # All successful
-    return {
-        "message": "All knowledgebases deleted successfully",
-        "deleted_kbs": deleted_kbs,
-        "failed_kbs": failed_kbs,
-        "total_requested": len(delete_request.kb_ids),
-        "total_deleted": len(deleted_kbs),
-        "total_failed": len(failed_kbs)
-    }
+    response: Dict[str, List[str]] = {}
+    for res in results:
+        kb_name = res.get("kb_name") or res.get("kb_id", "unknown")
+        reason = "Successfully deleted knowledgebases" if res.get("is_delete") else res.get("message", "Delete failed")
+        response.setdefault(reason, []).append(kb_name)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(kb_names)}"
+        for reason, kb_names in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted knowledgebases")
+    )
+
+    return {"results": results, "status_message": status_message}
  
 ## ==========================================================
 
@@ -1276,5 +1331,649 @@ async def get_installed_packages_endpoint(
             status_code=500, 
             detail=f"Failed to get installed packages: {str(e)}"
         )
+
+## ==========================================================
+## BACKUP AND EXPORT TO GITHUB ENDPOINT
+## ==========================================================
+    
+class BackupRequest(BaseModel):
+    user_email: str
+
+
+@router.post("/backup-and-export")
+async def backup_and_export_endpoint(
+    request: Request,
+    backup_request: BackupRequest,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Backup agents, tools, validators, MCP servers, and workflows to GitHub.
+    Only accessible by Admin users.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    # SuperAdmin cannot perform backup
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to perform backup operations.")
+
+    user_email = backup_request.user_email
+    user_department = user_data.department_name
+    is_admin = await authorization_service.has_role(
+        user_email=user_email, 
+        required_role=UserRole.ADMIN, 
+        department_name=user_department
+    )
+    
+    if not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Admin users can perform backup operations."
+        )
+    
+    try:
+        from src.utils.backup import extract_agent_and_tool_data
+        from github_pusher import push_backup_to_github
+        from src.utils.secrets_handler import get_user_secrets
+        import sys
+        import asyncio
+        
+        # Set event loop policy for Windows
+        if sys.platform.startswith('win'):
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
+        log.info(f"Starting backup process for user: {user_email}")
+        
+        backup_folder = await extract_agent_and_tool_data(None)
+        
+        if not backup_folder or not os.path.exists(backup_folder):
+            raise Exception("Backup extraction failed - no data was exported")
+        
+        log.info(f"Backup extraction completed. Data saved to: {backup_folder}")
+        
+        GITHUB_USERNAME = get_user_secrets('GITHUB_USERNAME', '')
+        GITHUB_PAT = get_user_secrets('GITHUB_PAT', '')
+        GITHUB_EMAIL = get_user_secrets('GITHUB_EMAIL', '')
+        TARGET_REPO_NAME = get_user_secrets('TARGET_REPO_NAME', '')
+        TARGET_REPO_OWNER = get_user_secrets('TARGET_REPO_OWNER', '')
+        SERVER_NAME = app_config.server_name
+        
+        github_url = push_backup_to_github(
+            source_backup_dir=Path(backup_folder),
+            server_name=SERVER_NAME,
+            GITHUB_USERNAME=GITHUB_USERNAME,
+            GITHUB_PAT=GITHUB_PAT,
+            GITHUB_EMAIL=GITHUB_EMAIL,
+            TARGET_REPO_NAME=TARGET_REPO_NAME,
+            TARGET_REPO_OWNER=TARGET_REPO_OWNER
+        )
+        
+        repo_info = f"{TARGET_REPO_OWNER}/{TARGET_REPO_NAME}" if TARGET_REPO_OWNER and TARGET_REPO_NAME else "GitHub"
+        
+        def cleanup():
+            try:
+                shutil.rmtree(backup_folder, ignore_errors=True)
+                log.info(f"Cleaned up temporary backup files")
+            except Exception as e:
+                log.error(f"Cleanup error: {e}")
+        
+        background_tasks.add_task(cleanup)
+        
+        return {
+            "success": True,
+            "message": f"Backup completed and pushed to GitHub repository: {repo_info}",
+            "github_url": github_url,
+            "server_name": SERVER_NAME,
+            "repository": repo_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_message = str(e)
+    
+        if "fatal: destination path" in error_message and "already exists" in error_message:
+            error_message = "Backup operation failed: Unable to clean up temporary directory. This may be due to file locks. Please try again in a moment."
+        elif "exit code(128)" in error_message and "Write access to repository not granted" in error_message:
+            error_message = "Backup operation failed: GitHub authentication failed. Please verify your GitHub Personal Access Token (PAT) has write access to the repository and hasn't expired."
+        elif "exit code(128)" in error_message and "403" in error_message:
+            error_message = "Backup operation failed: Access denied to GitHub repository. Please check your repository permissions and ensure your GitHub credentials are valid."
+        elif "Repository not found" in error_message or "404" in error_message:
+            error_message = "Backup operation failed: GitHub repository not found. Please verify the repository name and owner in your secrets configuration."
+        elif "no data was exported" in error_message:
+            error_message = "Backup operation failed: No data found to backup. Please ensure you have agents, tools, or other resources to backup."
+        else:
+            error_message = f"Backup operation failed: {error_message}"
+        
+        log.error(error_message, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_message)
+
+## ============ Cleanup Endpoints ============
+
+from datetime import datetime
+from typing import Any, Optional
+from pydantic import Field
+from fastapi.responses import FileResponse
+from src.database.cleanup_service import get_cleanup_service, CleanupSummary
+
+class CleanupPreviewRequest(BaseModel):
+    """Request model for cleanup preview"""
+    send_emails: bool = Field(default=False, description="Whether to send notification emails to users")
+
+class CleanupPreviewResponse(BaseModel):
+    """Response model for cleanup preview"""
+    status: str
+    message: str
+    summary: Optional[Dict[str, Any]] = None
+    report_file: Optional[str] = None
+    emails_sent: Optional[int] = None
+
+class CleanupExecuteResponse(BaseModel):
+    """Response model for cleanup execution"""
+    status: str
+    message: str
+    deleted_counts: Dict[str, int]
+    related_cleanup: Dict[str, int]
+    report_download_url: str
+
+@router.post("/cleanup/preview", response_model=CleanupPreviewResponse)
+async def cleanup_preview_endpoint(
+    request: CleanupPreviewRequest,
+    req: Request,
+    user_data: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    Preview items that will be cleaned up.
+    Fetches all items matching cleanup criteria (test/demo/sample in name or orphan items).
+    Optionally sends notification emails to users who created these items.
+    Only accessible by Admin users.
+    
+    Returns a summary and creates a preview report.
+    """
+    user_id = req.cookies.get("user_id")
+    user_session = req.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    # SuperAdmin cannot perform cleanup operations
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to perform cleanup operations.")
+    
+    # Only Admin can preview cleanup
+    is_admin = await authorization_service.has_role(
+        user_email=user_data.email,
+        required_role=UserRole.ADMIN,
+        department_name=user_data.department_name
+    )
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Only Admin users can preview cleanup operations.")
+    
+    try:
+        cleanup_service = get_cleanup_service()
+        
+        # Fetch items for cleanup (async)
+        items = await cleanup_service.fetch_cleanup_items()
+        
+        total_items = len(items.agents) + len(items.tools) + len(items.workflows) + len(items.mcp_tools)
+        
+        if total_items == 0:
+            return CleanupPreviewResponse(
+                status="success",
+                message="No items found for cleanup",
+                summary={"agents": 0, "tools": 0, "workflows": 0, "mcp_tools": 0, "total": 0}
+            )
+        
+        # Create preview report
+        report_file = cleanup_service.create_cleanup_report(items)
+        
+        # Send emails if requested
+        emails_sent = 0
+        if request.send_emails:
+            admin_email = user_id if user_id else "admin@infosys.com"
+            email_result = cleanup_service.send_emails_to_users(items, admin_email, report_file)
+            emails_sent = email_result.get("emails_sent", 0)
+        
+        # Create summary
+        summary = {
+            "agents": len(items.agents),
+            "tools": len(items.tools),
+            "workflows": len(items.workflows),
+            "mcp_tools": len(items.mcp_tools),
+            "total": total_items
+        }
+        
+        return CleanupPreviewResponse(
+            status="success",
+            message=f"Found {summary['total']} items for cleanup",
+            summary=summary,
+            report_file=report_file,
+            emails_sent=emails_sent if request.send_emails else None
+        )
+        
+    except Exception as e:
+        log.error(f"Error in cleanup preview: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cleanup preview failed: {str(e)}")
+
+@router.post("/cleanup/execute", response_model=CleanupExecuteResponse)
+async def cleanup_execute_endpoint(
+    req: Request,
+    user_data: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    Execute the cleanup - delete all items matching cleanup criteria.
+    Creates a deletion report with all deleted items.
+    Only accessible by Admin users.
+    
+    Returns deletion counts and a download URL for the report.
+    """
+    user_id = req.cookies.get("user_id")
+    user_session = req.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    # SuperAdmin cannot perform cleanup operations
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to perform cleanup operations.")
+    
+    # Only Admin can execute cleanup
+    is_admin = await authorization_service.has_role(
+        user_email=user_data.email,
+        required_role=UserRole.ADMIN,
+        department_name=user_data.department_name
+    )
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Only Admin users can execute cleanup operations.")
+    
+    try:
+        cleanup_service = get_cleanup_service()
+        
+        # Fetch items for cleanup (async)
+        items = await cleanup_service.fetch_cleanup_items()
+        
+        total_items = len(items.agents) + len(items.tools) + len(items.workflows) + len(items.mcp_tools)
+        
+        if total_items == 0:
+            return CleanupExecuteResponse(
+                status="success",
+                message="No items to delete",
+                deleted_counts={"agents": 0, "tools": 0, "workflows": 0, "mcp_tools": 0},
+                related_cleanup={},
+                report_download_url=""
+            )
+        
+        # Execute deletion (async) - this also creates the deletion report
+        result = await cleanup_service.execute_deletion(items)
+        
+        # Build download URL from result's report_path
+        report_filename = os.path.basename(result.report_path)
+        download_url = f"/utility/cleanup/report/download/{report_filename}"
+        
+        # Calculate total deleted
+        total_deleted = result.deleted_agents + result.deleted_tools + result.deleted_workflows + result.deleted_mcp_tools
+        
+        return CleanupExecuteResponse(
+            status="success",
+            message=f"Successfully deleted {total_deleted} items",
+            deleted_counts={
+                "agents": result.deleted_agents,
+                "tools": result.deleted_tools,
+                "workflows": result.deleted_workflows,
+                "mcp_tools": result.deleted_mcp_tools
+            },
+            related_cleanup=result.related_cleanup,
+            report_download_url=download_url
+        )
+        
+    except Exception as e:
+        log.error(f"Error in cleanup execution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Cleanup execution failed: {str(e)}")
+
+@router.get("/cleanup/report/download/{filename}")
+async def cleanup_report_download_endpoint(
+    filename: str,
+    req: Request,
+    user_data: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    Download a cleanup or deletion report file.
+    Only accessible by Admin users.
+    """
+    user_id = req.cookies.get("user_id")
+    user_session = req.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    # SuperAdmin cannot perform cleanup operations
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to perform cleanup operations.")
+    
+    # Only Admin can download reports
+    is_admin = await authorization_service.has_role(
+        user_email=user_data.email,
+        required_role=UserRole.ADMIN,
+        department_name=user_data.department_name
+    )
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Only Admin users can download cleanup reports.")
+    
+    # Validate filename to prevent path traversal
+    safe_filename = os.path.basename(filename)
+    if safe_filename != filename or '..' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    # Check in both folders
+    cleanup_path = os.path.join("cleanup_reports", safe_filename)
+    deletion_path = os.path.join("deletion_reports", safe_filename)
+    
+    if os.path.exists(deletion_path):
+        file_path = deletion_path
+    elif os.path.exists(cleanup_path):
+        file_path = cleanup_path
+    else:
+        raise HTTPException(status_code=404, detail=f"Report file not found: {filename}")
+    
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+@router.get("/cleanup/reports/list")
+async def cleanup_reports_list_endpoint(
+    req: Request,
+    user_data: User = Depends(get_current_user),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
+):
+    """
+    List all available cleanup and deletion reports.
+    Only accessible by Admin users.
+    """
+    user_id = req.cookies.get("user_id")
+    user_session = req.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+    
+    # SuperAdmin cannot perform cleanup operations
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to perform cleanup operations.")
+    
+    # Only Admin can list reports
+    is_admin = await authorization_service.has_role(
+        user_email=user_data.email,
+        required_role=UserRole.ADMIN,
+        department_name=user_data.department_name
+    )
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Only Admin users can list cleanup reports.")
+    
+    reports = {
+        "cleanup_reports": [],
+        "deletion_reports": []
+    }
+    
+    # List cleanup reports
+    cleanup_dir = "cleanup_reports"
+    if os.path.exists(cleanup_dir):
+        for f in os.listdir(cleanup_dir):
+            if f.endswith(".xlsx"):
+                file_path = os.path.join(cleanup_dir, f)
+                reports["cleanup_reports"].append({
+                    "filename": f,
+                    "size": os.path.getsize(file_path),
+                    "modified": datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    "download_url": f"/utility/cleanup/report/download/{f}"
+                })
+    
+    # List deletion reports
+    deletion_dir = "deletion_reports"
+    if os.path.exists(deletion_dir):
+        for f in os.listdir(deletion_dir):
+            if f.endswith(".xlsx"):
+                file_path = os.path.join(deletion_dir, f)
+                reports["deletion_reports"].append({
+                    "filename": f,
+                    "size": os.path.getsize(file_path),
+                    "modified": datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    "download_url": f"/utility/cleanup/report/download/{f}"
+                })
+    
+    return reports
+
+## ==========================================================
+
+@router.get("/get/onboarded-defaults")
+async def get_onboarded_defaults(
+    request: Request,
+    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
+    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+    workflow_service: WorkflowService = Depends(ServiceProvider.get_workflow_service),
+):
+    """
+    Lists all system-onboarded tools, agents, and workflows (created_by = 'system')
+    with their corresponding database IDs.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    try:
+        system_tools = await tool_service.get_system_tools()
+        tools = [{"tool_id": t["tool_id"], "tool_name": t["tool_name"]} for t in system_tools]
+
+        system_mcp_tools = await mcp_tool_service.get_system_mcp_tools()
+        mcp_tools = [{"mcp_tool_id": m["mcp_tool_id"], "mcp_tool_name": m["mcp_tool_name"]} for m in system_mcp_tools]
+
+        system_agents = await agent_service.get_system_agents()
+        agents = [{"agentic_application_id": a["agentic_application_id"], "agentic_application_name": a["agentic_application_name"]} for a in system_agents]
+
+        system_workflows = await workflow_service.get_system_workflows()
+        workflows = [{"workflow_id": p["workflow_id"], "workflow_name": p["workflow_name"]} for p in system_workflows]
+
+    except Exception as e:
+        log.error(f"Error retrieving onboarded defaults: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve onboarded defaults: {e}")
+
+    return JSONResponse(content={
+        "counts": {"tools": len(tools), "mcp_tools": len(mcp_tools), "agents": len(agents), "workflows": len(workflows)},
+        "tools": tools,
+        "mcp_tools": mcp_tools,
+        "agents": agents,
+        "workflows": workflows,
+    })
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONVERSATION DATA CLEANUP
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/conversation-cleanup")
+async def conversation_cleanup(
+    request: Request,
+    days_threshold: int = Query(default=30, description="Delete conversations older than this many days"),
+    recycle_retention_days: int = Query(default=15, description="Days to retain data in recycle bin before permanent deletion"),
+    user_data: User = Depends(get_current_user),
+):
+    """
+    Run conversation data cleanup.
+    
+    Backs up old conversations to the recycle database, then deletes them from the main database.
+    Also permanently deletes 'insidetable' checkpoint records and expired recycle-bin records.
+    
+    **Only SuperAdmin can trigger this.**
+    """
+    if user_data.role not in ["SuperAdmin"]:
+        raise HTTPException(status_code=403, detail="Only SuperAdmin can trigger conversation cleanup.")
+
+    try:
+        from src.utils.conversation_cleanup import ConversationCleanup
+
+        db_host = os.getenv("POSTGRESQL_HOST", "localhost")
+        db_port = os.getenv("POSTGRESQL_PORT", "5432")
+        db_user = os.getenv("POSTGRESQL_USER", "postgres")
+        db_password = os.getenv("POSTGRESQL_PASSWORD", "postgres")
+        main_db_name = os.getenv("DATABASE", "iaf_database")
+        recycle_db_name = os.getenv("RECYCLE_DB_NAME", "recycle")
+        feedback_db_name = os.getenv("FEEDBACK_LEARNING_DB_NAME", "feedback_learning")
+
+        if recycle_retention_days is None:
+            recycle_retention_days = int(os.getenv("RECYCLE_BIN_RETENTION_DAYS", "15"))
+
+        main_db_config = {
+            "dbname": main_db_name,
+            "user": db_user,
+            "password": db_password,
+            "host": db_host,
+            "port": db_port,
+        }
+        recycle_db_config = {
+            "dbname": recycle_db_name,
+            "user": db_user,
+            "password": db_password,
+            "host": db_host,
+            "port": db_port,
+        }
+        feedback_db_config = {
+            "dbname": feedback_db_name,
+            "user": db_user,
+            "password": db_password,
+            "host": db_host,
+            "port": db_port,
+        }
+
+        cleanup_handler = ConversationCleanup(main_db_config, recycle_db_config, feedback_db_config)
+
+        def _run_cleanup_sync():
+            """Run all blocking cleanup steps in a thread so the event loop is not blocked."""
+            try:
+                # Step 1: Permanently delete 'insidetable' records
+                cleanup_handler.permanent_delete_insidetable_records()
+
+                # Step 2: Permanent deletion from recycle bin
+                cleanup_handler.permanent_delete_from_recycle(recycle_retention_days)
+
+                # Step 3: Clean up old conversations
+                cleanup_handler.cleanup_conversations(days_threshold)
+            finally:
+                cleanup_handler.close_connections()
+
+        await asyncio.to_thread(_run_cleanup_sync)
+
+        # ── Log the cleanup run ──────────────────────────────────────────
+        try:
+            db_manager = ServiceProvider.get_database_manager()
+            from src.config.constants import DatabaseName
+            pool = await db_manager.get_pool(DatabaseName.MAIN.db_name)
+            async with pool.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS cleanup_run_log (
+                        id SERIAL PRIMARY KEY,
+                        run_by VARCHAR(255) NOT NULL,
+                        run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        days_threshold INTEGER,
+                        recycle_retention_days INTEGER,
+                        status VARCHAR(50) NOT NULL,
+                        message TEXT
+                    )
+                """)
+                await conn.execute(
+                    """
+                    INSERT INTO cleanup_run_log (run_by, run_at, days_threshold, recycle_retention_days, status, message)
+                    VALUES ($1, NOW(), $2, $3, $4, $5)
+                    """,
+                    user_data.email,
+                    days_threshold,
+                    recycle_retention_days,
+                    "success",
+                    f"Cleanup completed. Threshold: {days_threshold} days, Recycle retention: {recycle_retention_days} days.",
+                )
+        except Exception as log_err:
+            log.warning(f"Failed to log cleanup run: {log_err}")
+
+        return {
+            "success": True,
+            "message": (
+                f"Conversation cleanup completed. "
+                f"Threshold: {days_threshold} days, Recycle retention: {recycle_retention_days} days."
+            ),
+        }
+
+    except Exception as e:
+        log.error(f"Conversation cleanup failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Conversation cleanup failed: {str(e)}")
+
+
+@router.get("/conversation-cleanup/status")
+async def conversation_cleanup_status(
+    request: Request,
+    user_data: User = Depends(get_current_user),
+):
+    """
+    Get the status of the last conversation cleanup run.
+
+    Returns who last ran the cleanup, when it ran, and whether it has been run today.
+    **Accessible by SuperAdmin only.**
+    """
+    if user_data.role not in ["SuperAdmin"]:
+        raise HTTPException(status_code=403, detail="Only SuperAdmin can view cleanup status.")
+
+    try:
+        db_manager = ServiceProvider.get_database_manager()
+        from src.config.constants import DatabaseName
+        pool = await db_manager.get_pool(DatabaseName.MAIN.db_name)
+        async with pool.acquire() as conn:
+            # Ensure the table exists (no-op if already created)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS cleanup_run_log (
+                    id SERIAL PRIMARY KEY,
+                    run_by VARCHAR(255) NOT NULL,
+                    run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    days_threshold INTEGER,
+                    recycle_retention_days INTEGER,
+                    status VARCHAR(50) NOT NULL,
+                    message TEXT
+                )
+            """)
+
+            # Fetch all cleanup runs
+            rows = await conn.fetch(
+                "SELECT run_by, run_at, days_threshold, recycle_retention_days, status, message "
+                "FROM cleanup_run_log ORDER BY run_at DESC"
+            )
+
+            if not rows:
+                return {
+                    "runs": [],
+                    "ran_today": False,
+                    "message": "Cleanup has never been run.",
+                }
+
+            IST = timezone(timedelta(hours=5, minutes=30))
+            today_ist = datetime.now(IST).date()
+            ran_today = any(row["run_at"].astimezone(IST).date() == today_ist for row in rows)
+
+            run_list = [
+                {
+                    "run_by": row["run_by"],
+                    "run_at": row["run_at"].astimezone(IST).isoformat(),
+                    "days_threshold": row["days_threshold"],
+                    "recycle_retention_days": row["recycle_retention_days"],
+                    "status": row["status"],
+                    "message": row["message"],
+                }
+                for row in rows
+            ]
+
+            return {
+                "runs": run_list,
+                "ran_today": ran_today,
+                "message": "Cleanup was run today." if ran_today else "Cleanup has NOT been run today.",
+            }
+
+    except Exception as e:
+        log.error(f"Failed to fetch cleanup status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch cleanup status: {str(e)}")
+
 
 ## ==========================================================

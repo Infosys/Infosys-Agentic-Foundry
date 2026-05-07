@@ -25,13 +25,13 @@ class PublicSecretUpdateRequest(BaseModel):
     key_value: str = Field(..., description="The new value of the public secret.")
 
 class SecretDeleteRequest(BaseModel):
-    """Schema for deleting a user-specific secret_data."""
-    user_email: str = Field(..., description="The email of the user whose secret is deleted.")
-    key_name: str = Field(..., description="The name of the secret to delete.")
+    """Schema for deleting one or more user-specific secrets."""
+    user_email: str = Field(..., description="The email of the user whose secret(s) are deleted.")
+    key_names: List[str] = Field(..., description="List of secret names to delete. Pass a single item for single deletion.")
 
 class PublicSecretDeleteRequest(BaseModel):
-    """Schema for deleting a public secret_data."""
-    key_name: str = Field(..., description="The name of the public secret to delete.")
+    """Schema for deleting one or more public secrets."""
+    key_names: List[str] = Field(..., description="List of public secret names to delete. Pass a single item for single deletion.")
 
 class SecretGetRequest(BaseModel):
     """Schema for retrieving user-specific secrets."""
