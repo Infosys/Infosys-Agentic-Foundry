@@ -2,7 +2,7 @@
 ## Overview
 The `Admin Screen` serves as the central hub for managing and monitoring key components of the system. 
 
-- It is organized into multiple sections including `chat`, `Tools`, `Servers`, `Agents`, `Pipelines`, `Vault`, `Data Connectors`, `Knowledge Base`, `Resource Dashboard`, `Evaluation`, `Files` and an additional tab labeled `Admin`. 
+- It is organized into multiple sections including `chat`, `Tools`, `Servers`, `Agents`, `Workflows`, `Vault`, `Data Connectors`, `Knowledge Base`, `Resource Dashboard`, `Evaluation`, `Files` and an additional tab labeled `Admin`. 
 - The `Admin` tab is specifically designed to provide administrators with advanced management capabilities.
 - Within the `Admin` tab, you will find four main functional tabs that enable administrators to effectively manage users, oversee agent feedback, Installation, recycle bin management and Unused tools and agents, Groups and Role Control, Resource Management, and Inference Configuration.
 ---
@@ -17,7 +17,7 @@ The User Management section in the Admin tab allows administrators to manage use
 
 For detailed information on user management operations, permissions, and rules, refer to the RBAC documentation:
 
-[:octicons-arrow-right-24: User Management Within Departments](RBAC.md#4-user-management-within-departments)
+[:octicons-arrow-right-24: User Management Within Departments](RBAC.md#5-user-management-within-departments)
 
 
 ## 2. Learning - Feedback Approval
@@ -124,10 +124,30 @@ The **RecycleBin** tab lets administrators manage deleted tools, agents and MCP 
 
 - **View Deleted Items:** See a list of all deleted tools, agents and MCP Servers.
 - **Restore Functionality:** Restore mistakenly deleted items with a single click.
+
+    > Restore Conflict Handling
+
+    When restoring an item, the system checks whether an item with the same name already exists in the main database. The behavior differs by resource type:
+
+    **Tools — Restore Conflict**
+
+    If a tool with the same name already exists in the main database, the system detects a conflict and presents two options:
+
+    1. **Add as new version** — The restored tool's code is added as a new version to the existing tool that shares the same name.
+    2. **Restore as new tool** — The tool is restored under a different name. The admin is prompted to provide a new name before the restore proceeds.
+
+    **Agents — Restore Conflict**
+
+    If an agent with the same name already exists in the main database, the admin is prompted to provide a new name. The agent is then restored under the new name.
+
+    **MCP Servers — Restore Conflict**
+
+    If an MCP server with the same name already exists in the main database, the admin is prompted to provide a new name. The server is then restored under the new name.
+
 - **Permanent Deletion:** Permanently remove items that are no longer needed. This action cannot be undone.
 
-> **Note:**
-> Only users with administrative privileges can access the RecycleBin tab and perform restore or permanent delete actions.
+!!! Note
+    Only users with administrative privileges can access the RecycleBin tab and perform restore or permanent delete actions.
 
 ## 5. Unused Tools, Agents and MCP Servers
 
@@ -145,7 +165,7 @@ The **Control** tab in the Admin section enables administrators to manage groups
 
 **Group Management** — Organize users and agents into groups for collaborative access and shared vault secrets. Admins can create, update, and manage group memberships within their department.
 
-**Role Permissions** — Configure role-based access control by defining what actions each role can perform on resources (Tools, Agents, Servers, Pipelines). Set Read, Add, Update, Delete, and Execute permissions at the role level.
+**Role Permissions** — Configure role-based access control by defining what actions each role can perform on resources (Tools, Agents, Servers, Workflows). Set Read, Add, Update, Delete, and Execute permissions at the role level.
 
 For detailed information on group creation, member management, permission configuration, and access control rules, refer to the RBAC documentation:
 
@@ -209,5 +229,358 @@ Administrators can manage various inference parameters that affect agent behavio
     - Test configuration changes in a development environment before applying to production
     - Balance response quality with cost and performance considerations
     - Regularly review and optimize settings based on user feedback and system metrics
+
+## 9. Multiple Deletion
+
+Administrators have the exclusive ability to **select and delete multiple items at once** across all major resource sections of the platform. This capability is not available to Developers, Users, or any other role.
+
+!!! warning "Admin-Exclusive Feature"
+    Multiple deletion is available **only for the Admin role**. Other roles (Developer, User) can only delete items one at a time using the standard per-item delete action.
+
+**Supported Sections**
+
+Multiple deletion is available in the following sections:
+
+<div class="grid cards" markdown>
+
+- :material-wrench: **Tools**
+- :material-check-circle: **Validators**
+- :material-server: **Servers**
+- :material-robot: **Agents**
+- :material-pipe: **Workflows**
+- :material-safe: **Vault**
+- :material-book-open: **Knowledge Bases**
+- :material-text-search: **Consistency**
+- :material-view-dashboard: **Resource Dashboard**
+- :material-tools: **Unused Tools**
+- :material-robot-off: **Unused Agents**
+- :material-server-off: **Unused Servers**
+- :material-account-group: **Groups Management** *(inside a group)*
+- :material-file-multiple: **Files**
+
+</div>
+
+**How It Works**
+
+**1. Selecting Items**
+
+- A checkbox appears next to each item in the list — only visible to Admin users.
+- Admins can select individual items or use a **Select All** checkbox to select every item on the current list.
+- The count of selected items is displayed in the action bar.
+
+**2. Triggering Multiple Delete**
+
+- Once one or more items are selected, a **Delete Selected** button becomes active in the action bar.
+- Clicking it opens a confirmation dialog listing the selected items before proceeding.
+
+**3. Validation**
+
+- All existing validation checks are applied to each item before deletion — the same checks used for single item deletion.
+- If an item cannot be deleted (e.g., a tool is currently bound to an agent, or an agent is bound to a workflow), that item is skipped with an appropriate error message, and the rest of the valid items are deleted.
+
+**4. Recycle Bin**
+
+- Deleted items follow the **same recycle bin flow** as single item deletion — they are moved to the RecycleBin and are not permanently removed immediately.
+- Items remain in the RecycleBin for 30 days and can be restored by an Admin before permanent deletion.
+
+!!! note
+    Multiple deletion does not bypass any existing safeguards. Every item goes through the same pre-deletion validation and post deletion recycle flow as individual deletions — the only difference is that multiple items can be selected and processed in a single action.
+
+---
+
+## 10. Backup & Cleanup Guide
+
+This guide explains how to use the `Backup` and `Cleanup` features in the IAF. Both operations are restricted to `Admin` users only.
+
+### Backup Functionality
+
+The backup feature extracts all agents, tools, validators, MCP servers, and workflows from the IAF database and pushes the data to a configured GitHub repository. This allows teams to maintain a versioned, off-database copy of all platform resources.
+
+Each backup run is organised under a folder named after the server (using the `SERVER_NAME` environment variable) inside the configured GitHub repository.
+
+---
+
+**What Gets Backed Up**
+
+| Category | Contents |
+|---|---|
+| **Agents** | Agent configurations (`agent_config.json`), tags, type, model bindings, tool bindings |
+| **Tools** | Tool code (`.py`), tool config (`config.json`), all historical versions under a `versions/` subfolder |
+| **Validators** | Same structure as tools; identified by tool IDs starting with `_validator` |
+| **MCP Servers** | MCP server configs (`mcp_config.json`) and extracted server code (`.py`) |
+| **Workflows** | Workflow definitions (`workflow_config.json`) along with embedded agent data |
+
+---
+
+**Prerequisites Before Running a Backup**
+
+Before triggering a backup you **must** ensure the following secrets are configured in the application's secrets store:
+
+| Secret Key | Description |
+|---|---|
+| `GITHUB_USERNAME` | GitHub username of the account that will push the backup |
+| `GITHUB_PAT` | GitHub Personal Access Token (PAT) with **write** access to the target repository |
+| `GITHUB_EMAIL` | Email address associated with the GitHub account |
+| `TARGET_REPO_NAME` | Name of the target GitHub repository where backups will be stored |
+| `TARGET_REPO_OWNER` | Owner (user or organisation) of the target GitHub repository |
+
+!!! Important
+    The PAT must have at least `repo` scope to allow pushing new branches to the target repository. If the token has expired or lacks write access, the backup will fail with a clear error message.
+
+Additionally, the `SERVER_NAME` environment variable must be set in your deployment, as it is used to name the backup folder inside the repository.
+
+---
+
+**How to Trigger a Backup**
+
+The backup is triggered via a REST API call:
+
+**Endpoint:**
+```
+POST /utility/backup-and-export
+```
+
+**Request Body:**
+```json
+{
+  "user_email": "admin@example.com"
+}
+```
+
+**Authentication:** The request must be made by a logged-in `Admin` user. Provide the session cookie in the request.
+
+**What happens after you call this endpoint:**
+
+1. The system extracts all agents, tools, validators, MCP servers, and workflows from the database into a temporary folder.
+2. The extracted data is pushed to the configured GitHub repository as a new branch, under a path scoped to the server name.
+3. The temporary local folder is cleaned up automatically after the push.
+4. A response is returned with the GitHub URL of the pushed backup.
+
+**Successful Response:**
+
+```json
+{
+  "success": true,
+  "message": "Backup completed and pushed to GitHub repository: <owner>/<repo>",
+  "github_url": "<URL to the pushed branch>",
+  "server_name": "<SERVER_NAME>",
+  "repository": "<owner>/<repo>"
+}
+```
+
+---
+
+**Backup Output Structure**
+
+Inside the GitHub repository, the backup is organised as follows:
+
+```
+<SERVER_NAME>/
+├── Agents/
+│   ├── <Tag_or_General>/
+│   │   └── <AgentName>/
+│   │       └── agent_config.json
+├── Tools/
+│   └── <ToolName>/
+│       ├── config.json
+│       ├── <ToolName>.py
+│       └── versions/
+│           ├── v1.py
+│           ├── v2.py
+│           └── ...
+├── Validators/
+│   └── <ValidatorName>/
+│       ├── config.json
+│       ├── <ValidatorName>.py
+│       └── versions/
+├── MCP_Servers/
+│   └── <Tag_or_General>/
+│       └── <McpServerName>/
+│           ├── mcp_config.json
+│           └── <McpServerName>.py
+└── Workflows/
+    └── <WorkflowName>/
+        └── workflow_config.json
+```
+
+- **Agents** are grouped by their assigned tag (domain/category). Untagged agents fall under `General/`.
+- **Tools and Validators** include all historical versions under a `versions/` subfolder.
+- **MCP Servers** are grouped by tag similar to agents.
+
+---
+
+**Common Backup Errors**
+
+| Error Message | Likely Cause | Resolution |
+|---|---|---|
+| `GitHub authentication failed. Please verify your GitHub Personal Access Token (PAT)...` | PAT is expired or has insufficient scope | Regenerate the PAT with `repo` scope and update the secret |
+| `Access denied to GitHub repository...` | Insufficient permissions on the repository | Ensure the account has write access to the target repository |
+| `GitHub repository not found...` | Incorrect `TARGET_REPO_NAME` or `TARGET_REPO_OWNER` | Verify and correct the values in secrets |
+| `No data found to backup...` | No agents, tools, or other resources exist in the database | Add at least one resource before backing up |
+| `Unable to clean up temporary directory...` | File lock on the temp folder from a previous run | Wait a moment and try again |
+
+---
+
+### Cleanup Functionality
+
+The cleanup feature identifies and removes `test, demo, sample, and orphan` resources from the IAF database. It follows a `two-step process`: first preview what will be deleted, then execute the deletion. This ensures nothing is removed without admin awareness.
+
+Both steps generate downloadable Excel reports for auditing purposes.
+
+---
+
+**What Gets Cleaned Up**
+
+The cleanup targets the following resource types:
+
+- **Agents** (including Meta Agents and Workflow Agents)
+- **Tools** (regular tools and validators)
+- **MCP Tools / Servers**
+- **Workflows**
+
+---
+
+**Cleanup Criteria**
+
+A resource is flagged for cleanup if it meets `one or both` of the following conditions:
+
+**1. Test/Demo/Sample Name Pattern**
+
+The resource name contains any of the following words as whole words or separated by common delimiters (`_`, `-`, space):
+
+| Matched Words |
+|---|
+| `test`, `demo`, `sample`, `example`, `dummy` |
+| `trial`, `mock`, `fake`, `tmp`, `temp` |
+| `untitled`, `foo`, `bar`, `hello`, `world` |
+| `experiment`, `playground`, `scratch`, `sandbox` |
+
+!!! Info
+    Resources created by the system (`created_by = 'system'`) are **excluded** from cleanup.
+
+**2. Orphan**
+
+A resource is considered an orphan when it is not bound to or used by any other resource (e.g., a tool not used by any agent, or an agent not part of any meta agent or workflow).
+
+---
+
+**Step 1 – Preview Cleanup**
+
+Use this step to review what would be deleted **before** making any changes.
+
+**Endpoint:**
+```
+POST /utility/cleanup/preview
+```
+
+**Request Body:**
+
+```json
+{
+  "send_emails": false
+}
+```
+
+Set `send_emails` to `true` if you want the system to send notification emails to the creators of the identified resources (requires Outlook to be configured on the server).
+
+**What this returns:**
+
+- A count summary of items found per category (agents, tools, workflows, MCP tools)
+- Path to a generated preview Excel report (`CLEANUP_PREVIEW_<timestamp>.xlsx`) stored in the `cleanup_reports/` folder
+- Number of emails sent (if `send_emails` was `true`)
+
+**Example Response:**
+
+```json
+{
+  "status": "success",
+  "message": "Found 12 items for cleanup",
+  "summary": {
+    "agents": 5,
+    "tools": 4,
+    "workflows": 2,
+    "mcp_tools": 1,
+    "total": 12
+  },
+  "report_file": "cleanup_reports/CLEANUP_PREVIEW_20260429_103045.xlsx",
+  "emails_sent": 3
+}
+```
+
+!!! Info "Recommendation"
+    Always run a preview first and download the report to review the items before proceeding to execution.
+
+---
+
+**Step 2 – Execute Cleanup**
+
+Once you have reviewed the preview and are confident about proceeding, execute the cleanup.
+
+**Endpoint:**
+```
+POST /utility/cleanup/execute
+```
+
+**Request Body:** None required.
+
+**What happens:**
+
+1. The system re-fetches all items matching cleanup criteria at the time of execution.
+2. Tools are unbound from agents before deletion.
+3. Agents are unbound from meta agents and workflows before deletion.
+4. All matched items are permanently deleted from the database.
+5. A deletion report (`DELETION_REPORT_<timestamp>.xlsx`) is generated and stored in the `deletion_reports/` folder.
+6. A download URL for the deletion report is returned.
+
+**Example Response:**
+
+```json
+{
+  "status": "success",
+  "message": "Successfully deleted 12 items",
+  "deleted_counts": {
+    "agents": 5,
+    "tools": 4,
+    "workflows": 2,
+    "mcp_tools": 1
+  },
+  "related_cleanup": {
+    "tool_agent_unbindings": 8,
+    "agent_meta_unbindings": 2
+  },
+  "report_download_url": "/utility/cleanup/report/download/DELETION_REPORT_20260429_103120.xlsx"
+}
+```
+
+!!! Note
+    Execution is permanent. Deleted items cannot be recovered from this flow. Ensure you have reviewed the preview report before proceeding.
+
+---
+
+**Downloading Cleanup Reports**
+
+Both preview and deletion reports can be downloaded using:
+
+**Endpoint:**
+```
+GET /utility/cleanup/report/download/{filename}
+```
+
+Replace `{filename}` with the exact filename returned in the preview or execute response (e.g., `CLEANUP_PREVIEW_20260429_103045.xlsx`).
+
+The file is returned as an Excel (`.xlsx`) download.
+
+---
+
+**Listing All Reports**
+
+To see a list of all available preview and deletion reports:
+
+**Endpoint:**
+```
+GET /utility/cleanup/reports/list
+```
+
+This returns filenames from both `cleanup_reports/` and `deletion_reports/` folders.
 
 ---

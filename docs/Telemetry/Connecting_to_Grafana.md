@@ -90,3 +90,39 @@ The integration leverages Elasticsearch's distributed architecture and query opt
 
 The system supports extensive customization options including custom query builders, variable-driven dashboards, and conditional formatting. Users can create complex analytical views tailored to specific monitoring requirements and operational needs.
 
+---
+
+## 6. LLM Usage & Cost Monitoring Dashboard
+
+A pre-built **Grafana Dashboard JSON** is available for monitoring LLM (Language Model) usage and costs across the platform. The dashboard is organized into two main sections:
+
+**LLM Call Analysis**
+
+Tracks all individual API calls made to language models, sourced from the `token_usage_logs` table.
+
+| Metric | Description |
+|--------|-------------|
+| **Total Cost** | Aggregate cost across all LLM API calls |
+| **Total Tokens Used** | Combined prompt, completion, and cached token counts |
+| **Performance by Agent** | Cost and token usage broken down per agent |
+| **Performance by Model** | Cost and token usage broken down per model |
+| **Detailed Call Logs** | Per-call records with timestamps, tokens, and cost |
+
+**Query Level Analysis**
+
+Monitors user queries and their aggregate LLM costs, sourced from the `query_token_usage` table.
+
+| Metric | Description |
+|--------|-------------|
+| **Avg LLM Calls per Query** | Average number of model calls triggered per user query |
+| **Cost per Query** | Average and total cost at the query level |
+| **Query-Level Token Usage** | Token consumption aggregated per query |
+
+**Available Filters:**
+
+- `Agent` — Filter metrics by a specific agent
+- `Model` — Filter by LLM model name
+- `Status` — Filter by query or call status
+- `User ID` — Filter metrics for a specific user
+
+---

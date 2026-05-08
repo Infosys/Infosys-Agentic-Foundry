@@ -178,7 +178,7 @@ processors:
   batch: {}
 
 service:
-  pipelines:
+  workflows:
     traces:
       receivers: [otlp]
       processors: [batch]
@@ -200,7 +200,7 @@ service:
 
 **Configuration notes:**
 
-| Pipeline | Purpose | Elasticsearch |
+| Workflow | Purpose | Elasticsearch |
 |----------|---------|---------------|
 | **traces** | Distributed tracing data | Add `elasticsearch` to exporters list if you want traces stored in Elasticsearch |
 | **metrics** | Performance metrics | Add `elasticsearch` to exporters list if you want metrics stored in Elasticsearch |

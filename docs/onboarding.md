@@ -2,13 +2,13 @@
 
 ## Overview
 
-The Sample Data Insertion module automatically reads and loads sample tools, agents, and pipelines from the configuration file into the database when the server starts. This enables quick setup and testing without manual data entry.
+The Sample Data Insertion module automatically reads and loads sample tools, agents, and workflows from the configuration file into the database when the server starts. This enables quick setup and testing without manual data entry.
 
 **Key Features:**
 
 - **Automatic Loading** — Sample data is inserted on server startup
 - **No Code Changes Required** — Simply edit the JSON configuration file
-- **Supports Multiple Resources** — Tools, Agents, and Pipelines can all be pre-loaded
+- **Supports Multiple Resources** — Tools, Agents, and Workflows can all be pre-loaded
 
 ---
 
@@ -16,7 +16,7 @@ The Sample Data Insertion module automatically reads and loads sample tools, age
 
 **File Location:** `src/onboard/sample_data.json`
 
-To add new sample tools, agents, or pipelines, edit this JSON file. No code modifications are needed—just add your data to the appropriate list (tools, agents, or pipelines).
+To add new sample tools, agents, or workflows, edit this JSON file. No code modifications are needed—just add your data to the appropriate list (tools, agents, or workflows).
 
 ---
 
@@ -91,7 +91,7 @@ Define agents with specific configurations and behaviors.
 
 ---
 
-### 3. Pipelines
+### 3. Workflows
 
 Define multi-node workflows that orchestrate agents and data flow.
 
@@ -99,12 +99,12 @@ Define multi-node workflows that orchestrate agents and data flow.
 
 ```json
 {
-    "pipelines": [
+    "workflows": [
         {
-            "pipeline_name": "",
-            "pipeline_description": "",
+            "workflow_name": "",
+            "workflow_description": "",
             "always_onboard": true,
-            "pipeline_definition": {
+            "workflow_definition": {
                 "nodes": [
                     {
                         "node_id": "",
@@ -163,12 +163,12 @@ Define multi-node workflows that orchestrate agents and data flow.
 }
 ```
 
-**Pipeline Fields:**
+**Workflow Fields:**
 
-- `pipeline_name` — Unique identifier for the pipeline
-- `pipeline_description` — Description of the pipeline's purpose
+- `workflow_name` — Unique identifier for the workflow
+- `workflow_description` — Description of the workflow's purpose
 - `always_onboard` — Boolean flag to control automatic onboarding
-- `pipeline_definition` — Object containing nodes and edges
+- `workflow_definition` — Object containing nodes and edges
 
 **Node Configuration:**
 
@@ -186,10 +186,35 @@ Define multi-node workflows that orchestrate agents and data flow.
 
 ---
 
+### 4. MCP Tools
+
+Define Model Context Protocol (MCP) tools that agents can use to interact with external services and data sources.
+
+**Structure:**
+
+```json
+{
+    "mcp_tools": [
+        {
+            "tool_name": "",
+            "tool_description": "",
+            "mcp_type": "",
+            "code_content": ""
+        }
+    ]
+}
+```
+
+**Fields:**
+
+- `tool_name` — Unique identifier for the MCP tool
+- `tool_description` — Brief description of what the MCP tool does
+- `mcp_type` — The MCP server type (e.g., `file`, `url`, `module`)
+- `code_content` — Configuration or code content required to connect and run the MCP tool
 ## Usage
 
 1. **Edit Configuration** — Open `src/onboard/sample_data.json`
-2. **Add Your Data** — Insert tools, agents, or pipelines into the respective arrays
+2. **Add Your Data** — Insert tools, agents, or workflows into the respective arrays
 3. **Start Server** — The onboarding module automatically loads the data on startup
 4. **Verify** — Check the database or UI to confirm your sample data was loaded
 
@@ -197,6 +222,20 @@ Define multi-node workflows that orchestrate agents and data flow.
     Keep your sample data organized and well-documented. Use clear naming conventions and descriptions to make the data easy to understand and maintain.
 
 !!! warning "Important"
-    Ensure all referenced tools exist before creating agents that depend on them. Pipelines should reference valid agent names.
+    Ensure all referenced tools exist before creating agents that depend on them. Workflows should reference valid agent names.
 
 ---
+
+## Viber Agent
+
+The **Viber Agent** is a built-in AI assistant that is always onboarded by default. It helps users easily create simple AI agents that match their needs — all through natural conversation.
+
+**What it does:**
+
+- **Understands your intent** — Interprets what you want to build from plain conversational descriptions or shared documents, without requiring technical specifications.
+- **Guides you end-to-end** — Walks you through the entire agent creation process step by step, from defining the purpose to configuring tools and knowledge.
+- **Suggests capabilities** — Recommends the right tools (abilities) and knowledge bases that best fit the agent you want to create.
+
+!!! note
+    The Viber Agent does not need to be added to `sample_data.json`. It is always available in the platform as a default system agent.
+

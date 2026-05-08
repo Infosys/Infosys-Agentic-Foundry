@@ -92,3 +92,34 @@ When a user uploads a file and `STORAGE_PROVIDER` is set (e.g., `azure`), the fi
     This approach ensures file persistence, cross-pod accessibility, and eliminates the risk of data loss due to pod failures.
 
 ---
+
+## Standalone File Server for User Uploads
+
+A dedicated file server enables browsing and downloading files from the `user_uploads` directory without requiring authentication, providing seamless public access to uploaded user files.
+
+**Configuration**
+
+To enable the file server, add the following variables to your `.env` file:
+
+```bash
+FILE_SERVER_ENABLED=true
+FILE_SERVER_HOST=0.0.0.0
+FILE_SERVER_PORT=8001
+FILE_SERVER_BASE_DIR=user_uploads
+FILE_SERVER_ALLOWED_HOSTS=*
+```
+
+**Environment Variables**
+
+| Variable | Description |
+|---|---|
+| `FILE_SERVER_ENABLED` | Set to `true` to enable the standalone file server |
+| `FILE_SERVER_HOST` | Host address the file server binds to (`0.0.0.0` listens on all interfaces) |
+| `FILE_SERVER_PORT` | Port the file server runs on |
+| `FILE_SERVER_BASE_DIR` | Base directory served by the file server |
+| `FILE_SERVER_ALLOWED_HOSTS` | Allowed hosts for access (`*` permits all hosts) |
+
+!!! warning
+    Setting `FILE_SERVER_ALLOWED_HOSTS=*` permits access from any host. Restrict this to specific hosts in production environments where public access is not intended.
+
+---

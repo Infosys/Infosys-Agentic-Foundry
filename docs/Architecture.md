@@ -46,7 +46,7 @@ The Multi Agent operates on the Planner-Executor-Critic paradigm. It begins with
     Examples:
 
     1. Multi-step project management tasks where a detailed plan is needed.
-    2. Executing a sequence of dependent tasks, such as data processing pipelines.
+    2. Executing a sequence of dependent tasks, such as data processing workflows.
     3. Scenarios where outputs need to be evaluated and scored for quality or correctness.
 
 **Planner Executor Template**: 

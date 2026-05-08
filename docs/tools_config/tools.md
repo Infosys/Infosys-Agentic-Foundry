@@ -33,7 +33,19 @@ To maintain consistency and reliability, each tool should follow a standard form
 * `Model:` Once the  model is selected, a doc string for the tool will be generated.
 * `Domain Tags:` Optional labels (e.g., manufacturing, logistics) indicating the domain the tool applies to.
 
+## Filtering Tools and Servers
 
+The Tools listing pages provide filter options to help users quickly find the resources they need. These filters are available to all users.
+
+**Tools Filters**
+
+- `Tag / Industry` - Filter tools by domain tags (e.g., manufacturing, logistics, finance)
+- `Created By Me` - Show only tools created by the logged-in user
+- `Created By All` - Show all tools in the department
+- `Created By System` - Show only system-onboarded tools
+- `Type` - Toggle between showing only `Tools` or only `Validators`
+
+---
 
 ## Onboarding Tool
 

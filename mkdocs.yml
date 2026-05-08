@@ -42,7 +42,11 @@ nav:
      - AWS Kubernetes Engine: Installation/AWS.md
      - Database setup: Installation/Database_Setup.md
      - VM installation using docker-compose: Installation/VM_Docker-Compose.md
+     - Autoscaling Deployment:
+         - AKS Autoscaling: Installation/Autoscaling_Deployment/AKS_Autoscaling.md
+         - VM Autoscaling using Docker: Installation/Autoscaling_Deployment/VM_Autoscaling.md
   - Enabling Additional LLM Models: custom_llm_models.md
+  - Load Balancing & Fallback Models: Load_Balancing_Fallback.md
   - Model Server Integration: Model_server.md
   - Agents Design: 
      - Overview: Agents_Design/overview.md
@@ -64,11 +68,12 @@ nav:
     - Tool Creation via Chat Inference: tools_config/tool_creation.md
     - Tool Validation: Tool_Validation.md
     - Tool Interrupt: Tool_Interrupt.md
+    - Tool Versioning: tools_config/tool_versioning.md
   - Files: files_upload/files.md
   - DataConnectors: DataConnectors.md
   - Knowledge Base: Knowledge_Base.md
   - MCP Registry: MCP_Registry.md
-  - Agent Pipelines: Agent_Pipelines.md
+  - Agent Workflows: Agent_Workflows.md
   - Agent Configuration:
       - Overview: agent_config/Overview.md
       - React Agent Configuration: agent_config/reactAgent.md
@@ -91,6 +96,7 @@ nav:
       - Hybrid Agent Inference: Inference/HybridAgent_inference.md
       - Canvas Screen: Inference/Canvas_Screen.md
   - Serever Sent Events: SSE.md
+  - Kafka Message Queue: Kafka_Message_Queue.md
   - Prompt Optimization: prompt_optimization.md
   - Evaluation: 
       - Evaluation Metrics: Evaluation/evaluation_metrics.md
@@ -100,6 +106,8 @@ nav:
       - Open Telemetry: Telemetry/telemetry.md
       - Connecting to Grafana: Telemetry/Connecting_to_Grafana.md
       - Arize Phoenix: Telemetry/Arize_Phoenix.md
+  - Cost and Token Tracking: Cost_Token_Tracking.md
+  - Tool and MCP Export Import: Tool_and_MCP_Export_Import.md
   - Export Agent: ExportAgent.md
   - GZIP Compression: GZIP_Compression.md
   - Prebuilt Components Auto-Onboarding: onboarding.md
