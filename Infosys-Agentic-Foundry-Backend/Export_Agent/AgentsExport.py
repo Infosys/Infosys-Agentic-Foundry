@@ -22,14 +22,21 @@ class AgentExporter:
     STATIC_TEMPLATE_FOLDER = 'Export_Agent/Agentcode'    # Final export template base (configs etc.)
 
     SHARED_FILES = [
-        ('telemetry_wrapper.py', 'Agent_Backend'),
-        ('groundtruth.py', 'Agent_Backend'),
-        ('MultiDBConnection_Manager.py','Agent_Backend'),
-        ('VERSION', 'Agent_Backend'),
-        ('main.py', 'Agent_Backend'),
         ('.env.example', 'Agent_Backend'),
+        ('call_categorizer.py', 'Agent_Backend'),
+        ('data_extraction.py', 'Agent_Backend'),
+        ('generate_master_secret_key.py', 'Agent_Backend'),
+        ('groundtruth.py', 'Agent_Backend'),
+        ('LICENSE.md', 'Agent_Backend'),
+        ('litellm_standalone_tracker.py', 'Agent_Backend'),
+        ('main.py', 'Agent_Backend'),
         ('model_server.py', 'Agent_Backend'),
-        ('README.md', 'Agent_Backend')
+        ('MultiDBConnection_Manager.py','Agent_Backend'),
+        ('README.md', 'Agent_Backend'),
+        ('run_agent_worker.py', 'Agent_Backend'),
+        ('run_server.py', 'Agent_Backend'),
+        ('telemetry_wrapper.py', 'Agent_Backend'),
+        ('VERSION', 'Agent_Backend'),
     ]
 
     # Marker constants for export preprocessing
@@ -177,10 +184,23 @@ class AgentExporter:
         except Exception as e:
             raise e
     #------------------------------------------------------------------------        
-    async def get_tool_data(self, agent_data: dict, export_path: str, tools: List[str] = []):
+    async def get_tool_data(self, agent_data: dict, export_path: str, tools: List[str] = [], bound_versions_map: Dict[str, str] = None):
+        """
+        Export tool data and versions for an agent.
+        
+        Args:
+            agent_data: Agent dictionary (used if tools list is empty)
+            export_path: Path to export directory
+            tools: List of tool IDs to export (if empty, uses agent's tools_id)
+            bound_versions_map: Dict mapping tool_id -> bound_version (e.g., {"tool_123": "v4"})
+                               If provided, only exports the bound version for each tool.
+                               If not provided, exports only v1 (default version).
+        """
         if not self.tool_service:
             raise ValueError("ToolService instance is required to fetch tool data.")
         import json
+        if bound_versions_map is None:
+            bound_versions_map = {}
         if not tools:
             tools_id_str = agent_data.get("tools_id")
             tool_ids = tools_id_str
@@ -197,6 +217,7 @@ class AgentExporter:
         else:
             tool_ids = tools 
         tools_data = {}
+        tool_versions_data = {}  # Store bound version for each tool
         tool_codes = []  # Collect all tool codes for dependency analysis
         prefixes = ('mcp_file_', 'mcp_url_', 'mcp_module_')
         mcp_items = [item for item in tool_ids if item.startswith(prefixes)]
@@ -223,17 +244,48 @@ class AgentExporter:
                 tool_dict= tool_data[0]
                 processed_tool_dict = {}
                 default_null=""
+                # Fields to exclude from export (these contain ALL versions, not just bound)
+                exclude_fields = ["created_on", "updated_on", "db_connection_name", "is_public", 
+                                  "status", "comments", "approved_at", "approved_by", "department_name",
+                                  "versioning", "version_count", "versions"]  # Exclude version fields - we'll add only bound version
                 for key, value in tool_dict.items():
-                    if key not in ["created_on", "updated_on","db_connection_name","is_public","status","comments","approved_at","approved_by","department_name"]:
+                    if key not in exclude_fields:
                         if isinstance(value, datetime):
                             processed_tool_dict[key] = value.isoformat()
                         else:
                             processed_tool_dict[key] = value if value is not None else default_null
                 name=tool_dict["tool_name"]
-                raw_code=tool_dict["code_snippet"]
-                final_code=self.format_python_code_string(raw_code)
+                
+                # Get bound version for this tool (default v1)
+                bound_version = bound_versions_map.get(tool_id, "v1")
+                
+                # IMPORTANT: Use BOUND VERSION code as the main code, not tool_table.code_snippet
+                # This ensures the exported agent runs the correct version
+                raw_code = tool_dict["code_snippet"]  # Fallback
+                version_info = None
+                
+                if hasattr(self.tool_service, 'tool_version_repo') and self.tool_service.tool_version_repo:
+                    try:
+                        version_record = await self.tool_service.tool_version_repo.get_version(tool_id, bound_version)
+                        if version_record and version_record.get('code_snippet'):
+                            raw_code = version_record['code_snippet']  # Use bound version code!
+                            log.info(f"Exporting bound version '{bound_version}' code for tool '{name}'")
+                            version_info = {
+                                "version": version_record.get("version", bound_version),
+                                "tool_description": version_record.get("tool_description", ""),
+                                "model_name": version_record.get("model_name", ""),
+                                "updated_by": version_record.get("updated_by", ""),
+                            }
+                        else:
+                            log.warning(f"Bound version '{bound_version}' not found for tool '{name}', using tool_table code")
+                    except Exception as e:
+                        log.warning(f"Could not load bound version '{bound_version}' for tool '{name}': {e}")
+                
+                final_code = self.format_python_code_string(raw_code)
                 tool_codes.append(final_code)  # Store tool code for dependency analysis
-                file_path=os.path.join(export_path,f'Agent_Backend/tools_codes/{name}.py')         
+                
+                # Write main code file (contains BOUND VERSION code)
+                file_path = os.path.join(export_path, f'Agent_Backend/tools_codes/{name}.py')         
                 try:
                     path_obj = Path(file_path)
                     parent_directory = path_obj.parent
@@ -241,10 +293,27 @@ class AgentExporter:
                     with open(path_obj, 'w', encoding='utf-8') as f:
                         f.write(final_code)
                 except Exception as e:
-                    pass
-                processed_tool_dict["code_snippet"]=f'tools_codes/{name}.py'
-                # del processed_tool_dict["code_snippet"]
+                    log.warning(f"Failed to write tool code file for '{name}': {e}")
+                
+                processed_tool_dict["code_snippet"] = f'tools_codes/{name}.py'
+                
+                # Add only bound version info to processed_tool_dict
+                processed_tool_dict["version_count"] = 1
+                processed_tool_dict["versions"] = [bound_version]
+                
+                # Update tool_description with bound version's description if available
+                if version_info and version_info.get("tool_description"):
+                    processed_tool_dict["tool_description"] = version_info["tool_description"]
+                # Update model_name with bound version's model if available
+                if version_info and version_info.get("model_name"):
+                    processed_tool_dict["model_name"] = version_info["model_name"]
+                
                 tools_data[tool_id] = processed_tool_dict
+                
+                # Store version metadata if we have it
+                if version_info:
+                    version_info["code_snippet"] = f'tools_codes/{name}.py'  # Same file as main
+                    tool_versions_data[tool_id] = [version_info]
             else:
                 tools_data[tool_id] = None
         tool_data_file_path=os.path.join(export_path, 'Agent_Backend/tools_config.py')
@@ -252,6 +321,15 @@ class AgentExporter:
         with open(tool_data_file_path, 'w') as f:
                 f.write('tools_data = ')
                 f.write(tools_data_json_str)
+        
+        # Write tool versions config file
+        if tool_versions_data:
+            tool_versions_file_path = os.path.join(export_path, 'Agent_Backend/tool_versions_config.py')
+            tool_versions_json_str = json.dumps(tool_versions_data, indent=4)
+            with open(tool_versions_file_path, 'w') as f:
+                f.write('tool_versions_data = ')
+                f.write(tool_versions_json_str)
+        
         return tool_codes
     #------------------------------------------------------------------------
     async def serialize_agent(self, agent_dict):
@@ -394,7 +472,7 @@ class AgentExporter:
             dest,
             ignore=shutil.ignore_patterns(
                 '__pycache__', '*.pyc', '*.pyo', '*.pyd', '.Python',
-                'env', 'venv', 'ENV', 'env.bak', 'venv.bak',
+                'env', 'venv', '.venv', 'ENV', 'env.bak', 'venv.bak',
                 'agent_templates', 'chat_logs', 'onboard'
             )
         )
@@ -410,11 +488,23 @@ class AgentExporter:
                 dest,
                 ignore=shutil.ignore_patterns(
                     '__pycache__', '*.pyc', '*.pyo', '*.pyd', '.Python',
-                    '.env', 'env', '.venv', 'ENV', 'env.bak', 'venv.bak'
+                    '.env', 'env', 'venv', '.venv', 'ENV', 'env.bak', 'venv.bak'
                 )
             )
         else:
             log.warning('knowledgebase_server folder not found, skipping.')
+
+    #------------------------------------------------------------------------
+    def copy_worker_folders(self, target_folder: str):
+        """Copy agent_worker and tool_worker folders into Agent_Backend."""
+        ignore = shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo', '*.pyd', 'env', 'venv', '.venv', 'ENV')
+        for folder_name in ('agent_worker', 'tool_worker'):
+            src = os.path.join(os.getcwd(), folder_name)
+            dest = os.path.join(target_folder, 'Agent_Backend', folder_name)
+            if os.path.exists(src):
+                shutil.copytree(src, dest, ignore=ignore)
+            else:
+                log.warning(f'{folder_name} folder not found, skipping.')
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -513,6 +603,7 @@ class AgentExporter:
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
         self.copy_knowledgebase_server(target_folder)
+        self.copy_worker_folders(target_folder)
         self.copy_user_uploads(target_folder)
 
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
@@ -552,12 +643,33 @@ class AgentExporter:
                     tools_ids.add(validator)
             # if validator:
             #     tools_ids.add(validator)
-            await self.get_tool_data(agent_dict, export_path=target_folder, tools=tools_ids)
+            
+            # Build bound_versions_map from worker agents' tools_with_versions
+            bound_versions_map = {}
+            for wid, wdata in worker_agents.items():
+                if wdata and "tools_with_versions" in wdata:
+                    for twv in wdata["tools_with_versions"]:
+                        tid = twv.get("tool_id")
+                        tver = twv.get("tool_version", "v1")
+                        if tid:
+                            bound_versions_map[tid] = tver
+            
+            tool_codes = await self.get_tool_data(agent_dict, export_path=target_folder, tools=tools_ids, bound_versions_map=bound_versions_map)
         else:
             worker_agents_path = os.path.join(agent_backend, "worker_agents_config.py")
             with open(worker_agents_path, 'w') as f:
                 f.write('worker_agents = {}\n')
-            tool_codes = await self.get_tool_data(agent_dict, export_path=target_folder)
+            
+            # Build bound_versions_map from agent's tools_with_versions
+            bound_versions_map = {}
+            if "tools_with_versions" in agent_dict:
+                for twv in agent_dict["tools_with_versions"]:
+                    tid = twv.get("tool_id")
+                    tver = twv.get("tool_version", "v1")
+                    if tid:
+                        bound_versions_map[tid] = tver
+            
+            tool_codes = await self.get_tool_data(agent_dict, export_path=target_folder, bound_versions_map=bound_versions_map)
         
         # Pass tool codes to write_env_and_configs for dependency analysis
         await self.write_env_and_configs(target_folder, agent_dict, tool_codes=tool_codes)
@@ -576,6 +688,7 @@ class AgentExporter:
         self.copy_shared_files(target_folder)
         self.copy_src_folder(target_folder)
         self.copy_knowledgebase_server(target_folder)
+        self.copy_worker_folders(target_folder)
         self.copy_user_uploads(target_folder)
 
         agent_backend = os.path.join(target_folder, 'Agent_Backend')
@@ -633,8 +746,28 @@ class AgentExporter:
             for criterion in validators:
                 validator = criterion.get("validator")
                 if validator:
-                    tools_ids.add(validator)     
-        tool_codes = await self.get_tool_data(configs, export_path=target_folder, tools=tools_ids)
+                    tools_ids.add(validator)
+        
+        # Build bound_versions_map from all agents' and worker agents' tools_with_versions
+        bound_versions_map = {}
+        # From main agents in configs
+        for agent in configs.values():
+            if "tools_with_versions" in agent:
+                for twv in agent["tools_with_versions"]:
+                    tid = twv.get("tool_id")
+                    tver = twv.get("tool_version", "v1")
+                    if tid:
+                        bound_versions_map[tid] = tver
+        # From worker agents
+        for wid, wdata in worker_agents.items():
+            if wdata and "tools_with_versions" in wdata:
+                for twv in wdata["tools_with_versions"]:
+                    tid = twv.get("tool_id")
+                    tver = twv.get("tool_version", "v1")
+                    if tid:
+                        bound_versions_map[tid] = tver
+        
+        tool_codes = await self.get_tool_data(configs, export_path=target_folder, tools=tools_ids, bound_versions_map=bound_versions_map)
         
         # Pass tool codes to write_env_and_agentconfigs for dependency analysis
         await self.write_env_and_agentconfigs(target_folder, configs, tool_codes=tool_codes)
