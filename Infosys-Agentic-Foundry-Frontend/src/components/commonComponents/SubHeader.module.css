@@ -577,3 +577,36 @@
   text-overflow: ellipsis;
   color: #374151;
 }
+
+/* Select All row - displayed below the SubHeader, above the cards */
+.selectAllRow {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 4px;
+}
+
+/* Multi-select actions: Select All + Delete Selected (used by inline toolbars) */
+.multiSelectActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-right: 8px;
+}
+
+.selectAllWrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.selectAllLabel {
+  font-size: var(--font-size-sm, 13px);
+  color: var(--content-color);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+

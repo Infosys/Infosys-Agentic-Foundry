@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
-import Cookies from "js-cookie";
+import { getEmailFromToken } from "../../utils/jwtUtils";
 import SVGIcons from "../../Icons/SVGIcons";
 import style from "../../css_modules/ChatPanel.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -14,9 +14,9 @@ import NewCommonDropdown from "./NewCommonDropdown";
 /**
  * ChatPanel - A mini chat interface for code assistance
  * Displays in a side panel with model selection, message history, and input
- * Calls POST /tools/generate/pipeline/chat API for code generation
+ * Calls POST /tools/generate/workflow/chat API for code generation
  *
- * @param {string} pipelineId - Pipeline ID for the chat context
+ * @param {string} workflowId - Workflow ID for the chat context
  * @param {Array} models - Array of available model names
  * @param {function} onCodeUpdate - Callback to update code in parent (receives code_snippet)
  * @param {function} onClose - Callback to close the panel
@@ -25,12 +25,12 @@ import NewCommonDropdown from "./NewCommonDropdown";
  * @param {string} chatSessionId - External session ID from parent (optional)
  * @param {function} onSessionIdChange - Callback when new session ID is generated (optional)
  */
-const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models = [], onCodeUpdate = () => { }, onClose = () => { }, codeSnippet = "", toolId = "", chatSessionId = "", onSessionIdChange = () => { } }, ref) => {
+const ChatPanel = forwardRef(({ messages, setMessages, workflowId = "", models = [], onCodeUpdate = () => { }, onClose = () => { }, codeSnippet = "", toolId = "", chatSessionId = "", onSessionIdChange = () => { } }, ref) => {
   const { addMessage } = useMessage();
   const { fetchData, postData, deleteData } = useFetch();
 
   // Use external chatSessionId if provided, otherwise generate from email + toolId
-  const userEmail = Cookies.get("email") || "";
+  const userEmail = getEmailFromToken();
   const [sessionId, setSessionId] = useState(chatSessionId || `${userEmail}_${toolId.replace(/-/g, "_")}`);
 
   // Chat state
@@ -42,6 +42,9 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
   // Modal state for code preview
   const [showCodeModal, setShowCodeModal] = useState(false);
   const [selectedCodeSnippet, setSelectedCodeSnippet] = useState("");
+
+  // Maximize/minimize state
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // Refs
   const messagesEndRef = useRef(null);
@@ -91,7 +94,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
   const initializeChat = useCallback(async (currentSessionId = sessionId) => {
     // Section to fetch welcome message from api
     // const payload = {
-    //   pipeline_id: pipelineId,
+    //   workflow_id: workflowId,
     //   session_id: currentSessionId,
     //   query: "",
     //   model_name: modelOptions[0] || undefined,
@@ -99,7 +102,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
     //   selected_code: "",
     // };
 
-    // const response = await postData(APIs.PIPELINE_CHAT, payload);
+    // const response = await postData(APIs.WORKFLOW_CHAT, payload);
 
     // if (response?.message) {
     //   const botMessage = {
@@ -122,7 +125,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
       timestamp: new Date().toISOString(),
     };
     setMessages([botMessage]);
-  }, [pipelineId, sessionId, modelOptions, postData, setMessages]);
+  }, [workflowId, sessionId, modelOptions, postData, setMessages]);
 
   /**
    * Fetch a new session ID from the server
@@ -266,9 +269,9 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
       const apiQuery = hasSelectedCode ? (trimmedInput ? `${trimmedInput}\n\nExplain this code:\n${selectedCode}` : `Explain this code:\n${selectedCode}`) : trimmedInput;
 
       try {
-        // Build payload for pipeline chat API
+        // Build payload for workflow chat API
         const payload = {
-          pipeline_id: pipelineId,
+          workflow_id: workflowId,
           session_id: sessionId,
           query: apiQuery,
           model_name: selectedModel || undefined,
@@ -278,7 +281,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
           ...(codeSnippet && codeSnippet.startsWith("def ") && { current_code: codeSnippet }),
         };
 
-        const response = await postData(APIs.PIPELINE_CHAT, payload);
+        const response = await postData(APIs.WORKFLOW_CHAT, payload);
 
         // Debug: Log the response to check version_number
         console.log("ChatPanel API Response:", response);
@@ -302,7 +305,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
 
         setMessages((prev) => [...prev, botMessage]);
       } catch (error) {
-        console.error("Pipeline chat failed:", error);
+        console.error("Workflow chat failed:", error);
         addMessage("Failed to get response. Please try again.", "error");
 
         const errorMessage = {
@@ -318,7 +321,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
         inputRef.current?.focus();
       }
     },
-    [inputValue, isLoading, pipelineId, sessionId, selectedModel, postData, addMessage, onCodeUpdate, codeSnippet],
+    [inputValue, isLoading, workflowId, sessionId, selectedModel, postData, addMessage, onCodeUpdate, codeSnippet],
   );
 
   /**
@@ -371,11 +374,11 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
     // Delete conversation from server
     try {
       const deleteUrl = APIs.DELETE_TOOL_BOT_CONVERSATION.replace("{session_id}", encodeURIComponent(sessionId));
-      await deleteData(deleteUrl, { pipeline_id: pipelineId });
+      await deleteData(deleteUrl, { workflow_id: workflowId });
 
       const payloadForInference = {
         session_id: sessionId,
-        agent_id: pipelineId,
+        agent_id: workflowId,
         framework_type: "langgraph",
       };
       await resetChat(payloadForInference);
@@ -393,7 +396,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId, pipelineId, deleteData, initializeChat, setMessages, getNewSessionId, resetChat]);
+  }, [sessionId, workflowId, deleteData, initializeChat, setMessages, getNewSessionId, resetChat]);
 
   /**
    * Render a single message bubble
@@ -475,7 +478,7 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
   };
 
   return (
-    <div className={style.chatPanelContainer}>
+    <div className={`${style.chatPanelContainer} ${isMaximized ? style.chatPanelMaximized : ""}`}>
       {/* Header */}
       <div className={style.chatHeader}>
         <div className={style.chatHeaderTitle}>
@@ -485,6 +488,15 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
         <div className={style.chatHeaderActions}>
           <button type="button" className={style.clearButton} onClick={handleClearChat} title="Clear chat" disabled={messages.length === 0 || isLoading}>
             <SVGIcons icon="trash" width={14} height={14} color="currentColor" />
+          </button>
+          <button
+            type="button"
+            className={style.clearButton}
+            onClick={() => setIsMaximized((prev) => !prev)}
+            title={isMaximized ? "Minimize" : "Maximize"}
+            aria-label={isMaximized ? "Minimize chat panel" : "Maximize chat panel"}
+          >
+            <SVGIcons icon={isMaximized ? "fullscreen-collapse" : "fullscreen-expand"} width={14} height={14} color="currentColor" />
           </button>
           <button className="closeBtn" onClick={onClose} type="button" title="Close chat panel">
             ×
@@ -532,10 +544,12 @@ const ChatPanel = forwardRef(({ messages, setMessages, pipelineId = "", models =
             options={modelOptions}
             selected={selectedModel}
             onSelect={(val) => setSelectedModel(val)}
-            placeholder="Model"
+            placeholder={modelOptions.length === 0 ? "Loading models..." : "Model"}
             showSearch={modelOptions.length > 5}
-            disabled={isLoading}
+            disabled={isLoading || modelOptions.length === 0}
             selectFirstByDefault={true}
+            width="140px"
+            maxWidth="140px"
           />
         </div>
 

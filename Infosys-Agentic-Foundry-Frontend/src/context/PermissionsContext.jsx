@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import Cookies from "js-cookie";
 import { APIs, BASE_URL } from "../constant";
 import axios from "axios";
+import { getDepartmentFromToken, getRoleFromToken } from "../utils/jwtUtils";
 
 /**
  * PermissionsContext - Dynamic permissions management
@@ -62,7 +63,7 @@ const PermissionsContext = createContext({
   permissions: {},
   loading: true,
   error: null,
-  refreshPermissions: () => {},
+  refreshPermissions: () => { },
   hasPermission: () => false,
 });
 
@@ -73,7 +74,7 @@ export const PermissionsProvider = ({ children }) => {
   const fetchedRoleRef = useRef(null); // Track which role we've already fetched
 
   const fetchPermissions = useCallback(async (forceRefresh = false) => {
-    const role = Cookies.get("role");
+    const role = getRoleFromToken();
     if (!role) {
       // No role means not logged in or guest - use empty permissions
       setPermissions({});
@@ -101,8 +102,8 @@ export const PermissionsProvider = ({ children }) => {
     setLoading(true);
     setError(null);
     try {
-      // Get user's department
-      const department = Cookies.get("department") || "";
+      // Get user's department from JWT token payload
+      const department = getDepartmentFromToken();
 
       // Use POST request with request body as per API spec
       const url = `${BASE_URL}${APIs.GET_ROLE_PERMISSIONS}`;
@@ -141,7 +142,7 @@ export const PermissionsProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    const role = Cookies.get("role");
+    const role = getRoleFromToken();
     if (role) {
       fetchPermissions();
     } else {
@@ -151,7 +152,7 @@ export const PermissionsProvider = ({ children }) => {
 
     // Listen for permission updates (triggered after login)
     const handlePermissionsUpdated = () => {
-      const currentRole = Cookies.get("role");
+      const currentRole = getRoleFromToken();
       if (currentRole) {
         fetchedRoleRef.current = null; // Reset to force refresh
         fetchPermissions(true);
@@ -187,7 +188,7 @@ export const PermissionsProvider = ({ children }) => {
     if (!keyPath) return defaultValue;
 
     // SuperAdmin always has all permissions
-    const role = Cookies.get("role");
+    const role = getRoleFromToken();
     if (role) {
       const roleLower = role.toLowerCase();
       if (roleLower === "superadmin" || roleLower === "super admin" || roleLower === "super_admin") {

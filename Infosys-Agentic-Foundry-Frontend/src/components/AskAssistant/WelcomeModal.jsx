@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import SVGIcons from "../../Icons/SVGIcons";
 import styles from "./WelcomeModal.module.css";
-import { agentTypesDropdown, PIPELINE_AGENT } from "../../constant";
+import { agentTypesDropdown, WORKFLOW_AGENT } from "../../constant";
 
-// Include pipeline in WelcomeModal filters so users can filter pipeline agents
+// Include workflow in WelcomeModal filters so users can filter workflow agents
 const welcomeAgentTypes = [
   ...agentTypesDropdown,
-  { label: "Pipeline", value: PIPELINE_AGENT },
+  { label: "Workflow", value: WORKFLOW_AGENT },
 ];
 
 /**
@@ -40,10 +40,12 @@ const WelcomeModal = ({
   const agentDropdownRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Build abbreviation map from welcomeAgentTypes (includes pipeline)
+  // Build abbreviation map from welcomeAgentTypes (includes workflow)
+  const abbrOverrides = { workflow: "WF" };
   const typeAbbreviations = Object.fromEntries(
     welcomeAgentTypes.map((t) => {
-      // Generate 2-letter abbreviation from label words
+      // Use override if available, else generate 2-letter abbreviation from label words
+      if (abbrOverrides[t.value]) return [t.value, abbrOverrides[t.value]];
       const words = t.label.trim().split(/\s+/);
       const abbr = words.length > 1
         ? words.map((w) => w[0].toUpperCase()).join("").slice(0, 2)
@@ -139,17 +141,14 @@ const WelcomeModal = ({
   };
 
   // Filter agents based on search and type
-  // In WelcomeModal, show ALL agents including hybrid_agent regardless of framework
+  // In WelcomeModal, show ALL agents including hybrid_agent and workflow regardless of framework
   // Framework will be auto-switched when hybrid_agent is selected
-  // Exclude pipeline agents from "All" view - only show when explicitly filtered
   const filteredAgents = agents.filter((agent) => {
     const matchesSearch = !searchQuery ||
       agent.agentic_application_name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = localAgentType === "all" ||
       agent.agentic_application_type === localAgentType;
-    const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
-    const pipelineAllowed = localAgentType === PIPELINE_AGENT || !isPipeline;
-    return matchesSearch && matchesType && pipelineAllowed;
+    return matchesSearch && matchesType;
   });
 
   // Build option metadata for agent dropdown (type badges)
@@ -313,9 +312,7 @@ const WelcomeModal = ({
                       className={`${styles.typeFilterBtn} ${localAgentType === option.value ? styles.active : ""}`}
                       onClick={() => {
                         setLocalAgentType(option.value);
-                        if (onAgentTypeChange) {
-                          onAgentTypeChange(option.value === "all" ? "" : option.value);
-                        }
+                        // Keep filter local to WelcomeModal — don't propagate to parent
                       }}
                     >
                       {option.short}

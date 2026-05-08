@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import styles from "./CreateAgent.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import {
@@ -19,14 +19,13 @@ import {
 import useFetch from "../../Hooks/useAxios";
 import Loader from "../commonComponents/Loader";
 import { useMessage } from "../../Hooks/MessageContext";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import DeleteModal from "../commonComponents/DeleteModal";
 import { sanitizeFormField, isValidEvent } from "../../utils/sanitization";
 import { useAuth } from "../../context/AuthContext";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import ValidatorPatternsGroup from "../validators/ValidatorPatternsGroup";
 import TagSelector from "../commonComponents/TagSelector/TagSelector";
-import DepartmentSelector from "../commonComponents/DepartmentSelector/DepartmentSelector";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import ResourceSlider from "../commonComponents/ResourceSlider/ResourceSlider";
 import ResourceAccordion from "../commonComponents/ResourceAccordion/ResourceAccordion";
@@ -37,6 +36,9 @@ import Toggle from "../commonComponents/Toggle";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 import { useKnowledgeBaseService } from "../../services/knowledgeBaseService";
 import { usePermissions } from "../../context/PermissionsContext";
+import { useToolsAgentsService } from "../../services/toolService";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import { useDatabases } from "../DataConnectors/service/databaseService";
 
 /**
  * AgentForm - Unified component for Create and Update Agent operations
@@ -64,9 +66,9 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
   const isUpdateMode = currentMode === "update";
 
   // ============ Cookies ============
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
-  const role = Cookies.get("role");
+  const loggedInUserEmail = getEmailFromToken();
+  const userName = getUserNameFromToken();
+  const role = getRoleFromToken();
 
   // ============ Hooks ============
   const { fetchData, postData, putData } = useFetch();
@@ -75,10 +77,50 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
   const { logout } = useAuth();
   const { getKnowledgeBasesForAgent } = useKnowledgeBaseService();
   const { hasPermission } = usePermissions();
+  const { deleteAgent: deleteAgentService } = useToolsAgentsService();
+  const canDeleteAgents = typeof hasPermission === "function" ? hasPermission("delete_access.agents") : false;
+
+  // ============ Delete Agent from Modal ============
+  const handleDeleteAgentFromModal = async () => {
+    const agentId = currentAgentData?.agentic_application_id || agentData?.agentic_application_id;
+    if (!agentId) return;
+
+    const isAdmin = role && role?.toLowerCase() === "admin";
+    const emailId = userName === "Guest" ? (currentAgentData?.created_by || agentData?.created_by) : loggedInUserEmail;
+
+    const payload = {
+      user_email_id: emailId,
+      is_admin: isAdmin,
+    };
+
+    try {
+      setLoading(true);
+      const response = await deleteAgentService(payload, [agentId]);
+
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+
+      setShowDeleteConfirm(false);
+      setLoading(false);
+      onClose();
+      if (fetchAgents) await fetchAgents();
+    } catch (e) {
+      console.error("Delete agent error:", e);
+      addMessage("Failed to delete agent", "error");
+      setLoading(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   // ============ Resource Permissions ============
   // Check if user can access any resource type (tools, servers, knowledge bases, agents)
   const canViewTools = hasPermission("read_access.tools", true);
+  const canViewServers = hasPermission("read_access.mcp_servers", true);
   const canViewAgents = hasPermission("read_access.agents", true);
   const canViewKnowledgeBases = hasPermission("knowledgebase_access", true);
 
@@ -111,6 +153,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
   const [formData, setFormData] = useState(currentMode === "create" ? createInitialFormData : updateInitialFormData);
   const [fullAgentData, setFullAgentData] = useState({});
   const [models, setModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedToolsLoading, setSelectedToolsLoading] = useState(isUpdateMode);
 
@@ -149,8 +192,21 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
   const [addedKnowledgeBaseIds, setAddedKnowledgeBaseIds] = useState([]);
   const [removedKnowledgeBaseIds, setRemovedKnowledgeBaseIds] = useState([]);
 
+  // ============ Tool Versions State ============
+  // Maps tool_id -> selected version string, e.g. { "tool_abc": "v2" }
+  const [toolVersions, setToolVersions] = useState({});
+
+  // ============ Database Connections State ============
+  const [availableDbConnections, setAvailableDbConnections] = useState([]);
+  const [selectedDbConnections, setSelectedDbConnections] = useState([]);
+  const [initialDbConnections, setInitialDbConnections] = useState([]);
+  const [loadingDbConnections, setLoadingDbConnections] = useState(false);
+  const { fetchConnections: fetchDbConnections } = useDatabases();
+  const canViewDataConnectors = hasPermission("data_connector_access", true);
+
   // ============ UI State ============
   const [showGuestModal, setShowGuestModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [previewResource, setPreviewResource] = useState(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
 
@@ -179,10 +235,24 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
     if (isUpdateMode) {
       setExpandedSections(prev => ({
         ...prev,
-        resources: selectedResources.length > 0
+        resources: selectedResources.length > 0 || selectedDbConnections.length > 0
       }));
     }
-  }, [isUpdateMode, selectedResources.length]);
+  }, [isUpdateMode, selectedResources.length, selectedDbConnections.length]);
+
+  // ============ Combined Resources (tools + servers + KB + DB connections) ============
+  const combinedResources = useMemo(() => {
+    const dbResources = selectedDbConnections.map((connName) => {
+      const connInfo = availableDbConnections.find((c) => (c.connection_name || c.name) === connName);
+      return {
+        db_connection_name: connName,
+        name: connName,
+        type: "databases",
+        db_type: connInfo?.connection_database_type || connInfo?.type || "",
+      };
+    });
+    return [...selectedResources, ...dbResources];
+  }, [selectedResources, selectedDbConnections, availableDbConnections]);
 
   // ============ Welcome Message State ============
   const [welcomeMessage, setWelcomeMessage] = useState("");
@@ -217,6 +287,52 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
     }
   };
 
+  // ============ Helper: Parse tools_with_versions array into { tool_id: version } map ============
+  const parseToolVersions = (agentObj) => {
+    // Support array format: [{ tool_id: "...", tool_version: "v1" }]
+    const twv = agentObj?.tools_with_versions;
+    if (Array.isArray(twv) && twv.length > 0) {
+      const map = {};
+      twv.forEach((item) => {
+        if (item?.tool_id && item?.tool_version) {
+          map[item.tool_id] = item.tool_version;
+        }
+      });
+      if (Object.keys(map).length > 0) return map;
+    }
+    // Fallback: support legacy object format { tool_id: "v1" }
+    if (agentObj?.tool_versions && typeof agentObj.tool_versions === "object" && !Array.isArray(agentObj.tool_versions)) {
+      if (Object.keys(agentObj.tool_versions).length > 0) return agentObj.tool_versions;
+    }
+    // Fallback: extract from tools_details/tools array — use tool_version or default to latest version
+    const toolsDetails = agentObj?.tools_details || agentObj?.tools || [];
+    if (Array.isArray(toolsDetails) && toolsDetails.length > 0) {
+      const map = {};
+      toolsDetails.forEach((tool) => {
+        const id = tool?.tool_id || tool?.id;
+        if (!id) return;
+        // Use explicit tool_version if available
+        const version = tool?.tool_version || tool?.selected_version;
+        if (version) {
+          map[id] = version;
+        } else if (Array.isArray(tool?.versions) && tool.versions.length > 0) {
+          // Default to latest version from tool's versions array
+          map[id] = tool.versions[tool.versions.length - 1];
+        }
+      });
+      if (Object.keys(map).length > 0) return map;
+    }
+    return null;
+  };
+
+  // ============ Helper: Convert toolVersions map to tools_with_versions array ============
+  const buildToolsWithVersions = (versionsMap) => {
+    return Object.entries(versionsMap).map(([toolId, version]) => ({
+      tool_id: toolId,
+      tool_version: version,
+    }));
+  };
+
   // ============ Helper: Get Knowledge Base IDs from Agent Data ============
   const getKnowledgeBaseIds = (agentObj) => {
     const kbIdsField = agentObj?.knowledgebase_ids || agentObj?.kb_ids;
@@ -227,37 +343,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
   const [nonRemovableTags, setNonRemovableTags] = useState([]);
   const generalTagRef = useRef(null);
 
-  // ============ Is Public & Shared Departments State ============
-  const [isPublic, setIsPublic] = useState(false);
-  const [sharedDepartments, setSharedDepartments] = useState([]);
-  const [departmentsList, setDepartmentsList] = useState([]);
-  const [departmentsLoading, setDepartmentsLoading] = useState(false);
 
-  // Get logged-in user's department from cookies
-  const loggedInDepartment = Cookies.get("department") || "";
-
-  // ============ Fetch Departments List ============
-  useEffect(() => {
-    const fetchDepartments = async () => {
-      setDepartmentsLoading(true);
-      try {
-        const response = await fetchData(APIs.GET_DEPARTMENTS_LIST);
-        if (response && Array.isArray(response)) {
-          setDepartmentsList(response.map((dept) => dept.department_name || dept.name || dept));
-        } else if (response?.departments && Array.isArray(response.departments)) {
-          setDepartmentsList(response.departments.map((dept) => dept.department_name || dept.name || dept));
-        } else {
-          setDepartmentsList([]);
-        }
-      } catch (err) {
-        console.error("Failed to fetch departments", err);
-        setDepartmentsList([]);
-      } finally {
-        setDepartmentsLoading(false);
-      }
-    };
-    fetchDepartments();
-  }, [fetchData]);
 
   // Modify the fetch models useEffect to also set default "general" tag
   useEffect(() => {
@@ -266,6 +352,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
 
     (async () => {
       // Fetch models
+      setModelsLoading(true);
       try {
         const data = await fetchData(APIs.GET_MODELS);
         if (data?.models && Array.isArray(data.models)) {
@@ -294,6 +381,8 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
       } catch (err) {
         const errorMessage = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "Failed to load models";
         addMessage(errorMessage, "error");
+      } finally {
+        setModelsLoading(false);
       }
 
       // Fetch tags to find "general" tag (separate try-catch to avoid showing wrong error)
@@ -318,44 +407,110 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
     })();
   }, [fetchData, handleError, isCreateMode]);
 
+  // ============ Fetch Available DB Connections ============
+  useEffect(() => {
+    if (!canViewDataConnectors || isMetaAgentType) return;
+    const loadDbConnections = async () => {
+      setLoadingDbConnections(true);
+      try {
+        const result = await fetchDbConnections();
+        if (result.success) {
+          const connections = result.data?.connections || result.data || [];
+          setAvailableDbConnections(connections);
+        }
+      } catch {
+        console.error("Failed to fetch database connections");
+      } finally {
+        setLoadingDbConnections(false);
+      }
+    };
+    loadDbConnections();
+  }, [canViewDataConnectors, isMetaAgentType]);
+
   // ============ Load Related Tools/Agents/KnowledgeBases ============
-  const loadRelatedTools = async (type, selectedToolsId, selectedKbIds = []) => {
+  // Build resources from agent response data directly (no separate API calls)
+  const loadRelatedTools = async (type, selectedToolsId, selectedKbIds = [], agentResponse = null) => {
     try {
       const isToolBasedAgent = [REACT_AGENT, MULTI_AGENT, REACT_CRITIC_AGENT, PLANNER_EXECUTOR_AGENT, HYBRID_AGENT].includes(type);
       const isAgentBasedAgent = [META_AGENT, PLANNER_META_AGENT].includes(type);
 
       let allResources = [];
 
-      if (isToolBasedAgent) {
-        const response = await postData(APIs.GET_TOOLS_BY_LIST, selectedToolsId);
-        // API returns { tools: [...], servers: [...] } separately
-        const tools = Array.isArray(response?.tools) ? response.tools : [];
-        const servers = Array.isArray(response?.servers) ? response.servers : [];
+      // Try to use resource details from the agent response (backend now includes them)
+      if (agentResponse) {
+        // Extract tools from agent response
+        const responseTools = agentResponse.tools_details || agentResponse.tools || [];
+        const responseServers = agentResponse.servers_details || agentResponse.servers || [];
+        const responseAgents = agentResponse.agents_details || agentResponse.sub_agents || [];
+        const responseKbs = agentResponse.knowledgebases_details || agentResponse.knowledgebases || agentResponse.knowledge_bases || [];
 
-        const toolResources = tools.map((tool) => ({ ...tool, type: "tools" }));
-        const serverResources = servers.map((server) => ({ ...server, type: "servers" }));
-        allResources = [...allResources, ...toolResources, ...serverResources];
+        if (isToolBasedAgent && (responseTools.length > 0 || responseServers.length > 0)) {
+          allResources = [
+            ...responseTools.map((t) => ({ ...t, type: "tools" })),
+            ...responseServers.map((s) => ({ ...s, type: "servers" })),
+          ];
+        } else if (isAgentBasedAgent && responseTools.length > 0) {
+          allResources = responseTools.map((a) => ({ ...a, type: "agents" }));
+        }
 
-        // Fallback: if response is a flat array (old API format), infer type from mcp_config
-        if (tools.length === 0 && servers.length === 0) {
-          const flatItems = extractArrayFromResponse(response, "tools");
-          const resourcesWithType = flatItems.map((item) => ({
-            ...item,
-            type: item.mcp_config ? "servers" : "tools",
-          }));
+        // If we got tool/agent IDs but no detail objects, build minimal resources from IDs
+        if (allResources.length === 0 && selectedToolsId.length > 0) {
+          if (isToolBasedAgent) {
+            allResources = selectedToolsId.map((id) => ({
+              tool_id: id,
+              tool_name: id,
+              type: "tools",
+            }));
+          } else if (isAgentBasedAgent) {
+            allResources = selectedToolsId.map((id) => ({
+              agentic_application_id: id,
+              agentic_application_name: id,
+              type: "agents",
+            }));
+          }
+        }
+
+        // Add knowledge bases from response
+        if (responseKbs.length > 0) {
+          allResources = [
+            ...allResources,
+            ...responseKbs.map((kb) => ({ ...kb, type: "knowledgebases" })),
+          ];
+        } else if (selectedKbIds && selectedKbIds.length > 0) {
+          // Fallback: fetch KB details via service if not in response
+          const kbResources = await getKnowledgeBasesForAgent(selectedKbIds);
+          allResources = [...allResources, ...kbResources];
+        }
+      } else {
+        // Fallback: no agent response provided, use old API calls
+        if (isToolBasedAgent) {
+          const response = await postData(APIs.GET_TOOLS_BY_LIST, selectedToolsId);
+          const tools = Array.isArray(response?.tools) ? response.tools : [];
+          const servers = Array.isArray(response?.servers) ? response.servers : [];
+
+          const toolResources = tools.map((tool) => ({ ...tool, type: "tools" }));
+          const serverResources = servers.map((server) => ({ ...server, type: "servers" }));
+          allResources = [...allResources, ...toolResources, ...serverResources];
+
+          if (tools.length === 0 && servers.length === 0) {
+            const flatItems = extractArrayFromResponse(response, "tools");
+            const resourcesWithType = flatItems.map((item) => ({
+              ...item,
+              type: item.mcp_config ? "servers" : "tools",
+            }));
+            allResources = [...allResources, ...resourcesWithType];
+          }
+        } else if (isAgentBasedAgent) {
+          const response = await postData(APIs.GET_AGENTS_BY_LIST, selectedToolsId);
+          const agents = extractArrayFromResponse(response, "agents");
+          const resourcesWithType = agents.map((agent) => ({ ...agent, type: "agents" }));
           allResources = [...allResources, ...resourcesWithType];
         }
-      } else if (isAgentBasedAgent) {
-        const response = await postData(APIs.GET_AGENTS_BY_LIST, selectedToolsId);
-        const agents = extractArrayFromResponse(response, "agents");
-        const resourcesWithType = agents.map((agent) => ({ ...agent, type: "agents" }));
-        allResources = [...allResources, ...resourcesWithType];
-      }
 
-      // Fetch knowledge bases using the service
-      if (selectedKbIds && selectedKbIds.length > 0) {
-        const kbResources = await getKnowledgeBasesForAgent(selectedKbIds);
-        allResources = [...allResources, ...kbResources];
+        if (selectedKbIds && selectedKbIds.length > 0) {
+          const kbResources = await getKnowledgeBasesForAgent(selectedKbIds);
+          allResources = [...allResources, ...kbResources];
+        }
       }
 
       setSelectedResources(allResources);
@@ -388,17 +543,19 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
         }
         setFullAgentData(agentData);
         setWelcomeMessage(agentData?.welcome_message || "");
-        // Set is_public and shared_with_departments for recycle bin
-        setIsPublic(agentData?.is_public !== false);
-        setSharedDepartments(agentData?.shared_with_departments || []);
         // Set file context management prompt fields
         setFileContextManagementPrompt(agentData?.file_context_management_prompt || "");
         setFileContextPromptExists(agentData?.file_context_prompt_exists || false);
+        // Initialize tool versions for recycle bin
+        const parsedRecycleBinVersions = parseToolVersions(agentData);
+        if (parsedRecycleBinVersions) {
+          setToolVersions(parsedRecycleBinVersions);
+        }
         try {
           // Safely parse tools_id and knowledgebase_ids for recycle bin
           const toolsId = parseJsonArrayField(agentData?.tools_id, "tools_id");
           const kbIds = getKnowledgeBaseIds(agentData);
-          loadRelatedTools(agentData?.agentic_application_type, toolsId, kbIds);
+          loadRelatedTools(agentData?.agentic_application_type, toolsId, kbIds, agentData);
         } catch {
           setSelectedToolsLoading(false);
         }
@@ -408,7 +565,6 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
       setLoading(true);
       try {
         const data = await fetchData(APIs.GET_AGENTS_BY_ID + currentAgentData?.agentic_application_id);
-        console.log("Fetched agent data:", data); // Debug log
 
         // Handle both array and object response formats
         const agent = Array.isArray(data) ? data[0] : data;
@@ -448,9 +604,16 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
         setFileContextManagementPrompt(agent?.file_context_management_prompt || "");
         setFileContextPromptExists(agent?.file_context_prompt_exists || false);
 
-        // Set is_public and shared_with_departments from API response
-        setIsPublic(agent?.is_public !== false);
-        setSharedDepartments(agent?.shared_with_departments || []);
+        // Initialize tool versions from agent data
+        const parsedVersions = parseToolVersions(agent);
+        if (parsedVersions) {
+          setToolVersions(parsedVersions);
+        }
+
+        // Set database connection names from API response
+        const dbConns = Array.isArray(agent?.db_connection_names) ? agent.db_connection_names : [];
+        setSelectedDbConnections(dbConns);
+        setInitialDbConnections(dbConns);
 
         setFormData({
           agentic_application_name: agent?.agentic_application_name,
@@ -484,7 +647,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
         // Load related tools/agents/knowledge bases
         if (type) {
           setSelectedToolsLoading(true);
-          loadRelatedTools(type, selectedToolsId, selectedKbIds);
+          loadRelatedTools(type, selectedToolsId, selectedKbIds, agent);
         } else {
           setSelectedToolsLoading(false);
         }
@@ -618,6 +781,8 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
 
   const handleClearAll = () => {
     setSelectedResources([]);
+    setToolVersions({});
+    setSelectedDbConnections([]);
 
     if (!isUpdateMode) return;
 
@@ -646,9 +811,25 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
   };
 
   const handleRemoveResource = (resource) => {
+    // Handle database connection removal
+    if (resource.type === "databases" || resource.db_connection_name) {
+      const connName = resource.db_connection_name || resource.name;
+      setSelectedDbConnections((prev) => prev.filter((n) => n !== connName));
+      return;
+    }
+
     const resourceId = resource.tool_id || resource.agentic_application_id || resource.kb_id || resource.id;
     const newResources = selectedResources.filter((r) => (r.tool_id || r.agentic_application_id || r.kb_id || r.id) !== resourceId);
     setSelectedResources(newResources);
+
+    // Clean up tool version for removed tool
+    if (resource.type === "tools" || resource.tool_id) {
+      setToolVersions((prev) => {
+        const updated = { ...prev };
+        delete updated[resourceId];
+        return updated;
+      });
+    }
 
     if (!isUpdateMode) return;
 
@@ -731,7 +912,14 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
   };
 
   const getResourceTab = (resource) => {
-    if (resource?.server_id || resource?.server_name || resource?.mcp_config) return "servers";
+    // Prefer explicit type if set (e.g. from loadRelatedTools)
+    if (resource?.type && ["tools", "servers", "agents", "knowledgebases", "databases"].includes(resource.type)) {
+      return resource.type;
+    }
+    // Fallback: check for server by mcp_type, mcp_config, server_id, or tool_id with mcp_ prefix
+    const toolId = resource?.tool_id || "";
+    const isMcpServer = toolId.startsWith("mcp_");
+    if (resource?.server_id || resource?.server_name || resource?.mcp_config || resource?.mcp_type || isMcpServer) return "servers";
     if (resource?.agentic_application_id || resource?.agent_id) return "agents";
     return "tools";
   };
@@ -849,6 +1037,17 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
         setFileContextManagementPrompt(agent?.file_context_management_prompt || "");
         setFileContextPromptExists(agent?.file_context_prompt_exists || false);
 
+        // Refresh tool versions from agent data
+        const refreshedVersions = parseToolVersions(agent);
+        if (refreshedVersions) {
+          setToolVersions(refreshedVersions);
+        }
+
+        // Refresh database connection names
+        const refreshedDbConns = Array.isArray(agent?.db_connection_names) ? agent.db_connection_names : [];
+        setSelectedDbConnections(refreshedDbConns);
+        setInitialDbConnections(refreshedDbConns);
+
         setFormData({
           agentic_application_name: agent?.agentic_application_name,
           agentic_application_type: type,
@@ -873,7 +1072,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
         // Load related tools/agents
         if (type && (selectedToolsId?.length > 0 || selectedKbIds?.length > 0)) {
           setSelectedToolsLoading(true);
-          loadRelatedTools(type, selectedToolsId, selectedKbIds);
+          loadRelatedTools(type, selectedToolsId, selectedKbIds, agent);
         }
 
         // Update tags
@@ -975,8 +1174,20 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
       if (isCreateMode) {
         // ============ Create Agent ============
         // Separate resources by type for the payload
+        const isAgentBased = [META_AGENT, PLANNER_META_AGENT].includes(formData.agent_type);
         const toolServerResources = selectedResources.filter((r) => r.type === "tools" || r.type === "servers" || (!r.kb_id && !r.agentic_application_id));
+        const agentResources = selectedResources.filter((r) => r.type === "agents" || r.agentic_application_id);
         const kbResources = selectedResources.filter((r) => r.type === "knowledgebases" || r.kb_id);
+
+        const filteredCreatePatterns = isValidatorPatternHidden()
+          ? []
+          : validationPatterns
+            .filter((p) => p.query && p.expected_answer)
+            .map((p) => ({
+              query: p.query,
+              expected_answer: p.expected_answer,
+              validator: p.validator || null,
+            }));
 
         const payload = {
           agent_name: formData.agent_name,
@@ -988,10 +1199,13 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
           system_prompt: formData.system_prompt,
           category: formData.category,
           tag_ids: selectedTagsForSelector.map((t) => t.tag_id),
-          tools_id: toolServerResources.map((r) => r.tool_id || r.id),
+          tools_id: isAgentBased
+            ? agentResources.map((r) => r.agentic_application_id || r.id)
+            : toolServerResources.map((r) => r.tool_id || r.id),
+          tools_with_versions: Object.keys(toolVersions).length > 0 ? buildToolsWithVersions(toolVersions) : [],
           knowledgebase_ids: kbResources.map((r) => r.kb_id || r.id),
-          is_public: isPublic,
-          shared_with_departments: isPublic ? [] : sharedDepartments,
+          validation_criteria: filteredCreatePatterns,
+          ...(selectedDbConnections.length > 0 && { db_connection_names: selectedDbConnections }),
         };
 
         const response = await postData(APIs.ONBOARD_AGENTS, payload);
@@ -1013,8 +1227,6 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
         setFormData(createInitialFormData);
         setSelectedTagsForSelector([]);
         setSelectedResources([]);
-        setIsPublic(false);
-        setSharedDepartments([]);
 
         fetchAgents?.();
         onClose?.();
@@ -1058,8 +1270,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
           agentic_application_id_to_modify: currentAgentData?.agentic_application_id,
           tools_id_to_add: isAgentBased ? addedAgentsId : addedToolsId,
           tools_id_to_remove: isAgentBased ? removedAgentsId : removedToolsId,
-          is_public: isPublic,
-          shared_with_departments: isPublic ? [] : sharedDepartments,
+          tools_with_versions: Object.keys(toolVersions).length > 0 ? buildToolsWithVersions(toolVersions) : [],
           // Knowledge base IDs to add/remove
           knowledgebase_ids_to_add: addedKnowledgeBaseIds,
           knowledgebase_ids_to_remove: removedKnowledgeBaseIds,
@@ -1069,6 +1280,12 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
             regenerate_file_context_prompt: regenerateFileContextPrompt,
           }),
         };
+
+        // Compute db_connection_names diff for update
+        const dbToAdd = selectedDbConnections.filter((name) => !initialDbConnections.includes(name));
+        const dbToRemove = initialDbConnections.filter((name) => !selectedDbConnections.includes(name));
+        if (dbToAdd.length > 0) payload.db_connection_names_to_add = dbToAdd;
+        if (dbToRemove.length > 0) payload.db_connection_names_to_remove = dbToRemove;
 
         if (filteredPatterns.length > 0) {
           payload.validation_criteria = filteredPatterns;
@@ -1184,26 +1401,6 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
       {/* Left side: Access Control + Regenerate Toggles (hidden in readOnly/recycleBin mode) */}
       {!isReadOnly && (
         <div className={styles.footerTogglesContainer}>
-          {/* Access Control Toggle */}
-          <div className={styles.footerToggleItem}>
-            <Toggle
-              value={isPublic}
-              onChange={(e) => {
-                const newIsPublic = e.target.checked;
-                setIsPublic(newIsPublic);
-                if (newIsPublic) {
-                  // When toggling to public, clear shared departments
-                  setSharedDepartments([]);
-                } else {
-                  // Restore departments from last saved agent data
-                  setSharedDepartments(fullAgentData?.shared_with_departments || []);
-                }
-              }}
-            />
-            <span className={`label-desc ${styles.footerToggleLabel}`}>
-              {isPublic ? "Visible to All Departments" : "Visible to All Departments"}
-            </span>
-          </div>
           {/* Regenerate Toggles (Update Mode Only) */}
           {isUpdateMode && (
             <>
@@ -1251,6 +1448,16 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
             <IAFButton type="secondary" onClick={handleClose} aria-label="Cancel">
               Cancel
             </IAFButton>
+            {/* Delete Button - shown for all roles with delete permission in update mode */}
+            {!isCreateMode && !recycleBin && !isReadOnly && canDeleteAgents && (
+              <IAFButton
+                type="primary"
+                onClick={() => setShowDeleteConfirm(true)}
+                aria-label="Delete this agent"
+              >
+                Delete
+              </IAFButton>
+            )}
             <IAFButton
               type="primary"
               onClick={handleSubmit}
@@ -1273,7 +1480,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
         onClose={handleClose}
         title={isCreateMode ? "Add Agent" : currentAgentData?.agentic_application_name}
         headerInfo={getHeaderInfo()}
-        footer={readOnlyProp ? null : renderFooter()}
+        footer={(isCreateMode || hasPermission("update_access.agents")) ? renderFooter() : undefined}
         loading={loading}>
         <form onSubmit={handleSubmit}>
           <div className="formContent">
@@ -1328,7 +1535,19 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
                             selected={agentTypesDropdown.find((a) => a.value === formData.agent_type)?.label || ""}
                             onSelect={(label) => {
                               const found = agentTypesDropdown.find((a) => a.label === label);
-                              if (found) setFormData((prev) => ({ ...prev, agent_type: found.value }));
+                              if (found) {
+                                const prevType = formData.agent_type;
+                                const newType = found.value;
+                                const wasMetaType = [META_AGENT, PLANNER_META_AGENT].includes(prevType);
+                                const isNewMetaType = [META_AGENT, PLANNER_META_AGENT].includes(newType);
+                                // Clear selected resources when switching between tool-based and agent-based types
+                                if (wasMetaType !== isNewMetaType) {
+                                  setSelectedResources([]);
+                                  setToolVersions({});
+                                  setSelectedDbConnections([]);
+                                }
+                                setFormData((prev) => ({ ...prev, agent_type: newType }));
+                              }
                             }}
                             placeholder="Select Agent Type"
                           />
@@ -1340,7 +1559,8 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
               )}
 
               {/* Tools & Components Section - Collapsible */}
-              {hasAnyResourcePermission && (
+              {/* (canViewDataConnectors && !isMetaAgentType) - Data connectors tab hidden */}
+              {(hasAnyResourcePermission || (isUpdateMode && combinedResources.length > 0) /* || (canViewDataConnectors && !isMetaAgentType) */) && (
                 <div className={styles.collapsibleSection}>
                   <div
                     className={styles.collapsibleSectionHeader}
@@ -1351,13 +1571,13 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
                         <SVGIcons icon="wrench" width={16} height={16} />
                       </span>
                       Resources
-                      {selectedResources.length > 0 && (
-                        <span className={styles.collapsibleSectionBadge}>{selectedResources.length}</span>
+                      {combinedResources.length > 0 && (
+                        <span className={styles.collapsibleSectionBadge}>{combinedResources.length}</span>
                       )}
                     </div>
                     <div className={styles.collapsibleSectionRight}>
                       <div className={styles.collapsibleHeaderActions} onClick={(e) => e.stopPropagation()}>
-                        {!isReadOnly && (
+                        {!isReadOnly && hasAnyResourcePermission && (
                           <button
                             type="button"
                             onClick={() => setShowResourcesSlider(true)}
@@ -1377,28 +1597,42 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
                     <div className={styles.collapsibleSectionInner}>
                       {selectedToolsLoading && isUpdateMode ? (
                         <Loader />
-                      ) : selectedResources.length === 0 ? (
+                      ) : combinedResources.length === 0 ? (
                         <div className={styles.emptyState}>
                           <p className={styles.emptyStateText}>
-                            No resources added yet. Click{' '}
-                            <button
-                              type="button"
-                              onClick={() => setShowResourcesSlider(true)}
-                              className={styles.inlineAddBtn}
-                              aria-label="Add resources"
-                            >
-                              +
-                            </button>
-                            {' '}to attach tools, servers, or agents.
+                            {hasAnyResourcePermission ? (
+                              <>No resources added yet. Click{' '}
+                                <button
+                                  type="button"
+                                  onClick={() => setShowResourcesSlider(true)}
+                                  className={styles.inlineAddBtn}
+                                  aria-label="Add resources"
+                                >
+                                  +
+                                </button>
+                                {' '}to attach tools, servers, or agents.
+                              </>
+                            ) : (
+                              "No resources attached to this agent."
+                            )}
                           </p>
                         </div>
                       ) : (
                         <ResourceAccordion
-                          selectedResources={selectedResources}
-                          onRemoveResource={isReadOnly ? undefined : handleRemoveResource}
+                          selectedResources={combinedResources}
+                          onRemoveResource={(isReadOnly || !hasAnyResourcePermission) ? undefined : handleRemoveResource}
                           onResourceClick={handleResourceClick}
-                          onClearAll={isReadOnly ? undefined : handleClearAll}
-                          disabled={isReadOnly}
+                          onClearAll={(isReadOnly || !hasAnyResourcePermission) ? undefined : handleClearAll}
+                          disabled={isReadOnly || !hasAnyResourcePermission}
+                          toolVersions={toolVersions}
+                          resourcePermissions={{
+                            tools: canViewTools,
+                            servers: canViewServers,
+                            agents: canViewAgents,
+                            knowledgebases: canViewKnowledgeBases,
+                            // databases: canViewDataConnectors, // Data connectors tab hidden
+                            databases: false,
+                          }}
                         />
                       )}
                     </div>
@@ -1695,7 +1929,7 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
                   <div className={styles.collapsibleSectionRight}>
                     {!expandedSections.config && (
                       <span className={styles.collapsibleSectionPreview}>
-                        Model, Tags, Departments{isUpdateMode ? ", Temperature" : ""}
+                        Model, Tags{isUpdateMode ? ", Temperature" : ""}
                       </span>
                     )}
                     <span className={`${styles.collapsibleChevron} ${expandedSections.config ? styles.expanded : ''}`}>
@@ -1717,8 +1951,8 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
                               options={models.map((m) => m.label)}
                               selected={formData.model_name}
                               onSelect={(value) => setFormData((prev) => ({ ...prev, model_name: value }))}
-                              placeholder="Select Model"
-                              disabled={isReadOnly}
+                              placeholder={modelsLoading ? "Loading models..." : "Select Model"}
+                              disabled={isReadOnly || modelsLoading}
                               selectFirstByDefault={true}
                             />
                           </div>
@@ -1726,16 +1960,6 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
                       </div>
                       {/* Tags Section */}
                       <TagSelector selectedTags={selectedTagsForSelector} onTagsChange={handleTagsChange} nonRemovableTags={nonRemovableTags} disabled={isReadOnly} />
-                      {/* Departments Section - Styled like TagSelector with round + button */}
-                      {!isPublic && (
-                        <DepartmentSelector
-                          selectedDepartments={sharedDepartments}
-                          onChange={setSharedDepartments}
-                          departmentsList={departmentsList.filter(dept => dept !== loggedInDepartment)}
-                          disabled={isReadOnly}
-                          loading={departmentsLoading}
-                        />
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1750,11 +1974,18 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
             setPreviewModalOpen(false);
             setPreviewResource(null);
           }}
-          description={
-            previewResource?.agentic_application_description ||
-            previewResource?.tool_description ||
-            previewResource?.description
-          }
+          description={(() => {
+            // When a version is selected for a tool, pass null so ToolDetailModal fetches version-specific description
+            const resourceTab = getResourceTab(previewResource);
+            if (resourceTab === "tools") {
+              const resourceId = previewResource?.tool_id || previewResource?.id;
+              const selectedVer = resourceId && toolVersions[resourceId];
+              if (selectedVer) return null;
+            }
+            return previewResource?.agentic_application_description ||
+              previewResource?.tool_description ||
+              previewResource?.description;
+          })()}
           endpoint={(() => {
             const resourceTab = getResourceTab(previewResource);
             if (resourceTab === "servers") {
@@ -1766,15 +1997,21 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
             return undefined;
           })()}
           codeSnippet={(() => {
-            if (previewResource?.code_snippet) return previewResource.code_snippet;
             const resourceTab = getResourceTab(previewResource);
+            // When a version is selected, pass null so ToolDetailModal fetches version-specific code
+            if (resourceTab === "tools") {
+              const resourceId = previewResource?.tool_id || previewResource?.id;
+              const selectedVer = resourceId && toolVersions[resourceId];
+              if (selectedVer) return null;
+            }
+            if (previewResource?.code_snippet) return previewResource.code_snippet;
             if (resourceTab === "servers") {
               const mcpType = (previewResource?.mcp_type || "").toLowerCase();
               if (mcpType === "file") {
                 return getServerCodePreview(previewResource);
               }
             }
-            return undefined;
+            return null;
           })()}
           moduleName={(() => {
             const resourceTab = getResourceTab(previewResource);
@@ -1797,10 +2034,23 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
           tool={previewResource}
           agentType={agentType}
           resourceTab={getResourceTab(previewResource)}
+          selectedVersion={(() => {
+            const resourceId = previewResource?.tool_id || previewResource?.id;
+            return resourceId ? toolVersions[resourceId] : void 0;
+          })()}
           hideModifyButton={true}
           useToolCardDescriptionStyle={true}
         />
       </FullModal>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete "${currentAgentData?.agentic_application_name || agentData?.agentic_application_name || "this agent"}"? This action cannot be undone.`}
+          onConfirm={handleDeleteAgentFromModal}
+          setShowConfirmation={setShowDeleteConfirm}
+        />
+      )}
 
       {/* Resources Slider */}
       {!isReadOnly && (
@@ -1812,6 +2062,21 @@ const AgentForm = ({ mode = "create", agentData = null, onClose, fetchAgents, ta
           onClearAll={handleClearAll}
           initialTab="tools"
           agentType={isCreateMode ? formData.agent_type : agentType}
+          toolVersions={toolVersions}
+          onToolVersionChange={(toolId, version) => {
+            setToolVersions((prev) => {
+              const updated = { ...prev };
+              if (typeof version === "undefined") {
+                delete updated[toolId];
+              } else {
+                updated[toolId] = version;
+              }
+              return updated;
+            });
+          }}
+          availableDbConnections={canViewDataConnectors ? availableDbConnections : []}
+          selectedDbConnections={selectedDbConnections}
+          onDbConnectionsChange={setSelectedDbConnections}
         />
       )}
     </>

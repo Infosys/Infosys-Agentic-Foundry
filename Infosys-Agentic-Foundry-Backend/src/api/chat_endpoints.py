@@ -2,11 +2,14 @@
 import os
 import time
 import json
+import uuid
 from datetime import datetime, timezone
 import asyncio
+from pathlib import Path
+import pandas as pd
 from typing import Literal, Union, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.responses import StreamingResponse
 from fastapi.encoders import jsonable_encoder
 from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
@@ -18,25 +21,26 @@ util = RemoteSentenceTransformersUtil()
 from src.auth.authorization_service import AuthorizationService
 from src.database.redis_postgres_manager import RedisPostgresManager, TimedRedisPostgresManager, create_manager_from_env, create_timed_manager_from_env
 
-from src.schemas import AgentInferenceRequest, ChatSessionRequest, OldChatSessionsRequest, StoreExampleRequest, StoreExampleResponse
+from src.schemas import AgentInferenceRequest, ChatSessionRequest, OldChatSessionsRequest, StoreExampleRequest, StoreExampleResponse, M2MInferenceRequest
 
-from src.database.services import ChatService, FeedbackLearningService, AgentService, PipelineService
+from src.database.services import ChatService, FeedbackLearningService, WorkflowService, TaskRegistryService
+from src.database.repositories import QueryTokenUsageRepository
 from src.inference.inference_utils import EpisodicMemoryManager
 from src.inference.centralized_agent_inference import CentralizedAgentInference
-from src.inference.pipeline_inference import PipelineInference
+from src.inference.workflow_inference import WorkflowInference
 from src.api.dependencies import ServiceProvider # The dependency provider
 from src.auth.dependencies import get_current_user, get_user_info_from_request, setup_tool_user_context
 from src.decorators.tool_access import ToolUserContext
 from src.utils.file_manager import FileManager
+from src.utils.kafka_manager import KafkaManager
 
-from src.utils.secrets_handler import current_user_department
+from src.utils.secrets_handler import current_user_department, current_user_email
 
 
 from telemetry_wrapper import logger as log, update_session_context
 
 from src.models.model_service import ModelService
 from src.models.base_ai_model_service import BaseAIModelService
-
 from src.auth.models import UserRole, User
 
 
@@ -115,36 +119,489 @@ async def save_feedback_and_logs(
     except Exception as e:
         log.warning(f"[{session_id}] Could not update response time in chat history: {e}")
 
+@router.post("/m2m_inference")
+async def m2m_inference_endpoint(
+    request: Request,
+    chat_request: M2MInferenceRequest,
+    kafka_manager: KafkaManager = Depends(ServiceProvider.get_kafka_manager),
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service),
+    user_data: User = Depends(get_current_user)
+    ):
+    """
+    API endpoint to start the machine-to-machine (M2M) inference process.
+    Adds the request to Kafka queue for async processing.
+    """
+    
+    # fetching the framework type
+    task_id = f"task_{chat_request.framework_type.code}_{uuid.uuid4().hex[:12]}"
+    # Session ID is task_id + user email (no user input needed)
+    session_id = f"{task_id}_{current_user_email.get()}"
+    
+    # Register task with computed session_id
+    await task_registry_service.register_task(
+        task_id=task_id,
+        agentic_application_id=chat_request.agentic_application_id,
+        user_session_id=session_id,
+        query=chat_request.query,
+        model_name=chat_request.model_name,
+        created_by=user_data.email if user_data else None
+    )
+    
+    # Send request to Kafka for async processing by AgentWorker
+    success = kafka_manager.send_agent_request(
+        agent_call_id=task_id,
+        agentic_application_id=chat_request.agentic_application_id,
+        session_id=session_id,
+        model_name=chat_request.model_name,
+        query=chat_request.query,
+        user_email=current_user_email.get(),  # Pass user_email from context
+        reset_conversation=chat_request.reset_conversation,
+    )
+    
+    if not success:
+        # Mark task as failed if Kafka queuing fails
+        await task_registry_service.mark_task_failed(
+            task_id=task_id,
+            error_message="Failed to queue task to Kafka"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to queue M2M task for async processing"
+        )
+    
+    log.info(f"[{session_id}] M2M Task {task_id} added to queue")
+    
+    # Return task_id for client to poll progress
+    return {
+        "status": "queued",
+        "task_id": task_id,
+        "session_id": session_id,
+        "message": f"M2M task has been queued for async processing. Use /chat/task/{task_id}/status to check status and /chat/task/{task_id}/result to get the final result."
+    }
+
+
+@router.post("/batch_m2m_inference")
+async def batch_m2m_inference_endpoint(
+    request: Request,
+    chat_requests: List[M2MInferenceRequest],
+    kafka_manager: KafkaManager = Depends(ServiceProvider.get_kafka_manager),
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service),
+    user_data: User = Depends(get_current_user)
+    ):
+    """
+    API endpoint to start batch machine-to-machine (M2M) inference process.
+    Adds multiple requests to Kafka queue for async processing.
+    All tasks share a common batch prefix for identification.
+    """
+    # Generate a unique batch prefix
+    batch_prefix = f"batch_{uuid.uuid4().hex[:12]}"
+    user_email = current_user_email.get()
+    
+    queued_tasks = []
+    failed_tasks = []
+    
+    for idx, chat_request in enumerate(chat_requests):
+        # Create task_id with batch prefix
+        task_id = f"{batch_prefix}_task_{chat_request.framework_type.code}_{idx}"
+        # Session ID is task_id + user email (no user input needed)
+        session_id = f"{task_id}_{user_email}"
+        
+        # Register task with computed session_id
+        await task_registry_service.register_task(
+            task_id=task_id,
+            agentic_application_id=chat_request.agentic_application_id,
+            user_session_id=session_id,
+            query=chat_request.query,
+            model_name=chat_request.model_name,
+            batch_id=batch_prefix,
+            created_by=user_data.email if user_data else None
+        )
+        
+        # Send request to Kafka for async processing by AgentWorker
+        success = kafka_manager.send_agent_request(
+            agent_call_id=task_id,
+            agentic_application_id=chat_request.agentic_application_id,
+            session_id=session_id,
+            model_name=chat_request.model_name,
+            query=chat_request.query,
+            user_email=user_email,  # Pass user_email from context
+            reset_conversation=chat_request.reset_conversation,
+        )
+        
+        if success:
+            queued_tasks.append({
+                "task_id": task_id,
+                "session_id": session_id,
+                "agentic_application_id": chat_request.agentic_application_id
+            })
+            log.info(f"[{session_id}] Batch M2M Task {task_id} added to queue")
+        else:
+            # Mark task as failed in registry
+            await task_registry_service.mark_task_failed(
+                task_id=task_id,
+                error_message="Failed to queue task to Kafka"
+            )
+            failed_tasks.append({
+                "index": idx,
+                "task_id": task_id,
+                "session_id": session_id,
+                "agentic_application_id": chat_request.agentic_application_id,
+                "error": "Failed to queue task"
+            })
+            log.error(f"[{session_id}] Failed to add batch M2M task to queue")
+    
+    log.info(f"Batch {batch_prefix}: {len(queued_tasks)} queued, {len(failed_tasks)} failed")
+    
+    return {
+        "status": "queued" if queued_tasks else "failed",
+        "batch_id": batch_prefix,
+        "total_requests": len(chat_requests),
+        "queued_count": len(queued_tasks),
+        "failed_count": len(failed_tasks),
+        "queued_tasks": queued_tasks,
+        "failed_tasks": failed_tasks,
+        "message": f"Batch M2M tasks queued for async processing. Use /chat/batch/{batch_prefix}/status to check batch status."
+    }
+
+
+# ---------------------------------------------------------
+# Task Registry Endpoints
+# ---------------------------------------------------------
+
+@router.get("/task/{task_id}/status")
+async def get_task_status_endpoint(
+    task_id: str,
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service)
+):
+    """
+    Get the current status of an M2M task.
+    
+    Args:
+        task_id: The unique task identifier returned from m2m_inference
+        
+    Returns:
+        Task status and metadata including:
+        - status: queued | processing | completed | failed
+        - response_time_ms: Processing time if completed
+        - error_message: Error details if failed
+    """
+    result = await task_registry_service.get_task_status(task_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("message", "Task not found"))
+    return result
+
+
+@router.get("/task/{task_id}/result")
+async def get_task_result_endpoint(
+    task_id: str,
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service),
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Get the result of a completed M2M task, including the conversation history.
+    
+    Args:
+        task_id: The unique task identifier
+        
+    Returns:
+        Task details and conversation history if completed.
+        For incomplete tasks, returns current status only.
+    """
+    result = await task_registry_service.get_task_result(
+        task_id=task_id,
+        chat_service=chat_service,
+        role=user_data.role if user_data else None,
+        department_name=user_data.department_name if user_data else None
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("message", "Task not found"))
+    return result
+
+
+@router.get("/batch/{batch_id}/status")
+async def get_batch_status_endpoint(
+    batch_id: str,
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service)
+):
+    """
+    Get the aggregated status summary for a batch of M2M tasks.
+    
+    Args:
+        batch_id: The batch identifier returned from batch_m2m_inference
+        
+    Returns:
+        Aggregated batch status including:
+        - total: Total number of tasks
+        - queued, processing, completed, failed: Counts by status
+        - avg_response_time_ms: Average processing time for completed tasks
+        - is_complete: True if all tasks finished (completed or failed)
+    """
+    result = await task_registry_service.get_batch_status(batch_id)
+    if result.get("error"):
+        raise HTTPException(status_code=404, detail=result.get("error"))
+    return result
+
+@router.get("/batch/{batch_id}/get-excel-report")
+async def get_excel_batch_report_endpoint(
+    batch_id: str,
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service),
+    chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    This function will take a batch ID, retrieve all the tasks related to that batch and asynchronously call final response for all the tasks which are completed and failed, generate an Excel report with their status and if it is not pending there response also will be there, and return the download link of the report.
+    
+    Args:
+        batch_id: The batch identifier
+        
+    Returns:
+        Download link for the generated Excel report.
+    """
+    # Ensure reports directory exists
+    reports_dir = Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+    
+    # Retrieve all tasks for the batch
+    batch_tasks_result = await task_registry_service.get_batch_tasks(batch_id)
+    
+    if not batch_tasks_result.get("success"):
+        raise HTTPException(status_code=404, detail=f"Batch '{batch_id}' not found or has no tasks.")
+    
+    tasks = batch_tasks_result.get("tasks", [])
+    
+    if not tasks:
+        raise HTTPException(status_code=404, detail=f"No tasks found for batch '{batch_id}'.")
+    
+    # Fetch results for completed and failed tasks concurrently
+    async def fetch_task_result(task: dict) -> dict:
+        """Fetch task result including response for completed/failed tasks."""
+        task_id = task.get("task_id")
+        status = task.get("status")
+        
+        result_data = {
+            "task_id": task_id,
+            "status": status,
+            "agentic_application_id": task.get("agentic_application_id", ""),
+            "query": task.get("query", ""),
+            "model_name": task.get("model_name", ""),
+            "created_at": task.get("created_at", ""),
+            "started_at": task.get("started_at", ""),
+            "completed_at": task.get("completed_at", ""),
+            "response_time_ms": task.get("response_time_ms", ""),
+            "error_message": task.get("error_message", ""),
+            "response": "",
+            "executor_messages":[]
+        }
+        
+        # Fetch detailed result for completed, failed, and processing tasks
+        if status in ["completed", "failed", "processing"]:
+            try:
+                task_result = await task_registry_service.get_task_result(
+                    task_id=task_id,
+                    chat_service=chat_service,
+                    role=user_data.role if user_data else None,
+                    department_name=user_data.department_name if user_data else None
+                )
+                
+                if task_result.get("success"):
+                    # Extract response from conversation if available
+                    conversation = task_result.get("conversation", {})
+                    executor_messages = conversation.get("executor_messages", [])
+                    
+                    if executor_messages:
+                        # Get the last response from executor_messages
+                        last_message = executor_messages[-1] if executor_messages else {}
+                        response_text = last_message.get("response", "")
+                        
+                        # If response is a dict or list, convert to JSON string
+                        if isinstance(response_text, (dict, list)):
+                            response_text = json.dumps(response_text, ensure_ascii=False)
+                        
+                        result_data["response"] = response_text
+                        result_data["executor_messages"] = executor_messages
+                    
+                    # Update error_message from result if available
+                    if task_result.get("error_message"):
+                        result_data["error_message"] = task_result.get("error_message")
+                        
+            except Exception as e:
+                log.warning(f"Could not fetch result for task {task_id}: {e}")
+                result_data["error_message"] = f"Error fetching result: {str(e)}"
+                result_data["response"] = f"Error fetching result: {str(e)}"
+        
+        return result_data
+    
+    # Fetch all task results concurrently
+    task_results = await asyncio.gather(
+        *[fetch_task_result(task) for task in tasks],
+        return_exceptions=True
+    )
+    
+    # Process results, handling any exceptions
+    report_data = []
+    for i, result in enumerate(task_results):
+        if isinstance(result, Exception):
+            # If fetch failed, use basic task info
+            task = tasks[i]
+            report_data.append({
+                "task_id": task.get("task_id", ""),
+                "status": task.get("status", ""),
+                "agentic_application_id": task.get("agentic_application_id", ""),
+                "query": task.get("query", ""),
+                "model_name": task.get("model_name", ""),
+                "created_at": task.get("created_at", ""),
+                "started_at": task.get("started_at", ""),
+                "completed_at": task.get("completed_at", ""),
+                "response_time_ms": task.get("response_time_ms", ""),
+                "error_message": str(result),
+                "executor_messages": task.get("executor_messages", []),
+                "response": ""
+            })
+        else:
+            report_data.append(result)
+    
+    # Create DataFrame and generate Excel report
+    df = pd.DataFrame(report_data)
+    
+    # Reorder columns for better readability
+    column_order = [
+        "task_id",
+        "status",
+        "agentic_application_id",
+        "query",
+        "response",
+        "error_message",
+        "executor_messages",
+        "model_name",
+        "response_time_ms",
+        "created_at",
+        "started_at",
+        "completed_at"
+    ]
+    df = df[[col for col in column_order if col in df.columns]]
+    
+    # Generate unique filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"batch_report_{batch_id}_{timestamp}.xlsx"
+    file_path = reports_dir / filename
+    
+    # Save to Excel
+    try:
+        df.to_excel(file_path, index=False, engine='openpyxl')
+        log.info(f"Excel report generated: {file_path}")
+    except Exception as e:
+        log.error(f"Failed to generate Excel report: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate Excel report: {str(e)}")
+    
+    # Return the file as a download
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@router.get("/batch/{batch_id}/tasks")
+async def get_batch_tasks_endpoint(
+    batch_id: str,
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service)
+):
+    """
+    Get all tasks belonging to a batch.
+    
+    Args:
+        batch_id: The batch identifier
+        
+    Returns:
+        List of all tasks in the batch with their individual status.
+    """
+    result = await task_registry_service.get_batch_tasks(batch_id)
+    return result
+
+
+@router.get("/tasks/me")
+async def get_my_tasks_endpoint(
+    limit: int = Query(default=50, le=500, description="Maximum number of tasks to return"),
+    status: str = Query(default=None, description="Filter by status: queued | processing | completed | failed"),
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Get M2M tasks created by the current user.
+    
+    Args:
+        limit: Maximum number of tasks to return (default 50, max 500)
+        status: Optional filter by task status
+        
+    Returns:
+        List of tasks created by the authenticated user.
+    """
+    result = await task_registry_service.get_user_tasks(
+        user_email=user_data.email,
+        limit=limit,
+        status=status
+    )
+    return result
+
+
+@router.get("/tasks/agent/{agent_id}")
+async def get_agent_tasks_endpoint(
+    agent_id: str,
+    limit: int = Query(default=50, le=500, description="Maximum number of tasks to return"),
+    status: str = Query(default=None, description="Filter by status: queued | processing | completed | failed"),
+    task_registry_service: TaskRegistryService = Depends(ServiceProvider.get_task_registry_service)
+):
+    """
+    Get M2M tasks for a specific agent or workflow.
+    
+    Args:
+        agent_id: The agent or workflow ID
+        limit: Maximum number of tasks to return
+        status: Optional filter by task status
+        
+    Returns:
+        List of tasks for the specified agent/workflow.
+    """
+    result = await task_registry_service.get_agent_tasks(
+        agentic_application_id=agent_id,
+        limit=limit,
+        status=status
+    )
+    return result
+
 
 @router.post("/inference")
 async def run_agent_inference_endpoint(
                         request: Request,
                         inference_request: AgentInferenceRequest,
                         inference_service: CentralizedAgentInference = Depends(ServiceProvider.get_centralized_agent_inference),
-                        pipeline_inference: PipelineInference = Depends(ServiceProvider.get_pipeline_inference),
+                        workflow_inference: WorkflowInference = Depends(ServiceProvider.get_workflow_inference),
                         feedback_learning_service: FeedbackLearningService = Depends(ServiceProvider.get_feedback_learning_service),
                         chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
                         authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
                         user_data: User = Depends(get_current_user),
-                        tool_context: ToolUserContext = Depends(setup_tool_user_context)
+                        tool_context: ToolUserContext = Depends(setup_tool_user_context),
+                        kafka_manager: KafkaManager = Depends(ServiceProvider.get_kafka_manager),
+                        query_token_usage_repo: QueryTokenUsageRepository = Depends(ServiceProvider.get_query_token_usage_repo)
                     ):
     """
     
     API endpoint to run agent inference.
 
-    This is a unified endpoint that handles various agent types, HITL scenarios, and pipeline execution.
-    When is_pipeline_call is True, it executes a pipeline instead of a single agent.
+    This is a unified endpoint that handles various agent types, HITL scenarios, and workflow execution.
+    When is_workflow_call is True, it executes a workflow instead of a single agent.
 
     Parameters:
     
     - request: The FastAPI Request object.
     - inference_request: Pydantic model containing all inference parameters.
     - inference_service: Dependency-injected CentralizedAgentInference instance.
-    - pipeline_inference: Dependency-injected PipelineInference instance.
+    - workflow_inference: Dependency-injected WorkflowInference instance.
     - feedback_learning_service: Dependency-injected FeedbackLearningService instance.
 
     Returns:
-    - Dict[str, Any]: A dictionary with the agent's response or pipeline execution result.
+    - Dict[str, Any]: A dictionary with the agent's response or workflow execution result.
     """
     role = user_data.role
     
@@ -164,6 +621,11 @@ async def run_agent_inference_endpoint(
     user_id = request.cookies.get("user_id") or user_data.email
     user_session = request.cookies.get("user_session")
     session_id = inference_request.session_id
+
+    # Open a fresh per-request token accumulator so every LLM hook call during
+    # this inference can append its record — enabling per-query token totals.
+    from litellm_standalone_tracker import init_request_accumulator
+    init_request_accumulator(session_id)
 
     #message queue
     message_queue = inference_request.message_queue
@@ -245,36 +707,87 @@ async def run_agent_inference_endpoint(
             inference_request.context_flag = False
             log.info(f"[{session_id}] Context flag disabled - role '{role}' doesn't have context_access permission")
 
-
     # ---------------------------------------------------------
-    # Check if this is a Pipeline Call
+    # Handle Message Queue Mode - Async Execution via Worker
     # ---------------------------------------------------------
-    if inference_request.agentic_application_id.startswith("ppl_"):
-        # Validate pipeline_id is provided
-        pipeline_id = inference_request.agentic_application_id
-        if not pipeline_id:
+    if message_queue:
+        # Generate unique task/agent_call_id
+        task_id = f"task_{uuid.uuid4().hex[:16]}"
+        
+        # Send request to Kafka for async processing by AgentWorker
+        success = kafka_manager.send_agent_request(
+            agent_call_id=task_id,
+            agentic_application_id=inference_request.agentic_application_id,
+            session_id=session_id,
+            model_name=inference_request.model_name,
+            query=inference_request.query,
+            user_role=role,
+            department_name=user_data.department_name,
+            username=user_data.email,
+            user_email=user_data.email,  # Pass user_email
+            reset_conversation=inference_request.reset_conversation,
+            tool_verifier_flag=inference_request.tool_verifier_flag,
+            plan_verifier_flag=inference_request.plan_verifier_flag,
+            evaluation_flag=inference_request.evaluation_flag,
+            validator_flag=inference_request.validator_flag,
+            context_flag=inference_request.context_flag,
+            file_context_management_flag=inference_request.file_context_management_flag,
+            response_formatting_flag=inference_request.response_formatting_flag,
+            temperature=inference_request.temperature,
+            framework_type=inference_request.framework_type,
+            tool_feedback=inference_request.tool_feedback,
+            is_plan_approved=inference_request.is_plan_approved,
+            plan_feedback=inference_request.plan_feedback,
+            mentioned_agentic_application_id=inference_request.mentioned_agentic_application_id,
+            interrupt_items=inference_request.interrupt_items,
+            uploaded_files=inference_request.uploaded_files,
+        )
+        
+        if not success:
             raise HTTPException(
-                status_code=400,
-                detail="pipeline_id is required when is_pipeline_call is True"
+                status_code=500,
+                detail="Failed to queue task for async processing"
             )
         
-        log.info(f"[{session_id}] Routing to pipeline execution for pipeline_id: {pipeline_id}")
+        log.info(f"[{session_id}] Task {task_id} added to queue")
+        
+        # Return task_id for client to poll progress
+        return {
+            "status": "queued",
+            "task_id": task_id,
+            "session_id": session_id,
+            "message": "Task has been queued for async processing. Use /chat/task/{task_id}/progress to check status and /chat/task/{task_id}/result to get the final result."
+        }
+
+    # ---------------------------------------------------------
+    # Check if this is a Workflow Call
+    # ---------------------------------------------------------
+    if inference_request.agentic_application_id.startswith("wf_") or inference_request.agentic_application_id.startswith("ppl_"):
+        # Validate workflow_id is provided
+        workflow_id = inference_request.agentic_application_id
+        if not workflow_id:
+            raise HTTPException(
+                status_code=400,
+                detail="workflow_id is required when is_workflow_call is True"
+            )
+        
+        log.info(f"[{session_id}] Routing to workflow execution for workflow_id: {workflow_id}")
         
         # ---------------------------------------------------------
-        # Pipeline Streaming Response
+        # Workflow Streaming Response
         # ---------------------------------------------------------
         if inference_request.enable_streaming_flag:
-            async def pipeline_stream_generator():
-                """Generate SSE events from pipeline execution."""
+            async def workflow_stream_generator():
+                """Generate SSE events from workflow execution."""
                 try:
                     task_tracker[session_id] = asyncio.current_task()
                     
-                    async for event in pipeline_inference.run_pipeline(
-                        pipeline_id=pipeline_id,
+                    async for event in workflow_inference.run_workflow(
+                        workflow_id=workflow_id,
                         session_id=session_id,
                         model_name=inference_request.model_name,
                         input_query=inference_request.query,
-                        project_name=f"pipeline_{pipeline_id}",
+                        project_name=f"workflow_{workflow_id}",
                         reset_conversation=inference_request.reset_conversation,
                         plan_verifier_flag=inference_request.plan_verifier_flag,
                         is_plan_approved=inference_request.is_plan_approved,
@@ -285,7 +798,8 @@ async def run_agent_inference_endpoint(
                         evaluation_flag=inference_request.evaluation_flag,
                         validator_flag=inference_request.validator_flag,
                         temperature=inference_request.temperature or 0.0,
-                        role=str(role)
+                        role=str(role),
+                        chat_file_upload=inference_request.uploaded_files
                     ):
                         yield json.dumps(jsonable_encoder(event)) + "\n"
 
@@ -297,7 +811,7 @@ async def run_agent_inference_endpoint(
                     yield json.dumps(error_event) + "\n"
 
                 except Exception as e:
-                    log.error(f"[{session_id}] Pipeline execution error: {e}")
+                    log.error(f"[{session_id}] Workflow execution error: {e}")
                     error_event = {
                         'event_type': 'error',
                         'message': str(e)
@@ -316,25 +830,25 @@ async def run_agent_inference_endpoint(
                         agent_id='Unassigned', session_id='Unassigned', 
                         model_used='Unassigned', user_query='Unassigned', response='Unassigned'
                     )
-                    log.info(f"[{session_id}] Pipeline streaming completed in {time_taken:.2f}s")
+                    log.info(f"[{session_id}] Workflow streaming completed in {time_taken:.2f}s")
 
-            return StreamingResponse(pipeline_stream_generator(), media_type="application/json")
+            return StreamingResponse(workflow_stream_generator(), media_type="application/json")
 
         # ---------------------------------------------------------
-        # Pipeline Non-Streaming Response (Synchronous)
+        # Workflow Non-Streaming Response (Synchronous)
         # ---------------------------------------------------------
         else:
-            async def do_pipeline_inference():
+            async def do_workflow_inference():
                 try:
                     events = []
                     final_event = None
 
-                    async for event in pipeline_inference.run_pipeline(
-                        pipeline_id=pipeline_id,
+                    async for event in workflow_inference.run_workflow(
+                        workflow_id=workflow_id,
                         session_id=session_id,
                         model_name=inference_request.model_name,
                         input_query=inference_request.query,
-                        project_name=f"pipeline_{pipeline_id}",
+                        project_name=f"workflow_{workflow_id}",
                         reset_conversation=inference_request.reset_conversation,
                         plan_verifier_flag=inference_request.plan_verifier_flag,
                         is_plan_approved=inference_request.is_plan_approved,
@@ -345,19 +859,20 @@ async def run_agent_inference_endpoint(
                         evaluation_flag=inference_request.evaluation_flag,
                         validator_flag=inference_request.validator_flag,
                         temperature=inference_request.temperature or 0.0,
+                        chat_file_upload = inference_request.uploaded_files,
                         role=str(role)
                     ):
                         response = event
 
                     return response
                 except asyncio.CancelledError:
-                    log.warning(f"[{session_id}] Pipeline task cancelled.")
+                    log.warning(f"[{session_id}] Workflow task cancelled.")
                     raise
                 except StopAsyncIteration:
                     return {"status": "success", "events": [], "final_event": None}
 
             # Create Task
-            new_task = asyncio.create_task(do_pipeline_inference())
+            new_task = asyncio.create_task(do_workflow_inference())
             task_tracker[session_id] = new_task
 
             try:
@@ -365,14 +880,14 @@ async def run_agent_inference_endpoint(
                 end_time = time.monotonic()
                 time_taken = end_time - start_time
                 
-                log.info(f"[{session_id}] Pipeline execution completed in {time_taken:.2f}s")
+                log.info(f"[{session_id}] Workflow execution completed in {time_taken:.2f}s")
                 return response
 
             except asyncio.CancelledError:
                 raise HTTPException(status_code=499, detail="Request was cancelled")
             except Exception as e:
-                log.error(f"[{session_id}] Pipeline execution failed: {e}")
-                raise HTTPException(status_code=500, detail=f"Pipeline execution failed: {str(e)}")
+                log.error(f"[{session_id}] Workflow execution failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Workflow execution failed: {str(e)}")
             finally:
                 # Cleanup
                 update_session_context(
@@ -440,6 +955,32 @@ async def run_agent_inference_endpoint(
                 )
                 if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
                     response_time = await inference_service.update_response_time(agent_id=inference_request.agentic_application_id, session_id=session_id, start_time=start_time, time_stamp=start_time_stamp)
+                    # Inject per-query token totals into the same checkpoint
+                    from litellm_standalone_tracker import get_and_clear_accumulator
+                    token_records = get_and_clear_accumulator(session_id)
+                    if token_records and last_message:
+                        agent_name = token_records[0].get("agent_name") if token_records else None
+                        await inference_service.update_token_usage_in_graph(
+                            agent_id=inference_request.agentic_application_id,
+                            session_id=session_id,
+                            token_records=token_records,
+                        )
+                        last_message["token_usage"] = {
+                            "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                            "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                            "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                            "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                            "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                            "llm_calls":         token_records,
+                        }
+                        asyncio.create_task(query_token_usage_repo.insert(
+                            session_id=session_id,
+                            user_id=user_data.email,
+                            agent_id=inference_request.agentic_application_id,
+                            agent_name=agent_name,
+                            query=inference_request.query,
+                            token_records=token_records,
+                        ))
                 else:
                     response_time = time.monotonic() - start_time
                     response_time_details = {
@@ -450,6 +991,27 @@ async def run_agent_inference_endpoint(
                     }
                     thread_id = await chat_service._get_thread_id(inference_request.agentic_application_id, session_id)
                     await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
+                    # Drain accumulator and persist per-query token usage for python-based agents
+                    from litellm_standalone_tracker import get_and_clear_accumulator
+                    token_records = get_and_clear_accumulator(session_id)
+                    if token_records and last_message:
+                        agent_name = token_records[0].get("agent_name") if token_records else None
+                        last_message["token_usage"] = {
+                            "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                            "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                            "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                            "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                            "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                            "llm_calls":         token_records,
+                        }
+                        asyncio.create_task(query_token_usage_repo.insert(
+                            session_id=session_id,
+                            user_id=user_data.email,
+                            agent_id=inference_request.agentic_application_id,
+                            agent_name=agent_name,
+                            query=inference_request.query,
+                            token_records=token_records,
+                        ))
                 if last_message:
                     last_message["response_time"] = response_time
                 yield json.dumps(jsonable_encoder(full_accumulated_response))
@@ -500,6 +1062,32 @@ async def run_agent_inference_endpoint(
             )
             if chat_service and not await chat_service.is_python_based_agent(inference_request.agentic_application_id):
                 response_time = await inference_service.update_response_time(agent_id=inference_request.agentic_application_id, session_id=session_id, start_time=start_time, time_stamp=start_time_stamp)
+                # Inject per-query token totals into the same checkpoint
+                from litellm_standalone_tracker import get_and_clear_accumulator
+                token_records = get_and_clear_accumulator(session_id)
+                if token_records:
+                    agent_name = token_records[0].get("agent_name") if token_records else None
+                    await inference_service.update_token_usage_in_graph(
+                        agent_id=inference_request.agentic_application_id,
+                        session_id=session_id,
+                        token_records=token_records,
+                    )
+                    last_message["token_usage"] = {
+                        "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                        "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                        "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                        "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                        "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                        "llm_calls":         token_records,
+                    }
+                    asyncio.create_task(query_token_usage_repo.insert(
+                        session_id=session_id,
+                        user_id=user_data.email,
+                        agent_id=inference_request.agentic_application_id,
+                        agent_name=agent_name,
+                        query=inference_request.query,
+                        token_records=token_records,
+                    ))
             else:
                 response_time = time.monotonic() - start_time
                 response_time_details = {
@@ -508,6 +1096,28 @@ async def run_agent_inference_endpoint(
                 }
                 thread_id = await chat_service._get_thread_id(inference_request.agentic_application_id, session_id)
                 await inference_service.hybrid_agent_inference._add_additional_data_to_final_response(response_time_details, thread_id=thread_id)
+                # Drain accumulator and persist per-query token usage for python-based agents
+                from litellm_standalone_tracker import get_and_clear_accumulator
+                token_records = get_and_clear_accumulator(session_id)
+                if token_records:
+                    agent_name = token_records[0].get("agent_name") if token_records else None
+                    last_message["token_usage"] = {
+                        "prompt_tokens":     sum(r.get("prompt_tokens", 0)     for r in token_records),
+                        "completion_tokens": sum(r.get("completion_tokens", 0) for r in token_records),
+                        "total_tokens":      sum(r.get("total_tokens", 0)      for r in token_records),
+                        "cached_tokens":     sum(r.get("cached_tokens", 0)     for r in token_records),
+                        "total_cost":        sum(r.get("total_cost", 0.0)      for r in token_records),
+                        "llm_calls":         token_records,
+                    }
+                    asyncio.create_task(query_token_usage_repo.insert(
+                        session_id=session_id,
+                        user_id=user_data.email,
+                        agent_id=inference_request.agentic_application_id,
+                        agent_name=agent_name,
+                        query=inference_request.query,
+                        token_records=token_records,
+                    ))
+                    
             last_message["response_time"] = response_time
             return response
 
@@ -524,6 +1134,7 @@ async def run_agent_inference_endpoint(
             )
             if session_id in task_tracker and task_tracker[session_id].done():
                 del task_tracker[session_id]
+
 
 @router.post("/get/feedback-response/{feedback_type}")
 async def send_feedback_endpoint(
@@ -689,17 +1300,17 @@ async def get_chat_history_endpoint(
     request: Request, 
     chat_session_request: ChatSessionRequest, 
     chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
-    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service),
+    workflow_service: WorkflowService = Depends(ServiceProvider.get_workflow_service),
     user_data: User = Depends(get_current_user)):
     """
     API endpoint to retrieve the chat history of a previous session.
-    Supports both regular agent chats and pipeline conversations.
+    Supports both regular agent chats and workflow conversations.
 
     Parameters:
     - request: The FastAPI Request object.
     - chat_session_request: Pydantic model containing agent_id and session_id.
     - chat_service: Dependency-injected ChatService instance.
-    - pipeline_service: Dependency-injected PipelineService instance.
+    - workflow_service: Dependency-injected WorkflowService instance.
 
     Returns:
     - Dict[str, Any]: A dictionary containing the previous conversation history.
@@ -710,19 +1321,19 @@ async def get_chat_history_endpoint(
     
     role = user_data.role
     user_department = user_data.department_name
-    # Try to get pipeline history first
+    # Try to get workflow history first
     try:
-        pipeline_history = await pipeline_service.get_pipeline_conversation_history(
-            pipeline_id=chat_session_request.agent_id,
+        workflow_history = await workflow_service.get_workflow_conversation_history(
+            workflow_id=chat_session_request.agent_id,
             session_id=chat_session_request.session_id,
             role=role
         )
-        if pipeline_history:
+        if workflow_history:
             update_session_context(user_session="Unassigned", user_id="Unassigned", session_id="Unassigned", agent_id="Unassigned")
             # Wrap in executor_messages format to match regular chat history structure
-            return {"executor_messages": pipeline_history}
+            return {"executor_messages": workflow_history}
     except Exception as e:
-        log.warning(f"Error fetching pipeline history, falling back to agent history: {e}")
+        log.warning(f"Error fetching workflow history, falling back to agent history: {e}")
 
     # Fall back to regular chat history
     history = await chat_service.get_chat_history_from_short_term_memory(
@@ -741,17 +1352,17 @@ async def clear_chat_history_endpoint(
     request: Request, 
     chat_session_request: ChatSessionRequest, 
     chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
-    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service)
+    workflow_service: WorkflowService = Depends(ServiceProvider.get_workflow_service)
 ):
     """
     API endpoint to clear the chat history for a session.
-    Supports both regular agent chats and pipeline conversations.
+    Supports both regular agent chats and workflow conversations.
 
     Parameters:
     - request: The FastAPI Request object.
     - chat_session_request: Pydantic model containing agent_id and session_id.
     - chat_service: Dependency-injected ChatService instance.
-    - pipeline_service: Dependency-injected PipelineService instance.
+    - workflow_service: Dependency-injected WorkflowService instance.
 
     Returns:
     - Dict[str, Any]: A status dictionary indicating the result of the operation.
@@ -760,16 +1371,16 @@ async def clear_chat_history_endpoint(
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
     
-    # Try to delete pipeline history
+    # Try to delete workflow history
     try:
-        pipeline_result = await pipeline_service.delete_pipeline_session(
-            pipeline_id=chat_session_request.agent_id,
+        workflow_result = await workflow_service.delete_workflow_session(
+            workflow_id=chat_session_request.agent_id,
             session_id=chat_session_request.session_id
         )
-        if pipeline_result.get("status") == "success":
-            log.info(f"Pipeline history cleared for session '{chat_session_request.session_id}'")
+        if workflow_result.get("status") == "success":
+            log.info(f"Workflow history cleared for session '{chat_session_request.session_id}'")
     except Exception as e:
-        log.debug(f"No pipeline history to clear: {e}")
+        log.debug(f"No workflow history to clear: {e}")
     
     # Also delete regular chat history
     result = await chat_service.delete_session(
@@ -787,17 +1398,17 @@ async def get_old_conversations_endpoint(
     request: Request, 
     chat_session_request: OldChatSessionsRequest, 
     chat_service: ChatService = Depends(ServiceProvider.get_chat_service),
-    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service)
+    workflow_service: WorkflowService = Depends(ServiceProvider.get_workflow_service)
 ):
     """
     API endpoint to retrieve old chat sessions for a specific user and agent.
-    Supports both regular agent chats and pipeline conversations.
+    Supports both regular agent chats and workflow conversations.
 
     Parameters:
     - request: The FastAPI Request object.
     - chat_session_request: Pydantic model containing user_email and agent_id.
     - chat_service: Dependency-injected ChatService instance.
-    - pipeline_service: Dependency-injected PipelineService instance.
+    - workflow_service: Dependency-injected WorkflowService instance.
 
     Returns:
     - JSONResponse: A dictionary containing old chat sessions grouped by session ID.
@@ -806,16 +1417,16 @@ async def get_old_conversations_endpoint(
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
-    # Try to get pipeline old conversations first
+    # Try to get workflow old conversations first
     try:
-        pipeline_result = await pipeline_service.get_old_pipeline_conversations(
+        workflow_result = await workflow_service.get_old_workflow_conversations(
             user_email=chat_session_request.user_email,
-            pipeline_id=chat_session_request.agent_id
+            workflow_id=chat_session_request.agent_id
         )
-        if pipeline_result:
-            return JSONResponse(content=jsonable_encoder(pipeline_result))
+        if workflow_result:
+            return JSONResponse(content=jsonable_encoder(workflow_result))
     except Exception as e:
-        log.debug(f"No pipeline conversations found, checking agent conversations: {e}")
+        log.debug(f"No workflow conversations found, checking agent conversations: {e}")
 
     # Fall back to regular chat history
     result = await chat_service.get_old_chats_by_user_and_agent(

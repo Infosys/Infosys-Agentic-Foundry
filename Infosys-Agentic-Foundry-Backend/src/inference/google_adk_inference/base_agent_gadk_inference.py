@@ -1587,7 +1587,7 @@ Use positive examples as guidance and explicitly avoid negative examples.
 
         except Exception as e:
             # Catch any unhandled exceptions and raise a 500 internal server error
-            log.error(f"Error Occurred in agent inference: {e}")
-            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+            log.error(f"Error Occurred in agent inference in run method of Google ADK inference: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Internal Server Error in run method of Google ADK inference: {str(e)}")
 
 

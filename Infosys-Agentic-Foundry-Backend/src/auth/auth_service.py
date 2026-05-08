@@ -4,12 +4,21 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional, List
 from src.auth.models import User, UserRole, UserStatus, LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, RefreshTokenResponse
-from src.auth.repositories import UserRepository, AuditLogRepository, RefreshTokenRepository, DepartmentRepository, UserDepartmentMappingRepository
+from src.auth.repositories import UserRepository, AuditLogRepository, RefreshTokenRepository, DepartmentRepository, UserDepartmentMappingRepository, RegistrationRequestRepository
+from src.utils.send_email_helper import (
+    send_email,
+    notify_admins_new_registration,
+    notify_admins_department_access_request,
+    notify_user_request_approved,
+    notify_user_request_rejected
+)
 from telemetry_wrapper import logger as log
 from src.config.settings import (
     JWT_SECRET, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_SECONDS,
     REFRESH_TOKEN_EXPIRE_DAYS, ENABLE_REFRESH_TOKENS
 )
+
+import base64
 
 # In-memory blacklist for demonstration (use persistent store in production)
 JWT_BLACKLIST = set()
@@ -17,7 +26,7 @@ JWT_BLACKLIST = set()
 class AuthService:
     """Service for authentication operations"""
 
-    def __init__(self, user_repo: UserRepository, audit_repo: AuditLogRepository, refresh_repo: RefreshTokenRepository = None, department_repo: DepartmentRepository = None, user_dept_mapping_repo: UserDepartmentMappingRepository = None):
+    def __init__(self, user_repo: UserRepository, audit_repo: AuditLogRepository, refresh_repo: RefreshTokenRepository = None, department_repo: DepartmentRepository = None, user_dept_mapping_repo: UserDepartmentMappingRepository = None, registration_request_repo: RegistrationRequestRepository = None):
         self.user_repo = user_repo
         self.audit_repo = audit_repo
         # refresh_repo is optional to keep backward compatibility if not wired yet
@@ -26,6 +35,8 @@ class AuthService:
         self.department_repo = department_repo
         # user_dept_mapping_repo for managing user-department relationships
         self.user_dept_mapping_repo = user_dept_mapping_repo
+        # registration_request_repo for approval-based registration
+        self.registration_request_repo = registration_request_repo
 
     async def _log_login_failure(self, user_id: str, email: str, reason: str, ip_address: str, user_agent: str):
         """Helper to log failed login attempts"""
@@ -41,6 +52,7 @@ class AuthService:
 
     async def login(self, login_request: LoginRequest, ip_address: str = None, user_agent: str = None) -> LoginResponse:
         """Authenticate user and create session"""
+        decoded_password = login_request.password
         try:
             # Early check for required dependencies
             if not self.user_dept_mapping_repo:
@@ -60,7 +72,7 @@ class AuthService:
                 return LoginResponse(approval=False, message="User not found")
             
             # Check PWD first before any additional processing
-            if not bcrypt.checkpw(login_request.password.encode('utf-8'), user_data['password'].encode('utf-8')):
+            if not bcrypt.checkpw(decoded_password.encode('utf-8'), user_data['password'].encode('utf-8')):
                 await self._log_login_failure(user_data['mail_id'], user_email, "Incorrect password", ip_address, user_agent)
                 return LoginResponse(approval=False, message="Incorrect password")
             
@@ -356,91 +368,250 @@ class AuthService:
             return RefreshTokenResponse(approval=False, message="Failed to refresh token", token=None)
     
     async def register(self, register_request: RegisterRequest, ip_address: str = None, user_agent: str = None, current_user: User = None) -> RegisterResponse:
-        """Register new user - simplified version that only creates user with email, PWD, and username"""
+        """Register new user - creates the user in login_credential and pending department requests.
+        If user already exists, returns a message to log in and request departments separately."""
+        decoded_password = register_request.password
         try:
-            # Check if user already exists in the login_credential table
-            existing_user = await self.user_repo.get_user_basic_by_email(register_request.email_id)
-            
-            if existing_user:
-                return RegisterResponse(
-                    approval=False, 
-                    message=f"User with email {register_request.email_id} already exists" 
-                )
-            
-            # Check if this is the first user registration (no users exist yet)
+            if not self.registration_request_repo:
+                return RegisterResponse(approval=False, message="Registration service not available")
+
+            # Check if this is the first user registration (no users exist at all)
             is_first_user = not await self.user_repo.has_any_users()
-            
-            # Hash PWD 
-            password_hash = bcrypt.hashpw(register_request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            
-            # Create new user (without role and department - just basic credentials)
+            if is_first_user:
+                return RegisterResponse(
+                    approval=False,
+                    message="No SuperAdmin exists. Please use /auth/register-superadmin to bootstrap the system."
+                )
+
+            # Check if user already exists in login_credential
+            existing_user = await self.user_repo.get_user_basic_by_email(register_request.email_id)
+            if existing_user:
+                # Check if user has at least one department assigned
+                has_department = False
+                if self.user_dept_mapping_repo:
+                    user_depts = await self.user_dept_mapping_repo.get_user_departments_simple(register_request.email_id)
+                    has_department = len(user_depts) > 0
+
+                if has_department:
+                    return RegisterResponse(
+                        approval=False,
+                        message="You are already registered. If you want to join another department, please log in and raise a department access request."
+                    )
+                else:
+                    return RegisterResponse(
+                        approval=False,
+                        message="You are already registered. Your department access requests may still be pending. Please log in to check your request status."
+                    )
+
+            # Validate all requested departments exist
+            invalid_departments = []
+            if self.department_repo:
+                for dept in register_request.department_names:
+                    dept_exists = await self.department_repo.department_exists(dept)
+                    if not dept_exists:
+                        invalid_departments.append(dept)
+            if invalid_departments:
+                return RegisterResponse(
+                    approval=False,
+                    message=f"Department(s) not found: {', '.join(invalid_departments)}"
+                )
+
+            password_hash = bcrypt.hashpw(decoded_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             user_id = await self.user_repo.create_user(
                 email=register_request.email_id,
                 username=register_request.user_name,
                 password=password_hash
             )
-            
             if not user_id:
                 return RegisterResponse(approval=False, message="Registration failed")
-            
-            log.info(f"Created new user {register_request.email_id}")
-            
-            # If this is the first user, automatically assign SuperAdmin role
-            if is_first_user and self.user_dept_mapping_repo:
-                mapping_success = await self.user_dept_mapping_repo.add_superadmin(
-                    mail_id=register_request.email_id,
-                    created_by=register_request.email_id  # Self-assigned for first user
+
+            log.info(f"User account created for {register_request.email_id}")
+
+            # Create pending department access requests
+            created_departments = []
+            skipped_departments = []
+            for dept in register_request.department_names:
+                # Skip if a pending request already exists
+                has_pending = await self.registration_request_repo.has_pending_request(
+                    email_id=register_request.email_id,
+                    department_name=dept
                 )
-                if mapping_success:
-                    log.info(f"First user {register_request.email_id} automatically assigned SuperAdmin role")
-                    
-                    # Log registration
-                    await self.audit_repo.log_action(
-                        user_id=user_id,
-                        action="USER_REGISTERED",
-                        resource_type="user",
-                        resource_id=register_request.email_id,
-                        new_value="Role: SuperAdmin (First User - Auto-assigned)",
-                        ip_address=ip_address,
-                        user_agent=user_agent
-                    )
-                    
-                    return RegisterResponse(
-                        approval=True, 
-                        message=f"{register_request.user_name} registered successfully as the first SuperAdmin"
-                    )
+                if has_pending:
+                    skipped_departments.append(f"{dept} (request already pending)")
+                    continue
+
+                request_id = await self.registration_request_repo.create_request(
+                    email_id=register_request.email_id,
+                    user_name=register_request.user_name,
+                    password_hash=password_hash,
+                    department_name=dept
+                )
+                if request_id:
+                    created_departments.append(dept)
                 else:
-                    log.error(f"Failed to assign SuperAdmin role to first user {register_request.email_id}")
-                    return RegisterResponse(
-                        approval=False, 
-                        message="Failed to assign SuperAdmin role"
-                    )
-            
-            # Log regular user registration (without role/department)
-            await self.audit_repo.log_action(
-                user_id=user_id,
-                action="USER_REGISTERED",
-                resource_type="user",
-                resource_id=register_request.email_id,
-                new_value="User registered - awaiting role and department assignment",
-                ip_address=ip_address,
-                user_agent=user_agent
-            )
-            
+                    skipped_departments.append(f"{dept} (failed to create request)")
+
+            if not created_departments and skipped_departments:
+                return RegisterResponse(
+                    approval=True,
+                    message=f"Account created but no department requests were new. Skipped: {', '.join(skipped_departments)}"
+                )
+
+            if not created_departments:
+                return RegisterResponse(
+                    approval=True,
+                    message="Account created but failed to submit department requests. Please log in and raise requests."
+                )
+
+            message = f"Registration successful. Department access request submitted for: {', '.join(created_departments)}. Awaiting admin approval."
+            if skipped_departments:
+                message += f" Skipped: {', '.join(skipped_departments)}"
+
+            # Notify admins about the new registration
+            try:
+                if self.user_dept_mapping_repo:
+                    all_admin_emails = set()
+                    for dept in created_departments:
+                        dept_admins = await self.user_dept_mapping_repo.get_department_admin_emails(dept)
+                        all_admin_emails.update(dept_admins)
+                    if all_admin_emails:
+                        notify_admins_new_registration(
+                            admin_emails=list(all_admin_emails),
+                            user_email=register_request.email_id,
+                            user_name=register_request.user_name,
+                            departments=created_departments
+                        )
+            except Exception as email_err:
+                log.warning(f"Failed to send admin notification email for registration: {email_err}")
+
             return RegisterResponse(
-                approval=True, 
-                message=f"{register_request.user_name} registered successfully. Please contact an administrator to assign role and department."
+                approval=True,
+                message=message,
+                pending_departments=created_departments
             )
-            
+
         except Exception as e:
             log.error(f"Registration error: {e}")
             return RegisterResponse(approval=False, message="Registration failed due to an error")
+
+    async def request_department_access(self, email_id: str, department_names: list,
+                                         ip_address: str = None, user_agent: str = None) -> RegisterResponse:
+        """Request access to additional departments. User must already be registered and logged in."""
+        try:
+            if not self.registration_request_repo:
+                return RegisterResponse(approval=False, message="Registration service not available")
+
+            existing_user = await self.user_repo.get_user_basic_by_email(email_id)
+            if not existing_user:
+                return RegisterResponse(approval=False, message="User account not found.")
+
+            user_name = existing_user.get('user_name', email_id)
+
+            # Validate all requested departments exist
+            invalid_departments = []
+            if self.department_repo:
+                for dept in department_names:
+                    dept_exists = await self.department_repo.department_exists(dept)
+                    if not dept_exists:
+                        invalid_departments.append(dept)
+            if invalid_departments:
+                return RegisterResponse(
+                    approval=False,
+                    message=f"Department(s) not found: {', '.join(invalid_departments)}"
+                )
+
+            created_departments = []
+            skipped_departments = []
+            for dept in department_names:
+                # Skip if user is already in this department
+                if self.user_dept_mapping_repo:
+                    already_in_dept = await self.user_dept_mapping_repo.check_user_in_department(
+                        mail_id=email_id, department_name=dept
+                    )
+                    if already_in_dept:
+                        skipped_departments.append(f"{dept} (already a member)")
+                        continue
+
+                # Skip if a pending request already exists
+                has_pending = await self.registration_request_repo.has_pending_request(
+                    email_id=email_id, department_name=dept
+                )
+                if has_pending:
+                    skipped_departments.append(f"{dept} (request already pending)")
+                    continue
+
+                request_id = await self.registration_request_repo.create_request(
+                    email_id=email_id,
+                    user_name=user_name,
+                    password_hash='',
+                    department_name=dept
+                )
+                if request_id:
+                    created_departments.append(dept)
+                else:
+                    skipped_departments.append(f"{dept} (failed to create request)")
+
+            if not created_departments and skipped_departments:
+                return RegisterResponse(
+                    approval=False,
+                    message=f"No new requests created. Skipped: {', '.join(skipped_departments)}"
+                )
+
+            if not created_departments:
+                return RegisterResponse(approval=False, message="Department access request failed")
+
+            message = f"Department access request submitted for: {', '.join(created_departments)}. Awaiting admin approval."
+            if skipped_departments:
+                message += f" Skipped: {', '.join(skipped_departments)}"
+
+            # Notify admins about the department access request
+            try:
+                if self.user_dept_mapping_repo:
+                    all_admin_emails = set()
+                    for dept in created_departments:
+                        dept_admins = await self.user_dept_mapping_repo.get_department_admin_emails(dept)
+                        all_admin_emails.update(dept_admins)
+                    if all_admin_emails:
+                        notify_admins_department_access_request(
+                            admin_emails=list(all_admin_emails),
+                            user_email=email_id,
+                            user_name=user_name,
+                            departments=created_departments
+                        )
+            except Exception as email_err:
+                log.warning(f"Failed to send admin notification email for department access request: {email_err}")
+
+            return RegisterResponse(
+                approval=True,
+                message=message,
+                pending_departments=created_departments
+            )
+
+        except Exception as e:
+            log.error(f"Department access request error: {e}")
+            return RegisterResponse(approval=False, message="Department access request failed due to an error")
+
+    async def get_my_requests(self, email_id: str) -> dict:
+        """Get all department access requests for the current user (pending, approved, rejected)."""
+        try:
+            if not self.registration_request_repo:
+                return {"success": False, "message": "Registration service not available"}
+
+            requests = await self.registration_request_repo.get_requests_by_email(email_id)
+            return {
+                "success": True,
+                "requests": requests
+            }
+        except Exception as e:
+            log.error(f"Error fetching requests for {email_id}: {e}")
+            return {"success": False, "message": f"Failed to fetch requests: {str(e)}"}
     
-    async def register_superadmin(self, register_request: RegisterRequest, ip_address: str = None, user_agent: str = None) -> RegisterResponse:
+    async def register_superadmin(self, register_request, ip_address: str = None, user_agent: str = None) -> RegisterResponse:
         """
         Register a SuperAdmin user.
         Only allowed when no SuperAdmin exists in the system.
         """
+        decoded_password = register_request.password
         try:
             # Check if any SuperAdmin already exists
             if self.user_dept_mapping_repo:
@@ -461,7 +632,7 @@ class AuthService:
                 )
             
             # Hash PWD
-            password_hash = bcrypt.hashpw(register_request.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            password_hash = bcrypt.hashpw(decoded_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
             # Create new user
             user_id = await self.user_repo.create_user(
@@ -635,6 +806,301 @@ class AuthService:
                 "message": f"Failed to assign role and department: {str(e)}"
             }
     
+    async def approve_registration(self, request_id: int, role: str, current_user: User,
+                                    ip_address: str = None, user_agent: str = None) -> dict:
+        """Approve a pending registration request. Admin approves for their department, SuperAdmin for any."""
+        try:
+            if not self.registration_request_repo:
+                return {"success": False, "message": "Registration service not available"}
+
+            # Fetch the request
+            request = await self.registration_request_repo.get_request_by_id(request_id)
+            if not request:
+                return {"success": False, "message": f"Registration request #{request_id} not found"}
+
+            if request['status'] != 'pending':
+                return {"success": False, "message": f"Request is already {request['status']}"}
+
+            dept_name = request['department_name']
+
+            # Authorization: Admin can only approve for their department
+            if current_user.role == "Admin":
+                if self.user_dept_mapping_repo:
+                    admin_depts = await self.user_dept_mapping_repo.get_user_departments_simple(current_user.email)
+                    if dept_name not in admin_depts:
+                        return {
+                            "success": False,
+                            "message": f"You can only approve requests for your departments: {', '.join(admin_depts)}"
+                        }
+            elif current_user.role != "SuperAdmin":
+                return {"success": False, "message": "Only Admin or SuperAdmin can approve registrations"}
+
+            # Admin cannot assign Admin role — only SuperAdmin can
+            if current_user.role == "Admin" and role == "Admin":
+                return {
+                    "success": False,
+                    "message": "Only SuperAdmin can assign the Admin role. Please choose a different role."
+                }
+
+            # Validate role is allowed in the department
+            if self.department_repo:
+                role_allowed = await self.department_repo.is_role_allowed_in_department(dept_name, role)
+                if not role_allowed:
+                    return {
+                        "success": False,
+                        "message": f"Role '{role}' is not allowed in department '{dept_name}'"
+                    }
+
+            email_id = request['email_id']
+            user_name = request['user_name']
+            password_hash = request['password']
+
+            # Create user in login_credential if they don't exist yet
+            existing_user = await self.user_repo.get_user_basic_by_email(email_id)
+            if not existing_user:
+                user_id = await self.user_repo.create_user(
+                    email=email_id,
+                    username=user_name,
+                    password=password_hash
+                )
+                if not user_id:
+                    return {"success": False, "message": "Failed to create user account"}
+                log.info(f"Created user account for {email_id} during registration approval")
+
+            # Add user to the department with assigned role
+            if self.user_dept_mapping_repo:
+                # Check if already in this department
+                already_in_dept = await self.user_dept_mapping_repo.check_user_in_department(
+                    mail_id=email_id, department_name=dept_name
+                )
+                if already_in_dept:
+                    # Still mark the request as approved
+                    await self.registration_request_repo.approve_request(
+                        request_id=request_id,
+                        role=role,
+                        reviewed_by=current_user.email
+                    )
+                    return {
+                        "success": True,
+                        "message": f"User is already in department '{dept_name}'. Request marked as approved."
+                    }
+
+                mapping_success = await self.user_dept_mapping_repo.add_user_to_department(
+                    mail_id=email_id,
+                    department_name=dept_name,
+                    role=role,
+                    created_by=current_user.email
+                )
+                if not mapping_success:
+                    return {"success": False, "message": "Failed to add user to department"}
+
+            # Update request status
+            await self.registration_request_repo.approve_request(
+                request_id=request_id,
+                role=role,
+                reviewed_by=current_user.email
+            )
+
+            # Audit log
+            await self.audit_repo.log_action(
+                user_id=current_user.email,
+                action="REGISTRATION_APPROVED",
+                resource_type="registration_request",
+                resource_id=str(request_id),
+                new_value=f"Approved {email_id} as '{role}' in '{dept_name}'",
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+
+            log.info(f"Registration request #{request_id} approved: {email_id} as {role} in {dept_name}")
+
+            # Notify the user about the approval
+            try:
+                notify_user_request_approved(
+                    user_email=email_id,
+                    department_name=dept_name,
+                    assigned_role=role,
+                    approved_by=current_user.email
+                )
+            except Exception as email_err:
+                log.warning(f"Failed to send approval notification email to {email_id}: {email_err}")
+
+            return {
+                "success": True,
+                "message": f"Registration approved. User '{email_id}' assigned role '{role}' in department '{dept_name}'"
+            }
+
+        except Exception as e:
+            log.error(f"Error approving registration: {e}")
+            return {"success": False, "message": f"Failed to approve registration: {str(e)}"}
+
+    async def reject_registration(self, request_id: int, current_user: User,
+                                   rejection_reason: str = None,
+                                   ip_address: str = None, user_agent: str = None) -> dict:
+        """Reject a pending registration request."""
+        try:
+            if not self.registration_request_repo:
+                return {"success": False, "message": "Registration service not available"}
+
+            request = await self.registration_request_repo.get_request_by_id(request_id)
+            if not request:
+                return {"success": False, "message": f"Registration request #{request_id} not found"}
+
+            if request['status'] != 'pending':
+                return {"success": False, "message": f"Request is already {request['status']}"}
+
+            dept_name = request['department_name']
+
+            # Authorization check
+            if current_user.role == "Admin":
+                if self.user_dept_mapping_repo:
+                    admin_depts = await self.user_dept_mapping_repo.get_user_departments_simple(current_user.email)
+                    if dept_name not in admin_depts:
+                        return {
+                            "success": False,
+                            "message": f"You can only reject requests for your departments: {', '.join(admin_depts)}"
+                        }
+            elif current_user.role != "SuperAdmin":
+                return {"success": False, "message": "Only Admin or SuperAdmin can reject registrations"}
+
+            await self.registration_request_repo.reject_request(
+                request_id=request_id,
+                reviewed_by=current_user.email,
+                rejection_reason=rejection_reason
+            )
+
+            # Audit log
+            await self.audit_repo.log_action(
+                user_id=current_user.email,
+                action="REGISTRATION_REJECTED",
+                resource_type="registration_request",
+                resource_id=str(request_id),
+                new_value=f"Rejected {request['email_id']} for '{dept_name}'" + (f" - Reason: {rejection_reason}" if rejection_reason else ""),
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+
+            log.info(f"Registration request #{request_id} rejected for {request['email_id']} in {dept_name}")
+
+            # Notify the user about the rejection
+            try:
+                notify_user_request_rejected(
+                    user_email=request['email_id'],
+                    department_name=dept_name,
+                    rejected_by=current_user.email,
+                    rejection_reason=rejection_reason
+                )
+            except Exception as email_err:
+                log.warning(f"Failed to send rejection notification email to {request['email_id']}: {email_err}")
+
+            return {
+                "success": True,
+                "message": f"Registration request rejected for user '{request['email_id']}' in department '{dept_name}'"
+            }
+
+        except Exception as e:
+            log.error(f"Error rejecting registration: {e}")
+            return {"success": False, "message": f"Failed to reject registration: {str(e)}"}
+
+    async def bulk_approve_registration(self, request_ids: list, role: str, current_user: 'User',
+                                         ip_address: str = None, user_agent: str = None) -> dict:
+        """Approve multiple pending registration requests with the same role assignment."""
+        if not request_ids:
+            return {"success": False, "message": "No request IDs provided"}
+
+        approved = []
+        failed = []
+
+        for request_id in request_ids:
+            result = await self.approve_registration(
+                request_id=request_id,
+                role=role,
+                current_user=current_user,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            if result.get("success"):
+                approved.append({"request_id": request_id, "message": result["message"]})
+            else:
+                failed.append({"request_id": request_id, "message": result["message"]})
+
+        total = len(request_ids)
+        all_failed = len(approved) == 0
+
+        return {
+            "success": not all_failed,
+            "message": f"{len(approved)}/{total} registration(s) approved with role '{role}'"
+                       + (f", {len(failed)} failed" if failed else ""),
+            "approved": approved,
+            "failed": failed
+        }
+
+    async def bulk_reject_registration(self, request_ids: list, current_user: 'User',
+                                        rejection_reason: str = None,
+                                        ip_address: str = None, user_agent: str = None) -> dict:
+        """Reject multiple pending registration requests with the same rejection reason."""
+        if not request_ids:
+            return {"success": False, "message": "No request IDs provided"}
+
+        rejected = []
+        failed = []
+
+        for request_id in request_ids:
+            result = await self.reject_registration(
+                request_id=request_id,
+                current_user=current_user,
+                rejection_reason=rejection_reason,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            if result.get("success"):
+                rejected.append({"request_id": request_id, "message": result["message"]})
+            else:
+                failed.append({"request_id": request_id, "message": result["message"]})
+
+        total = len(request_ids)
+        all_failed = len(rejected) == 0
+
+        return {
+            "success": not all_failed,
+            "message": f"{len(rejected)}/{total} registration(s) rejected"
+                       + (f", {len(failed)} failed" if failed else ""),
+            "rejected": rejected,
+            "failed": failed
+        }
+
+    async def get_pending_registrations(self, current_user: User) -> dict:
+        """Get pending registration requests. Admin sees their departments, SuperAdmin sees all."""
+        try:
+            if not self.registration_request_repo:
+                return {"success": False, "message": "Registration service not available", "requests": []}
+
+            if current_user.role == "SuperAdmin":
+                requests = await self.registration_request_repo.get_all_pending()
+            elif current_user.role == "Admin":
+                # Show only requests for the admin's currently logged-in department
+                requests = await self.registration_request_repo.get_pending_by_department(current_user.department_name)
+            else:
+                return {"success": False, "message": "Only Admin or SuperAdmin can view registration requests", "requests": []}
+
+            # Convert records to dicts (exclude PWD)
+            result = []
+            for req in requests:
+                result.append({
+                    "id": req['id'],
+                    "email_id": req['email_id'],
+                    "user_name": req['user_name'],
+                    "department_name": req['department_name'],
+                    "status": req['status'],
+                    "created_at": str(req['created_at']) if req.get('created_at') else None
+                })
+
+            return {"success": True, "requests": result}
+
+        except Exception as e:
+            log.error(f"Error fetching pending registrations: {e}")
+            return {"success": False, "message": f"Failed to fetch registrations: {str(e)}", "requests": []}
+
     async def validate_jwt(self, token: str) -> Optional[User]:
         """Validate JWT and return user info with current role/department from database"""
         try:
@@ -816,9 +1282,10 @@ class AuthService:
         Set a temporary PWD for a user (SuperAdmin only).
         This sets must_change_password = True so user is prompted to change on next login.
         """
+        decoded_password = temporary_password
         try:
             # Hash the temporary PWD
-            password_hash = bcrypt.hashpw(temporary_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            password_hash = bcrypt.hashpw(decoded_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
             # Set temporary PWD with must_change_password flag
             success = await self.user_repo.set_temporary_password(email, password_hash)
@@ -850,6 +1317,8 @@ class AuthService:
         Verifies current PWD before allowing change.
         Clears must_change_password flag after successful change.
         """
+        current_decoded_password = current_password
+        new_decoded_password = new_password
         try:
             # Check if must_change_password flag is set
             must_change = await self.user_repo.get_must_change_password_status(email)
@@ -862,11 +1331,11 @@ class AuthService:
                 return {"success": False, "message": "User not found"}
             
             # Verify current PWD
-            if not bcrypt.checkpw(current_password.encode('utf-8'), user_data['password'].encode('utf-8')):
+            if not bcrypt.checkpw(current_decoded_password.encode('utf-8'), user_data['password'].encode('utf-8')):
                 return {"success": False, "message": "Current password is incorrect"}
             
             # Hash new PWD
-            password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            password_hash = bcrypt.hashpw(new_decoded_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
             # Update PWD and clear must_change_password flag
             success = await self.user_repo.update_user_password_and_clear_flag(email, password_hash)

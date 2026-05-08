@@ -103,6 +103,11 @@ Agentic Foundry provides comprehensive capabilities for building and managing in
   <div class="title">Reusable Components</div>
   <div class="desc">Modular agents and tools reusable across workflows and projects.</div>
 </div>
+<div class="af-card">
+  <div class="icon">✨</div>
+  <div class="title">Viber Agent</div>
+  <div class="desc">Conversational AI assistant that guides you to create agents from plain descriptions — no technical knowledge needed.</div>
+</div>
 </div>
 </div>
 
@@ -117,7 +122,7 @@ Agentic Foundry provides comprehensive capabilities for building and managing in
 </div>
 <div class="af-card">
   <div class="icon">🔗</div>
-  <div class="title">Agent Pipelines</div>
+  <div class="title">Agent Workflows</div>
   <div class="desc">Visual drag-and-drop builder for multi-agent workflows with conditional branching.</div>
 </div>
 <div class="af-card">
@@ -296,9 +301,9 @@ Design agents and tools as modular, self-contained components. These can be reus
 
 Integrate manual checkpoints into automated workflows to enable human review and intervention during critical decision-making steps. Maintain oversight and control where it matters most, especially in sensitive or high-risk operations.
 
-**6. Agent Pipelines**
+**6. Agent Workflows**
 
-Visually design multi-agent workflows using a drag-and-drop canvas. Connect multiple agents in sequence or parallel with conditional branching, input/output management, and reusable pipeline configurations.
+Visually design multi-agent workflows using a drag-and-drop canvas. Connect multiple agents in sequence or parallel with conditional branching, input/output management, and reusable workflow configurations.
 
 **7. Orchestrator Agent**
 

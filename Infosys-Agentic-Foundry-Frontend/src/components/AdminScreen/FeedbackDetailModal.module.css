@@ -143,6 +143,12 @@
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
+.statusRejected {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
 .statusHint {
   margin: 0;
   font-size: var(--font-size-sm);

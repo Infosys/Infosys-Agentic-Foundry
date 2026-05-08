@@ -378,3 +378,51 @@
   transform: none;
   box-shadow: none;
 }
+
+/* ── Selected Department Chips ── */
+.selectedChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 12px;
+  background: var(--hover-background);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--text-primary);
+  transition: background-color 0.15s ease;
+}
+
+.chip:hover {
+  background: var(--card-bg);
+}
+
+.chipRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-radius: 50%;
+  padding: 0;
+  transition: all 0.15s ease;
+  opacity: 0.6;
+}
+
+.chipRemove:hover {
+  opacity: 1;
+  background: var(--hover-background);
+  color: var(--danger, #ef4444);
+}

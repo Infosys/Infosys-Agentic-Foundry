@@ -8,7 +8,7 @@ import asyncio
 import tempfile
 import pandas as pd
 from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import List, Dict, Optional, Callable, Awaitable, Union
@@ -1145,13 +1145,13 @@ def get_robustness_preview_path(agentic_id: str) -> Path:
 @router.post("/approve-robustness-evaluation/{agentic_application_id}", summary="Approve and Run Robustness Evaluation")
 async def approve_robustness_evaluation(
     agentic_application_id: str,
-    # Inject the core service that has the pipeline logic
+    # Inject the core service that has the workflow logic
     core_robustness_service: CoreRobustnessEvaluationService = Depends(ServiceProvider.get_core_robustness_service),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Approves the previewed queries, runs the full evaluation pipeline,
+    Approves the previewed queries, runs the full evaluation workflow,
     and saves the results to the database.
     """
     # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
@@ -1367,67 +1367,110 @@ async def generate_update_preview(
     }
 
 
-@router.delete("/delete-agent/{agentic_application_id}", summary="Delete Agent and All Associated Data")
+# Request models for multi-delete
+class DeleteAgentEvaluationsRequest(BaseModel):
+    """Schema for deleting one or more agent evaluations."""
+    agentic_application_ids: List[str]
+    is_admin: bool = Field(False, description="Indicates if the user has admin privileges.")
+
+@router.delete("/delete-agent", summary="Delete One or More Agents and All Associated Data")
 async def delete_agent_details(
-    agentic_application_id: str,
+    delete_request: DeleteAgentEvaluationsRequest,
     consistency_service: ConsistencyService = Depends(ServiceProvider.get_consistency_service),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Completely deletes an agent and all of its associated data, including its
+    Deletes one or more agents and all of their associated data, including
     consistency and robustness result tables. This is a destructive action.
     
     Access Control:
     - Admin: Can delete any agent evaluation in their department
     - Developer: Can only delete agent evaluations they created (filtered via available_agents)
-    """
-    # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
-    agentic_application_id = agentic_application_id.strip('"').strip("'")
     
+    Parameters:
+    ----------
+    delete_request : DeleteAgentEvaluationsRequest
+        The request body containing the list of agentic_application_ids to delete.
+
+    Returns:
+    -------
+    dict
+        A dictionary containing the results of each deletion operation and a status_message.
+    """
+    # SuperAdmin cannot delete agent evaluations
+    if current_user.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Superadmin is not allowed to delete agent evaluations.")
+
     # Check evaluation access permission
     user_department = current_user.department_name
     has_access = await authorization_service.check_evaluation_access(current_user.role, user_department)
     if not has_access:
         raise HTTPException(status_code=403, detail="You don't have permission to access evaluation endpoints.")
-    
-    # Get the evaluation record - uses the same filtering as available_agents
-    # (Admin sees all in dept, Developer sees only their own)
-    eval_record = await consistency_service.get_agent_by_id(agentic_application_id)
-    
-    if not eval_record:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"Agent evaluation '{agentic_application_id}' not found."
-        )
-    
-    # Check department access - ensures admins from other departments can't delete
-    if eval_record.get('department_name') != user_department:
-        raise HTTPException(
-            status_code=403, 
-            detail="You can only delete agent evaluations in your department."
-        )
-    
-    log.warning(f"Received DELETE request for agent '{agentic_application_id}' by {current_user.email}.")
-    try:
-       
-        await consistency_service.drop_agent_results_table(agentic_application_id)
-        
-        robustness_table_name = f"robustness_{agentic_application_id}"
-        await consistency_service.drop_agent_results_table(robustness_table_name)
-        
-        await consistency_service.delete_agent_record_from_main_table(agentic_application_id)
 
-        log.info(f"Successfully deleted all data for agent '{agentic_application_id}'.")
+    if not delete_request.agentic_application_ids:
+        raise HTTPException(status_code=400, detail="'agentic_application_ids' must be provided and cannot be empty.")
 
-        return {
-            "deleted": True,
-            "agent_id": agentic_application_id,
-            "message": "The agent and all of its associated data have been successfully deleted."
-        }
-    except Exception as e:
-        log.error(f"An unexpected error occurred while deleting agent '{agentic_application_id}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal server error occurred while deleting the agent.")
+    is_admin = False
+    if delete_request.is_admin:
+        is_admin = await authorization_service.has_role(user_email=current_user.email, required_role=UserRole.ADMIN, department_name=user_department)
+
+    # Only admins can delete multiple agent evaluations at once; non-admins must delete one at a time
+    if len(delete_request.agentic_application_ids) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple agent evaluations at once. Please delete one agent evaluation at a time.")
+
+    results = []
+    for agentic_application_id in delete_request.agentic_application_ids:
+        # Strip any surrounding quotes from the agent ID (URL-encoded quotes may be present)
+        agentic_application_id = agentic_application_id.strip('"').strip("'")
+
+        try:
+            # Get the evaluation record
+            eval_record = await consistency_service.get_agent_by_id(agentic_application_id)
+
+            if not eval_record:
+                results.append({"agent_id": agentic_application_id, "is_delete": False, "message": f"Agent evaluation '{agentic_application_id}' not found."})
+                continue
+
+            if eval_record.get('department_name') != user_department:
+                results.append({"agent_id": agentic_application_id, "is_delete": False, "message": "You can only delete agent evaluations in your department."})
+                continue
+
+            # Check if user is the creator or an admin
+            is_creator = (eval_record.get('created_by') == current_user.email)
+            if not (is_admin or is_creator):
+                log.warning(f"User {current_user.email} attempted to delete agent evaluation '{agentic_application_id}' without admin privileges or creator access")
+                results.append({"agent_id": agentic_application_id, "is_delete": False, "message": "Admin privileges or evaluation creator access required to delete this agent evaluation"})
+                continue
+
+            log.warning(f"Received DELETE request for agent '{agentic_application_id}' by {current_user.email}.")
+
+            await consistency_service.drop_agent_results_table(agentic_application_id)
+
+            robustness_table_name = f"robustness_{agentic_application_id}"
+            await consistency_service.drop_agent_results_table(robustness_table_name)
+
+            await consistency_service.delete_agent_record_from_main_table(agentic_application_id)
+
+            log.info(f"Successfully deleted all data for agent '{agentic_application_id}'.")
+            results.append({"agent_id": agentic_application_id, "is_delete": True, "message": f"Agent '{agentic_application_id}' and all associated data deleted successfully."})
+
+        except Exception as e:
+            log.error(f"An unexpected error occurred while deleting agent '{agentic_application_id}': {e}", exc_info=True)
+            results.append({"agent_id": agentic_application_id, "is_delete": False, "message": f"Internal server error while deleting agent '{agentic_application_id}': {str(e)}"})
+
+    response: Dict[str, List[str]] = {}
+    for res in results:
+        agent_id = res.get("agent_id", "unknown")
+        reason = "Successfully deleted agent evaluations" if res.get("is_delete") else res.get("message", "Delete failed")
+        response.setdefault(reason, []).append(agent_id)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(agent_ids)}"
+        for reason, agent_ids in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted agent evaluations")
+    )
+
+    return {"results": results, "status_message": status_message}
 
 
 

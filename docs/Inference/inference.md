@@ -174,6 +174,8 @@ Each agent can display a personalized welcome message when a new chat session be
 
 Users can upload files directly during chat inference sessions, enabling the agent to process and analyze document content in real-time. This feature eliminates the need for pre-uploading files and allows for seamless integration of file-based context into ongoing conversations.
 
+This feature is supported across all agent templates and workflows — **React Agent**, **React Critic Agent**, **Multi Agent**, **Planner Executor Agent**, **Meta Agent**, **Meta Planner Agent**, **Hybrid Agent**, and **Workflows**.
+
 **7. Context Agent**
 
 The Context Agent feature allows you to add an additional agent to your chat session using the "@" button in the chat interface. This enables you to train the context agent on the main agent’s queries and responses, enhancing its ability to understand and respond based on ongoing conversation data.

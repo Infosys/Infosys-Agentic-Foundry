@@ -3,7 +3,6 @@ import { useState } from "react";
 import styles from "./ResponseList.module.css";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import Loader from "../commonComponents/Loader.jsx";
-import Toggle from "../commonComponents/Toggle";
 import EmptyState from "../commonComponents/EmptyState";
 
 const ResponsesList = ({
@@ -15,8 +14,9 @@ const ResponsesList = ({
   approvalFilter = "all",
   onApprovalFilterChange,
   onApprovalToggle,
+  onStatusChange,
   onLessonChange,
-  approvalCounts = { total: 0, approved: 0, nonApproved: 0 }
+  approvalCounts = { total: 0, approved: 0, pending: 0, rejected: 0 }
 }) => {
   // Track which lesson is being edited
   const [editingLessonId, setEditingLessonId] = useState(null);
@@ -31,7 +31,8 @@ const ResponsesList = ({
   const filterOptions = [
     { value: "all", label: `All (${approvalCounts.total})` },
     { value: "approved", label: `Approved (${approvalCounts.approved})` },
-    { value: "non-approved", label: `Non-Approved (${approvalCounts.nonApproved})` },
+    { value: "pending", label: `Pending (${approvalCounts.pending})` },
+    { value: "rejected", label: `Rejected (${approvalCounts.rejected})` },
   ];
 
   // Start editing a lesson
@@ -144,14 +145,35 @@ const ResponsesList = ({
                   </td>
                   <td className={styles.tdStatus}>
                     <div className={styles.statusCell}>
-                      <span className={`${styles.statusTag} ${response.approved ? styles.statusApproved : styles.statusNonApproved}`}>
-                        {response.approved ? "Approved" : "Non-Approved"}
+                      <span className={`${styles.statusTag} ${response.status === "approve" ? styles.statusApproved
+                          : response.status === "reject" ? styles.statusRejected
+                            : styles.statusPending
+                        }`}>
+                        {response.status === "approve" ? "Approved"
+                          : response.status === "reject" ? "Rejected"
+                            : "Pending"}
                       </span>
-                      {onApprovalToggle && (
-                        <Toggle
-                          value={response.approved}
-                          onChange={() => onApprovalToggle(response)}
-                        />
+                      {onStatusChange && (
+                        <div className={styles.statusActions}>
+                          {response.status !== "approve" && (
+                            <button
+                              type="button"
+                              className={styles.approveBtn}
+                              onClick={() => onStatusChange(response, "approve")}
+                              title="Approve">
+                              <SVGIcons icon="check" width={14} height={14} />
+                            </button>
+                          )}
+                          {response.status !== "reject" && (
+                            <button
+                              type="button"
+                              className={styles.rejectBtn}
+                              onClick={() => onStatusChange(response, "reject")}
+                              title="Reject">
+                              <SVGIcons icon="close" width={14} height={14} />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </td>

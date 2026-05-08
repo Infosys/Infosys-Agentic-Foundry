@@ -44,3 +44,23 @@ The system supports multiple types of agent templates, each offering different c
 7. [Hybrid Agent](HybridAgent.md): Combines features from multiple agent types, enabling flexible workflows that leverage both reasoning and execution capabilities for complex tasks.
 
 ---
+
+## Filtering Agents
+
+The Agents listing page provides filter options to help users quickly find the agents they need. These filters are available to all users.
+
+- `Agent Type` - Filter by agent template (e.g., React Agent, Multi Agent, Meta Agent, Hybrid Agent, Planner Executor Agent, Meta Planner Agent, React Critic Agent)
+- `Created By Me` - Show only agents created by the logged-in user
+- `Created By All` - Show all agents in the department
+- `Created By System` - Show only system-onboarded agents
+- `Tag / Industry` - Filter agents by domain tags (e.g., manufacturing, logistics, finance)
+
+## Filtering Workflows
+
+The Workflows listing page provides filter options to help users quickly find the workflows they need. These filters are available to all users.
+
+- `Created By Me` — Show only workflows created by the logged-in user
+- `Created By All` — Show all workflows in the department
+- `Created By System` — Show only system-onboarded workflows
+
+---

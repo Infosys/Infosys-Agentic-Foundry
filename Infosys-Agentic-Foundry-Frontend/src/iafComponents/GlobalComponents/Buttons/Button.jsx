@@ -4,7 +4,7 @@ import styles from "./Button.module.css";
  * Button component supporting primary, secondary, and icon-only variants.
  *
  * Props:
- * - type: "primary" | "secondary" | "icon" - Button variant
+ * - type: "primary" | "secondary" | "warning" | "icon" - Button variant
  * - htmlType: "button" | "submit" | "reset" - HTML button type (default: "button")
  * - children: Button text (not used for icon-only variant)
  * - icon: React node (icon element from SVGIcons or any React element)
@@ -30,6 +30,7 @@ const Button = ({ type = "primary", htmlType = "button", children, icon, disable
     styles.iafButton,
     type === "primary" || loading ? styles.iafButtonPrimary : "",
     type === "secondary" ? styles.iafButtonSecondary : "",
+    type === "warning" ? styles.iafWarningButton : "",
     type === "icon" ? styles.iconOnly : "",
     active ? styles.active : "",
     className, // allow passing extra classes (should be module-based)

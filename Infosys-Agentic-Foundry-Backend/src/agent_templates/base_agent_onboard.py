@@ -56,8 +56,8 @@ class BaseAgentOnboard(AgentService, ABC):
                             tag_ids: Optional[Union[str, List[str]]] = None,
                             validation_criteria: Optional[List[Dict[str, Any]]] = None,
                             knowledgebase_ids: Optional[List[str]] = None,
-                            is_public: Optional[bool] = False,
-                            shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+                            db_connection_names: Optional[List[str]] = None,
+                            tool_versions: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         return await self._onboard_agent(
             agent_name=agent_name,
             agent_goal=agent_goal,
@@ -70,8 +70,8 @@ class BaseAgentOnboard(AgentService, ABC):
             tag_ids=tag_ids,
             validation_criteria=validation_criteria,
             knowledgebase_ids=knowledgebase_ids,
-            is_public=is_public,
-            shared_with_departments=shared_with_departments
+            db_connection_names=db_connection_names,
+            tool_versions=tool_versions
         )
 
     async def update_agent(self,
@@ -93,8 +93,9 @@ class BaseAgentOnboard(AgentService, ABC):
                            validation_criteria: Optional[List[Dict[str, Any]]] = None,
                            knowledgebase_ids_to_add: Optional[List[str]] = None,
                            knowledgebase_ids_to_remove: Optional[List[str]] = None,
-                           is_public: Optional[bool] = None,
-                           shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+                           db_connection_names_to_add: Optional[List[str]] = None,
+                           db_connection_names_to_remove: Optional[List[str]] = None,
+                           tool_versions: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         return await self._update_agent(
             agentic_application_id=agentic_application_id,
             agentic_application_name=agentic_application_name,
@@ -112,10 +113,11 @@ class BaseAgentOnboard(AgentService, ABC):
             associated_ids_to_remove=tools_id_to_remove,
             updated_tag_id_list=updated_tag_id_list,
             validation_criteria=validation_criteria,
-            is_public=is_public,
-            shared_with_departments=shared_with_departments,
             knowledgebase_ids_to_add=knowledgebase_ids_to_add,
-            knowledgebase_ids_to_remove=knowledgebase_ids_to_remove
+            knowledgebase_ids_to_remove=knowledgebase_ids_to_remove,
+            tool_versions=tool_versions,
+            db_connection_names_to_add=db_connection_names_to_add,
+            db_connection_names_to_remove=db_connection_names_to_remove
         )
 
 
@@ -167,8 +169,7 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
                             user_id: str,
                             department_name: Optional[str] = None,
                             tag_ids: Optional[Union[str, List[str]]] = None,
-                            is_public: Optional[bool] = False,
-                            shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+                            db_connection_names: Optional[List[str]] = None) -> Dict[str, Any]:
         return await self._onboard_agent(
             agent_name=agent_name,
             agent_goal=agent_goal,
@@ -179,8 +180,7 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
             user_id=user_id,
             department_name=department_name,
             tag_ids=tag_ids,
-            is_public=is_public,
-            shared_with_departments=shared_with_departments
+            db_connection_names=db_connection_names
         )
 
     async def update_agent(self,
@@ -199,8 +199,8 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
                            worker_agents_id_to_add: List[str] = [],
                            worker_agents_id_to_remove: List[str] = [],
                            updated_tag_id_list: Optional[Union[str, List[str]]] = None,
-                           is_public: Optional[bool] = None,
-                           shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+                           db_connection_names_to_add: Optional[List[str]] = None,
+                           db_connection_names_to_remove: Optional[List[str]] = None) -> Dict[str, Any]:
         return await self._update_agent(
             agentic_application_id=agentic_application_id,
             agentic_application_name=agentic_application_name,
@@ -217,8 +217,8 @@ class BaseMetaTypeAgentOnboard(AgentService, ABC):
             associated_ids_to_add=worker_agents_id_to_add,
             associated_ids_to_remove=worker_agents_id_to_remove,
             updated_tag_id_list=updated_tag_id_list,
-            is_public=is_public,
-            shared_with_departments=shared_with_departments
+            db_connection_names_to_add=db_connection_names_to_add,
+            db_connection_names_to_remove=db_connection_names_to_remove
         )
 
 

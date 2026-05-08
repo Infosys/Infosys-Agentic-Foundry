@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
+import ReactDOM from "react-dom";
 import styles from "./RecycleBin.module.css";
-import Cookies from "js-cookie";
 import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.jsx";
 import { APIs, REACT_AGENT } from "../../constant";
+import { getEmailFromToken } from "../../utils/jwtUtils";
 import UpdateAgent from "../AvailableAgents/UpdateAgent.jsx";
 import ToolOnBoarding from "../AvailableTools/ToolOnBoarding.jsx";
 import AddServer from "../AgentOnboard/AddServer.jsx";
@@ -12,6 +13,7 @@ import { useMessage } from "../../Hooks/MessageContext";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
 import EmptyState from "../commonComponents/EmptyState.jsx";
 import { getServerType } from "../../utils/serverUtils.js";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 
 const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selectedAgentTypes = [], selectedServerTypes = [], selectedToolTypes = [] }) => {
   const [selectedType, setSelectedType] = useState(initialType); // for data fetching
@@ -33,6 +35,8 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
   const [restoreData, setRestoreData] = useState();
   const { addMessage } = useMessage();
   const [loader, setLoader] = useState(false);
+  const [restoreConflict, setRestoreConflict] = useState(null);
+  const [restoreNewName, setRestoreNewName] = useState("");
 
   const onAgentEdit = (data) => {
     setEditAgentData(data);
@@ -44,46 +48,60 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
     setLoader(true);
     let url = "";
     if (selectedType === "agents") {
-      url = `${APIs.RESTORE_AGENTS}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      url = `${APIs.RESTORE_AGENTS}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "tools") {
-      url = `${APIs.RESTORE_TOOLS}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      url = `${APIs.RESTORE_TOOLS}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "servers") {
       const serverId = editAgentData?.tool_id || editAgentData?.id;
-      url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     }
-    const response = await postData(url);
-    if (response?.is_restored) {
+    if (restoreNewName.trim()) url += `&new_name=${encodeURIComponent(restoreNewName.trim())}`;
+    try {
+      const response = await postData(url, undefined, { silent: true });
       setLoader(false);
-      addMessage(response?.message, "success");
-      setEditAgentData(false);
-      setRestoreData(response);
-    } else {
+      setRestoreNewName("");
+      if (response?.is_restored) {
+        addMessage(response?.message, "success");
+        setEditAgentData(false);
+        setRestoreData(response);
+      } else {
+        addMessage(response?.message || "Restore failed", "error");
+        setEditAgentData(false);
+      }
+    } catch (err) {
       setLoader(false);
-      setEditAgentData(false);
-      addMessage(response.message, "error");
+      const detail = err?.response?.data?.detail;
+      if (detail?.name_conflict) {
+        setRestoreConflict(detail);
+      } else {
+        const errMsg = typeof detail === "string" ? detail : detail?.message || err?.message || "Restore failed";
+        addMessage(errMsg, "error");
+        setEditAgentData(false);
+      }
     }
   };
   const deleteAgent = async (e) => {
     setLoader(true);
     let url = "";
     if (selectedType === "agents") {
-      url = `${APIs.DELETE_AGENTS_PERMANENTLY}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      url = `${APIs.DELETE_AGENTS_PERMANENTLY}${editAgentData?.agentic_application_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "tools") {
-      url = `${APIs.DELETE_TOOLS_PERMANENTLY}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      url = `${APIs.DELETE_TOOLS_PERMANENTLY}${editAgentData?.tool_id}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     } else if (selectedType === "servers") {
       const serverId = editAgentData?.tool_id || editAgentData?.id;
-      url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+      url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
     }
     const response = await deleteData(url);
-    if (response?.is_delete || response?.is_deleted) {
+    const statusMsg = response?.status_message || response?.message;
+    if (response?.is_delete) {
       setLoader(false);
-      addMessage(response.message, "success");
+      if (statusMsg) addMessage(statusMsg, "success");
       setEditAgentData(false);
       setRestoreData(response);
     } else {
       setLoader(false);
       setEditAgentData(false);
-      addMessage(response.message, "error");
+      if (statusMsg) addMessage(statusMsg, "error");
     }
   };
   useEffect(() => {
@@ -94,11 +112,11 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
       try {
         let url = "";
         if (selectedType === "agents") {
-          url = `${APIs.AGENTS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+          url = `${APIs.AGENTS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
         } else if (selectedType === "tools") {
-          url = `${APIs.TOOLS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+          url = `${APIs.TOOLS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
         } else if (selectedType === "servers") {
-          url = `${APIs.SERVERS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(Cookies?.get("email"))}`;
+          url = `${APIs.SERVERS_RECYCLE_BIN}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
         }
         const json = await fetchData(url);
 
@@ -120,7 +138,8 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
           });
           setData(normalizedServers);
         } else if (selectedType === "tools" && Array.isArray(json)) {
-          // Normalize tool data to include category for filtering
+          // Normalize tools — backend returns both fully-deleted tools (tool_status: "deleted")
+          // and version-deleted entries (tool_status: "active") in the same endpoint
           const normalizedTools = json.map(item => {
             const id = item.id || item.tool_id;
             const isValidator = item.is_validator === true || item.is_validator === "true" || (id && String(id).startsWith("_validator"));
@@ -131,8 +150,10 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
               description: item.description || item.tool_description || "",
               tool_description: item.description || item.tool_description || "",
               category: isValidator ? "validator" : "tool",
+              tool_status: item.tool_status || "deleted",
             };
           });
+
           setData(normalizedTools);
         } else if (Array.isArray(json)) {
           setData(json);
@@ -213,22 +234,6 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
 
   return (
     <>
-      {showForm && (
-        <ToolOnBoarding
-          setShowForm={(show) => {
-            if (!show) setActiveTab(lastTab);
-            setShowForm(show);
-          }}
-          isAddTool={isAddTool}
-          editTool={editTool}
-          setIsAddTool={setIsAddTool}
-          tags={""}
-          fetchPaginatedTools={""}
-          recycle={true}
-          selectedType={selectedType}
-          setRestoreData={setRestoreData}
-        />
-      )}
       <>
         {!initialType && (
           <div className={styles.toggleWrapper}>
@@ -435,6 +440,39 @@ const RecycleBin = ({ initialType = "agents", heading, externalSearchTerm, selec
           />
         )}
       </>
+
+      {restoreConflict && ReactDOM.createPortal(
+        <div className={styles.renameOverlay}
+          onClick={() => { setRestoreConflict(null); setRestoreNewName(""); }}>
+          <div className={styles.renameDialog} onClick={(e) => e.stopPropagation()}>
+            <h3 className={styles.renameTitle}>Name Already In Use</h3>
+            <p className={styles.renameMessage}>{restoreConflict.message}</p>
+            {restoreConflict.conflicting_resource && (
+              <p className={styles.renameConflictInfo}>
+                Active {selectedType === "agents" ? "agent" : "item"}: <strong>{restoreConflict.conflicting_resource.agentic_application_name || restoreConflict.conflicting_resource.tool_name}</strong>
+                {restoreConflict.conflicting_resource.created_by && <> &mdash; created by <strong>{restoreConflict.conflicting_resource.created_by}</strong></>}
+              </p>
+            )}
+            <div className={styles.renameFieldGroup}>
+              <label className="label-desc">New name</label>
+              <input
+                className="input"
+                type="text"
+                placeholder={restoreConflict.suggested_name || ""}
+                value={restoreNewName}
+                onChange={(e) => setRestoreNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && restoreNewName.trim()) { setRestoreConflict(null); RestoreAgent(); } }}
+                autoFocus
+              />
+            </div>
+            <div className={styles.renameActions}>
+              <IAFButton type="secondary" onClick={() => { setRestoreConflict(null); setRestoreNewName(""); }}>Cancel</IAFButton>
+              <IAFButton type="primary" disabled={loader || !restoreNewName.trim()} onClick={() => { setRestoreConflict(null); RestoreAgent(); }}>Restore</IAFButton>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 };

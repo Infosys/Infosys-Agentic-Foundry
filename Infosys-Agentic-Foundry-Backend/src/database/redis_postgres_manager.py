@@ -103,7 +103,7 @@ class RedisPostgresManager:
         self.cache_index_key = "cache_record_index"
 
         
-        # Initialize Redis connection
+        # Initialize Redis connection with fast-fail timeouts
         self.redis_client = redis.Redis(
             host=redis_host,
             port=redis_port,
@@ -111,7 +111,9 @@ class RedisPostgresManager:
             password=redis_password,
             decode_responses=True,
             socket_keepalive=True,
-            socket_keepalive_options={}
+            socket_keepalive_options={},
+            socket_timeout=0.5,  # Fail fast: 500ms read timeout
+            socket_connect_timeout=0.5  # Fail fast: 500ms connect timeout
         )
         
         # Initialize PostgreSQL connection pool
@@ -199,8 +201,8 @@ class RedisPostgresManager:
             cache_key = f"{self.cache_key_prefix}{record_id}"
             record_json = json.dumps(record.to_dict())
             
-            # Use pipeline for atomic operations
-            pipe = self.redis_client.pipeline()
+            # Use workflow for atomic operations
+            pipe = self.redis_client.workflow()
             pipe.setex(cache_key, self.cache_ttl, record_json)
             pipe.sadd(self.cache_index_key, record_id)
             pipe.incr(self.cache_counter_key)
@@ -263,7 +265,7 @@ class RedisPostgresManager:
             cache_key = f"{self.cache_key_prefix}{record_id}"
             
             # Remove from cache
-            pipe = self.redis_client.pipeline()
+            pipe = self.redis_client.workflow()
             pipe.delete(cache_key)
             pipe.srem(self.cache_index_key, record_id)
             pipe.decr(self.cache_counter_key)
@@ -438,7 +440,7 @@ class RedisPostgresManager:
                     records = cursor.fetchall()
             
             # Load records into cache
-            pipe = self.redis_client.pipeline()
+            pipe = self.redis_client.workflow()
             record_count = 0
             
             for record in records:

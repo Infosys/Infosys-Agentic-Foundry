@@ -6,6 +6,9 @@ import requests
 from typing import List, Union, Any
 import logging
 
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,6 +25,27 @@ class ModelServerClient:
                 self.base_url = None
         
         self.session = requests.Session()
+        
+        # Configure proxies from environment variables
+        proxies = {}
+        http_proxy = os.getenv("HTTP_PROXY", "").strip()
+        https_proxy = os.getenv("HTTPS_PROXY", "").strip()
+        no_proxy = os.getenv("NO_PROXY", "").strip()
+        
+        if http_proxy:
+            proxies["http"] = http_proxy
+        if https_proxy:
+            proxies["https"] = https_proxy
+        
+        if proxies:
+            self.session.proxies.update(proxies)
+            logger.info(f"Configured proxies: http={http_proxy or 'None'}, https={https_proxy or 'None'}")
+        
+        if no_proxy:
+            # Set NO_PROXY environment variable for the session
+            os.environ["NO_PROXY"] = no_proxy
+            logger.info(f"Configured NO_PROXY: {no_proxy}")
+        
         self.server_available = False
         
         if not self.base_url:

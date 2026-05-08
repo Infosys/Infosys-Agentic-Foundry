@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 import {
   BOT,
   agentTypesDropdown,
@@ -18,7 +19,7 @@ import {
   REACT_CRITIC_AGENT,
   PLANNER_EXECUTOR_AGENT,
   HYBRID_AGENT,
-  PIPELINE_AGENT,
+  WORKFLOW_AGENT,
   chat_screen_config,
 } from "../../constant";
 
@@ -67,7 +68,7 @@ const getAgentTypeFilterOptions = (framework) => {
     multi_agent: { label: "Planner Executor Critic", short: "PEC" },
     react_agent: { label: "React Agent", short: "RA" },
     react_critic_agent: { label: "React Critic", short: "RC" },
-    pipeline: { label: "Pipeline", short: "PL" },
+    workflow: { label: "Workflow", short: "WF" },
   };
 
   // Build options array starting with "All Types"
@@ -95,8 +96,8 @@ const FRAMEWORK_OPTIONS = [
 ];
 
 const AskAssistant = () => {
-  const userRole = Cookies.get("role") ? Cookies.get("role")?.toLowerCase() : "";
-  const loggedInUserEmail = Cookies.get("email");
+  const userRole = getRoleFromToken().toLowerCase();
+  const loggedInUserEmail = getEmailFromToken();
   const user_session = Cookies.get("user_session");
   const [messageData, setMessageData] = useState([]); // Holds the chat messages
   const [lastResponse, setLastResponse] = useState({}); // Stores the last response from the bot
@@ -128,6 +129,7 @@ const AskAssistant = () => {
   const [oldSessionId, setOldSessionId] = useState("");
   const [session, setSessionId] = useState(user_session);
   const [selectedModels, setSelectedModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [toolInterrupt, setToolInterrupt] = useState(false);
   const [isEditable, setIsEditable] = useState(false);
   // Tool interrupt submenu state
@@ -711,8 +713,8 @@ const AskAssistant = () => {
     setToolInterrupt(isEnabled);
     setIsTool(isEnabled);
 
-    // Skip tool fetching for PIPELINE_AGENT - pipelines don't have mapped tools
-    if (agentType === PIPELINE_AGENT) {
+    // Skip tool fetching for WORKFLOW_AGENT - workflows don't have mapped tools
+    if (agentType === WORKFLOW_AGENT) {
       setShowToolInterruptModal(false);
       return;
     }
@@ -859,11 +861,11 @@ const AskAssistant = () => {
   }, []);
 
   // filteredAgents is used by NewCommonDropdown - filters by selected agent type
-  // When "All Types" is selected (agentType is empty), exclude pipeline agents
-  // Pipelines only show when explicitly selected via the type filter
+  // When "All Types" is selected (agentType is empty), exclude workflow agents
+  // Workflows only show when explicitly selected via the type filter
   const filteredAgents = agentType
     ? agentListDropdown.filter((agent) => agent.agentic_application_type === agentType)
-    : agentListDropdown.filter((agent) => agent.agentic_application_type !== PIPELINE_AGENT);
+    : agentListDropdown.filter((agent) => agent.agentic_application_type !== WORKFLOW_AGENT);
 
   useEffect(() => {
     // Reset highlighted index if it's out of bounds
@@ -894,9 +896,9 @@ const AskAssistant = () => {
           return;
         }
         // Update dropdown list based on filter
-        if (agentType === PIPELINE_AGENT) {
-          const pipelineAgents = agentsListData?.filter((agent) => agent.agentic_application_type === PIPELINE_AGENT) || [];
-          setAgentListDropdown(pipelineAgents);
+        if (agentType === WORKFLOW_AGENT) {
+          const workflowAgents = agentsListData?.filter((agent) => agent.agentic_application_type === WORKFLOW_AGENT) || [];
+          setAgentListDropdown(workflowAgents);
         } else if (isAllFilter) {
           let allowedTypes = [];
           if (chat_screen_config[framework] && Array.isArray(chat_screen_config[framework].mentionAgentTypes)) {
@@ -932,10 +934,10 @@ const AskAssistant = () => {
       return;
     }
 
-    // Handle Pipeline type - filter pipelines from agentsListData
-    if (agentType === PIPELINE_AGENT) {
-      const pipelineAgents = agentsListData?.filter((agent) => agent.agentic_application_type === PIPELINE_AGENT) || [];
-      setAgentListDropdown(pipelineAgents);
+    // Handle Workflow type - filter workflows from agentsListData
+    if (agentType === WORKFLOW_AGENT) {
+      const workflowAgents = agentsListData?.filter((agent) => agent.agentic_application_type === WORKFLOW_AGENT) || [];
+      setAgentListDropdown(workflowAgents);
       return;
     }
 
@@ -1041,8 +1043,8 @@ const AskAssistant = () => {
 
   // Fetch tools when @mentioned agent changes (select or deselect)
   useEffect(() => {
-    // Skip for PIPELINE_AGENT
-    if (agentType === PIPELINE_AGENT) return;
+    // Skip for WORKFLOW_AGENT
+    if (agentType === WORKFLOW_AGENT) return;
     // Prioritize mentioned agent, fallback to selected agent
     const targetAgentId = mentionedAgent && mentionedAgent.agentic_application_id ? mentionedAgent.agentic_application_id : agentSelectValue;
     fetchMappedTools(targetAgentId);
@@ -1050,8 +1052,8 @@ const AskAssistant = () => {
 
   // Fetch tools and prompt suggestions when selected agent changes
   useEffect(() => {
-    // Skip for PIPELINE_AGENT
-    if (agentType === PIPELINE_AGENT) return;
+    // Skip for WORKFLOW_AGENT
+    if (agentType === WORKFLOW_AGENT) return;
 
     if (agentSelectValue) {
       fetchMappedTools(agentSelectValue);
@@ -1172,6 +1174,26 @@ const AskAssistant = () => {
     if (chatHistory && chatHistory[branchInteruptKey] === branchInteruptValue) {
       setFeedback("no");
       setShowInput(true);
+    }
+
+    // If this is an error response (e.g. LLM connection error), extract the error message
+    // and present it cleanly instead of processing executor_messages normally
+    if (chatHistory?.error_type || chatHistory?.error) {
+      const errorMsg = chatHistory.error || chatHistory.response || "An error occurred during processing";
+      // Extract user query from various possible locations in the error response
+      const humanMsg = Array.isArray(chatHistory.executor_messages)
+        ? chatHistory.executor_messages.find((m) => m?.type === "human" || m?.role === "user")
+        : null;
+      const userQuery = chatHistory.query || chatHistory.executor_messages?.[0]?.user_query || humanMsg?.content || "";
+      if (userQuery) {
+        chats.push({ type: USER, message: userQuery });
+      }
+      chats.push({
+        type: BOT,
+        message: errorMsg,
+        response_time: chatHistory.response_time || null,
+      });
+      return chats;
     }
 
     chatHistory?.executor_messages?.forEach((item, index) => {
@@ -1341,8 +1363,8 @@ const AskAssistant = () => {
 
   // Fetch tools mapped by agent - called when agent or @mentioned agent changes
   const fetchMappedTools = async (agentId) => {
-    // Skip for PIPELINE_AGENT - pipelines don't have mapped tools
-    if (agentType === PIPELINE_AGENT) {
+    // Skip for WORKFLOW_AGENT - workflows don't have mapped tools
+    if (agentType === WORKFLOW_AGENT) {
       setMappedTools([]);
       setSelectedInterruptTools([]);
       return;
@@ -1418,8 +1440,8 @@ const AskAssistant = () => {
         if (!obj || typeof obj !== "object") return;
 
         // Handle error events from SSE stream
-        if (obj.event_type === "error" || obj.error) {
-          const errorMessage = obj.message || obj.error || "An error occurred during processing";
+        if (obj.event_type === "error" || obj.error || obj.error_type) {
+          const errorMessage = obj.message || obj.error || obj.response || "An error occurred during processing";
           addMessage(errorMessage, "error");
           return;
         }
@@ -1498,8 +1520,11 @@ const AskAssistant = () => {
         await new Promise((r) => setTimeout(r, 450));
       };
       const responseObjects = await postDataStream(APIs.CHAT_INFERENCE, payload, { signal: abortControllerRef.current.signal }, onStreamChunk);
-      // Find response with executor_messages, or fallback to response with plan (for plan verifier)
-      const chatObj = Array.isArray(responseObjects) ? responseObjects.find((obj) => obj && obj.executor_messages) : responseObjects;
+      // Find response with executor_messages (skip error responses), or fallback to response with plan
+      const chatObj = Array.isArray(responseObjects)
+        ? responseObjects.find((obj) => obj && obj.executor_messages && !obj.error_type && !obj.error)
+        || responseObjects.find((obj) => obj && obj.executor_messages)
+        : responseObjects;
       setLastResponse(chatObj);
       setPlanData(chatObj?.plan || null);
       setCurrentNodeIndex(nodeIndex);
@@ -1680,8 +1705,8 @@ const AskAssistant = () => {
           }
 
           // Handle error events from SSE stream
-          if (obj.event_type === "error" || obj.error) {
-            const errorMessage = obj.message || obj.error || "An error occurred during processing";
+          if (obj.event_type === "error" || obj.error || obj.error_type) {
+            const errorMessage = obj.message || obj.error || obj.response || "An error occurred during processing";
             addMessage(errorMessage, "error");
             return;
           }
@@ -1771,8 +1796,11 @@ const AskAssistant = () => {
           setStreamParsedContents(parsedContents);
         }
 
-        // Find response with executor_messages, or fallback to response with plan (for plan verifier)
-        const chatObj = Array.isArray(responseObjects) ? responseObjects.find((obj) => obj && (obj.executor_messages || obj.plan)) : responseObjects;
+        // Find response with executor_messages (skip error responses), or fallback to response with plan
+        const chatObj = Array.isArray(responseObjects)
+          ? responseObjects.find((obj) => obj && (obj.executor_messages || obj.plan) && !obj.error_type && !obj.error)
+          || responseObjects.find((obj) => obj && (obj.executor_messages || obj.plan))
+          : responseObjects;
 
         // Ensure response_time is captured even if it arrived in a separate stream chunk
         if (chatObj && !chatObj.response_time && Array.isArray(responseObjects)) {
@@ -2020,6 +2048,7 @@ const AskAssistant = () => {
   };
 
   const fetchModels = async () => {
+    setModelsLoading(true);
     try {
       const data = await fetchData(APIs.GET_MODELS);
       if (data?.models && Array.isArray(data.models)) {
@@ -2042,6 +2071,8 @@ const AskAssistant = () => {
     } catch (e) {
       console.error(e);
       setSelectedModels([]);
+    } finally {
+      setModelsLoading(false);
     }
   };
 
@@ -2238,10 +2269,10 @@ const AskAssistant = () => {
         const notMentioned = !mentionedAgent || agent.agentic_application_id !== mentionedAgent.agentic_application_id;
         // Filter by framework-allowed agent types
         const isAllowedForFramework = allowedMentionTypes.length === 0 || allowedMentionTypes.includes(agent.agentic_application_type);
-        // Exclude pipelines from "all" view - only show when explicitly filtered
-        const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
-        const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
-        return matchesSearch && matchesAgentType && notCurrentlySelected && notMentioned && isAllowedForFramework && pipelineAllowed;
+        // Exclude workflows from "all" view - only show when explicitly filtered
+        const isWorkflow = agent.agentic_application_type === WORKFLOW_AGENT;
+        const workflowAllowed = mentionAgentTypeFilter === WORKFLOW_AGENT || !isWorkflow;
+        return matchesSearch && matchesAgentType && notCurrentlySelected && notMentioned && isAllowedForFramework && workflowAllowed;
       })
       : [];
 
@@ -2735,8 +2766,9 @@ const AskAssistant = () => {
             }
             selectAgent(agent);
             setAgentSelectValue(agent.agentic_application_id);
-            // Set agent type to match the selected agent
-            setAgentType(agent.agentic_application_type || "");
+            // Don't set agentType filter — it would lock the sidebar dropdown to this type
+            // effectiveAgentType already falls back to selectedAgent.agentic_application_type
+            setAgentType("");
             // Set model from agent's model_name if available
             if (agent.model_name) {
               setModel(agent.model_name);
@@ -3010,11 +3042,11 @@ const AskAssistant = () => {
                                   const matchesSearch = agent.agentic_application_name?.toLowerCase().includes(mentionSearchTerm);
                                   const notCurrentAgent = agent.agentic_application_id !== agentSelectValue;
                                   const matchesTypeFilter = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
-                                  const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
-                                  const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
+                                  const isWorkflow = agent.agentic_application_type === WORKFLOW_AGENT;
+                                  const workflowAllowed = mentionAgentTypeFilter === WORKFLOW_AGENT || !isWorkflow;
                                   const isHybridAgent = agent.agentic_application_type === HYBRID_AGENT;
                                   const typeAllowed = effectiveAgentType === HYBRID_AGENT ? isHybridAgent : !isHybridAgent;
-                                  return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && pipelineAllowed;
+                                  return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && workflowAllowed;
                                 });
                                 if (e.key === "ArrowDown") {
                                   e.preventDefault();
@@ -3144,9 +3176,9 @@ const AskAssistant = () => {
                           const notCurrentAgent = agent.agentic_application_id !== agentSelectValue;
                           const matchesTypeFilter = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
 
-                          // Exclude pipelines from "all" view - only show when explicitly filtered
-                          const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
-                          const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
+                          // Exclude workflows from "all" view - only show when explicitly filtered
+                          const isWorkflow = agent.agentic_application_type === WORKFLOW_AGENT;
+                          const workflowAllowed = mentionAgentTypeFilter === WORKFLOW_AGENT || !isWorkflow;
 
                           // Agent type filtering:
                           // - For hybrid agents: show ONLY hybrid agents
@@ -3154,7 +3186,7 @@ const AskAssistant = () => {
                           const isHybridAgent = agent.agentic_application_type === HYBRID_AGENT;
                           const typeAllowed = effectiveAgentType === HYBRID_AGENT ? isHybridAgent : !isHybridAgent;
 
-                          return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && pipelineAllowed;
+                          return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && workflowAllowed;
                         })
                         .map((agent, index) => {
                           // Get short abbreviation for agent type
@@ -3167,7 +3199,7 @@ const AskAssistant = () => {
                               planner_meta_agent: "MP",
                               planner_executor_agent: "PE",
                               multi_agent: "PEC",
-                              pipeline: "PL",
+                              workflow: "WF",
                               custom_template: "CT"
                             };
                             return abbrs[type] || type?.substring(0, 2).toUpperCase() || "";
@@ -3190,11 +3222,11 @@ const AskAssistant = () => {
                         const matchesSearch = agent.agentic_application_name?.toLowerCase().includes(mentionSearchTerm);
                         const notCurrentAgent = agent.agentic_application_id !== agentSelectValue;
                         const matchesTypeFilter = mentionAgentTypeFilter === "all" || agent.agentic_application_type === mentionAgentTypeFilter;
-                        const isPipeline = agent.agentic_application_type === PIPELINE_AGENT;
-                        const pipelineAllowed = mentionAgentTypeFilter === PIPELINE_AGENT || !isPipeline;
+                        const isWorkflow = agent.agentic_application_type === WORKFLOW_AGENT;
+                        const workflowAllowed = mentionAgentTypeFilter === WORKFLOW_AGENT || !isWorkflow;
                         const isHybridAgent = agent.agentic_application_type === HYBRID_AGENT;
                         const typeAllowed = effectiveAgentType === HYBRID_AGENT ? isHybridAgent : !isHybridAgent;
-                        return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && pipelineAllowed;
+                        return matchesSearch && notCurrentAgent && matchesTypeFilter && typeAllowed && workflowAllowed;
                       }).length === 0 && (
                           <div className={chatInputModule.mentionDropdownEmpty}>
                             No agents found
@@ -3412,9 +3444,9 @@ const AskAssistant = () => {
                       onSelect={(name) => {
                         setModel(name || "");
                       }}
-                      placeholder="Select Model"
+                      placeholder={modelsLoading ? "Loading models..." : "Select Model"}
                       showSearch={true}
-                      disabled={messageDisable || fetching || generating || isEditable}
+                      disabled={messageDisable || fetching || generating || isEditable || modelsLoading}
                       showClearIcon={false}
                       dropdownWidth="180px"
                       fixedHeight={true}

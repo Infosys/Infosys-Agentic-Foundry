@@ -1,0 +1,191 @@
+/* Conflict Resolution Modal */
+
+.conflictModal {
+  display: flex;
+  flex-direction: column;
+}
+
+.modalHeader {
+  padding: 20px 24px 16px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.modalTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--header-color);
+  margin: 0;
+}
+
+.modalBody {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.conflictMessage {
+  font-size: 14px;
+  color: var(--content-color);
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+}
+
+.prompt {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--header-color);
+  margin: 0 0 12px 0;
+}
+
+/* Vertical radio list */
+.optionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.optionItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 12px 14px;
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--border);
+  transition: border-color 0.15s;
+}
+
+.optionItem:hover {
+  border-color: var(--primary);
+}
+
+.optionSelected {
+  border-color: var(--primary);
+}
+
+.radio {
+  accent-color: var(--primary);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  margin: 2px 0 0 0;
+  flex-shrink: 0;
+}
+
+.optionContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.optionLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--header-color);
+}
+
+.optionDesc {
+  font-size: 12px;
+  color: var(--content-color);
+}
+
+/* Info block for needs_new_name scenario */
+.needsNameInfo {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius, 8px);
+  background: var(--info-bg, rgba(59, 130, 246, 0.06));
+  border: 1px solid var(--info-border, rgba(59, 130, 246, 0.15));
+}
+
+/* New name section — wraps all per-tool rename groups */
+.newNameSection {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Individual rename group per tool */
+.newNameGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.newNameLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--header-color);
+}
+
+.originalName {
+  background: var(--info-bg, rgba(59, 130, 246, 0.08));
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--primary);
+}
+
+.arrowIcon {
+  color: var(--content-color);
+  font-size: 14px;
+  opacity: 0.6;
+}
+
+.conflictCount {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--content-color);
+  margin-top: 4px;
+}
+
+.newNameInput {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--input-bg, #fff);
+  color: var(--header-color);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.newNameInput:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+}
+
+.validationError {
+  display: block;
+  font-size: 13px;
+  color: #dc2626;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.newNameHint {
+  font-size: 12px;
+  color: var(--content-color);
+  opacity: 0.7;
+}
+
+/* Footer */
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}

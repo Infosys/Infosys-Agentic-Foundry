@@ -4,6 +4,12 @@ import sys
 import asyncio
 import uvicorn
 import argparse
+from dotenv import load_dotenv
+
+from telemetry_wrapper import logger as log
+
+# Load environment variables before importing file server
+load_dotenv()
 
 if __name__ == "__main__":
     app = "main:app"
@@ -40,6 +46,19 @@ if __name__ == "__main__":
 
     # Combine default excludes with any user-provided excludes
     reload_excludes_list = list(set(default_excludes + args.reload_excludes)) if args.reload else None
+
+    # Start the file server in a separate thread if enabled
+    file_server_thread = None
+    try:
+        from src.file_server.file_server import start_file_server_thread, FILE_SERVER_ENABLED
+        if FILE_SERVER_ENABLED:
+            file_server_thread = start_file_server_thread()
+            if file_server_thread:
+                log.info("[Main] File server thread started successfully")
+    except ImportError as e:
+        log.error(f"[Main] File server module not available: {e}")
+    except Exception as e:
+        log.error(f"[Main] Error starting file server: {e}")
 
     uvicorn.run(
         app,

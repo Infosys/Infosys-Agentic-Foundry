@@ -1,9 +1,9 @@
 import { APIs } from '../../../constant.js';
 import useFetch from '../../../Hooks/useAxios';
-import Cookies from 'js-cookie';
+import { getEmailFromToken } from '../../../utils/jwtUtils';
 
 export const useDatabases = () => {
-    const {fetchData,postData} = useFetch();
+    const {fetchData,postData,putData,deleteData} = useFetch();
 
 const generateQuery = async (databaseType, naturalLanguageQuery) => {
   try {
@@ -29,7 +29,7 @@ const executeQuery = async (connectionName, query) => {
     const requestBody = {
       name: connectionName,
       data: btoa(query),  // Encoded query with key name changed to 'data'
-      created_by: Cookies.get("email"),
+      created_by: getEmailFromToken(),
     };
     const response = await postData(APIs.RUN_QUERY, requestBody);
     return {
@@ -176,5 +176,121 @@ const activateConnection = async (connectionName) => {
   }
 };
 
-return { generateQuery, executeQuery, fetchConnections, fetchSqlConnections, fetchMongodbConnections, executeMongodbOperation, activateConnection };
+// ============ DB Details API ============
+
+const getDbDetails = async (connectionName) => {
+  try {
+    const response = await fetchData(
+      APIs.GET_DB_DETAILS + encodeURIComponent(connectionName),
+      { silent: true }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.data?.detail || error.response?.message || error.message || "Failed to fetch connection details"
+    };
+  }
+};
+
+// ============ Blocked Commands APIs ============
+
+const getBlockedCommands = async (connectionName) => {
+  try {
+    const response = await fetchData(
+      APIs.GET_BLOCKED_COMMANDS + encodeURIComponent(connectionName),
+      { silent: true }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.data?.detail || error.response?.message || error.message || 'Failed to fetch blocked commands'
+    };
+  }
+};
+
+const updateBlockedCommands = async (connectionName, commands) => {
+  try {
+    const response = await putData(
+      APIs.UPDATE_BLOCKED_COMMANDS + encodeURIComponent(connectionName),
+      commands,
+      { silent: true }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    const detail = error.response?.data?.detail;
+    let errorMsg = "Failed to update blocked commands";
+    if (typeof detail === "string") {
+      errorMsg = detail;
+    } else if (Array.isArray(detail) && detail.length > 0) {
+      errorMsg = detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+    } else if (error.response?.message) {
+      errorMsg = error.response.message;
+    } else if (error.message) {
+      errorMsg = error.message;
+    }
+    return { success: false, error: errorMsg };
+  }
+};
+
+// ============ Schema & Samples APIs ============
+
+const regenerateSchema = async (connectionName) => {
+  try {
+    const response = await postData(
+      APIs.REGENERATE_SCHEMA_SAMPLES + encodeURIComponent(connectionName),
+      {},
+      { silent: true }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    const detail = error.response?.data?.detail;
+    let errorMsg = "Failed to regenerate schema";
+    if (typeof detail === "string") {
+      errorMsg = detail;
+    } else if (Array.isArray(detail) && detail.length > 0) {
+      errorMsg = detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+    } else if (error.response?.message) {
+      errorMsg = error.response.message;
+    } else if (error.message) {
+      errorMsg = error.message;
+    }
+    return { success: false, error: errorMsg };
+  }
+};
+
+const listDbFiles = async (connectionName) => {
+  try {
+    const url = connectionName
+      ? `${APIs.LIST_DB_FILES}?connection_name=${encodeURIComponent(connectionName)}`
+      : APIs.LIST_DB_FILES;
+    const response = await fetchData(url);
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.message || error.message || 'Failed to list database files'
+    };
+  }
+};
+
+const clearDbFiles = async (connectionName) => {
+  try {
+    const response = await deleteData(APIs.CLEAR_DB_FILES + encodeURIComponent(connectionName));
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.message || error.message || 'Failed to clear database files'
+    };
+  }
+};
+
+return {
+  generateQuery, executeQuery, fetchConnections, fetchSqlConnections,
+  fetchMongodbConnections, executeMongodbOperation, activateConnection,
+  getDbDetails, getBlockedCommands, updateBlockedCommands, regenerateSchema,
+  listDbFiles, clearDbFiles,
+};
 };

@@ -1,0 +1,3898 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../custom_llm_models/">
+      
+      
+        <link rel="next" href="../Model_server/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Load Balancing & Fallback Models - Agentic Foundry</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../css/hide-footer.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#load-balancing-fallback-models" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Agentic Foundry" class="md-header__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agentic Foundry
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Load Balancing & Fallback Models
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Agentic Foundry" class="md-nav__button md-logo" aria-label="Agentic Foundry" data-md-component="logo">
+      
+  <img src="../images/logo.png" alt="logo">
+
+    </a>
+    Agentic Foundry
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Definitions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Definitions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/Vocabulary_Definitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vocabulary - Definitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Definitions/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Human in the loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core_building_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Building Blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Installation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/windows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/linux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Linux
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Azure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Azure Kubernetes Service
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/GCP/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/AWS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AWS Kubernetes Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Database_Setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/VM_Docker-Compose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM installation using docker-compose
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Autoscaling Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Autoscaling Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Autoscaling_Deployment/AKS_Autoscaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AKS Autoscaling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Installation/Autoscaling_Deployment/VM_Autoscaling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VM Autoscaling using Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../custom_llm_models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enabling Additional LLM Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Load Balancing & Fallback Models
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Load Balancing & Fallback Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#load-balancing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Load Balancing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fallback-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback Models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitoring-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring &amp; Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing-your-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing Your Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#additional-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Model_server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Server Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agents Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/React%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/ReactCriticAgent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Multi%20Agent%20Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Planner_executor_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Orchestration_Meta_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Planner_meta_agent_design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agents_Design/Hybrid_Agent_Design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Admin_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Time-To-Live/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Time-To-Live
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SuperAdmin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Super Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../RBAC/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Role Base Access Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../JWT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        
+          
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tool_creation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Creation via Chat Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_Interrupt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Interrupt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools_config/tool_versioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files_upload/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DataConnectors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DataConnectors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Knowledge_Base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge Base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../MCP_Registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Agent_Workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_23" >
+        
+          
+          <label class="md-nav__link" for="__nav_23" id="__nav_23_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_23_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_23">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agent Configuration
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/Overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/reactAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/reactCritic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/multiAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/PlannerExecutor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/metaAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/PlannerMeta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agent_config/HybridAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../memory_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Google_ADK_Framework_Support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Google ADK Framework Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_26" >
+        
+          
+          <label class="md-nav__link" for="__nav_26" id="__nav_26_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_26_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_26">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Inference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/reactAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/ReactCriticAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    React Critic Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/multiAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/PlannerExecutorAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Executor Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/metaAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/MetaPlanner_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planner Meta Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/HybridAgent_inference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hybrid Agent Inference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Inference/Canvas_Screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canvas Screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serever Sent Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Kafka_Message_Queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kafka Message Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompt_optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompt Optimization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_30" >
+        
+          
+          <label class="md-nav__link" for="__nav_30" id="__nav_30_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_30_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_30">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Evaluation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/evaluation_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/Groundtruth_Evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Groundtruth Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Evaluation/Consistency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consistency Evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_31" >
+        
+          
+          <label class="md-nav__link" for="__nav_31" id="__nav_31_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Telemetry
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_31_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_31">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Telemetry
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/telemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Telemetry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Connecting_to_Grafana/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connecting to Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Telemetry/Arize_Phoenix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Arize Phoenix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Cost_Token_Tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost and Token Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../Tool_and_MCP_Export_Import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool and MCP Export Import
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ExportAgent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../GZIP_Compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GZIP Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../onboarding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prebuilt Components Auto-Onboarding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#load-balancing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Load Balancing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fallback-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback Models
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Best Practices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitoring-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring &amp; Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing-your-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing Your Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#additional-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="load-balancing-fallback-models">Load Balancing &amp; Fallback Models</h1>
+<p>This guide explains how to configure and use load balancing and fallback models in the LiteLLM proxy server. These features ensure high availability, optimal performance, and automatic failover when models are unavailable or rate-limited.</p>
+<hr />
+<h2 id="load-balancing">Load Balancing</h2>
+<p>Load balancing distributes requests across multiple deployments of the same model to:</p>
+<ul>
+<li><code>Maximize throughput</code> by utilizing multiple API keys/deployments</li>
+<li><code>Avoid rate limits</code> by spreading load across different endpoints</li>
+<li><code>Improve reliability</code> by having redundant deployments</li>
+<li><code>Optimize costs</code> by routing to the most available deployment</li>
+</ul>
+<hr />
+<p><strong>Supported Strategies</strong></p>
+<p><strong>1. Usage-Based Routing v2 (Recommended)</strong></p>
+<p>Routes requests based on real-time TPM (Tokens Per Minute) and RPM (Requests Per Minute) availability.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;usage-based-routing-v2&quot;</span>
+<span class="w">  </span><span class="nt">enable_pre_call_checks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p><strong>How it works:</strong></p>
+<ul>
+<li>Tracks token and request usage in real-time</li>
+<li>Routes to deployment with most available capacity</li>
+<li>Prevents hitting rate limits before they occur</li>
+<li>Automatically updates based on actual usage</li>
+</ul>
+<p><strong>2. Simple Shuffle</strong></p>
+<p>Randomly distributes requests across available deployments.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;simple-shuffle&quot;</span>
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Use case</p>
+<p>Equal load distribution without capacity tracking</p>
+</div>
+<p><strong>3. Latency-Based Routing</strong></p>
+<p>Routes to the fastest responding deployment.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;latency-based-routing&quot;</span>
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Use case</p>
+<p>Minimize response time for latency-sensitive applications</p>
+</div>
+<p><strong>4. Least Busy</strong></p>
+<p>Routes to the deployment handling the fewest requests.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;least-busy&quot;</span>
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Use case</p>
+<p>Prevent overloading individual deployments</p>
+</div>
+<hr />
+<p><strong>Load Balancing Configuration</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">model_list</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Multiple deployments of the same model for load balancing</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span><span class="w">  </span><span class="c1"># Same model name</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-2</span><span class="w">  </span><span class="c1"># Different deployment</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openai-248.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">YOUR_KEY_1</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200000</span><span class="w">  </span><span class="c1"># Tokens per minute limit</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span><span class="w">      </span><span class="c1"># Requests per minute limit</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span><span class="w">  </span><span class="c1"># Same model name</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-3</span><span class="w">  </span><span class="c1"># Different deployment</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openai-248.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">YOUR_KEY_2</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">916000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span><span class="w">  </span><span class="c1"># Same model name</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-4</span><span class="w">  </span><span class="c1"># Different deployment</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openai-248.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">YOUR_KEY_3</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">977000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;usage-based-routing-v2&quot;</span>
+<span class="w">  </span><span class="nt">num_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">  </span><span class="nt">enable_pre_call_checks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># Check TPM/RPM before routing</span>
+<span class="w">  </span><span class="nt">cooldown_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">  </span><span class="c1"># Cooldown period after rate limit (seconds)</span>
+</code></pre></div>
+<p><strong>Key Points:</strong></p>
+<ul>
+<li>Use same <code>model_name</code> for all deployments you want to load balance</li>
+<li>Use different deployment names in <code>litellm_params.model</code></li>
+<li>Specify accurate TPM/RPM limits for optimal routing</li>
+<li>Enable pre_call_checks to prevent rate limit errors</li>
+</ul>
+<p><strong>How Requests Are Routed</strong></p>
+<div class="highlight"><pre><span></span><code>Client Request: &quot;gpt-4o&quot;
+         ↓
+    Router checks:
+    - Which gpt-4o deployments are available?
+    - Which has most available TPM/RPM?
+    - Any deployments in cooldown?
+         ↓
+    Routes to: azure/gpt-4o-3 (most available capacity)
+         ↓
+    If rate limited → Cooldown 60s → Try azure/gpt-4o-2
+</code></pre></div>
+<hr />
+<h2 id="fallback-models">Fallback Models</h2>
+<p>Fallback models are alternative models used when the primary model:</p>
+<ul>
+<li>Is rate-limited</li>
+<li>Times out</li>
+<li>Returns an error</li>
+<li>Is temporarily unavailable</li>
+</ul>
+<p><strong>1. Model-Specific Fallbacks</strong></p>
+<p>Define fallbacks for specific models:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-chat</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">          </span><span class="c1"># gpt-5-chat → gpt-4o</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-mini</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">          </span><span class="c1"># gpt-5-mini → gpt-4o</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-nano</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># gpt-5-nano → gpt-5-mini → gpt-4o</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-35-turbo</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">        </span><span class="c1"># gpt-35-turbo → gpt-4o</span>
+</code></pre></div>
+<p><strong>Fallback Chain:</strong>
+<div class="highlight"><pre><span></span><code>Request: gpt-5-nano
+    ↓
+Try: gpt-5-nano (failed)
+    ↓
+Try: gpt-5-mini (failed)
+    ↓
+Try: gpt-4o (success) ✓
+</code></pre></div></p>
+<p><strong>2. Context Window Fallbacks</strong></p>
+<p>Automatically fallback when context is too large:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">context_window_fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-4o</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-chat</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># If gpt-4o context exceeded → use gpt-5-chat</span>
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Use case</p>
+<p>Request with 200K tokens → gpt-4o (128K limit) → gpt-5-chat (256K limit)</p>
+</div>
+<p><strong>3. Default Fallbacks</strong></p>
+<p>Fallback for models without specific configuration:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># Any undefined model → gpt-4o</span>
+</code></pre></div>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>The default fallback model should have <strong>HIGH RATE LIMITS</strong> (high TPM/RPM) since it will handle overflow traffic from all other models. Choose a model with the highest quota or multiple load-balanced deployments to prevent it from becoming a bottleneck.</p>
+</div>
+<p><strong>Recommended Default Fallback Configuration:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># GOOD: Default fallback with high limits and load balancing</span>
+<span class="nt">model_list</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span><span class="w">  </span><span class="c1"># Default fallback</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-2</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_1</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200000</span><span class="w">  </span><span class="c1"># High limit</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span><span class="w">  </span><span class="c1"># Load balanced</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-3</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_2</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">916000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span><span class="w">  </span><span class="c1"># Load balanced</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-4</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_3</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">977000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># Uses load-balanced gpt-4o with 3M+ total TPM</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="c1"># BAD: Low-limit model as default fallback</span>
+<span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-nano</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># Only 100K TPM - will bottleneck!</span>
+</code></pre></div>
+<p><strong>Retry Policy Configuration</strong></p>
+<p>Control which errors trigger fallbacks:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">retry_policy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ContentPolicyViolationErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">  </span><span class="c1"># Never retry content violations</span>
+<span class="w">    </span><span class="nt">BadRequestErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">              </span><span class="c1"># Never retry bad requests</span>
+<span class="w">    </span><span class="nt">TimeoutErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">                 </span><span class="c1"># Retry timeouts 3 times</span>
+<span class="w">    </span><span class="nt">InternalServerErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">          </span><span class="c1"># Retry server errors 3 times</span>
+<span class="w">    </span><span class="nt">RateLimitErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">               </span><span class="c1"># Retry rate limits 3 times</span>
+</code></pre></div>
+<p><strong>Allowed Fails Configuration</strong></p>
+<p>Set how many failures before moving to fallback:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">allowed_fails_policy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ContentPolicyViolationErrorAllowedFails</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">  </span><span class="c1"># Fail immediately</span>
+<span class="w">  </span><span class="nt">allowed_fails</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">  </span><span class="c1"># Default for other errors</span>
+<span class="w">  </span><span class="nt">cooldown_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">  </span><span class="c1"># Cooldown after rate limit</span>
+</code></pre></div>
+<hr />
+<h2 id="configuration-examples">Configuration Examples</h2>
+<details class="example">
+<summary>Example 1: High-Availability Setup</summary>
+<p><strong>Goal:</strong> Maximum uptime with automatic failover</p>
+<div class="highlight"><pre><span></span><code><span class="nt">model_list</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Primary: 3x gpt-4o deployments (load balanced)</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-2</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openai-248.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_1</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-3</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openai-248.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_2</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">916000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-4</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openai-248.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_3</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">977000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="c1"># Fallback: gpt-5-mini (cheaper, faster)</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-5-mini</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-5-mini</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://sohan-mbtd9z9j-eastus2.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_4</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-4o</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># If all gpt-4o deployments fail → gpt-5-mini</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># High TPM with load balancing</span>
+
+<span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;usage-based-routing-v2&quot;</span>
+<span class="w">  </span><span class="nt">num_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">  </span><span class="nt">enable_pre_call_checks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">cooldown_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+</code></pre></div>
+<p><strong>Request Flow:</strong>
+<div class="highlight"><pre><span></span><code>1. Request gpt-4o
+2. Router tries: gpt-4o-2 (most available TPM)
+3. If rate limited → tries gpt-4o-3
+4. If rate limited → tries gpt-4o-4
+5. If all fail → fallback to gpt-5-mini
+</code></pre></div></p>
+</details>
+<details class="example">
+<summary>Example 2: Cost-Optimized Setup</summary>
+<p><strong>Goal:</strong> Use cheaper models first, expensive models as backup</p>
+<div class="highlight"><pre><span></span><code><span class="nt">model_list</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Primary: gpt-5-nano (cheapest)</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-5-nano</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-5-nano</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://sohan-mbtd9z9j-eastus2.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_1</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="c1"># Fallback 1: gpt-5-mini (moderate cost)</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-5-mini</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-5-mini</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://sohan-mbtd9z9j-eastus2.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_2</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120000</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="w">  </span><span class="c1"># Fallback 2: gpt-4o (expensive, reliable, HIGH LIMIT)</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-2</span>
+<span class="w">      </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openai-248.openai.azure.com/</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">KEY_3</span>
+<span class="w">      </span><span class="nt">client</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200000</span><span class="w">  </span><span class="c1"># ✅ High limit for default fallback</span>
+<span class="w">      </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span>
+
+<span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-nano</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># nano → mini → gpt-4o</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># ✅ High-limit model as default</span>
+</code></pre></div>
+</details>
+<details class="example">
+<summary>Example 3: Performance-Optimized Setup</summary>
+<p><strong>Goal:</strong> Minimize latency, maximize speed</p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;latency-based-routing&quot;</span><span class="w">  </span><span class="c1"># Route to fastest deployment</span>
+<span class="w">  </span><span class="nt">num_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">  </span><span class="c1"># Fast fail</span>
+<span class="w">  </span><span class="nt">enable_pre_call_checks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Skip checks for speed</span>
+<span class="w">  </span><span class="nt">cooldown_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span><span class="w">  </span><span class="c1"># Shorter cooldown</span>
+
+<span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-chat</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># Smaller model if needed</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># ✅ Reliable high-limit fallback</span>
+<span class="w">  </span><span class="nt">drop_params</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># Drop unsupported params instead of failing</span>
+</code></pre></div>
+</details>
+<hr />
+<h2 id="best-practices">Best Practices</h2>
+<p><strong>1. Load Balancing Best Practices</strong></p>
+<p><strong>DO:</strong></p>
+<ul>
+<li>Use 2-4 deployments per model for optimal balance</li>
+<li>Set accurate TPM/RPM limits based on Azure quotas</li>
+<li>Enable <code>enable_pre_call_checks</code> to prevent rate limits</li>
+<li>Monitor usage patterns and adjust capacities</li>
+<li>Use <code>usage-based-routing-v2</code> for production</li>
+</ul>
+<p><strong>DON'T:</strong></p>
+<ul>
+<li>Use more than 5 deployments (diminishing returns)</li>
+<li>Set TPM/RPM limits higher than actual quotas</li>
+<li>Mix different model versions under same model name</li>
+<li>Disable retries in production</li>
+</ul>
+<p><strong>2. Fallback Best Practices</strong></p>
+<p><strong>DO:</strong></p>
+<ul>
+<li>Choose fallback models with similar capabilities</li>
+<li>Use cheaper models as fallbacks when appropriate</li>
+<li>Set reasonable retry counts (2-3)</li>
+<li>Define context_window_fallbacks for large requests</li>
+<li>Test fallback chains before production</li>
+<li><code>CRITICAL:</code> Ensure default fallback has HIGH rate limits</li>
+<li>Use load-balanced models as default fallbacks</li>
+</ul>
+<p><strong>DON'T:</strong></p>
+<ul>
+<li>Create circular fallbacks (A → B → A)</li>
+<li>Use drastically different models as fallbacks</li>
+<li>Set ContentPolicyViolationErrorRetries &gt; 0</li>
+<li>Have more than 3 levels in fallback chain</li>
+<li>Use low-limit models as default fallback</li>
+<li>Use single-deployment models with low TPM as default</li>
+</ul>
+<p><strong>3. Default Fallback Selection Guide</strong></p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Recommended Default Fallback</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>High Traffic</code></td>
+<td>Load-balanced gpt-4o (3+ deployments)</td>
+<td>Handles overflow from all models</td>
+</tr>
+<tr>
+<td><code>Medium Traffic</code></td>
+<td>Single gpt-4o with high TPM</td>
+<td>Sufficient capacity for occasional fallback</td>
+</tr>
+<tr>
+<td><code>Low Traffic</code></td>
+<td>gpt-5-mini (if high TPM available)</td>
+<td>Cost-effective for low usage</td>
+</tr>
+<tr>
+<td><code>Cost-Sensitive</code></td>
+<td>gpt-4o with moderate TPM</td>
+<td>Balance between cost and reliability</td>
+</tr>
+</tbody>
+</table>
+<details class="example">
+<summary>Example Capacity Planning</summary>
+<div class="highlight"><pre><span></span><code><span class="c1"># Total expected traffic: 500K TPM</span>
+<span class="c1"># Primary models: 300K TPM capacity</span>
+<span class="c1"># Default fallback should handle: 200K+ TPM overflow</span>
+
+<span class="c1"># GOOD: 3x gpt-4o = 3M TPM total capacity</span>
+<span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># With 3 load-balanced deployments</span>
+
+<span class="c1"># BAD: 1x gpt-5-nano = 100K TPM (insufficient)</span>
+<span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-nano</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># Will bottleneck at 100K TPM</span>
+</code></pre></div>
+</details>
+<p><strong>4. Cooldown Configuration</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">cooldown_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">  </span><span class="c1"># Recommended: 60-120 seconds</span>
+</code></pre></div>
+<p><strong>Guidelines:</strong></p>
+<ul>
+<li><code>30s:</code> High traffic, quick recovery needed</li>
+<li><code>60s:</code> Standard production use (recommended)</li>
+<li><code>120s:</code> Conservative, prevent repeated failures</li>
+<li><code>300s+:</code> Very conservative, long-running errors</li>
+</ul>
+<p><strong>5. Monitoring Configuration</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">general_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">store_model_in_db</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># Enable for tracking</span>
+<span class="w">  </span><span class="nt">disable_spend_logs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Track costs</span>
+
+<span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">logging</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># Enable detailed logs</span>
+</code></pre></div>
+<hr />
+<h2 id="monitoring-troubleshooting">Monitoring &amp; Troubleshooting</h2>
+<p><strong>Check Router Status</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Check health</span>
+curl<span class="w"> </span>http://localhost:4000/health
+
+<span class="c1"># Response includes:</span>
+<span class="o">{</span>
+<span class="w">  </span><span class="s2">&quot;status&quot;</span>:<span class="w"> </span><span class="s2">&quot;healthy&quot;</span>,
+<span class="w">  </span><span class="s2">&quot;models_available&quot;</span>:<span class="w"> </span><span class="o">[</span><span class="s2">&quot;gpt-4o&quot;</span>,<span class="w"> </span><span class="s2">&quot;gpt-5-chat&quot;</span>,<span class="w"> </span>...<span class="o">]</span>,
+<span class="w">  </span><span class="s2">&quot;load_balancing&quot;</span>:<span class="w"> </span><span class="s2">&quot;enabled&quot;</span>
+<span class="o">}</span>
+</code></pre></div>
+<p><strong>View Model Statistics</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Get model usage stats (if implemented)</span>
+curl<span class="w"> </span>http://localhost:4000/model/info
+</code></pre></div>
+<p><strong>Common Issues &amp; Solutions</strong></p>
+<p><strong>Issue 1: All Deployments Rate Limited</strong></p>
+<p><strong>Symptoms:</strong>
+<div class="highlight"><pre><span></span><code>Error: All models exhausted. Rate limit exceeded on all deployments.
+</code></pre></div></p>
+<p><strong>Solutions:</strong>
+1. Add more deployments:
+   <div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">  </span><span class="nt">litellm_params</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/gpt-4o-5</span><span class="w">  </span><span class="c1"># Add 5th deployment</span>
+</code></pre></div></p>
+<ol>
+<li>
+<p>Increase cooldown time:
+   <div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">cooldown_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span><span class="w">  </span><span class="c1"># Give more recovery time</span>
+</code></pre></div></p>
+</li>
+<li>
+<p>Add fallback models:
+   <div class="highlight"><pre><span></span><code><span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-4o</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gpt-5-nano</span><span class="p p-Indicator">]}</span>
+</code></pre></div></p>
+</li>
+</ol>
+<p><strong>Issue 2: Fallback Not Working</strong></p>
+<p><strong>Symptoms:</strong>
+<div class="highlight"><pre><span></span><code>Error: Model failed, no fallback attempted
+</code></pre></div></p>
+<p><strong>Check:</strong>
+1. Fallback model is configured:
+   <div class="highlight"><pre><span></span><code><span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-chat</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># Must be defined</span>
+</code></pre></div></p>
+<ol>
+<li>
+<p>Retry policy allows retries:
+   <div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">retry_policy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">RateLimitErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">  </span><span class="c1"># Must be &gt; 0</span>
+</code></pre></div></p>
+</li>
+<li>
+<p>Fallback model exists in model_list:
+   <div class="highlight"><pre><span></span><code><span class="nt">model_list</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span><span class="w">  </span><span class="c1"># Fallback model must exist</span>
+</code></pre></div></p>
+</li>
+</ol>
+<p><strong>Issue 3: Uneven Load Distribution</strong></p>
+<p><strong>Symptoms:</strong></p>
+<ul>
+<li>One deployment handles all traffic</li>
+<li>Other deployments idle</li>
+</ul>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p>Use correct routing strategy:
+   <div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;usage-based-routing-v2&quot;</span><span class="w">  </span><span class="c1"># Not &quot;simple-shuffle&quot;</span>
+</code></pre></div></p>
+</li>
+<li>
+<p>Set accurate TPM/RPM:
+   <div class="highlight"><pre><span></span><code><span class="nt">model_info</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200000</span><span class="w">  </span><span class="c1"># Match Azure quota exactly</span>
+<span class="w">  </span><span class="nt">rpm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span><span class="w">      </span><span class="c1"># Match Azure quota exactly</span>
+</code></pre></div></p>
+</li>
+<li>
+<p>Enable pre-call checks:</p>
+</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enable_pre_call_checks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p><strong>Issue 4: Circular Fallback Loop</strong></p>
+<p><strong>Symptoms:</strong>
+<div class="highlight"><pre><span></span><code>Error: Maximum fallback depth exceeded
+</code></pre></div></p>
+<p><strong>Bad Configuration:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-mini</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-nano</span><span class="p p-Indicator">]}</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-nano</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># Circular!</span>
+</code></pre></div>
+<p><strong>Good Configuration:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-mini</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">     </span><span class="c1"># Linear chain</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-5-nano</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gpt-4o</span><span class="p p-Indicator">]}</span><span class="w">  </span><span class="c1"># Multi-level</span>
+</code></pre></div>
+<p><strong>Issue 5: Default Fallback Bottleneck</strong></p>
+<p><strong>Symptoms:</strong></p>
+<div class="highlight"><pre><span></span><code>Error: Rate limit on default fallback model
+Multiple models failing simultaneously
+High latency during peak traffic
+</code></pre></div>
+<p><strong>Root Cause:</strong></p>
+<p>Default fallback has insufficient capacity for overflow traffic.</p>
+<p><strong>Solutions:</strong></p>
+<p><strong>1. Use load-balanced default fallback:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Add multiple deployments of default fallback</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">  </span><span class="nt">litellm_params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="nv">azure/gpt-4o-2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="nt">model_info</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="nv">1200000</span><span class="p p-Indicator">,</span><span class="nt"> rpm</span><span class="p">:</span><span class="w"> </span><span class="nv">500</span><span class="p p-Indicator">}</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">  </span><span class="nt">litellm_params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="nv">azure/gpt-4o-3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="nt">model_info</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="nv">916000</span><span class="p p-Indicator">,</span><span class="nt"> rpm</span><span class="p">:</span><span class="w"> </span><span class="nv">500</span><span class="p p-Indicator">}</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">  </span><span class="nt">litellm_params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="nv">azure/gpt-4o-4</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="nt">model_info</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="nv">977000</span><span class="p p-Indicator">,</span><span class="nt"> rpm</span><span class="p">:</span><span class="w"> </span><span class="nv">500</span><span class="p p-Indicator">}</span>
+
+<span class="nt">litellm_settings</span><span class="p">:</span>
+
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># Now has 3M+ total TPM</span>
+</code></pre></div>
+<p><strong>2. Increase quota on default fallback model:</strong></p>
+<ul>
+<li>Contact Azure support to increase TPM/RPM limits</li>
+<li>Switch to a higher-tier deployment</li>
+</ul>
+<p><strong>3. Add secondary default fallback:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># Chain of fallbacks</span>
+</code></pre></div>
+<hr />
+<h2 id="performance-metrics">Performance Metrics</h2>
+<p><strong>Expected Improvements</strong></p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Availability</th>
+<th>Throughput</th>
+<th>Cost</th>
+<th>Latency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Single Model</code></td>
+<td>99.0%</td>
+<td>1x</td>
+<td>Low</td>
+<td>Baseline</td>
+</tr>
+<tr>
+<td><code>3x Load Balanced</code></td>
+<td>99.9%</td>
+<td>3x</td>
+<td>Medium</td>
+<td>+5-10ms</td>
+</tr>
+<tr>
+<td><code>Load Balanced + Fallback</code></td>
+<td>99.99%</td>
+<td>3x</td>
+<td>Medium</td>
+<td>+10-15ms</td>
+</tr>
+<tr>
+<td><code>Multi-tier Fallbacks</code></td>
+<td>99.999%</td>
+<td>3-4x</td>
+<td>High</td>
+<td>+15-25ms</td>
+</tr>
+</tbody>
+</table>
+<details class="example">
+<summary>Real-World Example</summary>
+<p><strong>Setup:</strong> 3x gpt-4o deployments + gpt-5-mini fallback</p>
+<p><strong>Results:</strong></p>
+<ul>
+<li>Throughput: <code>300%</code> increase (3x deployments)</li>
+<li>⏱Latency: <code>+12ms</code> average (routing overhead)</li>
+<li>Cost: <code>15%</code> savings (cheaper fallback handles 10% of traffic)</li>
+<li>Availability: <code>99.95%</code> uptime (vs 99.0% single deployment)</li>
+</ul>
+</details>
+<hr />
+<h2 id="testing-your-configuration">Testing Your Configuration</h2>
+<p><strong>Test Load Balancing</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">litellm</span><span class="w"> </span><span class="kn">import</span> <span class="n">acompletion</span>
+
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_load_balancing</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Send 10 requests and see which deployments are used&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">acompletion</span><span class="p">(</span>
+            <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span>
+            <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Test </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">}],</span>
+            <span class="n">api_base</span><span class="o">=</span><span class="s2">&quot;http://localhost:4000&quot;</span>
+        <span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Request </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: Used model: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">test_load_balancing</span><span class="p">())</span>
+</code></pre></div>
+<p><strong>Expected Output:</strong></p>
+<div class="highlight"><pre><span></span><code>Request 0: Used model: azure/gpt-4o-2
+Request 1: Used model: azure/gpt-4o-3
+Request 2: Used model: azure/gpt-4o-4
+Request 3: Used model: azure/gpt-4o-2  # Balanced distribution
+...
+</code></pre></div>
+<p><strong>Test Fallback</strong></p>
+<div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_fallback</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Request a model that will fail and fallback&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">acompletion</span><span class="p">(</span>
+            <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-5-chat&quot;</span><span class="p">,</span>
+            <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;Test&quot;</span><span class="p">}],</span>
+            <span class="n">api_base</span><span class="o">=</span><span class="s2">&quot;http://localhost:4000&quot;</span><span class="p">,</span>
+            <span class="n">max_tokens</span><span class="o">=</span><span class="mi">999999</span>  <span class="c1"># Force context limit error</span>
+        <span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Used fallback model: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fallback failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">test_fallback</span><span class="p">())</span>
+</code></pre></div>
+<p><strong>Test Default Fallback Capacity</strong></p>
+<div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">stress_test_default_fallback</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Stress test default fallback with concurrent requests&quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">make_request</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">acompletion</span><span class="p">(</span>
+                <span class="n">model</span><span class="o">=</span><span class="s2">&quot;undefined-model&quot;</span><span class="p">,</span>  <span class="c1"># Will use default fallback</span>
+                <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Test </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">}],</span>
+                <span class="n">api_base</span><span class="o">=</span><span class="s2">&quot;http://localhost:4000&quot;</span>
+            <span class="p">)</span>
+            <span class="n">elapsed</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Request </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: Success in </span><span class="si">{</span><span class="n">elapsed</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s - Model: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">elapsed</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Request </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: Failed in </span><span class="si">{</span><span class="n">elapsed</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">s - Error: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)[:</span><span class="mi">50</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Send 50 concurrent requests to test fallback capacity</span>
+    <span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="n">make_request</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">50</span><span class="p">)]</span>
+    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">*</span><span class="n">tasks</span><span class="p">)</span>
+
+<span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">stress_test_default_fallback</span><span class="p">())</span>
+</code></pre></div>
+<hr />
+<h2 id="summary">Summary</h2>
+<p><strong>Quick Reference</strong></p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Configuration Location</th>
+<th>Key Parameter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Load Balancing</strong></td>
+<td><code>model_list</code></td>
+<td>Same <code>model_name</code>, different deployments</td>
+</tr>
+<tr>
+<td><strong>Routing Strategy</strong></td>
+<td><code>router_settings</code></td>
+<td><code>routing_strategy: "usage-based-routing-v2"</code></td>
+</tr>
+<tr>
+<td><strong>Model Fallbacks</strong></td>
+<td><code>litellm_settings.fallbacks</code></td>
+<td><code>{primary: [fallback1, fallback2]}</code></td>
+</tr>
+<tr>
+<td><strong>Context Fallbacks</strong></td>
+<td><code>litellm_settings.context_window_fallbacks</code></td>
+<td><code>{small_context: [large_context]}</code></td>
+</tr>
+<tr>
+<td><strong>Default Fallback</strong></td>
+<td><code>litellm_settings.default_fallbacks</code></td>
+<td><code>[gpt-4o]</code> <strong>Must have high TPM/RPM</strong></td>
+</tr>
+<tr>
+<td><strong>Retry Policy</strong></td>
+<td><code>router_settings.retry_policy</code></td>
+<td><code>RateLimitErrorRetries: 3</code></td>
+</tr>
+<tr>
+<td><strong>Cooldown</strong></td>
+<td><code>router_settings</code></td>
+<td><code>cooldown_time: 60</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommended Production Config</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nt">model_list</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Default fallback: Load-balanced gpt-4o with HIGH capacity</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="nv">azure/gpt-4o-2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="nv">1200000</span><span class="p p-Indicator">,</span><span class="nt"> rpm</span><span class="p">:</span><span class="w"> </span><span class="nv">500</span><span class="p p-Indicator">}</span><span class="w">  </span><span class="c1"># High limit</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="nv">azure/gpt-4o-3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="nv">916000</span><span class="p p-Indicator">,</span><span class="nt"> rpm</span><span class="p">:</span><span class="w"> </span><span class="nv">500</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+<span class="w">    </span><span class="nt">litellm_params</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="nv">azure/gpt-4o-4</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="nt">model_info</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tpm</span><span class="p">:</span><span class="w"> </span><span class="nv">977000</span><span class="p p-Indicator">,</span><span class="nt"> rpm</span><span class="p">:</span><span class="w"> </span><span class="nv">500</span><span class="p p-Indicator">}</span>
+
+<span class="nt">litellm_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">fallbacks</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">gpt-4o</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-5-mini</span><span class="p p-Indicator">]}</span>
+<span class="w">  </span><span class="nt">default_fallbacks</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-4o</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># High-capacity load-balanced model</span>
+
+<span class="nt">router_settings</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">routing_strategy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;usage-based-routing-v2&quot;</span>
+<span class="w">  </span><span class="nt">num_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">  </span><span class="nt">enable_pre_call_checks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">cooldown_time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+<span class="w">  </span><span class="nt">retry_policy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">RateLimitErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">    </span><span class="nt">TimeoutErrorRetries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</code></pre></div>
+<p><strong>Critical Reminders</strong></p>
+<p><strong>DEFAULT FALLBACK MUST HAVE HIGH RATE LIMITS</strong></p>
+<ul>
+<li>It handles overflow from ALL models</li>
+<li>Should be load-balanced with multiple deployments</li>
+<li>Typical requirement: 2-5x the TPM of any single primary model</li>
+<li>Monitor closely during production to ensure adequate capacity</li>
+</ul>
+<hr />
+<h2 id="additional-resources">Additional Resources</h2>
+<ul>
+<li><strong>LiteLLM Docs:</strong> https://docs.litellm.ai/docs/routing</li>
+<li><strong>Azure OpenAI Rate Limits:</strong> https://learn.microsoft.com/en-us/azure/ai-services/openai/quotas-limits</li>
+<li><strong>Load Balancing Strategies:</strong> https://docs.litellm.ai/docs/routing#advanced-routing-strategies</li>
+</ul>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.path"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

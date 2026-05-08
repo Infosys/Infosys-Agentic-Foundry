@@ -22,7 +22,7 @@ Finally, you'll provide comprehensive workflow instructions that detail how the 
 
 
 ??? info "Sample Agent Goal"
-    To intelligently process user queries by dynamically identifying their intent whether for entertainment or academic research and delivering personalized movie recommendations using real-time Wikipedia data or generating structured academic insights through the analysis of recent scholarly literature. The workflow is designed to provide tailored, context-aware content, enhancing both leisure exploration and research discovery through a unified, tool driven pipeline.
+    To intelligently process user queries by dynamically identifying their intent whether for entertainment or academic research and delivering personalized movie recommendations using real-time Wikipedia data or generating structured academic insights through the analysis of recent scholarly literature. The workflow is designed to provide tailored, context-aware content, enhancing both leisure exploration and research discovery through a unified, tool driven workflow.
 
 ??? info "Sample Workflow description"
 

@@ -1,5 +1,40 @@
 # Changelog
+## [1.8.8]
+ ### Changes
+ 1.Currently for the department, value is fetching from the cookies but when the application is logged in and closed the entire window and tried to access the application it is logged in automatically which is expected only but the permissions are not rendered as expected as department value is rendered in cookies in this case. Solution for this issue is to get the value by decoding the jwt token from the cookies .
+ 2. Display the loading text for the model dropdowns untill the api response is received.
+ 3. In agent update and create page in resource modal hide dataconnectors and in dataconnectors  page in manage modal hide eye icon.
+## [1.8.7]
+ ### Changes
+ 1.when users select react agent type while onboarding an agent and changes the selection to meta/metaplanner then the selected tools for the previous selection is retained, it should be cleared.
+ 2. In chat page for the upload file on click of the remove icon the file is not deleting because of the mismatch of the request payload.
+ 3. UI enhancements in chat page when the multiple files are uploaded.
+ 4. On click of the binded agents for meta/meta planner agents the content is not visible because of the incorrect endpoint trigger changed to correct endpoint as (GET_AGENTS_BY_ID)
+## [1.8.1]
 
+### Feature
+- 1. added new screens for notifations,requests and maintinance for super admin.
+ 1. vault screen delete and error or success message handling.
+ 2. when notification is getting approved or rejected, count on admin icon is not updating and users list is not updating
+ 3. On requests tab, not able to see full reason if reason is too long
+ 4. for registration, dept dropdown multi-select needed.
+ 5. requests should be shown like tables similar to feedback page
+ 6. for admin and superadmin, when approving show logged in department roles for admin and show selected department roles for superadmin in dropdown
+ 7. show count of notification on Admin tab icon
+ 8. sharing ui needs to be modified
+ 9. show pipeline node count properly on pipeline cards
+ 10. when clicking on any agent card, see response from backend and show resources names properly. No need to call tools/by-list endpoint for now onwards.
+ 11. Viber chat bot changes.
+ 12. Server health status check changes.
+ 13. viber chat bot hide for super admin and change label of clear chat history to clean up and last run for maintinance.
+ 14. created_by sytem value filtering in tools/agents/servers/pipelines.
+ 15. backup and export changes for tools/agents/servers/pipelines.
+ 16. ENV configuration changes for the auto deployments.
+ 17. chat page agent type pipelines changed to workflows
+ 18. tool page copy text is showing properly, chat agent maximize and minimize working properly.
+ 19. pipeline drag and drop working properly without opening properties.
+ 20. super admin update error is fixed and files page removed root path and added user_uploads.
+21. for tool run execution pannel loader issue is fixed.
 ## [1.8.0]
 
 ### Feature

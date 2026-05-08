@@ -1,9 +1,10 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from pydantic import BaseModel, Field
 
 from src.schemas import (
-    CreateGroupRequest, UpdateGroupRequest, AddUsersRequest, RemoveUsersRequest,
+    CreateGroupRequest, UpdateGroupRequest, DeleteGroupsRequest, AddUsersRequest, RemoveUsersRequest,
     AddAgentsRequest, RemoveAgentsRequest, GroupResponse, GroupOperationResponse,
     CreateGroupResponse, GetGroupResponse, GetAllGroupsResponse,
     GroupUserManagementResponse, GroupAgentManagementResponse,
@@ -513,54 +514,68 @@ async def update_group_endpoint(
         log.error(f"Error updating group: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error updating group: {str(e)}")
 
-
-@router.delete("/delete-group/{group_name}", response_model=GroupOperationResponse)
+@router.delete("/delete-group")
 async def delete_group_endpoint(
-    request: Request,
-    group_name: str,
+    delete_request: DeleteGroupsRequest,
     current_user: User = Depends(get_current_user),
     group_service: GroupService = Depends(ServiceProvider.get_group_service),
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
 ):
     """
-    Deletes a group. Only super-admins can delete groups.
+    Deletes one or more groups. Only admins can delete groups.
     
     Args:
-        request: The FastAPI Request object
-        group_name: The name of the group to delete
+        delete_request: Request body containing list of group names to delete
         current_user: The currently authenticated user
         group_service: The group service
-        authorization_service: The authorization service for checking super-admin privileges
+        authorization_service: The authorization service for checking admin privileges
         
     Returns:
-        GroupOperationResponse: Status of the group deletion operation
+        dict: Results of each deletion operation and a grouped status_message
     """
     if current_user.role == UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Superadmin is not allowed to delete groups.")
     
     await require_admin(current_user, authorization_service)
     
-    # Extract department from user data
-    department_name = current_user.department_name 
+    if not delete_request.group_names:
+        raise HTTPException(status_code=400, detail="'group_names' must be provided and cannot be empty.")
     
-    try:
-        result = await group_service.delete_group(group_name, department_name=department_name)
-        
-        if result["success"]:
-            log.info(f"Super-admin {current_user.email} deleted group '{group_name}'")
-            return GroupOperationResponse(
-                success=True,
-                message=result["message"],
-                group_name=result["group_name"]
-            )
-        else:
-            raise HTTPException(status_code=400, detail=result["message"])
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Error deleting group: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting group: {str(e)}")
+    # Only admins can delete multiple groups at once; non-admins must delete one at a time
+    is_admin = await authorization_service.has_role(user_email=current_user.email, required_role=UserRole.ADMIN, department_name=current_user.department_name)
+    if len(delete_request.group_names) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple groups at once. Please delete one group at a time.")
+
+    # Extract department from user data
+    department_name = current_user.department_name
+
+    results = []
+    for group_name in delete_request.group_names:
+        try:
+            result = await group_service.delete_group(group_name, department_name=department_name)
+
+            if result.get("success"):
+                log.info(f"Admin {current_user.email} deleted group '{group_name}'")
+                results.append({"group_name": group_name, "is_delete": True, "message": f"Group '{group_name}' deleted successfully."})
+            else:
+                results.append({"group_name": group_name, "is_delete": False, "message": result.get("message", "Failed to delete group")})
+
+        except Exception as e:
+            log.error(f"Error deleting group '{group_name}': {str(e)}")
+            results.append({"group_name": group_name, "is_delete": False, "message": f"Error deleting group '{group_name}': {str(e)}"})
+
+    response: Dict[str, List[str]] = {}
+    for res in results:
+        name = res.get("group_name", "unknown")
+        reason = "Successfully deleted groups" if res.get("is_delete") else res.get("message", "Delete failed")
+        response.setdefault(reason, []).append(name)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(group_names)}"
+        for reason, group_names in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted groups")
+    )
+
+    return {"results": results, "status_message": status_message}
 
 @router.get("/by-user/{user_email}", response_model=GetGroupsByUserResponse)
 async def get_groups_by_user_endpoint(

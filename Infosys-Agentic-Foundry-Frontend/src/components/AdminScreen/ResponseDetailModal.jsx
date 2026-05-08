@@ -11,30 +11,30 @@ import TextareaWithActions from "../commonComponents/TextareaWithActions";
  */
 const ResponseDetailModal = ({ isOpen, onClose, form, onChange, onSubmit, loading }) => {
   const [isLessonEditable, setIsLessonEditable] = useState(false);
-  const [isApprovedModified, setIsApprovedModified] = useState(false);
+  const [isStatusModified, setIsStatusModified] = useState(false);
   const originalLessonRef = useRef(form?.lesson);
-  const originalApprovedRef = useRef(form?.approved);
+  const originalStatusRef = useRef(form?.status);
 
   // Check if anything has been modified to enable/disable the update button
-  const hasChanges = isLessonEditable || isApprovedModified;
+  const hasChanges = isLessonEditable || isStatusModified;
 
   useEffect(() => {
     // Update the original refs when form changes from parent
     if (!isLessonEditable) {
       originalLessonRef.current = form?.lesson;
     }
-    if (!isApprovedModified) {
-      originalApprovedRef.current = form?.approved;
+    if (!isStatusModified) {
+      originalStatusRef.current = form?.status;
     }
-  }, [form?.lesson, form?.approved, isLessonEditable, isApprovedModified]);
+  }, [form?.lesson, form?.status, isLessonEditable, isStatusModified]);
 
   // Reset edit states when modal opens with new data
   useEffect(() => {
     if (isOpen) {
       setIsLessonEditable(false);
-      setIsApprovedModified(false);
+      setIsStatusModified(false);
       originalLessonRef.current = form?.lesson;
-      originalApprovedRef.current = form?.approved;
+      originalStatusRef.current = form?.status;
     }
   }, [isOpen, form?.response_id]);
 
@@ -55,15 +55,18 @@ const ResponseDetailModal = ({ isOpen, onClose, form, onChange, onSubmit, loadin
   };
 
   const handleApprovedToggle = () => {
-    const newValue = !form?.approved;
+    // Not used for 3-state; keeping for backwards compat
+  };
+
+  const handleStatusSelect = (newStatus) => {
     const event = {
       target: {
-        name: "approved",
-        value: newValue,
+        name: "status",
+        value: newStatus,
       },
     };
     onChange(event);
-    setIsApprovedModified(newValue !== originalApprovedRef.current);
+    setIsStatusModified(newStatus !== originalStatusRef.current);
   };
 
   const handleSubmit = async (e) => {
@@ -71,13 +74,13 @@ const ResponseDetailModal = ({ isOpen, onClose, form, onChange, onSubmit, loadin
     if (hasChanges) {
       await onSubmit(e);
       setIsLessonEditable(false);
-      setIsApprovedModified(false);
+      setIsStatusModified(false);
     }
   };
 
   const handleClose = () => {
     setIsLessonEditable(false);
-    setIsApprovedModified(false);
+    setIsStatusModified(false);
     onClose();
   };
 
@@ -192,20 +195,36 @@ const ResponseDetailModal = ({ isOpen, onClose, form, onChange, onSubmit, loadin
               />
             </div>
 
-            {/* Learning Status Toggle */}
+            {/* Learning Status - 3 State Buttons */}
             <div className="formGroup">
               <label className={`label-desc ${styles.responseDetailGroupHeader}`}>Learning Status</label>
-              <div className={styles.toggleContainer}>
-                <span className={`label-desc ${!form?.approved ? styles.toggleActive : styles.toggleInActive}`}>Excluded from Learning</span>
-                <div
-                  onClick={handleApprovedToggle}
-                  className={`${styles.toggleSwitch} ${form?.approved ? styles.toggleSwitchActive : ""}`}
-                  title={form?.approved ? "Included in Learning" : "Excluded from Learning"}>
-                  <div className={`${styles.toggleKnob} ${form?.approved ? styles.toggleKnobActive : ""}`} />
-                </div>
-                <span className={`label-desc ${form?.approved ? styles.toggleActive : styles.toggleInActive}`}>Included in Learning</span>
+              <div className={styles.statusButtonGroup}>
+                <button
+                  type="button"
+                  className={`${styles.statusBtn} ${styles.statusBtnApprove} ${form?.status === "approve" ? styles.statusBtnActive : ""}`}
+                  onClick={() => handleStatusSelect("approve")}
+                  disabled={form?.status === "approve"}>
+                  <SVGIcons icon="check" width={14} height={14} />
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.statusBtn} ${styles.statusBtnReject} ${form?.status === "reject" ? styles.statusBtnActive : ""}`}
+                  onClick={() => handleStatusSelect("reject")}
+                  disabled={form?.status === "reject"}>
+                  <SVGIcons icon="close" width={14} height={14} />
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.statusBtn} ${styles.statusBtnPending} ${form?.status === "pending" ? styles.statusBtnActive : ""}`}
+                  onClick={() => handleStatusSelect("pending")}
+                  disabled={form?.status === "pending"}>
+                  <SVGIcons icon="history-clock" width={14} height={14} />
+                  Pending
+                </button>
               </div>
-              {isApprovedModified && <div className={styles.modifiedIndicator}>Learning status modified</div>}
+              {isStatusModified && <div className={styles.modifiedIndicator}>Learning status modified</div>}
             </div>
           </div>
         </div>

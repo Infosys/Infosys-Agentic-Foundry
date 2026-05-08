@@ -1,0 +1,81 @@
+name: CI/CD Pipeline to EKS 
+ 
+on:
+  push:
+    branches:
+      - main
+ 
+jobs:
+  build-and-deploy:
+    runs-on: [self-hosted, Linux, X64]
+ 
+    permissions:
+      id-token: write
+      contents: read
+ 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4      
+ 
+      - name: Build and push Docker image to JFrog Artifactory
+        env:
+          JFROG_USERNAME: ${{ secrets.JFROG_USERNAME }}
+          JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+        run: |
+          echo "Logging in to JFrog Docker registry..."
+          sudo docker login infyartifactory.jfrog.io -u "$JFROG_USERNAME" -p "$JFROG_TOKEN"
+          echo "Building Docker image..."
+          sudo docker build -t infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }} .
+          echo "Pushing Docker image to JFrog..."
+          sudo docker push infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}
+ 
+      - name: Pull image from JFrog
+        run: |
+          echo "Logging in to JFrog..."
+          sudo docker login infyartifactory.jfrog.io -u ${{ secrets.JFROG_USERNAME }} -p ${{ secrets.JFROG_TOKEN }}
+          echo "Pulling image from JFrog..."
+          sudo docker pull infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }}
+      - name: Tag image for ECR
+        run: |
+          echo "Tagging image for ECR..."
+          sudo docker tag infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ github.sha }} ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+      - name: Configure AWS credentials, verify identity, and login to ECR
+        run: |
+          echo "Configuring AWS credentials..."
+          sudo aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          sudo aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          if [ -n "${{ secrets.AWS_SESSION_TOKEN }}" ]; then
+          sudo aws configure set aws_session_token ${{ secrets.AWS_SESSION_TOKEN }}
+          fi
+          sudo aws configure set region us-east-1
+          echo "Verifying AWS identity..."
+          sudo aws sts get-caller-identity
+          echo "Logging in to AWS ECR..."
+          sudo aws ecr get-login-password --region us-east-1 | \
+          sudo docker login --username AWS --password-stdin 501121655816.dkr.ecr.us-east-1.amazonaws.com
+      # - name: Configure AWS credentials for ECR.
+      #   uses: aws-actions/configure-aws-credentials@v2
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+      #     aws-region: us-east-1
+      # - name: Verify AWS identity
+      #   run: sudo aws sts get-caller-identity
+
+ 
+      # - name: Login to AWS ECR
+      #   run: |
+      #     echo "Logging in to AWS ECR..."
+      #     sudo aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 501121655816.dkr.ecr.us-east-1.amazonaws.com
+ 
+      - name: Push image to ECR
+        run: |
+          echo "Pushing image to ECR..."
+          sudo docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+      - name: Update kubeconfig
+        run: sudo aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+ 
+      - name: Deploy to EKS
+        run: |
+          sudo kubectl apply -f /root/iafbe-play.yaml

@@ -4,17 +4,17 @@ import Loader from "../commonComponents/Loader.jsx";
 import { APIs } from "../../constant";
 import { useMessage } from "../../Hooks/MessageContext";
 import useFetch from "../../Hooks/useAxios.js";
-import Cookies from "js-cookie";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
+import { getDepartmentFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import SVGIcons from "../../Icons/SVGIcons";
 import TextareaWithActions from "../commonComponents/TextareaWithActions";
 
 function GroupOnBoarding(props) {
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
-  const userDepartment = Cookies.get("department");
+  const loggedInUserEmail = getEmailFromToken();
+  const userName = getUserNameFromToken();
+  const userDepartment = getDepartmentFromToken();
 
   const formObject = {
     name: "",

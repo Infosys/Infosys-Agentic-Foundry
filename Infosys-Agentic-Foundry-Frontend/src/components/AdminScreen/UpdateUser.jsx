@@ -2,27 +2,29 @@
 import styles from "./UpdateUser.module.css";
 import containerStyles from "../../css_modules/AnimatedContainer.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
-import { APIs } from "../../constant";
+import { APIs, BASE_URL } from "../../constant";
 import Loader from "../commonComponents/Loader";
 import useFetch from "../../Hooks/useAxios";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import { useMessage } from "../../Hooks/MessageContext";
-import Cookies from "js-cookie";
+import { encodePassword } from "../../utils/encodeUtils";
+import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
+import axios from "axios";
 
 const defaultRoleOptions = ["Admin", "Developer", "User"];
 
 const UpdateUser = ({ embedded = false }) => {
   const [email, setEmail] = useState("");
   const [selectedOption, setSelectedOption] = useState("Select role");
-  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [temporaryPwd, setTemporaryPwd] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   const [errors, setErrors] = useState({
     email: "",
     role: "",
     department: "",
-    password: "",
+    pwd: "",
     api: "",
   });
   const [touched, setTouched] = useState({});
@@ -32,12 +34,15 @@ const UpdateUser = ({ embedded = false }) => {
   const { addMessage } = useMessage();
 
   // Get logged-in user's department and role from cookies
-  const loggedInDepartment = Cookies.get("department") || "";
-  const userRole = Cookies.get("role") || "";
-  const normalizedRole = userRole.toUpperCase().replace(/[\s_-]/g, "");
-  const isSuperAdmin = normalizedRole === "SUPERADMIN";
+  const loggedInDepartment = getDepartmentFromToken();
+  const loggedInRole = getRoleFromToken().toUpperCase();
+  const isSuperAdmin = loggedInRole === "SUPERADMIN";
 
-  // Department state for SuperAdmin
+  // SuperAdmin existence check — drives department dropdown visibility
+  const [superadminExists, setSuperadminExists] = useState(false);
+  const [superadminCheckLoading, setSuperadminCheckLoading] = useState(true);
+
+  // Department state (shown when superadmin exists)
   const [departments, setDepartments] = useState([]);
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [deptLoading, setDeptLoading] = useState(false);
@@ -46,33 +51,50 @@ const UpdateUser = ({ embedded = false }) => {
   const [departmentRoles, setDepartmentRoles] = useState([]);
   const [rolesLoading, setRolesLoading] = useState(false);
 
-  // Fetch departments for SuperAdmin
+  /**
+   * Check if superadmin exists on mount.
+   * If logged-in user is SuperAdmin → show department dropdown + fetch departments list.
+   * If not → keep form as-is (no department dropdown).
+   */
   useEffect(() => {
-    if (isSuperAdmin) {
-      const loadDepartments = async () => {
-        setDeptLoading(true);
-        try {
-          const response = await fetchData(APIs.GET_DEPARTMENTS_LIST);
-          let items = [];
-          if (Array.isArray(response)) {
-            items = response;
-          } else if (response?.departments && Array.isArray(response.departments)) {
-            items = response.departments;
+    const checkAndLoadDepartments = async () => {
+      setSuperadminCheckLoading(true);
+      try {
+        const res = await axios.get(`${BASE_URL}${APIs.SUPERADMIN_EXISTS}`);
+        const exists = res.data?.superadmin_exists ?? false;
+        setSuperadminExists(exists);
+
+        // If logged-in user is SuperAdmin, fetch the departments list
+        if (exists && isSuperAdmin) {
+          setDeptLoading(true);
+          try {
+            const deptRes = await fetchData(APIs.GET_DEPARTMENTS_LIST);
+            let items = [];
+            if (Array.isArray(deptRes)) {
+              items = deptRes;
+            } else if (deptRes?.departments && Array.isArray(deptRes.departments)) {
+              items = deptRes.departments;
+            }
+            const mapped = items.map((d) =>
+              typeof d === "string" ? d : d.department_name || d.name || String(d)
+            );
+            setDepartments(mapped);
+          } catch (err) {
+            console.error("Failed to fetch departments:", err);
+            setDepartments([]);
+          } finally {
+            setDeptLoading(false);
           }
-          const mapped = items.map((d) =>
-            typeof d === "string" ? d : d.department_name || d.name || String(d)
-          );
-          setDepartments(mapped);
-        } catch (err) {
-          console.error("Failed to fetch departments:", err);
-          setDepartments([]);
-        } finally {
-          setDeptLoading(false);
         }
-      };
-      loadDepartments();
-    }
-  }, [isSuperAdmin, fetchData]);
+      } catch (err) {
+        console.error("Failed to check superadmin existence:", err);
+        setSuperadminExists(false);
+      } finally {
+        setSuperadminCheckLoading(false);
+      }
+    };
+    checkAndLoadDepartments();
+  }, [fetchData, isSuperAdmin]);
 
   // Fetch roles based on department
   const fetchDepartmentRoles = useCallback(async (deptName) => {
@@ -104,7 +126,7 @@ const UpdateUser = ({ embedded = false }) => {
 
   // Fetch roles when department changes
   useEffect(() => {
-    if (isSuperAdmin && selectedDepartment) {
+    if (superadminExists && selectedDepartment) {
       // Reset role selection when department changes
       setSelectedOption("Select role");
       // Reset role touched state to prevent showing error immediately
@@ -112,11 +134,11 @@ const UpdateUser = ({ embedded = false }) => {
       // Clear any existing API error
       setErrors((prev) => ({ ...prev, api: "" }));
       fetchDepartmentRoles(selectedDepartment);
-    } else if (!isSuperAdmin && loggedInDepartment) {
-      // For Admin, fetch roles from their department
+    } else if (!superadminExists && loggedInDepartment) {
+      // When no superadmin, fetch roles from logged-in user's department
       fetchDepartmentRoles(loggedInDepartment);
     }
-  }, [isSuperAdmin, selectedDepartment, loggedInDepartment, fetchDepartmentRoles]);
+  }, [superadminExists, selectedDepartment, loggedInDepartment, fetchDepartmentRoles]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -125,40 +147,43 @@ const UpdateUser = ({ embedded = false }) => {
     };
   }, []);
 
-  const validate = () => {
+  const validate = (overrideTouched) => {
     const newErrors = {};
+    const currentTouched = overrideTouched || touched;
 
-    if (touched.email && !email) {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+    if (currentTouched.email && !email) {
       newErrors.email = "Email is required";
+    } else if (currentTouched.email && email && !emailRegex.test(email)) {
+      newErrors.email = "Please enter a valid email address";
     }
 
     // Check if a valid role is selected (not the placeholder)
     const isRoleSelected = selectedOption && selectedOption !== "Select role" && selectedOption.trim() !== "";
 
-    // Check if department is selected (for SuperAdmin)
+    // Check if department is selected (when user is superadmin)
     const isDepartmentSelected = !isSuperAdmin || (selectedDepartment && selectedDepartment.trim() !== "");
 
-    // Password validation - optional but if provided must be valid
-    const hasPassword = temporaryPassword && temporaryPassword.trim() !== "";
+    const hasPassword = temporaryPwd && temporaryPwd.trim() !== "";
     let isPasswordValid = true;
     if (hasPassword) {
       const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/;
-      if (!passwordRegex.test(temporaryPassword)) {
-        newErrors.password = "Must be at least 8 characters, include one uppercase, one number, and one special character";
+      if (!passwordRegex.test(temporaryPwd)) {
+        newErrors.pwd = "Must be at least 8 characters, include one uppercase, one number, and one special character";
         isPasswordValid = false;
       }
     }
 
     // Valid combinations:
     // 1. (Department + Role) selected - for role update
-    // 2. Valid password provided - for password update
     // At least one must be true
     const hasValidRoleUpdate = isRoleSelected && isDepartmentSelected;
     const hasValidPasswordUpdate = hasPassword && isPasswordValid;
     const hasValidUpdate = hasValidRoleUpdate || hasValidPasswordUpdate;
 
     // Show department error only if trying to update role without department
-    if (isSuperAdmin && touched.department && isRoleSelected && !selectedDepartment) {
+    if (isSuperAdmin && currentTouched.department && isRoleSelected && !selectedDepartment) {
       newErrors.department = "Department is required when updating role";
     }
 
@@ -166,10 +191,10 @@ const UpdateUser = ({ embedded = false }) => {
 
     // Form is valid when:
     // 1. No errors
-    // 2. Email is provided
-    // 3. Either (Department + Role) OR valid password is provided
+    // 2. Email is provided and valid format
+    const isEmailValid = email && emailRegex.test(email);
     const isFormValid = Object.keys(newErrors).length === 0 &&
-      email &&
+      isEmailValid &&
       hasValidUpdate;
 
     setIsSubmitDisabled(!isFormValid);
@@ -179,7 +204,7 @@ const UpdateUser = ({ embedded = false }) => {
   useEffect(() => {
     validate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, selectedOption, selectedDepartment, temporaryPassword, touched]);
+  }, [email, selectedOption, selectedDepartment, temporaryPwd, touched]);
 
   const handleBlur = (field) => {
     setTouched((prev) => ({ ...prev, [field]: true }));
@@ -205,17 +230,18 @@ const UpdateUser = ({ embedded = false }) => {
 
     // Check what's being submitted
     const isRoleSelected = selectedOption && selectedOption !== "Select role" && selectedOption.trim() !== "";
-    const hasPassword = temporaryPassword && temporaryPassword.trim() !== "";
+    const hasPassword = temporaryPwd && temporaryPwd.trim() !== "";
     const isDepartmentSelected = selectedDepartment && selectedDepartment.trim() !== "";
 
-    setTouched({
+    const allTouched = {
       email: true,
       selectedOption: true,
-      department: isSuperAdmin && isRoleSelected, // Only require department if updating role
+      department: isSuperAdmin && isRoleSelected, // Only require department if updating role as superadmin
       password: true,
-    });
+    };
+    setTouched(allTouched);
 
-    if (!validate()) {
+    if (!validate(allTouched)) {
       setIsLoading(false);
       return;
     }
@@ -225,15 +251,19 @@ const UpdateUser = ({ embedded = false }) => {
       email_id: email,
     };
 
-    // Only add department if role is being updated or if department is selected
-    if (isRoleSelected && (isSuperAdmin ? isDepartmentSelected : true)) {
-      requestBody.department_name = isSuperAdmin ? selectedDepartment : loggedInDepartment;
-      requestBody.new_role = selectedOption;
+    // Always include department_name for superadmin
+    if (isSuperAdmin && isDepartmentSelected) {
+      requestBody.department_name = selectedDepartment;
+    } else if (!isSuperAdmin) {
+      requestBody.department_name = loggedInDepartment;
     }
 
-    // Only add password if provided
+    // Add role if selected
+    if (isRoleSelected) {
+      requestBody.new_role = selectedOption;
+    }
     if (hasPassword) {
-      requestBody.temporary_password = temporaryPassword;
+      requestBody.temporary_password = encodePassword(temporaryPwd);
     }
 
     try {
@@ -241,13 +271,13 @@ const UpdateUser = ({ embedded = false }) => {
       const data = await response;
 
       addMessage(data?.message || data?.detail || "User updated successfully!", "success");
-      setErrors({ email: "", role: "", department: "", password: "", api: "" });
+      setErrors({ email: "", role: "", department: "", pwd: "", api: "" });
 
       // Reset form
       setEmail("");
       setSelectedOption("Select role");
-      setTemporaryPassword("");
-      if (isSuperAdmin) {
+      setTemporaryPwd("");
+      if (superadminExists) {
         setSelectedDepartment("");
         setDepartmentRoles([]);
       }
@@ -255,12 +285,20 @@ const UpdateUser = ({ embedded = false }) => {
     } catch (err) {
       console.error(err);
       // Extract error message from API response (detail) or fallback to generic error
-      const apiErrorMsg = err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to update user. Please try again.";
+      const rawDetail = err?.response?.data?.detail;
+      let apiErrorMsg;
+      if (Array.isArray(rawDetail)) {
+        apiErrorMsg = rawDetail.map((d) => d.msg || JSON.stringify(d)).join(", ");
+      } else if (typeof rawDetail === "object" && rawDetail !== null) {
+        apiErrorMsg = rawDetail.msg || rawDetail.message || JSON.stringify(rawDetail);
+      } else {
+        apiErrorMsg = rawDetail ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Failed to update user. Please try again.";
+      }
       // Note: handleApiError in patchData already shows a toast, so we only set form error
-      setErrors((prev) => ({ ...prev, api: apiErrorMsg }));
+      setErrors((prev) => ({ ...prev, api: String(apiErrorMsg) }));
     } finally {
       setIsLoading(false);
     }
@@ -286,7 +324,7 @@ const UpdateUser = ({ embedded = false }) => {
           {touched.email && errors.email && <span className={styles.errorText}>{errors.email}</span>}
         </div>
 
-        {/* Department Dropdown - Only for SuperAdmin */}
+        {/* Department Dropdown - Shown only for SuperAdmin */}
         {isSuperAdmin && (
           <div className={styles.inputGroup}>
             <NewCommonDropdown
@@ -296,7 +334,7 @@ const UpdateUser = ({ embedded = false }) => {
               placeholder={deptLoading ? "Loading departments..." : "Select department"}
               showSearch={true}
               width="382px"
-              disabled={deptLoading}
+              disabled={deptLoading || superadminCheckLoading}
             />
             {touched.department && errors.department && <span className={styles.errorText}>{errors.department}</span>}
           </div>
@@ -305,7 +343,7 @@ const UpdateUser = ({ embedded = false }) => {
         {/* Role Dropdown */}
         <div className={styles.inputGroup}>
           <NewCommonDropdown
-            options={departmentRoles.length > 0 ? departmentRoles : defaultRoleOptions}
+            options={(departmentRoles.length > 0 ? departmentRoles : defaultRoleOptions).filter((r) => isSuperAdmin || r.toLowerCase() !== "admin")}
             selected={selectedOption === "Select role" ? "" : selectedOption}
             onSelect={handleRoleSelect}
             placeholder={rolesLoading ? "Loading roles..." : "Select role"}
@@ -316,15 +354,14 @@ const UpdateUser = ({ embedded = false }) => {
           {touched.selectedOption && errors.role && <span className={styles.errorText}>{errors.role}</span>}
         </div>
 
-        {/* Temporary Password - Optional */}
         <div className={styles.inputGroup}>
           <div className={styles.passwordWrapper}>
             <input
               type={showPassword ? "text" : "password"}
-              value={temporaryPassword}
+              value={temporaryPwd}
               placeholder="Temporary Password (optional)"
               className={styles.input}
-              onChange={(e) => setTemporaryPassword(e.target.value)}
+              onChange={(e) => setTemporaryPwd(e.target.value)}
               onBlur={() => handleBlur("password")}
               autoComplete="new-password"
             />
@@ -337,7 +374,7 @@ const UpdateUser = ({ embedded = false }) => {
               <SVGIcons icon={showPassword ? "eye-off" : "eye"} width={18} height={18} stroke="var(--content-color)" />
             </button>
           </div>
-          {temporaryPassword && errors.password && <span className={styles.errorText}>{errors.password}</span>}
+          {temporaryPwd && errors.pwd && <span className={styles.errorText}>{errors.pwd}</span>}
         </div>
 
         {/* API Error Display */}

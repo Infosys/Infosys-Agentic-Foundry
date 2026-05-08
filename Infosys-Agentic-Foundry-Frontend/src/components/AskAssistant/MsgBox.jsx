@@ -1,4 +1,4 @@
-import { useEffect, useState, useId, useRef } from "react";
+import { useEffect, useState, useId, useRef, useCallback } from "react";
 import { useMessage } from "../../Hooks/MessageContext";
 import PlaceholderScreen from "./PlaceholderScreen";
 import DOMPurify from "dompurify";
@@ -6,6 +6,7 @@ import SVGIcons from "../../Icons/SVGIcons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import TextareaWithActions from "../commonComponents/TextareaWithActions";
+import { isAuthenticatedDownloadLink, handleAuthenticatedDownload } from "../../utils/downloadUtils";
 
 import {
   BOT,
@@ -23,7 +24,7 @@ import {
   feedBackMessage,
   APIs,
   PLANNER_META_AGENT,
-  PIPELINE_AGENT,
+  WORKFLOW_AGENT,
 } from "../../constant";
 import LoadingChat from "./LoadingChat";
 import AccordionPlanSteps from "../commonComponents/Accordions/AccordionPlanSteps";
@@ -86,6 +87,33 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
   const executionStepsInitialRef = useRef(null);
   const executionStepsInlineRef = useRef(null);
   const sseNodeListRef = useRef(null);
+
+  // Authenticated link handler for download links in markdown
+  const AuthenticatedLink = useCallback(
+    ({ href, children, ...linkProps }) => {
+      const handleClick = async (e) => {
+        if (isAuthenticatedDownloadLink(href)) {
+          e.preventDefault();
+          await handleAuthenticatedDownload(href, (errorMessage) => {
+            addMessage(errorMessage, "error");
+          });
+        }
+      };
+
+      return (
+        <a
+          href={href}
+          onClick={handleClick}
+          target="_blank"
+          rel="noopener noreferrer"
+          {...linkProps}
+        >
+          {children}
+        </a>
+      );
+    },
+    [addMessage]
+  );
 
   const {
     styles,
@@ -355,6 +383,26 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
   const converToChatFormat = (chatHistory) => {
     const chats = [];
     if (!chatHistory) return chats;
+
+    // If this is an error response (e.g. LLM connection error), extract the error message
+    // and present it cleanly instead of processing executor_messages normally
+    if (chatHistory.error_type || chatHistory.error) {
+      const errorMsg = chatHistory.error || chatHistory.response || "An error occurred during processing";
+      // Extract user query from various possible locations in the error response
+      const humanMsg = Array.isArray(chatHistory.executor_messages)
+        ? chatHistory.executor_messages.find((m) => m?.type === "human" || m?.role === "user")
+        : null;
+      const userQuery = chatHistory.query || chatHistory.executor_messages?.[0]?.user_query || humanMsg?.content || "";
+      if (userQuery) {
+        chats.push({ type: USER, message: userQuery });
+      }
+      chats.push({
+        type: BOT,
+        message: errorMsg,
+        response_time: chatHistory.response_time || null,
+      });
+      return chats;
+    }
 
     // Prefer streaming-captured planVerifierText prop if final response root no longer carries raw.plan_verifier
     const localPlanVerifierText =
@@ -651,6 +699,11 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     const onStreamChunk = (obj) => {
       if (!obj || typeof obj !== "object") return;
 
+      // Handle error events from SSE stream
+      if (obj.event_type === "error" || obj.error || obj.error_type) {
+        return;
+      }
+
       const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
       const statusVal = obj.Status || obj.status || obj.state || null;
       const toolName = obj["Tool Name"] || obj.tool_name || (obj.raw && (obj.raw["Tool Name"] || obj.raw.tool_name)) || null;
@@ -731,6 +784,11 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
     let nodeIndex = Array.isArray(nodes) ? nodes.length - 1 : -1;
     const onStreamChunk = (obj) => {
       if (!obj || typeof obj !== "object") return;
+
+      // Handle error events from SSE stream
+      if (obj.event_type === "error" || obj.error || obj.error_type) {
+        return;
+      }
 
       const nodeName = obj["Node Name"] || obj.node_name || obj.node || obj.name || null;
       const statusVal = obj.Status || obj.status || obj.state || null;
@@ -872,7 +930,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
               <div className={styles.accordion}>
                 <div className={styles["accordion-header"]}>
                   <div className={`${chatBubbleCss.messageBubble} ${chatBubbleCss.welcomeMessageBubble}`}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: AuthenticatedLink }}>
                       {selectedAgent?.welcome_message || `Hello! I'm ${selectedAgent?.agentic_application_name || "your assistant"}. How can I help you today?`}
                     </ReactMarkdown>
                   </div>
@@ -1229,7 +1287,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                       hasVisibleBubbleContent &&
                       index !== lastIndex &&
                       planApprovedIndex !== index &&
-                      (processingFeedback[index] && agentType !== PIPELINE_AGENT ? (
+                      (processingFeedback[index] && agentType !== WORKFLOW_AGENT ? (
                         <div className={`${styles.loadingChat} generating-2`} style={{ marginTop: 8 }}>
                           <LoadingChat label={"Generating"} />
                         </div>
@@ -1242,7 +1300,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                               </span>
                             </span>
                           )}
-                          {agentType !== PIPELINE_AGENT && (
+                          {agentType !== WORKFLOW_AGENT && (
                             <>
                               <button
                                 type="button"
@@ -1341,7 +1399,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                   {/* Also skip for plan-only responses when Plan Verifier (isHuman) is enabled */}
                                   {/* Hide feedback buttons when generating (like/regenerate in progress) */}
                                   {/* For PLANNER_META_AGENT/META_AGENT: Show feedback buttons when there's a final response (non-empty message) */}
-                                  {/* Hide feedback buttons for pipeline agents but show response time */}
+                                  {/* Hide feedback buttons for workflow agents but show response time */}
                                   {hasVisibleBubbleContent &&
                                     !showgenerateButton &&
                                     !isEditable &&
@@ -1357,7 +1415,7 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                             </span>
                                           </span>
                                         )}
-                                        {agentType !== PIPELINE_AGENT && (
+                                        {agentType !== WORKFLOW_AGENT && (
                                           <>
                                             <button className={`${chatBubbleCss.feedbackButton}`} onClick={() => handleFeedBack(like, session)} title="Good response">
                                               <SVGIcons icon="thumbs-up" width={16} height={16} />
@@ -1429,6 +1487,31 @@ const MsgBox = ({ nodes, currentNodeIndex, ...props }) => {
                                   if (domNode.name === "li") {
                                     domNode.attribs = domNode.attribs || {};
                                     domNode.attribs.class = (domNode.attribs.class || "") + " " + chatBubbleCss.markdownListItem;
+                                  }
+                                  // Handle authenticated download links
+                                  if (domNode.name === "a" && domNode.attribs?.href) {
+                                    const href = domNode.attribs.href;
+                                    if (isAuthenticatedDownloadLink(href)) {
+                                      const handleClick = async (e) => {
+                                        e.preventDefault();
+                                        await handleAuthenticatedDownload(href, (errorMessage) => {
+                                          addMessage(errorMessage, "error");
+                                        });
+                                      };
+                                      return (
+                                        <a
+                                          href={href}
+                                          onClick={handleClick}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className={domNode.attribs.class || ""}
+                                        >
+                                          {domNode.children?.map((child, idx) =>
+                                            child.type === "text" ? child.data : null
+                                          )}
+                                        </a>
+                                      );
+                                    }
                                   }
                                 },
                               });

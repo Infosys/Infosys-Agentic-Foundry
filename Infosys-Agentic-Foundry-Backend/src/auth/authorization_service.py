@@ -369,3 +369,37 @@ class AuthorizationService:
         except Exception as e:
             log.error(f"Evaluation access check error for role '{role}': {e}")
             return False
+
+    async def check_export_agents_access(self, role: str, department_name: str = "General") -> bool:
+        """
+        Check if user has export agents access permission.
+        Export agents access depends on read_access.agents being enabled.
+        
+        Args:
+            role: Role name of the user
+            department_name: Department name (defaults to "General")
+            
+        Returns:
+            bool: True if user can export agents, False otherwise
+        """
+        try:
+            # SuperAdmin bypass - no permission checks needed
+            if role == 'SuperAdmin':
+                log.info(f"SuperAdmin bypass - granted export agents access without permission check")
+                return True
+            
+            # Get role permissions from role_access table for the specific department
+            role_permissions = await self.role_repo.get_role_permissions(department_name, role)
+            if not role_permissions:
+                log.warning(f"No permissions found for role '{role}' in department '{department_name}'")
+                return False
+            
+            # Get export_agents_access permission
+            export_agents_access = role_permissions.get('export_agents_access', False)
+            
+            log.info(f"Role '{role}' in department '{department_name}' export agents access: {export_agents_access}")
+            return export_agents_access
+            
+        except Exception as e:
+            log.error(f"Export agents access check error for role '{role}': {e}")
+            return False

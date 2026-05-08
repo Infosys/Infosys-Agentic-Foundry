@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from src.auth.auth_service import AuthService
 from src.auth.authorization_service import AuthorizationService
-from src.auth.repositories import ApprovalPermissionRepository, AuditLogRepository, UserRepository, RefreshTokenRepository, RoleRepository, DepartmentRepository, UserDepartmentMappingRepository
+from src.auth.repositories import ApprovalPermissionRepository, AuditLogRepository, UserRepository, RefreshTokenRepository, RoleRepository, DepartmentRepository, UserDepartmentMappingRepository, RegistrationRequestRepository
 from src.utils.remote_model_client import RemoteCrossEncoder as CrossEncoder
 from src.auth.repositories import UserAccessKeyRepository
 from src.database.repositories import AccessKeyDefinitionsRepository
@@ -11,17 +11,19 @@ from src.database.repositories import ToolAccessKeyMappingRepository
 from src.database.database_manager import DatabaseManager
 from src.database.repositories import (
     TagRepository, TagToolMappingRepository, TagAgentMappingRepository,
-    ToolRepository, McpToolRepository, ToolAgentMappingRepository, RecycleToolRepository, RecycleMcpToolRepository,
+    ToolRepository, ToolVersionRepository, ToolVersionRecycleBinRepository, McpToolRepository, ToolAgentMappingRepository, RecycleToolRepository, RecycleMcpToolRepository,
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
-    FeedbackLearningRepository, EvaluationDataRepository,
+    FeedbackLearningRepository, EvaluationDataRepository, QueryTokenUsageRepository,
+    TokenUsageLogsRepository, ModelCostsRepository,
     ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
     ExportAgentRepository, AgentMetadataRepository, AgentDataTableRepository, ChatStateHistoryManagerRepository,
-    PipelineRepository, PipelineRunRepository, PipelineStepsRepository, AgentPipelineMappingRepository,
+    WorkflowRepository, WorkflowRunRepository, WorkflowStepsRepository, AgentWorkflowMappingRepository,
     ToolGenerationCodeVersionRepository,
     ToolGenerationConversationHistoryRepository, KnowledgebaseRepository, AgentKnowledgebaseMappingRepository, UserAgentAccessRepository,
     GroupRepository, GroupSecretsRepository,
     ToolDepartmentSharingRepository, AgentDepartmentSharingRepository, McpToolDepartmentSharingRepository,
-    KbDepartmentSharingRepository
+    KbDepartmentSharingRepository, WorkflowDepartmentSharingRepository,
+    TaskRegistryRepository
 )
 from src.database.admin_config_repository import AdminConfigRepository
 from src.database.admin_config_service import AdminConfigService
@@ -29,8 +31,9 @@ from src.tools.tool_code_processor import ToolCodeProcessor
 from src.database.services import (
     TagService, McpToolService, ToolService, AgentServiceUtils, AgentService, ChatService,
     FeedbackLearningService, EvaluationService, ExportService, UserAgentAccessService,
-    GroupService, GroupSecretsService, ConsistencyService, PipelineService, VMManagementService,
-    ToolGenerationCodeVersionService, ToolGenerationConversationHistoryService, KnowledgebaseService, RoleAccessService, DepartmentService
+    GroupService, GroupSecretsService, ConsistencyService, WorkflowService, VMManagementService,
+    ToolGenerationCodeVersionService, ToolGenerationConversationHistoryService, KnowledgebaseService, RoleAccessService, DepartmentService,
+    TaskRegistryService
 )
 from src.database.core_evaluation_service import CoreEvaluationService, CoreConsistencyEvaluationService, CoreRobustnessEvaluationService
 from src.models.model_service import ModelService
@@ -46,7 +49,7 @@ from src.inference import (
     InferenceUtils, ReactAgentInference, MultiAgentInference, PlannerExecutorAgentInference,
     ReactCriticAgentInference, MetaAgentInference, PlannerMetaAgentInference, CentralizedAgentInference
 )
-from src.inference.pipeline_inference import PipelineInference
+from src.inference.workflow_inference import WorkflowInference
 from src.inference.python_based_inference.hybrid_agent_inference import HybridAgentInference
 # Google ADK based Inference Imports
 from src.inference.google_adk_inference.react_agent_gadk_inference import ReactAgentGADKInference
@@ -59,7 +62,7 @@ from src.inference.google_adk_inference.planner_meta_agent_gadk_inference import
 from src.utils.file_manager import FileManager
 from src.utils.tool_file_manager import ToolFileManager
 from src.utils.postgres_vector_store_jsonb import PostgresVectorStoreJSONB
-from src.config.constants import DatabaseName
+from src.config.constants import DatabaseName, ConnectionPoolSize
 from src.config.application_config import app_config
 from MultiDBConnection_Manager import MultiDBConnectionRepository
 from src.tools.tool_export_import_service import ToolExportImportService
@@ -69,9 +72,10 @@ from telemetry_wrapper import logger as log
 from src.inference.inference_utils import EpisodicMemoryManager
 from src.utils.remote_model_client import RemoteSentenceTransformer as SentenceTransformer
 from src.utils.remote_model_client import get_remote_models_and_utils, ModelServerClient
+from src.utils.kafka_manager import KafkaManager
 
 # EXPORT:EXCLUDE:START
-from src.onboard.tools_agents_onboarding import insert_sample_tools, insert_sample_agents, insert_sample_pipelines
+from src.onboard.tools_agents_onboarding import insert_sample_tools, insert_sample_agents, insert_sample_workflows, insert_sample_mcp_tools
 from Export_Agent.AgentsExport import AgentExporter
 # EXPORT:EXCLUDE:END
 # EXPORT:INCLUDE:START
@@ -100,6 +104,8 @@ class AppContainer:
         self.tag_tool_mapping_repo: TagToolMappingRepository = None
         self.tag_agent_mapping_repo: TagAgentMappingRepository = None
         self.tool_repo: ToolRepository = None
+        self.tool_version_repo: ToolVersionRepository = None
+        self.tool_version_recycle_bin_repo: ToolVersionRecycleBinRepository = None
         self.mcp_tool_repo: McpToolRepository = None
         self.recycle_mcp_tool_repo: RecycleMcpToolRepository = None
         self.tool_agent_mapping_repo: ToolAgentMappingRepository = None
@@ -108,6 +114,7 @@ class AppContainer:
         self.recycle_agent_repo: RecycleAgentRepository = None
         self.chat_history_repo: ChatHistoryRepository = None
         self.feedback_learning_repo: FeedbackLearningRepository = None
+        self.query_token_usage_repo: QueryTokenUsageRepository = None
         self.evaluation_data_repo: EvaluationDataRepository = None
         self.tool_evaluation_metrics_repo: ToolEvaluationMetricsRepository = None
         self.agent_evaluation_metrics_repo: AgentEvaluationMetricsRepository = None
@@ -123,6 +130,7 @@ class AppContainer:
         self.agent_sharing_repo: AgentDepartmentSharingRepository = None  # Agent sharing across departments
         self.mcp_tool_sharing_repo: McpToolDepartmentSharingRepository = None  # MCP tool sharing across departments
         self.kb_sharing_repo: KbDepartmentSharingRepository = None  # KB sharing across departments
+        self.workflow_sharing_repo: WorkflowDepartmentSharingRepository = None  # Workflow sharing across departments
 
         # Utility Processors
         self.tool_code_processor: ToolCodeProcessor = None
@@ -178,13 +186,18 @@ class AppContainer:
 
         self.centralized_agent_inference: CentralizedAgentInference = None
         
-        # Pipeline repositories and services
-        self.pipeline_repo: PipelineRepository = None
-        self.pipeline_run_repo: PipelineRunRepository = None
-        self.pipeline_steps_repo: PipelineStepsRepository = None
-        self.pipeline_service: PipelineService = None
-        self.pipeline_inference: PipelineInference = None
-        self.agent_pipeline_mapping_repo: AgentPipelineMappingRepository = None
+        # Workflow repositories and services
+        self.workflow_repo: WorkflowRepository = None
+        self.workflow_run_repo: WorkflowRunRepository = None
+        self.workflow_steps_repo: WorkflowStepsRepository = None
+        self.workflow_service: WorkflowService = None
+        self.workflow_inference: WorkflowInference = None
+        self.agent_workflow_mapping_repo: AgentWorkflowMappingRepository = None
+        
+        # Task Registry for M2M async task tracking
+        self.task_registry_repo: TaskRegistryRepository = None
+        self.task_registry_service: TaskRegistryService = None
+        
         # Tool generation code versioning
         self.tool_generation_code_version_repo: ToolGenerationCodeVersionRepository = None
         self.tool_generation_code_version_service: ToolGenerationCodeVersionService = None
@@ -234,6 +247,9 @@ class AppContainer:
         # Tool Export/Import
         self.tool_export_import_service: ToolExportImportService = None
 
+        # Kafka Manager
+        self.kafka_manager: KafkaManager = None
+
 
     async def initialize_services(self):
         """
@@ -255,12 +271,19 @@ class AppContainer:
         pool_config = app_config.postgres_db.pool_config
 
         await self.db_manager.connect(
-                        db_names=app_config.postgres_db.primary_databases,
+                        db_names=[DatabaseName.MAIN.db_name, DatabaseName.LOGIN.db_name],
                         min_size=pool_config.min_size,
                         max_size=pool_config.max_size, # Default pool sizes
                         db_main_min_size=pool_config.main_db_min_size,
                         db_main_max_size=pool_config.main_db_max_size       # Custom sizes for main DB or agentic_workflow_as_service_database
                     )
+
+        low_pool_config = ConnectionPoolSize.LOW.config 
+        await self.db_manager.connect(
+            db_names=[DatabaseName.EVALUATION_LOGS.db_name, DatabaseName.FEEDBACK_LEARNING.db_name, DatabaseName.RECYCLE.db_name],
+            min_size=low_pool_config.min_size,
+            max_size=low_pool_config.max_size,
+        )
         log.info("AppContainer: All database connection pools established.")
 
         # Get pools for initialization
@@ -282,6 +305,8 @@ class AppContainer:
         self.tag_tool_mapping_repo = TagToolMappingRepository(pool=main_pool, login_pool=login_pool)
         self.tag_agent_mapping_repo = TagAgentMappingRepository(pool=main_pool, login_pool=login_pool)
         self.tool_repo = ToolRepository(pool=main_pool, login_pool=login_pool)
+        self.tool_version_repo = ToolVersionRepository(pool=main_pool, login_pool=login_pool)
+        self.tool_version_recycle_bin_repo = ToolVersionRecycleBinRepository(pool=recycle_pool, login_pool=login_pool)
         self.mcp_tool_repo = McpToolRepository(pool=main_pool, login_pool=login_pool)
         self.recycle_mcp_tool_repo = RecycleMcpToolRepository(pool=recycle_pool, login_pool=login_pool)
         self.tool_agent_mapping_repo = ToolAgentMappingRepository(pool=main_pool, login_pool=login_pool)
@@ -290,6 +315,9 @@ class AppContainer:
         self.recycle_agent_repo = RecycleAgentRepository(pool=recycle_pool, login_pool=login_pool)
         self.chat_history_repo = ChatHistoryRepository(pool=main_pool, login_pool=login_pool)
         self.feedback_learning_repo = FeedbackLearningRepository(pool=feedback_learning_pool, login_pool=login_pool)
+        self.query_token_usage_repo = QueryTokenUsageRepository(pool=main_pool, login_pool=login_pool)
+        self.token_usage_logs_repo = TokenUsageLogsRepository(pool=main_pool, login_pool=login_pool)
+        self.model_costs_repo = ModelCostsRepository(pool=main_pool, login_pool=login_pool)
         self.evaluation_data_repo = EvaluationDataRepository(pool=logs_pool, login_pool=login_pool, agent_repo=self.agent_repo)
         self.tool_evaluation_metrics_repo = ToolEvaluationMetricsRepository(pool=logs_pool, login_pool=login_pool, agent_repo= self.agent_repo)
         self.agent_evaluation_metrics_repo = AgentEvaluationMetricsRepository(pool=logs_pool, login_pool=login_pool, agent_repo= self.agent_repo)
@@ -300,12 +328,16 @@ class AppContainer:
         # EXPORT:EXCLUDE:END
         self.chat_state_history_manager_repo = ChatStateHistoryManagerRepository(pool=main_pool, login_pool=login_pool)
         
-        # Initialize pipeline repositories
-        self.pipeline_repo = PipelineRepository(pool=main_pool, login_pool=login_pool)
-        self.pipeline_run_repo = PipelineRunRepository(pool=main_pool, login_pool=login_pool)
-        self.pipeline_steps_repo = PipelineStepsRepository(pool=main_pool, login_pool=login_pool)
-        self.agent_pipeline_mapping_repo = AgentPipelineMappingRepository(pool=main_pool, login_pool=login_pool)
-        await self.agent_pipeline_mapping_repo.migrate_pipelines_to_agent_mappings()
+        # Initialize workflow repositories
+        self.workflow_repo = WorkflowRepository(pool=main_pool, login_pool=login_pool)
+        self.workflow_run_repo = WorkflowRunRepository(pool=main_pool, login_pool=login_pool)
+        self.workflow_steps_repo = WorkflowStepsRepository(pool=main_pool, login_pool=login_pool)
+        self.agent_workflow_mapping_repo = AgentWorkflowMappingRepository(pool=main_pool, login_pool=login_pool)
+        
+        # Initialize task registry repository for M2M async task tracking
+        self.task_registry_repo = TaskRegistryRepository(pool=main_pool, login_pool=login_pool)
+        await self.task_registry_repo.create_table()
+        
         # Initialize tool generation code version repository
         self.tool_generation_code_version_repo = ToolGenerationCodeVersionRepository(pool=main_pool, login_pool=login_pool)
         
@@ -329,6 +361,7 @@ class AppContainer:
         self.approval_permission_repo = ApprovalPermissionRepository(pool=login_pool)
         self.audit_log_repo = AuditLogRepository(pool=login_pool)
         self.refresh_token_repo = RefreshTokenRepository(pool=login_pool)
+        self.registration_request_repo = RegistrationRequestRepository(pool=login_pool)
 
         # Initialize admin configuration repository and service
         self.admin_config_repo = AdminConfigRepository(pool=main_pool, login_pool=login_pool)
@@ -349,10 +382,7 @@ class AppContainer:
         self.agent_sharing_repo = AgentDepartmentSharingRepository(pool=main_pool, login_pool=login_pool)
         self.mcp_tool_sharing_repo = McpToolDepartmentSharingRepository(pool=main_pool, login_pool=login_pool)
         self.kb_sharing_repo = KbDepartmentSharingRepository(pool=main_pool, login_pool=login_pool)
-        # Set tool sharing repos on agent sharing repo for cascade sharing (when agent is shared, its tools and KBs are shared too)
-        self.agent_sharing_repo.set_tool_sharing_repo(self.tool_sharing_repo)
-        self.agent_sharing_repo.set_mcp_tool_sharing_repo(self.mcp_tool_sharing_repo)
-        self.agent_sharing_repo.set_kb_sharing_repo(self.kb_sharing_repo)
+        self.workflow_sharing_repo = WorkflowDepartmentSharingRepository(pool=main_pool, login_pool=login_pool)
         
         log.info("AppContainer: All repositories initialized.")
 
@@ -382,6 +412,8 @@ class AppContainer:
         )
         self.tool_service = ToolService(
             tool_repo=self.tool_repo,
+            tool_version_repo=self.tool_version_repo,
+            tool_version_recycle_bin_repo=self.tool_version_recycle_bin_repo,
             recycle_tool_repo=self.recycle_tool_repo,
             tool_agent_mapping_repo=self.tool_agent_mapping_repo,
             tag_service=self.tag_service,
@@ -419,11 +451,11 @@ class AppContainer:
             tag_service=self.tag_service,
             model_service=self.model_service,
             knowledgebase_service=self.knowledgebase_service,
-            agent_pipeline_mapping_repo=self.agent_pipeline_mapping_repo,
-            pipeline_repo=self.pipeline_repo,
+            agent_workflow_mapping_repo=self.agent_workflow_mapping_repo,
+            workflow_repo=self.workflow_repo,
             agent_sharing_repo=self.agent_sharing_repo,
             department_repo=self.department_repo
-        )
+            )
 
         # Initialize authentication services FIRST (before ChatService needs it)
         self.auth_service = AuthService(
@@ -431,7 +463,8 @@ class AppContainer:
             audit_repo=self.audit_log_repo,
             refresh_repo=self.refresh_token_repo,
             department_repo=self.department_repo,
-            user_dept_mapping_repo=self.user_dept_mapping_repo
+            user_dept_mapping_repo=self.user_dept_mapping_repo,
+            registration_request_repo=self.registration_request_repo
         )
         self.authorization_service = AuthorizationService(
             user_repo=self.user_repo,
@@ -449,6 +482,7 @@ class AppContainer:
             department_repo=self.department_repo,
             user_repo=self.user_repo,
             audit_repo=self.audit_log_repo,
+            role_repo=self.role_repo,
             login_pool=login_pool,
             main_pool=main_pool,
             recycle_pool=recycle_pool,
@@ -535,13 +569,21 @@ class AppContainer:
             self.public_keys_handler = None
             self.group_secrets_service = None
                 
-        # Initialize pipeline service
-        self.pipeline_service = PipelineService(
-            pipeline_repo=self.pipeline_repo,
-            pipeline_run_repo=self.pipeline_run_repo,
-            pipeline_steps_repo=self.pipeline_steps_repo,
-            agent_pipeline_mapping_repo=self.agent_pipeline_mapping_repo,
-            agent_service=self.agent_service
+        # Initialize workflow service
+        self.workflow_service = WorkflowService(
+            workflow_repo=self.workflow_repo,
+            workflow_run_repo=self.workflow_run_repo,
+            workflow_steps_repo=self.workflow_steps_repo,
+            agent_workflow_mapping_repo=self.agent_workflow_mapping_repo,
+            agent_service=self.agent_service,
+            workflow_sharing_repo=self.workflow_sharing_repo,
+            department_repo=self.department_repo
+        )
+    
+        
+        # Initialize task registry service for M2M async task tracking
+        self.task_registry_service = TaskRegistryService(
+            task_registry_repo=self.task_registry_repo
         )
         
         # Initialize tool generation code version service
@@ -636,13 +678,13 @@ class AppContainer:
         )
         log.info("AppContainer: Inference services initialized.")
         
-        # Initialize Pipeline Inference
-        self.pipeline_inference = PipelineInference(
+        # Initialize Workflow Inference
+        self.workflow_inference = WorkflowInference(
             inference_utils=self.inference_utils,
-            pipeline_service=self.pipeline_service,
+            workflow_service=self.workflow_service,
             centralized_agent_inference=self.centralized_agent_inference
         )
-        log.info("AppContainer: Pipeline inference initialized.")
+        log.info("AppContainer: Workflow inference initialized.")
 
         self.core_evaluation_service = CoreEvaluationService(
             evaluation_service=self.evaluation_service,
@@ -667,6 +709,9 @@ class AppContainer:
         self.file_manager = FileManager()
         
         self.vm_management_service = VMManagementService()
+
+        # Kafka Manager
+        self.kafka_manager = KafkaManager()
 
         # 8. Create Tables (if they don't exist)
         # Call create_tables_if_not_exists for each service/repository that manages tables.
@@ -713,14 +758,22 @@ class AppContainer:
             raise
 
         await self.approval_permission_repo.create_table_if_not_exists()
+        await self.registration_request_repo.create_table_if_not_exists()
         await self.audit_log_repo.create_table_if_not_exists()
         await self.admin_config_repo.create_table_if_not_exists()
         await self.tag_repo.create_table_if_not_exists()
         await self.tool_repo.create_table_if_not_exists()
+        await self.tool_version_repo.create_table_if_not_exists()
+        await self.tool_version_recycle_bin_repo.create_table_if_not_exists()
+        # Migrate existing versioning data from JSON column to new table
+        await self.tool_version_repo.migrate_from_json_versioning(self.tool_repo)
         await self.mcp_tool_repo.create_table_if_not_exists()
         await self.agent_repo.create_table_if_not_exists()
         await self.chat_history_repo.create_agent_conversation_summary_table()
         await self.feedback_learning_repo.create_tables_if_not_exists()
+        await self.query_token_usage_repo.create_table_if_not_exists()
+        await self.token_usage_logs_repo.create_table_if_not_exists()
+        await self.model_costs_repo.create_table_if_not_exists()
         await self.evaluation_service.create_evaluation_tables_if_not_exists()
         await self.consistency_service.create_evaluation_table_if_not_exists()
         await self.multi_db_connection_repo.create_db_connections_table_if_not_exists() # Create multi-DB connections table
@@ -729,8 +782,12 @@ class AppContainer:
         # EXPORT:EXCLUDE:END
         await self.chat_state_history_manager_repo.create_table_if_not_exists()
         
-        # Pipeline tables
-        await self.pipeline_repo.create_table_if_not_exists()
+        # Run pipeline→workflow schema migration
+        await self.agent_workflow_mapping_repo.migrate_pipeline_to_workflow_schema()
+        await self.agent_workflow_mapping_repo.migrate_ppl_to_wf_prefix()
+        
+        # Workflow tables
+        await self.workflow_repo.create_table_if_not_exists()
         
         # Tool generation code version table
         await self.tool_generation_code_version_repo.create_table_if_not_exists()
@@ -750,18 +807,21 @@ class AppContainer:
         await self.agent_sharing_repo.create_table_if_not_exists()  # Agent sharing across departments
         await self.mcp_tool_sharing_repo.create_table_if_not_exists()  # MCP tool sharing across departments
         await self.kb_sharing_repo.create_table_if_not_exists()  # KB sharing across departments
+        await self.workflow_sharing_repo.create_table_if_not_exists()  # Workflow sharing across departments
 
         # Mapping tables (depend on main tables)
         await self.tag_tool_mapping_repo.create_table_if_not_exists()
         await self.tag_agent_mapping_repo.create_table_if_not_exists()
         await self.tool_agent_mapping_repo.create_table_if_not_exists()
-        await self.agent_pipeline_mapping_repo.create_table_if_not_exists()  # Agent-Pipeline mapping table
+        await self.agent_workflow_mapping_repo.create_table_if_not_exists()  # Agent-Workflow mapping table
+        await self.agent_workflow_mapping_repo.migrate_workflows_to_agent_mappings()  # Migrate legacy workflow data
         await self.agent_kb_mapping_repo.create_table_if_not_exists()  # Agent-KB mapping table
 
         # EXPORT:EXCLUDE:START
         await insert_sample_tools(self.tool_service)
+        await insert_sample_mcp_tools(self.mcp_tool_service)
         await insert_sample_agents(self.agent_service)
-        await insert_sample_pipelines(self.pipeline_service)
+        await insert_sample_workflows(self.workflow_service)
         # EXPORT:EXCLUDE:END
         # EXPORT:INCLUDE:START
         # await load_exported_data(
@@ -771,6 +831,8 @@ class AppContainer:
         #     tag_tool_mapping_repo=self.tag_tool_mapping_repo,
         #     tag_agent_mapping_repo=self.tag_agent_mapping_repo,
         #     tag_repo=self.tag_repo,
+        #     tool_version_repo=self.tool_version_repo,
+        #     tool_agent_mapping_repo=self.tool_agent_mapping_repo,
         # )
         # EXPORT:INCLUDE:END
 

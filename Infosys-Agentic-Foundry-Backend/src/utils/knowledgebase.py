@@ -4,7 +4,7 @@ import asyncpg
 import numpy as np
 from typing import List, Dict, Any
 from langchain_core.tools import tool
-from langchain_openai import AzureChatOpenAI
+from src.models.guardrail_aware_llm import TokenLoggingAzureChatOpenAI
 from src.utils.postgres_vector_store_jsonb import PostgresVectorStoreJSONB
 from src.utils.remote_model_client import get_remote_models
 from src.storage import get_storage_client
@@ -163,7 +163,7 @@ def knowledgebase_retriever(query: str, knowledgebase_names: list) -> str:
     log.info(f"Knowledgebase retriever called with query: {query[:50]}... for KBs: {knowledgebase_names}")
     
     try:
-        llm = AzureChatOpenAI(
+        llm = TokenLoggingAzureChatOpenAI(
             azure_endpoint=os.getenv('AZURE_ENDPOINT'),
             azure_deployment='gpt-4o',
             api_version=os.getenv('OPENAI_API_VERSION'),

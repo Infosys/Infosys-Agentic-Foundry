@@ -44,6 +44,12 @@ SHELL_AGENT_SYSTEM_PROMPT = """You have access to a secure shell environment via
 
 ## Your Environment (Hierarchical)
 
+### Database Files (SHARED across ALL agents - READ-ONLY)
+- `/databases/` - Database schema and sample data files
+- `/databases/{connection_name}/schema.md` - Database schema (tables, columns, relationships)
+- `/databases/{connection_name}/samples.md` - Sample data from each table
+**Usage:** Always read schema.md BEFORE writing SQL queries!
+
 ### User Level (persists across ALL agents and sessions)
 - `/user/preferences.md` - User preferences (theme, language)
 - `/user/profile.md` - User profile info
@@ -72,6 +78,11 @@ SHELL_AGENT_SYSTEM_PROMPT = """You have access to a secure shell environment via
 - `head -n 20 /file` - First 20 lines
 - `tail -n 20 /file` - Last 20 lines
 
+### Database Schema Access
+- `ls /databases/` - List all database connections
+- `cat /databases/my_db/schema.md` - Read database schema
+- `cat /databases/my_db/samples.md` - Read sample data
+
 ### Searching
 - `grep -r "pattern" /path` - Search for exact text
 - `semgrep "concept" /path` - Search by meaning (use when grep fails!)
@@ -84,15 +95,25 @@ SHELL_AGENT_SYSTEM_PROMPT = """You have access to a secure shell environment via
 
 ## Storage Strategy
 
-1. **API keys, credentials, user preferences** → `/user/facts/` (persists forever)
-2. **Agent-specific knowledge** → `/agent/facts/` (persists across sessions)
-3. **Temporary work** → `/session/workspace/` (current session only)
+1. **Database schema/samples** → `/databases/{conn}/` (SHARED, read-only)
+2. **API keys, credentials, user preferences** → `/user/facts/` (persists forever)
+3. **Agent-specific knowledge** → `/agent/facts/` (persists across sessions)
+4. **Temporary work** → `/session/workspace/` (current session only)
 
 ## Example Session
 
 ```
 > ls /
-user/  agent/  session/
+databases/  user/  agent/  session/
+
+> ls /databases/
+sales_db/  customer_db/
+
+> cat /databases/sales_db/schema.md
+# Database Schema: sales_db
+## Tables:
+- orders (id, customer_id, total, created_at)
+- products (id, name, price, category)
 
 > ls /user
 preferences.md  profile.md  facts/
@@ -100,9 +121,6 @@ preferences.md  profile.md  facts/
 > cat /user/facts/api_keys.md
 API_KEY: abc123
 DEFAULT_CITY: London
-
-> echo "Favorite color: blue" >> /user/preferences.md
-Wrote to /user/preferences.md
 
 > cat /session/conversations/summary.md
 # Conversation Summary
@@ -112,8 +130,10 @@ Wrote to /user/preferences.md
 ## Rules
 
 - Files in `/user/`, `/agent/`, `/session/` are automatically indexed for semantic search
+- Files in `/databases/` are READ-ONLY (shared across all agents)
 - Use descriptive filenames like `api_keys.md`, `weather_prefs.md`
 - BLOCKED commands: rm, sudo, curl, wget, python (for security)
+- ALWAYS read database schema BEFORE writing SQL queries
 """
 
 
@@ -123,7 +143,8 @@ def get_shell_tool(
     agent_id: str,
     session_id: str,
     user_email: str = None,
-    workspace_root: str = "./agent_workspaces"
+    workspace_root: str = "./agent_workspaces",
+    department: str = None
 ) -> "StructuredTool":
     """
     Create a LangChain tool for shell command execution.
@@ -133,6 +154,7 @@ def get_shell_tool(
         session_id: Session identifier.
         user_email: User email for user-level persistence.
         workspace_root: Root directory for workspaces.
+        department: Department name for workspace segregation.
         
     Returns:
         LangChain StructuredTool.
@@ -144,7 +166,8 @@ def get_shell_tool(
         agent_id=agent_id,
         session_id=session_id,
         user_email=user_email,
-        workspace_root=workspace_root
+        workspace_root=workspace_root,
+        department=department
     )
     
     def run_shell_command(command: str) -> str:
@@ -165,13 +188,16 @@ Available commands:
 - find /path -name "*.md": Find files
 
 Key directories (Hierarchical):
+- /databases/{connection}/ - Database schema & samples (SHARED, READ-ONLY)
+  - schema.md: Database schema (tables, columns) - ALWAYS read before SQL queries
+  - samples.md: Sample data for reference
 - /user/facts/ - User-level facts (API keys, preferences) - persists across ALL agents
 - /agent/facts/ - Agent-specific facts - persists across sessions
 - /agent/learnings/ - Agent insights and patterns
 - /session/workspace/ - Scratchpad for current task
 - /session/conversations/ - [VIRTUAL] Past chat history (read-only)
 
-Example: echo "API_KEY: abc123" > /user/facts/api_keys.md""",
+Example: cat /databases/sales_db/schema.md""",
         args_schema=ShellCommandInput
     )
     
@@ -182,7 +208,8 @@ def get_shell_tools_for_session(
     agent_id: str,
     session_id: str,
     user_email: str = None,
-    workspace_root: str = "./agent_workspaces"
+    workspace_root: str = "./agent_workspaces",
+    department: str = None
 ) -> Tuple[AgentShell, List["BaseTool"]]:
     """
     Create shell and tools for a session.
@@ -194,6 +221,7 @@ def get_shell_tools_for_session(
         session_id: Current session ID.
         user_email: User email for user-level persistence.
         workspace_root: Root directory for workspaces.
+        department: Department name for workspace segregation.
         
     Returns:
         Tuple of (AgentShell, List[BaseTool]).
@@ -205,7 +233,8 @@ def get_shell_tools_for_session(
         agent_id=agent_id,
         session_id=session_id,
         user_email=user_email,
-        workspace_root=workspace_root
+        workspace_root=workspace_root,
+        department=department
     )
     
     def run_shell_command(command: str) -> str:

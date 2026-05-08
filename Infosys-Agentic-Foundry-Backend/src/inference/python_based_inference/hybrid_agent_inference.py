@@ -28,13 +28,15 @@ class HybridAgentInference(BasePythonBasedAgentInference):
         Builds the agent and chains for the Hybrid Agent.
         """
         tool_ids = agent_config["TOOLS_INFO"]
+        tool_versions = agent_config.get("TOOLS_WITH_VERSIONS", {})
         system_prompt = agent_config["SYSTEM_PROMPT"]
 
         # Use the common helper to get the agent instance
         hybrid_agent, _ = await self._get_python_based_agent_instance(
                                         llm,
                                         system_prompt=system_prompt.get("SYSTEM_PROMPT_HYBRID_AGENT", ""),
-                                        tool_ids=tool_ids
+                                        tool_ids=tool_ids,
+                                        tool_versions=tool_versions
                                     )
         chains = {
             "llm": llm,

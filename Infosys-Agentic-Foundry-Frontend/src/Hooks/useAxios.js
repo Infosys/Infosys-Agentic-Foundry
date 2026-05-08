@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
-import { APIs, BASE_URL } from "../constant";
+import { APIs, BASE_URL, env } from "../constant";
 import Cookies from "js-cookie";
 import axios from "axios";
 import { registerAxiosInterceptors } from "../config/axiosInterceptors"; // ensure timing/error interceptors on custom instance
 import { useErrorHandler } from "./useErrorHandler";
+import { getEmailFromToken } from "../utils/jwtUtils";
 
 let sessionId = null;
 
@@ -136,7 +137,7 @@ export const getSessionId = () => {
   return sessionId;
 };
 
-const REQUEST_TIMEOUT_MS = Number(process.env.REACT_APP_API_TIMEOUT ?? 20 * 60 * 1000); // If not declared in ENV , it will be 20 minutes
+const REQUEST_TIMEOUT_MS = Number(env.REACT_APP_API_TIMEOUT || process.env.REACT_APP_API_TIMEOUT) || (20 * 60 * 1000); // If not declared in ENV , it will be 20 minutes
 
 const defaultConfig = {
   headers: {
@@ -146,7 +147,8 @@ const defaultConfig = {
 };
 
 // Create a centralized axios instance so interceptors fire uniformly
-const axiosInstance = axios.create({
+// Exported so non-hook utilities (e.g. downloadUtils) can reuse it.
+export const axiosInstance = axios.create({
   baseURL: BASE_URL,
   ...defaultConfig,
 });
@@ -186,12 +188,12 @@ const performTokenRefresh = async () => {
   isRefreshing = true;
   refreshPromise = (async () => {
     const rToken = getRefreshToken();
-    const email = Cookies.get("email");
+    const email = getEmailFromToken();
     const user_session = Cookies.get("user_session");
     if (!email || !user_session) {
       throw new Error("Refresh prerequisites missing (email/session)");
     }
-    const isSessionStillActive = () => Boolean(Cookies.get("user_session")) && Boolean(Cookies.get("email"));
+    const isSessionStillActive = () => Boolean(Cookies.get("user_session")) && Boolean(getEmailFromToken());
     try {
       if (process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console
@@ -285,7 +287,7 @@ const handleFetch401 = async (response, url) => {
   if (response.status !== 401) return null;
 
   // Check if we have session credentials to attempt refresh
-  const email = Cookies.get("email");
+  const email = getEmailFromToken();
   const user_session = Cookies.get("user_session");
 
   if (!email || !user_session) {
@@ -340,7 +342,7 @@ axiosInstance.interceptors.response.use(
 
     if (isAuthError && !originalConfig._retry) {
       // Attempt silent refresh first; do NOT logout yet.
-      if (Cookies.get("email") && Cookies.get("user_session")) {
+      if (getEmailFromToken() && Cookies.get("user_session")) {
         originalConfig._retry = true;
         try {
           if (isRefreshing) {
@@ -654,7 +656,8 @@ const useFetch = () => {
         }
 
         // Use existing error handler for consistent 401 handling and messaging
-        handleApiError(err, { context: `fetchData: ${url}`, silent: false });
+        // Support silent option from config to suppress error popups (e.g., for health checks)
+        handleApiError(err, { context: `fetchData: ${url}`, silent: config.silent || false });
 
         setError((prevError) => ({ ...prevError, fetch: err }));
         throw err;
@@ -720,7 +723,7 @@ const useFetch = () => {
         }
 
         // Use existing error handler for consistent 401 handling and messaging
-        handleApiError(err, { context: `postData: ${url}`, silent: false });
+        handleApiError(err, { context: `postData: ${url}`, silent: config.silent || false });
 
         setError((prevError) => ({ ...prevError, post: err }));
         throw err;
@@ -779,7 +782,7 @@ const useFetch = () => {
         }
 
         // Use existing error handler for consistent 401 handling and messaging
-        handleApiError(err, { context: `putData: ${url}`, silent: false });
+        handleApiError(err, { context: `putData: ${url}`, silent: config.silent || false });
 
         setError((prevError) => ({ ...prevError, put: err }));
         throw err;

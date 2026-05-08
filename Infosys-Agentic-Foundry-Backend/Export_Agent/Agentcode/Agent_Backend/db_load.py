@@ -4,7 +4,8 @@ import json
 from datetime import datetime, timezone
 from src.database.repositories import (
     ToolRepository, McpToolRepository, AgentRepository,
-    TagToolMappingRepository, TagAgentMappingRepository, TagRepository
+    TagToolMappingRepository, TagAgentMappingRepository, TagRepository,
+    ToolVersionRepository, ToolAgentMappingRepository
 )
 from telemetry_wrapper import logger as log
 from dotenv import load_dotenv
@@ -19,11 +20,13 @@ async def load_exported_data(
     tag_repo: TagRepository,
     tag_tool_mapping_repo: TagToolMappingRepository,
     tag_agent_mapping_repo: TagAgentMappingRepository,
+    tool_version_repo: ToolVersionRepository = None,
+    tool_agent_mapping_repo: ToolAgentMappingRepository = None,
 ):
     """
     Reads the exported config files (agent_config.py, tools_config.py,
-    worker_agents_config.py) and inserts all data into the database using the
-    *original* repository objects.  This avoids duplicating table schemas.
+    worker_agents_config.py, tool_versions_config.py) and inserts all data 
+    into the database using the *original* repository objects.
 
     Missing columns that are not present in the export files are filled with
     sensible defaults:
@@ -36,14 +39,23 @@ async def load_exported_data(
     Order of operations:
         1. Regular tools  (from tools_config)
         2. MCP tools      (from tools_config, prefixed mcp_file_/mcp_url_/mcp_module_)
-        3. Worker agents  (from worker_agents_config)
-        4. Agents         (from agent_config)
-        5. Tag-tool mappings
-        6. Tag-agent mappings (agents + worker agents)
+        3. Tool versions  (from tool_versions_config)
+        4. Worker agents  (from worker_agents_config)
+        5. Agents         (from agent_config)
+        6. Tool-agent mappings with versions (from agent's tools_with_versions)
+        7. Tag-tool mappings
+        8. Tag-agent mappings (agents + worker agents)
     """
     from tools_config import tools_data
     from agent_config import agent_data
     from worker_agents_config import worker_agents
+    
+    # Try to import tool_versions_config (may not exist in older exports)
+    try:
+        from tool_versions_config import tool_versions_data
+    except ImportError:
+        tool_versions_data = {}
+        log.info("No tool_versions_config.py found, skipping version loading.")
 
     tools_data: dict = tools_data
     agent_data: dict = agent_data
@@ -107,7 +119,35 @@ async def load_exported_data(
         except Exception as e:
             log.error(f"Error loading tool '{tool_id}': {e}")
 
-    # ── 3. Insert worker agents ──────────────────────────────────────────
+    # ── 3. Insert tool versions ──────────────────────────────────────────
+    if tool_version_repo and tool_versions_data:
+        for tool_id, versions_list in tool_versions_data.items():
+            if not versions_list:
+                continue
+            for version_info in versions_list:
+                try:
+                    # Resolve code_snippet from file if it's a path
+                    code_snippet = version_info.get("code_snippet", "")
+                    if code_snippet and not _looks_like_code(code_snippet):
+                        if os.path.exists(code_snippet):
+                            with open(code_snippet, "r", encoding="utf-8") as f:
+                                code_snippet = f.read()
+                        else:
+                            log.warning(f"Version code file not found: {code_snippet}")
+                    
+                    await tool_version_repo.create_version(
+                        tool_id=tool_id,
+                        version=version_info.get("version", "v1"),
+                        code_snippet=code_snippet,
+                        tool_description=version_info.get("tool_description", ""),
+                        model_name=version_info.get("model_name", ""),
+                        updated_by=version_info.get("updated_by", "system")
+                    )
+                    log.info(f"Loaded tool version: {tool_id} {version_info.get('version', 'v1')}")
+                except Exception as e:
+                    log.error(f"Error loading version for tool '{tool_id}': {e}")
+
+    # ── 4. Insert worker agents ──────────────────────────────────────────
     if worker_agents:
         for agent_id, agent_info in worker_agents.items():
             if agent_info is None:
@@ -118,7 +158,7 @@ async def load_exported_data(
             except Exception as e:
                 log.error(f"Error loading worker agent '{agent_id}': {e}")
 
-    # ── 4. Insert agents ─────────────────────────────────────────────────
+    # ── 5. Insert agents ─────────────────────────────────────────────────
     for agent_id, agent_info in agent_data.items():
         if agent_info is None:
             continue
@@ -128,7 +168,51 @@ async def load_exported_data(
         except Exception as e:
             log.error(f"Error loading agent '{agent_id}': {e}")
 
-    # ── 5. Tag-tool mappings ──────────────────────────────────────────────
+    # ── 6. Tool-agent mappings with versions ─────────────────────────────
+    if tool_agent_mapping_repo:
+        # Process all agents (main + workers)
+        all_agents_for_mapping = {}
+        all_agents_for_mapping.update(agent_data or {})
+        all_agents_for_mapping.update(worker_agents or {})
+        
+        # Track processed mappings to avoid duplicates
+        processed_mappings = set()
+        
+        for agent_id, agent_info in all_agents_for_mapping.items():
+            if agent_info is None:
+                continue
+            tools_with_versions = agent_info.get("tools_with_versions", [])
+            for twv in tools_with_versions:
+                tool_id = twv.get("tool_id")
+                tool_version = twv.get("tool_version", "v1")
+                agent_app_id = agent_info.get("agentic_application_id", agent_id)
+                
+                # Skip if already processed (deduplicate)
+                mapping_key = (tool_id, agent_app_id, tool_version)
+                if mapping_key in processed_mappings:
+                    log.info(f"Skipping duplicate mapping: {tool_id} -> {agent_app_id} (version: {tool_version})")
+                    continue
+                processed_mappings.add(mapping_key)
+                
+                if tool_id:
+                    try:
+                        # Get tool info for created_by
+                        tool_info = tools_data.get(tool_id, {})
+                        tool_created_by = tool_info.get("created_by", "") if tool_info else ""
+                        agent_created_by = agent_info.get("created_by", "")
+                        
+                        await tool_agent_mapping_repo.assign_tool_to_agent_record(
+                            tool_id=tool_id,
+                            agentic_application_id=agent_info.get("agentic_application_id", agent_id),
+                            tool_created_by=tool_created_by,
+                            agentic_app_created_by=agent_created_by,
+                            tool_version=tool_version
+                        )
+                        log.info(f"Created tool-agent mapping: {tool_id} -> {agent_id} (version: {tool_version})")
+                    except Exception as e:
+                        log.error(f"Error creating tool-agent mapping for tool '{tool_id}' to agent '{agent_id}': {e}")
+
+    # ── 7. Tag-tool mappings ──────────────────────────────────────────────
     for tool_id, tool_info in tools_data.items():
         if tool_info is None:
             continue
@@ -149,7 +233,7 @@ async def load_exported_data(
             except Exception as e:
                 log.error(f"Error mapping tag '{tag_name}' to tool '{tool_id}': {e}")
 
-    # ── 6. Tag-agent mappings (agents + worker agents) ────────────────────
+    # ── 8. Tag-agent mappings (agents + worker agents) ────────────────────
     all_agents = {}
     all_agents.update(agent_data or {})
     all_agents.update(worker_agents or {})

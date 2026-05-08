@@ -6,7 +6,7 @@ import { usePermissions } from "../../context/PermissionsContext";
 import SVGIcons from "../../Icons/SVGIcons";
 import { useMessage } from "../../Hooks/MessageContext";
 import Loader from "../commonComponents/Loader.jsx";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import AddServer from "../AgentOnboard/AddServer.jsx";
 import FilterModal from "../commonComponents/FilterModal.jsx";
 import useFetch from "../../Hooks/useAxios.js";
@@ -17,19 +17,163 @@ import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/Displ
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import EmptyState from "../commonComponents/EmptyState.jsx";
+import ShareModal from "../commonComponents/ShareModal/ShareModal.jsx";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
 import { useActiveNavClick } from "../../events/navigationEvents";
 import { Modal } from "../commonComponents/Modal";
+import ImportModal from "./ImportModal.jsx";
+import useMultiSelect from "../../Hooks/useMultiSelect.js";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+
+// ========================================
+// Health Status Cache Configuration
+// ========================================
+const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
+const HEALTH_CHECK_DEBOUNCE_MS = 500; // 500ms debounce after pagination
+
+// In-memory cache for health status (persists across re-renders within session)
+const healthStatusCache = new Map();
+
+/**
+ * Get cached health status if not expired
+ * @param {string} serverId - Server ID
+ * @returns {Object|null} Cached status or null if expired/missing
+ */
+const getCachedHealthStatus = (serverId) => {
+  const cached = healthStatusCache.get(serverId);
+  if (cached && Date.now() - cached.timestamp < HEALTH_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  // Clean up expired entry
+  if (cached) healthStatusCache.delete(serverId);
+  return null;
+};
+
+/**
+ * Set health status in cache with timestamp
+ * @param {string} serverId - Server ID
+ * @param {Object} status - Health status object
+ */
+const setCachedHealthStatus = (serverId, status) => {
+  healthStatusCache.set(serverId, {
+    data: status,
+    timestamp: Date.now(),
+  });
+};
 
 export default function AvailableServers(props) {
-  const { getLiveToolDetails, deleteServer, getServersSearchByPageLimit } = useMcpServerService();
+  const { getLiveToolDetails, deleteServer, getServersSearchByPageLimit, getServerById, checkServerHealth, exportServers, importServers } = useMcpServerService();
   const { calculateDivs } = useToolsAgentsService();
   // State for live tool details
   const [liveToolDetails, setLiveToolDetails] = useState([]);
   const [loadingTools, setLoadingTools] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // ========================================
+  // Health Status State Management
+  // ========================================
+  // Map of serverId -> { status: 'healthy' | 'unhealthy' | 'unknown' | 'checking', toolCount: number }
+  const [healthStatusMap, setHealthStatusMap] = useState({});
+  // Ref to track which servers are currently being checked (to avoid duplicate calls)
+  const healthCheckInProgressRef = useRef(new Set());
+  // Handle server card click - fetch latest data from API before editing
+  const handleServerCardClick = useCallback(async (item) => {
+    const serverId = item?.raw?.tool_id || item?.id || item?.tool_id;
+    if (!serverId) {
+      setEditServerData(item.raw && Object.keys(item.raw).length ? item.raw : item);
+      setShowAddServerModal(true);
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await getServerById(serverId);
+      // Handle both array and single object response
+      const serverData = Array.isArray(response) ? response[0] : response;
+
+      if (serverData && typeof serverData === "object" && !serverData.error) {
+        setEditServerData(serverData);
+      } else {
+        // Fallback to local data if API fails
+        setEditServerData(item.raw && Object.keys(item.raw).length ? item.raw : item);
+      }
+      setShowAddServerModal(true);
+    } catch (error) {
+      console.error("Error fetching server details:", error);
+      // Fallback to local data on error
+      setEditServerData(item.raw && Object.keys(item.raw).length ? item.raw : item);
+      setShowAddServerModal(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [getServerById]);
+
+  // Handle eye icon click - fetch latest data from API before viewing
+  const handleViewServerClick = useCallback(async (item) => {
+    const serverId = item?.raw?.tool_id || item?.id || item?.tool_id;
+    if (!serverId) {
+      setSelected(item);
+      setOpen(true);
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await getServerById(serverId);
+      // Handle both array and single object response
+      const serverData = Array.isArray(response) ? response[0] : response;
+
+      if (serverData && typeof serverData === "object" && !serverData.error) {
+        // Map the API response to match expected format
+        const raw = serverData;
+        const hasCode = Boolean(raw?.mcp_config?.args?.[1] || raw?.mcp_file?.code_content || raw?.code_content || raw?.code || raw?.script);
+        const hasUrl = Boolean(raw?.mcp_config?.url || raw?.mcp_url || raw?.endpoint || raw?.mcp_config?.mcp_url || raw?.mcp_config?.endpoint);
+
+        let type;
+        if (raw.mcp_type === "module") {
+          type = "External";
+        } else if (raw.mcp_type === "file" || hasCode) {
+          type = "Local";
+        } else if (raw.mcp_type === "url" || hasUrl) {
+          type = "Remote";
+        } else {
+          const rawType = String(raw.mcp_type || raw.type || "");
+          type = rawType ? rawType.charAt(0).toUpperCase() + rawType.slice(1).toLowerCase() : "Unknown";
+        }
+
+        const endpoint = raw.mcp_url || (raw.mcp_config && (raw.mcp_config.url || raw.mcp_config.mcp_url || raw.mcp_config.endpoint)) || raw.endpoint || "";
+
+        const mappedData = {
+          id: raw.tool_id || raw.id,
+          name: raw.tool_name || raw.name,
+          status: raw.status || "approved",
+          type,
+          team_id: raw.team_id || "Public",
+          description: raw.tool_description || raw.description,
+          tags: Array.isArray(raw.tag_ids)
+            ? raw.tag_ids.map((t) => (typeof t === "object" ? t.tag_name || t.tag : t))
+            : Array.isArray(raw.tags)
+              ? raw.tags.map((t) => (typeof t === "object" ? t.tag_name || t.tag : t))
+              : [],
+          endpoint: endpoint || "",
+          tools: raw.tools || [],
+          created_by: raw.created_by || raw.user_email_id || raw.createdBy || raw.created_by_email || raw.creator_email || "",
+          raw: raw,
+        };
+        setSelected(mappedData);
+      } else {
+        setSelected(item);
+      }
+      setOpen(true);
+    } catch (error) {
+      console.error("Error fetching server details:", error);
+      setSelected(item);
+      setOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [getServerById]);
+
   // Handle + icon click internally to show AddServer modal
   const handlePlusClick = () => {
     setShowAddServerModal(true);
@@ -46,11 +190,18 @@ export default function AvailableServers(props) {
   const [selectedServerTypes, setSelectedServerTypes] = useState([]);
   const [showAddServerModal, setShowAddServerModal] = useState(false);
   const [editServerData, setEditServerData] = useState(null);
+
+  // Share modal state
+  const [shareModalData, setShareModalData] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const pageRef = useRef(1);
   const serverListContainerRef = useRef(null);
   const isLoadingRef = useRef(false);
   const [tags, setTags] = useState([]);
-  const { fetchData } = useFetch();
+  const { fetchData, deleteData } = useFetch();
   const hasLoadedTagsOnce = useRef(false);
 
   // Copy and Zoom popup state
@@ -59,17 +210,31 @@ export default function AvailableServers(props) {
 
   // Created By dropdown state
   const [createdBy, setCreatedBy] = useState("All");
-  const loggedInUserEmail = Cookies.get("email");
-  const userName = Cookies.get("userName");
+  const loggedInUserEmail = getEmailFromToken();
+  const userName = getUserNameFromToken();
 
   const { handleError } = useErrorHandler();
 
-  // Permission checks for CRUD operations on servers (using tools permissions)
+  // Permission checks for CRUD operations on servers (using mcp_servers permissions)
   const { hasPermission, loading: permissionsLoading } = usePermissions();
-  const canReadServers = typeof hasPermission === "function" ? hasPermission("read_access.tools") : false;
-  const canAddServers = typeof hasPermission === "function" ? hasPermission("add_access.tools") : false;
-  const canUpdateServers = typeof hasPermission === "function" ? hasPermission("update_access.tools") : false;
-  const canDeleteServers = typeof hasPermission === "function" ? hasPermission("delete_access.tools") : false;
+  const canReadServers = typeof hasPermission === "function" ? hasPermission("read_access.mcp_servers") : false;
+  const canAddServers = typeof hasPermission === "function" ? hasPermission("add_access.mcp_servers") : false;
+  const canUpdateServers = typeof hasPermission === "function" ? hasPermission("update_access.mcp_servers") : false;
+  const canDeleteServers = typeof hasPermission === "function" ? hasPermission("delete_access.mcp_servers") : false;
+  const isAdmin = getRoleFromToken().toLowerCase() === "admin";
+
+  // Multi-select delete state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: visibleData, idKey: "id" });
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   const getTags = useCallback(async () => {
     try {
@@ -106,9 +271,9 @@ export default function AvailableServers(props) {
     let type;
     if (raw.mcp_type === "module") {
       type = "External";
-    } else if (hasCode) {
+    } else if (raw.mcp_type === "file" || hasCode) {
       type = "Local";
-    } else if (hasUrl) {
+    } else if (raw.mcp_type === "url" || hasUrl) {
       type = "Remote";
     } else {
       // Title case the fallback value
@@ -137,6 +302,114 @@ export default function AvailableServers(props) {
     };
   }, []);
 
+  // ========================================
+  // Health Check Logic for Remote Servers
+  // ========================================
+
+  /**
+   * Check health status for a single remote server
+   * Uses cache to avoid redundant API calls
+   */
+  const checkSingleServerHealth = useCallback(
+    async (server) => {
+      const serverId = server.id;
+      if (!serverId) return;
+
+      // Check cache first
+      const cached = getCachedHealthStatus(serverId);
+      if (cached) {
+        setHealthStatusMap((prev) => ({
+          ...prev,
+          [serverId]: cached,
+        }));
+        return;
+      }
+
+      // Skip if already checking
+      if (healthCheckInProgressRef.current.has(serverId)) return;
+      healthCheckInProgressRef.current.add(serverId);
+
+      // Set checking state
+      setHealthStatusMap((prev) => ({
+        ...prev,
+        [serverId]: { status: "checking", toolCount: 0 },
+      }));
+
+      try {
+        const result = await checkServerHealth(serverId);
+        const healthStatus = {
+          status: result.status,
+          toolCount: result.toolCount,
+        };
+
+        // Update state and cache
+        setHealthStatusMap((prev) => ({
+          ...prev,
+          [serverId]: healthStatus,
+        }));
+        setCachedHealthStatus(serverId, healthStatus);
+      } catch (error) {
+        // On error, mark as unknown
+        const unknownStatus = { status: "unknown", toolCount: 0 };
+        setHealthStatusMap((prev) => ({
+          ...prev,
+          [serverId]: unknownStatus,
+        }));
+        setCachedHealthStatus(serverId, unknownStatus);
+      } finally {
+        healthCheckInProgressRef.current.delete(serverId);
+      }
+    },
+    [checkServerHealth]
+  );
+
+  /**
+   * Check health for all visible remote servers
+   * Runs sequentially to avoid overwhelming the backend (MCP connections can be slow)
+   */
+  const checkRemoteServersHealth = useCallback(
+    async (servers) => {
+      // Filter only remote (URL-based) servers
+      const remoteServers = servers.filter(
+        (server) => server.type === "Remote" || server.raw?.mcp_type === "url"
+      );
+
+      if (remoteServers.length === 0) return;
+
+      // Process servers sequentially (one at a time) since MCP connections can be slow
+      // and parallel requests can overwhelm the backend
+      for (const server of remoteServers) {
+        await checkSingleServerHealth(server);
+      }
+    },
+    [checkSingleServerHealth]
+  );
+
+  /**
+   * Debounced health check trigger - runs 1 second after pagination settles
+   */
+  const debouncedHealthCheck = useMemo(
+    () =>
+      debounce((servers) => {
+        checkRemoteServersHealth(servers);
+      }, 1000), // Increased debounce to 1 second
+    [checkRemoteServersHealth]
+  );
+
+  // Trigger health checks when visible data changes
+  useEffect(() => {
+    if (visibleData.length > 0 && !loading) {
+      debouncedHealthCheck(visibleData);
+    }
+
+    // Cleanup debounce on unmount
+    return () => {
+      if (debouncedHealthCheck.cancel) {
+        debouncedHealthCheck.cancel();
+      }
+    };
+  }, [visibleData, loading, debouncedHealthCheck]);
+
   const handleSearch = async (searchValue, divsCount, pageNumber, tagsToUse = null, typesToUse = null, createdByToUse = null) => {
     setSearchTerm(searchValue || "");
     pageRef.current = 1;
@@ -150,7 +423,7 @@ export default function AvailableServers(props) {
       const typesForSearch = typesToUse !== null ? typesToUse : selectedServerTypes;
       // Use createdByToUse if provided, otherwise fall back to state
       const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
-      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : createdByValue === "System" ? "system" : undefined;
       const response = await getServersSearchByPageLimit({
         page: pageNumber,
         limit: divsCount,
@@ -260,8 +533,8 @@ export default function AvailableServers(props) {
         newData = initialData.map(mapServerData);
       } else {
         // Load more regular data
-        // Pass created_by email when "Me" filter is selected
-        const createdByEmail = createdBy === "Me" ? loggedInUserEmail : undefined;
+        // Pass created_by value based on filter selection
+        const createdByEmail = createdBy === "Me" ? loggedInUserEmail : createdBy === "System" ? "system" : undefined;
         const response = await getServersSearchByPageLimit({
           page: nextPage,
           limit: divsCount,
@@ -454,32 +727,29 @@ export default function AvailableServers(props) {
     const serverId = server.id || server.tool_id || (server.raw && (server.raw.id || server.raw.tool_id));
 
     if (!serverId) {
-      addMessage("Cannot delete: Server ID not found", "error");
       return;
     }
 
     // Call the delete API directly since Card.jsx already shows confirmation
-    const role = Cookies.get("role") || "";
-    const loggedInUserEmail = (Cookies.get("email") || "").trim();
+    const role = getRoleFromToken();
+    const loggedInUserEmail = getEmailFromToken().trim();
     const isAdmin = (role || "").toLowerCase() === "admin";
     const data = { user_email_id: loggedInUserEmail, is_admin: isAdmin };
 
     try {
       const response = await deleteServer(data, serverId);
-      if (response?.is_delete) {
-        // Refresh the server list after delete
-        const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
-        getServersData(1, divsCount);
-        addMessage(response?.message || "Server deleted successfully", "success");
-        setShowPopup(true);
-      } else {
-        let errorMessage = "Failed to delete server. Please try again.";
-        if (response?.message) {
-          errorMessage = response.message;
-        } else if (response?.detail) {
-          errorMessage = response.detail;
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+        const isSuccess = !hasAnyFailure;
+        if (isSuccess) {
+          const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+          getServersData(1, divsCount);
         }
-        addMessage(errorMessage, "error");
+        if (statusMsg) {
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+        if (isSuccess) setShowPopup(true);
       }
     } catch (err) {
       let errorMessage = "Failed deleting server";
@@ -495,6 +765,50 @@ export default function AvailableServers(props) {
   };
 
   const { addMessage, setShowPopup } = useMessage();
+
+  // Bulk delete handler for multi-select — single API call
+  const handleBulkDeleteServers = async () => {
+    if (multiSelectIds.length === 0) return;
+    // Filter out items created by the current user (creator cannot delete own items)
+    const currentEmail = (loggedInUserEmail || "").trim().toLowerCase();
+    const ownItems = visibleData.filter((item) => multiSelectIds.includes(item.id) && (item.created_by || "").trim().toLowerCase() === currentEmail);
+    const deletableIds = multiSelectIds.filter((id) => {
+      const item = visibleData.find((d) => d.id === id);
+      return !item || (item.created_by || "").trim().toLowerCase() !== currentEmail;
+    });
+    if (ownItems.length > 0) {
+      addMessage(`${ownItems.length} server(s) created by you were skipped. You cannot delete your own servers.`, "error");
+    }
+    if (deletableIds.length === 0) {
+      clearMultiSelection();
+      setShowBulkDeleteModal(false);
+      return;
+    }
+    setBulkDeleteLoading(true);
+    const role = getRoleFromToken();
+    const isAdmin = (role || "").toLowerCase() === "admin";
+
+    try {
+      const apiUrl = APIs.MCP_DELETE_TOOLS.replace(/\/$/, "");
+      const payload = { tool_ids: deletableIds, is_admin: isAdmin, user_email_id: loggedInUserEmail };
+      const response = await deleteData(apiUrl, payload);
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch {
+      // silent catch
+    }
+
+    clearMultiSelection();
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
+    getServersData(1, divsCount);
+  };
 
   const handleRefreshClick = async () => {
     try {
@@ -548,7 +862,7 @@ export default function AvailableServers(props) {
     try {
       // Use createdByToUse if provided, otherwise fall back to state
       const createdByValue = createdByToUse !== null ? createdByToUse : createdBy;
-      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : undefined;
+      const createdByEmail = createdByValue === "Me" ? loggedInUserEmail : createdByValue === "System" ? "system" : undefined;
       // Use the new API endpoint for paginated servers with tag filtering
       const response = await getServersSearchByPageLimit({
         page: pageNumber,
@@ -637,6 +951,61 @@ export default function AvailableServers(props) {
     setCreatedBy(value);
   };
 
+  // Export selected servers as zip
+  const handleExportServers = async () => {
+    if (multiSelectIds.length === 0) return;
+    setExportLoading(true);
+    try {
+      const blob = await exportServers(multiSelectIds);
+      if (!blob) throw new Error("Failed to export servers");
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "servers_export.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      addMessage(`${multiSelectIds.length} server${multiSelectIds.length !== 1 ? "s" : ""} exported successfully!`, "success");
+      clearMultiSelection();
+    } catch (err) {
+      const errorMessage = err?.message || "Export failed";
+      addMessage(errorMessage, "error");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  // Import servers from zip file
+  const handleImportServers = async (zipFile) => {
+    setImportLoading(true);
+    setShowImportModal(false);
+    try {
+      const createdByEmail = getEmailFromToken();
+      const response = await importServers(zipFile, createdByEmail);
+      if (response?.status === "success") {
+        const result = response.result || {};
+        const imported = result.imported?.length || 0;
+        const skipped = result.skipped?.length || 0;
+        const failed = result.failed?.length || 0;
+        addMessage(
+          result.message || `Import complete. ${imported} imported, ${skipped} skipped, ${failed} failed.`,
+          failed > 0 && imported === 0 ? "error" : "success"
+        );
+        if (imported > 0) {
+          handleRefreshClick();
+        }
+      } else {
+        addMessage(response?.message || response?.detail || "Import failed", "error");
+      }
+    } catch (err) {
+      const errorMessage = err?.message || err?.detail || "Import failed";
+      addMessage(errorMessage, "error");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   useActiveNavClick("/servers", () => {
     setShowAddServerModal(false);
     setEditServerData(null);
@@ -648,9 +1017,10 @@ export default function AvailableServers(props) {
       {showAddServerModal &&
         (editServerData ? (
           <AddServer
+            key={editServerData?.tool_id || editServerData?.id || "edit"}
             editMode={true}
             serverData={editServerData}
-            readOnly={canReadServers && !canUpdateServers}
+            readOnly={!canUpdateServers}
             setRefreshPaginated={async () => {
               try {
                 const divsCount = calculateDivs(serverListContainerRef, 200, 140, 16);
@@ -695,7 +1065,7 @@ export default function AvailableServers(props) {
           />
         ))}
 
-      {loading && <Loader />}
+      {(loading || exportLoading || importLoading) && <Loader />}
 
       <div className={"pageContainer"}>
         <SubHeader
@@ -718,6 +1088,21 @@ export default function AvailableServers(props) {
           createdBy={createdBy}
           onCreatedByChange={handleCreatedByChange}
           handleTypeFilter={handleTypeFilter}
+          tertiaryButtonLabel={canAddServers ? "Export" : undefined}
+          onTertiaryButtonClick={canAddServers ? handleExportServers : undefined}
+          tertiaryButtonDisabled={multiSelectIds.length === 0 || exportLoading}
+          tertiaryButtonTitle={multiSelectIds.length === 0 ? "Select servers to export" : ""}
+          quaternaryButtonLabel={canAddServers ? "Import" : undefined}
+          onQuaternaryButtonClick={canAddServers ? () => setShowImportModal(true) : undefined}
+          quaternaryButtonDisabled={importLoading}
+          quaternaryButtonTitle="Import servers from a zip file"
+          showSelectAll={canDeleteServers && isAdmin && visibleData.length > 1}
+          isAllSelected={isAllSelected}
+          isPartiallySelected={isPartiallySelected}
+          onSelectAll={handleSelectAll}
+          selectedCount={multiSelectCount}
+          onDeleteSelected={canDeleteServers && isAdmin ? () => setShowBulkDeleteModal(true) : null}
+          deleteSelectedLabel="Delete"
         />
 
         {/* Conditional summary line only when we have visible data */}
@@ -726,29 +1111,15 @@ export default function AvailableServers(props) {
           {visible?.length > 0 && (
             <DisplayCard1
               data={visible}
-              // Card click - if read access, open modal (readOnly if no update access); if no read access, not clickable
-              onCardClick={(canReadServers || canUpdateServers) ? (name, item) => {
-                setEditServerData(item.raw && Object.keys(item.raw).length ? item.raw : item);
-                setShowAddServerModal(true);
-              } : undefined}
-              // Dotted button = view
-              onButtonClick={(name, item) => {
-                setSelected(item);
-                setOpen(true);
-              }}
-              onDeleteClick={canDeleteServers ? (name, item) => handleDeleteClick(name, item) : undefined}
-              onEditClick={canUpdateServers ? (item) => {
-                setEditServerData(item.raw && Object.keys(item.raw).length ? item.raw : item);
-                setShowAddServerModal(true);
-              } : undefined}
+              onCardClick={(canReadServers || canUpdateServers) ? (name, item) => handleServerCardClick(item) : undefined}
+              onButtonClick={(name, item) => handleViewServerClick(item)}
+              onEditClick={canUpdateServers ? (item) => handleServerCardClick(item) : undefined}
               onCreateClick={canAddServers ? handlePlusClick : undefined}
-              showDeleteButton={canDeleteServers}
+              showDeleteButton={false}
               showButton={true}
               showCreateCard={false}
               buttonIcon={<SVGIcons icon="eye" width={16} height={16} />}
               enableComplexDelete={false}
-              // loading={loading}
-              // className={styles.serverGrid}
               cardNameKey="name"
               cardDescriptionKey="description"
               cardOwnerKey="created_by"
@@ -756,6 +1127,16 @@ export default function AvailableServers(props) {
               emptyMessage="No servers found"
               contextType="server"
               cardDisabled={!canReadServers && !canUpdateServers}
+              healthStatusMap={healthStatusMap}
+              hideActions={!canReadServers}
+              showCheckbox={canAddServers || canDeleteServers}
+              onSelectionChange={(canAddServers || canDeleteServers) ? handleMultiSelectChange : undefined}
+              selectedIds={multiSelectIds}
+              idKey="id"
+              onShareClick={(item) => {
+                setShareModalData(item.raw || item);
+                setShowShareModal(true);
+              }}
             />
           )}
           {/* Display EmptyState when filters are active but no results */}
@@ -980,6 +1361,29 @@ export default function AvailableServers(props) {
         {/* Zoom Popup for Description */}
         {zoomPopup.open && (
           <ZoomPopup title={zoomPopup.title} content={zoomPopup.content} type="text" readOnly={true} onClose={() => setZoomPopup({ open: false, title: "", content: "" })} />
+        )}
+
+        <ShareModal
+          show={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          itemData={shareModalData}
+          entityType="server"
+        />
+
+        {showImportModal && (
+          <ImportModal
+            type="servers"
+            onClose={() => setShowImportModal(false)}
+            onImport={handleImportServers}
+            loading={importLoading}
+          />
+        )}
+        {showBulkDeleteModal && (
+          <ConfirmationModal
+            message={`Are you sure you want to delete ${multiSelectCount} selected server(s)? This action cannot be undone.`}
+            onConfirm={handleBulkDeleteServers}
+            setShowConfirmation={setShowBulkDeleteModal}
+          />
         )}
       </div>
     </>

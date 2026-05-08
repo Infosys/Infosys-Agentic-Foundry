@@ -25,7 +25,7 @@ export const getServerType = (server) => {
   );
 
   if (raw.mcp_type === "module") return "EXTERNAL";
-  if (hasCode) return "LOCAL";
-  if (hasUrl) return "REMOTE";
+  if (raw.mcp_type === "file" || hasCode) return "LOCAL";
+  if (raw.mcp_type === "url" || hasUrl) return "REMOTE";
   return String(raw.mcp_type || raw.type || "").toUpperCase() || "UNKNOWN";
 };

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 import SummaryLine from "../../iafComponents/GlobalComponents/SummaryLine.jsx";
 import DisplayCard1 from "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.jsx";
 import Loader from "../commonComponents/Loader.jsx";
@@ -11,6 +11,12 @@ import { debounce } from "lodash";
 import { useMessage } from "../../Hooks/MessageContext";
 import EmptyState from "../commonComponents/EmptyState.jsx";
 import GroupOnBoarding from "./GroupOnBoarding.jsx";
+import useMultiSelect from "../../Hooks/useMultiSelect";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox";
+import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
+import SVGIcons from "../../Icons/SVGIcons";
+import subHeaderStyles from "../commonComponents/SubHeader.module.css";
 
 const ITEMS_PER_PAGE = 20;
 const CARD_MIN_WIDTH = 200;
@@ -40,8 +46,8 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
   const { addMessage } = useMessage();
 
   // Additional state for Card component functionality
-  const loggedInUserEmail = Cookies.get("email");
-  const role = Cookies.get("role");
+  const loggedInUserEmail = getEmailFromToken();
+  const role = getRoleFromToken();
   const normalizedRole = role ? role.toUpperCase().replace(/[\s_-]/g, "") : "";
   const isSuperAdmin = normalizedRole === "SUPERADMIN";
   const isAdmin = normalizedRole === "ADMIN";
@@ -49,6 +55,8 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
 
   // Created By dropdown state
   const [createdBy, setCreatedBy] = useState("All");
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Calculate number of cards that fit in the container
   const calculateDivs = (containerRef) => {
@@ -362,6 +370,42 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
   // Permission checks - show loader inline instead of replacing entire component
   const isPermissionsLoading = permissionsLoading;
 
+  // Multi-select state
+  const {
+    selectedIds: multiSelectIds,
+    selectedCount: multiSelectCount,
+    isAllSelected,
+    isPartiallySelected,
+    handleSelectionChange: handleMultiSelectChange,
+    handleSelectAll,
+    clearSelection: clearMultiSelection,
+  } = useMultiSelect({ data: visibleData, idKey: "group_name" });
+
+  // Bulk delete handler — single API call
+  const handleBulkDeleteGroups = async () => {
+    if (multiSelectIds.length === 0) return;
+    setBulkDeleteLoading(true);
+
+    try {
+      const payload = { group_names: multiSelectIds };
+      const response = await deleteData(APIs.DELETE_GROUP.replace(/\/$/, ""), payload);
+
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch {
+      // silent catch
+    }
+    clearMultiSelection();
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    handleRefresh();
+  };
+
   const handleCardDelete = async (groupName) => {
     const group = visibleData.find((g) => g.group_name === groupName);
     if (group) {
@@ -370,25 +414,23 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
         return;
       }
 
-      // Direct delete without confirmation
+      // Use bulk endpoint for single delete
       setLoading(true);
       try {
-        const deleteUrl = `${APIs.DELETE_GROUP}${encodeURIComponent(groupName)}`;
-        const result = await deleteData(deleteUrl);
+        const payload = { group_names: [groupName] };
+        const result = await deleteData(APIs.DELETE_GROUP.replace(/\/$/, ""), payload);
 
-        if (result && result.success !== false) {
-          addMessage(`Group "${groupName}" deleted successfully!`, "success");
-          handleRefresh();
-        } else {
-          throw new Error(result?.message || "Failed to delete group");
+        const statusMsg = result?.status_message || result?.message;
+        const hasAnyFailure = Array.isArray(result?.results) && result.results.some((r) => r.is_delete === false);
+        if (statusMsg) {
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
         }
+        if (!hasAnyFailure) handleRefresh();
       } catch (error) {
-        console.error("Error deleting group:", error);
-        const errorMsg = extractErrorMessage(error).message || "Failed to delete group. Please try again.";
-        addMessage(errorMsg, "error");
-      } finally {
-        setLoading(false);
+        const errorMsg = extractErrorMessage(error).message;
+        if (errorMsg) addMessage(errorMsg, "error");
       }
+      setLoading(false);
     }
   };
 
@@ -405,11 +447,36 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
       )}
       {(loading || isPermissionsLoading) && <Loader />}
       <>
-        {/* Summary Line */}
-        <SummaryLine visibleCount={visibleData.length} totalCount={totalGroupsCount} />
+        {/* Summary + Delete button row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px" }}>
+          <SummaryLine visibleCount={visibleData.length} totalCount={totalGroupsCount} />
+          {canManageGroups && multiSelectCount > 0 && (
+            <IAFButton
+              type="primary"
+              className={subHeaderStyles.deleteSelectedBtn}
+              onClick={() => setShowBulkDeleteModal(true)}
+              icon={<SVGIcons icon="trash" width={14} height={14} color="#fff" />}
+            >
+              Delete ({multiSelectCount})
+            </IAFButton>
+          )}
+        </div>
+        {/* Select All row - above cards */}
+        {canManageGroups && visibleData.length > 1 && (
+          <div className={subHeaderStyles.selectAllRow}>
+            <label className={subHeaderStyles.selectAllWrapper}>
+              <CheckBox
+                checked={isAllSelected}
+                indeterminate={isPartiallySelected}
+                onChange={handleSelectAll}
+              />
+              <span className={subHeaderStyles.selectAllLabel}>Select All</span>
+            </label>
+          </div>
+        )}
         <div className="listWrapper" ref={groupListContainerRef}>
-          {/* Show DisplayCard1 when there's data, or when no active filters and user can manage groups */}
-          {!loading && (visibleData?.length > 0 || (canManageGroups && !searchTerm.trim() && (!createdBy || createdBy === "All"))) && (
+          {/* Show DisplayCard1 when there's data */}
+          {!loading && visibleData?.length > 0 && (
             <DisplayCard1
               data={visibleData}
               onCardClick={(_cardName, item) => {
@@ -420,6 +487,10 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
               }}
               onDeleteClick={(cardName) => handleCardDelete(cardName)}
               showDeleteButton={canManageGroups}
+              showCheckbox={canManageGroups}
+              onSelectionChange={handleMultiSelectChange}
+              selectedIds={multiSelectIds}
+              idKey="group_name"
               cardNameKey="group_name"
               cardDescriptionKey="group_description"
               cardOwnerKey="created_by"
@@ -443,12 +514,32 @@ const GroupAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClear
                 if (onClearParentSearch) onClearParentSearch();
                 handleRefresh();
               }}
-              onCreateClick={handlePlusIconClick}
+              onCreateClick={canManageGroups ? handlePlusIconClick : undefined}
               createButtonLabel="Create Group"
+              showCreateButton={canManageGroups}
+            />
+          )}
+          {/* Display EmptyState when no data exists (no filters applied) */}
+          {!searchTerm.trim() && (!createdBy || createdBy === "All") && visibleData.length === 0 && !loading && (
+            <EmptyState
+              message="No groups found"
+              subMessage={canManageGroups ? "Get started by creating your first group" : "No groups available"}
+              onCreateClick={canManageGroups ? handlePlusIconClick : undefined}
+              createButtonLabel={canManageGroups ? "Create Group" : undefined}
+              showClearFilter={false}
+              showCreateButton={canManageGroups}
             />
           )}
         </div>
       </>
+
+      {showBulkDeleteModal && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete ${multiSelectCount} selected group(s)? This action cannot be undone.`}
+          onConfirm={handleBulkDeleteGroups}
+          setShowConfirmation={setShowBulkDeleteModal}
+        />
+      )}
     </>
   );
 };

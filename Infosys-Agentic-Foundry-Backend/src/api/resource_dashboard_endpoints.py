@@ -15,7 +15,7 @@ The Resource Dashboard is accessible by all authenticated users.
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from src.auth.models import User
+from src.auth.models import User, UserRole
 from src.auth.dependencies import get_current_user
 from src.api.dependencies import ServiceProvider
 from src.auth.authorization_service import AuthorizationService
@@ -92,6 +92,11 @@ class MyAccessKeyFullResponse(BaseModel):
     access_key: str
     allowed_values: List[str]
     excluded_values: List[str]
+    
+
+class DeleteAccessKeysRequest(BaseModel):
+    """Request model for deleting one or more access keys"""
+    access_keys: List[str] = Field(..., description="List of access key names to delete")
     
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -222,20 +227,20 @@ async def get_access_key_details(
     )
 
 
-@router.delete("/access-keys/{access_key}")
+@router.delete("/access-keys")
 async def delete_access_key(
-    access_key: str,
+    request: DeleteAccessKeysRequest,
     current_user: User = Depends(get_current_user),
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service)
 ):
     """
-    Delete an access key.
+    Delete one or more access keys.
     
     **Permission required** - delete access on tools.
     **Creator only** - Only the user who created the access key can delete it.
     
     Args:
-        access_key: The access key to delete
+        request: Request body containing list of access key names to delete
         
     Returns:
         Success message or error with details
@@ -244,56 +249,75 @@ async def delete_access_key(
     user_department = current_user.department_name 
     if not await authorization_service.check_operation_permission(current_user.email, current_user.role, "create", "tools", user_department):
         raise HTTPException(status_code=403, detail="You don't have permission to delete access keys")
+
+    if not request.access_keys:
+        raise HTTPException(status_code=400, detail="No access keys provided for deletion")
+
+    # Check if user is admin
+    is_admin = await authorization_service.has_role(
+        user_email=current_user.email,
+        required_role=UserRole.ADMIN,
+        department_name=current_user.department_name
+    )
+
+    # Only admins can delete multiple access keys at once; non-admins must delete one at a time
+    if len(request.access_keys) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple access keys at once. Please delete one access key at a time.")
+
     repo = ServiceProvider.get_access_key_definitions_repository()
-    
-    # Check if access key exists in user's department
-    key_definition = await repo.get_access_key(access_key, department_name=current_user.department_name)
-    if not key_definition:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Access key '{access_key}' not found in your department"
-        )
-    
-    # Check if user is the creator
-    if key_definition["created_by"] != current_user.username:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Only the creator ({key_definition['created_by']}) can delete this access key"
-        )
-    
-    # Check if any tools are using this access key
     tool_mapping_repo = ServiceProvider.get_tool_access_key_mapping_repository()
-    tools_using_key = await tool_mapping_repo.get_tools_by_access_key(access_key, department_name=current_user.department_name)
-    
-    if tools_using_key:
-        tool_names = [t["tool_name"] for t in tools_using_key]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "message": f"Cannot delete access key '{access_key}' because it is being used by {len(tools_using_key)} tool(s): {tool_names}"
-            }
-        )
-    
-    # Delete the access key definition
-    result = await repo.delete_access_key(access_key, department_name=current_user.department_name, requesting_user=current_user.username)
-    
-    if not result.get("success"):
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.get("error", "Failed to delete access key")
-        )
-    
-    # Also delete all user access key entries for this access key
     user_access_repo = ServiceProvider.get_user_access_key_repository()
-    deleted_user_entries = await user_access_repo.delete_all_for_access_key(access_key, department_name=current_user.department_name)
-    
-    log.info(f"User {current_user.email} deleted access key '{access_key}' (removed {deleted_user_entries} user entries)")
-    
-    return {
-        "success": True,
-        "message": f"Access key '{access_key}' deleted successfully",
-        "deleted_user_entries": deleted_user_entries
-    }
+
+    results = []
+    for access_key in request.access_keys:
+        try:
+            # Check if access key exists in user's department
+            key_definition = await repo.get_access_key(access_key, department_name=current_user.department_name)
+            if not key_definition:
+                results.append({"access_key": access_key, "is_delete": False, "message": "Access key not found in your department"})
+                continue
+
+            # Check if user is the creator
+            if key_definition["created_by"] != current_user.username:
+                results.append({"access_key": access_key, "is_delete": False, "message": f"Only the creator ({key_definition['created_by']}) can delete this access key"})
+                continue
+
+            # Check if any tools are using this access key
+            tools_using_key = await tool_mapping_repo.get_tools_by_access_key(access_key, department_name=current_user.department_name)
+            if tools_using_key:
+                tool_names = [t["tool_name"] for t in tools_using_key]
+                results.append({"access_key": access_key, "is_delete": False, "message": f"Cannot delete because it is being used by {len(tools_using_key)} tool(s): {tool_names}"})
+                continue
+
+            # Delete the access key definition
+            result = await repo.delete_access_key(access_key, department_name=current_user.department_name, requesting_user=current_user.username)
+
+            if not result.get("success"):
+                results.append({"access_key": access_key, "is_delete": False, "message": result.get("error", "Failed to delete access key")})
+                continue
+
+            # Also delete all user access key entries for this access key
+            deleted_user_entries = await user_access_repo.delete_all_for_access_key(access_key, department_name=current_user.department_name)
+
+            log.info(f"User {current_user.email} deleted access key '{access_key}' (removed {deleted_user_entries} user entries)")
+            results.append({"access_key": access_key, "is_delete": True, "message": "Access key deleted successfully", "deleted_user_entries": deleted_user_entries})
+
+        except Exception as e:
+            log.error(f"Error deleting access key '{access_key}': {str(e)}")
+            results.append({"access_key": access_key, "is_delete": False, "message": f"Error deleting access key: {str(e)}"})
+
+    response = {}
+    for res in results:
+        key_name = res.get("access_key", "unknown")
+        reason = "Successfully deleted access keys" if res.get("is_delete") else res.get("message", "Delete failed")
+        response.setdefault(reason, []).append(key_name)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(key_names)}"
+        for reason, key_names in sorted(response.items(), key=lambda item: item[0] != "Successfully deleted access keys")
+    )
+
+    return {"results": results, "status_message": status_message}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

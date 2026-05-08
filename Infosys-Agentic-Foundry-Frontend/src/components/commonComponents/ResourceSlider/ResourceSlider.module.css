@@ -196,6 +196,7 @@
 
 .tabLabel {
   font-weight: var(--font-weight-medium);
+  white-space: nowrap;
 }
 
 /* No Permission Text - Displayed when user lacks access to all resource types */
@@ -313,6 +314,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dbTypeBadge {
+  display: inline-flex;
+  padding: 1px 8px;
+  background: var(--accent-light, rgba(55, 172, 234, 0.12));
+  color: var(--app-primary-color, #37acEA);
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium, 500);
+  text-transform: lowercase;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
 }
 
 .previewButton {
@@ -346,6 +363,34 @@
   text-align: center;
   font-size: var(--font-size-sm);
   color: var(--content-color, var(--text-secondary));
+}
+
+/* Version select dropdown for tools */
+.versionSelect {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: var(--font-primary, "Inter", sans-serif);
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--header-color);
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--accent-color, var(--border-color));
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  outline: none;
+  appearance: auto;
+  min-width: 50px;
+  max-width: 80px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.versionSelect:focus {
+  border-color: var(--accent, #37acea);
+  box-shadow: 0 0 0 2px var(--accent-light, rgba(55, 172, 234, 0.15));
+}
+
+.versionSelect:hover {
+  border-color: var(--accent, #37acea);
 }
 
 /* Slider Footer - Fixed */

@@ -9,6 +9,9 @@ import Loader from "./Loader.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 
 const JSON_INDENT = 2;
+const REMOTE_TIMEOUT_SEC = 30;
+
+const REMOTE_ERROR_PHASES = new Set(["validation", "connection", "header_resolution", "resolution", "execution"]);
 
 /**
  * Converts a string to Title Case (e.g., "user_name" -> "User Name")
@@ -16,9 +19,9 @@ const JSON_INDENT = 2;
 const toTitleCase = (str) =>
   str
     ? str
-        .split(/[_\s]+/)
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(" ")
+      .split(/[_\s]+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ")
     : "Provide Value";
 
 /**
@@ -30,6 +33,9 @@ const toTitleCase = (str) =>
 const isMandatoryParam = (param) => {
   if (typeof param.mandatory === "boolean") {
     return param.mandatory;
+  }
+  if (typeof param.required === "boolean") {
+    return param.required;
   }
   // Fallback: mandatory if no default exists
   return param.default == null;
@@ -66,7 +72,18 @@ const getPlaceholder = (param) => {
   return "";
 };
 
-const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeTrigger = 0, onClose = () => {}, onRunStart = () => {}, onRunComplete = () => {} }) => {
+const ExecutorPanel = ({
+  code = "",
+  mode = "tool",
+  remoteEndpoint = "",
+  vaultValue = "",
+  customHeaders = [],
+  autoExecute = false,
+  executeTrigger = 0,
+  onClose = () => { },
+  onRunStart = () => { },
+  onRunComplete = () => { },
+}) => {
   const { addMessage } = useMessage();
   const { postData } = useFetch();
 
@@ -84,6 +101,28 @@ const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeT
   const executionResultRef = useRef(null);
   const containerRef = useRef(null);
   const executedTriggersRef = useRef(new Set());
+  const remoteParamFetchSeq = useRef(0);
+
+  const buildRemoteBasePayload = useCallback(() => {
+    const ep = typeof remoteEndpoint === "string" ? remoteEndpoint.trim() : "";
+    const payload = { endpoint: ep, timeout_sec: REMOTE_TIMEOUT_SEC };
+    const mergedHeaders = {};
+    const v = typeof vaultValue === "string" ? vaultValue.trim() : "";
+    if (v) {
+      mergedHeaders.Authorization = `VAULT::${v}`;
+    }
+    if (Array.isArray(customHeaders)) {
+      for (const row of customHeaders) {
+        if (row.name && row.name.trim() && row.value && row.value.trim()) {
+          mergedHeaders[row.name.trim()] = row.value.trim();
+        }
+      }
+    }
+    if (Object.keys(mergedHeaders).length > 0) {
+      payload.headers = mergedHeaders;
+    }
+    return payload;
+  }, [remoteEndpoint, vaultValue, customHeaders]);
 
   // -------- Rendering helpers --------
 
@@ -201,6 +240,60 @@ const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeT
 
   // -------- Response handling (shared) --------
   const processResponse = (response) => {
+    const remoteErr = response?.error != null && String(response.error).trim() !== "";
+    const phase = response?.phase;
+
+    if (mode === "remote") {
+      if (phase === "introspection" && !remoteErr && Array.isArray(response?.inputs_required) && response.inputs_required.length > 0) {
+        setServerTools(response.inputs_required);
+        const first = response.inputs_required[0];
+        setSelectedTool(first.name);
+        setInputsMeta([]);
+        setInputValues({});
+        setParamErrors({});
+        setExecutionResult(null);
+        return;
+      }
+      if (phase === "introspection" && !remoteErr && Array.isArray(response?.inputs_required) && response.inputs_required.length === 0) {
+        setServerTools([]);
+        setInputsMeta([]);
+        setExecutionResult({ type: "error", data: "No tools returned from remote server" });
+        return;
+      }
+      if (phase === "introspection" && remoteErr) {
+        setServerTools([]);
+        setInputsMeta([]);
+        setInputValues({});
+        setParamErrors({});
+        setExecutionResult({ type: "error", data: response.error });
+        return;
+      }
+      if (phase === "await_args" && !remoteErr && Array.isArray(response?.inputs_required)) {
+        setActiveParams(response.inputs_required);
+        setExecutionResult(null);
+        return;
+      }
+      if (phase === "await_args" && remoteErr) {
+        setActiveParams([]);
+        setExecutionResult({ type: "error", data: response.error });
+        return;
+      }
+      if (phase === "completed" && response?.success) {
+        setExecutionResult({ type: "success", data: response.output });
+        return;
+      }
+      if (remoteErr || (phase && REMOTE_ERROR_PHASES.has(phase))) {
+        let msg = remoteErr ? response.error : response?.message || "Request failed";
+        if (response?.conversion_errors && typeof response.conversion_errors === "object" && Object.keys(response.conversion_errors).length > 0) {
+          msg = `${msg} ${JSON.stringify(response.conversion_errors)}`;
+        }
+        setExecutionResult({ type: "error", data: msg });
+        return;
+      }
+      setExecutionResult({ type: "error", data: response?.message || "Unknown response" });
+      return;
+    }
+
     // Server mode introspection: list of tools (each has params)
     if (mode === "server" && Array.isArray(response?.inputs_required) && response.inputs_required.length && !response.success && response.error === "") {
       setServerTools(response.inputs_required);
@@ -240,7 +333,16 @@ const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeT
   // -------- Run handler --------
   const handleRun = async (e) => {
     if (e) e.preventDefault();
-    if (!code?.trim()) {
+    if (mode === "remote") {
+      if (!remoteEndpoint?.trim()) {
+        addMessage("Endpoint URL is required", "error");
+        return;
+      }
+      if (!selectedTool) {
+        addMessage("Select a tool", "error");
+        return;
+      }
+    } else if (!code?.trim()) {
       addMessage("No code to execute", "error");
       return;
     }
@@ -249,14 +351,21 @@ const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeT
     onRunStart();
     setRunLoading(true);
     try {
-      const isTool = mode === "tool";
-      const url = isTool ? APIs.EXECUTE_CODE : APIs.INLINE_MCP_RUN;
-      const payload = isTool
-        ? { code, inputs: buildArguments(), handle_default: true }
-        : { code, tool_name: selectedTool, arguments: buildArguments(), timeout_sec: 5, debug: false, handle_default: true };
+      if (mode === "remote") {
+        const args = buildArguments();
+        const payload = { ...buildRemoteBasePayload(), tool_name: selectedTool, arguments: args };
+        const response = await postData(APIs.INLINE_MCP_RUN_REMOTE, payload);
+        processResponse(response);
+      } else {
+        const isTool = mode === "tool";
+        const url = isTool ? APIs.EXECUTE_CODE : APIs.INLINE_MCP_RUN;
+        const payload = isTool
+          ? { code, inputs: buildArguments(), handle_default: true }
+          : { code, tool_name: selectedTool, arguments: buildArguments(), timeout_sec: 5, debug: false, handle_default: true };
 
-      const response = await postData(url, payload);
-      processResponse(response);
+        const response = await postData(url, payload);
+        processResponse(response);
+      }
     } catch (err) {
       setExecutionResult({ type: "error", data: err?.message || "Execution error" });
     } finally {
@@ -267,8 +376,14 @@ const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeT
 
   // -------- Auto execute (dry-run / introspection) --------
   useEffect(() => {
-    if (!autoExecute || !code) return;
-    const key = `${mode}-${executeTrigger}`;
+    if (!autoExecute) return;
+    if (mode === "remote") {
+      if (!remoteEndpoint?.trim()) return;
+    } else if (!code) {
+      return;
+    }
+
+    const key = mode === "remote" ? `remote-${executeTrigger}-${remoteEndpoint?.trim()}` : `${mode}-${executeTrigger}`;
     if (executedTriggersRef.current.has(key)) return;
     executedTriggersRef.current.add(key);
 
@@ -276,29 +391,70 @@ const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeT
       onRunStart();
       setRunLoading(true);
       try {
-        const isTool = mode === "tool";
-        const url = isTool ? APIs.EXECUTE_CODE : APIs.INLINE_MCP_RUN;
-        // handle_default false to elicit required inputs
-        const payload = { code, handle_default: false };
-        const response = await postData(url, payload);
-        processResponse(response);
+        if (mode === "remote") {
+          const payload = buildRemoteBasePayload();
+          const response = await postData(APIs.INLINE_MCP_RUN_REMOTE, payload);
+          processResponse(response);
+        } else {
+          const isTool = mode === "tool";
+          const url = isTool ? APIs.EXECUTE_CODE : APIs.INLINE_MCP_RUN;
+          const payload = { code, handle_default: false };
+          const response = await postData(url, payload);
+          processResponse(response);
+        }
       } catch (err) {
-        addMessage("Error executing code", "error");
+        addMessage(mode === "remote" ? "Error loading remote tools" : "Error executing code", "error");
       } finally {
         setRunLoading(false);
-        // Always signal completion so parent loaders clear
         onRunComplete();
       }
     })();
-  }, [autoExecute, executeTrigger, code, mode, postData, addMessage, onRunStart, onRunComplete]);
+  }, [autoExecute, executeTrigger, code, mode, remoteEndpoint, vaultValue, postData, addMessage, onRunStart, onRunComplete, buildRemoteBasePayload]);
 
-  // -------- Sync params when server selected tool changes --------
+  // -------- Sync params when server selected tool changes (local inline MCP only) --------
   useEffect(() => {
     if (mode !== "server") return;
     const tool = serverTools.find((t) => t.name === selectedTool);
     if (tool) setActiveParams(tool.params || []);
     else setActiveParams([]);
   }, [selectedTool, mode, serverTools]);
+
+  // -------- Remote MCP: fetch parameter schema when tool selection changes --------
+  useEffect(() => {
+    if (mode !== "remote" || !remoteEndpoint?.trim() || !selectedTool || serverTools.length === 0) return;
+
+    const seq = ++remoteParamFetchSeq.current;
+    (async () => {
+      setRunLoading(true);
+      try {
+        const payload = { ...buildRemoteBasePayload(), tool_name: selectedTool };
+        const response = await postData(APIs.INLINE_MCP_RUN_REMOTE, payload);
+        if (seq !== remoteParamFetchSeq.current) return;
+
+        const err = response?.error != null && String(response.error).trim() !== "";
+        if (response?.phase === "await_args" && !err && Array.isArray(response?.inputs_required)) {
+          setActiveParams(response.inputs_required);
+          setExecutionResult(null);
+        } else if (err || (response?.phase && REMOTE_ERROR_PHASES.has(response.phase))) {
+          let msg = err ? response.error : response?.message || "Failed to load tool parameters";
+          if (response?.conversion_errors && typeof response.conversion_errors === "object" && Object.keys(response.conversion_errors).length > 0) {
+            msg = `${msg} ${JSON.stringify(response.conversion_errors)}`;
+          }
+          setExecutionResult({ type: "error", data: msg });
+        } else {
+          setExecutionResult({ type: "error", data: response?.message || "Failed to load tool parameters" });
+        }
+      } catch (e) {
+        if (seq === remoteParamFetchSeq.current) {
+          setExecutionResult({ type: "error", data: e?.message || "Failed to load tool parameters" });
+        }
+      } finally {
+        if (seq === remoteParamFetchSeq.current) {
+          setRunLoading(false);
+        }
+      }
+    })();
+  }, [mode, remoteEndpoint, vaultValue, selectedTool, serverTools, buildRemoteBasePayload, postData]);
 
   // -------- Scroll result into view when updated --------
   useEffect(() => {
@@ -321,133 +477,141 @@ const ExecutorPanel = ({ code = "", mode = "tool", autoExecute = false, executeT
         if (pageRect.top < 0 || pageRect.bottom > vh) {
           try {
             container.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          } catch (_) {}
+          } catch (_) { }
         }
       } else {
         try {
           resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        } catch (_) {}
+        } catch (_) { }
       }
     };
     requestAnimationFrame(() => setTimeout(doScroll, 0));
   }, [executionResult]);
 
   const hasParams = inputsMeta.length > 0;
-  // const headerText = mode === "server" ? "Server Parameters" : "Required Inputs";
+  const canRunRemoteTool = mode === "remote" && Boolean(selectedTool) && serverTools.length > 0;
+  const showRunSection = hasParams || canRunRemoteTool;
   const headerText = "Required Inputs";
+  const useRawParamLabels = mode === "server" || mode === "remote";
 
   return (
-    <div ref={containerRef} className={style.executorContainer}>
+    <div className={style.executorOuterWrapper}>
       {runLoading && (
         <div className={style.loadingOverlay} aria-label="Executing">
           <Loader />
         </div>
       )}
-      <div className={style.executorHeaderWrapper}>
-        <h3 className={style.executorPanelHeader}>Executor Panel</h3>
-        <button
-          className={`closeBtn ${style.closeBtnPosition}`}
-          onClick={() => {
-            setInputsMeta([]);
-            setServerTools([]);
-            setInputValues({});
-            setParamErrors({});
-            setExecutionResult(null);
-            onClose();
-          }}
-          type="button"
-          title="Close Executorpanel">
-          ×
-        </button>
-      </div>
-      <div className={style.sectionWrapper}>
-        {mode === "server" && serverTools.length > 0 && (
-          <div className={style.formBlock}>
-            <NewCommonDropdown
-              options={serverTools.map((t) => t.name)}
-              selected={selectedTool}
-              onSelect={(name) => setSelectedTool(name)}
-              placeholder="Search tool..."
-              width={240}
-              classNameOverride="executorPanelToolsDropdown"
-            />
-          </div>
-        )}
-
-        {hasParams && (
-          <form onSubmit={handleRun} className="form">
-            <div className={style.executionHeader}>
-              <p className={style.headerText}>{headerText}</p>
+      <div ref={containerRef} className={style.executorContainer}>
+        <div className={style.executorHeaderWrapper}>
+          <h3 className={style.executorPanelHeader}>Executor Panel</h3>
+          <button
+            className={`closeBtn ${style.closeBtnPosition}`}
+            onClick={() => {
+              setInputsMeta([]);
+              setServerTools([]);
+              setSelectedTool("");
+              setInputValues({});
+              setParamErrors({});
+              setExecutionResult(null);
+              onClose();
+            }}
+            type="button"
+            title="Close Executorpanel">
+            ×
+          </button>
+        </div>
+        <div className={style.sectionWrapper}>
+          {(mode === "server" || mode === "remote") && serverTools.length > 0 && (
+            <div className={style.formBlock}>
+              <NewCommonDropdown
+                options={serverTools.map((t) => t.name)}
+                selected={selectedTool}
+                onSelect={(name) => setSelectedTool(name)}
+                placeholder="Search tool..."
+                width={240}
+                classNameOverride="executorPanelToolsDropdown"
+              />
             </div>
-            <div className="formSection">
+          )}
+
+          {showRunSection && (
+            <form onSubmit={handleRun} className="form">
+              {hasParams && (
+                <div className={style.executionHeader}>
+                  <p className={style.headerText}>{headerText}</p>
+                </div>
+              )}
               <div className="formSection">
-                {inputsMeta.map((p) => {
-                  const errorId = `${p.name}-error`;
-                  const hasError = Boolean(paramErrors[p.name]);
-                  const isRequired = isMandatoryParam(p);
-                  const placeholder = getPlaceholder(p);
+                <div className="formSection">
+                  {inputsMeta.map((p) => {
+                    const errorId = `${p.name}-error`;
+                    const hasError = Boolean(paramErrors[p.name]);
+                    const isRequired = isMandatoryParam(p);
+                    const placeholder = getPlaceholder(p);
 
-                  const inputId = `param-input-${p.name}`;
+                    const inputId = `param-input-${p.name}`;
 
-                  return (
-                    <div key={p.name} className="formGroup">
-                      <label htmlFor={inputId} className="label-desc">
-                        {/* <span> */}
-                        {mode === "server" ? p.name : toTitleCase(p.name)}
-                        {isRequired && <span className="required">*</span>}
-                        {/* </span> */}
-                      </label>
-                      <input
-                        type="text"
-                        id={inputId}
-                        name={p.name}
-                        value={inputValues[p.name] || ""}
-                        onChange={(e) => handleParamChange(p.name, e.target.value)}
-                        className={`input ${hasError ? style.inputError : ""}`}
-                        aria-label={p.name}
-                        placeholder={placeholder}
-                        {...(hasError ? { "aria-describedby": errorId } : {})}
-                        {...(isRequired ? { "aria-required": "true" } : {})}
-                      />
-                      {hasError && (
-                        <span id={errorId} className={style.subtleErrorMessage} role="alert">
-                          {paramErrors[p.name]}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-                <div className={style.runButtonRight}>
-                  <IAFButton type="primary" onClick={handleRun} disabled={runLoading} loading={runLoading}>
-                    Run
-                  </IAFButton>
+                    return (
+                      <div key={p.name} className="formGroup">
+                        <label htmlFor={inputId} className="label-desc">
+                          {useRawParamLabels ? p.name : toTitleCase(p.name)}
+                          {isRequired && <span className="required">*</span>}
+                        </label>
+                        <input
+                          type="text"
+                          id={inputId}
+                          name={p.name}
+                          value={inputValues[p.name] || ""}
+                          onChange={(e) => handleParamChange(p.name, e.target.value)}
+                          className={`input ${hasError ? style.inputError : ""}`}
+                          aria-label={p.name}
+                          placeholder={placeholder}
+                          {...(hasError ? { "aria-describedby": errorId } : {})}
+                          {...(isRequired ? { "aria-required": "true" } : {})}
+                        />
+                        {hasError && (
+                          <span id={errorId} className={style.subtleErrorMessage} role="alert">
+                            {paramErrors[p.name]}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className={style.runButtonRight}>
+                    <IAFButton type="primary" onClick={handleRun} disabled={runLoading} loading={runLoading}>
+                      Run
+                    </IAFButton>
+                  </div>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
+
+        {executionResult && (
+          <div className={style.sectionWrapper}>
+            <div className={style.executionHeader}>
+              <span className={style.executionTitle}>Output</span>
+              {executionResult.type === "success" ? (
+                <span className={style.checkIcon} aria-label="Success">
+                  <SVGIcons icon="circle-check-big" width={20} height={20} color="var(--header-color)" />
+                </span>
+              ) : null}
+            </div>
+            <div ref={executionResultRef} className={style.executionOutputPanel}>
+              <div className={style.executionOutputTextBlock}>
+                <div className={style.executionStep}>
+                  {executionResult.type === "success" ? "Execution completed successfully!" : "Execution failed"}
+                </div>
+                <div className={style.executionResultText}>
+                  {executionResult.type === "error" ? "Error: " : "Result: "}
+                  {renderValidationContent(executionResult.data)}
                 </div>
               </div>
             </div>
-          </form>
+          </div>
         )}
       </div>
-
-      {executionResult && (
-        <div className={style.sectionWrapper}>
-          <div className={style.executionHeader}>
-            <span className={style.executionTitle}>Output</span>
-            <span className={style.checkIcon} aria-label="Success">
-              <SVGIcons icon="circle-check-big" width={20} height={20} color="var(--header-color)" />
-            </span>
-          </div>
-          <div ref={executionResultRef} className={style.executionOutputPanel}>
-            <div className={style.executionOutputTextBlock}>
-              {/* <div className={style.executionStep}>Execution started...</div>
-              <div className={style.executionStep}>
-                Processing {typeof code === "string" && code.match(/def\s+(\w+)/) ? code.match(/def\s+(\w+)/)[1] : selectedTool || "TOOL"}...
-              </div> */}
-              <div className={style.executionStep}>Execution completed successfully!</div>
-              <div className={style.executionResultText}>Result: {renderValidationContent(executionResult.data)}</div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

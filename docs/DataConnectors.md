@@ -101,6 +101,14 @@ Username: db_user
 Password: ********
 ```
 
+## Secure Credential Handling
+
+Data Connector APIs are designed with security-first credential management:
+
+- **Secure API Integration** — Data connector APIs handle credentials securely, ensuring database passwords and connection details are never exposed in plain text through the API layer.
+- **Base64-Encoded Passwords** — Passwords are accepted as base64-encoded strings with built-in validation. The system decodes and validates the encoding before establishing any connection, rejecting malformed or incorrectly encoded values.
+- **Password Masking in UI** — The data connector UI masks password fields at all times — during entry and when viewing existing connections — preventing accidental exposure of credentials on screen.
+
 ## Data Connector Features
 
 ### Run Button Functionality

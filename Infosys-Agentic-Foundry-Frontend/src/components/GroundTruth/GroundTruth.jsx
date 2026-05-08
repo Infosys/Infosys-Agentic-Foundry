@@ -5,7 +5,7 @@ import { useMessage } from "../../Hooks/MessageContext";
 import { APIs } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
-import { getAgentTypeAbbreviation } from "../Pipeline/pipelineUtils";
+import { getAgentTypeAbbreviation } from "../Workflow/workflowUtils";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import UploadBox from "../commonComponents/UploadBox";
 import SvgIcon from "../../Icons/SVGIcons";
@@ -37,6 +37,7 @@ const GroundTruth = () => {
   const [loading, setLoading] = useState(false);
   const [templateDownloading, setTemplateDownloading] = useState(false);
   const [models, setModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const { addMessage, setShowPopup } = useMessage();
   const { fetchData, postDataStream } = useFetch();
   const [agentsListData, setAgentsListData] = useState([]);
@@ -77,6 +78,7 @@ const GroundTruth = () => {
   }, [loading, setShowPopup]);
 
   const fetchModels = async () => {
+    setModelsLoading(true);
     try {
       const data = await fetchData(APIs.GET_MODELS);
       if (data?.models && Array.isArray(data.models)) {
@@ -96,6 +98,8 @@ const GroundTruth = () => {
     } catch (error) {
       addMessage("Failed to fetch models", "error");
       setModels([]);
+    } finally {
+      setModelsLoading(false);
     }
   };
 
@@ -449,10 +453,10 @@ const GroundTruth = () => {
                       }));
                     }
                   }}
-                  placeholder="Select Model"
+                  placeholder={modelsLoading ? "Loading models..." : "Select Model"}
                   showSearch={true}
                   width="100%"
-                  disabled={isExecuting}
+                  disabled={isExecuting || modelsLoading}
                 />
               </div>
 

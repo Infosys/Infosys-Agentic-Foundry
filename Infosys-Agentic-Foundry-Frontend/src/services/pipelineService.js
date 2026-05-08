@@ -92,14 +92,19 @@ export const usePipelineService = () => {
   };
 
   /**
-   * Delete a pipeline
-   * @param {string} pipelineId - Pipeline ID
+   * Delete pipeline(s) - always use array of pipeline_ids and PIPELINE_DELETE endpoint (no pipelineId in URL)
+   * @param {Object} pipelineData - Additional payload data (e.g., user_email_id, is_admin)
+   * @param {string|string[]} pipelineIdOrIds - Single pipelineId or array of pipelineIds
    * @returns {Promise<Object>} Deletion response
    */
-  const deletePipeline = async (pipelineId) => {
-    if (!pipelineId) throw new Error("Pipeline ID is required");
-    const url = `${APIs.PIPELINE_DELETE}${encodeURIComponent(pipelineId)}`;
-    return await deleteData(url);
+  const deletePipeline = async (pipelineData, pipelineIdOrIds) => {
+    if (!pipelineIdOrIds || (Array.isArray(pipelineIdOrIds) && pipelineIdOrIds.length === 0)) {
+      throw new Error("At least one pipeline ID is required");
+    }
+    const apiUrl = APIs.PIPELINE_DELETE;
+    const ids = Array.isArray(pipelineIdOrIds) ? pipelineIdOrIds : [pipelineIdOrIds];
+    const payload = { ...pipelineData, pipeline_ids: ids };
+    return await deleteData(apiUrl, payload);
   };
 
   /**

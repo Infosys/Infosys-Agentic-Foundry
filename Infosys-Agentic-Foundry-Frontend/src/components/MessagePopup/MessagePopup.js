@@ -11,6 +11,11 @@ const MessagePopup = () => {
 
   const { message: messageText, type, id } = message;
 
+  // Safely convert message to string — prevents "Objects are not valid as a React child" crash
+  const safeMessage = typeof messageText === "string" ? messageText
+    : messageText && typeof messageText === "object" ? (messageText.message || messageText.detail || JSON.stringify(messageText))
+    : String(messageText || "");
+
   return (
     <div className="popup-message-modal">
       <div className="message-container">
@@ -23,7 +28,7 @@ const MessagePopup = () => {
                 <SVGIcons color="#FFFFFF" icon="exclamation" width={16} height={16} />
               )}
             </div>
-            <span>{messageText}</span>
+            <span>{safeMessage}</span>
           </div>
           <div className="close-btn" onClick={() => removeMessage()}>
             <SVGIcons color="#FFFFFF" icon="close-icon" width={20} height={20} />

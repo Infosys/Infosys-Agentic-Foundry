@@ -12,8 +12,9 @@ import difflib
 import subprocess
 import pandas as pd
 from pathlib import Path
+from urllib.parse import urlparse
 from datetime import datetime, timezone
-from typing import List, Optional, Union, Dict, Any, Literal, Tuple
+from typing import List, Optional, Union, Dict, Any, Literal, Tuple, Set
 from fastapi import UploadFile, HTTPException
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_core.prompts import PromptTemplate
@@ -33,16 +34,17 @@ import json
 from typing import Any, Dict, List
 
 from src.database.repositories import (
-    AgentKnowledgebaseMappingRepository, KnowledgebaseRepository, TagRepository, TagToolMappingRepository, TagAgentMappingRepository,
-    ToolRepository, ToolAgentMappingRepository, RecycleToolRepository,
+    AgentKnowledgebaseMappingRepository, KnowledgebaseRepository, TagRepository, TagToolMappingRepository,
+    TagAgentMappingRepository, ToolRepository, ToolVersionRepository,
+    ToolVersionRecycleBinRepository, ToolAgentMappingRepository, RecycleToolRepository,
     AgentRepository, RecycleAgentRepository, ChatHistoryRepository,
     FeedbackLearningRepository, EvaluationDataRepository,
     ToolEvaluationMetricsRepository, AgentEvaluationMetricsRepository,
     ExportAgentRepository, McpToolRepository, RecycleMcpToolRepository, AgentDataTableRepository, 
-    AgentMetadataRepository, ChatStateHistoryManagerRepository, PipelineRepository, PipelineRunRepository, AgentPipelineMappingRepository,
-    PipelineStepsRepository, save_pending_module, get_all_pending_modules, ToolGenerationCodeVersionRepository, 
+    AgentMetadataRepository, ChatStateHistoryManagerRepository, WorkflowRepository, WorkflowRunRepository, AgentWorkflowMappingRepository,
+    WorkflowStepsRepository, save_pending_module, get_all_pending_modules, ToolGenerationCodeVersionRepository, 
     UserAgentAccessRepository, GroupRepository, GroupSecretsRepository, ToolAccessKeyMappingRepository,
-    AccessKeyDefinitionsRepository, ToolDepartmentSharingRepository
+    AccessKeyDefinitionsRepository, ToolDepartmentSharingRepository, TaskRegistryRepository
 )
 from src.database.admin_config_service import AdminConfigService
 from src.auth.repositories import RoleRepository, UserRepository, AuditLogRepository, DepartmentRepository
@@ -50,8 +52,9 @@ from src.auth.authorization_service import AuthorizationService
 from src.models.model_service import ModelService
 from src.prompts.prompts import CONVERSATION_SUMMARY_PROMPT
 from src.tools.tool_code_processor import ToolCodeProcessor
-from src.utils.secrets_handler import get_user_secrets, current_user_email
+from src.utils.secrets_handler import get_user_secrets, current_user_email, current_request_headers
 from src.utils.tool_file_manager import ToolFileManager
+from src.utils.kafka_manager import KafkaManager
 from src.config.constants import AgentType, FrameworkType, Limits, TableNames
 from telemetry_wrapper import logger as log, update_session_context
 from src.tools.tool_validation import graph
@@ -908,6 +911,119 @@ class SecurityMaliciousOperationAnalyzer:
         return None
 
 
+_BOOL_TRUE_REMOTE = {"true", "1", "yes", "y", "on"}
+_BOOL_FALSE_REMOTE = {"false", "0", "no", "n", "off"}
+
+
+def _mcp_remote_json_type_from_prop(prop: Dict[str, Any]) -> str:
+    t = prop.get("type")
+    if isinstance(t, list):
+        t = next((x for x in t if x != "null"), None)
+    if t in ("integer", "number", "string", "boolean", "object", "array"):
+        return t
+    return "string"
+
+
+def _mcp_remote_parse_json_schema_props(tool: StructuredTool) -> Tuple[Dict[str, Dict[str, Any]], Set[str]]:
+    args = getattr(tool, "args", None) or {}
+    if not isinstance(args, dict):
+        return {}, set()
+    if "properties" in args and isinstance(args["properties"], dict):
+        req = set(args.get("required") or [])
+        return dict(args["properties"]), req
+    skip = {
+        "type", "title", "description", "$defs", "properties", "required",
+        "additionalProperties", "definitions",
+    }
+    props: Dict[str, Dict[str, Any]] = {}
+    for k, v in args.items():
+        if k in skip:
+            continue
+        if isinstance(v, dict):
+            props[k] = v
+    required: Set[str] = set()
+    for k, v in props.items():
+        if not v.get("default") and v.get("type") != "optional":
+            required.add(k)
+    return props, required
+
+
+def _mcp_remote_coerce_value(raw: Any, prop_schema: Dict[str, Any]) -> Tuple[Any, Optional[str]]:
+    """Coerce a value to JSON-schema-like type. Returns (value, error_message)."""
+    if prop_schema is None:
+        prop_schema = {}
+    typ = _mcp_remote_json_type_from_prop(prop_schema)
+    try:
+        if typ == "string":
+            if isinstance(raw, str):
+                return raw, None
+            return str(raw), None
+        if typ == "integer":
+            if isinstance(raw, bool):
+                return None, "Cannot coerce boolean to integer"
+            if isinstance(raw, int) and not isinstance(raw, bool):
+                return raw, None
+            if isinstance(raw, float):
+                return int(raw), None
+            if isinstance(raw, str):
+                s = raw.strip()
+                if (s.isdigit() or (s.startswith("-") and s[1:].isdigit())):
+                    return int(s), None
+                return None, f"Cannot coerce '{raw}' to integer"
+            return None, f"Cannot coerce {type(raw).__name__} to integer"
+        if typ == "number":
+            if isinstance(raw, bool):
+                return None, "Cannot coerce boolean to number"
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                return float(raw), None
+            if isinstance(raw, str):
+                try:
+                    return float(raw.strip()), None
+                except Exception:
+                    return None, f"Cannot coerce '{raw}' to number"
+            return None, f"Cannot coerce {type(raw).__name__} to number"
+        if typ == "boolean":
+            if isinstance(raw, bool):
+                return raw, None
+            if isinstance(raw, str):
+                low = raw.strip().lower()
+                if low in _BOOL_TRUE_REMOTE:
+                    return True, None
+                if low in _BOOL_FALSE_REMOTE:
+                    return False, None
+                return None, f"Cannot coerce '{raw}' to boolean"
+            return None, f"Cannot coerce {type(raw).__name__} to boolean"
+        if typ == "object":
+            if isinstance(raw, dict):
+                return raw, None
+            if isinstance(raw, str):
+                try:
+                    return json.loads(raw), None
+                except Exception as e:
+                    return None, str(e)
+            return None, f"Expected object or JSON string, got {type(raw).__name__}"
+        if typ == "array":
+            if isinstance(raw, list):
+                return raw, None
+            if isinstance(raw, str):
+                try:
+                    return json.loads(raw), None
+                except Exception as e:
+                    return None, str(e)
+            return None, f"Expected array or JSON string, got {type(raw).__name__}"
+    except Exception as e:
+        return None, str(e)
+    return raw, None
+
+
+def _mcp_remote_serialize_output(output: Any) -> Any:
+    try:
+        json.dumps(output)
+        return output
+    except (TypeError, ValueError):
+        return str(output)
+
+
 # --- McpToolService ---
 
 class McpToolService:
@@ -969,6 +1085,65 @@ class McpToolService:
             log.error(f"Error reading and normalizing uploaded file content: {e}")
             raise
 
+    @staticmethod
+    def _detect_module_executable(module_name: str) -> Optional[str]:
+        """
+        Detects if a Python module has a bundled executable (e.g., azmcp.exe in msmcp_azure).
+        
+        Some MCP packages (like msmcp-azure) don't support 'python -m' execution
+        but instead ship a native binary in their package's bin/ directory.
+        This method auto-detects such executables.
+        
+        Args:
+            module_name: The normalized Python module name (e.g., 'msmcp_azure').
+            
+        Returns:
+            The absolute path to the executable if found, None otherwise.
+        """
+        try:
+            import importlib
+            from pathlib import Path
+            import platform
+
+            mod = importlib.import_module(module_name)
+            if not mod.__file__:
+                return None
+            
+            module_dir = Path(mod.__file__).parent
+
+            # First check: does it support python -m (has __main__.py)?
+            if (module_dir / "__main__.py").exists():
+                return None  # Standard python -m will work, no need for executable
+
+            # Second check: look for bundled executables in bin/ directory
+            bin_dir = module_dir / "bin"
+            if bin_dir.exists() and bin_dir.is_dir():
+                system = platform.system().lower()
+                for f in sorted(bin_dir.iterdir()):
+                    if not f.is_file():
+                        continue
+                    # On Windows look for .exe files, on Linux/Mac look for executable files
+                    if system == "windows" and f.suffix == ".exe":
+                        log.info(f"Found bundled executable for module '{module_name}': {f}")
+                        return str(f)
+                    elif system != "windows" and os.access(str(f), os.X_OK) and f.suffix == "":
+                        log.info(f"Found bundled executable for module '{module_name}': {f}")
+                        return str(f)
+
+            # Third check: see if module has get_executable_path() function (common wrapper pattern)
+            if hasattr(mod, 'get_executable_path'):
+                exe_path = mod.get_executable_path()
+                if exe_path and Path(exe_path).exists():
+                    log.info(f"Found executable via get_executable_path() for module '{module_name}': {exe_path}")
+                    return str(exe_path)
+
+        except ImportError:
+            log.warning(f"Module '{module_name}' is not installed. Falling back to 'python -m' execution.")
+        except Exception as e:
+            log.warning(f"Error detecting executable for module '{module_name}': {e}. Falling back to 'python -m' execution.")
+        
+        return None
+
     # --- MCP Tool Creation Operations ---
 
     async def create_mcp_tool(
@@ -981,23 +1156,14 @@ class McpToolService:
             mcp_url: Optional[str] = None,
             headers: Optional[Dict[str, str]] = None,
             mcp_module_name: Optional[str] = None,
+            mcp_command: Optional[str] = None,
             code_content: Optional[str] = None, # For file-based MCPs
             department_name: Optional[str] = None,
-            shared_with_departments: Optional[List[str]] = None,  # For sharing MCP tool with other departments
-            is_public: bool = False,  # Whether the MCP tool should be public
         ) -> Dict[str, Any]:
         """
         Creates a new MCP tool (server definition) and saves it to the database.
         Handles file creation for 'file' type MCPs with comprehensive validation.
         """
-        # Validate: is_public and shared_with_departments are mutually exclusive
-        if is_public and shared_with_departments:
-            log.warning(f"Cannot create MCP tool '{tool_name}' with both is_public and shared_with_departments set.")
-            return {
-                "message": "Cannot set both 'is_public' and 'shared_with_departments'. A public MCP tool is already accessible to all departments.",
-                "is_created": False
-            }
-        
         # Generate tool_id with appropriate prefix
         tool_id_prefix = f"mcp_{mcp_type}_"
         tool_id = tool_id_prefix + str(uuid.uuid4())
@@ -1012,7 +1178,7 @@ class McpToolService:
             if not code_content:
                 return {"message": "Code content is required for 'file' type MCP tools.", "is_created": False}
             
-            # Enhanced validation pipeline with malicious operation detection
+            # Enhanced validation workflow with malicious operation detection
             validation_result = await self._validate_mcp_file_code(code_content)
             
             # Log validation result for auditing and security monitoring
@@ -1047,9 +1213,17 @@ class McpToolService:
         elif mcp_type == "module":
             if not mcp_module_name:
                 return {"message": "Module name is required for 'module' type MCP tools.", "is_created": False}
-            mcp_module_name = mcp_module_name.replace("-", "_") # Normalize module name
-            mcp_config["command"] = "python"
-            mcp_config["args"] = ["-m", mcp_module_name]
+
+            if not mcp_command:
+                mcp_command = "python"
+            # External command explicitly specified (e.g., "npx", "node", or an absolute path)
+            # Do NOT normalize module name for non-Python packages (e.g., @playwright/mcp@latest)
+            mcp_config["command"] = mcp_command
+            # For npx, auto-add '-y' flag to skip install confirmation prompts
+            if mcp_command.lower() == "npx":
+                mcp_config["args"] = ["-y", mcp_module_name]
+            else:
+                mcp_config["args"] = ["-m", mcp_module_name]
 
         else:
             return {"message": f"Unsupported MCP type: {mcp_type}", "is_created": False}
@@ -1060,7 +1234,6 @@ class McpToolService:
             "tool_name": tool_name,
             "tool_description": tool_description,
             "mcp_config": mcp_config,
-            "is_public": is_public,
             "status": "pending", # Default values as per schema
             "comments": None,
             "approved_at": None,
@@ -1085,22 +1258,6 @@ class McpToolService:
             # Include validation warnings in success response if any
             if mcp_type == "file" and validation_result.get("warnings"):
                 result["warnings"] = validation_result["warnings"]
-            
-            # Handle sharing with other departments if requested
-            if shared_with_departments and self.mcp_tool_sharing_repo and department_name:
-                try:
-                    sharing_result = await self.mcp_tool_sharing_repo.share_mcp_tool_with_multiple_departments(
-                        mcp_tool_id=tool_id,
-                        mcp_tool_name=tool_name,
-                        source_department=department_name,
-                        target_departments=shared_with_departments,
-                        shared_by=created_by
-                    )
-                    result["sharing_status"] = sharing_result
-                    log.info(f"MCP tool '{tool_name}' shared with {sharing_result['success_count']} department(s)")
-                except Exception as e:
-                    log.error(f"Error sharing MCP tool '{tool_name}' with departments: {e}")
-                    result["sharing_status"] = {"error": str(e), "success_count": 0}
                 
             return result
         else:
@@ -1109,7 +1266,7 @@ class McpToolService:
 
     async def _validate_mcp_file_code(self, code_content: str) -> Dict[str, Any]:
         """
-        Comprehensive validation pipeline for file-based MCP server code.
+        Comprehensive validation workflow for file-based MCP server code.
         Returns validation result with errors/warnings.
         """
         log.info("Starting enhanced MCP file validation with SecurityMaliciousOperationAnalyzer")
@@ -1324,7 +1481,7 @@ class McpToolService:
                 warnings.append(f"RUNTIME_TEST_ERROR: {str(e)} - skipping runtime validation")
                 return True  # Don't fail validation for runtime test errors
 
-        # Validation pipeline execution
+        # Validation workflow execution
         # Stage 1: Size and basic checks
         if len(code_content.encode('utf-8')) > 100 * 1024:  # 100KB limit
             errors.append("FILE_TOO_LARGE: Code content exceeds 100KB limit")
@@ -1461,6 +1618,56 @@ class McpToolService:
         log.info(f"Retrieved {len(tool_records)} MCP tools.")
         return tool_records
 
+    async def get_system_mcp_tools(self, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all MCP tools that were onboarded by the system (created_by = 'system').
+        Optionally filters by tool name.
+
+        Args:
+            tool_name (str, optional): If provided, returns only MCP tools matching this name.
+
+        Returns:
+            list: A list of system-onboarded MCP tools, represented as dictionaries with tags and sharing info.
+        """
+        try:
+            async with self.mcp_tool_repo.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"SELECT * FROM {self.mcp_tool_repo.table_name} "
+                    f"WHERE created_by = $1 ORDER BY created_on ASC",
+                    "system"
+                )
+            tools = [dict(row) for row in rows]
+
+            if tool_name:
+                tools = [t for t in tools if t.get('tool_name', '').lower() == tool_name.lower()]
+
+            tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+            for tool in tools:
+                if isinstance(tool.get("mcp_config"), str):
+                    tool["mcp_config"] = json.loads(tool["mcp_config"])
+                tool["mcp_type"] = await self._get_mcp_type_by_id(tool['tool_id'])
+                tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+
+                # Extract server_type and functions from mcp_config for display
+                mcp_config = tool.get("mcp_config", {})
+                tool["server_type"] = mcp_config.get("server_type", "LOCAL")
+                tool["functions"] = mcp_config.get("functions", [])
+                tool["function_count"] = mcp_config.get("function_count", len(tool["functions"]))
+
+                tool['is_shared'] = False
+                tool['is_public_access'] = False
+                if self.mcp_tool_sharing_repo:
+                    shared_info = await self.mcp_tool_sharing_repo.get_shared_departments_for_mcp_tool(tool['tool_id'])
+                    tool['shared_with_departments'] = [s['target_department'] for s in shared_info]
+                else:
+                    tool['shared_with_departments'] = []
+
+            log.info(f"Retrieved {len(tools)} system-onboarded MCP tools")
+            return tools
+        except Exception as e:
+            log.error(f"Error retrieving system MCP tools: {e}")
+            return []
+
     async def get_mcp_tools_by_search_or_page(self, search_value: str = '', limit: int = 20, page: int = 1, tag_names: Optional[List[str]] = None, mcp_type: Optional[List[Literal["file", "url", "module"]]] = None, created_by:str = None, department_name: str=None) -> Dict[str, Any]:
         """
         Retrieves MCP tools (server definitions) with pagination and search filtering, including associated tags.
@@ -1539,7 +1746,6 @@ class McpToolService:
         comments: Optional[str] = None,
         approved_at: Optional[datetime] = None,
         approved_by: Optional[str] = None,
-        shared_with_departments: Optional[List[str]] = None  # For sharing MCP tool with other departments
     ) -> Dict[str, Any]:
         """
         Updates an existing MCP tool (server definition) record.
@@ -1552,6 +1758,23 @@ class McpToolService:
 
         tool_data = tool_records[0]
 
+        # PROTECTION: Block update if MCP tool is bound to any agent (admins can bypass)
+        if not is_admin:
+            agents_using_mcp = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
+            if agents_using_mcp:
+                agent_names = []
+                for mapping in agents_using_mcp:
+                    agent_id = mapping.get('agentic_application_id')
+                    agent_records = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+                    if agent_records:
+                        agent_names.append(agent_records[0].get('agentic_application_name', agent_id))
+                log.warning(f"Cannot update MCP tool '{tool_data['tool_name']}': It is bound to agent(s): {agent_names}")
+                return {
+                    "message": f"Cannot update MCP tool '{tool_data['tool_name']}': It is bound to agent(s): {', '.join(agent_names)}. Please remove the MCP tool from the agent(s) first.",
+                    "is_update": False,
+                    "bound_agents": agent_names
+                }
+
         if not is_admin and tool_data["created_by"] != user_id:
             err = f"Permission denied: Only the admin or the tool's creator can perform this action for MCP Tool: {tool_data['tool_name']}."
             log.error(err)
@@ -1559,19 +1782,8 @@ class McpToolService:
 
         # Check if any actual updates are requested
         if not any([tool_description, code_content, updated_tag_id_list,
-                    is_public is not None, status, comments, approved_at, approved_by,
-                    shared_with_departments is not None]):
+                    is_public is not None, status, comments, approved_at, approved_by]):
             return {"message": "No fields provided to update the MCP tool.", "is_update": False}
-
-        # Validate: is_public and shared_with_departments are mutually exclusive
-        # Check both the incoming update values and the existing tool state
-        effective_is_public = is_public if is_public is not None else tool_data.get("is_public", False)
-        if effective_is_public and shared_with_departments:
-            log.warning(f"Cannot update MCP tool '{tool_id}' with both is_public=True and shared_with_departments.")
-            return {
-                "message": "Cannot set 'shared_with_departments' when MCP tool is public. A public tool is already accessible to all departments.",
-                "is_update": False
-            }
 
         update_payload: Dict[str, Any] = {"updated_on": datetime.now(timezone.utc).replace(tzinfo=None)}
         
@@ -1652,26 +1864,27 @@ class McpToolService:
         # Handle code_content update for 'mcp_file_' type only
         validation_result = {}
         if tool_id.startswith("mcp_file_") and code_content:
-            agent_using_this_tool_raw = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
-            if agent_using_this_tool_raw:
-                agent_ids = [m['agentic_application_id'] for m in agent_using_this_tool_raw]
-                agent_details = []
-                for agent_id in agent_ids:
-                    agent_record = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
-                    if agent_record:
-                        agent_record = agent_record[0]
-                        agent_details.append({
-                            "agentic_application_id": agent_record['agentic_application_id'],
-                            "agentic_application_name": agent_record['agentic_application_name'],
-                            "agentic_app_created_by": agent_record['created_by']
-                        })
-                if agent_details:
-                    log.error(f"The MCP tool you are trying to update is being referenced by {len(agent_details)} agentic application(s).")
-                    return {
-                        "message": f"The MCP tool you are trying to update is being referenced by {len(agent_details)} agentic application(s).",
-                        "details": agent_details,
-                        "is_update": False
-                    }
+            if not is_admin:
+                agent_using_this_tool_raw = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
+                if agent_using_this_tool_raw:
+                    agent_ids = [m['agentic_application_id'] for m in agent_using_this_tool_raw]
+                    agent_details = []
+                    for agent_id in agent_ids:
+                        agent_record = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+                        if agent_record:
+                            agent_record = agent_record[0]
+                            agent_details.append({
+                                "agentic_application_id": agent_record['agentic_application_id'],
+                                "agentic_application_name": agent_record['agentic_application_name'],
+                                "agentic_app_created_by": agent_record['created_by']
+                            })
+                    if agent_details:
+                        log.error(f"The MCP tool you are trying to update is being referenced by {len(agent_details)} agentic application(s).")
+                        return {
+                            "message": f"The MCP tool you are trying to update is being referenced by {len(agent_details)} agentic application(s).",
+                            "details": agent_details,
+                            "is_update": False
+                        }
 
             # Enhanced validation with malicious operation detection
             validation_result = await self._validate_mcp_file_code(code_content)
@@ -1709,36 +1922,293 @@ class McpToolService:
             if "warnings" in validation_result:
                 result["warnings"] = validation_result["warnings"]
             
-            # Handle sharing with other departments if requested
-            if shared_with_departments is not None and self.mcp_tool_sharing_repo:
-                source_department = tool_data.get('department_name', 'General')
-                try:
-                    # If empty list, unshare from all departments
-                    if len(shared_with_departments) == 0:
-                        removed_count = await self.mcp_tool_sharing_repo.unshare_mcp_tool_from_all_departments(tool_id)
-                        result["sharing_status"] = {"message": f"Removed sharing from {removed_count} department(s)", "success_count": 0, "removed_count": removed_count}
-                    else:
-                        # First, clear existing shares
-                        await self.mcp_tool_sharing_repo.unshare_mcp_tool_from_all_departments(tool_id)
-                        # Then add new shares
-                        sharing_result = await self.mcp_tool_sharing_repo.share_mcp_tool_with_multiple_departments(
-                            mcp_tool_id=tool_id,
-                            mcp_tool_name=tool_data['tool_name'],
-                            source_department=source_department,
-                            target_departments=shared_with_departments,
-                            shared_by=user_id
-                        )
-                        result["sharing_status"] = sharing_result
-                        log.info(f"MCP tool '{tool_id}' sharing updated: {sharing_result['success_count']} department(s)")
-                except Exception as e:
-                    log.error(f"Error updating MCP tool sharing: {e}")
-                    result["sharing_status"] = {"error": str(e), "success_count": 0}
-            
             return result
 
         else:
             log.error(f"Failed to update MCP tool with ID: {tool_id}.")
             return {"message": f"Failed to update MCP tool: {tool_data['tool_name']}.", "is_update": False}
+
+    async def update_mcp_remote_url_config(
+        self,
+        tool_id: str,
+        user_id: str,
+        is_admin: bool = False,
+        mcp_url: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Updates `url` and/or `headers` inside mcp_config for URL-based MCP tools (`mcp_url_*` only).
+        Preserves `transport: streamable_http` and other config keys unless overwritten by this call.
+        """
+        if mcp_url is None and headers is None:
+            return {"message": "No mcp_url or headers provided to update.", "is_update": False}
+
+        tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id)
+        if not tool_records:
+            log.error(f"MCP tool not found: {tool_id}")
+            return {"message": f"MCP tool not found: {tool_id}", "is_update": False}
+
+        tool_data = tool_records[0]
+
+        if not tool_id.startswith("mcp_url_"):
+            return {
+                "message": "Remote URL updates are only allowed for URL-type MCP tools (tool_id prefix mcp_url_).",
+                "is_update": False,
+            }
+
+        if not is_admin and tool_data["created_by"] != user_id:
+            err = f"Permission denied: Only an admin or the tool creator can update remote URL for: {tool_data['tool_name']}."
+            log.error(err)
+            return {"message": err, "is_update": False}
+
+        if not is_admin:
+            agents_using_mcp = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
+            if agents_using_mcp:
+                agent_names = []
+                for mapping in agents_using_mcp:
+                    agent_id = mapping.get("agentic_application_id")
+                    agent_records = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+                    if agent_records:
+                        agent_names.append(agent_records[0].get("agentic_application_name", agent_id))
+                log.warning(
+                    f"Cannot update remote URL for MCP '{tool_data['tool_name']}': bound to agent(s): {agent_names}"
+                )
+                return {
+                    "message": (
+                        f"Cannot update remote URL for '{tool_data['tool_name']}': it is bound to agent(s): "
+                        f"{', '.join(agent_names)}. Remove the MCP from those agents first, or ask an admin to update."
+                    ),
+                    "is_update": False,
+                    "bound_agents": agent_names,
+                }
+
+        cfg = tool_data.get("mcp_config")
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+        if not isinstance(cfg, dict):
+            return {"message": "Invalid mcp_config on record; cannot update.", "is_update": False}
+
+        new_cfg = dict(cfg)
+
+        if mcp_url is not None:
+            ep = mcp_url.strip()
+            if not ep:
+                return {"message": "mcp_url cannot be empty.", "is_update": False}
+            parsed = urlparse(ep)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                return {
+                    "message": "mcp_url must be a valid http(s) URL with a host.",
+                    "is_update": False,
+                }
+            new_cfg["url"] = ep
+
+        if headers is not None:
+            new_cfg["headers"] = dict(headers)
+
+        new_cfg["transport"] = "streamable_http"
+
+        update_payload: Dict[str, Any] = {
+            "updated_on": datetime.now(timezone.utc).replace(tzinfo=None),
+            "mcp_config": new_cfg,
+        }
+
+        success = await self.mcp_tool_repo.update_mcp_tool_record(update_payload, tool_id)
+        if success:
+            log.info(f"Updated remote MCP URL config for tool_id={tool_id}")
+            return {
+                "message": f"Successfully updated remote MCP configuration for '{tool_data['tool_name']}'.",
+                "is_update": True,
+                "tool_id": tool_id,
+                "mcp_config": new_cfg,
+            }
+        return {"message": f"Failed to persist update for '{tool_data['tool_name']}'.", "is_update": False}
+
+    async def update_mcp_module_config(
+        self,
+        tool_id: str,
+        user_id: str,
+        is_admin: bool = False,
+        mcp_module_name: Optional[str] = None,
+        mcp_command: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Updates `command` and/or `args` inside mcp_config for module-based MCP tools (`mcp_module_*` only).
+        Rebuilds the mcp_config using the same logic as creation (npx → -y, else → python -m).
+        """
+        if mcp_module_name is None and mcp_command is None:
+            return {"message": "No mcp_module_name or mcp_command provided to update.", "is_update": False}
+
+        tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id)
+        if not tool_records:
+            log.error(f"MCP tool not found: {tool_id}")
+            return {"message": f"MCP tool not found: {tool_id}", "is_update": False}
+
+        tool_data = tool_records[0]
+
+        if not tool_id.startswith("mcp_module_"):
+            return {
+                "message": "Module config updates are only allowed for module-type MCP tools (tool_id prefix mcp_module_).",
+                "is_update": False,
+            }
+
+        if not is_admin and tool_data["created_by"] != user_id:
+            err = f"Permission denied: Only an admin or the tool creator can update module config for: {tool_data['tool_name']}."
+            log.error(err)
+            return {"message": err, "is_update": False}
+
+        if not is_admin:
+            agents_using_mcp = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
+            if agents_using_mcp:
+                agent_names = []
+                for mapping in agents_using_mcp:
+                    agent_id = mapping.get("agentic_application_id")
+                    agent_records = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+                    if agent_records:
+                        agent_names.append(agent_records[0].get("agentic_application_name", agent_id))
+                log.warning(
+                    f"Cannot update module config for MCP '{tool_data['tool_name']}': bound to agent(s): {agent_names}"
+                )
+                return {
+                    "message": (
+                        f"Cannot update module config for '{tool_data['tool_name']}': it is bound to agent(s): "
+                        f"{', '.join(agent_names)}. Remove the MCP from those agents first, or ask an admin to update."
+                    ),
+                    "is_update": False,
+                    "bound_agents": agent_names,
+                }
+
+        cfg = tool_data.get("mcp_config")
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+        if not isinstance(cfg, dict):
+            return {"message": "Invalid mcp_config on record; cannot update.", "is_update": False}
+
+        new_cfg = dict(cfg)
+
+        # Resolve current values; use existing if not provided
+        final_module_name = mcp_module_name.strip() if mcp_module_name else None
+        final_command = mcp_command.strip() if mcp_command else None
+
+        # If only one field is provided, derive the other from existing config
+        if final_module_name is None:
+            # Keep existing module name from args
+            existing_args = cfg.get("args", [])
+            if existing_args:
+                # Module name is the last arg (e.g., ["-y", "module"] or ["-m", "module"])
+                final_module_name = existing_args[-1]
+            else:
+                return {"message": "Cannot determine existing module name from config.", "is_update": False}
+
+        if final_command is None:
+            final_command = cfg.get("command", "python")
+
+        if not final_module_name:
+            return {"message": "mcp_module_name cannot be empty.", "is_update": False}
+
+        # Rebuild mcp_config using same logic as creation
+        new_cfg["command"] = final_command
+        if final_command.lower() == "npx":
+            new_cfg["args"] = ["-y", final_module_name]
+        else:
+            new_cfg["command"] = "python"
+            new_cfg["args"] = ["-m", final_module_name]
+
+        update_payload: Dict[str, Any] = {
+            "updated_on": datetime.now(timezone.utc).replace(tzinfo=None),
+            "mcp_config": new_cfg,
+        }
+
+        success = await self.mcp_tool_repo.update_mcp_tool_record(update_payload, tool_id)
+        if success:
+            log.info(f"Updated module MCP config for tool_id={tool_id}")
+            return {
+                "message": f"Successfully updated module configuration for '{tool_data['tool_name']}'.",
+                "is_update": True,
+                "tool_id": tool_id,
+                "mcp_config": new_cfg,
+            }
+        return {"message": f"Failed to persist update for '{tool_data['tool_name']}'.", "is_update": False}
+
+    async def update_mcp_tool_sharing(
+        self,
+        tool_id: str,
+        user_email: str,
+        department_name: str,
+        is_public: bool = None,
+        shared_with_departments: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Updates the visibility (is_public) and/or department sharing for an MCP tool.
+
+        Args:
+            tool_id: The MCP tool ID.
+            user_email: The email of the user making the update.
+            department_name: The department of the user.
+            is_public: If provided, update the is_public flag.
+            shared_with_departments: If provided, replace the shared departments list.
+
+        Returns:
+            Dict with update results.
+        """
+        # Verify MCP tool exists and belongs to user's department
+        tool_records = await self.mcp_tool_repo.get_mcp_tool_record(tool_id=tool_id)
+        if not tool_records:
+            raise HTTPException(status_code=404, detail=f"MCP tool not found with ID: {tool_id}")
+
+        tool = tool_records[0]
+        if tool.get("department_name") != department_name:
+            raise HTTPException(
+                status_code=403,
+                detail=f"MCP tool '{tool_id}' belongs to department '{tool.get('department_name')}', not '{department_name}'. Only the owning department can update sharing settings."
+            )
+
+        result = {"tool_id": tool_id, "tool_name": tool.get("tool_name", "")}
+
+        # Determine effective is_public value
+        effective_is_public = is_public if is_public is not None else tool.get("is_public", False)
+
+        # Validate: is_public and shared_with_departments are mutually exclusive
+        if effective_is_public and shared_with_departments:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot set both 'is_public' and 'shared_with_departments'. A public MCP tool is already accessible to all departments."
+            )
+
+        # Update is_public if provided
+        if is_public is not None:
+            updated = await self.mcp_tool_repo.update_mcp_tool_visibility(tool_id, is_public)
+            result["is_public_updated"] = updated
+            result["is_public"] = is_public
+
+            # If setting to public, remove all existing department sharing
+            if is_public and self.mcp_tool_sharing_repo:
+                removed = await self.mcp_tool_sharing_repo.unshare_mcp_tool_from_all_departments(tool_id)
+                if removed > 0:
+                    log.info(f"Removed {removed} department sharing records for MCP tool '{tool_id}' since it is now public.")
+                    result["sharing"] = {"message": f"All department sharing removed (MCP tool is now public). {removed} records cleared.", "success_count": 0}
+
+        # Update shared departments if provided
+        if shared_with_departments is not None and self.mcp_tool_sharing_repo:
+            tool_name = tool.get("tool_name", "")
+            source_department = tool.get("department_name", "")
+
+            # First, remove all existing sharing
+            await self.mcp_tool_sharing_repo.unshare_mcp_tool_from_all_departments(tool_id)
+
+            # Then share with the new list of departments
+            if shared_with_departments:
+                sharing_result = await self.mcp_tool_sharing_repo.share_mcp_tool_with_multiple_departments(
+                    mcp_tool_id=tool_id,
+                    mcp_tool_name=tool_name,
+                    source_department=source_department,
+                    target_departments=shared_with_departments,
+                    shared_by=user_email
+                )
+                result["sharing"] = sharing_result
+            else:
+                result["sharing"] = {"message": "All department sharing removed", "success_count": 0}
+
+        return result
 
     # --- MCP Tool Deletion Operations ---
 
@@ -1837,13 +2307,14 @@ class McpToolService:
         log.info(f"Retrieved {len(tool_records)} MCP tools from recycle bin.")
         return tool_records
 
-    async def restore_mcp_tool_from_recycle_bin(self, tool_id: str, department_name: str = None) -> Dict[str, Any]:
+    async def restore_mcp_tool_from_recycle_bin(self, tool_id: str, department_name: str = None, new_name: str = None) -> Dict[str, Any]:
         """
         Restores an MCP tool from the recycle bin to the main mcp_tool_table.
 
         Args:
             tool_id (str): The ID of the MCP tool to restore.
             department_name (str): The department name to filter by.
+            new_name (str, optional): New name to use if the original name conflicts with an active resource.
 
         Returns:
             dict: Status of the operation.
@@ -1864,6 +2335,45 @@ class McpToolService:
                 "details": [],
                 "is_restored": False
             }
+
+        if new_name is not None and not new_name.strip():
+            return {
+                "message": "new_name cannot be empty or whitespace.",
+                "details": [],
+                "is_restored": False
+            }
+
+        effective_name = new_name.strip() if new_name else tool_data["tool_name"]
+
+        # Check name conflict in active table
+        existing = await self.mcp_tool_repo.get_mcp_tool_record(tool_name=effective_name, department_name=tool_data.get("department_name"))
+        if existing:
+            if not new_name:
+                conflicting = existing[0]
+                log.warning(f"MCP tool restore conflict: name '{effective_name}' already active.")
+                return {
+                    "message": f"Cannot restore: an active MCP tool named '{effective_name}' already exists. Provide a new name or delete the active one first.",
+                    "is_restored": False,
+                    "name_conflict": True,
+                    "conflicting_resource": {
+                        "tool_id": conflicting.get("tool_id"),
+                        "tool_name": conflicting.get("tool_name"),
+                        "created_by": conflicting.get("created_by"),
+                        "created_on": str(conflicting.get("created_on", ""))
+                    },
+                    "suggested_name": f"{tool_data['tool_name']}_restored"
+                }
+            else:
+                log.warning(f"MCP tool restore conflict: new_name '{effective_name}' also already active.")
+                return {
+                    "message": f"The name '{effective_name}' is also already in use. Please choose a different name.",
+                    "is_restored": False,
+                    "name_conflict": True,
+                    "suggested_name": f"{tool_data['tool_name']}_restored"
+                }
+
+        if new_name:
+            tool_data["tool_name"] = new_name.strip()
 
         # Attempt to save to main table
         success = await self.mcp_tool_repo.save_mcp_tool_record(tool_data)
@@ -2030,10 +2540,12 @@ class McpToolService:
 
     async def approve_mcp_tool(self, tool_id: str, approved_by: str, comments: Optional[str] = None) -> Dict[str, Any]:
         """
-        Approves an MCP tool by updating its status in the repository.
+        Approves an MCP tool by updating its status to 'approved', setting is_public to True,
+        recording the approval timestamp and approver information.
         """
         update_payload = {
             "status": "approved",
+            "is_public": True,
             "approved_by": approved_by,
             "approved_at": datetime.now(timezone.utc).replace(tzinfo=None),
             "comments": comments
@@ -2098,17 +2610,40 @@ class McpToolService:
         Returns:
             List[StructuredTool]: A list of StructuredTool instances discovered from all servers.
         """
+        
+        # Adding request headers also to the mcp headers
         for server_name, config in mcp_configs.items():
+            if "command" in config:  # This is a stdio connection
+                config["env"] = config.get("env") or {}
+                # Env values must be strings
+                headers_data = current_request_headers.get()
+                config["env"]["access-token"] = json.dumps(headers_data) if headers_data else ""
+        
+        # Resolve VAULT:: references in headers and URLs
+        for server_name, config in mcp_configs.items():
+            # Resolve VAULT:: references in header values
             headers: dict = config.get("headers", None)
-            if not headers:
-                continue
-            for k, v in headers.items():
-                if isinstance(v, str) and v.startswith(self.VAULT_PREFIX):
-                    vault_key = v[len(self.VAULT_PREFIX):].strip()
+            if headers:
+                for k, v in headers.items():
+                    if isinstance(v, str) and v.startswith(self.VAULT_PREFIX):
+                        vault_key = v[len(self.VAULT_PREFIX):].strip()
+                        vault_val = get_user_secrets(vault_key, None)
+                        if not vault_val:
+                            raise ValueError(f"Vault key '{vault_key}' not found for MCP server '{server_name}'.")
+                        headers[k] = vault_val
+
+            # Resolve VAULT:: references embedded in the URL (e.g., ?apikey=VAULT::MY_KEY)
+            url = config.get("url", "")
+            if isinstance(url, str) and self.VAULT_PREFIX in url:
+                import re
+                vault_pattern = re.compile(r'VAULT::(\S+?)(?=[&\s]|$)')
+                def _resolve_vault_in_url(match):
+                    vault_key = match.group(1).strip()
                     vault_val = get_user_secrets(vault_key, None)
                     if not vault_val:
-                        raise ValueError(f"Vault key '{vault_key}' not found for MCP server '{server_name}'.")
-                    headers[k] = vault_val
+                        raise ValueError(f"Vault key '{vault_key}' not found in URL for MCP server '{server_name}'.")
+                    return vault_val
+                config["url"] = vault_pattern.sub(_resolve_vault_in_url, url)
 
         try:
             log.info(f"Connecting to {len(mcp_configs)} MCP servers.")
@@ -2272,6 +2807,310 @@ class McpToolService:
         
         log.info(f"Extracted details for {len(extracted_details)} MCP tools for display.")
         return extracted_details
+
+    async def run_inline_remote_mcp(
+        self,
+        endpoint: str,
+        tool_name: Optional[str] = None,
+        arguments: Optional[Dict[str, Any]] = None,
+        timeout_sec: int = 30,
+        auth_uuid: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Connect to a remote MCP server (streamable HTTP), discover tools, and optionally execute one tool.
+        Phases: validation, header_resolution, connection, introspection, resolution, await_args, execution, completed.
+        """
+        def _resp(
+            *,
+            inputs_required: Any,
+            output: Any,
+            success: bool,
+            phase: str,
+            error: str = "",
+            raw_arguments: Any = None,
+            converted_arguments: Any = None,
+            conversion_errors: Any = None,
+            endpoint_out: str = "",
+        ) -> Dict[str, Any]:
+            ot = type(output).__name__ if output is not None else None
+            return {
+                "inputs_required": inputs_required if inputs_required is not None else [],
+                "output": output,
+                "output_type": ot,
+                "error": error if error else "",
+                "success": success,
+                "feedback": None,
+                "endpoint": endpoint_out,
+                "raw_arguments": raw_arguments,
+                "converted_arguments": converted_arguments,
+                "conversion_errors": conversion_errors,
+                "phase": phase,
+            }
+
+        ep = (endpoint or "").strip()
+        if not ep:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="validation",
+                error="Empty endpoint URL provided",
+                endpoint_out="",
+            )
+
+        parsed = urlparse(ep)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="validation",
+                error="Endpoint must be a valid http(s) URL with a host",
+                raw_arguments=None,
+                converted_arguments=None,
+                conversion_errors=None,
+                endpoint_out=ep,
+            )
+
+        to = max(1, min(int(timeout_sec or 30), 120))
+
+        merged_headers: Dict[str, str] = dict(headers or {})
+        if auth_uuid:
+            merged_headers.setdefault("Authorization", auth_uuid)
+
+        try:
+            for hk, hv in list(merged_headers.items()):
+                if isinstance(hv, str) and hv.startswith(self.VAULT_PREFIX):
+                    vault_key = hv[len(self.VAULT_PREFIX):].strip()
+                    vault_val = get_user_secrets(vault_key, None)
+                    if not vault_val:
+                        raise ValueError(f"Vault key '{vault_key}' not found.")
+                    merged_headers[hk] = vault_val
+        except PermissionError as e:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="header_resolution",
+                error=str(e),
+                endpoint_out=ep,
+            )
+        except ValueError as e:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="header_resolution",
+                error=str(e),
+                endpoint_out=ep,
+            )
+
+        mcp_config: Dict[str, Any] = {
+            "url": ep,
+            "transport": "streamable_http",
+            "headers": merged_headers,
+        }
+
+        try:
+            live_tools = await self.get_tools_from_mcp_configs({"remote_inline": mcp_config})
+        except Exception as e:
+            log.error(f"run_inline_remote_mcp connection failed: {e}")
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="connection",
+                error=str(e),
+                endpoint_out=ep,
+            )
+
+        if not live_tools:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="introspection",
+                error="No tools available from remote MCP server",
+                endpoint_out=ep,
+            )
+
+        name_to_tool: Dict[str, StructuredTool] = {}
+        for t in live_tools:
+            if isinstance(t, StructuredTool):
+                name_to_tool[t.name] = t
+
+        if not tool_name:
+            tools_list: List[Dict[str, Any]] = []
+            for t in live_tools:
+                if not isinstance(t, StructuredTool):
+                    continue
+                props, req = _mcp_remote_parse_json_schema_props(t)
+                params_out: List[Dict[str, Any]] = []
+                for pname, pschema in props.items():
+                    params_out.append({
+                        "name": pname,
+                        "type": _mcp_remote_json_type_from_prop(pschema),
+                        "description": (pschema.get("description") or "")[:4000],
+                        "required": pname in req,
+                    })
+                tools_list.append({
+                    "name": t.name,
+                    "description": (t.description or "")[:4000],
+                    "params": params_out,
+                })
+            return _resp(
+                inputs_required=tools_list,
+                output=None,
+                success=False,
+                phase="introspection",
+                endpoint_out=ep,
+            )
+
+        if tool_name not in name_to_tool:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="resolution",
+                error=f"Tool '{tool_name}' not found on remote server",
+                endpoint_out=ep,
+            )
+
+        target = name_to_tool[tool_name]
+        props, required_set = _mcp_remote_parse_json_schema_props(target)
+        raw_arguments = dict(arguments) if arguments else {}
+
+        if not raw_arguments:
+            params_list: List[Dict[str, Any]] = []
+            for pname, pschema in props.items():
+                params_list.append({
+                    "name": pname,
+                    "type": _mcp_remote_json_type_from_prop(pschema),
+                    "description": (pschema.get("description") or "")[:4000],
+                    "required": pname in required_set,
+                    "default": pschema.get("default"),
+                })
+            return _resp(
+                inputs_required=params_list,
+                output=None,
+                success=False,
+                phase="await_args",
+                endpoint_out=ep,
+            )
+
+        unexpected = set(raw_arguments.keys()) - set(props.keys())
+        if unexpected:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="execution",
+                error=f"Unexpected arguments: {sorted(unexpected)}",
+                raw_arguments=raw_arguments,
+                converted_arguments={},
+                conversion_errors={},
+                endpoint_out=ep,
+            )
+
+        missing = [k for k in required_set if k not in raw_arguments]
+        if missing:
+            pl: List[Dict[str, Any]] = []
+            for pname, pschema in props.items():
+                pl.append({
+                    "name": pname,
+                    "type": _mcp_remote_json_type_from_prop(pschema),
+                    "description": (pschema.get("description") or "")[:4000],
+                    "required": pname in required_set,
+                    "default": pschema.get("default"),
+                })
+            return _resp(
+                inputs_required=pl,
+                output=None,
+                success=False,
+                phase="await_args",
+                error=f"Missing required parameters: {missing}",
+                endpoint_out=ep,
+            )
+
+        conversion_errors: Dict[str, str] = {}
+        converted: Dict[str, Any] = {}
+        for pname, pschema in props.items():
+            if pname not in raw_arguments:
+                continue
+            val, err = _mcp_remote_coerce_value(raw_arguments[pname], pschema)
+            if err:
+                conversion_errors[pname] = err
+            else:
+                converted[pname] = val
+
+        if conversion_errors:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="execution",
+                error="Argument type conversion failed",
+                raw_arguments=raw_arguments,
+                converted_arguments=converted,
+                conversion_errors=conversion_errors,
+                endpoint_out=ep,
+            )
+
+        final_args: Dict[str, Any] = {}
+        for pname, pschema in props.items():
+            if pname in converted:
+                final_args[pname] = converted[pname]
+            elif pname in raw_arguments:
+                final_args[pname] = raw_arguments[pname]
+
+        try:
+            if hasattr(target, "ainvoke"):
+                output = await asyncio.wait_for(target.ainvoke(final_args), timeout=to)
+            elif hasattr(target, "arun"):
+                output = await asyncio.wait_for(target.arun(**final_args), timeout=to)
+            else:
+                output = await asyncio.wait_for(
+                    asyncio.to_thread(target.invoke, final_args),
+                    timeout=to,
+                )
+        except asyncio.TimeoutError:
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="execution",
+                error=f"Execution timed out after {to} seconds",
+                raw_arguments=raw_arguments,
+                converted_arguments=converted,
+                conversion_errors={},
+                endpoint_out=ep,
+            )
+        except Exception as e:
+            log.error(f"run_inline_remote_mcp execution error: {e}")
+            return _resp(
+                inputs_required=[],
+                output=None,
+                success=False,
+                phase="execution",
+                error=str(e),
+                raw_arguments=raw_arguments,
+                converted_arguments=converted,
+                conversion_errors={},
+                endpoint_out=ep,
+            )
+
+        serialized = _mcp_remote_serialize_output(output)
+        return _resp(
+            inputs_required=[],
+            output=serialized,
+            success=True,
+            phase="completed",
+            raw_arguments=raw_arguments,
+            converted_arguments=converted,
+            conversion_errors={},
+            endpoint_out=ep,
+        )
 
     # --- MCP Tool Testing Operations ---
 
@@ -2494,20 +3333,24 @@ class ToolService:
     def __init__(
         self,
         tool_repo: ToolRepository,
-        recycle_tool_repo: RecycleToolRepository,
-        tool_agent_mapping_repo: ToolAgentMappingRepository,
-        tag_service: TagService,
-        tool_code_processor: ToolCodeProcessor,
-        agent_repo: AgentRepository, # Need agent_repo for dependency checks
-        model_service: ModelService,
-        mcp_tool_service: McpToolService, # Inject the new MCP Tool Service
-        tool_file_manager: ToolFileManager, # Inject the ToolFileManager
+        tool_version_repo: ToolVersionRepository = None,  # Repository for tool versions table
+        tool_version_recycle_bin_repo: ToolVersionRecycleBinRepository = None,  # Repository for tool version recycle bin
+        recycle_tool_repo: RecycleToolRepository = None,
+        tool_agent_mapping_repo: ToolAgentMappingRepository = None,
+        tag_service: TagService = None,
+        tool_code_processor: ToolCodeProcessor = None,
+        agent_repo: AgentRepository = None, # Need agent_repo for dependency checks
+        model_service: ModelService = None,
+        mcp_tool_service: McpToolService = None, # Inject the new MCP Tool Service
+        tool_file_manager: ToolFileManager = None, # Inject the ToolFileManager
         tool_access_key_mapping_repo: ToolAccessKeyMappingRepository = None,  # Repository for tool access key mappings
         access_key_definitions_repo: AccessKeyDefinitionsRepository = None,  # Repository for checking if access keys exist
         tool_sharing_repo: ToolDepartmentSharingRepository = None,  # Repository for tool department sharing
         department_repo: DepartmentRepository = None  # Repository for validating department names
     ):
         self.tool_repo = tool_repo
+        self.tool_version_repo = tool_version_repo  # Store tool version repo
+        self.tool_version_recycle_bin_repo = tool_version_recycle_bin_repo  # Store tool version recycle bin repo
         self.recycle_tool_repo = recycle_tool_repo
         self.tool_agent_mapping_repo = tool_agent_mapping_repo
         self.tag_service = tag_service
@@ -2541,7 +3384,7 @@ class ToolService:
 
     # --- Tool Creation Operations ---
 
-    async def create_tool(self, tool_data: Dict[str, Any], force_add, is_validator: Optional[bool] = False, is_public: Optional[bool] = False, shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def create_tool(self, tool_data: Dict[str, Any], force_add, is_validator: Optional[bool] = False) -> Dict[str, Any]:
         """
         Creates a new tool, including validation, docstring generation, and saving to the database.
 
@@ -2549,8 +3392,6 @@ class ToolService:
             tool_data (dict): A dictionary containing the tool data to save.
             force_add (bool): Force add flag for bypassing certain validations.
             is_validator (bool, optional): Whether this is a validator tool.
-            is_public (bool, optional): Whether the tool is public (accessible to all departments).
-            shared_with_departments (List[str], optional): List of department names to share the tool with.
 
         Returns:
             dict: Status of the operation, including success message or error details.
@@ -2565,18 +3406,19 @@ class ToolService:
             }
 
         tool_data["tool_name"] = validation_status["function_name"]
-        update_session_context(tool_name=tool_data["tool_name"])
-
-        if await self.recycle_tool_repo.is_tool_in_recycle_bin_record(tool_name=tool_data["tool_name"]):
-            log.info(f"Tool Insertion Status: Integrity error inserting data: Tool name {tool_data['tool_name']} already exists in recycle bin.")
+        
+        # Validate tool name doesn't use version-like suffix (reserved for versioning)
+        import re
+        if re.search(r'_v\d+$', tool_data["tool_name"], re.IGNORECASE):
+            log.error(f"Tool creation failed: Tool name cannot end with version pattern like _v1, _v2, etc.")
             return {
-                "message": f"Integrity error inserting data: Tool name {tool_data['tool_name']} already exists in recycle bin.",
+                "message": f"Invalid tool name '{tool_data['tool_name']}': Names ending with _v1, _v2, etc. are reserved for version files. Please rename your function.",
                 "tool_id": "",
-                "tool_name": tool_data['tool_name'],
-                "model_name": tool_data.get('model_name', ''),
-                "created_by": tool_data.get('created_by', ''),
                 "is_created": False
             }
+        
+        update_session_context(tool_name=tool_data["tool_name"])
+
         if not force_add:
             initial_state = {
                     "code": tool_data["code_snippet"],
@@ -2711,9 +3553,6 @@ class ToolService:
 
         # Set the is_validator flag in the tool data
         tool_data["is_validator"] = is_validator
-        
-        # Set the is_public flag in the tool data
-        tool_data["is_public"] = is_public if is_public is not None else False
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         tool_data['created_on'] = now
@@ -2722,12 +3561,27 @@ class ToolService:
         success = await self.tool_repo.save_tool_record(tool_data)
 
         if success:
+            # Create v1 entry in tool_versions_table
+            if self.tool_version_repo:
+                v1_created = await self.tool_version_repo.create_version(
+                    tool_id=tool_data['tool_id'],
+                    version='v1',
+                    code_snippet=tool_data.get('code_snippet', ''),
+                    tool_description=tool_data.get('tool_description', ''),
+                    model_name=tool_data.get('model_name', ''),
+                    updated_by=tool_data.get('created_by', 'system')
+                )
+                if v1_created:
+                    log.info(f"Created v1 in tool_versions_table for tool '{tool_data['tool_id']}'")
+                else:
+                    log.error(f"FAILED to create v1 in tool_versions_table for tool '{tool_data['tool_id']}'. Check database constraints and logs.")
+            
             tags_status = await self.tag_service.assign_tags_to_tool(
                 tag_ids=tool_data['tag_ids'], tool_id=tool_data['tool_id']
             )
             
-            # Create .py file for the tool using tool_name
-            file_creation_result = await self.tool_file_manager.create_tool_file(tool_data)
+            # Create .py file for the tool using tool_name with version v1
+            file_creation_result = await self.tool_file_manager.create_tool_file(tool_data, version="v1")
             if file_creation_result.get("success"):
                 log.info(f"Tool file created at: {file_creation_result.get('file_path')}")
             else:
@@ -2745,65 +3599,19 @@ class ToolService:
                     )
                     log.info(f"Saved access keys {access_keys} for tool '{tool_data['tool_name']}'")
             
-            # Handle department sharing if specified (skip if is_public=true as it's redundant)
-            sharing_status = None
-            if is_public and shared_with_departments:
-                log.info(f"Tool '{tool_data['tool_name']}' is public, skipping shared_with_departments as public tools are visible to all departments")
-                sharing_status = {"message": "Tool is public, shared_with_departments ignored"}
-            elif shared_with_departments and self.tool_sharing_repo:
-                try:
-                    # Validate that all target departments exist
-                    invalid_departments = []
-                    valid_departments = []
-                    if self.department_repo:
-                        for dept_name in shared_with_departments:
-                            dept = await self.department_repo.get_department_by_name(dept_name)
-                            if dept:
-                                valid_departments.append(dept_name)
-                            else:
-                                invalid_departments.append(dept_name)
-                    else:
-                        # If no department_repo available, proceed with all departments
-                        valid_departments = shared_with_departments
-                    
-                    if invalid_departments:
-                        log.warning(f"Invalid department names provided for sharing: {invalid_departments}")
-                    
-                    if valid_departments:
-                        sharing_result = await self.tool_sharing_repo.share_tool_with_multiple_departments(
-                            tool_id=tool_data['tool_id'],
-                            tool_name=tool_data['tool_name'],
-                            source_department=tool_data.get('department_name', ''),
-                            target_departments=valid_departments,
-                            shared_by=tool_data.get('created_by', '')
-                        )
-                        sharing_status = {
-                            "shared_with": [f["department"] for f in sharing_result.get("failures", []) if False] or valid_departments[:sharing_result.get("success_count", 0)],
-                            "failed": sharing_result.get("failures", []),
-                            "invalid_departments": invalid_departments
-                        }
-                        log.info(f"Tool '{tool_data['tool_name']}' shared with departments: {sharing_result.get('shared_departments', [])}")
-                    else:
-                        sharing_status = {"error": "No valid departments to share with", "invalid_departments": invalid_departments}
-                except Exception as share_error:
-                    log.warning(f"Failed to share tool with departments: {share_error}")
-                    sharing_status = {"error": str(share_error)}
-            
             log.info(f"Successfully onboarded tool with tool_id: {tool_data['tool_id']}")
             result = {
-                "message": f"Successfully onboarded tool: {tool_data['tool_name']}",
+                "message": f"Successfully onboarded tool: {tool_data['tool_name']} (version v1 created)",
                 "tool_id": tool_data['tool_id'],
                 "tool_name": tool_data['tool_name'],
                 "model_name": tool_data.get('model_name', ''),
                 "tags_status": tags_status,
                 "created_by": tool_data.get('created_by', ''),
                 "is_created": True,
-                "is_public": tool_data.get('is_public', False),
+                "version_created": "v1",
                 "file_created": file_creation_result.get("success", False),
                 "file_path": file_creation_result.get("file_path", "")
             }
-            if sharing_status:
-                result["sharing_status"] = sharing_status
             return result
         else:
             log.info(f"Tool Insertion Status: Integrity error inserting data: Tool name {tool_data['tool_name']} already exists.")
@@ -2818,7 +3626,7 @@ class ToolService:
 
 
 
-    async def create_tool_for_message_queue(self, tool_data: Dict[str, Any], force_add, is_validator: Optional[bool] = False, is_public: Optional[bool] = False, shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def create_tool_for_message_queue(self, tool_data: Dict[str, Any], force_add, is_validator: Optional[bool] = False) -> Dict[str, Any]:
         """
         Creates a new tool, for message queue workflow whose task will be simply to :
         send message to the desired topic, 
@@ -2828,8 +3636,6 @@ class ToolService:
             tool_data (dict): A dictionary containing the tool data to save.
             force_add (bool): Force add flag for bypassing certain validations.
             is_validator (bool, optional): Whether this is a validator tool.
-            is_public (bool, optional): Whether the tool is public (accessible to all departments).
-            shared_with_departments (List[str], optional): List of department names to share the tool with.
 
         Returns:
             dict: Status of the operation, including success message or error details.
@@ -2837,8 +3643,8 @@ class ToolService:
         
         log.info("======Executing message queue workflow======")
 
-        # Create regular tool (with sharing parameters)
-        regular_msg = await self.create_tool(tool_data, force_add, is_validator, is_public, shared_with_departments)
+        # Create regular tool
+        regular_msg = await self.create_tool(tool_data, force_add, is_validator)
 
         #Fetch tool id and update for message queue version
         t_id=regular_msg['tool_id']
@@ -2853,9 +3659,8 @@ class ToolService:
                 "is_created": False
             }
 
-        tool_data["tool_name"] = validation_status["function_name"]
-
-        
+        if not tool_data.get("tool_name"):
+            tool_data["tool_name"] = validation_status["function_name"]
 
         #New tool name for message queue version
         tool_data["tool_name"] += '_message_queue'
@@ -2865,11 +3670,12 @@ class ToolService:
         
         update_session_context(tool_name=tool_data["tool_name"],tool_id=tool_data.get("tool_id", None))
 
-
-        if await self.recycle_tool_repo.is_tool_in_recycle_bin_record(tool_name=tool_data["tool_name"]):
-            log.info(f"Tool Insertion Status: Integrity error inserting data: Tool name {tool_data['tool_name']} already exists in recycle bin.")
+        # Case-insensitive duplicate name check
+        existing_mq_tool = await self.tool_repo.get_tool_record(tool_name=tool_data["tool_name"])
+        if existing_mq_tool:
+            log.info(f"Tool Insertion Status: Tool name {tool_data['tool_name']} already exists (case-insensitive match).")
             return {
-                "message": f"Integrity error inserting data: Tool name {tool_data['tool_name']} already exists in recycle bin.",
+                "message": f"Integrity error inserting data: Tool name {tool_data['tool_name']} already exists.",
                 "tool_id": "",
                 "tool_name": tool_data['tool_name'],
                 "model_name": tool_data.get('model_name', ''),
@@ -2983,9 +3789,6 @@ class ToolService:
 
         # Set the is_validator flag in the tool data
         tool_data["is_validator"] = is_validator
-        
-        # Set the is_public flag in the tool data
-        tool_data["is_public"] = is_public if is_public is not None else False
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         tool_data['created_on'] = now
@@ -2994,12 +3797,27 @@ class ToolService:
         success = await self.tool_repo.save_tool_record(tool_data)
 
         if success:
+            # Create v1 entry in tool_versions_table
+            if self.tool_version_repo:
+                v1_created = await self.tool_version_repo.create_version(
+                    tool_id=tool_data['tool_id'],
+                    version='v1',
+                    code_snippet=tool_data.get('code_snippet', ''),
+                    tool_description=tool_data.get('tool_description', ''),
+                    model_name=tool_data.get('model_name', ''),
+                    updated_by=tool_data.get('created_by', 'system')
+                )
+                if v1_created:
+                    log.info(f"Created v1 in tool_versions_table for tool '{tool_data['tool_id']}'")
+                else:
+                    log.error(f"FAILED to create v1 in tool_versions_table for tool '{tool_data['tool_id']}'. Check database constraints and logs.")
+            
             tags_status = await self.tag_service.assign_tags_to_tool(
                 tag_ids=tool_data['tag_ids'], tool_id=tool_data['tool_id']
             )
             
-            # Create .py file for the tool using tool_name
-            file_creation_result = await self.tool_file_manager.create_tool_file(tool_data)
+            # Create .py file for the tool using tool_name with version v1
+            file_creation_result = await self.tool_file_manager.create_tool_file(tool_data, version="v1")
             if file_creation_result.get("success"):
                 log.info(f"Tool file created at: {file_creation_result.get('file_path')}")
             else:
@@ -3017,65 +3835,19 @@ class ToolService:
                     )
                     log.info(f"Saved access keys {access_keys} for tool '{tool_data['tool_name']}'")
             
-            # Handle department sharing if specified (skip if is_public=true as it's redundant)
-            sharing_status = None
-            if is_public and shared_with_departments:
-                log.info(f"Tool '{tool_data['tool_name']}' is public, skipping shared_with_departments as public tools are visible to all departments")
-                sharing_status = {"message": "Tool is public, shared_with_departments ignored"}
-            elif shared_with_departments and self.tool_sharing_repo:
-                try:
-                    # Validate that all target departments exist
-                    invalid_departments = []
-                    valid_departments = []
-                    if self.department_repo:
-                        for dept_name in shared_with_departments:
-                            dept = await self.department_repo.get_department_by_name(dept_name)
-                            if dept:
-                                valid_departments.append(dept_name)
-                            else:
-                                invalid_departments.append(dept_name)
-                    else:
-                        # If no department_repo available, proceed with all departments
-                        valid_departments = shared_with_departments
-                    
-                    if invalid_departments:
-                        log.warning(f"Invalid department names provided for sharing: {invalid_departments}")
-                    
-                    if valid_departments:
-                        sharing_result = await self.tool_sharing_repo.share_tool_with_multiple_departments(
-                            tool_id=tool_data['tool_id'],
-                            tool_name=tool_data['tool_name'],
-                            source_department=tool_data.get('department_name', ''),
-                            target_departments=valid_departments,
-                            shared_by=tool_data.get('created_by', '')
-                        )
-                        sharing_status = {
-                            "shared_with": [f["department"] for f in sharing_result.get("failures", []) if False] or valid_departments[:sharing_result.get("success_count", 0)],
-                            "failed": sharing_result.get("failures", []),
-                            "invalid_departments": invalid_departments
-                        }
-                        log.info(f"Tool '{tool_data['tool_name']}' shared with departments: {sharing_result.get('shared_departments', [])}")
-                    else:
-                        sharing_status = {"error": "No valid departments to share with", "invalid_departments": invalid_departments}
-                except Exception as share_error:
-                    log.warning(f"Failed to share tool with departments: {share_error}")
-                    sharing_status = {"error": str(share_error)}
-            
             log.info(f"Successfully onboarded tool with tool_id: {tool_data['tool_id']}")
             result = {
-                "message": f"Successfully onboarded tool: {tool_data['tool_name']}",
+                "message": f"Successfully onboarded tool: {tool_data['tool_name']} (version v1 created)",
                 "tool_id": tool_data['tool_id'],
                 "tool_name": tool_data['tool_name'],
                 "model_name": tool_data.get('model_name', ''),
                 "tags_status": tags_status,
                 "created_by": tool_data.get('created_by', ''),
                 "is_created": True,
-                "is_public": tool_data.get('is_public', False),
+                "version_created": "v1",
                 "file_created": file_creation_result.get("success", False),
                 "file_path": file_creation_result.get("file_path", "")
             }
-            if sharing_status:
-                result["sharing_status"] = sharing_status
             return result
         else:
             log.info(f"Tool Insertion Status: Integrity error inserting data: Tool name {tool_data['tool_name']} already exists.")
@@ -3124,6 +3896,32 @@ class ToolService:
             if tool.get('is_validator', False) or tool.get('tool_id', '').startswith('_validator') or tool.get('tool_id','').endswith('_message_queue'):
                 continue
             tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+            
+            # Get version info from tool_versions_table (full details for GET /tools/get)
+            if self.tool_version_repo:
+                versions_data = await self.tool_version_repo.get_all_versions(tool['tool_id'])
+                if versions_data:
+                    tool['version_count'] = len(versions_data)
+                    tool['versions'] = [v['version'] for v in versions_data]
+                    # Build versioning dict with full details
+                    tool['versioning'] = {
+                        v['version']: {
+                            'code_snippet': v.get('code_snippet', ''),
+                            'updated_date': str(v.get('updated_date', ''))[:10] if v.get('updated_date') else '',
+                            'updated_by': v.get('updated_by', ''),
+                            'model_name': v.get('model_name', ''),
+                            'tool_description': v.get('tool_description', '')
+                        } for v in versions_data
+                    }
+                else:
+                    tool['version_count'] = 1
+                    tool['versions'] = ['v1']
+                    tool['versioning'] = {}
+            else:
+                tool['version_count'] = 1
+                tool['versions'] = ['v1']
+                tool['versioning'] = {}
+            
             # Add shared departments information
             if self.tool_sharing_repo:
                 shared_info = await self.tool_sharing_repo.get_shared_departments_for_tool(tool['tool_id'])
@@ -3134,6 +3932,46 @@ class ToolService:
         
         log.info(f"Retrieved {len(regular_tools)} regular tools (excluding validators)")
         return regular_tools
+
+    async def get_system_tools(self, tool_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all tools that were onboarded by the system (created_by = 'system').
+        Optionally filters by tool name.
+
+        Args:
+            tool_name (str, optional): If provided, returns only tools matching this name.
+
+        Returns:
+            list: A list of system-onboarded tools, represented as dictionaries with tags and sharing info.
+        """
+        try:
+            async with self.tool_repo.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"SELECT * FROM {self.tool_repo.table_name} "
+                    f"WHERE created_by = $1 ORDER BY created_on ASC",
+                    "system"
+                )
+            tools = [dict(row) for row in rows]
+
+            if tool_name:
+                tools = [t for t in tools if t.get('tool_name', '').lower() == tool_name.lower()]
+
+            tool_id_to_tags = await self.tag_service.get_tool_id_to_tags_dict()
+            for tool in tools:
+                tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+                tool['is_shared'] = False
+                tool['is_public_access'] = False
+                if self.tool_sharing_repo:
+                    shared_info = await self.tool_sharing_repo.get_shared_departments_for_tool(tool['tool_id'])
+                    tool['shared_with_departments'] = [info['target_department'] for info in shared_info]
+                else:
+                    tool['shared_with_departments'] = []
+
+            log.info(f"Retrieved {len(tools)} system-onboarded tools")
+            return tools
+        except Exception as e:
+            log.error(f"Error retrieving system tools: {e}")
+            return []
 
     async def get_tools_by_tags(self, tag_ids: Optional[Union[List[str], str]] = None, tag_names: Optional[Union[List[str], str]] = None, department_name:str = None) -> List[Dict[str, Any]]:
         """
@@ -3198,8 +4036,8 @@ class ToolService:
         Returns:
             List[Dict[str, Any]]: A list of dictionaries representing the retrieved tool(s), each with associated tags and shared_with_departments. Returns an empty list if no tool is found.
         """
-        if tool_id and tool_id.startswith("mcp_"):
-            return await self.mcp_tool_service.get_mcp_tool(tool_id=tool_id, department_name= department_name)
+        # if tool_id and tool_id.startswith("mcp_"):
+        #     return await self.mcp_tool_service.get_mcp_tool(tool_id=tool_id, department_name= department_name)
 
         # First try to get tool (own department or public)
         tool_records = await self.tool_repo.get_tool_record(tool_id=tool_id, tool_name=tool_name, department_name=department_name)
@@ -3225,8 +4063,47 @@ class ToolService:
             else:
                 tool_record['shared_with_departments'] = []
             
+            # Add versioning info from tool_versions_table
+            if self.tool_version_repo:
+                versions_data = await self.tool_version_repo.get_all_versions(tool_record['tool_id'])
+                tool_record['versioning'] = {
+                    v['version']: {
+                        'code_snippet': v.get('code_snippet', ''),
+                        'tool_description': v.get('tool_description', ''),
+                        'updated_date': str(v.get('updated_date', '')) if v.get('updated_date') else '',
+                        'updated_by': v.get('updated_by', ''),
+                        'model_name': v.get('model_name', '')
+                    } for v in versions_data
+                }
+                tool_record['version_count'] = len(versions_data)
+                tool_record['versions'] = [v['version'] for v in versions_data]
+            else:
+                tool_record['versioning'] = {}
+                tool_record['version_count'] = 0
+                tool_record['versions'] = []
+            
         log.info(f"Retrieved tool with ID: {tool_records[0]['tool_id']} and Name: {tool_records[0]['tool_name']}.")
         return tool_records
+
+    async def get_tool_versions(self, tool_id: str) -> List[str]:
+        """
+        Retrieves all version strings for a tool.
+
+        Args:
+            tool_id (str): The tool ID.
+
+        Returns:
+            List[str]: A list of version strings (e.g., ['v1', 'v2', 'v3']).
+        """
+        # Verify tool exists
+        tool_record = await self.tool_repo.get_tool_record(tool_id=tool_id)
+        if not tool_record:
+            return None
+        
+        if not self.tool_version_repo:
+            return ["v1"]
+        
+        return await self.tool_version_repo.get_version_list(tool_id)
     
     async def get_tool_by_id(self, tool_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -3290,6 +4167,16 @@ class ToolService:
                 
             log.debug(f"Including regular tool: {tool_id}")
             tool['tags'] = tool_id_to_tags.get(tool['tool_id'], [])
+            
+            # Get version info from tool_versions_table (only count and list for listings)
+            if self.tool_version_repo:
+                versions_list = await self.tool_version_repo.get_version_list(tool['tool_id'])
+                tool['version_count'] = len(versions_list) if versions_list else 1
+                tool['versions'] = versions_list if versions_list else ['v1']
+            else:
+                tool['version_count'] = 1
+                tool['versions'] = ['v1']
+            
             # Add shared departments information
             if self.tool_sharing_repo:
                 shared_info = await self.tool_sharing_repo.get_shared_departments_for_tool(tool['tool_id'])
@@ -3334,7 +4221,7 @@ class ToolService:
         try:
             # Build query with optional department_name filter
             query = f"""
-                SELECT tool_id, tool_name, tool_description, created_by, created_on, last_used
+                SELECT tool_id, tool_name, tool_description, created_by, created_on, last_used, department_name
                 FROM {TableNames.TOOL.value} 
                 WHERE (last_used IS NULL OR last_used < (NOW() - INTERVAL '1 day' * $1))
             """
@@ -3504,6 +4391,15 @@ class ToolService:
             tool_tags = tool_id_to_tags.get(tool_id, [])
             tool['tags'] = tool_tags
             
+            # Get version info from tool_versions_table (only count and list for listings)
+            if self.tool_version_repo:
+                versions_list = await self.tool_version_repo.get_version_list(tool_id)
+                tool['version_count'] = len(versions_list) if versions_list else 1
+                tool['versions'] = versions_list if versions_list else ['v1']
+            else:
+                tool['version_count'] = 1
+                tool['versions'] = ['v1']
+            
             # Add shared departments information
             if self.tool_sharing_repo:
                 shared_info = await self.tool_sharing_repo.get_shared_departments_for_tool(tool_id)
@@ -3526,10 +4422,10 @@ class ToolService:
 
     # --- Tool Updation Operations ---
 
-    async def update_tool(self, tool_id: str, model_name: str, force_add, code_snippet: str = "", tool_description: str = "", updated_tag_id_list: Optional[Union[List[str], str]] = None, user_id: Optional[str] = None, is_admin: bool = False, is_validator: bool = False, is_public: Optional[bool] = None, shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def update_tool(self, tool_id: str, model_name: str, force_add, code_snippet: str = "", tool_description: str = "", updated_tag_id_list: Optional[Union[List[str], str]] = None, user_id: Optional[str] = None, is_admin: bool = False, is_validator: bool = False, version: Optional[str] = None, create_new_version: bool = False) -> Dict[str, Any]:
         """
         Updates an existing tool record, including code validation, docstring regeneration,
-        permission checks, dependency checks, and tag updates.
+        permission checks, dependency checks, and tag updates. Supports versioning.
 
         Args:
             tool_id (str): The ID of the tool to update.
@@ -3541,8 +4437,8 @@ class ToolService:
             user_id (str, optional): The ID of the user performing the update.
             is_admin (bool, optional): Whether the user has admin privileges.
             is_validator (bool, optional): Whether the tool is a validator tool.
-            is_public (bool, optional): Whether the tool should be public (accessible to all departments).
-            shared_with_departments (List[str], optional): List of department names to share the tool with.
+            version (str, optional): The specific version to update. If None, updates the current version.
+            create_new_version (bool, optional): If True, creates a new version instead of updating existing.
 
         Returns:
             dict: Status of the update operation.
@@ -3570,13 +4466,6 @@ class ToolService:
         current_is_validator = tool_data.get('is_validator', False) or tool_data.get('tool_id', '').startswith('_validator')
         validator_flag_changed = is_validator != current_is_validator
         
-        # Check if is_public is being changed
-        current_is_public = tool_data.get('is_public', False)
-        is_public_changed = is_public is not None and is_public != current_is_public
-        
-        # Check if sharing is being updated
-        sharing_changed = shared_with_departments is not None
-        
         log.info(f"Validator status check: current={current_is_validator}, requested={is_validator}, changed={validator_flag_changed}")
         validator_flag_value = tool_data.get('is_validator', 'not_present') if isinstance(tool_data, dict) else 'invalid_data'
         log.info(f"Tool ID: {tool_data.get('tool_id', '') if isinstance(tool_data, dict) else 'unknown'}, has_is_validator_flag: {validator_flag_value}")
@@ -3588,194 +4477,7 @@ class ToolService:
             tag_update_status = await self.tag_service.assign_tags_to_tool(tag_ids=updated_tag_id_list, tool_id=tool_id)
             log.info("Successfully updated tags for the tool.")
 
-        # Handle is_public and sharing updates even if no other fields change
-        sharing_update_status = None
-        
-        # If setting is_public=true, sharing is redundant - clear any existing sharing
-        if is_public_changed and is_public and self.tool_sharing_repo:
-            if shared_with_departments:
-                log.info(f"Tool '{tool_data['tool_name']}' is being set to public, ignoring shared_with_departments")
-                sharing_update_status = {"message": "Tool is public, shared_with_departments ignored"}
-                sharing_changed = False  # Skip further sharing processing
-        
-        # VALIDATION: Check if unsharing tool would break any shared agents
-        if is_public_changed or sharing_changed:
-            # Get agents that use this tool
-            agents_using_tool = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
-            
-            if agents_using_tool:
-                blocking_agents = []
-                
-                for mapping in agents_using_tool:
-                    agent_id = mapping.get('agentic_application_id')
-                    agent_records = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
-                    if not agent_records:
-                        continue
-                    agent = agent_records[0]
-                    agent_name = agent.get('agentic_application_name', agent_id)
-                    agent_is_public = agent.get('is_public', False)
-                    
-                    # Case 1: Tool is being made non-public
-                    if is_public_changed and not is_public:
-                        agent_department = agent.get('department_name', '')
-                        tool_department = tool_data.get('department_name', '')
-                        
-                        # Block if agent is from a different department (it relies on tool being public)
-                        if agent_department and tool_department and agent_department != tool_department:
-                            blocking_agents.append({
-                                "agent_name": agent_name,
-                                "agent_id": agent_id,
-                                "agent_department": agent_department,
-                                "reason": f"Agent belongs to department '{agent_department}' and accesses this tool via public visibility. Making the tool non-public will revoke access for this agent."
-                            })
-                            continue
-                        
-                        # Also block if agent is public (it needs the tool to be accessible to all)
-                        if agent_is_public:
-                            blocking_agents.append({
-                                "agent_name": agent_name,
-                                "agent_id": agent_id,
-                                "agent_department": agent_department,
-                                "reason": "Agent is public and requires this tool to be accessible"
-                            })
-                            continue
-                    
-                    # Case 2: Check if tool is being unshared from departments where agent is shared
-                    if sharing_changed and self.tool_sharing_repo:
-                        # Get current tool sharing
-                        current_tool_shared_info = await self.tool_sharing_repo.get_shared_departments_for_tool(tool_id)
-                        current_tool_shared_set = set(d['target_department'] for d in current_tool_shared_info)
-                        
-                        # Get new tool sharing (after update)
-                        valid_new_depts = []
-                        if shared_with_departments and self.department_repo:
-                            for dept_name in shared_with_departments:
-                                dept = await self.department_repo.get_department_by_name(dept_name)
-                                if dept:
-                                    valid_new_depts.append(dept_name)
-                        elif shared_with_departments:
-                            valid_new_depts = shared_with_departments
-                        new_tool_shared_set = set(valid_new_depts) if valid_new_depts else set()
-                        
-                        # Departments being unshared from
-                        depts_being_unshared = current_tool_shared_set - new_tool_shared_set
-                        
-                        if depts_being_unshared:
-                            # Get agent's sharing info
-                            if self.tool_sharing_repo and hasattr(self, 'agent_repo'):
-                                # Check if agent is shared with any of the departments being unshared
-                                agent_shared_info = []
-                                try:
-                                    # Get agent sharing repo from tool_service context
-                                    from src.database.repositories import AgentDepartmentSharingRepository
-                                    agent_sharing_query = f"""
-                                        SELECT target_department FROM agent_department_sharing 
-                                        WHERE agentic_application_id = $1
-                                    """
-                                    async with self.tool_repo.pool.acquire() as conn:
-                                        agent_shared_info = await conn.fetch(agent_sharing_query, agent_id)
-                                except Exception as e:
-                                    log.warning(f"Could not check agent sharing: {e}")
-                                
-                                agent_shared_depts = set(r['target_department'] for r in agent_shared_info)
-                                
-                                # Check if agent is shared with departments we're trying to unshare tool from
-                                conflicting_depts = depts_being_unshared & agent_shared_depts
-                                if conflicting_depts:
-                                    blocking_agents.append({
-                                        "agent_name": agent_name,
-                                        "agent_id": agent_id,
-                                        "reason": f"Agent is shared with departments {list(conflicting_depts)} and requires this tool"
-                                    })
-                
-                if blocking_agents:
-                    agent_names = [a['agent_name'] for a in blocking_agents]
-                    log.error(f"Cannot update tool visibility for '{tool_data['tool_name']}': Used by agents in other departments: {agent_names}")
-                    
-                    # Build a specific, descriptive error message
-                    agent_detail_msgs = []
-                    for ba in blocking_agents[:5]:
-                        dept_info = f" (Department: {ba['agent_department']})" if ba.get('agent_department') else ""
-                        agent_detail_msgs.append(f"'{ba['agent_name']}'{dept_info}")
-                    agents_summary = ", ".join(agent_detail_msgs)
-                    if len(blocking_agents) > 5:
-                        agents_summary += f" and {len(blocking_agents) - 5} more"
-                    
-                    return {
-                        "message": f"Cannot make tool '{tool_data['tool_name']}' non-public: It is currently used by {len(blocking_agents)} agent(s) in other departments that would lose access: {agents_summary}. Please remove this tool from those agents first, or keep the tool public.",
-                        "details": blocking_agents,
-                        "is_update": False
-                    }
-        
-        if is_public_changed or sharing_changed:
-            # Update is_public in tool_data if changed
-            if is_public_changed:
-                tool_data["is_public"] = is_public
-                await self.tool_repo.update_tool_record({"is_public": is_public}, tool_id)
-                log.info(f"Updated is_public to {is_public} for tool: {tool_data['tool_name']}")
-            
-            # Handle sharing update (with department validation)
-            if sharing_changed and self.tool_sharing_repo:
-                try:
-                    # Validate new departments exist
-                    valid_new_depts = []
-                    invalid_departments = []
-                    if shared_with_departments and self.department_repo:
-                        for dept_name in shared_with_departments:
-                            dept = await self.department_repo.get_department_by_name(dept_name)
-                            if dept:
-                                valid_new_depts.append(dept_name)
-                            else:
-                                invalid_departments.append(dept_name)
-                        if invalid_departments:
-                            log.warning(f"Invalid department names provided for sharing: {invalid_departments}")
-                    elif shared_with_departments:
-                        valid_new_depts = shared_with_departments
-                    
-                    # Get current sharing state
-                    current_shared_info = await self.tool_sharing_repo.get_shared_departments_for_tool(tool_id)
-                    current_shared_set = set(d['target_department'] for d in current_shared_info)
-                    new_shared_set = set(valid_new_depts) if valid_new_depts else set()
-                    
-                    # Departments to add (only valid ones)
-                    depts_to_add = new_shared_set - current_shared_set
-                    # Departments to remove
-                    depts_to_remove = current_shared_set - new_shared_set
-                    
-                    added_depts = []
-                    removed_depts = []
-                    
-                    # Remove sharing from departments no longer in the list
-                    for dept in depts_to_remove:
-                        try:
-                            await self.tool_sharing_repo.unshare_tool_from_department(tool_id, dept)
-                            removed_depts.append(dept)
-                        except Exception as e:
-                            log.warning(f"Failed to unshare tool from department {dept}: {e}")
-                    
-                    # Add sharing to new departments
-                    if depts_to_add:
-                        share_result = await self.tool_sharing_repo.share_tool_with_multiple_departments(
-                            tool_id=tool_id,
-                            tool_name=tool_data['tool_name'],
-                            source_department=tool_data.get('department_name', ''),
-                            target_departments=list(depts_to_add),
-                            shared_by=user_id or ''
-                        )
-                        added_depts = list(depts_to_add)[:share_result.get("success_count", 0)]
-                    
-                    sharing_update_status = {
-                        "added": added_depts,
-                        "removed": removed_depts,
-                        "current_shared_with": list(new_shared_set),
-                        "invalid_departments": invalid_departments if invalid_departments else []
-                    }
-                    log.info(f"Updated sharing for tool '{tool_data['tool_name']}': added={added_depts}, removed={removed_depts}")
-                except Exception as share_error:
-                    log.warning(f"Failed to update tool sharing: {share_error}")
-                    sharing_update_status = {"error": str(share_error)}
-
-        if not tool_description and not code_snippet and not validator_flag_changed: # Only tags/sharing were updated
+        if not tool_description and not code_snippet and not validator_flag_changed: # Only tags were updated
             log.info("No modifications made to the tool code/description attributes.")
             result = {
                 "message": "Tool updated successfully",
@@ -3784,10 +4486,6 @@ class ToolService:
             }
             if tag_update_status:
                 result["tag_update_status"] = tag_update_status
-            if sharing_update_status:
-                result["sharing_update_status"] = sharing_update_status
-            if is_public_changed:
-                result["is_public"] = is_public
             return result
 
         if code_snippet:
@@ -3908,26 +4606,34 @@ class ToolService:
                 )
             log.info(f"[SUCCESS] Validator tool validation passed for updated tool: {tool_data['tool_name']}")
 
-        # Check for agent dependencies before updating core tool data
-        agents_using_this_tool_raw = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
-        if agents_using_this_tool_raw:
-            agent_ids = [m['agentic_application_id'] for m in agents_using_this_tool_raw]
-            agent_details = []
-            for agent_id in agent_ids:
-                agent_record = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
-                if agent_record:
-                    agent_record = agent_record[0]
-                    agent_details.append({
-                        "agentic_application_id": agent_record['agentic_application_id'],
-                        "agentic_application_name": agent_record['agentic_application_name'],
-                        "agentic_app_created_by": agent_record['created_by']
-                    })
-            if agent_details:
-                return {
-                    "message": f"The tool you are trying to update is being referenced by {len(agent_details)} agentic applications.",
-                    "details": agent_details,
-                    "is_update": False
-                }
+        # Check for agent dependencies before updating core tool data (admins can bypass)
+        # Skip this check if creating a new version (not modifying existing versions that agents use)
+        if not is_admin and not create_new_version:
+            agents_using_this_tool_raw = await self.tool_agent_mapping_repo.get_tool_agent_mappings_record(tool_id=tool_id)
+            if agents_using_this_tool_raw:
+                # Filter only agents using THIS SPECIFIC VERSION being updated
+                agents_using_this_version = [
+                    m for m in agents_using_this_tool_raw 
+                    if m.get('tool_version', 'v1') == version
+                ]
+                if agents_using_this_version:
+                    agent_ids = [m['agentic_application_id'] for m in agents_using_this_version]
+                    agent_details = []
+                    for agent_id in agent_ids:
+                        agent_record = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+                        if agent_record:
+                            agent_record = agent_record[0]
+                            agent_details.append({
+                                "agentic_application_id": agent_record['agentic_application_id'],
+                                "agentic_application_name": agent_record['agentic_application_name'],
+                                "agentic_app_created_by": agent_record['created_by']
+                            })
+                    if agent_details:
+                        return {
+                            "message": f"The tool version '{version}' you are trying to update is being referenced by {len(agent_details)} agentic application(s).",
+                            "details": agent_details,
+                            "is_update": False
+                        }
 
         llm = await self.model_service.get_llm_model(model_name=model_name, temperature=0.0)
         docstring_generation = await self.tool_code_processor.generate_docstring_for_tool_onboarding(
@@ -3945,6 +4651,69 @@ class ToolService:
         tool_data["code_snippet"] = docstring_generation["code_snippet"]
         tool_data["model_name"] = model_name # Ensure model name is updated if changed
 
+        # ============================================================================
+        # Versioning Logic - Using tool_versions_table
+        # ============================================================================
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        version_data = {
+            "code_snippet": tool_data["code_snippet"],
+            "tool_description": tool_data.get("tool_description", ""),
+            "updated_date": current_date,
+            "updated_by": user_id or "unknown",
+            "model_name": model_name
+        }
+        
+        version_info = {}
+        next_version = None  # Will be set if creating new version
+        
+        # Require explicit version for updates (UI enforces this, API protection)
+        if not version and not create_new_version:
+            return {
+                "message": "Version is required for update. Please specify a version (v1, v2, etc.) or set create_new_version=true.",
+                "details": [],
+                "is_update": False
+            }
+        
+        if create_new_version:
+            # Create new version using ToolVersionRepository
+            next_version = await self.tool_version_repo.get_next_version_number(tool_id)
+            version_success = await self.tool_version_repo.create_version(
+                tool_id=tool_id,
+                version=next_version,
+                code_snippet=version_data["code_snippet"],
+                tool_description=version_data.get("tool_description", ""),
+                model_name=version_data["model_name"],
+                updated_by=version_data["updated_by"]
+            )
+            if version_success:
+                version_info = {
+                    "version_created": next_version,
+                    "is_new_version": True
+                }
+                log.info(f"Created new version '{next_version}' for tool '{tool_id}'")
+            else:
+                log.warning(f"Failed to create new version for tool '{tool_id}'")
+        else:
+            # Update existing version using ToolVersionRepository
+            # version is guaranteed to be non-empty here (v1, v2, etc.)
+            target_version = version
+            version_success = await self.tool_version_repo.update_version(
+                tool_id=tool_id,
+                version=target_version,
+                code_snippet=version_data["code_snippet"],
+                tool_description=version_data.get("tool_description", ""),
+                model_name=version_data["model_name"],
+                updated_by=version_data["updated_by"]
+            )
+            if version_success:
+                version_info = {
+                    "version_updated": target_version,
+                    "is_new_version": False
+                }
+                log.info(f"Updated version '{target_version}' for tool '{tool_id}'")
+            else:
+                log.warning(f"Failed to update version for tool '{tool_id}'")
+
         # Handle validator status change by updating tool_id prefix
         update_tool_id = tool_id  # Original tool_id for the update query
         if validator_flag_changed:
@@ -3960,11 +4729,39 @@ class ToolService:
                 tool_data["tool_id"] = new_tool_id
                 log.info(f"Converting tool from validator: {current_tool_id} -> {new_tool_id}")
 
+        # IMPORTANT: Remove versioning from tool_data to prevent overwriting
+        # the versioning changes made by add_tool_version or update_tool_version above
+        tool_data.pop('versioning', None)
+        
+        # Determine the version for file creation/update
+        file_version = next_version if create_new_version else version
+        
+        # ============================================================================
+        # PRESERVE MAIN TOOL'S CODE AND DESCRIPTION
+        # ============================================================================
+        # Main tool table code_snippet = original code from when tool was created
+        # It's only used for:
+        #   1. Import conflict detection (comparing checksums)
+        #   2. Display when no version is selected
+        # Agents always use specific versions (v1, v2, etc.), not main tool code
+        # So we should NOT update main tool's code when updating/creating versions
+        new_version_code = tool_data.get("code_snippet", "")  # Save new code for version file
+        original_tool_data = await self.tool_repo.get_tool_record(tool_id=update_tool_id, message_queue_implementation=False)
+        if original_tool_data:
+            # Always preserve main tool's code and description
+            tool_data["tool_description"] = original_tool_data[0].get("tool_description", "")
+            tool_data["code_snippet"] = original_tool_data[0].get("code_snippet", "")
+            log.info(f"Preserving main tool's description and code (version update only)")
+        
         success = await self.tool_repo.update_tool_record(tool_data, update_tool_id)
 
         if success:
-            # Update the .py file for the tool using tool_name
-            file_update_result = await self.tool_file_manager.update_tool_file(tool_data)
+            # Update/create the .py file for the tool with version
+            # For new versions, use the new code (not the preserved original)
+            file_tool_data = tool_data.copy()
+            if create_new_version:
+                file_tool_data["code_snippet"] = new_version_code
+            file_update_result = await self.tool_file_manager.update_tool_file(file_tool_data, version=file_version)
             if file_update_result.get("success"):
                 log.info(f"Tool file updated at: {file_update_result.get('file_path')}")
             else:
@@ -3988,12 +4785,21 @@ class ToolService:
                     )
                     log.info(f"Removed access key mapping for tool '{tool_data['tool_name']}' (no access decorators found)")
             
+            # Build appropriate message based on version operation
+            if version_info.get("is_new_version"):
+                message = f"Successfully created new version '{version_info.get('version_created')}' for tool: {tool_data['tool_name']}"
+            elif version_info.get("version_updated"):
+                message = f"Successfully updated version '{version_info.get('version_updated')}' of tool: {tool_data['tool_name']}"
+            else:
+                message = f"Successfully updated the tool: {tool_data['tool_name']}"
+            
             status = {
-                "message": f"Successfully updated the tool: {tool_data['tool_name']}",
+                "message": message,
                 "details": [],
                 "is_update": True,
                 "file_updated": file_update_result.get("success", False),
-                "file_path": file_update_result.get("file_path", "")
+                "file_path": file_update_result.get("file_path", ""),
+                **version_info  # Include version info in response
             }
         else:
             status = {
@@ -4004,25 +4810,104 @@ class ToolService:
 
         if tag_update_status:
             status['tag_update_status'] = tag_update_status
-        if sharing_update_status:
-            status['sharing_update_status'] = sharing_update_status
-        if is_public_changed:
-            status['is_public'] = is_public
         log.info(f"Tool update status: {status['message']}")
         return status
 
+    async def update_tool_sharing(
+        self,
+        tool_id: str,
+        user_email: str,
+        department_name: str,
+        is_public: bool = None,
+        shared_with_departments: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Updates the visibility (is_public) and/or department sharing for a tool.
+
+        Args:
+            tool_id: The tool ID.
+            user_email: The email of the user making the update.
+            department_name: The department of the user.
+            is_public: If provided, update the is_public flag.
+            shared_with_departments: If provided, replace the shared departments list.
+
+        Returns:
+            Dict with update results.
+        """
+        # Verify tool exists and belongs to user's department
+        tool_records = await self.tool_repo.get_tool_record(tool_id=tool_id)
+        if not tool_records:
+            raise HTTPException(status_code=404, detail=f"Tool not found with ID: {tool_id}")
+
+        tool = tool_records[0]
+        if tool.get("department_name") != department_name:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tool '{tool_id}' belongs to department '{tool.get('department_name')}', not '{department_name}'. Only the owning department can update sharing settings."
+            )
+
+        result = {"tool_id": tool_id, "tool_name": tool.get("tool_name", "")}
+
+        # Determine effective is_public value
+        effective_is_public = is_public if is_public is not None else tool.get("is_public", False)
+
+        # Validate: is_public and shared_with_departments are mutually exclusive
+        if effective_is_public and shared_with_departments:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot set both 'is_public' and 'shared_with_departments'. A public tool is already accessible to all departments."
+            )
+
+        # Update is_public if provided
+        if is_public is not None:
+            updated = await self.tool_repo.update_tool_visibility(tool_id, is_public)
+            result["is_public_updated"] = updated
+            result["is_public"] = is_public
+
+            # If setting to public, remove all existing department sharing
+            if is_public and self.tool_sharing_repo:
+                removed = await self.tool_sharing_repo.unshare_tool_from_all_departments(tool_id)
+                if removed > 0:
+                    log.info(f"Removed {removed} department sharing records for tool '{tool_id}' since it is now public.")
+                    result["sharing"] = {"message": f"All department sharing removed (tool is now public). {removed} records cleared.", "success_count": 0}
+
+        # Update shared departments if provided
+        if shared_with_departments is not None and self.tool_sharing_repo:
+            tool_name = tool.get("tool_name", "")
+            source_department = tool.get("department_name", "")
+
+            # First, remove all existing sharing
+            await self.tool_sharing_repo.unshare_tool_from_all_departments(tool_id)
+
+            # Then share with the new list of departments
+            if shared_with_departments:
+                sharing_result = await self.tool_sharing_repo.share_tool_with_multiple_departments(
+                    tool_id=tool_id,
+                    tool_name=tool_name,
+                    source_department=source_department,
+                    target_departments=shared_with_departments,
+                    shared_by=user_email
+                )
+                result["sharing"] = sharing_result
+            else:
+                result["sharing"] = {"message": "All department sharing removed", "success_count": 0}
+
+        return result
+
     # --- Tool Deletion Operations ---
 
-    async def delete_tool(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None, user_id: Optional[str] = None, is_admin: bool = False) -> Dict[str, Any]:
+    async def delete_tool(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None, user_id: Optional[str] = None, is_admin: bool = False, version: Optional[str] = None) -> Dict[str, Any]:
         """
         Deletes a tool by moving it to the recycle bin and then removing it from the main tool table.
         It checks for user permissions and dependencies before deletion.
+        If version is provided, only that specific version is deleted.
 
         Args:
             tool_id (str, optional): The ID of the tool to delete.
             tool_name (str, optional): The name of the tool to delete.
             user_id (str, optional): The ID of the user performing the deletion.
             is_admin (bool, optional): Whether the user is an admin.
+            version (str, optional): If provided, delete only this specific version.
 
         Returns:
             dict: Status of the operation.
@@ -4058,6 +4943,18 @@ class ToolService:
         agent_details = []
         
         if agents_using_this_tool_raw:
+            # If deleting specific version, only check agents using that version
+            if version:
+                agents_using_this_version = [
+                    m for m in agents_using_this_tool_raw 
+                    if m.get('tool_version', 'v1') == version
+                ]
+                if not agents_using_this_version:
+                    # No agents using this specific version - allow deletion
+                    agents_using_this_tool_raw = []
+                else:
+                    agents_using_this_tool_raw = agents_using_this_version
+            
             agent_ids = [m['agentic_application_id'] for m in agents_using_this_tool_raw]
             for agent_id in agent_ids:
                 agent_record = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
@@ -4101,7 +4998,73 @@ class ToolService:
                 "is_delete": False
             }
 
-        # Move to recycle bin
+        # If deleting specific version only (not the whole tool)
+        if version:
+            # Check if this is the last version
+            if self.tool_version_repo:
+                version_count = await self.tool_version_repo.get_version_count(tool_data['tool_id'])
+                if version_count <= 1:
+                    return {
+                        "message": f"Cannot delete the last remaining version '{version}'. Use full tool deletion instead.",
+                        "details": [],
+                        "is_delete": False
+                    }
+                
+                # Get the version data before deleting (for recycle bin)
+                version_data = await self.tool_version_repo.get_version(tool_data['tool_id'], version)
+                if not version_data:
+                    return {
+                        "message": f"Version '{version}' not found",
+                        "details": [],
+                        "is_delete": False
+                    }
+                
+                # Move to version recycle bin if available
+                moved_to_recycle = False
+                if self.tool_version_recycle_bin_repo:
+                    recycle_id = await self.tool_version_recycle_bin_repo.move_version_to_recycle_bin(
+                        version_data=version_data,
+                        tool_name=tool_data['tool_name'],
+                        deleted_by=user_id or ''
+                    )
+                    moved_to_recycle = recycle_id is not None
+                
+                # Delete from tool_versions_table
+                delete_result = await self.tool_version_repo.delete_version(tool_data['tool_id'], version)
+                if delete_result.get('success'):
+                    # Delete version file
+                    file_result = await self.tool_file_manager.delete_tool_file(tool_data['tool_name'], version=version)
+                    log.info(f"Successfully deleted version '{version}' for tool: {tool_data['tool_name']}")
+                    return {
+                        "message": f"Successfully deleted version '{version}' for tool: {tool_data['tool_name']}",
+                        "details": [],
+                        "is_delete": True,
+                        "deleted_version": version,
+                        "file_deleted": file_result.get("success", False),
+                        "moved_to_recycle_bin": moved_to_recycle
+                    }
+                else:
+                    return {
+                        "message": f"Failed to delete version '{version}': {delete_result.get('message', 'Unknown error')}",
+                        "details": [],
+                        "is_delete": False
+                    }
+            else:
+                return {
+                    "message": "Version repository not available",
+                    "details": [],
+                    "is_delete": False
+                }
+
+        # STEP 1: Get all versions BEFORE any deletion (critical for recycle bin)
+        versions = ['v1']
+        versions_data = []
+        if self.tool_version_repo:
+            versions_data = await self.tool_version_repo.get_all_versions(tool_data['tool_id'])
+            versions = [v.get('version', 'v1') for v in versions_data] if versions_data else ['v1']
+            log.info(f"Found {len(versions)} versions to backup for tool: {tool_data['tool_name']}: {versions}")
+        
+        # STEP 2: Move tool to recycle bin (full tool deletion)
         recycle_success = await self.recycle_tool_repo.insert_recycle_tool_record(tool_data)
         if not recycle_success:
             log.error(f"Failed to move tool {tool_data['tool_id']} to recycle bin.")
@@ -4111,7 +5074,18 @@ class ToolService:
                 "is_delete": False
             }
 
-        # Clean up mappings
+        # STEP 3: Move ALL versions to version recycle bin BEFORE deleting anything
+        versions_recycled = 0
+        if self.tool_version_recycle_bin_repo and versions_data:
+            recycle_result = await self.tool_version_recycle_bin_repo.move_all_versions_to_recycle_bin(
+                versions=versions_data,
+                tool_name=tool_data['tool_name'],
+                deleted_by=user_id or ''
+            )
+            versions_recycled = recycle_result.get('moved', 0)
+            log.info(f"Moved {versions_recycled}/{recycle_result.get('total', 0)} versions to recycle bin for tool: {tool_data['tool_name']}")
+
+        # STEP 4: Clean up mappings
         await self.tool_agent_mapping_repo.remove_tool_from_agent_record(tool_id=tool_data['tool_id'])
         await self.tag_service.clear_tags(tool_id=tool_data['tool_id'])
         
@@ -4119,30 +5093,48 @@ class ToolService:
         if self.tool_access_key_mapping_repo:
             await self.tool_access_key_mapping_repo.delete_tool_access_keys(tool_id=tool_data['tool_id'])
 
-        # Delete from main table
+        # STEP 5: Delete all versions from tool_versions_table
+        if self.tool_version_repo and versions_data:
+            await self.tool_version_repo.delete_all_versions(tool_data['tool_id'])
+            log.info(f"Deleted {len(versions_data)} versions from tool_versions_table for tool: {tool_data['tool_name']}")
+
+        # STEP 6: Delete from main table
         delete_success = await self.tool_repo.delete_tool_record(tool_data['tool_id'])
 
         if delete_success:
-            # Delete the .py file for the tool using tool_name
-            file_delete_result = await self.tool_file_manager.delete_tool_file(tool_data['tool_name'])
+            # STEP 7: Delete all version files for the tool
+            file_delete_result = await self.tool_file_manager.delete_all_version_files(tool_data['tool_name'], versions)
             if file_delete_result.get("success"):
-                log.info(f"Tool file deleted: {file_delete_result.get('success')}")
+                log.info(f"Tool version files deleted: {file_delete_result.get('deleted_files')}")
             else:
-                log.warning(f"Failed to delete tool file (may not exist): {file_delete_result.get('message')}")
+                log.warning(f"Failed to delete some tool files: {file_delete_result.get('message')}")
             
             log.info(f"Successfully deleted tool with ID: {tool_data['tool_id']}")
             return {
                 "message": f"Successfully deleted tool: {tool_data['tool_name']}",
                 "details": [],
                 "is_delete": True,
-                "file_deleted": file_delete_result.get("success", False)
+                "file_deleted": file_delete_result.get("success", False),
+                "deleted_files": file_delete_result.get("deleted_files", []),
+                "versions_recycled": versions_recycled,
+                "status_message": f"Successfully deleted tool: {tool_data['tool_name']} with {len(versions)} version(s)"
             }
         else:
-            # Rollback: Remove from recycle bin since delete from main table failed
-            log.error(f"Failed to delete tool {tool_data['tool_id']} from main table. Rolling back recycle bin insert.")
+            # Rollback: Remove from recycle bins since delete from main table failed
+            log.error(f"Failed to delete tool {tool_data['tool_id']} from main table. Rolling back recycle bin inserts.")
             rollback_success = await self.recycle_tool_repo.delete_recycle_tool_record(tool_data['tool_id'])
             if not rollback_success:
                 log.error(f"Rollback failed: Could not remove tool '{tool_data['tool_id']}' from recycle bin. Tool may exist in both tables.")
+            # Also rollback version recycle bin entries
+            if self.tool_version_recycle_bin_repo and versions_data:
+                for version_data in versions_data:
+                    try:
+                        await self.tool_version_recycle_bin_repo.permanent_delete_version(
+                            tool_id=tool_data['tool_id'],
+                            version=version_data.get('version', 'v1')
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to rollback version recycle entry: {e}")
             return {
                 "message": f"Failed to delete tool {tool_data['tool_name']} from main table. The tool remains in the main table.",
                 "details": [],
@@ -4525,20 +5517,157 @@ Tool Code Snippet:
 
     async def get_all_tools_from_recycle_bin(self, department_name: str = None) -> List[Dict[str, Any]]:
         """
-        Retrieves all tools from the recycle bin.
+        Retrieves all tools from the recycle bin with their versions.
+        Also includes ACTIVE tools that have deleted versions.
+
+        Args:
+            department_name: Filter by department (optional)
 
         Returns:
-            list: A list of dictionaries representing the tools in the recycle bin.
+            list: A list of dictionaries representing:
+                  - Deleted tools (tool_status="deleted") with all their deleted versions
+                  - Active tools (tool_status="active") that have deleted versions
+                  Each entry contains a 'versions' list with deleted versions.
         """
-        return await self.recycle_tool_repo.get_all_recycle_tool_records(department_name=department_name)
+        result = []
+        deleted_tool_ids = set()
+        
+        # STEP 1: Get deleted tools from tool_recycle_bin
+        deleted_tools = await self.recycle_tool_repo.get_all_recycle_tool_records(department_name=department_name)
+        
+        if deleted_tools:
+            for tool in deleted_tools:
+                tool_id = tool.get('tool_id')
+                deleted_tool_ids.add(tool_id)
+                tool['tool_status'] = 'deleted'  # Mark as deleted tool
+                
+                # Fetch deleted versions for this tool
+                if self.tool_version_recycle_bin_repo and tool_id:
+                    try:
+                        versions = await self.tool_version_recycle_bin_repo.get_deleted_versions_for_tool(tool_id)
+                        tool['versions'] = versions if versions else []
+                        tool['version_count'] = len(tool['versions'])
+                    except Exception as e:
+                        log.warning(f"Failed to fetch versions for recycled tool {tool_id}: {e}")
+                        tool['versions'] = []
+                        tool['version_count'] = 0
+                else:
+                    tool['versions'] = []
+                    tool['version_count'] = 0
+                
+                result.append(tool)
+        
+        # STEP 2: Get ALL deleted versions and find those belonging to ACTIVE tools
+        if self.tool_version_recycle_bin_repo:
+            try:
+                all_deleted_versions = await self.tool_version_recycle_bin_repo.get_all_deleted_versions()
+                
+                if all_deleted_versions:
+                    # Group versions by tool_id
+                    active_tool_versions = {}  # tool_id -> [versions]
+                    
+                    for version in all_deleted_versions:
+                        tool_id = version.get('tool_id')
+                        # Only include if tool is NOT in deleted tools (i.e., tool is active)
+                        if tool_id and tool_id not in deleted_tool_ids:
+                            if tool_id not in active_tool_versions:
+                                active_tool_versions[tool_id] = []
+                            active_tool_versions[tool_id].append(version)
+                    
+                    # STEP 3: Fetch active tool info and add to result
+                    for tool_id, versions in active_tool_versions.items():
+                        # Get tool info from main tools table
+                        tool_records = await self.tool_repo.get_tool_record(
+                            tool_id=tool_id, 
+                            department_name=department_name,
+                            include_public=True
+                        )
+                        
+                        if tool_records:
+                            tool_data = tool_records[0].copy()
+                            tool_data['tool_status'] = 'active'  # Mark as active tool
+                            tool_data['versions'] = versions
+                            tool_data['version_count'] = len(versions)
+                            result.append(tool_data)
+                        else:
+                            # Tool might have been permanently deleted, skip
+                            log.warning(f"Active tool {tool_id} not found for deleted versions")
+                            
+            except Exception as e:
+                log.warning(f"Failed to fetch all deleted versions: {e}")
+        
+        return result
 
-    async def restore_tool(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None, department_name: str = None) -> Dict[str, Any]:
+    @staticmethod
+    def _normalize_code(code: str) -> str:
+        """Normalize code for comparison by stripping whitespace variations."""
+        if not code:
+            return ""
+        return code.strip().replace("\r\n", "\n").replace("\r", "\n")
+
+    @staticmethod
+    def _hash_code(code: str) -> str:
+        """
+        Create a SHA-256 hash of normalized code for O(1) comparison.
+        Used for efficient duplicate detection when merging tool versions.
+        
+        Args:
+            code: The code snippet to hash
+            
+        Returns:
+            SHA-256 hex digest of the normalized code
+        """
+        if not code:
+            return ""
+        normalized = code.strip().replace("\r\n", "\n").replace("\r", "\n")
+        return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+
+    def _generate_unique_tool_name(self, base_name: str, existing_names: set) -> str:
+        """
+        Generate a unique tool name for restore by appending _restorev1, _restorev2, etc.
+        Used when restoring from recycle bin with 'create_new_tool' action.
+        """
+        restore_num = 1
+        while restore_num < 100:
+            candidate = f"{base_name}_restorev{restore_num}"
+            if candidate not in existing_names:
+                return candidate
+            restore_num += 1
+        raise ValueError(f"Could not generate unique name for '{base_name}' after 100 attempts")
+    
+    def _validate_tool_name_format(self, tool_name: str) -> tuple:
+        """
+        Validate tool name format. Names ending with _v1, _v2, etc. are reserved for version files.
+        
+        Returns:
+            Tuple of (is_valid: bool, error_message: str or None)
+        """
+        import re
+        if re.search(r'_v\d+$', tool_name, re.IGNORECASE):
+            return False, f"Invalid tool name '{tool_name}': Names ending with _v1, _v2, etc. are reserved for version files."
+        return True, None
+
+    async def restore_tool(
+        self, 
+        tool_id: Optional[str] = None, 
+        tool_name: Optional[str] = None, 
+        department_name: str = None, 
+        new_name: str = None,
+        action: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Restores a tool from the recycle bin to the main tool table.
+        Also recreates a v1 entry in tool_versions_table.
 
         Args:
             tool_id (str, optional): The ID of the tool to restore.
             tool_name (str, optional): The name of the tool to restore.
+            new_name (str, optional): New name to use if the original name conflicts with an active resource.
+            action (str, optional): Action to take on conflict. One of:
+                - None: Check for conflicts and return options
+                - "add_version": Add deleted tool's code as new version to existing tool
+                - "create_new_tool": Create as new tool with auto-generated unique name
+                - "skip": Skip restoration
 
         Returns:
             dict: Status of the operation.
@@ -4560,6 +5689,392 @@ Tool Code Snippet:
                 "is_restored": False
             }
 
+        # Handle skip action
+        if action == "skip":
+            log.info(f"User chose to skip restoration of tool '{tool_data['tool_name']}'")
+            return {
+                "message": f"Restoration of tool '{tool_data['tool_name']}' was skipped by user.",
+                "details": [],
+                "is_restored": False,
+                "skipped": True
+            }
+
+        if new_name is not None:
+            new_name = new_name.strip()
+            if not new_name:
+                return {
+                    "message": "new_name cannot be empty or whitespace.",
+                    "details": [],
+                    "is_restored": False
+                }
+            
+            # Validate name format (no _v1, _v2 pattern - reserved for version files)
+            is_valid, error_msg = self._validate_tool_name_format(new_name)
+            if not is_valid:
+                return {
+                    "message": error_msg,
+                    "details": [],
+                    "is_restored": False,
+                    "invalid_name": True
+                }
+
+        effective_name = new_name if new_name else tool_data["tool_name"]
+        
+        # Track original name for function renaming in versions
+        original_tool_name = tool_data["tool_name"]
+
+        # Check name conflict in active table
+        existing = await self.tool_repo.get_tool_record(tool_name=effective_name, message_queue_implementation=False)
+        # Filter to same department
+        existing = [t for t in existing if t.get("department_name") == tool_data.get("department_name")] if existing else []
+        
+        if existing:
+            conflicting = existing[0]
+            
+            # Handle add_version action - add ALL unique versions from recycle bin to existing tool
+            if action == "add_version":
+                if not self.tool_version_repo:
+                    return {
+                        "message": "Version repository not available. Cannot add version.",
+                        "details": [],
+                        "is_restored": False
+                    }
+                
+                existing_tool_id = conflicting.get("tool_id")
+                deleted_tool_id = tool_data['tool_id']
+                
+                # Step 1: Build hash set of existing versions in the target tool - O(m)
+                existing_versions = await self.tool_version_repo.get_all_versions(existing_tool_id)
+                existing_code_hashes = set()
+                for ver in existing_versions:
+                    ver_code = ver.get("code_snippet", "")
+                    if ver_code:
+                        existing_code_hashes.add(self._hash_code(ver_code))
+                
+                log.info(f"Built hash set with {len(existing_code_hashes)} existing version hashes for tool '{conflicting.get('tool_name')}'")
+                
+                # Step 2: Get all versions from recycle bin for the deleted tool
+                recycled_versions = []
+                if self.tool_version_recycle_bin_repo:
+                    try:
+                        recycled_versions = await self.tool_version_recycle_bin_repo.get_deleted_versions_for_tool(deleted_tool_id)
+                    except Exception as e:
+                        log.warning(f"Failed to get recycled versions: {e}")
+                
+                # Step 3: Prepare all code snippets to import (main + recycled versions)
+                codes_to_import = []
+                
+                # Add main tool code
+                main_code = tool_data.get("code_snippet", "")
+                if main_code:
+                    codes_to_import.append({
+                        "code_snippet": main_code,
+                        "tool_description": tool_data.get("tool_description", ""),
+                        "model_name": tool_data.get("model_name", ""),
+                        "updated_by": tool_data.get("created_by", ""),
+                        "source": "main"
+                    })
+                
+                # Add all recycled versions
+                for rv in recycled_versions:
+                    rv_code = rv.get("code_snippet", "")
+                    if rv_code:
+                        codes_to_import.append({
+                            "code_snippet": rv_code,
+                            "tool_description": rv.get("tool_description", ""),
+                            "model_name": rv.get("model_name", ""),
+                            "updated_by": rv.get("updated_by", tool_data.get("created_by", "")),
+                            "source": f"recycled_{rv.get('version', 'unknown')}"
+                        })
+                
+                # Step 4: Import only unique versions - O(n)
+                versions_added = []
+                duplicates_skipped = 0
+                skipped_details = []  # Track which codes were skipped and why
+                
+                for code_info in codes_to_import:
+                    code_hash = self._hash_code(code_info["code_snippet"])
+                    
+                    # O(1) lookup - check if code already exists
+                    if code_hash in existing_code_hashes:
+                        duplicates_skipped += 1
+                        # Determine reason for skip
+                        if code_info["source"] == "main":
+                            reason = "same code already exists in active tool versions"
+                        else:
+                            reason = "same code already exists (either in active tool or already added from this restore)"
+                        skipped_details.append({
+                            "source": code_info["source"],
+                            "reason": reason
+                        })
+                        log.debug(f"Skipping duplicate code from {code_info['source']}: {reason}")
+                        continue
+                    
+                    # Code is unique - add as new version
+                    next_version = await self.tool_version_repo.get_next_version_number(existing_tool_id)
+                    version_id = await self.tool_version_repo.create_version(
+                        tool_id=existing_tool_id,
+                        version=next_version,
+                        code_snippet=code_info["code_snippet"],
+                        tool_description=code_info["tool_description"],
+                        model_name=code_info["model_name"],
+                        updated_by=code_info["updated_by"]
+                    )
+                    
+                    if version_id:
+                        # Add to hash set to prevent duplicates within same batch
+                        existing_code_hashes.add(code_hash)
+                        versions_added.append({"version": next_version, "source": code_info["source"]})
+                        
+                        # Create version .py file
+                        if self.tool_file_manager:
+                            try:
+                                await self.tool_file_manager.create_tool_file(
+                                    {"tool_name": conflicting.get("tool_name"), "code_snippet": code_info["code_snippet"]},
+                                    version=next_version
+                                )
+                            except Exception as e:
+                                log.warning(f"Failed to create version file {next_version}: {e}")
+                
+                # Step 5: Clean up recycle bin
+                await self.recycle_tool_repo.delete_recycle_tool_record(deleted_tool_id)
+                if self.tool_version_recycle_bin_repo:
+                    await self.tool_version_recycle_bin_repo.delete_all_versions_for_tool_from_recycle_bin(deleted_tool_id)
+                
+                # Step 6: Build response message
+                if versions_added:
+                    version_names = [v["version"] for v in versions_added]
+                    if duplicates_skipped > 0:
+                        message = f"Added {len(versions_added)} version(s) to existing tool '{conflicting.get('tool_name')}' ({duplicates_skipped} duplicate(s) skipped)"
+                    else:
+                        message = f"Added {len(versions_added)} version(s) to existing tool '{conflicting.get('tool_name')}'"
+                    
+                    log.info(f"Restore merge: {message}")
+                    return {
+                        "message": message,
+                        "details": [],
+                        "is_restored": True,
+                        "added_as_version": True,
+                        "existing_tool_id": existing_tool_id,
+                        "existing_tool_name": conflicting.get("tool_name"),
+                        "versions_added": version_names,
+                        "versions_added_details": versions_added,
+                        "duplicates_skipped": duplicates_skipped,
+                        "skipped_details": skipped_details
+                    }
+                else:
+                    # All versions were duplicates
+                    log.info(f"All {duplicates_skipped} version(s) from deleted tool were duplicates, nothing added")
+                    return {
+                        "message": f"All {duplicates_skipped} version(s) already exist in '{conflicting.get('tool_name')}'. Nothing added.",
+                        "details": [],
+                        "is_restored": False,
+                        "all_duplicates": True,
+                        "existing_tool_id": existing_tool_id,
+                        "existing_tool_name": conflicting.get("tool_name"),
+                        "duplicates_skipped": duplicates_skipped,
+                        "skipped_details": skipped_details
+                    }
+            
+# Handle create_new_tool action - generate unique name or use user-provided name
+            elif action == "create_new_tool":
+                # Get all existing tool names in the department
+                all_tools = await self.tool_repo.get_all_tool_records(department_name=department_name)
+                existing_names = {t.get("tool_name") for t in all_tools} if all_tools else set()
+                
+                # Also check recycle bin for name conflicts
+                recycled_tools = await self.recycle_tool_repo.get_all_recycle_tool_records(department_name=department_name)
+                recycled_names = {t.get("tool_name") for t in recycled_tools} if recycled_tools else set()
+                existing_names = existing_names.union(recycled_names)
+                
+                # If user provided new_name, validate and use it
+                if new_name:
+                    # Validate name format (no _v1, _v2 pattern)
+                    is_valid, error_msg = self._validate_tool_name_format(new_name)
+                    if not is_valid:
+                        return {
+                            "message": error_msg,
+                            "details": [],
+                            "is_restored": False,
+                            "invalid_name": True
+                        }
+                    
+                    # Check if name already exists
+                    if new_name in existing_names:
+                        return {
+                            "message": f"Tool with name '{new_name}' already exists. Please choose a different name.",
+                            "details": [],
+                            "is_restored": False,
+                            "name_conflict": True
+                        }
+                    
+                    unique_name = new_name
+                else:
+                    # Generate unique name using _restorev pattern
+                    try:
+                        unique_name = self._generate_unique_tool_name(tool_data["tool_name"], existing_names)
+                    except ValueError as e:
+                        return {
+                            "message": str(e),
+                            "details": [],
+                            "is_restored": False
+                        }
+                
+                log.info(f"Creating tool with new unique name: '{unique_name}' (original: '{tool_data['tool_name']}')")
+                
+                # Update tool data with new name
+                old_name = tool_data["tool_name"]
+                tool_data["tool_name"] = unique_name
+                
+                # Rename function in code snippet
+                if tool_data.get("code_snippet") and old_name:
+                    tool_data["code_snippet"] = re.sub(
+                        rf'\bdef\s+{re.escape(old_name)}\s*\(',
+                        f'def {unique_name}(',
+                        tool_data["code_snippet"]
+                    )
+                
+                # Continue with restoration using new name (fall through to save logic below)
+            
+            elif not new_name:
+                # No action specified and no new_name - return conflict info with options
+                # Compare code snippets to determine conflict type
+                deleted_code = self._normalize_code(tool_data.get("code_snippet", ""))
+                existing_code = self._normalize_code(conflicting.get("code_snippet", ""))
+                
+                is_same_code = deleted_code == existing_code
+                conflict_type = "same_code" if is_same_code else "different_code"
+                
+                # Generate suggested name
+                all_tools = await self.tool_repo.get_all_tool_records(department_name=department_name)
+                existing_names = {t.get("tool_name") for t in all_tools} if all_tools else set()
+                recycled_tools = await self.recycle_tool_repo.get_all_recycle_tool_records(department_name=department_name)
+                recycled_names = {t.get("tool_name") for t in recycled_tools} if recycled_tools else set()
+                existing_names = existing_names.union(recycled_names)
+                
+                try:
+                    suggested_name = self._generate_unique_tool_name(tool_data["tool_name"], existing_names)
+                except ValueError:
+                    suggested_name = f"{tool_data['tool_name']}_restored"
+                
+                # Pre-check: Are there ANY unique versions in recycle bin?
+                # This determines if we should offer "add_version" option
+                # Also detect duplicates WITHIN recycle bin (e.g., main = v1)
+                has_unique_versions = False
+                unique_version_count = 0
+                duplicate_version_count = 0
+                existing_versions = []
+                
+                if self.tool_version_repo:
+                    # Build hash set of existing tool versions
+                    existing_versions = await self.tool_version_repo.get_all_versions(conflicting.get("tool_id"))
+                    existing_code_hashes = set()
+                    for ver in existing_versions:
+                        ver_code = ver.get("code_snippet", "")
+                        if ver_code:
+                            existing_code_hashes.add(self._hash_code(ver_code))
+                    
+                    # Track hashes we've already counted from recycle bin (to detect internal duplicates)
+                    seen_recycle_hashes = set()
+                    
+                    # Check main code from recycle bin
+                    main_code = tool_data.get("code_snippet", "")
+                    if main_code:
+                        main_hash = self._hash_code(main_code)
+                        if main_hash in existing_code_hashes:
+                            duplicate_version_count += 1
+                        elif main_hash in seen_recycle_hashes:
+                            # Already counted this code from another recycle entry
+                            duplicate_version_count += 1
+                        else:
+                            has_unique_versions = True
+                            unique_version_count += 1
+                            seen_recycle_hashes.add(main_hash)
+                    
+                    # Check all versions from recycle bin
+                    if self.tool_version_recycle_bin_repo:
+                        try:
+                            recycled_versions = await self.tool_version_recycle_bin_repo.get_deleted_versions_for_tool(tool_data['tool_id'])
+                            for rv in recycled_versions:
+                                rv_code = rv.get("code_snippet", "")
+                                if rv_code:
+                                    rv_hash = self._hash_code(rv_code)
+                                    if rv_hash in existing_code_hashes:
+                                        duplicate_version_count += 1
+                                    elif rv_hash in seen_recycle_hashes:
+                                        # Already counted this code (e.g., main = v1)
+                                        duplicate_version_count += 1
+                                    else:
+                                        has_unique_versions = True
+                                        unique_version_count += 1
+                                        seen_recycle_hashes.add(rv_hash)
+                        except Exception as e:
+                            log.warning(f"Failed to check recycled versions: {e}")
+                
+                # Determine available options based on whether unique versions exist
+                if has_unique_versions:
+                    if is_same_code:
+                        message = f"Tool '{effective_name}' already exists with identical main code, but has {unique_version_count} unique version(s) that can be merged."
+                    else:
+                        message = f"Tool '{effective_name}' already exists with different code. {unique_version_count} unique version(s) can be merged."
+                    options = ["add_version", "create_new_tool", "skip"]
+                else:
+                    # No unique versions - don't offer add_version
+                    message = f"Tool '{effective_name}' already exists with identical code and all versions. You can create a new tool or skip."
+                    options = ["create_new_tool", "skip"]
+                
+                # Get version info for existing tool
+                version_info = {}
+                if self.tool_version_repo:
+                    next_version = await self.tool_version_repo.get_next_version_number(conflicting.get("tool_id"))
+                    version_info = {
+                        "version_count": len(existing_versions),
+                        "next_version": next_version
+                    }
+                
+                log.warning(f"Tool restore conflict ({conflict_type}): name '{effective_name}' already active. Unique versions: {unique_version_count}, Duplicates: {duplicate_version_count}")
+                return {
+                    "message": message,
+                    "details": [],
+                    "is_restored": False,
+                    "name_conflict": True,
+                    "conflict_type": conflict_type,
+                    "options": options,
+                    "conflicting_resource": {
+                        "tool_id": conflicting.get("tool_id"),
+                        "tool_name": conflicting.get("tool_name"),
+                        "created_by": conflicting.get("created_by"),
+                        "created_on": str(conflicting.get("created_on", "")),
+                        **version_info
+                    },
+                    "suggested_name": suggested_name,
+                    "unique_versions_available": unique_version_count,
+                    "duplicate_versions": duplicate_version_count
+                }
+            else:
+                # new_name was provided but it also conflicts
+                log.warning(f"Tool restore conflict: new_name '{effective_name}' also already active.")
+                return {
+                    "message": f"The name '{effective_name}' is also already in use. Please choose a different name.",
+                    "details": [],
+                    "is_restored": False,
+                    "name_conflict": True,
+                    "suggested_name": f"{tool_data['tool_name']}_restored"
+                }
+
+        # If new_name provided and no conflict exists, apply it
+        if new_name:
+            old_name = tool_data["tool_name"]
+            tool_data["tool_name"] = new_name
+            # Also rename the function definition in the code snippet so the
+            # function name in code stays in sync with tool_name in the DB.
+            if tool_data.get("code_snippet") and old_name:
+                tool_data["code_snippet"] = re.sub(
+                    rf'\bdef\s+{re.escape(old_name)}\s*\(',
+                    f'def {new_name}(',
+                    tool_data["code_snippet"]
+                )
+
         # Attempt to save to main table
         success = await self.tool_repo.save_tool_record(tool_data)
         general_tag = await self.tag_service.get_tag(tag_name="General")
@@ -4575,37 +6090,130 @@ Tool Code Snippet:
                 "is_restored": False
             }
 
-        # Recreate the .py file using database data
-        file_restore_result = await self.tool_file_manager.restore_tool_file(tool_data)
-        if file_restore_result.get("success"):
-            log.info(f"Tool file restored at: {file_restore_result.get('file_path')}")
-        else:
-            log.warning(f"Failed to restore tool file: {file_restore_result.get('message')}")
+        # Restore ALL versions from version recycle bin
+        versions_restored = 0
+        restored_version_list = []
+        
+        # Check if tool was renamed (need to rename function in version code snippets)
+        tool_was_renamed = original_tool_name != tool_data["tool_name"]
+        
+        if self.tool_version_repo and self.tool_version_recycle_bin_repo:
+            # Try to restore versions from version recycle bin
+            recycled_versions = await self.tool_version_recycle_bin_repo.restore_all_versions_for_tool(tool_data['tool_id'])
+            
+            if recycled_versions:
+                for version_data in recycled_versions:
+                    try:
+                        version_code = version_data.get('code_snippet', '')
+                        
+                        # If tool was renamed, also rename function in version code
+                        if tool_was_renamed and version_code and original_tool_name:
+                            version_code = re.sub(
+                                rf'\bdef\s+{re.escape(original_tool_name)}\s*\(',
+                                f'def {tool_data["tool_name"]}(',
+                                version_code
+                            )
+                        
+                        version_id = await self.tool_version_repo.create_version(
+                            tool_id=tool_data['tool_id'],
+                            version=version_data.get('version', 'v1'),
+                            code_snippet=version_code,
+                            tool_description=version_data.get('tool_description', ''),
+                            model_name=version_data.get('model_name', ''),
+                            updated_by=version_data.get('updated_by', '')
+                        )
+                        if version_id:
+                            versions_restored += 1
+                            restored_version_list.append(version_data.get('version'))
+                            log.info(f"Restored version '{version_data.get('version')}' for tool: {tool_data['tool_id']}")
+                    except Exception as e:
+                        log.warning(f"Failed to restore version '{version_data.get('version')}' for tool {tool_data['tool_id']}: {e}")
+                
+                # Clean up versions from version recycle bin
+                await self.tool_version_recycle_bin_repo.delete_all_versions_for_tool_from_recycle_bin(tool_data['tool_id'])
+                log.info(f"Restored {versions_restored} versions from recycle bin for tool: {tool_data['tool_name']}")
+        
+        # Fallback: If no versions restored from recycle bin, create v1 from tool's code_snippet
+        if versions_restored == 0 and self.tool_version_repo:
+            try:
+                version_id = await self.tool_version_repo.create_version(
+                    tool_id=tool_data['tool_id'],
+                    version="v1",
+                    code_snippet=tool_data.get('code_snippet', ''),
+                    tool_description=tool_data.get('tool_description', ''),
+                    model_name=tool_data.get('model_name', ''),
+                    updated_by=tool_data.get('created_by', '')
+                )
+                if version_id:
+                    versions_restored = 1
+                    restored_version_list = ['v1']
+                    log.info(f"Created v1 from tool code_snippet for restored tool: {tool_data['tool_id']}")
+            except Exception as e:
+                log.warning(f"Failed to create v1 for tool {tool_data['tool_id']}: {e}")
+
+        # Recreate .py files for all restored versions
+        file_restore_results = []
+        if restored_version_list and self.tool_file_manager:
+            for version in restored_version_list:
+                # Get the code for this version
+                if self.tool_version_repo:
+                    version_data = await self.tool_version_repo.get_version(tool_data['tool_id'], version)
+                    if version_data:
+                        file_result = await self.tool_file_manager.restore_tool_file_for_version(
+                            tool_data=tool_data,
+                            version=version,
+                            code_snippet=version_data.get('code_snippet', '')
+                        )
+                        file_restore_results.append({
+                            "version": version,
+                            "success": file_result.get("success", False),
+                            "file_path": file_result.get("file_path", "")
+                        })
+        
+        # Legacy: Restore single file if no version-specific restore
+        if not file_restore_results:
+            file_restore_result = await self.tool_file_manager.restore_tool_file(tool_data)
+            if file_restore_result.get("success"):
+                log.info(f"Tool file restored at: {file_restore_result.get('file_path')}")
+                file_restore_results.append({
+                    "version": "v1",
+                    "success": True,
+                    "file_path": file_restore_result.get("file_path")
+                })
+            else:
+                log.warning(f"Failed to restore tool file: {file_restore_result.get('message')}")
 
         # Delete from recycle bin
         delete_success = await self.recycle_tool_repo.delete_recycle_tool_record(tool_data['tool_id'])
         if delete_success:
             log.info(f"Successfully deleted tool {tool_data['tool_id']} from recycle bin.")
             return {
-                "message": f"Successfully restored tool with ID: {tool_data['tool_id']}",
+                "message": f"Tool restored successfully as '{tool_data['tool_name']}'",
                 "details": [],
                 "is_restored": True,
-                "file_restored": file_restore_result.get("success", False),
-                "file_path": file_restore_result.get("file_path", "")
+                "tool_id": tool_data['tool_id'],
+                "tool_name": tool_data['tool_name'],
+                "versions_restored": versions_restored,
+                "restored_versions": restored_version_list,
+                "file_restore_results": file_restore_results
             }
         else:
             log.error(f"Failed to delete tool {tool_data['tool_id']} from recycle bin after restoration.")
             return {
-                "message": f"Tool {tool_data['tool_id']} restored to main table, but failed to delete from recycle bin.",
+                "message": f"Tool '{tool_data['tool_name']}' restored to main table, but failed to delete from recycle bin.",
                 "details": [],
                 "is_restored": False,
-                "file_restored": file_restore_result.get("success", False),
-                "file_path": file_restore_result.get("file_path", "")
+                "tool_id": tool_data['tool_id'],
+                "tool_name": tool_data['tool_name'],
+                "versions_restored": versions_restored,
+                "restored_versions": restored_version_list,
+                "file_restore_results": file_restore_results
             }
 
     async def delete_tool_from_recycle_bin(self, tool_id: Optional[str] = None, tool_name: Optional[str] = None, department_name: str = None) -> Dict[str, Any]:
         """
         Deletes a tool permanently from the recycle bin.
+        Also permanently deletes all versions of this tool from the version recycle bin.
 
         Args:
             tool_id (str, optional): The ID of the tool to delete.
@@ -4631,20 +6239,220 @@ Tool Code Snippet:
                 "is_delete": False
             }
 
-        success = await self.recycle_tool_repo.delete_recycle_tool_record(tool_data['tool_id'])
+        actual_tool_id = tool_data['tool_id']
+        
+        # First, permanently delete all versions from version recycle bin
+        versions_deleted = 0
+        if self.tool_version_recycle_bin_repo:
+            try:
+                # Get count of versions before deletion
+                deleted_versions = await self.tool_version_recycle_bin_repo.get_deleted_versions_for_tool(actual_tool_id)
+                versions_deleted = len(deleted_versions) if deleted_versions else 0
+                
+                # Delete all versions at once using the bulk method
+                if versions_deleted > 0:
+                    success = await self.tool_version_recycle_bin_repo.delete_all_versions_for_tool_from_recycle_bin(actual_tool_id)
+                    if success:
+                        log.info(f"Permanently deleted {versions_deleted} versions from recycle bin for tool {actual_tool_id}")
+                    else:
+                        log.warning(f"Failed to delete versions from recycle bin for tool {actual_tool_id}")
+                        versions_deleted = 0
+            except Exception as e:
+                log.warning(f"Error deleting versions from recycle bin: {e}")
+                versions_deleted = 0
+
+        # Then delete the tool from recycle bin
+        success = await self.recycle_tool_repo.delete_recycle_tool_record(actual_tool_id)
         if success:
-            log.info(f"Successfully deleted tool from recycle bin with ID: {tool_data['tool_id']}")
+            log.info(f"Successfully deleted tool from recycle bin with ID: {actual_tool_id}")
             return {
-                "message": f"Successfully deleted tool from recycle bin with ID: {tool_data['tool_id']}",
+                "message": f"Successfully deleted tool from recycle bin with ID: {actual_tool_id}",
                 "details": [],
+                "versions_deleted": versions_deleted,
                 "is_delete": True
             }
         else:
-            log.error(f"Failed to delete tool {tool_data['tool_id']} from recycle bin.")
+            log.error(f"Failed to delete tool {actual_tool_id} from recycle bin.")
             return {
-                "message": f"Failed to delete tool {tool_data['tool_id']} from recycle bin.",
+                "message": f"Failed to delete tool {actual_tool_id} from recycle bin.",
                 "details": [],
                 "is_delete": False
+            }
+
+    # --- Version Recycle Bin Operations ---
+
+    async def get_deleted_versions_for_tool(self, tool_id: str) -> List[Dict[str, Any]]:
+        """
+        Gets all deleted versions for a specific tool from the recycle bin.
+        
+        Args:
+            tool_id: The tool ID.
+            
+        Returns:
+            List of deleted version records.
+        """
+        if not self.tool_version_recycle_bin_repo:
+            log.warning("Tool version recycle bin repository not available")
+            return []
+        return await self.tool_version_recycle_bin_repo.get_deleted_versions_for_tool(tool_id)
+
+    async def get_all_deleted_versions(self) -> List[Dict[str, Any]]:
+        """
+        Gets all deleted versions from the recycle bin.
+        
+        Returns:
+            List of all deleted version records.
+        """
+        if not self.tool_version_recycle_bin_repo:
+            log.warning("Tool version recycle bin repository not available")
+            return []
+        return await self.tool_version_recycle_bin_repo.get_all_deleted_versions()
+
+    async def restore_deleted_version(self, tool_id: str, version: str) -> Dict[str, Any]:
+        """
+        Restores a specific deleted version from the recycle bin.
+        
+        Args:
+            tool_id: The tool ID.
+            version: The version to restore (e.g., 'v5').
+            
+        Returns:
+            Status dictionary with success/failure information.
+        """
+        if not self.tool_version_recycle_bin_repo or not self.tool_version_repo:
+            return {
+                "message": "Version recycle bin not available",
+                "is_restored": False
+            }
+
+        # Get deleted versions for this tool
+        deleted_versions = await self.tool_version_recycle_bin_repo.get_deleted_versions_for_tool(tool_id)
+        
+        # Find the version to restore
+        version_to_restore = None
+        recycle_bin_id = None
+        for v in deleted_versions:
+            if v.get('version') == version:
+                version_to_restore = v
+                recycle_bin_id = str(v.get('id'))
+                break
+        
+        if not version_to_restore:
+            return {
+                "message": f"Version '{version}' not found in recycle bin for tool '{tool_id}'",
+                "is_restored": False
+            }
+
+        # Check if version already exists in tool_versions_table
+        existing_version = await self.tool_version_repo.get_version(tool_id, version)
+        
+        # If version exists, get next available version number
+        restore_as_version = version
+        if existing_version:
+            restore_as_version = await self.tool_version_repo.get_next_version_number(tool_id)
+            log.info(f"Version '{version}' already exists, will restore as '{restore_as_version}'")
+
+        # Restore the version to tool_versions_table
+        try:
+            version_id = await self.tool_version_repo.create_version(
+                tool_id=tool_id,
+                version=restore_as_version,
+                code_snippet=version_to_restore.get('code_snippet', ''),
+                tool_description=version_to_restore.get('tool_description', ''),
+                model_name=version_to_restore.get('model_name', ''),
+                updated_by=version_to_restore.get('updated_by', '')
+            )
+            
+            if version_id:
+                # Recreate the .py file
+                tool_records = await self.tool_repo.get_tool_record(tool_id=tool_id)
+                if tool_records and len(tool_records) > 0 and self.tool_file_manager:
+                    tool_data = tool_records[0]  # get_tool_record returns a list
+                    file_result = await self.tool_file_manager.restore_tool_file_for_version(
+                        tool_data=tool_data,
+                        version=restore_as_version,
+                        code_snippet=version_to_restore.get('code_snippet', '')
+                    )
+                    log.info(f"Restored version file: {file_result}")
+                
+                # Delete from recycle bin
+                await self.tool_version_recycle_bin_repo.delete_version_from_recycle_bin(recycle_bin_id)
+                
+                # Build appropriate message
+                if restore_as_version != version:
+                    message = f"Version '{version}' already exists. Restored as '{restore_as_version}' instead."
+                    log.info(f"Restored version '{version}' as '{restore_as_version}' for tool '{tool_id}'")
+                else:
+                    message = f"Successfully restored version '{version}' for tool"
+                    log.info(f"Successfully restored version '{version}' for tool '{tool_id}'")
+                
+                return {
+                    "message": message,
+                    "is_restored": True,
+                    "original_version": version,
+                    "restored_as_version": restore_as_version,
+                    "version": restore_as_version,
+                    "tool_id": tool_id
+                }
+            else:
+                return {
+                    "message": f"Failed to create version '{restore_as_version}' in versions table",
+                    "is_restored": False
+                }
+        except Exception as e:
+            log.error(f"Error restoring version '{version}' for tool '{tool_id}': {e}")
+            return {
+                "message": f"Error restoring version: {str(e)}",
+                "is_restored": False
+            }
+
+    async def permanently_delete_version_from_recycle_bin(self, tool_id: str, version: str) -> Dict[str, Any]:
+        """
+        Permanently deletes a specific version from the recycle bin.
+        
+        Args:
+            tool_id: The tool ID.
+            version: The version to delete (e.g., 'v5').
+            
+        Returns:
+            Status dictionary.
+        """
+        if not self.tool_version_recycle_bin_repo:
+            return {
+                "message": "Version recycle bin not available",
+                "is_deleted": False
+            }
+
+        # Get deleted versions for this tool
+        deleted_versions = await self.tool_version_recycle_bin_repo.get_deleted_versions_for_tool(tool_id)
+        
+        # Find the version to delete
+        recycle_bin_id = None
+        for v in deleted_versions:
+            if v.get('version') == version:
+                recycle_bin_id = str(v.get('id'))
+                break
+        
+        if not recycle_bin_id:
+            return {
+                "message": f"Version '{version}' not found in recycle bin for tool '{tool_id}'",
+                "is_deleted": False
+            }
+
+        # Delete from recycle bin
+        success = await self.tool_version_recycle_bin_repo.delete_version_from_recycle_bin(recycle_bin_id)
+        
+        if success:
+            return {
+                "message": f"Permanently deleted version '{version}' from recycle bin",
+                "is_deleted": True,
+                "version": version,
+                "tool_id": tool_id
+            }
+        else:
+            return {
+                "message": f"Failed to delete version '{version}' from recycle bin",
+                "is_deleted": False
             }
 
     async def _read_uploaded_file_content(self, uploaded_file: UploadFile) -> str:
@@ -4674,8 +6482,8 @@ class AgentServiceUtils:
         tag_service: TagService,
         model_service: ModelService,
         knowledgebase_service: 'KnowledgebaseService' = None,
-        agent_pipeline_mapping_repo: AgentPipelineMappingRepository = None,
-        pipeline_repo: PipelineRepository = None,
+        agent_workflow_mapping_repo: AgentWorkflowMappingRepository = None,
+        workflow_repo: WorkflowRepository = None,
         agent_sharing_repo = None,  # Repository for agent department sharing
         department_repo = None,  # Repository for validating department names
     ):
@@ -4685,12 +6493,11 @@ class AgentServiceUtils:
         self.tag_service = tag_service
         self.model_service = model_service
         self.knowledgebase_service = knowledgebase_service
-        self.agent_pipeline_mapping_repo = agent_pipeline_mapping_repo
-        self.pipeline_repo = pipeline_repo
+        self.agent_workflow_mapping_repo = agent_workflow_mapping_repo
+        self.workflow_repo = workflow_repo
         self.agent_sharing_repo = agent_sharing_repo  # Store agent sharing repo
         self.department_repo = department_repo  # Store department repo for validation
         self.meta_type_templates = [agent_type.value for agent_type in AgentType.meta_types()]
-        self.agent_pipeline_mapping_repo = agent_pipeline_mapping_repo
 
 
     @staticmethod
@@ -4725,8 +6532,21 @@ class AgentServiceUtils:
     # =====================================================
     # File-Context Prompt Management Utilities
     # =====================================================
+    # Legacy class-level constants (kept for backward compat, use get_file_context_*_dir(department) instead)
     FILE_CONTEXT_PROMPTS_DIR = os.path.join("agent_workspaces", "file_context_prompts")
     FILE_CONTEXT_RECYCLE_BIN_DIR = os.path.join("agent_workspaces", "file_context_prompts_recycle_bin")
+
+    @staticmethod
+    def _get_file_context_prompts_dir(department: str = None) -> str:
+        """Get the file-context prompts directory for a department."""
+        from src.inference.database_tools_cache import get_file_context_prompts_dir
+        return str(get_file_context_prompts_dir(department))
+
+    @staticmethod
+    def _get_file_context_recycle_bin_dir(department: str = None) -> str:
+        """Get the file-context prompts recycle bin directory for a department."""
+        from src.inference.database_tools_cache import get_file_context_recycle_bin_dir
+        return str(get_file_context_recycle_bin_dir(department))
 
     @staticmethod
     def get_safe_agent_name(agent_name: str) -> str:
@@ -4760,19 +6580,22 @@ class AgentServiceUtils:
         return filtered_prompt.strip()
 
     @staticmethod
-    def move_file_context_prompt_to_recycle_bin(agent_name: str) -> dict:
+    def move_file_context_prompt_to_recycle_bin(agent_name: str, department: str = None) -> dict:
         """
         Move file-context prompt to recycle bin when agent is deleted.
         
         Args:
             agent_name: The name of the agent whose prompt should be moved.
+            department: Department name for workspace segregation.
             
         Returns:
             dict with keys: success, message, source_path, dest_path
         """
         safe_agent_name = AgentServiceUtils.get_safe_agent_name(agent_name)
-        source_path = os.path.join(AgentServiceUtils.FILE_CONTEXT_PROMPTS_DIR, f"{safe_agent_name}_file_context_prompt.md")
-        dest_path = os.path.join(AgentServiceUtils.FILE_CONTEXT_RECYCLE_BIN_DIR, f"{safe_agent_name}_file_context_prompt.md")
+        prompts_dir = AgentServiceUtils._get_file_context_prompts_dir(department)
+        recycle_dir = AgentServiceUtils._get_file_context_recycle_bin_dir(department)
+        source_path = os.path.join(prompts_dir, f"{safe_agent_name}_file_context_prompt.md")
+        dest_path = os.path.join(recycle_dir, f"{safe_agent_name}_file_context_prompt.md")
         
         if not os.path.exists(source_path):
             return {
@@ -4784,7 +6607,7 @@ class AgentServiceUtils:
         
         try:
             # Ensure recycle bin directory exists
-            os.makedirs(AgentServiceUtils.FILE_CONTEXT_RECYCLE_BIN_DIR, exist_ok=True)
+            os.makedirs(recycle_dir, exist_ok=True)
             
             # Move file to recycle bin
             shutil.move(source_path, dest_path)
@@ -4806,19 +6629,25 @@ class AgentServiceUtils:
             }
 
     @staticmethod
-    def restore_file_context_prompt_from_recycle_bin(agent_name: str) -> dict:
+    def restore_file_context_prompt_from_recycle_bin(agent_name: str, department: str = None, new_agent_name: str = None) -> dict:
         """
         Restore file-context prompt from recycle bin when agent is restored.
         
         Args:
-            agent_name: The name of the agent whose prompt should be restored.
+            agent_name: The original name of the agent (used to locate the file in the recycle bin).
+            department: Department name for workspace segregation.
+            new_agent_name: If the agent was restored under a different name, the destination
+                            file will use this name instead of agent_name.
             
         Returns:
             dict with keys: success, message, source_path, dest_path
         """
         safe_agent_name = AgentServiceUtils.get_safe_agent_name(agent_name)
-        source_path = os.path.join(AgentServiceUtils.FILE_CONTEXT_RECYCLE_BIN_DIR, f"{safe_agent_name}_file_context_prompt.md")
-        dest_path = os.path.join(AgentServiceUtils.FILE_CONTEXT_PROMPTS_DIR, f"{safe_agent_name}_file_context_prompt.md")
+        safe_dest_name = AgentServiceUtils.get_safe_agent_name(new_agent_name) if new_agent_name else safe_agent_name
+        prompts_dir = AgentServiceUtils._get_file_context_prompts_dir(department)
+        recycle_dir = AgentServiceUtils._get_file_context_recycle_bin_dir(department)
+        source_path = os.path.join(recycle_dir, f"{safe_agent_name}_file_context_prompt.md")
+        dest_path = os.path.join(prompts_dir, f"{safe_dest_name}_file_context_prompt.md")
         
         if not os.path.exists(source_path):
             return {
@@ -4830,7 +6659,7 @@ class AgentServiceUtils:
         
         try:
             # Ensure prompts directory exists
-            os.makedirs(AgentServiceUtils.FILE_CONTEXT_PROMPTS_DIR, exist_ok=True)
+            os.makedirs(prompts_dir, exist_ok=True)
             
             # Move file back from recycle bin
             shutil.move(source_path, dest_path)
@@ -4852,18 +6681,20 @@ class AgentServiceUtils:
             }
 
     @staticmethod
-    def permanently_delete_file_context_prompt(agent_name: str) -> dict:
+    def permanently_delete_file_context_prompt(agent_name: str, department: str = None) -> dict:
         """
         Permanently delete file-context prompt from recycle bin.
         
         Args:
             agent_name: The name of the agent whose prompt should be deleted.
+            department: Department name for workspace segregation.
             
         Returns:
             dict with keys: success, message, file_path
         """
         safe_agent_name = AgentServiceUtils.get_safe_agent_name(agent_name)
-        file_path = os.path.join(AgentServiceUtils.FILE_CONTEXT_RECYCLE_BIN_DIR, f"{safe_agent_name}_file_context_prompt.md")
+        recycle_dir = AgentServiceUtils._get_file_context_recycle_bin_dir(department)
+        file_path = os.path.join(recycle_dir, f"{safe_agent_name}_file_context_prompt.md")
         
         if not os.path.exists(file_path):
             return {
@@ -4896,7 +6727,9 @@ class AgentServiceUtils:
         workflow_description: str,
         tools_id: List[str],
         model_name: str,
-        is_meta_agent: bool = False
+        is_meta_agent: bool = False,
+        db_connection_names: Optional[List[str]] = None,
+        department: str = None
     ) -> dict:
         """
         Regenerate file-context prompt for an agent using LLM.
@@ -4911,6 +6744,8 @@ class AgentServiceUtils:
             tools_id: List of tool IDs associated with the agent.
             model_name: The model name to use for generation.
             is_meta_agent: Whether this is a meta agent (uses worker agents instead of tools).
+            db_connection_names: Optional list of database connection names.
+            department: Department name for workspace segregation.
             
         Returns:
             dict with keys: success, message, file_path, prompt (optional)
@@ -4948,6 +6783,28 @@ class AgentServiceUtils:
             # Apply filter as extra safety measure to ensure no memory tools in prompt
             tool_or_worker_agents_prompt = self.filter_memory_tools_from_prompt(tool_or_worker_agents_prompt)
             
+            # Generate database connection info and schema access instructions
+            db_connections_info = "No database connections configured."
+            db_schema_access_instructions = """- `ls /databases/` - List available database connections
+- `cat /databases/{connection_name}/schema.md` - Read database schema (ALWAYS read before SQL queries)
+- `cat /databases/{connection_name}/samples.md` - Read sample data for reference"""
+            
+            if db_connection_names and len(db_connection_names) > 0:
+                db_list = ", ".join([f"`{name}`" for name in db_connection_names])
+                db_connections_info = f"""The agent has access to the following databases: {db_list}
+
+**IMPORTANT FOR DATABASE QUERIES:**
+- ALWAYS read the schema first using `cat /databases/{{connection_name}}/schema.md`
+- Use `database_query_tool` to execute SELECT queries
+- Allowed operations depend on the connection's blocked commands configuration (by default only SELECT is allowed)
+"""
+                schema_instructions = ["- `ls /databases/` - List available database connections"]
+                for conn_name in db_connection_names:
+                    schema_instructions.append(f"- `cat /databases/{conn_name}/schema.md` - Read {conn_name} schema")
+                    schema_instructions.append(f"- `cat /databases/{conn_name}/samples.md` - Read {conn_name} sample data")
+                db_schema_access_instructions = "\n".join(schema_instructions)
+                log.info(f"Including {len(db_connection_names)} database connections in file-context prompt: {db_connection_names}")
+            
             # Get LLM model
             llm = await self.model_service.get_llm_model(model_name=model_name, temperature=0)
             
@@ -4960,12 +6817,15 @@ class AgentServiceUtils:
                 "agent_name": agent_name,
                 "agent_goal": agent_goal,
                 "workflow_description": workflow_description,
-                "tool_prompt": tool_or_worker_agents_prompt
+                "tool_prompt": tool_or_worker_agents_prompt,
+                "db_connections_info": db_connections_info,
+                "db_schema_access_instructions": db_schema_access_instructions
             })
             
             # Save to file
             safe_agent_name = self.get_safe_agent_name(agent_name)
-            prompt_file_path = os.path.join(self.FILE_CONTEXT_PROMPTS_DIR, f"{safe_agent_name}_file_context_prompt.md")
+            prompts_dir = self._get_file_context_prompts_dir(department)
+            prompt_file_path = os.path.join(prompts_dir, f"{safe_agent_name}_file_context_prompt.md")
             os.makedirs(os.path.dirname(prompt_file_path), exist_ok=True)
             
             with open(prompt_file_path, "w", encoding="utf-8") as f:
@@ -4989,20 +6849,22 @@ class AgentServiceUtils:
             }
 
     @staticmethod
-    def update_file_context_prompt(agent_name: str, prompt_content: str) -> dict:
+    def update_file_context_prompt(agent_name: str, prompt_content: str, department: str = None) -> dict:
         """
         Update/save file-context prompt content directly.
         
         Args:
             agent_name: The name of the agent.
             prompt_content: The prompt content to save.
+            department: Department name for workspace segregation.
             
         Returns:
             dict with keys: success, message, file_path
         """
         try:
             safe_agent_name = AgentServiceUtils.get_safe_agent_name(agent_name)
-            prompt_file_path = os.path.join(AgentServiceUtils.FILE_CONTEXT_PROMPTS_DIR, f"{safe_agent_name}_file_context_prompt.md")
+            prompts_dir = AgentServiceUtils._get_file_context_prompts_dir(department)
+            prompt_file_path = os.path.join(prompts_dir, f"{safe_agent_name}_file_context_prompt.md")
             os.makedirs(os.path.dirname(prompt_file_path), exist_ok=True)
             
             with open(prompt_file_path, "w", encoding="utf-8") as f:
@@ -5042,23 +6904,73 @@ class AgentService:
         self.model_service = agent_service_utils.model_service
         self.knowledgebase_service = agent_service_utils.knowledgebase_service
         self.meta_type_templates = agent_service_utils.meta_type_templates
-        self.agent_pipeline_mapping_repo = agent_service_utils.agent_pipeline_mapping_repo
-        self.pipeline_repo = agent_service_utils.pipeline_repo
+        self.agent_workflow_mapping_repo = agent_service_utils.agent_workflow_mapping_repo
+        self.workflow_repo = agent_service_utils.workflow_repo
         self.agent_sharing_repo = agent_service_utils.agent_sharing_repo  # Store agent sharing repo
         self.department_repo = agent_service_utils.department_repo  # Store department repo for validation
-        self.agent_pipeline_mapping_repo = agent_service_utils.agent_pipeline_mapping_repo
+        self.agent_workflow_mapping_repo = agent_service_utils.agent_workflow_mapping_repo
 
+    async def _enrich_agent_with_tool_versions(self, agent: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enriches an agent dictionary with tool version information.
+        Adds 'tools_with_versions' list containing {tool_id, tool_version} for each bound tool.
+
+        Args:
+            agent (dict): The agent dictionary to enrich.
+
+        Returns:
+            dict: The enriched agent dictionary with tools_with_versions field.
+        """
+        try:
+            agent_id = agent.get('agentic_application_id')
+            if not agent_id:
+                agent['tools_with_versions'] = []
+                return agent
+
+            # Get all tool-agent mappings for this agent
+            mappings = await self.tool_service.tool_agent_mapping_repo.get_tool_agent_mappings_record(
+                agentic_application_id=agent_id
+            )
+
+            # Build tools_with_versions list
+            tools_with_versions = []
+            for mapping in mappings:
+                tools_with_versions.append({
+                    'tool_id': mapping.get('tool_id'),
+                    'tool_version': mapping.get('tool_version', 'v1')
+                })
+
+            agent['tools_with_versions'] = tools_with_versions
+            return agent
+        except Exception as e:
+            log.error(f"Error enriching agent {agent.get('agentic_application_id')} with tool versions: {e}")
+            agent['tools_with_versions'] = []
+            return agent
+
+    async def _enrich_agents_with_tool_versions(self, agents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Enriches a list of agent dictionaries with tool version information.
+
+        Args:
+            agents (list): List of agent dictionaries to enrich.
+
+        Returns:
+            list: The enriched list of agent dictionaries.
+        """
+        for agent in agents:
+            await self._enrich_agent_with_tool_versions(agent)
+        return agents
 
     # --- Agent Creation Operations ---
 
-    async def _save_agent_data(self, agent_data: Dict[str, Any], shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def _save_agent_data(self, agent_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Saves agent data to the database, including associated tool/worker agent mappings and tags.
         This is a private helper method used by public onboarding methods.
 
         Args:
             agent_data (dict): A dictionary containing the agent data to insert.
-            shared_with_departments (List[str], optional): List of department names to share the agent with.
+                               Optional 'tool_versions' dict maps tool_id -> version (e.g., {'tool-uuid': 'v1'}).
 
         Returns:
             dict: Status of the operation.
@@ -5069,6 +6981,10 @@ class AgentService:
         # Serialize validation_criteria if present
         if 'validation_criteria' in agent_data and agent_data['validation_criteria'] is not None:
             agent_data['validation_criteria'] = json.dumps(agent_data['validation_criteria'])
+        
+        # Serialize db_connection_names if present
+        if 'db_connection_names' in agent_data:
+            agent_data['db_connection_names'] = json.dumps(agent_data.get('db_connection_names', []))
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         agent_data["created_on"] = now
@@ -5081,6 +6997,10 @@ class AgentService:
             log.info(f"Generated new agentic_application_id: {agent_data['agentic_application_id']}")
         update_session_context(agent_id=agent_data["agentic_application_id"])
 
+        # Get tool versions mapping (tool_id -> version, defaults to 'v1')
+        tool_versions = agent_data.pop("tool_versions", {}) or {}
+        log.info(f"Tool versions mapping: {tool_versions}")
+
         success = await self.agent_repo.save_agent_record(agent_data)
 
         if success:
@@ -5089,9 +7009,14 @@ class AgentService:
 
             for associated_id in associated_ids:
                 associated_created_by = None
+                tool_version = tool_versions.get(associated_id, "v1")  # Default to v1 if no version specified
+                log.info(f"Assigning tool version {tool_version} for tool ID {associated_id}")
                 if is_meta_agent:
                     worker_agent_info = await self.get_agent(agentic_application_id=associated_id)
                     associated_created_by = worker_agent_info[0]["created_by"] if worker_agent_info else None
+                elif associated_id.startswith("mcp_"):
+                    mcp_tool_info = await self.mcp_tool_service.get_mcp_tool(tool_id=associated_id)
+                    associated_created_by = mcp_tool_info[0]["created_by"] if mcp_tool_info else None
                 else:
                     tool_info = await self.tool_service.get_tool(tool_id=associated_id)
                     associated_created_by = tool_info[0]["created_by"] if tool_info else None
@@ -5101,7 +7026,8 @@ class AgentService:
                         tool_id=associated_id,
                         agentic_application_id=agent_data["agentic_application_id"],
                         tool_created_by=associated_created_by,
-                        agentic_app_created_by=agent_data["created_by"]
+                        agentic_app_created_by=agent_data["created_by"],
+                        tool_version=tool_version
                     )
 
             tags_status = await self.tag_service.assign_tags_to_agent(
@@ -5109,124 +7035,6 @@ class AgentService:
                 agentic_application_id=agent_data["agentic_application_id"]
             )
             
-            # Handle department sharing if specified (skip if is_public=true as it's redundant)
-            sharing_status = None
-            is_public = agent_data.get('is_public', False)
-            
-            # Get tools info for cascade sharing (separate regular tools and MCP tools)
-            tools_info = []
-            mcp_tools_info = []
-            is_meta_agent = agent_data["agentic_application_type"] in self.meta_type_templates
-            if not is_meta_agent:
-                for tool_id in associated_ids:
-                    if tool_id.startswith("mcp_"):
-                        # MCP tool - fetch from MCP tool service
-                        mcp_tool_data = await self.mcp_tool_service.get_mcp_tool(tool_id=tool_id)
-                        if mcp_tool_data:
-                            mcp_tools_info.append({
-                                'tool_id': mcp_tool_data[0]['tool_id'],
-                                'tool_name': mcp_tool_data[0].get('tool_name', ''),
-                                'department_name': mcp_tool_data[0].get('department_name', agent_data.get('department_name', ''))
-                            })
-                    else:
-                        # Regular tool - fetch from tool service
-                        tool_data = await self.tool_service.get_tool(tool_id=tool_id)
-                        if tool_data:
-                            tools_info.append({
-                                'tool_id': tool_data[0]['tool_id'],
-                                'tool_name': tool_data[0].get('tool_name', ''),
-                                'department_name': tool_data[0].get('department_name', agent_data.get('department_name', ''))
-                            })
-            
-            # If agent is public, also make its tools public (both regular and MCP)
-            if is_public and tools_info:
-                for tool in tools_info:
-                    try:
-                        await self.tool_service.tool_repo.update_tool_record({"is_public": True}, tool['tool_id'])
-                        log.info(f"Made tool '{tool['tool_name']}' public (cascade from public agent)")
-                    except Exception as e:
-                        log.warning(f"Failed to make tool '{tool['tool_id']}' public: {e}")
-            
-            if is_public and mcp_tools_info:
-                for mcp_tool in mcp_tools_info:
-                    try:
-                        await self.mcp_tool_service.mcp_tool_repo.update_mcp_tool_record({"is_public": True}, mcp_tool['tool_id'])
-                        log.info(f"Made MCP tool '{mcp_tool['tool_name']}' public (cascade from public agent)")
-                    except Exception as e:
-                        log.warning(f"Failed to make MCP tool '{mcp_tool['tool_id']}' public: {e}")
-            
-            # Gather KB info for cascade sharing/public (needed for both public and shared scenarios)
-            kbs_info = []
-            if self.knowledgebase_service:
-                try:
-                    kb_ids = await self.knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(agent_data['agentic_application_id'])
-                    for kb_id in kb_ids:
-                        kb_record = await self.knowledgebase_service.knowledgebase_repo.get_knowledgebase_by_id(kb_id)
-                        if kb_record:
-                            kbs_info.append({
-                                'kb_id': kb_id,
-                                'kb_name': kb_record.get('knowledgebase_name', ''),
-                                'department_name': kb_record.get('department_name', agent_data.get('department_name', ''))
-                            })
-                except Exception as e:
-                    log.warning(f"Failed to gather KB info for cascade sharing: {e}")
-            
-            # If agent is public, also make its knowledge bases public
-            if is_public and kbs_info:
-                for kb in kbs_info:
-                    try:
-                        await self.knowledgebase_service.knowledgebase_repo.update_kb_visibility(kb['kb_id'], True)
-                        log.info(f"Made KB '{kb['kb_name']}' public (cascade from public agent)")
-                    except Exception as e:
-                        log.warning(f"Failed to make KB '{kb['kb_id']}' public: {e}")
-            
-            if is_public and shared_with_departments:
-                log.info(f"Agent '{agent_data['agentic_application_name']}' is public, skipping shared_with_departments as public agents are visible to all departments")
-                sharing_status = {"message": "Agent is public, shared_with_departments ignored"}
-            elif shared_with_departments and self.agent_sharing_repo:
-                try:
-                    invalid_departments = []
-                    valid_departments = []
-                    if self.department_repo:
-                        for dept_name in shared_with_departments:
-                            dept = await self.department_repo.get_department_by_name(dept_name)
-                            if dept:
-                                valid_departments.append(dept_name)
-                            else:
-                                invalid_departments.append(dept_name)
-                    else:
-                        # If no department_repo available, proceed with all departments
-                        valid_departments = shared_with_departments
-                    
-                    if invalid_departments:
-                        log.warning(f"Invalid department names provided for sharing: {invalid_departments}")
-                    
-                    if valid_departments:
-                        sharing_result = await self.agent_sharing_repo.share_agent_with_multiple_departments(
-                            agentic_application_id=agent_data['agentic_application_id'],
-                            agentic_application_name=agent_data['agentic_application_name'],
-                            source_department=agent_data.get('department_name', ''),
-                            target_departments=valid_departments,
-                            shared_by=agent_data.get('created_by', ''),
-                            tools_info=tools_info,  # Pass regular tools for cascade sharing
-                            mcp_tools_info=mcp_tools_info,  # Pass MCP tools for cascade sharing
-                            kbs_info=kbs_info  # Pass knowledge bases for cascade sharing
-                        )
-                        sharing_status = {
-                            "shared_with": valid_departments[:sharing_result.get("success_count", 0)],
-                            "failed": sharing_result.get("failures", []),
-                            "invalid_departments": invalid_departments,
-                            "tools_shared": sharing_result.get("total_tools_shared", 0),
-                            "mcp_tools_shared": sharing_result.get("total_mcp_tools_shared", 0),
-                            "kbs_shared": sharing_result.get("total_kbs_shared", 0)
-                        }
-                        log.info(f"Agent '{agent_data['agentic_application_name']}' shared with departments: {sharing_result.get('shared_departments', [])}")
-                    else:
-                        sharing_status = {"error": "No valid departments to share with", "invalid_departments": invalid_departments}
-                except Exception as share_error:
-                    log.warning(f"Failed to share agent with departments: {share_error}")
-                    sharing_status = {"error": str(share_error)}
-
             log.info(f"Successfully onboarded Agentic Application with ID: {agent_data['agentic_application_id']}")
             result = {
                 "message": f"Successfully onboarded Agent: {agent_data['agentic_application_name']}",
@@ -5236,11 +7044,8 @@ class AgentService:
                 "model_name": agent_data.get("model_name", ""),
                 "tags_status": tags_status,
                 "created_by": agent_data["created_by"],
-                "is_public": agent_data.get("is_public", False),
                 "is_created": True
             }
-            if sharing_status:
-                result["sharing_status"] = sharing_status
             return result
         else:
             log.error(f"Integrity error inserting data: Agent name {agent_data.get('agentic_application_name', '')} already exists.")
@@ -5266,8 +7071,8 @@ class AgentService:
                              tag_ids: Optional[Union[str, List[str]]] = None,
                              validation_criteria: Optional[List[Dict[str, Any]]] = None,
                              knowledgebase_ids: Optional[List[str]] = None,
-                             is_public: Optional[bool] = False,
-                             shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+                             db_connection_names: Optional[List[str]] = None,
+                             tool_versions: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Onboards a new Agent.
 
@@ -5282,24 +7087,12 @@ class AgentService:
             tag_ids (Union[List[str], str], optional): A list of tag IDs for the agent.
             validation_criteria (List[Dict[str, Any]], optional): List of validation test cases for the agent.
             knowledgebase_ids (List[str], optional): A list of knowledgebase IDs to link to the agent.
-            is_public (bool, optional): Whether the agent is public (accessible to all departments).
-            shared_with_departments (List[str], optional): List of department names to share the agent with.
+            db_connection_names (List[str], optional): A list of database connection names for auto-injecting DB tools.
+            tool_versions (Dict[str, str], optional): Mapping of tool_id to version (e.g., {'tool-uuid': 'v2'}). Defaults to 'v1' if not specified.
 
         Returns:
             dict: Status of the onboarding operation.
         """
-        if await self.is_agent_in_recycle_bin(agentic_application_name=agent_name):
-            err = f"Agentic Application with name {agent_name} already exists in recycle bin."
-            log.error(err)
-            return {
-                "message": err,
-                "agentic_application_id": "",
-                "agentic_application_name": agent_name,
-                "agentic_application_type": "",
-                "model_name": "",
-                "created_by": "",
-                "is_created": False
-            }
         agent_check = await self.get_agent(agentic_application_name=agent_name)
         if agent_check:
             log.error(f"Agentic Application with name {agent_name} already exists.")
@@ -5331,7 +7124,8 @@ class AgentService:
                 workflow_description=workflow_description,
                 agent_type=agent_type,
                 associated_ids=associated_ids,
-                model_name=model_name
+                model_name=model_name,
+                # db_connection_names=db_connection_names  # Temporarily disabled - will be used later
             ),
             self._get_welcome_message_for_agent(
                 agent_name=agent_name,
@@ -5372,13 +7166,15 @@ class AgentService:
             "created_by": user_id,
             "department_name": department_name,
             "tag_ids": tag_ids,
-            "is_public": is_public if is_public is not None else False
+            # "db_connection_names": db_connection_names or [],  # Temporarily disabled - will be used later
+            "db_connection_names": [],  # DB connections disabled for now
+            "tool_versions": tool_versions or {}  # Pass tool versions for binding
         }
 
         # Only add validation_criteria for non-meta agents
         if agent_type not in self.meta_type_templates and validation_criteria is not None:
             agent_data["validation_criteria"] = validation_criteria
-        agent_creation_status = await self._save_agent_data(agent_data, shared_with_departments=shared_with_departments)
+        agent_creation_status = await self._save_agent_data(agent_data)
         
         # Link knowledgebases if provided
         if agent_creation_status.get("is_created") and knowledgebase_ids and self.knowledgebase_service:
@@ -5459,6 +7255,8 @@ class AgentService:
                 # Deserialize validation_criteria if present
                 if 'validation_criteria' in agent_record and agent_record['validation_criteria'] is not None:
                     agent_record['validation_criteria'] = json.loads(agent_record['validation_criteria']) if isinstance(agent_record['validation_criteria'], str) else agent_record['validation_criteria']
+                if 'db_connection_names' in agent_record and agent_record['db_connection_names'] is not None:
+                    agent_record['db_connection_names'] = json.loads(agent_record['db_connection_names']) if isinstance(agent_record['db_connection_names'], str) else agent_record['db_connection_names']
                 agent_record['tags'] = await self.tag_service.get_tags_by_agent(agent_record['agentic_application_id'])
                 # Add shared departments information
                 if self.agent_sharing_repo:
@@ -5468,6 +7266,10 @@ class AgentService:
                     agent_record['shared_with_departments'] = []
                 
                 log.info(f"Retrieved agentic application with name: {agentic_application_name}")
+        
+        # Enrich agents with tool version information
+        await self._enrich_agents_with_tool_versions(agent_records)
+        
         return agent_records
 
     async def get_all_agents(self, agentic_application_type: Optional[Union[str, List[str]]] = None, department_name: str = None, include_shared: bool = True) -> List[Dict[str, Any]]:
@@ -5505,6 +7307,8 @@ class AgentService:
             # Deserialize validation_criteria if present
             if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
                 agent['validation_criteria'] = json.loads(agent['validation_criteria']) if isinstance(agent['validation_criteria'], str) else agent['validation_criteria']
+            if 'db_connection_names' in agent and agent['db_connection_names'] is not None:
+                agent['db_connection_names'] = json.loads(agent['db_connection_names']) if isinstance(agent['db_connection_names'], str) else agent['db_connection_names']
             agent['tags'] = agent_id_to_tags.get(agent['agentic_application_id'], [])
             # Add shared departments information
             if self.agent_sharing_repo:
@@ -5512,8 +7316,56 @@ class AgentService:
                 agent['shared_with_departments'] = [info['target_department'] for info in shared_info]
             else:
                 agent['shared_with_departments'] = []
+        
+        # Enrich agents with tool version information
+        await self._enrich_agents_with_tool_versions(agent_records)
+        
         log.info(f"Retrieved {len(agent_records)} agentic applications.")
         return agent_records
+
+    async def get_system_agents(self, agent_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all agents that were onboarded by the system (created_by = 'system').
+        Optionally filters by agent name.
+
+        Args:
+            agent_name (str, optional): If provided, returns only agents matching this name.
+
+        Returns:
+            list: A list of system-onboarded agents, represented as dictionaries with tags and sharing info.
+        """
+        try:
+            agent_records = await self.agent_repo.get_agent_record(created_by="system")
+
+            if agent_name:
+                agent_records = [
+                    a for a in agent_records
+                    if a.get('agentic_application_name', '').lower() == agent_name.lower()
+                ]
+
+            agent_id_to_tags = await self.tag_service.get_agent_id_to_tags_dict()
+            for agent in agent_records:
+                agent['system_prompt'] = json.loads(agent['system_prompt']) if isinstance(agent['system_prompt'], str) else agent['system_prompt']
+                agent['tools_id'] = json.loads(agent['tools_id']) if isinstance(agent['tools_id'], str) else agent['tools_id']
+                if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
+                    agent['validation_criteria'] = json.loads(agent['validation_criteria']) if isinstance(agent['validation_criteria'], str) else agent['validation_criteria']
+                if 'db_connection_names' in agent and agent['db_connection_names'] is not None:
+                    agent['db_connection_names'] = json.loads(agent['db_connection_names']) if isinstance(agent['db_connection_names'], str) else agent['db_connection_names']
+                agent['tags'] = agent_id_to_tags.get(agent['agentic_application_id'], [])
+                if self.agent_sharing_repo:
+                    shared_info = await self.agent_sharing_repo.get_shared_departments_for_agent(agent['agentic_application_id'])
+                    agent['shared_with_departments'] = [info['target_department'] for info in shared_info]
+                else:
+                    agent['shared_with_departments'] = []
+
+            # Enrich agents with tool version information
+            await self._enrich_agents_with_tool_versions(agent_records)
+
+            log.info(f"Retrieved {len(agent_records)} system-onboarded agents")
+            return agent_records
+        except Exception as e:
+            log.error(f"Error retrieving system agents: {e}")
+            return []
 
     async def get_agents_by_search_or_page(self,
                                            search_value: str = '',
@@ -5568,6 +7420,9 @@ class AgentService:
             # No tag filtering needed, use agent_records directly
             filtered_agents = agent_records
 
+        # Enrich agents with tool version information
+        await self._enrich_agents_with_tool_versions(filtered_agents)
+
         log.info(f"Retrieved {len(agent_records)} agentic applications with search '{search_value}' on page {page}.")
         return {
             "total_count": total_count,
@@ -5618,7 +7473,13 @@ class AgentService:
             # Deserialize validation_criteria if present
             if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
                 agent['validation_criteria'] = json.loads(agent['validation_criteria']) if isinstance(agent['validation_criteria'], str) else agent['validation_criteria']
+            if 'db_connection_names' in agent and agent['db_connection_names'] is not None:
+                agent['db_connection_names'] = json.loads(agent['db_connection_names']) if isinstance(agent['db_connection_names'], str) else agent['db_connection_names']
             agent['tags'] = agent_id_to_tags.get(agent['agentic_application_id'], [])
+        
+        # Enrich agents with tool version information
+        await self._enrich_agents_with_tool_versions(filtered_agents)
+        
         log.info(f"Filtered {len(filtered_agents)} agents by tags: {tag_ids or tag_names}.")
         return filtered_agents
 
@@ -5644,22 +7505,42 @@ class AgentService:
         # Deserialize validation_criteria if present
         if 'validation_criteria' in agent_details and agent_details['validation_criteria'] is not None:
             agent_details['validation_criteria'] = json.loads(agent_details['validation_criteria']) if isinstance(agent_details['validation_criteria'], str) else agent_details['validation_criteria']
+        if 'db_connection_names' in agent_details and agent_details['db_connection_names'] is not None:
+            agent_details['db_connection_names'] = json.loads(agent_details['db_connection_names']) if isinstance(agent_details['db_connection_names'], str) else agent_details['db_connection_names']
 
         associated_ids = agent_details.get("tools_id", [])
         associated_info_list = []
+
+        # Get tool-agent mappings to include version info
+        tool_mappings = await self.tool_service.tool_agent_mapping_repo.get_tool_agent_mappings_record(
+            agentic_application_id=agentic_application_id
+        )
+        # Create a dict of tool_id -> tool_version
+        tool_version_map = {m.get('tool_id'): m.get('tool_version', 'v1') for m in tool_mappings}
 
         if agent_details['agentic_application_type'] in self.meta_type_templates:
             for worker_agent_id in associated_ids:
                 worker_agent_info = await self.get_agent(agentic_application_id=worker_agent_id)
                 if worker_agent_info:
-                    associated_info_list.append(worker_agent_info[0])
+                    worker_info = worker_agent_info[0]
+                    worker_info['tool_version'] = tool_version_map.get(worker_agent_id, 'v1')
+                    associated_info_list.append(worker_info)
         else:
             for tool_id in associated_ids:
                 tool_info = await self.tool_service.get_tool(tool_id=tool_id)
                 if tool_info:
-                    associated_info_list.append(tool_info[0])
+                    tool_data = tool_info[0]
+                    tool_data['tool_version'] = tool_version_map.get(tool_id, 'v1')
+                    associated_info_list.append(tool_data)
 
         agent_details["tools_id"] = associated_info_list
+        
+        # Add tools_with_versions summary
+        agent_details['tools_with_versions'] = [
+            {'tool_id': item.get('tool_id') or item.get('agentic_application_id'), 'tool_version': item.get('tool_version', 'v1')}
+            for item in associated_info_list
+        ]
+        
         log.info(f"Retrieved agentic application details for ID: {agentic_application_id}")
         return agent_details
 
@@ -5787,7 +7668,7 @@ class AgentService:
             # Build query with optional department_name filter
             query = f"""
                 SELECT agentic_application_id, agentic_application_name, agentic_application_description, 
-                       agentic_application_type, created_by, created_on, last_used
+                       agentic_application_type, created_by, created_on, last_used, department_name
                 FROM {TableNames.AGENT.value} 
                 WHERE (last_used IS NULL OR last_used < (NOW() - INTERVAL '1 day' * $1))
             """
@@ -5832,7 +7713,7 @@ class AgentService:
 
     # --- Agent Updation Operations ---
 
-    async def _update_agent_data_util(self, agent_data: Dict[str, Any], agentic_application_id: str) -> bool:
+    async def _update_agent_data_util(self, agent_data: Dict[str, Any], agentic_application_id: str, tool_versions: Optional[Dict[str, str]] = None) -> bool:
         """
         Updates an agent record in the database and manages associated tool/worker agent mappings.
         This is a private helper method.
@@ -5840,14 +7721,29 @@ class AgentService:
         Args:
             agent_data (dict): A dictionary containing the agent data to update.
             agentic_application_id (str): The ID of the agentic application to update.
+            tool_versions (Dict[str, str], optional): Mapping of tool_id to version (e.g., {'tool-uuid': 'v2'}).
+                - Specify versions for tools you want to update
+                - Existing tools not in this dict will keep their current version
 
         Returns:
             bool: True if the update was successful, False otherwise.
         """
+        tool_versions = tool_versions or {}
+        
         agent_data["updated_on"] = datetime.now(timezone.utc).replace(tzinfo=None)
         # Remove non-database fields that are added during get_agent()
         tags = agent_data.pop("tags", None)
         shared_with_departments = agent_data.pop("shared_with_departments", None)
+        tools_with_versions = agent_data.pop("tools_with_versions", None)  # Computed field, not in DB
+        knowledgebase_ids = agent_data.pop("knowledgebase_ids", None)  # Computed field
+        tools = agent_data.pop("tools", None)  # Computed field with tool details
+        servers = agent_data.pop("servers", None)  # Computed field for MCP servers
+        
+        # Get existing tool mappings to preserve versions for tools not in tool_versions
+        existing_mappings = await self.tool_service.tool_agent_mapping_repo.get_tool_agent_mappings_record(
+            agentic_application_id=agent_data['agentic_application_id']
+        )
+        existing_versions = {m['tool_id']: m.get('tool_version', 'v1') for m in existing_mappings}
 
         success = await self.agent_repo.update_agent_record(agent_data, agentic_application_id)
 
@@ -5858,9 +7754,15 @@ class AgentService:
             associated_ids = json.loads(agent_data['tools_id'])
             for associated_id in associated_ids:
                 associated_created_by = None
+                # Priority: 1) Explicitly provided in tool_versions, 2) Existing version, 3) Default to v1
+                tool_version = tool_versions.get(associated_id) or existing_versions.get(associated_id, "v1")
+                
                 if agent_data['agentic_application_type'] in self.meta_type_templates:
                     worker_agent_info = await self.get_agent(agentic_application_id=associated_id)
                     associated_created_by = worker_agent_info[0]["created_by"] if worker_agent_info else None
+                elif associated_id.startswith("mcp_"):
+                    mcp_tool_info = await self.mcp_tool_service.get_mcp_tool(tool_id=associated_id)
+                    associated_created_by = mcp_tool_info[0]["created_by"] if mcp_tool_info else None
                 else:
                     tool_info = await self.tool_service.get_tool(tool_id=associated_id)
                     associated_created_by = tool_info[0]["created_by"] if tool_info else None
@@ -5870,7 +7772,8 @@ class AgentService:
                         tool_id=associated_id,
                         agentic_application_id=agent_data["agentic_application_id"],
                         tool_created_by=associated_created_by,
-                        agentic_app_created_by=agent_data["created_by"]
+                        agentic_app_created_by=agent_data["created_by"],
+                        tool_version=tool_version
                     )
             return True
         return False
@@ -5894,8 +7797,9 @@ class AgentService:
                             validation_criteria: Optional[List[Dict[str, Any]]] = None,
                             knowledgebase_ids_to_add: Optional[List[str]] = None,
                             knowledgebase_ids_to_remove: Optional[List[str]] = None,
-                            is_public: Optional[bool] = None,
-                            shared_with_departments: Optional[List[str]] = None) -> Dict[str, Any]:
+                            db_connection_names_to_add: Optional[List[str]] = None,
+                            db_connection_names_to_remove: Optional[List[str]] = None,
+                            tool_versions: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Updates a agent in the database.
 
@@ -5918,12 +7822,15 @@ class AgentService:
             validation_criteria (List[Dict[str, Any]], optional): List of validation test cases for the agent.
             knowledgebase_ids_to_add (List[str], optional): Knowledgebase IDs to add to the agent.
             knowledgebase_ids_to_remove (List[str], optional): Knowledgebase IDs to remove from the agent.
-            is_public (bool, optional): Whether the agent should be public (accessible to all departments).
-            shared_with_departments (List[str], optional): List of department names to share the agent with.
+            db_connection_names_to_add (List[str], optional): Database connection names to add to the agent.
+            db_connection_names_to_remove (List[str], optional): Database connection names to remove from the agent.
+            tool_versions (Dict[str, str], optional): Mapping of tool_id to version (e.g., {'tool-uuid': 'v2'}).
 
         Returns:
             dict: Status of the update operation.
         """
+        tool_versions = tool_versions or {}  # Initialize if not provided
+        
         agent_records = await self.get_agent(agentic_application_id=agentic_application_id, agentic_application_name=agentic_application_name)
         if not agent_records:
             log.error(f"No Agentic Application found with ID: {agentic_application_id or agentic_application_name}")
@@ -5935,15 +7842,9 @@ class AgentService:
         is_meta_agent = agent["agentic_application_type"] in self.meta_type_templates
         validation_criteria_check = validation_criteria is None if not is_meta_agent else True  # Skip validation_criteria check for meta agents
         kb_check = not knowledgebase_ids_to_add and not knowledgebase_ids_to_remove  # Check if KB fields are empty
+        db_conn_check = not db_connection_names_to_add and not db_connection_names_to_remove  # Check if DB connection fields are empty
         
-        # Check if is_public is being changed
-        current_is_public = agent.get('is_public', False)
-        is_public_changed = is_public is not None and is_public != current_is_public
-        
-        # Check if sharing is being updated
-        sharing_changed = shared_with_departments is not None
-        
-        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not welcome_message and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove and updated_tag_id_list is None and validation_criteria_check and not is_public_changed and not sharing_changed:
+        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not welcome_message and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove and updated_tag_id_list is None and validation_criteria_check and kb_check and db_conn_check and not tool_versions:
             log.error("No fields provided to update the agentic application.")
             return {"message": "Error: Please specify at least one field to modify.", "is_update": False}
 
@@ -5956,168 +7857,11 @@ class AgentService:
             await self.tag_service.clear_tags(agent_id=agentic_application_id)
             tag_status = await self.tag_service.assign_tags_to_agent(tag_ids=updated_tag_id_list, agentic_application_id=agentic_application_id)
 
-        # Handle is_public and sharing updates
-        sharing_update_status = None
-        
-        # Get agent's tools info for cascade sharing (needed for both public and shared scenarios)
-        # Separate regular tools and MCP tools
-        tools_info = []
-        mcp_tools_info = []
-        if not is_meta_agent:
-            tools_id_raw = agent.get('tools_id', '[]')
-            current_tools_id = tools_id_raw if isinstance(tools_id_raw, list) else json.loads(tools_id_raw)
-            for tool_id in current_tools_id:
-                if tool_id.startswith("mcp_"):
-                    # MCP tool - fetch from MCP tool service
-                    mcp_tool_data = await self.mcp_tool_service.get_mcp_tool(tool_id=tool_id)
-                    if mcp_tool_data:
-                        mcp_tools_info.append({
-                            'tool_id': mcp_tool_data[0]['tool_id'],
-                            'tool_name': mcp_tool_data[0].get('tool_name', ''),
-                            'department_name': mcp_tool_data[0].get('department_name', agent.get('department_name', ''))
-                        })
-                else:
-                    # Regular tool - fetch from tool service
-                    tool_data = await self.tool_service.get_tool(tool_id=tool_id)
-                    if tool_data:
-                        tools_info.append({
-                            'tool_id': tool_data[0]['tool_id'],
-                            'tool_name': tool_data[0].get('tool_name', ''),
-                            'department_name': tool_data[0].get('department_name', agent.get('department_name', ''))
-                        })
-        
-        # If setting is_public=true, sharing is redundant - skip shared_with_departments
-        if is_public_changed and is_public and self.agent_sharing_repo:
-            if shared_with_departments:
-                log.info(f"Agent '{agent['agentic_application_name']}' is being set to public, ignoring shared_with_departments")
-                sharing_update_status = {"message": "Agent is public, shared_with_departments ignored"}
-                sharing_changed = False  # Skip further sharing processing
-        
-        # Gather KB info for cascade sharing/public (needed for both public and shared scenarios)
-        kbs_info = []
-        if (is_public_changed or sharing_changed) and self.knowledgebase_service:
-            try:
-                kb_ids = await self.knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(agentic_application_id)
-                for kb_id in kb_ids:
-                    kb_record = await self.knowledgebase_service.knowledgebase_repo.get_knowledgebase_by_id(kb_id)
-                    if kb_record:
-                        kbs_info.append({
-                            'kb_id': kb_id,
-                            'kb_name': kb_record.get('knowledgebase_name', ''),
-                            'department_name': kb_record.get('department_name', agent.get('department_name', ''))
-                        })
-            except Exception as e:
-                log.warning(f"Failed to gather KB info for cascade sharing during update: {e}")
-        
-        if is_public_changed or sharing_changed:
-            # Update is_public in agent record if changed
-            if is_public_changed:
-                agent["is_public"] = is_public
-                await self.agent_repo.update_agent_record({"is_public": is_public}, agentic_application_id)
-                log.info(f"Updated is_public to {is_public} for agent: {agent['agentic_application_name']}")
-                
-                # If agent is made public, also make its tools public (both regular and MCP)
-                if is_public and tools_info:
-                    for tool in tools_info:
-                        try:
-                            await self.tool_service.tool_repo.update_tool_record({"is_public": True}, tool['tool_id'])
-                            log.info(f"Made tool '{tool['tool_name']}' public (cascade from public agent)")
-                        except Exception as e:
-                            log.warning(f"Failed to make tool '{tool['tool_id']}' public: {e}")
-                
-                if is_public and mcp_tools_info:
-                    for mcp_tool in mcp_tools_info:
-                        try:
-                            await self.mcp_tool_service.mcp_tool_repo.update_mcp_tool_record({"is_public": True}, mcp_tool['tool_id'])
-                            log.info(f"Made MCP tool '{mcp_tool['tool_name']}' public (cascade from public agent)")
-                        except Exception as e:
-                            log.warning(f"Failed to make MCP tool '{mcp_tool['tool_id']}' public: {e}")
-                
-                # If agent is made public, also make its knowledge bases public
-                if is_public and kbs_info:
-                    for kb in kbs_info:
-                        try:
-                            await self.knowledgebase_service.knowledgebase_repo.update_kb_visibility(kb['kb_id'], True)
-                            log.info(f"Made KB '{kb['kb_name']}' public (cascade from public agent)")
-                        except Exception as e:
-                            log.warning(f"Failed to make KB '{kb['kb_id']}' public: {e}")
-            
-            # Handle sharing update (with department validation)
-            if sharing_changed and self.agent_sharing_repo:
-                try:
-                    # Validate new departments exist
-                    valid_new_depts = []
-                    invalid_departments = []
-                    if shared_with_departments and self.department_repo:
-                        for dept_name in shared_with_departments:
-                            dept = await self.department_repo.get_department_by_name(dept_name)
-                            if dept:
-                                valid_new_depts.append(dept_name)
-                            else:
-                                invalid_departments.append(dept_name)
-                        if invalid_departments:
-                            log.warning(f"Invalid department names provided for sharing: {invalid_departments}")
-                    elif shared_with_departments:
-                        valid_new_depts = shared_with_departments
-                    
-                    # Get current sharing state
-                    current_shared_info = await self.agent_sharing_repo.get_shared_departments_for_agent(agentic_application_id)
-                    current_shared_set = set(d['target_department'] for d in current_shared_info) if isinstance(current_shared_info, list) and current_shared_info and isinstance(current_shared_info[0], dict) else set(current_shared_info) if current_shared_info else set()
-                    new_shared_set = set(valid_new_depts) if valid_new_depts else set()
-                    
-                    # Departments to add (only valid ones)
-                    depts_to_add = new_shared_set - current_shared_set
-                    # Departments to remove
-                    depts_to_remove = current_shared_set - new_shared_set
-                    
-                    added_depts = []
-                    removed_depts = []
-                    
-                    # Remove sharing from departments no longer in the list
-                    for dept in depts_to_remove:
-                        try:
-                            await self.agent_sharing_repo.unshare_agent_from_department(agentic_application_id, dept)
-                            removed_depts.append(dept)
-                        except Exception as e:
-                            log.warning(f"Failed to unshare agent from department {dept}: {e}")
-                    
-                    # Add sharing to new departments
-                    if depts_to_add:
-                        share_result = await self.agent_sharing_repo.share_agent_with_multiple_departments(
-                            agentic_application_id=agentic_application_id,
-                            agentic_application_name=agent['agentic_application_name'],
-                            source_department=agent.get('department_name', ''),
-                            target_departments=list(depts_to_add),
-                            shared_by=created_by or '',
-                            tools_info=tools_info,  # Pass regular tools for cascade sharing
-                            mcp_tools_info=mcp_tools_info,  # Pass MCP tools for cascade sharing
-                            kbs_info=kbs_info  # Pass knowledge bases for cascade sharing
-                        )
-                        added_depts = list(depts_to_add)[:share_result.get("success_count", 0)]
-                    
-                    sharing_update_status = {
-                        "added": added_depts,
-                        "removed": removed_depts,
-                        "current_shared_with": list(new_shared_set),
-                        "invalid_departments": invalid_departments if invalid_departments else [],
-                        "tools_shared": share_result.get("total_tools_shared", 0) if depts_to_add else 0,
-                        "mcp_tools_shared": share_result.get("total_mcp_tools_shared", 0) if depts_to_add else 0,
-                        "kbs_shared": share_result.get("total_kbs_shared", 0) if depts_to_add else 0
-                    }
-                    log.info(f"Updated sharing for agent '{agent['agentic_application_name']}': added={added_depts}, removed={removed_depts}")
-                except Exception as share_error:
-                    log.warning(f"Failed to update agent sharing: {share_error}")
-                    sharing_update_status = {"error": str(share_error)}
-
-        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not welcome_message and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove and validation_criteria_check and kb_check:
-            log.info("Tags/sharing updated successfully. No other fields modified.")
+        if not agentic_application_description and not agentic_application_workflow_description and not system_prompt and not welcome_message and not associated_ids and not associated_ids_to_add and not associated_ids_to_remove and validation_criteria_check and kb_check and db_conn_check and not tool_versions:
+            log.info("Tags updated successfully. No other fields modified.")
             result = {"message": "Agent updated successfully", "is_update": True}
             if tag_status:
                 result["tag_update_status"] = tag_status
-            if sharing_update_status:
-                result["sharing_update_status"] = sharing_update_status
-            if is_public_changed:
-                result["is_public"] = is_public
             return result
 
         associated_ids_to_check = associated_ids + associated_ids_to_add + associated_ids_to_remove
@@ -6215,7 +7959,29 @@ class AgentService:
         if 'validation_criteria' in agent and agent['validation_criteria'] is not None:
             agent['validation_criteria'] = json.dumps(agent['validation_criteria'])
         
-        success = await self._update_agent_data_util(agent_data=agent, agentic_application_id=agentic_application_id)
+        # Handle db_connection_names updates — Temporarily disabled, will be used later
+        # if db_connection_names_to_add or db_connection_names_to_remove:
+        #     raw_db_connections = agent.get("db_connection_names", []) or []
+        #     if isinstance(raw_db_connections, str):
+        #         raw_db_connections = json.loads(raw_db_connections)
+        #     current_db_connections = set(raw_db_connections)
+        #     if db_connection_names_to_add:
+        #         current_db_connections.update(db_connection_names_to_add)
+        #         log.info(f"Adding {len(db_connection_names_to_add)} DB connections to agent {agentic_application_id}")
+        #     if db_connection_names_to_remove:
+        #         current_db_connections.difference_update(db_connection_names_to_remove)
+        #         log.info(f"Removing {len(db_connection_names_to_remove)} DB connections from agent {agentic_application_id}")
+        #     agent['db_connection_names'] = json.dumps(list(current_db_connections))
+        # elif 'db_connection_names' in agent and agent['db_connection_names'] is not None:
+        #     # Serialize existing db_connection_names if not being modified
+        #     if isinstance(agent['db_connection_names'], list):
+        #         agent['db_connection_names'] = json.dumps(agent['db_connection_names'])
+        # Serialize existing db_connection_names (passthrough only, no add/remove)
+        if 'db_connection_names' in agent and agent['db_connection_names'] is not None:
+            if isinstance(agent['db_connection_names'], list):
+                agent['db_connection_names'] = json.dumps(agent['db_connection_names'])
+        
+        success = await self._update_agent_data_util(agent_data=agent, agentic_application_id=agentic_application_id, tool_versions=tool_versions)
         
         # Handle knowledgebase updates
         if success and self.knowledgebase_service:
@@ -6248,139 +8014,6 @@ class AgentService:
             except Exception as e:
                 log.warning(f"Failed to update knowledgebases for agent {agentic_application_id}: {e}")
         
-        # Cascade public/sharing to NEWLY ADDED tools, MCP tools, and KBs
-        # This handles the case where agent is already public or shared and user swaps tools/KBs
-        if success and not is_meta_agent:
-            effective_is_public = is_public if is_public is not None else current_is_public
-            
-            # Determine which tools/KBs were newly added
-            newly_added_tool_ids = set()
-            if associated_ids:
-                # Full replacement: new tools = final set minus what was there before
-                old_tools_set = set(tools_id_raw if isinstance(tools_id_raw, list) else json.loads(tools_id_raw)) if tools_id_raw else set()
-                newly_added_tool_ids = set(associated_ids) - old_tools_set
-            elif associated_ids_to_add:
-                newly_added_tool_ids = set(associated_ids_to_add)
-            
-            newly_added_kb_ids = set(knowledgebase_ids_to_add) if knowledgebase_ids_to_add else set()
-            
-            if newly_added_tool_ids or newly_added_kb_ids:
-                # Gather info for newly added tools
-                new_tools_info = []
-                new_mcp_tools_info = []
-                for tool_id in newly_added_tool_ids:
-                    if tool_id.startswith("mcp_"):
-                        mcp_tool_data = await self.mcp_tool_service.get_mcp_tool(tool_id=tool_id)
-                        if mcp_tool_data:
-                            new_mcp_tools_info.append({
-                                'tool_id': mcp_tool_data[0]['tool_id'],
-                                'tool_name': mcp_tool_data[0].get('tool_name', ''),
-                                'department_name': mcp_tool_data[0].get('department_name', agent.get('department_name', ''))
-                            })
-                    else:
-                        tool_data = await self.tool_service.get_tool(tool_id=tool_id)
-                        if tool_data:
-                            new_tools_info.append({
-                                'tool_id': tool_data[0]['tool_id'],
-                                'tool_name': tool_data[0].get('tool_name', ''),
-                                'department_name': tool_data[0].get('department_name', agent.get('department_name', ''))
-                            })
-                
-                # Gather info for newly added KBs
-                new_kbs_info = []
-                for kb_id in newly_added_kb_ids:
-                    try:
-                        kb_record = await self.knowledgebase_service.knowledgebase_repo.get_knowledgebase_by_id(kb_id)
-                        if kb_record:
-                            new_kbs_info.append({
-                                'kb_id': kb_id,
-                                'kb_name': kb_record.get('knowledgebase_name', ''),
-                                'department_name': kb_record.get('department_name', agent.get('department_name', ''))
-                            })
-                    except Exception:
-                        pass
-                
-                # If agent is public, make newly added items public
-                if effective_is_public:
-                    for tool in new_tools_info:
-                        try:
-                            await self.tool_service.tool_repo.update_tool_record({"is_public": True}, tool['tool_id'])
-                            log.info(f"Made newly added tool '{tool['tool_name']}' public (agent is public)")
-                        except Exception as e:
-                            log.warning(f"Failed to make newly added tool '{tool['tool_id']}' public: {e}")
-                    
-                    for mcp_tool in new_mcp_tools_info:
-                        try:
-                            await self.mcp_tool_service.mcp_tool_repo.update_mcp_tool_record({"is_public": True}, mcp_tool['tool_id'])
-                            log.info(f"Made newly added MCP tool '{mcp_tool['tool_name']}' public (agent is public)")
-                        except Exception as e:
-                            log.warning(f"Failed to make newly added MCP tool '{mcp_tool['tool_id']}' public: {e}")
-                    
-                    for kb in new_kbs_info:
-                        try:
-                            await self.knowledgebase_service.knowledgebase_repo.update_kb_visibility(kb['kb_id'], True)
-                            log.info(f"Made newly added KB '{kb['kb_name']}' public (agent is public)")
-                        except Exception as e:
-                            log.warning(f"Failed to make newly added KB '{kb['kb_id']}' public: {e}")
-                
-                # If agent is shared with departments, share newly added items too
-                elif not effective_is_public and self.agent_sharing_repo:
-                    try:
-                        shared_depts_info = await self.agent_sharing_repo.get_shared_departments_for_agent(agentic_application_id)
-                        shared_depts = [d['target_department'] for d in shared_depts_info] if isinstance(shared_depts_info, list) and shared_depts_info and isinstance(shared_depts_info[0], dict) else list(shared_depts_info) if shared_depts_info else []
-                        
-                        if shared_depts:
-                            agent_department = agent.get('department_name', '')
-                            
-                            # Share newly added regular tools with departments
-                            if new_tools_info and self.tool_service.tool_sharing_repo:
-                                for tool in new_tools_info:
-                                    for dept in shared_depts:
-                                        try:
-                                            await self.tool_service.tool_sharing_repo.share_tool_with_department(
-                                                tool_id=tool['tool_id'],
-                                                tool_name=tool['tool_name'],
-                                                source_department=tool.get('department_name', agent_department),
-                                                target_department=dept,
-                                                shared_by=created_by or ''
-                                            )
-                                        except Exception as e:
-                                            log.warning(f"Failed to share newly added tool '{tool['tool_id']}' with dept '{dept}': {e}")
-                            
-                            # Share newly added MCP tools with departments
-                            if new_mcp_tools_info and self.mcp_tool_service.mcp_tool_sharing_repo:
-                                for mcp_tool in new_mcp_tools_info:
-                                    for dept in shared_depts:
-                                        try:
-                                            await self.mcp_tool_service.mcp_tool_sharing_repo.share_mcp_tool_with_department(
-                                                tool_id=mcp_tool['tool_id'],
-                                                tool_name=mcp_tool['tool_name'],
-                                                source_department=mcp_tool.get('department_name', agent_department),
-                                                target_department=dept,
-                                                shared_by=created_by or ''
-                                            )
-                                        except Exception as e:
-                                            log.warning(f"Failed to share newly added MCP tool '{mcp_tool['tool_id']}' with dept '{dept}': {e}")
-                            
-                            # Share newly added KBs with departments
-                            if new_kbs_info and self.knowledgebase_service and self.knowledgebase_service.kb_sharing_repo:
-                                for kb in new_kbs_info:
-                                    for dept in shared_depts:
-                                        try:
-                                            await self.knowledgebase_service.kb_sharing_repo.share_kb_with_department(
-                                                knowledgebase_id=kb['kb_id'],
-                                                knowledgebase_name=kb['kb_name'],
-                                                source_department=kb.get('department_name', agent_department),
-                                                target_department=dept,
-                                                shared_by=created_by or ''
-                                            )
-                                        except Exception as e:
-                                            log.warning(f"Failed to share newly added KB '{kb['kb_id']}' with dept '{dept}': {e}")
-                            
-                            log.info(f"Cascaded sharing to newly added items for agent '{agentic_application_id}' across {len(shared_depts)} departments")
-                    except Exception as e:
-                        log.warning(f"Failed to cascade sharing to newly added items: {e}")
-        
         if success:
             log.info(f"Successfully updated Agentic Application with ID: {agentic_application_id}.")
             status = {"message": f"Successfully updated Agent: {agent['agentic_application_name']}.", "is_update": True}
@@ -6390,11 +8023,88 @@ class AgentService:
         
         if tag_status:
             status['tag_update_status'] = tag_status
-        if sharing_update_status:
-            status['sharing_update_status'] = sharing_update_status
-        if is_public_changed:
-            status['is_public'] = is_public
         return status
+
+    async def update_agent_sharing(
+        self,
+        agent_id: str,
+        user_email: str,
+        department_name: str,
+        is_public: bool = None,
+        shared_with_departments: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Updates the visibility (is_public) and/or department sharing for an agent.
+
+        Args:
+            agent_id: The agent ID (agentic_application_id).
+            user_email: The email of the user making the update.
+            department_name: The department of the user.
+            is_public: If provided, update the is_public flag.
+            shared_with_departments: If provided, replace the shared departments list.
+
+        Returns:
+            Dict with update results.
+        """
+        # Verify agent exists and belongs to user's department
+        agent_records = await self.agent_repo.get_agent_record(agentic_application_id=agent_id)
+        if not agent_records:
+            raise HTTPException(status_code=404, detail=f"Agent not found with ID: {agent_id}")
+
+        agent = agent_records[0]
+        if agent.get("department_name") != department_name:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Agent '{agent_id}' belongs to department '{agent.get('department_name')}', not '{department_name}'. Only the owning department can update sharing settings."
+            )
+
+        result = {"agent_id": agent_id, "agent_name": agent.get("agentic_application_name", "")}
+
+        # Determine effective is_public value
+        effective_is_public = is_public if is_public is not None else agent.get("is_public", False)
+
+        # Validate: is_public and shared_with_departments are mutually exclusive
+        if effective_is_public and shared_with_departments:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot set both 'is_public' and 'shared_with_departments'. A public agent is already accessible to all departments."
+            )
+
+        # Update is_public if provided
+        if is_public is not None:
+            updated = await self.agent_repo.update_agent_visibility(agent_id, is_public)
+            result["is_public_updated"] = updated
+            result["is_public"] = is_public
+
+            # If setting to public, remove all existing department sharing
+            if is_public and self.agent_sharing_repo:
+                removed = await self.agent_sharing_repo.unshare_agent_from_all_departments(agent_id)
+                if removed > 0:
+                    log.info(f"Removed {removed} department sharing records for agent '{agent_id}' since it is now public.")
+                    result["sharing"] = {"message": f"All department sharing removed (agent is now public). {removed} records cleared.", "success_count": 0}
+
+        # Update shared departments if provided
+        if shared_with_departments is not None and self.agent_sharing_repo:
+            agent_name = agent.get("agentic_application_name", "")
+            source_department = agent.get("department_name", "")
+
+            # First, remove all existing sharing
+            await self.agent_sharing_repo.unshare_agent_from_all_departments(agent_id)
+
+            # Then share with the new list of departments
+            if shared_with_departments:
+                sharing_result = await self.agent_sharing_repo.share_agent_with_multiple_departments(
+                    agentic_application_id=agent_id,
+                    agentic_application_name=agent_name,
+                    source_department=source_department,
+                    target_departments=shared_with_departments,
+                    shared_by=user_email
+                )
+                result["sharing"] = sharing_result
+            else:
+                result["sharing"] = {"message": "All department sharing removed", "success_count": 0}
+
+        return result
 
     # --- Agent Deletion Operations ---
 
@@ -6443,7 +8153,7 @@ class AgentService:
         # Get all meta-agents and planner-meta-agents
         meta_agents = await self.agent_repo.get_all_agent_records(agentic_application_type=self.meta_type_templates)
 
-        pipelines = await self.agent_pipeline_mapping_repo.get_agent_pipeline_mappings_record(agentic_application_id=agentic_application_id)
+        workflows = await self.agent_workflow_mapping_repo.get_agent_workflow_mappings_record(agentic_application_id=agentic_application_id)
 
         dependent_meta_agents_details = []
 
@@ -6457,15 +8167,15 @@ class AgentService:
                     "agentic_application_created_by": meta_agent['created_by']
                 })
 
-        for pipeline in pipelines:
-            pipeline_id = pipeline.get('pipeline_id')
-            pipeline_name = pipeline.get('pipeline_name')
-            pipeline_created_by = pipeline.get('pipeline_created_by')
+        for workflow in workflows:
+            workflow_id = workflow.get('workflow_id')
+            workflow_name = workflow.get('workflow_name')
+            workflow_created_by = workflow.get('workflow_created_by')
 
             dependent_meta_agents_details.append({
-                "agentic_application_id": pipeline_id,
-                "agentic_application_name": pipeline_name + " PipeLine",
-                "agentic_application_created_by": pipeline_created_by
+                "agentic_application_id": workflow_id,
+                "agentic_application_name": workflow_name + " Workflow",
+                "agentic_application_created_by": workflow_created_by
             })
 
         if dependent_meta_agents_details:
@@ -6589,7 +8299,8 @@ class AgentService:
                                            workflow_description: str,
                                            agent_type: str,
                                            associated_ids: List[str],
-                                           model_name: str):
+                                           model_name: str,
+                                           db_connection_names: Optional[List[str]] = None):
         """
         Asynchronously generates a system prompt for an agent based on its type, associated IDs, and model.
         Args:
@@ -6599,6 +8310,7 @@ class AgentService:
             agent_type (str): The type of the agent (e.g., meta or tool-based).
             associated_ids (List[str]): List of IDs associated with the agent (either worker agent IDs or tool IDs).
             model_name (str): The name of the language model to use for prompt generation.
+            db_connection_names (List[str], optional): List of database connection names for DB agents.
         Returns:
             dict or str: The generated system prompt, or a dictionary containing an error message if validation fails.
         Raises:
@@ -6634,7 +8346,8 @@ class AgentService:
                 agent_goal=agent_goal,
                 workflow_description=workflow_description,
                 tool_or_worker_agents_prompt=tool_or_worker_agents_prompt,
-                llm=llm
+                llm=llm,
+                db_connection_names=db_connection_names
             )
             log.info("Successfully generated system prompt.")
             return system_prompt
@@ -6644,7 +8357,7 @@ class AgentService:
             return {"error": f"Failed to generate system prompt: {str(e)}"}
 
     # Method to generate system prompt for agent, which must be implemented in the subclasses of respective agent templates
-    async def _generate_system_prompt(self, agent_name: str, agent_goal: str, workflow_description: str, tool_or_worker_agents_prompt: str, llm):
+    async def _generate_system_prompt(self, agent_name: str, agent_goal: str, workflow_description: str, tool_or_worker_agents_prompt: str, llm, db_connection_names: Optional[List[str]] = None):
         raise NotImplementedError(f"'_generate_system_prompt' method must be implemented in the subclasses of respective agent templates.")
 
     async def _get_welcome_message_for_agent(self,
@@ -6744,13 +8457,14 @@ class AgentService:
         """
         return await self.recycle_agent_repo.get_all_recycle_agent_records(department_name=department_name)
 
-    async def restore_agent(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None, department_name: str = None) -> Dict[str, Any]:
+    async def restore_agent(self, agentic_application_id: Optional[str] = None, agentic_application_name: Optional[str] = None, department_name: str = None, new_name: str = None) -> Dict[str, Any]:
         """
         Restores an agent from the recycle bin to the main agent table.
 
         Args:
             agentic_application_id (str, optional): The ID of the agent to restore.
             agentic_application_name (str, optional): The name of the agent to restore.
+            new_name (str, optional): New name to use if the original name conflicts with an active resource.
 
         Returns:
             dict: Status of the operation.
@@ -6770,6 +8484,48 @@ class AgentService:
                 "is_restored": False
             }
 
+        if new_name is not None and not new_name.strip():
+            return {
+                "message": "new_name cannot be empty or whitespace.",
+                "is_restored": False
+            }
+
+        effective_name = new_name.strip() if new_name else agent_data["agentic_application_name"]
+
+        # Check name conflict in active table
+        existing_agents = await self.agent_repo.get_agent_record(agentic_application_name=effective_name)
+        existing_agents = existing_agents or []
+        # Filter to same department if not super admin
+        if department_name:
+            existing_agents = [a for a in existing_agents if a.get("department_name") == (agent_data.get("department_name") or department_name)]
+        if existing_agents:
+            if not new_name:
+                conflicting = existing_agents[0]
+                log.warning(f"Agent restore conflict: name '{effective_name}' already active.")
+                return {
+                    "message": f"Cannot restore: an active agent named '{effective_name}' already exists. Provide a new name or delete the active one first.",
+                    "is_restored": False,
+                    "name_conflict": True,
+                    "conflicting_resource": {
+                        "agentic_application_id": conflicting.get("agentic_application_id"),
+                        "agentic_application_name": conflicting.get("agentic_application_name"),
+                        "created_by": conflicting.get("created_by"),
+                        "created_on": str(conflicting.get("created_on", ""))
+                    },
+                    "suggested_name": f"{agent_data['agentic_application_name']}_restored"
+                }
+            else:
+                log.warning(f"Agent restore conflict: new_name '{effective_name}' also already active.")
+                return {
+                    "message": f"The name '{effective_name}' is also already in use. Please choose a different name.",
+                    "is_restored": False,
+                    "name_conflict": True,
+                    "suggested_name": f"{agent_data['agentic_application_name']}_restored"
+                }
+
+        if new_name:
+            agent_data["agentic_application_name"] = new_name.strip()
+
         # Delete from recycle bin first
         delete_success = await self.recycle_agent_repo.delete_recycle_agent_record(agent_data['agentic_application_id'])
         if not delete_success:
@@ -6788,6 +8544,9 @@ class AgentService:
             if agent_data['agentic_application_type'] in self.meta_type_templates:
                 worker_agent_info = await self.get_agent(agentic_application_id=associated_id)
                 associated_created_by = worker_agent_info[0]["created_by"] if worker_agent_info else None
+            elif associated_id.startswith("mcp_"):
+                mcp_tool_info = await self.mcp_tool_service.get_mcp_tool(tool_id=associated_id)
+                associated_created_by = mcp_tool_info[0]["created_by"] if mcp_tool_info else None
             else:
                 tool_info = await self.tool_service.get_tool(tool_id=associated_id)
                 associated_created_by = tool_info[0]["created_by"] if tool_info else None
@@ -7771,7 +9530,6 @@ class ChatService:
 
                 # Segregate messages using the static method
                 data["executor_messages"] = await self.segregate_conversation_from_raw_chat_history_with_pretty_steps(data, agentic_application_id=agentic_application_id, session_id=session_id, role=role, department_name=department_name)
-
                 log.info(f"Previous conversation retrieved successfully for session ID: {session_id} and agent ID: {agentic_application_id}.")
                 return data
             except Exception as e:
@@ -8299,10 +10057,21 @@ class ChatService:
             pass
         response_time = None
         start_timestamp = None
+        token_usage = None
         for message in reversed(executor_messages):
             if message.type == "chat" and message.role == "response_time":
                 response_time = message.content[0].get("response_time")
                 start_timestamp = message.content[0].get("start_timestamp")
+                continue
+            if message.type == "chat" and message.role == "token_usage":
+                token_usage = message.content[0]
+                log.info(
+                    f"📊 [Segregate] token_usage sentinel found: "
+                    f"prompt={token_usage.get('prompt_tokens')}, "
+                    f"completion={token_usage.get('completion_tokens')}, "
+                    f"total={token_usage.get('total_tokens')}, "
+                    f"llm_calls={len(token_usage.get('llm_calls', []))}"
+                )
                 continue
             agent_steps.append(message)
             if message.type == "human" and hasattr(message, 'role') and message.role=="user_query":
@@ -8349,6 +10118,7 @@ class ChatService:
                         "final_response": final_response_content,
                         "response_time": response_time,
                         "start_timestamp": start_timestamp,
+                        "token_usage": token_usage,
                         "parts": parts_dict.get(agent_steps[0].id, [
                             {
                                 "type": "text",
@@ -8407,6 +10177,7 @@ class ChatService:
                         "final_response": agent_steps[0].content if (agent_steps[0].type == "ai") and ("tool_calls" not in agent_steps[0].additional_kwargs) and ("function_call" not in agent_steps[0].additional_kwargs) else "",
                         "response_time": response_time,
                         "start_timestamp": start_timestamp,
+                        "token_usage": token_usage,
                         "tools_used": tools_used,
                         "additional_details": agent_steps,
                         "parts": parts_dict.get(agent_steps[0].id, [
@@ -8734,6 +10505,16 @@ class ChatService:
             Dict containing both preference updates and conversation analysis results
         """
         try:
+            # Explicitly stamp session context so the background task's token-logging
+            # hook can attribute this LLM call to the correct agent and session.
+            # asyncio.create_task() copies the parent context at creation time, but that
+            # snapshot may be incomplete; setting here guarantees the values are present.
+            from telemetry_wrapper import SessionContext
+            SessionContext.set(
+                agent_id=agentic_application_id,
+                session_id=session_id,
+            )
+
             from src.inference.inference_utils import EpisodicMemoryManager
             preferences = await self.repo.get_agent_conversation_summary_with_preference(agentic_application_id=agentic_application_id, session_id= session_id)
             preferences_string = ""
@@ -9608,8 +11389,21 @@ class ChatService:
                         new_invocation["agent_steps"] += get_message_pretty_string(critic_response, current_msg["type"])
 
                     elif "canvas_parts" in state_delta:
-                        canvas_parts = state_delta.get("canvas_parts", {}).get("parts", [])
-                        canvas_parts = json.loads(canvas_parts)
+                        canvas_parts: str = state_delta.get("canvas_parts", {}).get("parts", [])
+
+                        try:
+                            canvas_parts.strip()
+                            if canvas_parts.startswith("```json"):
+                                canvas_parts = canvas_parts[7:-3]
+                            canvas_parts = json.loads(canvas_parts)
+                        except json.JSONDecodeError as e1:
+                            log.error(f"Error decoding canvas_parts JSON: {e1}")
+                            try:
+                                canvas_parts = ast.literal_eval(canvas_parts)
+                            except Exception as e2:
+                                log.error(f"Error literal evaluating canvas_parts: {e2}")
+                                canvas_parts = [{"type": "text", "data": {"content": canvas_parts}, "metadata": {"error1": str(e1), "error2": str(e2)}}]
+
                         new_invocation["parts"] = canvas_parts
                         for canvas_part in canvas_parts:
                             if canvas_part.get("type", None) != "text":
@@ -10733,52 +12527,56 @@ class VMManagementService:
             }
 
 
-# --- Pipeline Service ---
+# --- Workflow Service ---
 
-class PipelineService:
+class WorkflowService:
     """
-    Service layer for managing agent pipelines and their executions.
+    Service layer for managing agent workflows and their executions.
     Applies business rules and orchestrates repository calls.
     """
 
     def __init__(
         self,
-        pipeline_repo: PipelineRepository,
-        pipeline_run_repo: PipelineRunRepository,
-        pipeline_steps_repo: PipelineStepsRepository,
-        agent_pipeline_mapping_repo: AgentPipelineMappingRepository,
-        agent_service: AgentService
+        workflow_repo: WorkflowRepository,
+        workflow_run_repo: WorkflowRunRepository,
+        workflow_steps_repo: WorkflowStepsRepository,
+        agent_workflow_mapping_repo: AgentWorkflowMappingRepository,
+        agent_service: AgentService,
+        workflow_sharing_repo=None,
+        department_repo=None
     ):
-        self.pipeline_repo = pipeline_repo
-        self.pipeline_run_repo = pipeline_run_repo
-        self.pipeline_steps_repo = pipeline_steps_repo
-        self.agent_pipeline_mapping_repo = agent_pipeline_mapping_repo
+        self.workflow_repo = workflow_repo
+        self.workflow_run_repo = workflow_run_repo
+        self.workflow_steps_repo = workflow_steps_repo
+        self.agent_workflow_mapping_repo = agent_workflow_mapping_repo
         self.agent_service = agent_service
+        self.workflow_sharing_repo = workflow_sharing_repo
+        self.department_repo = department_repo
 
-    # --- Pipeline Run & Step Tracking (Business Logic) ---
+    # --- Workflow Run & Step Tracking (Business Logic) ---
 
-    async def create_pipeline_run(self, run_id: str, user_query: str, pipeline_id: str = None, session_id: str = None, status: str = "pending") -> bool:
+    async def create_workflow_run(self, run_id: str, user_query: str, workflow_id: str = None, session_id: str = None, status: str = "pending") -> bool:
         """
-        Creates a new pipeline run record.
+        Creates a new workflow run record.
 
         Args:
             run_id: Unique identifier for this run
             user_query: The user's input query
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
             session_id: The user session ID for conversation tracking
             status: Initial status (default: pending)
 
         Returns:
             bool: True if successful, False otherwise
         """
-        return await self.pipeline_run_repo.create_run(run_id, user_query, pipeline_id, session_id, status)
+        return await self.workflow_run_repo.create_run(run_id, user_query, workflow_id, session_id, status)
 
-    async def add_pipeline_step(self, run_id: str, step_order: int, agent_id: str, step_data: dict) -> bool:
+    async def add_workflow_step(self, run_id: str, step_order: int, agent_id: str, step_data: dict) -> bool:
         """
-        Adds a step record for a pipeline run.
+        Adds a step record for a workflow run.
 
         Args:
-            run_id: The pipeline run ID
+            run_id: The workflow run ID
             step_order: The order/sequence of this step
             agent_id: The agent ID that executed this step
             step_data: JSON data containing step execution details
@@ -10786,9 +12584,9 @@ class PipelineService:
         Returns:
             bool: True if successful, False otherwise
         """
-        return await self.pipeline_steps_repo.add_step(run_id, step_order, agent_id, step_data)
+        return await self.workflow_steps_repo.add_step(run_id, step_order, agent_id, step_data)
 
-    async def update_pipeline_run_status(self, run_id: str, status: str, final_response: Optional[str] = None, response_time: Optional[float] = None) -> bool:
+    async def update_workflow_run_status(self, run_id: str, status: str, final_response: Optional[str] = None, response_time: Optional[float] = None) -> bool:
         """
         Updates run status and optionally final response.
 
@@ -10801,11 +12599,11 @@ class PipelineService:
         Returns:
             bool: True if successful, False otherwise
         """
-        return await self.pipeline_run_repo.update_status(run_id, status, final_response, response_time)
+        return await self.workflow_run_repo.update_status(run_id, status, final_response, response_time)
 
-    async def get_pipeline_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def get_workflow_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """
-        Gets a pipeline run by ID.
+        Gets a workflow run by ID.
 
         Args:
             run_id: The run ID to retrieve
@@ -10813,109 +12611,122 @@ class PipelineService:
         Returns:
             Dict with run details or None if not found
         """
-        return await self.pipeline_run_repo.get_run(run_id)
+        return await self.workflow_run_repo.get_run(run_id)
 
-    async def get_pipeline_steps(self, run_id: str) -> List[Dict[str, Any]]:
+    async def get_workflow_steps(self, run_id: str) -> List[Dict[str, Any]]:
         """
-        Gets all steps for a pipeline run.
+        Gets all steps for a workflow run.
 
         Args:
-            run_id: The pipeline run ID
+            run_id: The workflow run ID
 
         Returns:
             List of step dictionaries ordered by step_order
         """
-        return await self.pipeline_steps_repo.get_steps_by_run(run_id)
+        return await self.workflow_steps_repo.get_steps_by_run(run_id)
 
     async def get_latest_step_order(self, run_id: str) -> int:
         """
-        Gets the latest step order for a pipeline run.
+        Gets the latest step order for a workflow run.
 
         Args:
-            run_id: The pipeline run ID
+            run_id: The workflow run ID
 
         Returns:
             int: The latest step order, or 0 if no steps exist
         """
-        return await self.pipeline_steps_repo.get_latest_step_order(run_id)
+        return await self.workflow_steps_repo.get_latest_step_order(run_id)
 
-    # --- Pipeline CRUD Operations ---
+    # --- Workflow CRUD Operations ---
 
-    async def create_pipeline(
+    async def create_workflow(
         self,
-        pipeline_name: str,
-        pipeline_description: str,
-        pipeline_definition: dict,
+        workflow_name: str,
+        workflow_description: str,
+        workflow_definition: dict,
         created_by: str,
-        department_name: str = None
+        department_name: str = None,
+        is_public: bool = False
     ) -> Dict[str, Any]:
         """
-        Creates a new pipeline after validating the definition.
+        Creates a new workflow after validating the definition.
 
         Args:
-            pipeline_name: Name of the pipeline
-            pipeline_description: Description of the pipeline
-            pipeline_definition: Graph definition with nodes and edges
+            workflow_name: Name of the workflow
+            workflow_description: Description of the workflow
+            workflow_definition: Graph definition with nodes and edges
             created_by: Email of the creator
-            department_name: Department name for the pipeline
+            department_name: Department name for the workflow
+            is_public: Whether the workflow should be publicly accessible
 
         Returns:
             dict: Status of the creation operation
         """
-        # Validate the pipeline definition
-        validation_result = await self._validate_pipeline_definition(pipeline_definition)
+        # Validate the workflow definition
+        validation_result = await self._validate_workflow_definition(workflow_definition)
         if not validation_result['is_valid']:
             return {
                 "message": validation_result['message'],
                 "is_created": False
             }
 
-        pipeline_id = "ppl_" + str(uuid.uuid4())
-        result = await self.pipeline_repo.insert_pipeline(
-            pipeline_id=pipeline_id,
-            pipeline_name=pipeline_name,
-            pipeline_description=pipeline_description,
-            pipeline_definition=pipeline_definition,
+        # Case-insensitive duplicate name check
+        if department_name and await self.workflow_repo.check_workflow_name_exists(
+            workflow_name=workflow_name, department_name=department_name
+        ):
+            return {
+                "message": f"A workflow with name '{workflow_name}' already exists in this department.",
+                "is_created": False
+            }
+
+        workflow_id = "wf_" + str(uuid.uuid4())
+        result = await self.workflow_repo.insert_workflow(
+            workflow_id=workflow_id,
+            workflow_name=workflow_name,
+            workflow_description=workflow_description,
+            workflow_definition=workflow_definition,
             created_by=created_by,
-            department_name=department_name
+            department_name=department_name,
+            is_public=is_public
         )
 
         if result.get("success"):
-            # Create agent-pipeline mappings for all agent nodes
-            await self._create_agent_pipeline_mappings(
-                pipeline_id=pipeline_id,
-                pipeline_definition=pipeline_definition,
-                pipeline_created_by=created_by
+            # Create agent-workflow mappings for all agent nodes
+            await self._create_agent_workflow_mappings(
+                workflow_id=workflow_id,
+                workflow_definition=workflow_definition,
+                workflow_created_by=created_by
             )
+
             return {
-                "message": f"Pipeline '{pipeline_name}' created successfully.",
-                "pipeline_id": pipeline_id,
+                "message": f"Workflow '{workflow_name}' created successfully.",
+                "workflow_id": workflow_id,
                 "is_created": True
             }
         else:
             # Handle duplicate name error specifically
-            error_message = result.get("message", f"Failed to create pipeline '{pipeline_name}'.")
+            error_message = result.get("message", f"Failed to create workflow '{workflow_name}'.")
             return {
                 "message": error_message,
                 "is_created": False
             }
 
-    async def _create_agent_pipeline_mappings(
+    async def _create_agent_workflow_mappings(
         self,
-        pipeline_id: str,
-        pipeline_definition: dict,
-        pipeline_created_by: str
+        workflow_id: str,
+        workflow_definition: dict,
+        workflow_created_by: str
     ) -> None:
         """
-        Creates agent-pipeline mappings for all agent nodes in the pipeline definition.
+        Creates agent-workflow mappings for all agent nodes in the workflow definition.
 
         Args:
-            pipeline_id: The ID of the pipeline
-            pipeline_definition: The pipeline definition containing nodes
-            pipeline_created_by: Email of the pipeline creator
+            workflow_id: The ID of the workflow
+            workflow_definition: The workflow definition containing nodes
+            workflow_created_by: Email of the workflow creator
         """
         try:
-            nodes = pipeline_definition.get('nodes', [])
+            nodes = workflow_definition.get('nodes', [])
             agent_nodes = [n for n in nodes if n.get('node_type') == 'agent']
             
             for node in agent_nodes:
@@ -10930,48 +12741,132 @@ class PipelineService:
                         agent_created_by = agent_record.get('created_by', '') if agent_record else ''
                     
                     # Create the mapping
-                    await self.agent_pipeline_mapping_repo.assign_agent_to_pipeline_record(
+                    await self.agent_workflow_mapping_repo.assign_agent_to_workflow_record(
                         agentic_application_id=agent_id,
-                        pipeline_id=pipeline_id,
+                        workflow_id=workflow_id,
                         agent_created_by=agent_created_by,
-                        pipeline_created_by=pipeline_created_by
+                        workflow_created_by=workflow_created_by
                     )
-                    log.info(f"Created agent-pipeline mapping: agent '{agent_id}' -> pipeline '{pipeline_id}'")
+                    log.info(f"Created agent-workflow mapping: agent '{agent_id}' -> workflow '{workflow_id}'")
         except Exception as e:
-            log.error(f"Error creating agent-pipeline mappings for pipeline '{pipeline_id}': {e}")
+            log.error(f"Error creating agent-workflow mappings for workflow '{workflow_id}': {e}")
 
-    async def get_all_pipelines(
+    async def update_workflow_sharing(
         self,
-        created_by: Optional[str] = None,
-        is_active: Optional[bool] = None,
-        department_name: str = None
-    ) -> List[Dict[str, Any]]:
+        workflow_id: str,
+        user_email: str,
+        department_name: str,
+        is_public: bool = None,
+        shared_with_departments: List[str] = None
+    ) -> Dict[str, Any]:
         """
-        Retrieves all pipelines with optional filtering.
+        Updates the visibility (is_public) and/or department sharing for a workflow.
 
         Args:
-            created_by: Filter by creator email
-            is_active: Filter by active status
-            department_name: Filter by department name
+            workflow_id: The workflow ID.
+            user_email: The email of the user making the update.
+            department_name: The department of the user.
+            is_public: If provided, update the is_public flag.
+            shared_with_departments: If provided, replace the shared departments list.
 
         Returns:
-            List of pipeline dictionaries
+            Dict with update results.
         """
-        return await self.pipeline_repo.get_all_pipelines(created_by=created_by, is_active=is_active, department_name=department_name)
+        # Verify workflow exists and belongs to user's department
+        workflow = await self.workflow_repo.get_workflow(workflow_id)
+        if not workflow:
+            raise HTTPException(status_code=404, detail=f"Workflow not found with ID: {workflow_id}")
 
-    async def get_pipeline_by_name(self, pipeline_name: str) -> Optional[Dict[str, Any]]:
+        if workflow.get("department_name") != department_name:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Workflow '{workflow_id}' belongs to department '{workflow.get('department_name')}', not '{department_name}'. Only the owning department can update sharing settings."
+            )
+
+        result = {"workflow_id": workflow_id, "workflow_name": workflow.get("workflow_name", "")}
+
+        # Determine effective is_public value
+        effective_is_public = is_public if is_public is not None else workflow.get("is_public", False)
+
+        # Validate: is_public and shared_with_departments are mutually exclusive
+        if effective_is_public and shared_with_departments:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot set both 'is_public' and 'shared_with_departments'. A public workflow is already accessible to all departments."
+            )
+
+        # Update is_public if provided
+        if is_public is not None:
+            updated = await self.workflow_repo.update_workflow_visibility(workflow_id, is_public)
+            result["is_public_updated"] = updated
+            result["is_public"] = is_public
+
+            # If setting to public, remove all existing department sharing
+            if is_public and self.workflow_sharing_repo:
+                removed = await self.workflow_sharing_repo.unshare_workflow_from_all_departments(workflow_id)
+                if removed > 0:
+                    log.info(f"Removed {removed} department sharing records for workflow '{workflow_id}' since it is now public.")
+                    result["sharing"] = {"message": f"All department sharing removed (workflow is now public). {removed} records cleared.", "success_count": 0}
+
+        # Update shared departments if provided
+        if shared_with_departments is not None and self.workflow_sharing_repo:
+            workflow_name = workflow.get("workflow_name", "")
+            source_department = workflow.get("department_name", "")
+
+            # First, remove all existing sharing
+            await self.workflow_sharing_repo.unshare_workflow_from_all_departments(workflow_id)
+
+            # Then share with the new list of departments
+            if shared_with_departments:
+                sharing_result = await self.workflow_sharing_repo.share_workflow_with_multiple_departments(
+                    workflow_id=workflow_id,
+                    workflow_name=workflow_name,
+                    source_department=source_department,
+                    target_departments=shared_with_departments,
+                    shared_by=user_email
+                )
+                result["sharing"] = sharing_result
+            else:
+                result["sharing"] = {"message": "All department sharing removed", "success_count": 0}
+
+        return result
+
+    async def get_system_workflows(self, workflow_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves a single pipeline by its exact name.
+        Retrieves all workflows that were onboarded by the system (created_by = 'system').
+        Optionally filters by workflow name.
 
         Args:
-            pipeline_name: The exact pipeline name to look up
+            workflow_name (str, optional): If provided, returns only workflows matching this name.
 
         Returns:
-            Pipeline dictionary if found, None otherwise
+            list: A list of system-onboarded workflows, represented as dictionaries.
         """
-        return await self.pipeline_repo.get_pipeline_by_name(pipeline_name=pipeline_name)
+        try:
+            workflows = await self.workflow_repo.get_all_workflows(created_by="system")
 
-    async def get_pipelines_by_search_or_page(
+            if workflow_name:
+                workflows = [p for p in workflows if p.get('workflow_name', '').lower() == workflow_name.lower()]
+
+            log.info(f"Retrieved {len(workflows)} system-onboarded workflows")
+            return workflows
+        except Exception as e:
+            log.error(f"Error retrieving system workflows: {e}")
+            return []
+
+    async def get_workflow_by_name(self, workflow_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a single workflow by its exact name.
+
+        Args:
+            workflow_name: The exact workflow name to look up
+
+        Returns:
+            Workflow dictionary if found, None otherwise
+        """
+        return await self.workflow_repo.get_workflow_by_name(workflow_name=workflow_name)
+
+    async def get_workflows_by_search_or_page(
         self,
         search_value: str = '',
         limit: int = 20,
@@ -10981,10 +12876,11 @@ class PipelineService:
         department_name: str = None
     ) -> Dict[str, Any]:
         """
-        Retrieves pipelines with pagination and search filtering.
+        Retrieves workflows with pagination and search filtering.
+        Includes shared and public workflows when department_name is specified.
 
         Args:
-            search_value: Search string to match against pipeline name
+            search_value: Search string to match against workflow name
             limit: Number of results per page
             page: Page number (1-indexed)
             created_by: Filter by creator email
@@ -10992,185 +12888,344 @@ class PipelineService:
             department_name: Filter by department name
 
         Returns:
-            dict: A dictionary containing total_count and list of pipeline details
+            dict: A dictionary containing total_count and list of workflow details
         """
-        total_count = await self.pipeline_repo.get_total_pipeline_count(
+        # Get shared workflow IDs for this department
+        shared_workflow_ids = []
+        if department_name and self.workflow_sharing_repo:
+            try:
+                shared_workflow_ids = await self.workflow_sharing_repo.get_workflows_shared_with_department(department_name)
+            except Exception as e:
+                log.warning(f"Failed to get shared workflows for department '{department_name}': {e}")
+
+        total_count = await self.workflow_repo.get_total_workflow_count(
             search_value=search_value,
             created_by=created_by,
             is_active=is_active,
-            department_name=department_name
+            department_name=department_name,
+            shared_workflow_ids=shared_workflow_ids
         )
         
-        pipeline_records = await self.pipeline_repo.get_pipelines_by_search_or_page(
+        workflow_records = await self.workflow_repo.get_workflows_by_search_or_page(
             search_value=search_value,
             limit=limit,
             page=page,
             created_by=created_by,
             is_active=is_active,
-            department_name=department_name
+            department_name=department_name,
+            shared_workflow_ids=shared_workflow_ids
         )
         
-        log.info(f"Retrieved {len(pipeline_records)} pipelines with search '{search_value}' on page {page}.")
+        log.info(f"Retrieved {len(workflow_records)} workflows with search '{search_value}' on page {page}.")
         return {
             "total_count": total_count,
-            "details": pipeline_records
+            "details": workflow_records
         }
 
-    async def get_pipeline(self, pipeline_id: str, department_name: str = None) -> Optional[Dict[str, Any]]:
+    async def get_workflow(self, workflow_id: str, department_name: str = None) -> Optional[Dict[str, Any]]:
         """
-        Retrieves a single pipeline by ID.
+        Retrieves a single workflow by ID.
+        Includes workflows that are: owned by department, public, OR shared with the department.
 
         Args:
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             department_name: Filter by department name
 
         Returns:
-            Pipeline dictionary or None
+            Workflow dictionary or None
         """
-        return await self.pipeline_repo.get_pipeline(pipeline_id, department_name=department_name)
+        # First try to get workflow (own department or public)
+        result = await self.workflow_repo.get_workflow(workflow_id, department_name=department_name)
 
-    async def update_pipeline(
+        # If not found and department specified, check if workflow is shared with this department
+        if not result and department_name and self.workflow_sharing_repo:
+            try:
+                is_shared = await self.workflow_sharing_repo.is_workflow_shared_with_department(workflow_id, department_name)
+                if is_shared:
+                    # Get the workflow without department filter
+                    result = await self.workflow_repo.get_workflow(workflow_id)
+            except Exception as e:
+                log.warning(f"Failed to check workflow sharing for '{workflow_id}': {e}")
+
+        return result
+
+    async def update_workflow(
         self,
-        pipeline_id: str,
-        pipeline_name: Optional[str] = None,
-        pipeline_description: Optional[str] = None,
-        pipeline_definition: Optional[dict] = None,
+        workflow_id: str,
+        workflow_name: Optional[str] = None,
+        workflow_description: Optional[str] = None,
+        workflow_definition: Optional[dict] = None,
         is_active: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
-        Updates a pipeline.
+        Updates a workflow.
 
         Args:
-            pipeline_id: The pipeline ID to update
-            pipeline_name: New name (optional)
-            pipeline_description: New description (optional)
-            pipeline_definition: New definition (optional)
+            workflow_id: The workflow ID to update
+            workflow_name: New name (optional)
+            workflow_description: New description (optional)
+            workflow_definition: New definition (optional)
             is_active: New active status (optional)
 
         Returns:
             dict: Status of the update operation
         """
-        # Check if pipeline exists
-        existing = await self.pipeline_repo.get_pipeline(pipeline_id)
+        # Check if workflow exists
+        existing = await self.workflow_repo.get_workflow(workflow_id)
         if not existing:
             return {
-                "message": f"Pipeline '{pipeline_id}' not found.",
+                "message": f"Workflow '{workflow_id}' not found.",
                 "is_updated": False
             }
 
         # Validate definition if provided
-        if pipeline_definition:
-            validation_result = await self._validate_pipeline_definition(pipeline_definition)
+        if workflow_definition:
+            validation_result = await self._validate_workflow_definition(workflow_definition)
             if not validation_result['is_valid']:
                 return {
                     "message": validation_result['message'],
                     "is_updated": False
                 }
 
-        result = await self.pipeline_repo.update_pipeline(
-            pipeline_id=pipeline_id,
-            pipeline_name=pipeline_name,
-            pipeline_description=pipeline_description,
-            pipeline_definition=pipeline_definition,
+        result = await self.workflow_repo.update_workflow(
+            workflow_id=workflow_id,
+            workflow_name=workflow_name,
+            workflow_description=workflow_description,
+            workflow_definition=workflow_definition,
             is_active=is_active
         )
 
         if result.get("success"):
-            # If pipeline_definition was updated, refresh agent-pipeline mappings
-            if pipeline_definition:
-                pipeline_created_by = existing.get('created_by', '')
-                await self._update_agent_pipeline_mappings(
-                    pipeline_id=pipeline_id,
-                    pipeline_definition=pipeline_definition,
-                    pipeline_created_by=pipeline_created_by
+            # If workflow_definition was updated, refresh agent-workflow mappings
+            if workflow_definition:
+                workflow_created_by = existing.get('created_by', '')
+                await self._update_agent_workflow_mappings(
+                    workflow_id=workflow_id,
+                    workflow_definition=workflow_definition,
+                    workflow_created_by=workflow_created_by
                 )
             return {
-                "message": f"Pipeline '{pipeline_id}' updated successfully.",
+                "message": f"Workflow '{workflow_id}' updated successfully.",
                 "is_updated": True
             }
         else:
             # Handle specific error messages (e.g., duplicate name)
-            error_message = result.get("message", f"Failed to update pipeline '{pipeline_id}'.")
+            error_message = result.get("message", f"Failed to update workflow '{workflow_id}'.")
             return {
                 "message": error_message,
                 "is_updated": False
             }
 
-    async def _update_agent_pipeline_mappings(
+    async def _update_agent_workflow_mappings(
         self,
-        pipeline_id: str,
-        pipeline_definition: dict,
-        pipeline_created_by: str
+        workflow_id: str,
+        workflow_definition: dict,
+        workflow_created_by: str
     ) -> None:
         """
-        Updates agent-pipeline mappings when a pipeline definition is updated.
+        Updates agent-workflow mappings when a workflow definition is updated.
         Removes old mappings and creates new ones based on the updated definition.
 
         Args:
-            pipeline_id: The ID of the pipeline
-            pipeline_definition: The updated pipeline definition containing nodes
-            pipeline_created_by: Email of the pipeline creator
+            workflow_id: The ID of the workflow
+            workflow_definition: The updated workflow definition containing nodes
+            workflow_created_by: Email of the workflow creator
         """
         try:
-            # Remove existing mappings for this pipeline
-            await self.agent_pipeline_mapping_repo.remove_agent_from_pipeline_record(pipeline_id=pipeline_id)
-            log.info(f"Removed existing agent-pipeline mappings for pipeline '{pipeline_id}'")
+            # Remove existing mappings for this workflow
+            await self.agent_workflow_mapping_repo.remove_agent_from_workflow_record(workflow_id=workflow_id)
+            log.info(f"Removed existing agent-workflow mappings for workflow '{workflow_id}'")
             
             # Create new mappings based on updated definition
-            await self._create_agent_pipeline_mappings(
-                pipeline_id=pipeline_id,
-                pipeline_definition=pipeline_definition,
-                pipeline_created_by=pipeline_created_by
+            await self._create_agent_workflow_mappings(
+                workflow_id=workflow_id,
+                workflow_definition=workflow_definition,
+                workflow_created_by=workflow_created_by
             )
-            log.info(f"Recreated agent-pipeline mappings for pipeline '{pipeline_id}'")
+            log.info(f"Recreated agent-workflow mappings for workflow '{workflow_id}'")
         except Exception as e:
-            log.error(f"Error updating agent-pipeline mappings for pipeline '{pipeline_id}': {e}")
+            log.error(f"Error updating agent-workflow mappings for workflow '{workflow_id}': {e}")
 
-    async def delete_pipeline(self, pipeline_id: str) -> Dict[str, Any]:
+    async def delete_workflow(self, workflow_id: str) -> Dict[str, Any]:
         """
-        Deletes a pipeline.
+        Deletes a workflow.
 
         Args:
-            pipeline_id: The pipeline ID to delete
+            workflow_id: The workflow ID to delete
 
         Returns:
             dict: Status of the deletion operation
         """
-        success = await self.pipeline_repo.delete_pipeline(pipeline_id)
+        success = await self.workflow_repo.delete_workflow(workflow_id)
 
         if success:
+            # Also clean up sharing records
+            if self.workflow_sharing_repo:
+                try:
+                    await self.workflow_sharing_repo.unshare_workflow_from_all_departments(workflow_id)
+                except Exception as e:
+                    log.warning(f"Failed to clean up workflow sharing records: {e}")
             return {
-                "message": f"Pipeline '{pipeline_id}' deleted successfully.",
+                "message": f"Workflow '{workflow_id}' deleted successfully.",
                 "is_deleted": True
             }
         else:
             return {
-                "message": f"Pipeline '{pipeline_id}' not found or deletion failed.",
+                "message": f"Workflow '{workflow_id}' not found or deletion failed.",
                 "is_deleted": False
             }
 
-    # --- Pipeline Validation ---
+    # --- Workflow Sharing Operations ---
 
-    async def _validate_pipeline_definition(self, pipeline_definition: dict) -> Dict[str, Any]:
+    async def update_workflow_sharing(
+        self,
+        workflow_id: str,
+        user_email: str,
+        department_name: str,
+        is_public: bool = None,
+        shared_with_departments: List[str] = None
+    ) -> Dict[str, Any]:
         """
-        Validates a pipeline definition based on the updated schema.
+        Updates the sharing settings for a workflow.
 
         Args:
-            pipeline_definition: The definition to validate
+            workflow_id: The workflow ID
+            user_email: The user performing the action
+            department_name: The user's department
+            is_public: Whether to make the workflow public
+            shared_with_departments: List of departments to share with
+
+        Returns:
+            dict: Result of the sharing update
+        """
+        # Get the workflow
+        workflow = await self.workflow_repo.get_workflow(workflow_id)
+        if not workflow:
+            return {"error": f"Workflow '{workflow_id}' not found.", "success": False}
+
+        # Verify the user's department owns the workflow
+        workflow_dept = workflow.get('department_name', 'General')
+        if department_name and workflow_dept != department_name:
+            return {"error": "You can only update sharing for workflows in your own department.", "success": False}
+
+        # Validate mutual exclusivity
+        effective_is_public = is_public if is_public is not None else workflow.get('is_public', False)
+        if effective_is_public and shared_with_departments:
+            return {"error": "Cannot set both 'is_public' and 'shared_with_departments'.", "success": False}
+
+        result = {}
+
+        # Update is_public if changed
+        if is_public is not None:
+            await self.workflow_repo.update_workflow_visibility(workflow_id, is_public)
+            result["is_public"] = is_public
+            log.info(f"Updated workflow '{workflow_id}' visibility to is_public={is_public}")
+            # If making public, remove all department-specific sharing
+            if is_public and self.workflow_sharing_repo:
+                removed = await self.workflow_sharing_repo.unshare_workflow_from_all_departments(workflow_id)
+                result["removed_sharing_count"] = removed
+
+        # Update department sharing
+        if shared_with_departments is not None and self.workflow_sharing_repo:
+            workflow_name = workflow.get('workflow_name', '')
+            source_dept = workflow.get('department_name', 'General')
+
+            # Validate departments
+            valid_depts = []
+            invalid_depts = []
+            if self.department_repo:
+                for dept_name in shared_with_departments:
+                    dept = await self.department_repo.get_department_by_name(dept_name)
+                    if dept:
+                        valid_depts.append(dept_name)
+                    else:
+                        invalid_depts.append(dept_name)
+            else:
+                valid_depts = shared_with_departments
+
+            # Clear existing and re-add
+            await self.workflow_sharing_repo.unshare_workflow_from_all_departments(workflow_id)
+            if valid_depts:
+                sharing_result = await self.workflow_sharing_repo.share_workflow_with_multiple_departments(
+                    workflow_id=workflow_id,
+                    workflow_name=workflow_name,
+                    source_department=source_dept,
+                    target_departments=valid_depts,
+                    shared_by=user_email
+                )
+                result["shared_with"] = valid_depts[:sharing_result.get("success_count", 0)]
+                result["failures"] = sharing_result.get("failures", [])
+            else:
+                result["shared_with"] = []
+
+            if invalid_depts:
+                result["invalid_departments"] = invalid_depts
+
+        result["success"] = True
+        return result
+
+    async def get_all_workflows(
+        self,
+        created_by: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        department_name: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves all workflows with optional filtering.
+        Includes workflows from own department + shared workflows + public workflows.
+
+        Args:
+            created_by: Filter by creator email
+            is_active: Filter by active status
+            department_name: Filter by department name
+
+        Returns:
+            List of workflow dictionaries
+        """
+        # Get shared workflow IDs for this department
+        shared_workflow_ids = []
+        if department_name and self.workflow_sharing_repo:
+            try:
+                shared_workflow_ids = await self.workflow_sharing_repo.get_workflows_shared_with_department(department_name)
+            except Exception as e:
+                log.warning(f"Failed to get shared workflows for department '{department_name}': {e}")
+
+        workflows = await self.workflow_repo.get_all_workflows(
+            created_by=created_by,
+            is_active=is_active,
+            department_name=department_name,
+            shared_workflow_ids=shared_workflow_ids
+        )
+
+        # Mark shared/public workflows from other departments
+        if department_name:
+            shared_set = set(shared_workflow_ids)
+            for p in workflows:
+                if p.get('department_name') != department_name:
+                    p['is_shared'] = True
+
+        return workflows
+
+    async def _validate_workflow_definition(self, workflow_definition: dict) -> Dict[str, Any]:
+        """
+        Validates a workflow definition based on the updated schema.
+
+        Args:
+            workflow_definition: The definition to validate
 
         Returns:
             dict: Validation result with 'is_valid' and 'message'
         """
-        nodes = pipeline_definition.get('nodes', [])
-        edges = pipeline_definition.get('edges', [])
+        nodes = workflow_definition.get('nodes', [])
+        edges = workflow_definition.get('edges', [])
 
         if not nodes:
-            return {"is_valid": False, "message": "Pipeline must have at least one node."}
+            return {"is_valid": False, "message": "Workflow must have at least one node."}
 
         # Check for input node
         input_nodes = [n for n in nodes if n.get('node_type') == 'input']
         if len(input_nodes) != 1:
-            return {"is_valid": False, "message": "Pipeline must have exactly one input node."}
+            return {"is_valid": False, "message": "Workflow must have exactly one input node."}
 
         # Check all agent nodes have valid agent_ids in their config
         agent_nodes = [n for n in nodes if n.get('node_type') == 'agent']
@@ -11214,22 +13269,22 @@ class PipelineService:
         if not input_edges:
             return {"is_valid": False, "message": "Input node must connect to at least one agent."}
 
-        return {"is_valid": True, "message": "Pipeline definition is valid."}
+        return {"is_valid": True, "message": "Workflow definition is valid."}
 
-    # --- Pipeline Conversation History ---
+    # --- Workflow Conversation History ---
 
-    async def get_pipeline_conversation_history(
+    async def get_workflow_conversation_history(
         self,
-        pipeline_id: str,
+        workflow_id: str,
         session_id: str,
         limit: int = 50,
         role: str = None
     ) -> List[Dict[str, Any]]:
         """
-        Gets the formatted conversation history for a pipeline session.
+        Gets the formatted conversation history for a workflow session.
 
         Args:
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
             session_id: The user session ID
             limit: Maximum number of conversations to return
             role: User role for determining response detail level
@@ -11238,15 +13293,15 @@ class PipelineService:
             List of formatted conversation dictionaries
         """
         # Get previous runs for this session
-        runs = await self.pipeline_run_repo.get_runs_by_session(pipeline_id, session_id, limit)
+        runs = await self.workflow_run_repo.get_runs_by_session(workflow_id, session_id, limit)
         
         conversations = []
         for run in runs:
             # Get steps for this run
-            steps = await self.pipeline_steps_repo.get_steps_by_run(run['id'])
+            steps = await self.workflow_steps_repo.get_steps_by_run(run['id'])
             
             # Format conversation entry
-            conversation = await self._format_pipeline_conversation(
+            conversation = await self._format_workflow_conversation(
                 run=run,
                 steps=steps,
                 role=role
@@ -11256,18 +13311,18 @@ class PipelineService:
         # Return in chronological order (oldest first)
         return list(reversed(conversations))
 
-    async def _format_pipeline_conversation(
+    async def _format_workflow_conversation(
         self,
         run: Dict[str, Any],
         steps: List[Dict[str, Any]],
         role: str = None
     ) -> Dict[str, Any]:
         """
-        Formats a single pipeline run into a conversation entry similar to agent response format.
+        Formats a single workflow run into a conversation entry similar to agent response format.
 
         Args:
-            run: The pipeline run record
-            steps: The pipeline steps for this run
+            run: The workflow run record
+            steps: The workflow steps for this run
             role: User role for determining response detail level
 
         Returns:
@@ -11376,7 +13431,7 @@ class PipelineService:
                 "final_response": final_response,
                 "tools_used": tools_used,
                 "additional_details": agent_steps_data,
-                "pipeline_steps": steps,
+                "workflow_steps": steps,
                 "parts": parts,
                 "show_canvas": show_canvas,
                 "response_time": response_time,
@@ -11387,20 +13442,20 @@ class PipelineService:
         
         return conversation
 
-    async def format_pipeline_response_with_history(
+    async def format_workflow_response_with_history(
         self,
         current_response: Dict[str, Any],
-        pipeline_id: str,
+        workflow_id: str,
         session_id: str,
         role: str = "user",
         response_time: float = None
     ) -> List[Dict[str, Any]]:
         """
-        Formats the current pipeline response and includes previous conversation history.
+        Formats the current workflow response and includes previous conversation history.
 
         Args:
-            current_response: The current pipeline execution response
-            pipeline_id: The pipeline definition ID
+            current_response: The current workflow execution response
+            workflow_id: The workflow definition ID
             session_id: The user session ID
             role: User role for determining response detail level
             response_time: Response time for current execution
@@ -11409,8 +13464,8 @@ class PipelineService:
             List of formatted conversations including history and current response
         """
         # Get previous conversation history
-        history = await self.get_pipeline_conversation_history(
-            pipeline_id=pipeline_id,
+        history = await self.get_workflow_conversation_history(
+            workflow_id=workflow_id,
             session_id=session_id,
             limit=49,  # Leave room for current response
             role=role
@@ -11442,7 +13497,7 @@ class PipelineService:
         #         "user_query": user_query,
         #         "final_response": final_response,
         #         "tools_used": {},
-        #         "pipeline_steps": executor_messages,
+        #         "workflow_steps": executor_messages,
         #         "additional_details": [],
         #         "parts": parts,
         #         "show_canvas": show_canvas,
@@ -11482,7 +13537,7 @@ class PipelineService:
                     "user_query": user_query,
                     "final_response": final_response,
                     "tools_used": {},
-                    "pipeline_steps": [],
+                    "workflow_steps": [],
                     "additional_details": [],
                     "parts": parts,
                     "show_canvas": show_canvas,
@@ -11495,16 +13550,16 @@ class PipelineService:
         
         return history
 
-    async def delete_pipeline_session(
+    async def delete_workflow_session(
         self,
-        pipeline_id: str,
+        workflow_id: str,
         session_id: str
     ) -> Dict[str, Any]:
         """
-        Deletes all pipeline run history for a given pipeline and session.
+        Deletes all workflow run history for a given workflow and session.
 
         Args:
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
             session_id: The user session ID
 
         Returns:
@@ -11512,54 +13567,54 @@ class PipelineService:
         """
         try:
             # First get all run IDs to delete their steps
-            run_ids = await self.pipeline_run_repo.get_run_ids_by_session(pipeline_id, session_id)
+            run_ids = await self.workflow_run_repo.get_run_ids_by_session(workflow_id, session_id)
             
             # Delete steps for each run
             for run_id in run_ids:
-                await self.pipeline_steps_repo.delete_steps_by_run(run_id)
+                await self.workflow_steps_repo.delete_steps_by_run(run_id)
             
             # Delete all runs for this session
-            success = await self.pipeline_run_repo.delete_runs_by_session(pipeline_id, session_id)
+            success = await self.workflow_run_repo.delete_runs_by_session(workflow_id, session_id)
             
             if success:
                 return {
                     "status": "success",
-                    "message": f"Pipeline history cleared for session '{session_id}'."
+                    "message": f"Workflow history cleared for session '{session_id}'."
                 }
             else:
                 return {
                     "status": "error",
-                    "message": f"Failed to clear pipeline history for session '{session_id}'."
+                    "message": f"Failed to clear workflow history for session '{session_id}'."
                 }
         except Exception as e:
-            log.error(f"Error deleting pipeline session '{session_id}': {e}")
+            log.error(f"Error deleting workflow session '{session_id}': {e}")
             return {
                 "status": "error",
-                "message": f"Error clearing pipeline history: {str(e)}"
+                "message": f"Error clearing workflow history: {str(e)}"
             }
 
-    async def get_old_pipeline_conversations(
+    async def get_old_workflow_conversations(
         self,
         user_email: str,
-        pipeline_id: str
+        workflow_id: str
     ) -> Dict[str, Any]:
         """
-        Gets old pipeline conversations for a user, grouped by session ID.
-        Similar to ChatService.get_old_chats_by_user_and_agent but for pipelines.
+        Gets old workflow conversations for a user, grouped by session ID.
+        Similar to ChatService.get_old_chats_by_user_and_agent but for workflows.
         Returns simplified format with timestamp_start, timestamp_end, user_input, agent_response.
 
         Args:
             user_email: The user's email address
-            pipeline_id: The pipeline definition ID
+            workflow_id: The workflow definition ID
 
         Returns:
             Dict with session IDs as keys and conversation lists as values
         """
         try:
-            # Get all sessions for this user and pipeline
-            sessions = await self.pipeline_run_repo.get_sessions_by_user_and_pipeline(
+            # Get all sessions for this user and workflow
+            sessions = await self.workflow_run_repo.get_sessions_by_user_and_workflow(
                 user_email=user_email,
-                pipeline_id=pipeline_id
+                workflow_id=workflow_id
             )
             
             if not sessions:
@@ -11572,8 +13627,8 @@ class PipelineService:
                     continue
                 
                 # Get runs for this session
-                runs = await self.pipeline_run_repo.get_runs_by_session(
-                    pipeline_id=pipeline_id,
+                runs = await self.workflow_run_repo.get_runs_by_session(
+                    workflow_id=workflow_id,
                     session_id=session_id,
                     limit=100
                 )
@@ -11604,7 +13659,7 @@ class PipelineService:
             return result
             
         except Exception as e:
-            log.error(f"Error getting old pipeline conversations for user '{user_email}': {e}")
+            log.error(f"Error getting old workflow conversations for user '{user_email}': {e}")
             return {}
 
 
@@ -11622,7 +13677,7 @@ class ToolGenerationCodeVersionService:
     async def save_version(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         code_snippet: str,
         created_by: str,
         label: Optional[str] = None,
@@ -11634,7 +13689,7 @@ class ToolGenerationCodeVersionService:
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             code_snippet: The code to save
             created_by: Email of the creator
             label: Optional label for the version
@@ -11661,7 +13716,7 @@ class ToolGenerationCodeVersionService:
         # Save version
         version = await self.code_version_repo.save_code_version(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             code_snippet=code_snippet,
             created_by=created_by,
             label=label,
@@ -11910,7 +13965,7 @@ class ToolGenerationConversationHistoryService:
     async def save_user_message(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         message: str,
         created_by: str,
         code_snippet: Optional[str] = None,
@@ -11921,7 +13976,7 @@ class ToolGenerationConversationHistoryService:
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             message: The user's message/query
             created_by: Email of the user
             code_snippet: Optional code context (e.g., current_code or selected_code)
@@ -11932,7 +13987,7 @@ class ToolGenerationConversationHistoryService:
         """
         result = await self.conversation_repo.save_message(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             role="user",
             message=message,
             code_snippet=code_snippet,
@@ -11954,7 +14009,7 @@ class ToolGenerationConversationHistoryService:
     async def save_assistant_message(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         message: str,
         code_snippet: Optional[str] = None,
         metadata: Optional[dict] = None
@@ -11964,7 +14019,7 @@ class ToolGenerationConversationHistoryService:
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             message: The assistant's response message
             code_snippet: Optional generated code snippet
             metadata: Optional additional metadata (e.g., model_name, tokens)
@@ -11974,7 +14029,7 @@ class ToolGenerationConversationHistoryService:
         """
         result = await self.conversation_repo.save_message(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             role="assistant",
             message=message,
             code_snippet=code_snippet,
@@ -11996,7 +14051,7 @@ class ToolGenerationConversationHistoryService:
     async def save_conversation_pair(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         user_message: str,
         assistant_message: str,
         user_email: str,
@@ -12010,7 +14065,7 @@ class ToolGenerationConversationHistoryService:
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             user_message: The user's query
             assistant_message: The assistant's response
             user_email: Email of the user
@@ -12024,7 +14079,7 @@ class ToolGenerationConversationHistoryService:
         # Save user message
         user_result = await self.save_user_message(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             message=user_message,
             created_by=user_email,
             code_snippet=user_code_context,
@@ -12037,7 +14092,7 @@ class ToolGenerationConversationHistoryService:
         # Save assistant message
         assistant_result = await self.save_assistant_message(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             message=assistant_message,
             code_snippet=assistant_code_snippet,
             metadata=metadata
@@ -12055,7 +14110,7 @@ class ToolGenerationConversationHistoryService:
     async def get_conversation_history(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
         include_code: bool = True
@@ -12065,7 +14120,7 @@ class ToolGenerationConversationHistoryService:
 
         Args:
             session_id: The user's session ID
-            pipeline_id: Optional filter by pipeline ID
+            workflow_id: Optional filter by workflow ID
             limit: Maximum number of messages to return
             offset: Number of messages to skip (for pagination)
             include_code: Whether to include code snippets
@@ -12075,7 +14130,7 @@ class ToolGenerationConversationHistoryService:
         """
         messages = await self.conversation_repo.get_conversation_history(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             limit=limit,
             offset=offset,
             include_code=include_code
@@ -12083,7 +14138,7 @@ class ToolGenerationConversationHistoryService:
         
         return {
             "session_id": session_id,
-            "pipeline_id": pipeline_id,
+            "workflow_id": workflow_id,
             "total_messages": len(messages),
             "messages": messages
         }
@@ -12091,7 +14146,7 @@ class ToolGenerationConversationHistoryService:
     async def get_latest_messages(
         self,
         session_id: str,
-        pipeline_id: str,
+        workflow_id: str,
         count: int = 10
     ) -> List[Dict[str, Any]]:
         """
@@ -12099,7 +14154,7 @@ class ToolGenerationConversationHistoryService:
 
         Args:
             session_id: The user's session ID
-            pipeline_id: The pipeline ID
+            workflow_id: The workflow ID
             count: Number of messages to return
 
         Returns:
@@ -12107,28 +14162,28 @@ class ToolGenerationConversationHistoryService:
         """
         return await self.conversation_repo.get_latest_messages(
             session_id=session_id,
-            pipeline_id=pipeline_id,
+            workflow_id=workflow_id,
             count=count
         )
 
     async def clear_conversation_history(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Clears conversation history for a session.
 
         Args:
             session_id: The session ID
-            pipeline_id: Optional pipeline ID
+            workflow_id: Optional workflow ID
 
         Returns:
             Dict with success status
         """
         success = await self.conversation_repo.clear_conversation_history(
             session_id=session_id,
-            pipeline_id=pipeline_id
+            workflow_id=workflow_id
         )
         
         if success:
@@ -12144,48 +14199,48 @@ class ToolGenerationConversationHistoryService:
     async def get_message_count(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> int:
         """
         Gets the total number of messages for a session.
 
         Args:
             session_id: The session ID
-            pipeline_id: Optional pipeline ID filter
+            workflow_id: Optional workflow ID filter
 
         Returns:
             Number of messages
         """
         return await self.conversation_repo.get_message_count(
             session_id=session_id,
-            pipeline_id=pipeline_id
+            workflow_id=workflow_id
         )
 
     async def get_latest_code(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Gets the latest code snippet from conversation history.
 
         Args:
             session_id: The user's session ID
-            pipeline_id: Optional filter by pipeline ID
+            workflow_id: Optional filter by workflow ID
 
         Returns:
             Dict with latest code snippet or None
         """
         result = await self.conversation_repo.get_latest_code_snippet(
             session_id=session_id,
-            pipeline_id=pipeline_id
+            workflow_id=workflow_id
         )
         
         if result:
             return {
                 "success": True,
                 "session_id": session_id,
-                "pipeline_id": pipeline_id,
+                "workflow_id": workflow_id,
                 "code_snippet": result.get("code_snippet"),
                 "message_id": result.get("message_id"),
                 "timestamp": result.get("timestamp")
@@ -12193,7 +14248,7 @@ class ToolGenerationConversationHistoryService:
         return {
             "success": True,
             "session_id": session_id,
-            "pipeline_id": pipeline_id,
+            "workflow_id": workflow_id,
             "code_snippet": None,
             "message": "No code snippet found in conversation history"
         }
@@ -12201,7 +14256,7 @@ class ToolGenerationConversationHistoryService:
     async def clear_conversation(
         self,
         session_id: str,
-        pipeline_id: Optional[str] = None
+        workflow_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Clears conversation history for a session.
@@ -12209,14 +14264,14 @@ class ToolGenerationConversationHistoryService:
 
         Args:
             session_id: The session ID
-            pipeline_id: Optional pipeline ID
+            workflow_id: Optional workflow ID
 
         Returns:
             Dict with success status
         """
         return await self.clear_conversation_history(
             session_id=session_id,
-            pipeline_id=pipeline_id
+            workflow_id=workflow_id
         )
 
     async def restore_to_message(
@@ -12277,18 +14332,9 @@ class KnowledgebaseService:
         kb_name: str,
         list_of_documents: list = None,
         created_by: str = "system",
-        department_name: str = "General",
-        is_public: bool = False,
-        shared_with_departments: List[str] = None
+        department_name: str = "General"
     ) -> Dict[str, Any]:
-        """Create a new knowledge base record with optional sharing."""
-        # Validate: is_public and shared_with_departments are mutually exclusive
-        if is_public and shared_with_departments:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot set both 'is_public' and 'shared_with_departments'. A public knowledge base is already accessible to all departments."
-            )
-        
+        """Create a new knowledge base record."""
         # Check if KB with same name already exists in the department
         existing_kb = await self.knowledgebase_repo.get_knowledgebase_by_name(kb_name, department_name=department_name)
         if existing_kb:
@@ -12304,36 +14350,17 @@ class KnowledgebaseService:
             "list_of_documents": list_of_documents or [],
             "created_by": created_by,
             "department_name": department_name,
-            "is_public": is_public,
             "created_on": datetime.now(timezone.utc)
         }
         
         is_created = await self.knowledgebase_repo.save_knowledgebase_record(kb_data)
         
-        # Handle department sharing if specified
-        sharing_result = None
-        if is_created and shared_with_departments and self.kb_sharing_repo:
-            try:
-                sharing_result = await self.kb_sharing_repo.share_kb_with_multiple_departments(
-                    knowledgebase_id=kb_id,
-                    knowledgebase_name=kb_name,
-                    source_department=department_name,
-                    target_departments=shared_with_departments,
-                    shared_by=created_by
-                )
-                log.info(f"KB '{kb_name}' shared with {sharing_result.get('success_count', 0)} departments during creation")
-            except Exception as e:
-                log.warning(f"Error sharing KB '{kb_name}' with departments during creation: {e}")
-        
         result = {
             "knowledgebase_id": kb_id,
             "knowledgebase_name": kb_name,
             "is_created": is_created,
-            "is_public": is_public,
             "message": f"Knowledge base '{kb_name}' created successfully"
         }
-        if sharing_result:
-            result["sharing"] = sharing_result
         return result
 
     async def get_all_knowledgebases(self, department_name: str = None) -> List[Dict[str, Any]]:
@@ -12517,6 +14544,16 @@ class KnowledgebaseService:
         kb_record = await self.knowledgebase_repo.get_knowledgebase_by_id(kb_id)
         if not kb_record:
             raise HTTPException(status_code=404, detail=f"Knowledge base '{kb_id}' not found.")
+        
+        # PROTECTION: Block update if knowledge base is bound to any agent
+        agents_using_kb = await self.agent_kb_mapping_repo.get_agents_using_knowledgebase(kb_id)
+        if agents_using_kb:
+            agent_names = [agent.get('agentic_application_name', agent.get('agentic_application_id')) for agent in agents_using_kb]
+            log.warning(f"Cannot update knowledge base '{kb_record.get('knowledgebase_name')}': It is bound to agent(s): {agent_names}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot update knowledge base '{kb_record.get('knowledgebase_name')}': It is bound to agent(s): {', '.join(agent_names)}. Please remove the knowledge base from the agent(s) first."
+            )
         
         if kb_record.get("department_name") != department_name:
             raise HTTPException(
@@ -13676,7 +15713,9 @@ class RoleAccessService:
         if isinstance(json_data, dict):
             return AccessPermission(
                 tools=json_data.get('tools', False),
-                agents=json_data.get('agents', False)
+                agents=json_data.get('agents', False),
+                mcp_servers=json_data.get('mcp_servers', False),
+                workflows=json_data.get('workflows', False)
             )
         elif isinstance(json_data, str):
             # If it's a JSON string, parse it
@@ -13685,17 +15724,19 @@ class RoleAccessService:
                 parsed_data = json.loads(json_data)
                 return AccessPermission(
                     tools=parsed_data.get('tools', False),
-                    agents=parsed_data.get('agents', False)
+                    agents=parsed_data.get('agents', False),
+                    mcp_servers=parsed_data.get('mcp_servers', False),
+                    workflows=parsed_data.get('workflows', False)
                 )
             except (json.JSONDecodeError, TypeError):
                 log.warning(f"Failed to parse JSON string: {json_data}")
-                return AccessPermission(tools=False, agents=False)
+                return AccessPermission(tools=False, agents=False, mcp_servers=False, workflows=False)
         elif isinstance(json_data, bool):
             # Backward compatibility for boolean values
-            return AccessPermission(tools=json_data, agents=json_data)
+            return AccessPermission(tools=json_data, agents=json_data, mcp_servers=json_data, workflows=json_data)
         else:
             log.warning(f"Unexpected data type for permission: {type(json_data)} - {json_data}")
-            return AccessPermission(tools=False, agents=False)
+            return AccessPermission(tools=False, agents=False, mcp_servers=False, workflows=False)
 
 
 
@@ -13760,11 +15801,11 @@ class RoleAccessService:
                 return RolePermissionsResponse(success=False, message=f"Role '{request.role_name}' does not exist in department '{request.department_name}'")
 
             # Convert AccessPermission objects to dictionaries
-            read_dict = {"tools": request.read_access.tools, "agents": request.read_access.agents}
-            add_dict = {"tools": request.add_access.tools, "agents": request.add_access.agents}
-            update_dict = {"tools": request.update_access.tools, "agents": request.update_access.agents}
-            delete_dict = {"tools": request.delete_access.tools, "agents": request.delete_access.agents}
-            execute_dict = {"tools": request.execute_access.tools, "agents": request.execute_access.agents}
+            read_dict = {"tools": request.read_access.tools, "agents": request.read_access.agents, "mcp_servers": request.read_access.mcp_servers, "workflows": request.read_access.workflows}
+            add_dict = {"tools": request.add_access.tools, "agents": request.add_access.agents, "mcp_servers": request.add_access.mcp_servers, "workflows": request.add_access.workflows}
+            update_dict = {"tools": request.update_access.tools, "agents": request.update_access.agents, "mcp_servers": request.update_access.mcp_servers, "workflows": request.update_access.workflows}
+            delete_dict = {"tools": request.delete_access.tools, "agents": request.delete_access.agents, "mcp_servers": request.delete_access.mcp_servers, "workflows": request.delete_access.workflows}
+            execute_dict = {"tools": request.execute_access.tools, "agents": request.execute_access.agents, "mcp_servers": request.execute_access.mcp_servers, "workflows": request.execute_access.workflows}
 
             # Set permissions
             success = await self.role_repo.set_role_permissions(
@@ -13787,6 +15828,7 @@ class RoleAccessService:
                 file_context_access=request.file_context_access,
                 canvas_view_access=request.canvas_view_access,
                 context_access=request.context_access,
+                export_agents_access=request.export_agents_access,
                 created_by=set_by
             )
 
@@ -13799,7 +15841,7 @@ class RoleAccessService:
                 action="ROLE_PERMISSIONS_SET",
                 resource_type="role_access",
                 resource_id=request.role_name,
-                new_value=f"Role: {request.role_name}, Read: {read_dict}, Add: {add_dict}, Update: {update_dict}, Delete: {delete_dict}, Execute: {execute_dict}, ExecutionStepsAccess: {request.execution_steps_access}, ToolVerifierAccess: {request.tool_verifier_flag_access}, PlanVerifierAccess: {request.plan_verifier_flag_access}, OnlineEvaluationAccess: {request.online_evaluation_flag_access}, EvaluationAccess: {request.evaluation_access}, VaultAccess: {request.vault_access}, DataConnectorAccess: {request.data_connector_access}, KnowledgebaseAccess: {request.knowledgebase_access}, ValidatorAccess: {request.validator_access}, FileContextAccess: {request.file_context_access}, CanvasViewAccess: {request.canvas_view_access}, ContextAccess: {request.context_access}",
+                new_value=f"Role: {request.role_name}, Read: {read_dict}, Add: {add_dict}, Update: {update_dict}, Delete: {delete_dict}, Execute: {execute_dict}, ExecutionStepsAccess: {request.execution_steps_access}, ToolVerifierAccess: {request.tool_verifier_flag_access}, PlanVerifierAccess: {request.plan_verifier_flag_access}, OnlineEvaluationAccess: {request.online_evaluation_flag_access}, EvaluationAccess: {request.evaluation_access}, VaultAccess: {request.vault_access}, DataConnectorAccess: {request.data_connector_access}, KnowledgebaseAccess: {request.knowledgebase_access}, ValidatorAccess: {request.validator_access}, FileContextAccess: {request.file_context_access}, CanvasViewAccess: {request.canvas_view_access}, ContextAccess: {request.context_access}, ExportAgentsAccess: {request.export_agents_access}",
                 ip_address=ip_address,
                 user_agent=user_agent
             )
@@ -13826,6 +15868,7 @@ class RoleAccessService:
                     file_context_access=permissions_data.get('file_context_access', False),
                     canvas_view_access=permissions_data.get('canvas_view_access', False),
                     context_access=permissions_data.get('context_access', False),
+                    export_agents_access=permissions_data.get('export_agents_access', False),
                     created_at=permissions_data['created_at'],
                     updated_at=permissions_data['updated_at'],
                     created_by=permissions_data['created_by']
@@ -13867,6 +15910,7 @@ class RoleAccessService:
                     file_context_access=False,
                     canvas_view_access=False,
                     context_access=False,
+                    export_agents_access=False,
                     created_at=datetime.now(),
                     updated_at=datetime.now(),
                     created_by=None
@@ -13893,6 +15937,7 @@ class RoleAccessService:
                 file_context_access=permissions_data.get('file_context_access', False),
                 canvas_view_access=permissions_data.get('canvas_view_access', False),
                 context_access=permissions_data.get('context_access', False),
+                export_agents_access=permissions_data.get('export_agents_access', False),
                 created_at=permissions_data['created_at'],
                 updated_at=permissions_data['updated_at'],
                 created_by=permissions_data['created_by']
@@ -13959,6 +16004,7 @@ class RoleAccessService:
                             file_context_access=perm_data.get('file_context_access', False),
                             canvas_view_access=perm_data.get('canvas_view_access', False),
                             context_access=perm_data.get('context_access', False),
+                            export_agents_access=perm_data.get('export_agents_access', False),
                             created_at=perm_data.get('created_at') or default_datetime,
                             updated_at=perm_data.get('updated_at') or default_datetime,
                             created_by=perm_data.get('created_by') or "system"
@@ -13987,6 +16033,7 @@ class RoleAccessService:
                             file_context_access=False,
                             canvas_view_access=False,
                             context_access=False,
+                            export_agents_access=False,
                             created_at=default_datetime,
                             updated_at=default_datetime,
                             created_by="system"
@@ -14040,15 +16087,15 @@ class RoleAccessService:
             updated_permissions = {}
             
             if request.read_access is not None:
-                updated_permissions['read_access'] = {"tools": request.read_access.tools, "agents": request.read_access.agents}
+                updated_permissions['read_access'] = {"tools": request.read_access.tools, "agents": request.read_access.agents, "mcp_servers": request.read_access.mcp_servers, "workflows": request.read_access.workflows}
             if request.add_access is not None:
-                updated_permissions['add_access'] = {"tools": request.add_access.tools, "agents": request.add_access.agents}
+                updated_permissions['add_access'] = {"tools": request.add_access.tools, "agents": request.add_access.agents, "mcp_servers": request.add_access.mcp_servers, "workflows": request.add_access.workflows}
             if request.update_access is not None:
-                updated_permissions['update_access'] = {"tools": request.update_access.tools, "agents": request.update_access.agents}
+                updated_permissions['update_access'] = {"tools": request.update_access.tools, "agents": request.update_access.agents, "mcp_servers": request.update_access.mcp_servers, "workflows": request.update_access.workflows}
             if request.delete_access is not None:
-                updated_permissions['delete_access'] = {"tools": request.delete_access.tools, "agents": request.delete_access.agents}
+                updated_permissions['delete_access'] = {"tools": request.delete_access.tools, "agents": request.delete_access.agents, "mcp_servers": request.delete_access.mcp_servers, "workflows": request.delete_access.workflows}
             if request.execute_access is not None:
-                updated_permissions['execute_access'] = {"tools": request.execute_access.tools, "agents": request.execute_access.agents}
+                updated_permissions['execute_access'] = {"tools": request.execute_access.tools, "agents": request.execute_access.agents, "mcp_servers": request.execute_access.mcp_servers, "workflows": request.execute_access.workflows}
 
             # Update permissions using the partial update method
             success = await self.role_repo.update_role_permissions(
@@ -14066,6 +16113,7 @@ class RoleAccessService:
                 file_context_access=request.file_context_access,
                 canvas_view_access=request.canvas_view_access,
                 context_access=request.context_access,
+                export_agents_access=request.export_agents_access,
                 **updated_permissions
             )
 
@@ -14100,6 +16148,8 @@ class RoleAccessService:
                         updated_fields.append(f"CanvasViewAccess={value}")
                     elif field == 'context_access':
                         updated_fields.append(f"ContextAccess={value}")
+                    elif field == 'export_agents_access':
+                        updated_fields.append(f"ExportAgentsAccess={value}")
                     else:
                         updated_fields.append(f"{field}={value}")
             
@@ -14137,6 +16187,7 @@ class RoleAccessService:
                     file_context_access=permissions_data.get('file_context_access', False),
                     canvas_view_access=permissions_data.get('canvas_view_access', False),
                     context_access=permissions_data.get('context_access', False),
+                    export_agents_access=permissions_data.get('export_agents_access', False),
                     created_at=permissions_data['created_at'],
                     updated_at=permissions_data['updated_at'],
                     created_by=permissions_data['created_by']
@@ -14181,10 +16232,11 @@ class DepartmentService:
     """Service for department management"""
 
     def __init__(self, department_repo: DepartmentRepository, user_repo: UserRepository, audit_repo: AuditLogRepository,
-                 login_pool=None, main_pool=None, recycle_pool=None, logs_pool=None, feedback_learning_pool=None):
+                 role_repo=None, login_pool=None, main_pool=None, recycle_pool=None, logs_pool=None, feedback_learning_pool=None):
         self.department_repo = department_repo
         self.user_repo = user_repo
         self.audit_repo = audit_repo
+        self.role_repo = role_repo
         # Database pools for cascade delete operations
         self.login_pool = login_pool
         self.main_pool = main_pool
@@ -14222,28 +16274,48 @@ class DepartmentService:
             if not re.match(r'^[A-Z][A-Za-z0-9\s\-_]*$', department_name):
                 return DepartmentResponse(success=False, message="Department name must start with capital letter and contain only letters, numbers, spaces, hyphens, and underscores")
 
-            # Check if department already exists
-            if await self.department_repo.department_exists(department_name.capitalize()):
-                return DepartmentResponse(success=False, message=f"Department '{department_name.capitalize()}' already exists")
+            # Check if department already exists (case-insensitive via department_exists)
+            if await self.department_repo.department_exists(department_name):
+                return DepartmentResponse(success=False, message=f"Department '{department_name}' already exists")
 
             # Add department
             success = await self.department_repo.add_department(department_name, created_by)
             
             if success:
+                # Add default roles (Admin, Developer, User) to the new department
+                default_roles = ["Admin", "Developer", "User"]
+                dept_name_capitalized = department_name.capitalize()
+                for role in default_roles:
+                    try:
+                        role_result = await self.department_repo.add_role_to_department(dept_name_capitalized, role, created_by)
+                        if role_result.get("success"):
+                            log.info(f"Added default role '{role}' to new department '{dept_name_capitalized}'")
+                            # Auto-initialize default permissions for the role
+                            if self.role_repo:
+                                try:
+                                    await self._initialize_default_permissions_for_role(dept_name_capitalized, role, created_by)
+                                    log.info(f"Initialized default permissions for role '{role}' in department '{dept_name_capitalized}'")
+                                except Exception as perm_err:
+                                    log.warning(f"Failed to auto-initialize permissions for role '{role}' in department '{dept_name_capitalized}': {perm_err}")
+                        else:
+                            log.warning(f"Failed to add default role '{role}' to department '{dept_name_capitalized}': {role_result.get('message')}")
+                    except Exception as role_err:
+                        log.warning(f"Error adding default role '{role}' to department '{dept_name_capitalized}': {role_err}")
+
                 # Log the action
                 await self.audit_repo.log_action(
                     user_id=created_by,
                     action="DEPARTMENT_ADDED",
                     resource_type="department",
-                    resource_id=department_name.capitalize(),
-                    new_value=f"Added department: {department_name.capitalize()}",
+                    resource_id=dept_name_capitalized,
+                    new_value=f"Added department: {dept_name_capitalized} with default roles: {default_roles}",
                     ip_address=ip_address,
                     user_agent=user_agent
                 )
                 
                 return DepartmentResponse(
                     success=True, 
-                    message=f"Department '{department_name.capitalize()}' added successfully",
+                    message=f"Department '{dept_name_capitalized}' added successfully with default roles: {', '.join(default_roles)}",
                     department=DepartmentModel(
                         department_name=success['department_name'],
                         admins=success.get('admins', []),
@@ -14292,7 +16364,7 @@ class DepartmentService:
         This method deletes a department and all related records from:
         LOGIN DB: userdepartmentmapping, role_access, user_access_keys
         MAIN DB: tool_table, mcp_tool_table, agent_table, tool_department_sharing, agent_department_sharing,
-                 access_key_definitions, tool_access_key_mapping, groups, group_secrets, pipelines_table,
+                 access_key_definitions, tool_access_key_mapping, groups, group_secrets, workflows_table,
                  db_connections_table, public_keys, user_secrets, agent_evaluations, user_agent_access
                  + Dynamic tables: table_{agent_id} (chat history tables for each agent)
         RECYCLE DB: recycle_tool, recycle_mcp_tool, recycle_agent
@@ -14422,6 +16494,13 @@ class DepartmentService:
             result = await self.department_repo.add_role_to_department(department_name, role_name, added_by)
             
             if result["success"]:
+                # Auto-initialize default permissions for the role in this department
+                if self.role_repo:
+                    try:
+                        await self._initialize_default_permissions_for_role(department_name, role_name, added_by)
+                    except Exception as perm_err:
+                        log.warning(f"Failed to auto-initialize permissions for role '{role_name}' in department '{department_name}': {perm_err}")
+
                 # Log the action
                 await self.audit_repo.log_action(
                     user_id=added_by,
@@ -14448,6 +16527,95 @@ class DepartmentService:
         except Exception as e:
             log.error(f"Add role to department error: {e}")
             return DepartmentRoleResponse(success=False, message=f"Internal error: {str(e)}")
+
+    async def _initialize_default_permissions_for_role(self, department_name: str, role_name: str, created_by: str):
+        """Auto-initialize default permissions when a role is added to a department.
+        
+        Known roles (Admin, Developer, User) get predefined defaults.
+        Custom roles get all-false defaults so they appear in the role_access table.
+        """
+        # Default permission templates for known roles
+        default_permissions = {
+            "User": {
+                "read_access": {"tools": True, "agents": True, "mcp_servers": False, "workflows": False},
+                "add_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
+                "update_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
+                "delete_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
+                "execute_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
+                "execution_steps_access": False, "tool_verifier_flag_access": False,
+                "plan_verifier_flag_access": False, "online_evaluation_flag_access": False,
+                "evaluation_access": False, "vault_access": False, "data_connector_access": False,
+                "knowledgebase_access": False, "validator_access": False, "file_context_access": False,
+                "canvas_view_access": False, "context_access": False, "export_agents_access": False
+            },
+            "Developer": {
+                "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "add_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "update_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "delete_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "execute_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "execution_steps_access": True, "tool_verifier_flag_access": True,
+                "plan_verifier_flag_access": True, "online_evaluation_flag_access": True,
+                "evaluation_access": True, "vault_access": True, "data_connector_access": True,
+                "knowledgebase_access": True, "validator_access": True, "file_context_access": True,
+                "canvas_view_access": True, "context_access": True, "export_agents_access": True
+            },
+            "Admin": {
+                "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "add_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "update_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "delete_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "execute_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                "execution_steps_access": True, "tool_verifier_flag_access": True,
+                "plan_verifier_flag_access": True, "online_evaluation_flag_access": True,
+                "evaluation_access": True, "vault_access": True, "data_connector_access": True,
+                "knowledgebase_access": True, "validator_access": True, "file_context_access": True,
+                "canvas_view_access": True, "context_access": True, "export_agents_access": True
+            }
+        }
+
+        # Use known defaults or all-false for custom roles
+        all_false_perm = {"tools": False, "agents": False, "mcp_servers": False, "workflows": False}
+        perms = default_permissions.get(role_name, {
+            "read_access": all_false_perm, "add_access": all_false_perm,
+            "update_access": all_false_perm, "delete_access": all_false_perm,
+            "execute_access": all_false_perm,
+            "execution_steps_access": False, "tool_verifier_flag_access": False,
+            "plan_verifier_flag_access": False, "online_evaluation_flag_access": False,
+            "evaluation_access": False, "vault_access": False, "data_connector_access": False,
+            "knowledgebase_access": False, "validator_access": False, "file_context_access": False,
+            "canvas_view_access": False, "context_access": False, "export_agents_access": False
+        })
+
+        # Only set if no permissions exist yet (preserve any custom settings)
+        existing = await self.role_repo.get_role_permissions(department_name, role_name)
+        if not existing:
+            await self.role_repo.set_role_permissions(
+                department_name=department_name,
+                role_name=role_name,
+                read_access=perms["read_access"],
+                add_access=perms["add_access"],
+                update_access=perms["update_access"],
+                delete_access=perms["delete_access"],
+                execute_access=perms["execute_access"],
+                execution_steps_access=perms["execution_steps_access"],
+                tool_verifier_flag_access=perms["tool_verifier_flag_access"],
+                plan_verifier_flag_access=perms["plan_verifier_flag_access"],
+                online_evaluation_flag_access=perms["online_evaluation_flag_access"],
+                evaluation_access=perms["evaluation_access"],
+                vault_access=perms["vault_access"],
+                data_connector_access=perms["data_connector_access"],
+                knowledgebase_access=perms["knowledgebase_access"],
+                validator_access=perms["validator_access"],
+                file_context_access=perms["file_context_access"],
+                canvas_view_access=perms["canvas_view_access"],
+                context_access=perms["context_access"],
+                export_agents_access=perms["export_agents_access"],
+                created_by=created_by
+            )
+            log.info(f"Auto-initialized default permissions for role '{role_name}' in department '{department_name}'")
+        else:
+            log.info(f"Permissions already exist for role '{role_name}' in department '{department_name}' - skipping auto-initialization")
 
     async def remove_role_from_department(self, department_name: str, role_name: str, removed_by: str, 
                                         ip_address: str = None, user_agent: str = None, user_department_name: str = None) -> DepartmentRoleResponse:
@@ -14543,3 +16711,400 @@ class DepartmentService:
         except Exception as e:
             log.error(f"Get department roles error: {e}")
             return DepartmentRoleResponse(success=False, message=f"Internal error: {str(e)}")
+
+
+# --- Task Registry Service ---
+
+
+class TaskRegistryService:
+    """
+    Service layer for M2M task lifecycle management.
+    Provides business logic for task registration, status updates, and queries.
+    """
+
+    def __init__(self, task_registry_repo: TaskRegistryRepository):
+        """
+        Initializes the TaskRegistryService.
+
+        Args:
+            task_registry_repo: The repository for task registry data access.
+        """
+        self.repo: TaskRegistryRepository = task_registry_repo
+
+    async def initialize(self):
+        """Creates the task_registry table if it doesn't exist."""
+        await self.repo.create_table()
+
+    async def register_task(
+        self,
+        task_id: str,
+        agentic_application_id: str,
+        user_session_id: str,
+        query: str = None,
+        model_name: str = None,
+        batch_id: str = None,
+        created_by: str = None
+    ) -> Dict[str, Any]:
+        """
+        Registers a new M2M task in the registry.
+        
+        Args:
+            task_id: Unique task identifier
+            agentic_application_id: The agent or workflow ID
+            user_session_id: The user's original session ID (short)
+            query: The inference query
+            model_name: The model being used
+            batch_id: Optional batch identifier for grouped tasks
+            created_by: The user who created the task
+            
+        Returns:
+            Dict with registration status
+        """
+        success = await self.repo.register_task(
+            task_id=task_id,
+            agentic_application_id=agentic_application_id,
+            user_session_id=user_session_id,
+            query=query,
+            model_name=model_name,
+            batch_id=batch_id,
+            created_by=created_by
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "task_id": task_id,
+                "status": "queued",
+                "message": f"Task '{task_id}' registered successfully."
+            }
+        return {
+            "success": False,
+            "task_id": task_id,
+            "message": f"Failed to register task '{task_id}'."
+        }
+
+    async def mark_task_started(
+        self,
+        task_id: str
+    ) -> bool:
+        """
+        Marks a task as 'processing' when worker begins.
+        
+        Args:
+            task_id: The task identifier
+            
+        Returns:
+            bool: True if successful
+        """
+        return await self.repo.update_task_started(task_id=task_id)
+
+    async def mark_task_completed(
+        self,
+        task_id: str,
+        response_time_ms: float = None
+    ) -> bool:
+        """
+        Marks a task as 'completed' with timing info.
+        
+        Args:
+            task_id: The task identifier
+            response_time_ms: Total processing time in milliseconds
+            
+        Returns:
+            bool: True if successful
+        """
+        return await self.repo.update_task_completed(
+            task_id=task_id,
+            response_time_ms=response_time_ms
+        )
+
+    async def mark_task_failed(
+        self,
+        task_id: str,
+        error_message: str = None
+    ) -> bool:
+        """
+        Marks a task as 'failed' with error details.
+        
+        Args:
+            task_id: The task identifier
+            error_message: The error description
+            
+        Returns:
+            bool: True if successful
+        """
+        return await self.repo.update_task_failed(
+            task_id=task_id,
+            error_message=error_message
+        )
+
+    async def get_task_status(self, task_id: str) -> Dict[str, Any]:
+        """
+        Gets the current status of a task.
+        
+        Args:
+            task_id: The task identifier
+            
+        Returns:
+            Dict with task status and metadata
+        """
+        task = await self.repo.get_task(task_id)
+        if not task:
+            return {
+                "success": False,
+                "task_id": task_id,
+                "message": f"Task '{task_id}' not found."
+            }
+        
+        # Convert datetime objects to strings for JSON serialization
+        for key in ['created_at', 'started_at', 'completed_at']:
+            if task.get(key):
+                task[key] = str(task[key])
+        
+        return {
+            "success": True,
+            **task
+        }
+
+    async def get_task_result(
+        self,
+        task_id: str,
+        chat_service: 'ChatService' = None,
+        framework_type: FrameworkType = FrameworkType.LANGGRAPH,
+        role: str = None,
+        department_name: str = None
+    ) -> Dict[str, Any]:
+        """
+        Gets the task result including chat history if completed.
+        
+        Args:
+            task_id: The task identifier
+            chat_service: Optional ChatService for fetching conversation
+            
+        Returns:
+            Dict with task details and optionally the conversation
+        """
+        task = await self.repo.get_task(task_id)
+        if not task:
+            return {
+                "success": False,
+                "task_id": task_id,
+                "message": f"Task '{task_id}' not found."
+            }
+        
+        # Convert datetime objects to strings
+        for key in ['created_at', 'started_at', 'completed_at']:
+            if task.get(key):
+                task[key] = str(task[key])
+        
+        result = {"success": True, **task}
+        
+        # If completed and chat_service provided, fetch conversation
+        # user_session_id is the full session_id (task_id + "_" + email)
+        if (task["status"] == "completed" or task["status"] == "failed" or task["status"] == "processing") and chat_service and task.get("user_session_id"):
+            try:
+                conversation = await chat_service.get_chat_history_from_short_term_memory(
+                    agentic_application_id=task["agentic_application_id"],
+                    session_id=task["user_session_id"],
+                    framework_type=framework_type,
+                    role=role,
+                    department_name=department_name
+                )
+                result["conversation"] = conversation
+            except Exception as e:
+                log.warning(f"Could not fetch conversation for task {task_id}: {e}")
+        
+        return result
+
+    async def get_batch_status(self, batch_id: str) -> Dict[str, Any]:
+        """
+        Gets the status summary for a batch of tasks.
+        
+        Args:
+            batch_id: The batch identifier
+            
+        Returns:
+            Dict with aggregated batch status
+        """
+        summary = await self.repo.get_batch_summary(batch_id)
+        return summary
+
+    async def get_batch_tasks(self, batch_id: str) -> Dict[str, Any]:
+        """
+        Gets all tasks in a batch.
+        
+        Args:
+            batch_id: The batch identifier
+            
+        Returns:
+            Dict with list of tasks
+        """
+        tasks = await self.repo.get_batch_tasks(batch_id)
+        
+        # Convert datetime objects to strings
+        for task in tasks:
+            for key in ['created_at', 'started_at', 'completed_at']:
+                if task.get(key):
+                    task[key] = str(task[key])
+        
+        return {
+            "success": True,
+            "batch_id": batch_id,
+            "tasks": tasks,
+            "total_count": len(tasks)
+        }
+
+    async def get_user_tasks(
+        self,
+        user_email: str,
+        limit: int = 100,
+        status: str = None
+    ) -> Dict[str, Any]:
+        """
+        Gets tasks created by a specific user.
+        
+        Args:
+            user_email: The user identifier
+            limit: Maximum number of tasks to return
+            status: Optional status filter
+            
+        Returns:
+            Dict with list of tasks
+        """
+        tasks = await self.repo.get_tasks_by_user(
+            created_by=user_email,
+            limit=limit,
+            status=status
+        )
+        
+        # Convert datetime objects to strings
+        for task in tasks:
+            for key in ['created_at', 'started_at', 'completed_at']:
+                if task.get(key):
+                    task[key] = str(task[key])
+        
+        return {
+            "success": True,
+            "user": user_email,
+            "tasks": tasks,
+            "total_count": len(tasks)
+        }
+
+    async def get_agent_tasks(
+        self,
+        agentic_application_id: str,
+        limit: int = 100,
+        status: str = None
+    ) -> Dict[str, Any]:
+        """
+        Gets tasks for a specific agent/workflow.
+        
+        Args:
+            agentic_application_id: The agent or workflow ID
+            limit: Maximum number of tasks to return
+            status: Optional status filter
+            
+        Returns:
+            Dict with list of tasks
+        """
+        tasks = await self.repo.get_tasks_by_agent(
+            agentic_application_id=agentic_application_id,
+            limit=limit,
+            status=status
+        )
+        
+        # Convert datetime objects to strings
+        for task in tasks:
+            for key in ['created_at', 'started_at', 'completed_at']:
+                if task.get(key):
+                    task[key] = str(task[key])
+        
+        return {
+            "success": True,
+            "agentic_application_id": agentic_application_id,
+            "tasks": tasks,
+            "total_count": len(tasks)
+        }
+
+    # --- Task Recovery Methods ---
+
+    async def recover_stuck_tasks(
+        self,
+        lookback_hours: float,
+        offset_minutes: float = 0,
+        kafka_manager: KafkaManager=None
+    ) -> Dict[str, Any]:
+        """
+        Finds and recovers tasks stuck in 'processing' within a time window.
+        Atomically claims them (prevents duplicate recovery by other workers),
+        re-publishes to Kafka, and resets status to 'queued'.
+        
+        The time window is:
+          started_at BETWEEN NOW()-(lookback_hours + offset_minutes) AND NOW()-offset_minutes
+        
+        Args:
+            lookback_hours: How far back to look (e.g., 24 = 24 hours)
+            offset_minutes: Offset from NOW() (e.g., 15 means skip tasks < 15 min old)
+            kafka_manager: KafkaManager to re-publish recovered tasks
+            
+        Returns:
+            Dict with recovery results
+        """
+        # Get the time window from DB clock
+        time_window = await self.repo.get_recovery_time_window(
+            lookback_hours=lookback_hours,
+            offset_minutes=offset_minutes
+        )
+        if not time_window:
+            return {"recovered_count": 0, "requeued_count": 0, "message": "Failed to get time window"}
+
+        # Atomically claim all stuck tasks in the window
+        claimed_tasks = await self.repo.claim_stuck_processing_tasks(
+            window_start=time_window["window_start"],
+            window_end=time_window["window_end"]
+        )
+
+        if not claimed_tasks:
+            log.info(
+                f"Recovery: No stuck tasks found in window "
+                f"({time_window['window_start']} to {time_window['window_end']})"
+            )
+            return {
+                "recovered_count": 0,
+                "requeued_count": 0,
+                "message": "No stuck tasks found"
+            }
+
+        # Re-publish claimed tasks to Kafka
+        requeued_count = 0
+        if kafka_manager:
+            for task in claimed_tasks:
+                try:
+                    kafka_manager.send_agent_request(
+                        agent_call_id=task["task_id"],
+                        agentic_application_id=task["agentic_application_id"],
+                        session_id=task["user_session_id"],
+                        model_name=task.get("model_name"),
+                        query=task.get("query"),
+                        reset_conversation=True,
+                    )
+                    requeued_count += 1
+                    log.info(f"Re-published recovered task {task['task_id']} to Kafka")
+                except Exception as e:
+                    log.error(f"Failed to re-publish task {task['task_id']}: {e}")
+
+        # Reset claimed tasks back to queued
+        claimed_ids = [t["task_id"] for t in claimed_tasks]
+        await self.repo.reset_tasks_to_queued(task_ids=claimed_ids)
+
+        log.warning(
+            f"Recovery complete: {len(claimed_tasks)} stuck tasks claimed, "
+            f"{requeued_count} re-queued to Kafka"
+        )
+
+        return {
+            "recovered_count": len(claimed_tasks),
+            "requeued_count": requeued_count,
+            "recovered_task_ids": claimed_ids,
+            "message": f"Recovered {len(claimed_tasks)} stuck tasks, re-queued {requeued_count}"
+        }

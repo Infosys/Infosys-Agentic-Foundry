@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import Cookies from "js-cookie";
+import { getRoleFromToken } from "../../utils/jwtUtils";
 import { APIs } from "../../constant";
 import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -106,7 +106,7 @@ const ResourceAllocationManagement = ({ externalSearchTerm = "", onPlusClickRef,
   }, [selectedKey, onNavigationChange]);
 
   // User role
-  const role = Cookies.get("role") || "";
+  const role = getRoleFromToken();
   const isAdmin = role.toLowerCase() === "admin" || role.toLowerCase() === "superadmin" || role.toLowerCase() === "super_admin";
 
   // Disable plus button - no create endpoint

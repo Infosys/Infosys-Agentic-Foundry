@@ -1,0 +1,104 @@
+/* Import Modal - Content-specific styles only */
+/* Overlay, container, animation, close button handled by common Modal component */
+
+.importModal {
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+}
+
+.importForm {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.modalHeader {
+  padding: 20px 24px 16px 24px;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.modalTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--header-color, #111827);
+  margin: 0;
+}
+
+.modalBody {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modalInfo {
+  font-size: 14px;
+  color: var(--content-color, #4b5563);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.formHint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+  margin-top: 4px;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  background-color: var(--card-bg, #f9fafb);
+  border-radius: 0 0 var(--radius-lg, 20px) var(--radius-lg, 20px);
+  flex-shrink: 0;
+}
+
+/* Validation Errors */
+.validationErrorsSection {
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.validationErrorsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.validationErrorItem {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--card-bg, #f9fafb);
+}
+
+.validationToolName {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--header-color, #111827);
+}
+
+.validationNewName {
+  font-size: 13px;
+  color: var(--muted, #6b7280);
+}
+
+.validationErrorReason {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #dc2626;
+  line-height: 1.4;
+}
+
+.validationSuccess {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #16a34a;
+}

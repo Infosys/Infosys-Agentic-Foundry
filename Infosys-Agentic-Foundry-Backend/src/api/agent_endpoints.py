@@ -7,10 +7,11 @@ import io
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, BackgroundTasks, Form, UploadFile, File
 from fastapi.responses import FileResponse
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
+from pydantic import BaseModel
 
 from src.schemas import AgentOnboardingRequest, UpdateAgentRequest, DeleteAgentRequest, TagIdName
-from src.database.services import AgentService, AgentServiceUtils, PipelineService, ToolService, McpToolService, FeedbackLearningService
+from src.database.services import AgentService, AgentServiceUtils, WorkflowService, ToolService, McpToolService, FeedbackLearningService
 from src.config.constants import AgentType, DatabaseName
 from src.utils.secrets_handler import get_user_secrets
 from src.api.dependencies import ServiceProvider # The dependency provider
@@ -99,10 +100,11 @@ async def onboard_agent_endpoint(
                     user_id=onboarding_request.email_id,
                     department_name=user_data.department_name,
                     tag_ids=onboarding_request.tag_ids,
-                    is_public=onboarding_request.is_public if onboarding_request.is_public else False,
-                    shared_with_departments=onboarding_request.shared_with_departments
+                    db_connection_names=onboarding_request.db_connection_names
                 )
             else:
+                # Convert list format to dict: [{tool_id, tool_version}] → {tool_id: version}
+                tool_versions_dict = {item.tool_id: item.tool_version for item in onboarding_request.tool_versions} if onboarding_request.tool_versions else {}
                 result = await specialized_agent_service.onboard_agent(
                     agent_name=onboarding_request.agent_name,
                     agent_goal=onboarding_request.agent_goal,
@@ -114,8 +116,8 @@ async def onboard_agent_endpoint(
                     tag_ids=onboarding_request.tag_ids,
                     validation_criteria=onboarding_request.validation_criteria,
                     knowledgebase_ids=onboarding_request.knowledgebase_ids,
-                    is_public=onboarding_request.is_public if onboarding_request.is_public else False,
-                    shared_with_departments=onboarding_request.shared_with_departments
+                    db_connection_names=onboarding_request.db_connection_names,
+                    tool_versions=tool_versions_dict  # Pass tool versions for binding
                 )
         update_session_context(model_used='Unassigned',
                             agent_name='Unassigned',
@@ -207,11 +209,11 @@ async def get_all_agents_endpoint(
 async def get_agents_details_for_chat_interface_endpoint(
     request: Request, 
     agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
-    pipeline_service: PipelineService = Depends(ServiceProvider.get_pipeline_service),
+    workflow_service: WorkflowService = Depends(ServiceProvider.get_workflow_service),
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user)
 ):
-    """Retrieves basic agent and pipeline details for chat purposes, filtered by user access."""
+    """Retrieves basic agent and workflow details for chat purposes, filtered by user access."""
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
     
@@ -227,26 +229,87 @@ async def get_agents_details_for_chat_interface_endpoint(
         log.info(f"Returning {len(agent_details) if agent_details else 0} agents for chat interface for department {user_data.department_name}")
     
     
-    # Fetch pipelines and format them to match agent structure
-    pipelines = await pipeline_service.get_all_pipelines(is_active=True, department_name=user_data.department_name)
+    # Fetch workflows and format them to match agent structure
+    workflows = await workflow_service.get_all_workflows(is_active=True, department_name=user_data.department_name)
     
     default_welcome_message = "Hello! I'm here to help you. What can I assist you with today?"
     
-    pipeline_details = []
-    for pipeline in pipelines:
-        pipeline_details.append({
-            "agentic_application_id": pipeline.get("pipeline_id"),
-            "agentic_application_name": pipeline.get("pipeline_name"),
-            "agentic_application_type": "pipeline",
-            "welcome_message": pipeline.get("welcome_message", default_welcome_message)
+    workflow_details = []
+    for workflow in workflows:
+        workflow_details.append({
+            "agentic_application_id": workflow.get("workflow_id"),
+            "agentic_application_name": workflow.get("workflow_name"),
+            "agentic_application_type": "workflow",
+            "welcome_message": workflow.get("welcome_message", default_welcome_message)
         })
     
-    # Combine agents and pipelines
-    combined_details = (agent_details or []) + pipeline_details
+    # Combine agents and workflows
+    combined_details = (agent_details or []) + workflow_details
     
     if not combined_details:
-        raise HTTPException(status_code=404, detail="No agents or pipelines found for chat interface.")
+        raise HTTPException(status_code=404, detail="No agents or workflows found for chat interface.")
     return combined_details
+
+
+@router.get("/get/system-agents")
+async def get_system_agents_endpoint(
+    request: Request,
+    agent_name: Optional[str] = Query(None, description="Filter by agent name. If provided, returns only the matching agent."),
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Retrieves all system-onboarded agents (created_by = 'system').
+    Optionally filters by agent name to return a specific agent.
+
+    Parameters:
+    ----------
+    agent_name : str, optional
+        The name of the agent to filter by. If provided, returns only the matching agent.
+
+    Returns:
+    -------
+    list
+        A list of agents that were onboarded by the system during startup.
+        If no system agents are found, raises an HTTPException with status code 404.
+    """
+    # Check permissions first
+    user_department = user_data.department_name
+    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "read", "agents", user_department):
+        raise HTTPException(status_code=403, detail="You don't have permission to view agents.")
+
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    agents = await agent_service.get_system_agents(agent_name=agent_name)
+
+    if not agents:
+        detail = f"No system agent found with name '{agent_name}'" if agent_name else "No system agents found"
+        raise HTTPException(status_code=404, detail=detail)
+    return agents
+
+
+@router.get("/viber-agent-id")
+async def get_viber_agent_id_endpoint(
+    request: Request,
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
+):
+    """
+    Returns only the agentic_application_id for the agent named 'Enterprise IAF Orchestrator System Agent'.
+    """
+    user_id = request.cookies.get("user_id")
+    user_session = request.cookies.get("user_session")
+    update_session_context(user_session=user_session, user_id=user_id)
+
+    all_agents = await agent_service.get_all_agents()
+    if all_agents:
+        for agent in all_agents:
+            if agent.get("agentic_application_name") == "Enterprise IAF Orchestrator System Agent":
+                return agent["agentic_application_id"]
+
+    raise HTTPException(status_code=404, detail="No agent found with name 'Enterprise IAF Orchestrator System Agent'")
 
 
 @router.get("/get/{agent_id}")
@@ -311,6 +374,52 @@ async def get_agent_by_id_endpoint(
         
     # get_agent returns a list, extract the first element
     response = response[0]
+    agent_type = AgentType(response.get("agentic_application_type"))
+
+    # Enrich tools_id with tool details split into tools and servers (MCP tools)
+    try:
+        tool_service = ServiceProvider.get_tool_service()
+        mcp_tool_service = ServiceProvider.get_mcp_tool_service()
+        tools = []
+        servers = []
+        for tid in (response.get("tools_id") or []):
+            try:
+                if tid.startswith("mcp_"):
+                    log.info(f"Fetching MCP tool details for tool_id '{tid}' in agent '{agent_id}'")
+                    tool_records = await mcp_tool_service.get_mcp_tool(tool_id=tid)
+                    if tool_records:
+                        servers.append({
+                            "tool_id": tool_records[0].get("tool_id"),
+                            "tool_name": tool_records[0].get("tool_name"),
+                            "tags": tool_records[0].get("tags", [])
+                        })
+                elif agent_type.is_basic_type:
+                    log.info(f"Fetching regular tool details for tool_id '{tid}' in agent '{agent_id}'")
+                    tool_records = await tool_service.get_tool(tool_id=tid)
+                    if tool_records:
+                        tools.append({
+                            "tool_id": tool_records[0].get("tool_id"),
+                            "tool_name": tool_records[0].get("tool_name"),
+                            "tags": tool_records[0].get("tags", [])
+                        })
+                else:
+                    log.info(f"Fetching agent details for tool_id '{tid}' in agent '{agent_id}' since it's a meta agent")
+                    agent_records = await agent_service.get_agent(agentic_application_id=tid)
+                    if agent_records:
+                        tools.append({
+                            "tool_id": agent_records[0].get("agentic_application_id"),
+                            "tool_name": agent_records[0].get("agentic_application_name"),
+                            "tags": agent_records[0].get("tags", [])
+                        })
+            except Exception:
+                log.error(f"Error fetching details for tool_id '{tid}' in agent '{agent_id}': {traceback.format_exc()}")
+
+        response["tools"] = tools
+        response["servers"] = servers
+    except Exception as e:
+        log.warning(f"Error fetching tool details for agent {agent_id}: {e}")
+        response["tools"] = []
+        response["servers"] = []
     
     # If file_context_prompt is requested, try to load it from file
     if include_file_context_prompt:
@@ -320,7 +429,9 @@ async def get_agent_by_id_endpoint(
             if agent_name:
                 # Sanitize agent name for filename (use same logic as AgentServiceUtils)
                 safe_agent_name = AgentServiceUtils.get_safe_agent_name(agent_name)
-                prompt_file_path = os.path.join("agent_workspaces", "file_context_prompts", f"{safe_agent_name}_file_context_prompt.md")
+                from src.inference.database_tools_cache import get_file_context_prompts_dir
+                prompts_dir = str(get_file_context_prompts_dir(user_data.department_name))
+                prompt_file_path = os.path.join(prompts_dir, f"{safe_agent_name}_file_context_prompt.md")
                 log.info(f"Looking for file-context prompt at: '{prompt_file_path}'")
                 
                 if os.path.exists(prompt_file_path):
@@ -661,8 +772,8 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                 worker_agents_id_to_add=update_request.tools_id_to_add,
                 worker_agents_id_to_remove=update_request.tools_id_to_remove,
                 updated_tag_id_list=update_request.updated_tag_id_list,
-                is_public=update_request.is_public,
-                shared_with_departments=update_request.shared_with_departments
+                db_connection_names_to_add=update_request.db_connection_names_to_add,
+                db_connection_names_to_remove=update_request.db_connection_names_to_remove
             )
         else:
             response = await specialized_agent_service.update_agent(
@@ -682,8 +793,9 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                 validation_criteria=update_request.validation_criteria,
                 knowledgebase_ids_to_add=update_request.knowledgebase_ids_to_add,
                 knowledgebase_ids_to_remove=update_request.knowledgebase_ids_to_remove,
-                is_public=update_request.is_public,
-                shared_with_departments=update_request.shared_with_departments
+                tool_versions={item.tool_id: item.tool_version for item in update_request.tool_versions} if update_request.tool_versions else {},  # Convert list to dict
+                db_connection_names_to_add=update_request.db_connection_names_to_add,
+                db_connection_names_to_remove=update_request.db_connection_names_to_remove
             )
         response["status_message"] = response.get("message", "")
         log.info(f"Agent update response: {response}")
@@ -725,6 +837,7 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
             if updated_agent:
                 updated_agent = updated_agent[0] if isinstance(updated_agent, list) else updated_agent
                 tools_id = updated_agent.get("tools_id", [])
+                db_connection_names = updated_agent.get("db_connection_names", [])
                 
                 # Get model name from update request or agent data
                 model_name = update_request.model_name or updated_agent.get("model_name", "gpt-4o")
@@ -739,7 +852,9 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                     workflow_description=workflow_description,
                     tools_id=tools_id,
                     model_name=model_name,
-                    is_meta_agent=is_meta_agent
+                    is_meta_agent=is_meta_agent,
+                    db_connection_names=db_connection_names,
+                    department=user_data.department_name
                 )
                 
                 response["file_context_prompt_regenerated"] = result["success"]
@@ -762,7 +877,8 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
                 # Use service method to update file-context prompt
                 result = AgentServiceUtils.update_file_context_prompt(
                     agent_name=agent_name,
-                    prompt_content=update_request.file_context_management_prompt
+                    prompt_content=update_request.file_context_management_prompt,
+                    department=user_data.department_name
                 )
                 
                 response["file_context_prompt_updated"] = result["success"]
@@ -780,10 +896,15 @@ async def update_agent_endpoint(request: Request, update_request: UpdateAgentReq
     return response
 
 
-@router.delete("/delete/{agent_id}")
-async def delete_agent_endpoint(request: Request, agent_id: str, delete_request: DeleteAgentRequest, agent_service: AgentService = Depends(ServiceProvider.get_agent_service), authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
+# NOTE: Tool version updates are handled through PUT /agent/update endpoint
+# Use tool_versions parameter to update versions for existing or new tools
+# Example: {"agentic_application_id_to_modify": "agent-id", "tool_versions": {"tool-id": "v2"}}
+
+
+@router.delete("/delete")
+async def delete_agent_endpoint(request: Request, delete_request: DeleteAgentRequest, agent_service: AgentService = Depends(ServiceProvider.get_agent_service), authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service), user_data: User = Depends(get_current_user)):
     """
-    Deletes an agent by its ID.
+    Deletes one or more agents by their IDs.
     
     Access Control:
     - Admins can delete any agent
@@ -794,19 +915,15 @@ async def delete_agent_endpoint(request: Request, agent_id: str, delete_request:
     ----------
     request : Request
         The FastAPI Request object.
-    agent_id : str
-        The ID of the agent to be deleted.
     delete_request : DeleteAgentRequest
-        The request body containing the user email ID and admin status.
+        The request body containing the user email ID, admin status, and list of agent IDs to delete.
     agent_service : AgentService
         Dependency-injected AgentService instance.
 
     Returns:
     -------
     dict
-        A dictionary containing the status of the deletion operation.
-        If the deletion is unsuccessful, raises an HTTPException
-        with status code 400 and the status message.
+        A dictionary containing the results of each deletion operation.
     """
     if user_data.role == UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Superadmin is not allowed to delete agents.")
@@ -815,65 +932,102 @@ async def delete_agent_endpoint(request: Request, agent_id: str, delete_request:
     if not await authorization_server.check_operation_permission(user_data.email, user_data.role, "delete", "agents", user_department):
         raise HTTPException(status_code=403, detail="You don't have permission to delete agents.")
     
-    # Fetch previous value; don't pass department_name for SUPER_ADMIN
-    if user_data.role == UserRole.SUPER_ADMIN:
-        previous_value = await agent_service.get_agent(agentic_application_id=agent_id)
-    else:
-        previous_value = await agent_service.get_agent(agentic_application_id=agent_id, department_name=user_data.department_name)
-
-    if not previous_value:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    previous_value = previous_value[0]
-    
-    # Check if user's department owns this agent (public agents can only be deleted by owning department)
-    agent_department = previous_value.get("department_name")
-    if agent_department and agent_department != user_data.department_name:
-        raise HTTPException(
-            status_code=403, 
-            detail=f"You cannot delete this agent. It belongs to department '{agent_department}'. Only users from the owning department can delete it."
-        )
-    
     user_id = user_data.email
     user_session = request.cookies.get("user_session")
+
     is_admin = False
     if delete_request.is_admin:
-        is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN, department_name= user_department)
-    is_creator = (previous_value.get("created_by") == user_data.username)
-    if not (is_admin or is_creator):
-        log.warning(f"User {user_id} attempted to delete agent without admin privileges or creator access")
-        raise HTTPException(status_code=403, detail="Admin privileges or agent creator access required to delete this agent")
-    
-    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id,
-                           action_on='agent',
-                           action_type='delete',
-                           previous_value=previous_value)
-    
-    response = await agent_service.delete_agent(
-        agentic_application_id=agent_id,
-        user_id=user_data.username,
-        is_admin=is_admin
+        is_admin = await authorization_server.has_role(user_email=user_id, required_role=UserRole.ADMIN, department_name=user_department)
+
+    # Only admins can delete multiple agents at once; non-admins must delete one at a time
+    if len(delete_request.agent_ids) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple agents at once. Please delete one agent at a time.")
+
+    results = []
+    for agent_id in delete_request.agent_ids:
+        # Fetch previous value; don't pass department_name for SUPER_ADMIN
+        if user_data.role == UserRole.SUPER_ADMIN:
+            previous_value = await agent_service.get_agent(agentic_application_id=agent_id)
+        else:
+            previous_value = await agent_service.get_agent(agentic_application_id=agent_id, department_name=user_data.department_name)
+
+        if not previous_value:
+            results.append({"agent_id": agent_id, "is_delete": False, "message": "Agent not found"})
+            continue
+        previous_value = previous_value[0]
+        agent_name = previous_value.get("agentic_application_name")
+
+        # Check if user's department owns this agent (public agents can only be deleted by owning department)
+        agent_department = previous_value.get("department_name")
+        if agent_department and agent_department != user_data.department_name:
+            results.append({"agent_id": agent_id, "agent_name": agent_name, "is_delete": False, "message": f"You cannot delete this agent. It belongs to department '{agent_department}'. Only users from the owning department can delete it."})
+            continue
+
+        is_creator = (previous_value.get("created_by") == user_data.username)
+        if not (is_admin or is_creator):
+            log.warning(f"User {user_id} attempted to delete agent {agent_id} without admin privileges or creator access")
+            results.append({"agent_id": agent_id, "agent_name": agent_name, "is_delete": False, "message": "Admin privileges or agent creator access required to delete this agent"})
+            continue
+
+        update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id,
+                               action_on='agent',
+                               action_type='delete',
+                               previous_value=previous_value)
+
+        response = await agent_service.delete_agent(
+            agentic_application_id=agent_id,
+            user_id=user_data.username,
+            is_admin=is_admin
+        )
+        response["status_message"] = response.get("message", "")
+        response["agent_name"] = agent_name
+        update_session_context(agent_id='Unassigned', action_on='Unassigned', action_type='Unassigned', previous_value='Unassigned')
+
+        if not response.get("is_delete"):
+            agents = []
+            for res in response.get('details', []):
+                if res.get('agentic_application_name'):
+                    agents.append(res.get('agentic_application_name'))
+            if agents:
+                error_msg = f"Agent delete failed: {response['message']} with names: {agents}"
+                log.error(error_msg)
+                response["message"] = error_msg
+            else:
+                log.error(f"Agent delete failed: {response.get('message')}")
+            response["agent_id"] = agent_id
+            results.append(response)
+            continue
+
+        # Move file-context prompt to recycle bin if agent deletion was successful
+        if agent_name:
+            file_context_result = AgentServiceUtils.move_file_context_prompt_to_recycle_bin(agent_name, department=user_data.department_name)
+            response["file_context_prompt_recycled"] = file_context_result["success"]
+            response["file_context_prompt_message"] = file_context_result["message"]
+
+        response["agent_id"] = agent_id
+        results.append(response)
+
+    summary: Dict[str, Any] = {}
+    for res in results:
+        agent_name = res.get("agent_name") or res.get("agent_id", "unknown")
+        reason = "Successfully deleted agents" if res.get("is_delete") else res.get("message", "Delete failed")
+        summary.setdefault(reason, []).append(agent_name)
+
+    status_message = " | ".join(
+        f"{reason}: {', '.join(agent_names)}"
+        for reason, agent_names in sorted(summary.items(), key=lambda item: item[0] != "Successfully deleted agents")
     )
-    response["status_message"] = response.get("message", "")
+    summary["status_message"] = status_message
+    is_delete = any(r.get("is_delete") for r in results)
 
     update_session_context(agent_id='Unassigned', action_on='Unassigned', action_type='Unassigned', previous_value='Unassigned')
-    if not response.get("is_delete"):
-        agents = []
-        for res in response.get('details', []):
-            if res.get('agentic_application_name'):
-                agents.append(res.get('agentic_application_name'))
-        if agents:
-            log.error(f"Agent delete failed: {response['message']} with names: {agents}")
-            raise HTTPException(status_code=400, detail=f"Agent delete failed: {response['message']} with names: {agents}")
-        raise HTTPException(status_code=400, detail=response.get("message"))
-    
-    # Move file-context prompt to recycle bin if agent deletion was successful
-    agent_name = previous_value.get("agentic_application_name", "")
-    if agent_name:
-        file_context_result = AgentServiceUtils.move_file_context_prompt_to_recycle_bin(agent_name)
-        response["file_context_prompt_recycled"] = file_context_result["success"]
-        response["file_context_prompt_message"] = file_context_result["message"]
-    
-    return response
+
+    # Raise 400 only when every requested deletion failed
+    if results and all(not r.get("is_delete") for r in results):
+        log.error(f"All agent deletions failed: {status_message}")
+        raise HTTPException(status_code=400, detail=status_message)
+
+    return {"results": results, "summary": summary, "status_message": status_message, "is_delete": is_delete}
 
 
 @router.get("/templates")
@@ -938,6 +1092,7 @@ async def restore_agent_endpoint(
     request: Request, 
     agent_id: str, 
     user_email_id: str = Query(...), 
+    new_name: Optional[str] = Query(None, description="New name to use if the original name conflicts with an active agent."),
     agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
     authorization_server: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user)
@@ -966,19 +1121,21 @@ async def restore_agent_endpoint(
                 agent_name = agent.get("agentic_application_name", "")
                 break
 
-    # Do not pass department_name for SUPER_ADMIN
-    if user_data.role == UserRole.SUPER_ADMIN:
-        result = await agent_service.restore_agent(agentic_application_id=agent_id)
-    else:
-        result = await agent_service.restore_agent(agentic_application_id=agent_id, department_name=user_data.department_name)
+    # Restore the agent within the requesting user's department context
+    result = await agent_service.restore_agent(agentic_application_id=agent_id, department_name=user_data.department_name, new_name=new_name)
 
     result["status_message"] = result.get("message", "")
     if not result.get("is_restored"):
-        raise HTTPException(status_code=400, detail=result.get("message"))
+        status_code = 409 if result.get("name_conflict") else 400
+        raise HTTPException(status_code=status_code, detail=result)
     
     # Restore file-context prompt from recycle bin if agent restoration was successful
+    # Source file is always keyed by the old agent_name; if restored under new_name, rename destination
     if agent_name:
-        file_context_result = AgentServiceUtils.restore_file_context_prompt_from_recycle_bin(agent_name)
+        effective_new_name = new_name.strip() if new_name and new_name.strip() else None
+        file_context_result = AgentServiceUtils.restore_file_context_prompt_from_recycle_bin(
+            agent_name, department=user_data.department_name, new_agent_name=effective_new_name
+        )
         result["file_context_prompt_restored"] = file_context_result["success"]
         result["file_context_prompt_message"] = file_context_result["message"]
     
@@ -1031,7 +1188,7 @@ async def delete_agent_from_recycle_bin_endpoint(
     
     # Permanently delete file-context prompt from recycle bin if agent deletion was successful
     if agent_name:
-        file_context_result = AgentServiceUtils.permanently_delete_file_context_prompt(agent_name)
+        file_context_result = AgentServiceUtils.permanently_delete_file_context_prompt(agent_name, department=user_data.department_name)
         result["file_context_prompt_deleted"] = file_context_result["success"]
         result["file_context_prompt_message"] = file_context_result["message"]
     
@@ -1059,9 +1216,9 @@ async def export_agents_endpoint(
         authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
         user_data: User = Depends(get_current_user)
     ):
-    # Check permissions first
+    # Check permissions first - export agents requires export_agents_access
     user_department = user_data.department_name 
-    if not await authorization_service.check_operation_permission(user_data.email, user_data.role, "execute", "agents", user_department):
+    if not await authorization_service.check_export_agents_access(user_data.role, user_department):
         raise HTTPException(status_code=403, detail="You don't have permission to export agents.")
     
     from src.database.repositories import ExportAgentRepository
@@ -1334,177 +1491,65 @@ async def get_tools_or_agents_mapped_to_agent_endpoint(
 # Agent Sharing Endpoints (Admin Only)
 # ============================================================================
 
-@router.post("/{agent_id}/share")
-async def share_agent_with_departments(
+class UpdateAgentSharingRequest(BaseModel):
+    """Request model for updating agent visibility and sharing settings."""
+    is_public: bool = None
+    shared_with_departments: List[str] = None
+
+
+@router.put("/{agent_id}/sharing")
+async def update_agent_sharing_endpoint(
     request: Request,
     agent_id: str,
-    target_departments: List[str],
+    body: UpdateAgentSharingRequest,
     current_user: User = Depends(get_current_user),
-    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
-    tool_service: ToolService = Depends(ServiceProvider.get_tool_service),
-    mcp_tool_service: McpToolService = Depends(ServiceProvider.get_mcp_tool_service),
-    agent_sharing_repo = Depends(ServiceProvider.get_agent_sharing_repo)
+    agent_service: AgentService = Depends(ServiceProvider.get_agent_service)
 ):
     """
-    Share an agent with one or more departments.
-    Only Admins of the agent's department or SuperAdmins can share agents.
-    When an agent is shared, all its tools (both regular and MCP) and knowledge bases are automatically shared too.
-    
-    Args:
-        agent_id: The ID of the agent to share
-        target_departments: List of department names to share with
-        
+    Update the visibility (is_public) and/or department sharing for an agent.
+    Only Admins of the agent's department or SuperAdmins can update sharing settings.
+
+    Parameters:
+    - agent_id: The agent ID
+    - is_public: Whether the agent should be publicly accessible to all departments
+    - shared_with_departments: List of department names to share the agent with (replaces existing sharing)
+
     Returns:
-        Dict with sharing results including tools and KBs shared count
+    - Updated sharing information
     """
     user_id = request.cookies.get("user_id")
     user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
-    
-    # Check if user is Admin or SuperAdmin
+    update_session_context(user_session=user_session, user_id=user_id)
+
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
-        raise HTTPException(
-            status_code=403,
-            detail="Only Admins can share agents with other departments"
-        )
-    
-    # Get the agent to verify it exists and get its department
-    agent_records = await agent_service.get_agent(agentic_application_id=agent_id)
-    if not agent_records:
-        raise HTTPException(status_code=404, detail=f"Agent not found with ID: {agent_id}")
-    
-    agent = agent_records[0] if isinstance(agent_records, list) else agent_records
-    source_department = agent.get('department_name', 'General')
-    agent_name = agent.get('agentic_application_name', '')
-    
-    # If Admin, verify they are admin of the agent's department
-    if current_user.role == UserRole.ADMIN:
-        if current_user.department_name != source_department:
-            raise HTTPException(
-                status_code=403,
-                detail=f"You can only share agents from your own department ({current_user.department_name})"
-            )
-    
-    # Get the agent's tools info for cascade sharing (separate regular tools and MCP tools)
-    tools_id = agent.get('tools_id', [])
-    tools_info = []
-    mcp_tools_info = []
-    if tools_id:
-        for tid in tools_id:
-            if tid.startswith("mcp_"):
-                # MCP tool - fetch from MCP tool service
-                mcp_tool_records = await mcp_tool_service.get_mcp_tool(tool_id=tid)
-                if mcp_tool_records:
-                    mcp_tool = mcp_tool_records[0]
-                    mcp_tools_info.append({
-                        'tool_id': tid,
-                        'tool_name': mcp_tool.get('tool_name', ''),
-                        'department_name': mcp_tool.get('department_name', source_department)
-                    })
-            else:
-                # Regular tool - fetch from tool service
-                tool_records = await tool_service.get_tool(tool_id=tid)
-                if tool_records:
-                    tool = tool_records[0]
-                    tools_info.append({
-                        'tool_id': tid,
-                        'tool_name': tool.get('tool_name', ''),
-                        'department_name': tool.get('department_name', source_department)
-                    })
-    
-    # Get the agent's knowledge bases info for cascade sharing
-    kbs_info = []
-    if agent_service.knowledgebase_service:
-        try:
-            kb_ids = await agent_service.knowledgebase_service.agent_kb_mapping_repo.get_knowledgebase_ids_for_agent(agent_id)
-            for kb_id in kb_ids:
-                kb_record = await agent_service.knowledgebase_service.knowledgebase_repo.get_knowledgebase_by_id(kb_id)
-                if kb_record:
-                    kbs_info.append({
-                        'kb_id': kb_id,
-                        'kb_name': kb_record.get('knowledgebase_name', ''),
-                        'department_name': kb_record.get('department_name', source_department)
-                    })
-        except Exception as e:
-            log.warning(f"Failed to gather KB info for agent sharing: {e}")
-    
-    # Share the agent (and its tools + KBs will be shared automatically)
-    result = await agent_sharing_repo.share_agent_with_multiple_departments(
-        agentic_application_id=agent_id,
-        agentic_application_name=agent_name,
-        source_department=source_department,
-        target_departments=target_departments,
-        shared_by=current_user.email,
-        tools_info=tools_info,
-        mcp_tools_info=mcp_tools_info,
-        kbs_info=kbs_info
-    )
-    
-    log.info(f"Agent '{agent_id}' sharing result: {result}")
-    return {
-        "message": f"Agent shared with {result['success_count']} department(s), {result.get('total_tools_shared', 0)} tools, {result.get('total_mcp_tools_shared', 0)} MCP tools, and {result.get('total_kbs_shared', 0)} knowledge bases also shared",
-        "agent_id": agent_id,
-        "agent_name": agent_name,
-        "source_department": source_department,
-        "tools_shared": result.get('total_tools_shared', 0),
-        "mcp_tools_shared": result.get('total_mcp_tools_shared', 0),
-        "kbs_shared": result.get('total_kbs_shared', 0),
-        **result
-    }
+        raise HTTPException(status_code=403, detail="Only Admins can update agent sharing settings")
 
+    if body.is_public is None and body.shared_with_departments is None:
+        raise HTTPException(status_code=400, detail="At least one of 'is_public' or 'shared_with_departments' must be provided.")
 
-@router.delete("/{agent_id}/share/{target_department}")
-async def unshare_agent_from_department(
-    request: Request,
-    agent_id: str,
-    target_department: str,
-    current_user: User = Depends(get_current_user),
-    agent_service: AgentService = Depends(ServiceProvider.get_agent_service),
-    agent_sharing_repo = Depends(ServiceProvider.get_agent_sharing_repo)
-):
-    """
-    Remove sharing of an agent from a specific department.
-    Only Admins of the agent's department or SuperAdmins can unshare agents.
-    """
-    user_id = request.cookies.get("user_id")
-    user_session = request.cookies.get("user_session")
-    update_session_context(user_session=user_session, user_id=user_id, agent_id=agent_id)
-    
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
+    if body.is_public and body.shared_with_departments:
         raise HTTPException(
-            status_code=403,
-            detail="Only Admins can unshare agents"
-        )
-    
-    agent_records = await agent_service.get_agent(agentic_application_id=agent_id)
-    if not agent_records:
-        raise HTTPException(status_code=404, detail=f"Agent not found with ID: {agent_id}")
-    
-    agent = agent_records[0] if isinstance(agent_records, list) else agent_records
-    source_department = agent.get('department_name', 'General')
-    
-    if current_user.role == UserRole.ADMIN and current_user.department_name != source_department:
-        raise HTTPException(
-            status_code=403,
-            detail=f"You can only manage sharing for agents from your own department"
-        )
-    
-    success = await agent_sharing_repo.unshare_agent_from_department(agent_id, target_department)
-    
-    if success:
-        return {
-            "message": f"Agent '{agent.get('agentic_application_name')}' unshared from department '{target_department}'",
-            "agent_id": agent_id,
-            "target_department": target_department
-        }
-    else:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Agent was not shared with department '{target_department}'"
+            status_code=400,
+            detail="Cannot set both 'is_public' and 'shared_with_departments'. A public agent is already accessible to all departments."
         )
 
+    try:
+        result = await agent_service.update_agent_sharing(
+            agent_id=agent_id,
+            user_email=current_user.email,
+            department_name=current_user.department_name,
+            is_public=body.is_public,
+            shared_with_departments=body.shared_with_departments
+        )
+        return {"message": "Agent sharing settings updated successfully", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error updating agent sharing: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating agent sharing: {str(e)}")
 
-@router.get("/{agent_id}/sharing")
+
+@router.get("/{agent_id}/sharing-info")
 async def get_agent_sharing_info(
     request: Request,
     agent_id: str,
@@ -1533,7 +1578,7 @@ async def get_agent_sharing_info(
         "agent_name": agent.get('agentic_application_name'),
         "owner_department": agent.get('department_name', 'General'),
         "is_public": agent.get('is_public', False),
-        "shared_with": shared_departments
+        "shared_with": [d.get('target_department') for d in shared_departments if d.get('target_department')]
     }
 
 

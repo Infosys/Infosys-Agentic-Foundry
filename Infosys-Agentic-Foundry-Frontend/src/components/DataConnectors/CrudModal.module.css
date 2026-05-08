@@ -23,6 +23,28 @@
   gap: 16px;
 }
 
+.backBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--content-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.backBtn:hover {
+  background: var(--hover-background);
+  border-color: var(--app-primary-color);
+  color: var(--app-primary-color);
+}
+
 .databaseIcon {
   width: 48px;
   height: 48px;

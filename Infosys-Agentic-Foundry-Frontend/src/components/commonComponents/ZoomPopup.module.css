@@ -1,35 +1,52 @@
 .popup {
-  position: fixed;
-  top: 0;
-  left: var(--main-width, 56px); /* Start after left nav */
-  width: calc(100vw - var(--main-width, 56px)); /* Full width minus left nav */
-  height: 100vh;
-  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
-  backdrop-filter: var(--backdrop-blur, blur(8px));
-  -webkit-backdrop-filter: var(--backdrop-blur, blur(8px));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000002; /* Higher than FullModal (1000001) to appear on top */
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000002 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .popupContent {
-  background: var(--card-bg, #ffffff);
-  box-shadow: var(--shadow-lg, 0 4px 15px rgba(0, 0, 0, 0.3));
-  border-radius: var(--radius, 16px);
-  position: relative;
-  text-align: left;
-  overflow-y: auto;
-  width: 90%; /* Increased from 80% for more editing space */
-  max-width: 1400px; /* Increased from 1200px */
-  min-width: 500px; /* Increased from 400px */
-  height: 85vh; /* Increased from 65vh for taller popup */
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  pointer-events: auto;
-  border: 1px solid var(--border, #ddd);
-  font-family: var(--font-primary, "Inter", sans-serif);
+  background: var(--card-bg, #ffffff) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4), 0 12px 24px -8px rgba(0, 0, 0, 0.25) !important;
+  border-radius: 16px !important;
+  position: relative !important;
+  text-align: left !important;
+  overflow-y: auto !important;
+  width: calc(100vw - 60px) !important;
+  max-width: none !important;
+  min-width: unset !important;
+  height: calc(100vh - 60px) !important;
+  max-height: none !important;
+  padding: 24px 32px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  pointer-events: auto !important;
+  border: 1px solid var(--border, #ddd) !important;
+  font-family: var(--font-primary, "Inter", sans-serif) !important;
+  animation: zoomIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+@keyframes zoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* Close/Collapse button */
@@ -384,10 +401,11 @@
   }
 
   .popupContent {
-    width: 95%;
+    width: 98vw;
+    height: 98vh;
     min-width: unset;
-    max-height: 85vh;
     padding: 16px;
+    border-radius: 12px;
   }
 
   .popupInner {
@@ -410,9 +428,10 @@
 
 @media (max-width: 480px) {
   .popupContent {
-    width: 98%;
-    max-height: 80vh;
+    width: 100vw;
+    height: 100vh;
     padding: 12px;
+    border-radius: 0;
   }
 
   .popupInner {

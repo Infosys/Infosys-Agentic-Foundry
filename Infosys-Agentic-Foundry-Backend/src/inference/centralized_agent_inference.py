@@ -22,6 +22,7 @@ from src.inference.google_adk_inference.meta_agent_gadk_inference import MetaAge
 from src.inference.google_adk_inference.planner_meta_agent_gadk_inference import PlannerMetaAgentGADKInference
 
 from src.inference.inference_utils import InferenceUtils
+from telemetry_wrapper import logger as log
 
 
 
@@ -89,16 +90,21 @@ class CentralizedAgentInference:
 
     async def get_specialized_agent_inference(self, agent_type: str, framework_type: FrameworkType = FrameworkType.LANGGRAPH) -> BaseAgentInference:
         """Return the appropriate specialized service instance"""
+        log.debug(f"Resolving inference service for agent_type={agent_type}, framework_type={framework_type}")
 
         if agent_type == AgentType.HYBRID_AGENT:
+            log.info(f"Selected HybridAgentInference for agent_type={agent_type}")
             return self.hybrid_agent_inference
 
         if framework_type == FrameworkType.GOOGLE_ADK and agent_type in self.google_adk_inference_services_map:
+            log.info(f"Selected Google ADK inference service for agent_type={agent_type}")
             return self.google_adk_inference_services_map[agent_type]
 
         if framework_type == FrameworkType.LANGGRAPH and agent_type in self.langgraph_inference_services_map:
+            log.info(f"Selected LangGraph inference service for agent_type={agent_type}")
             return self.langgraph_inference_services_map[agent_type]
 
+        log.error(f"No inference service found for agent_type={agent_type}, framework_type={framework_type}")
         raise ValueError(f"Unknown agent type: {agent_type}")
 
     @staticmethod
@@ -168,7 +174,8 @@ After drafting your response, verify that you've correctly applied all relevant 
             insert_into_eval_flag: bool = True,
             role: str = None,
             department_name: str = None,
-            user_name: str = None
+            user_name: str = None,
+            use_kafka_tool_worker: bool = False
         ):
         """
         Run the inference request using the appropriate agent inference service based on the agent type.
@@ -181,18 +188,29 @@ After drafting your response, verify that you've correctly applied all relevant 
             department_name: The user's department
             user_name: The logged-in user's name/email for role-based access control
         """
+        session_id = inference_request.session_id
         agent_id = inference_request.mentioned_agentic_application_id or inference_request.agentic_application_id
+        log.info(f"[{session_id}] CentralizedAgentInference.run started | agent_id={agent_id}, user={user_name}, role={role}, department={department_name}, framework={inference_request.framework_type}, kafka_worker={use_kafka_tool_worker}")
+
         agent_config = await self.react_agent_inference._get_agent_config(agent_id)
+        log.info(f"[{session_id}] Agent config retrieved | agent_type={agent_config['AGENT_TYPE']}, agent_name={agent_config.get('AGENT_NAME')}, tools_count={len(agent_config.get('TOOLS_INFO', []))}")
         
         # Generate user context prompt if user information is available
         user_context_prompt = ""
         if user_name and role:
             user_context_prompt = self.get_user_context_prompt(user_name, role, department_name)
+            log.debug(f"[{session_id}] User context prompt generated for user={user_name}, role={role}")
 
         # Handle Feedback Learning Integration
+        log.debug(f"[{session_id}] Fetching approved feedback learning data for agent_id={agent_id}")
         feedback_learning_data = await self.feedback_learning_service.get_approved_feedback(agent_id=agent_id, department_name=department_name)
         feedback_msg = await self.inference_utils.format_feedback_learning_data(feedback_learning_data)
         lesson_prompt = self.get_lesson_prompt(feedback_msg) if feedback_msg else ""
+        if feedback_msg:
+            log.info(f"[{session_id}] Feedback learning lessons injected into system prompts")
+        else:
+            log.debug(f"[{session_id}] No feedback learning data found for agent_id={agent_id}")
+
         system_prompts: dict = agent_config.get('SYSTEM_PROMPT', {})
         for system_prompt_key in system_prompts.keys():
             agent_config['SYSTEM_PROMPT'][system_prompt_key] += lesson_prompt
@@ -201,17 +219,27 @@ After drafting your response, verify that you've correctly applied all relevant 
 
 
         agent_inference: BaseAgentInference = await self.get_specialized_agent_inference(agent_type=agent_config["AGENT_TYPE"], framework_type=inference_request.framework_type)
+        log.info(f"[{session_id}] Dispatching to {agent_inference.__class__.__name__} for agent_type={agent_config['AGENT_TYPE']}")
 
         async for response in agent_inference.run(
                 inference_request=inference_request,
                 agent_config=agent_config,
                 insert_into_eval_flag=insert_into_eval_flag,
                 role=role,
-                department_name=department_name
+                department_name=department_name,
+                use_kafka_tool_worker=use_kafka_tool_worker
             ):
             yield response
+
+        log.info(f"[{session_id}] CentralizedAgentInference.run completed for agent_id={agent_id}")
 
     async def update_response_time(self, agent_id: str, session_id: str,  start_time: float, time_stamp: Any):
         """Updates the response time in the last executor message for the given session. 
         As update_response_time method is common for all types we are calling react agent inference method here."""
+        log.debug(f"[{session_id}] Delegating update_response_time to react_agent_inference for agent_id={agent_id}")
         return await self.react_agent_inference.update_response_time(agent_id, session_id,  start_time=start_time, time_stamp=time_stamp)
+
+    async def update_token_usage_in_graph(self, agent_id: str, session_id: str, token_records: list):
+        """Delegates token-usage graph injection to react_agent_inference (common for all LangGraph types)."""
+        log.debug(f"[{session_id}] Delegating update_token_usage_in_graph to react_agent_inference for agent_id={agent_id}, records_count={len(token_records) if token_records else 0}")
+        return await self.react_agent_inference.update_token_usage_in_graph(agent_id, session_id, token_records)

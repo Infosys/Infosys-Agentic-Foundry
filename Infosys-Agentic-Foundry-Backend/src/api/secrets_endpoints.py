@@ -456,14 +456,13 @@ async def delete_user_secret_endpoint(
     user_data: User = Depends(get_current_user)
 ):
     """
-    Delete a user secret_data.
-    
+    Delete one or more user secrets.
+
     Args:
-        request (SecretDeleteRequest): The request containing user email and secret_data name.
-    
+        request (SecretDeleteRequest): The request containing user email and secret_name(s).
     Returns:
-        dict: Success or error response.
-    
+        dict: Results of each deletion operation with a status message.
+
     Raises:
         HTTPException: If secret_data deletion fails or secret_data doesn't exist.
     """
@@ -480,38 +479,78 @@ async def delete_user_secret_endpoint(
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
+    if not request.key_names:
+        raise HTTPException(status_code=400, detail="'key_names' must be provided and cannot be empty.")
+    
+    # Only admins can delete multiple user secrets at once; non-admins must delete one at a time
+    is_admin = await authorization_service.has_role(
+        user_email=user_data.email,
+        required_role=UserRole.ADMIN,
+        department_name=department_name
+    )
+    if len(request.key_names) > 1 and not is_admin:
+        raise HTTPException(status_code=403, detail="Only admins are allowed to delete multiple secrets at once. Please delete one secret at a time.")
+
     try:
         # Set the user context
         
         # Initialize secrets manager
         secrets_manager = setup_secrets_manager()
-        
-        # Delete the secret_data
-        success = secrets_manager.delete_user_secret(
-            user_email=request.user_email,
-            key_name=request.key_name,
-            department_name=department_name
+
+        results = []
+        for key_name in request.key_names:
+            try:
+                success = secrets_manager.delete_user_secret(
+                    user_email=request.user_email,
+                    key_name=key_name,
+                    department_name=department_name
+                )
+
+                if success:
+                    log.info(f"Secret '{key_name}' deleted successfully for user: {request.user_email}")
+                    results.append({
+                        "key_name": key_name,
+                        "is_delete": True,
+                        "message": f"Secret '{key_name}' deleted successfully"
+                    })
+                else:
+                    log.warning(f"Secret '{key_name}' not found for deletion for user: {request.user_email}")
+                    results.append({
+                        "key_name": key_name,
+                        "is_delete": False,
+                        "message": f"Secret '{key_name}' not found for user"
+                    })
+            except Exception as e:
+                log.error(f"Error deleting secret '{key_name}' for user {request.user_email}: {str(e)}")
+                results.append({
+                    "key_name": key_name,
+                    "is_delete": False,
+                    "message": f"Error deleting secret '{key_name}': {str(e)}"
+                })
+
+        # Build grouped status message similar to delete_tool_endpoint
+        response_groups = {}
+        for res in results:
+            key_name = res.get("key_name", "unknown")
+            reason = "Successfully deleted secrets" if res.get("is_delete") else res.get("message", "Delete failed")
+            response_groups.setdefault(reason, []).append(key_name)
+
+        status_message = " | ".join(
+            f"{reason}: {', '.join(names)}"
+            for reason, names in sorted(response_groups.items(), key=lambda item: item[0] != "Successfully deleted secrets")
         )
-        
-        if success:
-            log.info(f"Secret '{request.key_name}' deleted successfully for user: {request.user_email}")
-            return {
-                "success": True,
-                "message": f"Secret '{request.key_name}' deleted successfully",
-                "user_email": request.user_email,
-                "key_name": request.key_name
-            }
-        else:
-            log.warning(f"Secret '{request.key_name}' not found for deletion for user: {request.user_email}")
-            raise HTTPException(
-                status_code=404,
-                detail=f"Secret '{request.key_name}' not found for user"
-            )
-            
+
+        return {
+            "success": any(r["is_delete"] for r in results),
+            "user_email": request.user_email,
+            "results": results,
+            "status_message": status_message
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"Error deleting secret for user {request.user_email}: {str(e)}")
+        log.error(f"Error deleting secret(s) for user {request.user_email}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
@@ -520,57 +559,118 @@ async def delete_user_secret_endpoint(
 
 @router.delete("/public/delete")
 async def delete_public_secret_endpoint(
-    fastapi_request: Request, 
+    fastapi_request: Request,
     request: PublicSecretDeleteRequest,
     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
     user_data: User = Depends(get_current_user)
 ):
     """
-    Delete a public secret_data.
+    Delete one or more public secrets.
 
     Args:
-        request (PublicSecretDeleteRequest): The request containing secret_data name.
+        request (PublicSecretDeleteRequest): The request containing key_names list.
 
     Returns:
-        dict: Success or error response.
+        dict: Results of each deletion operation with a status message.
 
     Raises:
-        HTTPException: If public secret_data deletion fails or secret_data doesn't exist.
+        HTTPException: If key_names is empty or all deletions fail.
     """
     if user_data.role == UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Superadmin is not allowed to delete public keys.")
     # Check vault access permission
-    department_name = user_data.department_name 
+    department_name = user_data.department_name
     has_access = await authorization_service.check_vault_access(user_data.role, department_name)
     if not has_access:
         raise HTTPException(status_code=403, detail="Access denied: You don't have permission to access vault endpoints")
+
+    # Only department admins can delete department-specific public secrets
+    is_admin = await authorization_service.has_role(
+        user_email=user_data.email,
+        required_role=UserRole.ADMIN,
+        department_name=department_name
+    )
+    if not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: Only department admins can delete public secrets."
+        )
         
     #changed
     user_id = fastapi_request.cookies.get("user_id")
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
+
+    if not request.key_names:
+        raise HTTPException(status_code=400, detail="'key_names' must be provided and cannot be empty.")
+
     try:
-        # Delete the public key
-        success = delete_public_key(
-            key_name=request.key_name,
-            department_name=department_name
+        # Pre-validate: only allow deletion of keys that belong to the admin's own department
+        department_keys = list_public_keys(department_name=department_name)
+        department_key_names = {k['name'] for k in department_keys}
+
+        results = []
+        for key_name in request.key_names:
+            # Check if the key belongs to the admin's department
+            if key_name not in department_key_names:
+                log.warning(f"Admin from department '{department_name}' attempted to delete key '{key_name}' which does not belong to their department")
+                results.append({
+                    "key_name": key_name,
+                    "is_delete": False,
+                    "message": f"Access denied: Public key '{key_name}' does not belong to department '{department_name}'"
+                })
+                continue
+
+            try:
+                success = delete_public_key(
+                    key_name=key_name,
+                    department_name=department_name
+                )
+
+                if success:
+                    log.info(f"Public key '{key_name}' deleted successfully")
+                    results.append({
+                        "key_name": key_name,
+                        "is_delete": True,
+                        "message": f"Public key '{key_name}' deleted successfully"
+                    })
+                else:
+                    log.error(f"Failed to delete public key '{key_name}'")
+                    results.append({
+                        "key_name": key_name,
+                        "is_delete": False,
+                        "message": f"Failed to delete public key '{key_name}'"
+                    })
+            except Exception as e:
+                log.error(f"Error deleting public key '{key_name}': {str(e)}")
+                results.append({
+                    "key_name": key_name,
+                    "is_delete": False,
+                    "message": f"Error deleting public key '{key_name}': {str(e)}"
+                })
+
+        # Build grouped status message similar to delete_tool_endpoint
+        response_groups = {}
+        for res in results:
+            key_name = res.get("key_name", "unknown")
+            reason = "Successfully deleted public secrets" if res.get("is_delete") else res.get("message", "Delete failed")
+            response_groups.setdefault(reason, []).append(key_name)
+
+        status_message = " | ".join(
+            f"{reason}: {', '.join(names)}"
+            for reason, names in sorted(response_groups.items(), key=lambda item: item[0] != "Successfully deleted public secrets")
         )
 
-        if success:
-            log.info(f"Public key '{request.key_name}' deleted successfully")
-            return {
-                "success": True,
-                "message": f"Public key '{request.key_name}' deleted successfully"
-            }
-        else:
-            log.error(f"Failed to delete public key '{request.key_name}'")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to delete public key '{request.key_name}'"
-            )
+        return {
+            "success": any(r["is_delete"] for r in results),
+            "results": results,
+            "status_message": status_message
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        log.error(f"Error deleting public key '{request.key_name}': {str(e)}")
+        log.error(f"Error deleting public key(s): {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"

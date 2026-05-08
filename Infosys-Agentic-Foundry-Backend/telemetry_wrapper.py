@@ -52,7 +52,7 @@ class OpenTelemetryManager:
 
     def setup_tracing(self, service_name: str = "agentic-workflow-service"):
         """
-        Initializes the OpenTelemetry tracing pipeline. Should be called once.
+        Initializes the OpenTelemetry tracing workflow. Should be called once.
         """
         if self._otel_tracer_provider:
             logger.debug("OpenTelemetry Tracing already initialized.")
@@ -86,7 +86,7 @@ class OpenTelemetryManager:
 
     def setup_logging(self, service_name: str = "agentic-workflow-service", use_http: bool = True):
         """
-        Initializes the OpenTelemetry logging pipeline. Should be called once.
+        Initializes the OpenTelemetry logging workflow. Should be called once.
         """
         if self._otel_logger_provider:
             logger.debug("OpenTelemetry Logging already initialized.")
@@ -227,7 +227,8 @@ class SessionContext:
         agent_name: Optional[str] = None, tool_id: Optional[str] = None, tool_name: Optional[str] = None, model_used: Optional[str] = None,
         tags: Optional[Union[List[str], str]] = None, agent_type: Optional[str] = None, tools_binded: Optional[Union[List[str], str]] = None,
         agents_binded: Optional[Union[List[str], str]] = None, user_query: Optional[str] = None, response: Optional[str] = None,
-        action_type: Optional[str] = None, action_on: Optional[str] = None, previous_value: Optional[Any] = None, new_value: Optional[Any] = None
+        action_type: Optional[str] = None, action_on: Optional[str] = None, previous_value: Optional[Any] = None, new_value: Optional[Any] = None,
+        agent_call_id: Optional[str] = None
     ):
         current_ctx = _session_context.get().copy()
         if user_id is not None: current_ctx['user_id'] = user_id
@@ -248,6 +249,7 @@ class SessionContext:
         if action_on is not None: current_ctx['action_on'] = action_on
         if previous_value is not None: current_ctx['previous_value'] = cls._serialize_if_complex(previous_value)
         if new_value is not None: current_ctx['new_value'] = cls._serialize_if_complex(new_value)
+        if agent_call_id is not None: current_ctx['agent_call_id'] = agent_call_id
         _session_context.set(current_ctx)
 
     @classmethod
@@ -263,7 +265,8 @@ class SessionContext:
             current_ctx.get('tools_binded', 'Unassigned'), current_ctx.get('agents_binded', 'Unassigned'),
             current_ctx.get('user_query', 'Unassigned'), current_ctx.get('response', 'Unassigned'),
             current_ctx.get('action_type', 'Unassigned'), current_ctx.get('action_on', 'Unassigned'),
-            current_ctx.get('previous_value', 'Unassigned'), current_ctx.get('new_value', 'Unassigned')
+            current_ctx.get('previous_value', 'Unassigned'), current_ctx.get('new_value', 'Unassigned'),
+            current_ctx.get('agent_call_id', 'Unassigned')
         )
     @classmethod
 
@@ -277,7 +280,7 @@ class CustomFilter(logging.Filter):
         (user_id, session_id, user_session, agent_id, agent_name,
          tool_id, tool_name, model_used, tags, agent_type, tools_binded,
          agents_binded, user_query, response, action_type, action_on,
-         previous_value, new_value) = SessionContext.get()
+         previous_value, new_value, agent_call_id) = SessionContext.get()
         current_span = SpanContextManager.get_or_create_span_context(otel_manager.get_tracer())
         record.trace_id = "00000000000000000000000000000000"
         record.span_id = "0000000000000000"
@@ -303,6 +306,7 @@ class CustomFilter(logging.Filter):
         record.action_on = action_on
         record.previous_value = previous_value
         record.new_value = new_value
+        record.agent_call_id = agent_call_id
         # Always inject server name into each log record
         try:
             record.server_name = SERVER_NAME
@@ -355,14 +359,15 @@ def update_session_context(
         user_id=None, session_id=None, user_session=None, agent_id=None,agent_name=None, tool_id=None, tool_name=None,
         model_used=None, tags=None, agent_type=None,
         tools_binded=None, agents_binded=None, user_query=None, response=None,
-        action_type=None, action_on=None, previous_value=None, new_value=None
+        action_type=None, action_on=None, previous_value=None, new_value=None,
+        agent_call_id=None
     ):
     SessionContext.set(
         user_id=user_id, session_id=session_id, user_session=user_session,agent_id=agent_id, agent_name=agent_name,
         tool_id=tool_id, tool_name=tool_name, model_used=model_used, tags=tags,
         agent_type=agent_type, tools_binded=tools_binded, agents_binded=agents_binded,
         user_query=user_query, response=response, action_type=action_type, action_on=action_on,
-        previous_value=previous_value, new_value=new_value
+        previous_value=previous_value, new_value=new_value, agent_call_id=agent_call_id
     )
 
 def with_logging_span(operation_name: Optional[str] = None):

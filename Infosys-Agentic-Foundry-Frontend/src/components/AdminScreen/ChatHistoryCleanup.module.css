@@ -1,0 +1,437 @@
+/**
+ * ChatHistoryCleanup - Table + Run Cleanup modal
+ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  padding: 0 20px 20px 20px;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  gap: 16px;
+}
+
+/* ===== Action Bar ===== */
+.actionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lastRun {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.lastRunLabel {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.lastRunValue {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.runButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  background: var(--app-primary-color);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.runButton:hover {
+  background: var(--app-secondary-color);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.runButton:active {
+  transform: translateY(0);
+}
+
+/* ===== Table ===== */
+.tableWrapper {
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tableContainer {
+  overflow-x: auto;
+  overflow-y: auto;
+  height: calc(100vh - 200px);
+}
+
+.cleanupTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cleanupTable th {
+  position: sticky;
+  top: 0;
+  background: var(--hover-background);
+  padding: 10px 14px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--app-primary-color);
+  font-size: 13px;
+  border: none;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+  z-index: 1;
+  min-width: 150px;
+  max-width: 200px;
+  width: 200px;
+}
+
+.cleanupTable th:hover {
+  background: var(--border);
+}
+
+.sortedColumn {
+  background: var(--accent-light, rgba(59, 130, 246, 0.08)) !important;
+}
+
+.thContent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sortIcon {
+  font-size: 12px;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.cleanupTable th:hover .sortIcon {
+  opacity: 1;
+}
+
+.cleanupTable td {
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-primary);
+  vertical-align: middle;
+  text-align: center;
+  min-width: 150px;
+  max-width: 200px;
+  width: 200px;
+}
+
+/* Cell wrapper: text + expand icon */
+.cellWrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.cellText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+/* Expand icon button - matches AgentLearning expand icon style */
+.expandIconBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  color: var(--content-color);
+  flex-shrink: 0;
+}
+
+.expandIconBtn:hover {
+  opacity: 1;
+}
+
+.expandIconBtn svg {
+  fill: var(--content-color);
+  stroke: var(--content-color);
+  color: var(--content-color);
+}
+
+.cleanupTable tbody tr:hover .expandIconBtn {
+  display: inline-flex;
+}
+
+.cleanupTable tbody tr {
+  transition: background 0.15s ease;
+}
+
+.cleanupTable tbody tr:hover {
+  background-color: var(--hover-background);
+}
+
+.cleanupTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ===== Status Badges ===== */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.statusSuccess {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success, #10b981);
+  border: 1px solid var(--success, #10b981);
+}
+
+.statusError {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger, #ef4444);
+  border: 1px solid var(--danger, #ef4444);
+}
+
+.statusPending {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border: 1px solid #f59e0b;
+}
+
+/* ===== Modal ===== */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay, rgba(0, 0, 0, 0.5));
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.modal {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 460px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  animation: slideUp 0.2s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+}
+
+.modalHeader h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--header-color);
+}
+
+.closeBtn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--hover-background);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--muted);
+  transition: all 0.15s ease;
+}
+
+.closeBtn:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 24px 16px;
+}
+
+.formGroup label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fieldHint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.formInput {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.formInput:focus {
+  outline: none;
+  border-color: var(--app-primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.formInput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.cancelBtn {
+  padding: 8px 18px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: var(--hover-background);
+}
+
+.cancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.executeBtn {
+  padding: 8px 24px;
+  background: var(--app-primary-color);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.executeBtn:hover:not(:disabled) {
+  background: var(--app-secondary-color);
+}
+
+.executeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .tableContainer {
+    max-height: calc(100vh - 300px);
+  }
+
+  .modal {
+    width: 95vw;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 0 12px 12px 12px;
+  }
+
+  .cleanupTable th,
+  .cleanupTable td {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .modalHeader {
+    padding: 16px 16px 10px;
+  }
+
+  .modalDescription,
+  .formGroup {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .modalFooter {
+    padding: 12px 16px 16px;
+  }
+}

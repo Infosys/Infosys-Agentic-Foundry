@@ -8,7 +8,7 @@ import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import { Modal } from "../commonComponents/Modal";
 import { sanitizeInput } from "../../utils/sanitization";
 
-const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
+const QueryModal = ({ database, onClose, onRunQuery, isExecuting, initialConnectionName = "", onBack }) => {
   const [queryData, setQueryData] = useState({
     selectedConnection: "",
     naturalLanguageQuery: "",
@@ -49,6 +49,18 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
       fetchSqlConnectionsData();
     }
   }, []);
+
+  // Auto-select connection when initialConnectionName is provided and connections are loaded
+  useEffect(() => {
+    if (initialConnectionName && sqlConnections.length > 0) {
+      const matchingConn = getAllAvailableConnections().find(
+        (conn) => conn.label === initialConnectionName
+      );
+      if (matchingConn) {
+        setQueryData((prev) => ({ ...prev, selectedConnection: matchingConn.value }));
+      }
+    }
+  }, [initialConnectionName, sqlConnections]);
 
   // Handle input changes with sanitization for text inputs
   const handleQueryInputChange = (e) => {
@@ -278,38 +290,47 @@ const QueryModal = ({ database, onClose, onRunQuery, isExecuting }) => {
       {(isExecuting || isGenerating) && <Loader />}
       <div className={styles.modalHeader}>
         <div className={styles.headerLeft}>
+          {onBack && (
+            <button className={styles.backBtn} onClick={onBack} aria-label="Back to list" title="Back to connections list">
+              <SVGIcons icon="chevron-left" width={18} height={18} />
+            </button>
+          )}
           <div className={styles.databaseIcon} style={{ backgroundColor: database.color }}>
             <SVGIcons icon={database.icon} width={24} height={24} fill="white" />
           </div>
           <div>
-            <h3 className={styles.modalTitle}>Run Query - {database.name}</h3>
+            <h3 className={styles.modalTitle}>
+              Run Query{initialConnectionName ? ` — ${initialConnectionName}` : ` - ${database.name}`}
+            </h3>
             <p className={styles.modalSubtitle}>Execute queries on your database</p>
           </div>
         </div>
-        <button className="closeBtn" onClick={onClose} aria-label="Close modal">
+        <button className="closeBtn" onClick={onBack || onClose} aria-label="Close modal">
           ×
         </button>
       </div>
 
       <div className={styles.modalBody}>
-        <div className="formGroup">
-          <label htmlFor="selectedConnection" className="label-desc">
-            Select Connection <span className="required">*</span>
-          </label>
-          <NewCommonDropdown
-            options={allConnections.map((conn) => conn.label)}
-            selected={allConnections.find((c) => c.value === queryData.selectedConnection)?.label || ""}
-            onSelect={(label) => {
-              const conn = allConnections.find((c) => c.label === label);
-              if (conn) {
-                handleQueryInputChange({ target: { name: "selectedConnection", value: conn.value } });
-              }
-            }}
-            placeholder={isLoadingConnections ? "Loading Connections..." : hasConnections ? "Select A Connection..." : "No Connections Available"}
-            showSearch={true}
-            width="100%"
-          />
-        </div>
+        {!initialConnectionName && (
+          <div className="formGroup">
+            <label htmlFor="selectedConnection" className="label-desc">
+              Select Connection <span className="required">*</span>
+            </label>
+            <NewCommonDropdown
+              options={allConnections.map((conn) => conn.label)}
+              selected={allConnections.find((c) => c.value === queryData.selectedConnection)?.label || ""}
+              onSelect={(label) => {
+                const conn = allConnections.find((c) => c.label === label);
+                if (conn) {
+                  handleQueryInputChange({ target: { name: "selectedConnection", value: conn.value } });
+                }
+              }}
+              placeholder={isLoadingConnections ? "Loading Connections..." : hasConnections ? "Select A Connection..." : "No Connections Available"}
+              showSearch={true}
+              width="100%"
+            />
+          </div>
+        )}
 
         <div className="formGroup">
           <label htmlFor="naturalLanguageQuery" className="label-desc">

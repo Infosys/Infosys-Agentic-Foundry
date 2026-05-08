@@ -1,21 +1,51 @@
-import { useState } from "react";
-import Cookies from "js-cookie";
+import { useState, useCallback } from "react";
+import { getRoleFromToken } from "../../../utils/jwtUtils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useTheme } from "../../../Hooks/ThemeContext";
+import { useMessage } from "../../../Hooks/MessageContext";
 import styles from "./AccordionPlan.module.css";
 import DebugStepsCss from "../../../css_modules/DebugSteps.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
 import { META_AGENT, PLANNER_META_AGENT } from "../../../constant";
+import { isAuthenticatedDownloadLink, handleAuthenticatedDownload } from "../../../utils/downloadUtils";
 
 const AccordionPlanSteps = (props) => {
-  const userRole = (Cookies.get("role") || "").toLowerCase();
+  const userRole = getRoleFromToken().toLowerCase();
   const [isOpen, setIsOpen] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(false);
   const { theme } = useTheme();
+  const { addMessage } = useMessage();
   const syntaxTheme = theme === "dark" ? oneDark : oneLight;
+
+  // Authenticated link handler for download links in markdown
+  const AuthenticatedLink = useCallback(
+    ({ href, children, ...linkProps }) => {
+      const handleClick = async (e) => {
+        if (isAuthenticatedDownloadLink(href)) {
+          e.preventDefault();
+          await handleAuthenticatedDownload(href, (errorMessage) => {
+            addMessage(errorMessage, "error");
+          });
+        }
+      };
+
+      return (
+        <a
+          href={href}
+          onClick={handleClick}
+          target="_blank"
+          rel="noopener noreferrer"
+          {...linkProps}
+        >
+          {children}
+        </a>
+      );
+    },
+    [addMessage]
+  );
 
   const toggleAccordion = () => {
     setIsOpen(!isOpen);
@@ -124,6 +154,7 @@ const AccordionPlanSteps = (props) => {
                 <ReactMarkdown
                   rehypePlugins={[remarkGfm]}
                   components={{
+                    a: AuthenticatedLink,
                     code({ node, inline, className, children, ...props }) {
                       const match = /language-(\w+)/.exec(className || "");
                       return !inline && match ? (
@@ -151,6 +182,7 @@ const AccordionPlanSteps = (props) => {
                   <ReactMarkdown
                     rehypePlugins={[remarkGfm]}
                     components={{
+                      a: AuthenticatedLink,
                       code({ node, inline, className, children, ...props }) {
                         const match = /language-(\w+)/.exec(className || "");
                         return !inline && match ? (
@@ -284,6 +316,7 @@ const AccordionPlanSteps = (props) => {
                                     <ReactMarkdown
                                       rehypePlugins={[remarkGfm]}
                                       components={{
+                                        a: AuthenticatedLink,
                                         code({ node, inline, className, children, ...props }) {
                                           const match = /language-(\w+)/.exec(className || "");
                                           return !inline && match ? (

@@ -6,7 +6,7 @@ import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox.jsx
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField.jsx";
 import { useMessage } from "../../Hooks/MessageContext";
-import { getAgentTypeAbbreviation } from "../Pipeline/pipelineUtils";
+import { getAgentTypeAbbreviation } from "../Workflow/workflowUtils";
 
 /**
  * UnifiedFilterDropdown - A single filter button that opens a dropdown panel

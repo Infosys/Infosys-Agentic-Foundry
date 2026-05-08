@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import styles from "./ImageViewer.module.css";
 import SVGIcons from "../../../Icons/SVGIcons";
 
-import { BASE_URL } from "../../../constant";
+import { BASE_URL, APIs } from "../../../constant";
 import Cookies from "js-cookie";
 
 // Constants for magic numbers
@@ -130,7 +130,7 @@ const ImageViewer = ({ content, messageId }) => {
     const isProtected = (
       typeof imageSrc === "string" &&
       (
-        imageSrc.includes("/utility/files/") ||
+        imageSrc.includes(APIs.UTILITY_FILES_PREFIX) ||
         isBackend ||
         imageSrc.startsWith("/") ||
         imageSrc.startsWith("user_uploads/")
@@ -264,7 +264,7 @@ const ImageViewer = ({ content, messageId }) => {
           </div> */}
           <span className={styles.imageTitle}>{imageAlt}</span>
         </div>
-        
+
         <div className={styles.toolbarActions}>
           <button
             className={styles.toolbarButton}
@@ -273,14 +273,14 @@ const ImageViewer = ({ content, messageId }) => {
             disabled={zoomLevel <= ZOOM_MIN}
           >
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <circle cx="9" cy="9" r="7" stroke="#666" strokeWidth="1.5"/>
-              <path d="M6 9h6" stroke="#666" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M21 21l-4.35-4.35" stroke="#666" strokeWidth="1.5" strokeLinecap="round"/>
+              <circle cx="9" cy="9" r="7" stroke="#666" strokeWidth="1.5" />
+              <path d="M6 9h6" stroke="#666" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M21 21l-4.35-4.35" stroke="#666" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
-          
+
           <span className={styles.zoomLevel}>{Math.round(zoomLevel * ZOOM_PERCENT)}%</span>
-          
+
           <button
             className={styles.toolbarButton}
             onClick={handleZoomIn}
@@ -288,42 +288,42 @@ const ImageViewer = ({ content, messageId }) => {
             disabled={zoomLevel >= ZOOM_MAX}
           >
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <circle cx="9" cy="9" r="7" stroke="#666" strokeWidth="1.5"/>
-              <path d="M6 9h6M9 6v6" stroke="#666" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M21 21l-4.35-4.35" stroke="#666" strokeWidth="1.5" strokeLinecap="round"/>
+              <circle cx="9" cy="9" r="7" stroke="#666" strokeWidth="1.5" />
+              <path d="M6 9h6M9 6v6" stroke="#666" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M21 21l-4.35-4.35" stroke="#666" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </button>
-          
+
           <button
             className={styles.toolbarButton}
             onClick={handleResetZoom}
             title="Reset Zoom"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C9.69494 21 7.59227 20.1334 6 18.7083" 
-                stroke="#666" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M3 4V9H8" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C9.69494 21 7.59227 20.1334 6 18.7083"
+                stroke="#666" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M3 4V9H8" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          
+
           <div className={styles.separator}></div>
-          
+
           <button
             className={styles.toolbarButton}
             onClick={handleDownload}
             title="Download Image"
           >
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <path d="M10 13V3M7 10L10 13L13 10M5 17H15" 
-                stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M10 13V3M7 10L10 13L13 10M5 17H15"
+                stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          
+
         </div>
       </div>
 
       {/* Image Container */}
-      <div 
+      <div
         className={styles.imageContainer}
         ref={containerRef}
         onMouseDown={handleMouseDown}
@@ -338,14 +338,14 @@ const ImageViewer = ({ content, messageId }) => {
             <p>Loading image...</p>
           </div>
         )}
-        
+
         {error && (
           <div className={styles.errorState}>
             <SVGIcons icon="fa-exclamation-triangle" width={48} height={48} fill="#dc2626" />
             <p className={styles.errorMessage}>{error}</p>
           </div>
         )}
-        
+
         {/* Only render image if not loading and no error */}
         {!isLoading && !error && (
           <img
@@ -365,7 +365,7 @@ const ImageViewer = ({ content, messageId }) => {
           />
         )}
       </div>
-      
+
       {/* Footer with image info */}
       <div className={styles.footer}>
         <div className={styles.imageInfo}>

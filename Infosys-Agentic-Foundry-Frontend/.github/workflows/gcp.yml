@@ -1,0 +1,81 @@
+name: Build and Deploy to GKE #
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME }}
+  GKE_ZONE: ${{ secrets.GKE_ZONE }}
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_number }}
+  DEPLOYMENT_MANIFEST_PATH: /root/iafbe.yaml
+
+jobs:
+  buildImage:
+    runs-on: [self-hosted-gcpb, Linux, X64]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Build and push Docker image to JFrog Artifactory
+        env:
+          JFROG_USERNAME: ${{ secrets.JFROG_USERNAME }}
+          JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+        run: |
+          docker login infyartifactory.jfrog.io -u "$JFROG_USERNAME" -p "$JFROG_TOKEN"
+          docker build -t infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ env.IMAGE_TAG }} .
+          docker push infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ env.IMAGE_TAG }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker to use GCR credentials
+        run: |
+          gcloud auth configure-docker gcr.io
+
+      - name: Pull image from JFrog and tag for GCR
+        run: |
+          GCR_IMAGE="gcr.io/pcs-gcp-cr-10055-prj-infy-hck/iafbackend:${{ env.IMAGE_TAG }}"
+          docker pull infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ env.IMAGE_TAG }}
+          docker tag infyartifactory.jfrog.io/infyagenticrepo/iafbackend:${{ env.IMAGE_TAG }} $GCR_IMAGE
+
+      # - name: Push image to GCR using Docker
+      #   run: |
+      #     GCR_IMAGE="gcr.io/pcs-gcp-cr-10055-prj-infy-hck/iafbackend:${{ env.IMAGE_TAG }}"
+      #     docker push $GCR_IMAGE
+      - name: Push image to GCR using Docker
+        run: |
+          gcloud auth configure-docker gcr.io
+          GCR_IMAGE="gcr.io/pcs-gcp-cr-10055-prj-infy-hck/iafbackend:${{ env.IMAGE_TAG }}"
+          docker push $GCR_IMAGE
+
+  deploy:
+    needs: buildImage
+    runs-on: [self-hosted-gcpb, Linux, X64]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --zone ${{ env.GKE_ZONE }} --project ${{ env.GCP_PROJECT_ID }}
+
+      - name: Deploy application to GKE
+        run: |
+          sudo kubectl apply -f ${{ env.DEPLOYMENT_MANIFEST_PATH }}

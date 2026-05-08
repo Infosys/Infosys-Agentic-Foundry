@@ -12,6 +12,7 @@ import MessagePopup from "./components/MessagePopup/MessagePopup";
 import GlobalComponent from "./Hooks/GlobalComponent";
 import Register from "./components/Register/Index";
 import { useAuth } from "./context/AuthContext";
+import { usePermissions } from "./context/PermissionsContext";
 import ProtectedRoute from "./ProtectedRoute";
 import AdminScreenNew from "./components/AdminScreen/AdminScreenNew";
 import SuperAdminControl from "./components/AdminScreen/SuperAdminControl";
@@ -25,7 +26,8 @@ import FilesPage from "./components/AskAssistant/FilesPage";
 import useAutoLogout from "./Hooks/useAutoLogout";
 import useErrorHandler from "./Hooks/useErrorHandler";
 import { globalErrorService } from "./services/globalErrorService";
-import Pipeline from "./components/Pipeline";
+import Workflow from "./components/Workflow";
+import Requests from "./components/Requests/Requests";
 
 function App() {
   useErrorHandler(); // Calling error handler hook to catch errors from API calls across the application
@@ -43,10 +45,14 @@ function App() {
   // install 6-hour absolute session auto logout
   useAutoLogout();
 
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const canExecuteAgents = hasPermission("execute_access.agents", true);
+
   const PublicRoute = ({ children }) => {
     if (loading) return null; // wait until auth hydrated
     if (isAuthenticated) {
-      return <Navigate to="/" />;
+      // Redirect to /tools if chat/execute access is disabled
+      return <Navigate to={canExecuteAgents ? "/" : "/tools"} />;
     }
     return children;
   };
@@ -100,9 +106,13 @@ function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <Layout>
-                <AskAssistant />
-              </Layout>
+              {canExecuteAgents ? (
+                <Layout>
+                  <AskAssistant />
+                </Layout>
+              ) : (
+                <Navigate to="/tools" replace />
+              )}
             </ProtectedRoute>
           }
         />
@@ -127,11 +137,11 @@ function App() {
           }
         />
         <Route
-          path="/pipeline"
+          path="/workflows"
           element={
             <ProtectedRoute>
               <Layout>
-                <Pipeline />
+                <Workflow />
               </Layout>
             </ProtectedRoute>
           }
@@ -150,9 +160,13 @@ function App() {
           path="/chat"
           element={
             <ProtectedRoute>
-              <Layout>
-                <AskAssistant />
-              </Layout>
+              {canExecuteAgents ? (
+                <Layout>
+                  <AskAssistant />
+                </Layout>
+              ) : (
+                <Navigate to="/tools" replace />
+              )}
             </ProtectedRoute>
           }
         />
@@ -212,6 +226,16 @@ function App() {
             <ProtectedRoute>
               <Layout>
                 <KnowledgeBase />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/requests"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Requests />
               </Layout>
             </ProtectedRoute>
           }

@@ -2,8 +2,8 @@ import React from "react";
 import styles from "./PermissionsModal.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { usePermissions } from "../../context/PermissionsContext";
-import Cookies from "js-cookie";
 import FullModal from "../../iafComponents/GlobalComponents/FullModal/FullModal";
+import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
 
 /**
  * PermissionsModal - Displays current user's role-based permissions
@@ -16,8 +16,8 @@ import FullModal from "../../iafComponents/GlobalComponents/FullModal/FullModal"
  */
 const PermissionsModal = ({ isOpen, onClose }) => {
   const { permissions, loading } = usePermissions();
-  const role = Cookies.get("role") || "Guest";
-  const department = Cookies.get("department") || "";
+  const role = getRoleFromToken() || "Guest";
+  const department = getDepartmentFromToken();
 
   // Render a permission status indicator
   const renderPermissionBadge = (value) => {
@@ -54,6 +54,27 @@ const PermissionsModal = ({ isOpen, onClose }) => {
         { key: "update_access.agents", label: "Update Access" },
         { key: "delete_access.agents", label: "Delete Access" },
         { key: "execute_access.agents", label: "Execute Access" },
+        { key: "export_agents_access", label: "Export Agents" },
+      ],
+    },
+    "MCP Servers": {
+      icon: "server",
+      items: [
+        { key: "read_access.mcp_servers", label: "Read Access" },
+        { key: "add_access.mcp_servers", label: "Create Access" },
+        { key: "update_access.mcp_servers", label: "Update Access" },
+        { key: "delete_access.mcp_servers", label: "Delete Access" },
+        { key: "execute_access.mcp_servers", label: "Execute Access" },
+      ],
+    },
+    Workflows: {
+      icon: "fa-project-diagram",
+      items: [
+        { key: "read_access.workflows", label: "Read Access" },
+        { key: "add_access.workflows", label: "Create Access" },
+        { key: "update_access.workflows", label: "Update Access" },
+        { key: "delete_access.workflows", label: "Delete Access" },
+        { key: "execute_access.workflows", label: "Execute Access" },
       ],
     },
     Chat: {

@@ -2,17 +2,17 @@ import { useState, useEffect } from "react";
 import styles from "./CreateAccessKeyModal.module.css";
 import FullModal from "../../iafComponents/GlobalComponents/FullModal/FullModal.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
-import Cookies from "js-cookie";
+import { getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 
 /**
  * ViewAccessKeyModal Component
  * Slide-in modal from right for viewing/editing access key details
  */
-export default function ViewAccessKeyModal({ 
-  onClose, 
-  accessKeyData, 
+export default function ViewAccessKeyModal({
+  onClose,
+  accessKeyData,
   loading,
-  isEditMode = false 
+  isEditMode = false
 }) {
   const [formData, setFormData] = useState({
     access_key: "",
@@ -22,8 +22,8 @@ export default function ViewAccessKeyModal({
     created_at: ""
   });
 
-  const userName = Cookies.get("userName");
-  const userEmail = Cookies.get("email");
+  const userName = getUserNameFromToken();
+  const userEmail = getEmailFromToken();
 
   // Populate form data when accessKeyData changes
   useEffect(() => {

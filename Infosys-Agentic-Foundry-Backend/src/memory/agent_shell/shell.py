@@ -52,26 +52,34 @@ class AgentShell:
     - mkdir, touch: Create directories and files
     - semgrep: Semantic search
     
-    Directory Structure (Hierarchical):
+    Directory Structure (NEW - Separated User and Agent):
     ```
-    {workspace_root}/{user_email}/
-    ├── user/                           # User-level data (ONLY preferences)
-    │   └── preferences.md              # User preferences (theme, language, etc.)
-    ├── {agent_id}/
-    │   ├── agent/                      # Agent-level data (persistent across sessions)
-    │   │   ├── facts/                  # Agent-specific facts, API keys, credentials
-    │   │   ├── learnings/              # Agent learnings
-    │   │   └── entities/               # Known entities
-    │   └── {session_id}/
-    │       ├── session/                # Session-level data (current session only)
-    │       │   ├── workspace/          # Scratchpad for current task
-    │       │   ├── history/            # Session history
-    │       │   └── pending_context/    # Multi-turn pending tasks (session-specific)
-    │       │       └── current.md      # Current pending context
-    │       ├── conversations/          # VIRTUAL: Past chat history (read-only)
-    │       │   ├── summary.md
-    │       │   └── full.md
-    │       └── .index/                 # Vector store index
+    {workspace_root}/
+    ├── users/                          # User-level data (shared across ALL agents)
+    │   └── {user_email}/
+    │       └── preferences.md          # User preferences (theme, language, etc.)
+    │
+    └── agents/                         # Agent-level data (separate from users)
+        └── {agent_id}/
+            ├── agent/                  # Agent-level data (persistent across sessions)
+            │   ├── facts/              # Agent-specific facts, API keys, credentials
+            │   ├── learnings/          # Agent learnings
+            │   └── entities/           # Known entities
+            ├── db_cache/               # Database schema & sample data cache
+            │   ├── schema_cache.json
+            │   ├── sample_data_cache.json
+            │   └── cache_metadata.json
+            └── sessions/
+                └── {session_id}/
+                    ├── session/        # Session-level data (current session only)
+                    │   ├── workspace/  # Scratchpad for current task
+                    │   ├── history/    # Session history
+                    │   └── pending_context/
+                    │       └── current.md
+                    ├── conversations/  # VIRTUAL: Past chat history (read-only)
+                    │   ├── summary.md
+                    │   └── full.md
+                    └── .index/         # Vector store index
     ```
     """
     
@@ -102,6 +110,7 @@ class AgentShell:
         session_id: str,
         user_email: str = None,
         workspace_root: str = "./agent_workspaces",
+        department: str = None,
         chat_logs_path: str = None,
         enable_semantic_search: bool = True
     ):
@@ -113,6 +122,7 @@ class AgentShell:
             session_id: Session identifier (MANDATORY).
             user_email: User email for user-level persistence (optional but recommended).
             workspace_root: Root directory for all workspaces.
+            department: Department name for workspace segregation (defaults to 'General').
             chat_logs_path: Path to conversations.json (auto-detected if None).
             enable_semantic_search: Enable semgrep command.
         """
@@ -122,6 +132,7 @@ class AgentShell:
         self.agent_id = agent_id
         self.session_id = session_id
         self.user_email = user_email or "anonymous"
+        self.department = department or "General"
         # Sanitize email for filesystem (replace @ and . with _)
         self.user_dir_name = self.user_email.replace("@", "_at_").replace(".", "_")
         self.workspace_root = Path(workspace_root).resolve()
@@ -142,11 +153,24 @@ class AgentShell:
                     self.chat_logs_path = p.resolve()
                     break
         
-        # Build hierarchical paths:
-        # {workspace_root}/{user_email}/{agent_id}/{session_id}/
-        self.user_root = (self.workspace_root / self.user_dir_name).resolve()
-        self.agent_root = (self.user_root / agent_id).resolve()
-        self.shell_root = (self.agent_root / session_id).resolve()
+        # NEW STRUCTURE: Department-segregated workspace
+        # {workspace_root}/{department}/users/{user_email}/
+        # {workspace_root}/{department}/agents/{agent_id}/
+        # {workspace_root}/{department}/databases/{connection_name}/ (SHARED/REUSABLE)
+        
+        dept_root = self.workspace_root / self.department
+        
+        # User root: shared across all agents for this user within the department
+        self.user_root = (dept_root / "users" / self.user_dir_name).resolve()
+        
+        # Agent root: separate from user, under /agents/
+        self.agent_root = (dept_root / "agents" / agent_id).resolve()
+        
+        # Databases root: SHARED across all agents within the department (reusable)
+        self.databases_root = (dept_root / "databases").resolve()
+        
+        # Session root: under agent, in sessions folder
+        self.shell_root = (self.agent_root / "sessions" / session_id).resolve()
         
         # Virtual current working directory
         self.cwd = "/"
@@ -163,29 +187,36 @@ class AgentShell:
         log.info(f"AgentShell initialized: user={self.user_email}, agent={agent_id}, session={session_id}")
     
     def _bootstrap(self):
-        """Create the hierarchical directory structure."""
-        # User-level directories (ONLY preferences - nothing else)
+        """Create the hierarchical directory structure (NEW STRUCTURE)."""
+        # User-level directories (under /users/{user_email}/ - shared across ALL agents)
+        # Only preferences file lives here
         user_dirs = [
-            self.user_root / "user",
+            self.user_root,  # /users/{user_email}/
         ]
         
-        # Agent-level directories (persistent across sessions for this agent)
-        # ALL facts, API keys, credentials go here
+        # Agent-level directories (under /agents/{agent_id}/ - persistent across sessions)
+        # Facts, API keys, credentials go here (NO db data - that's shared)
         agent_dirs = [
             self.agent_root / "agent" / "facts",
             self.agent_root / "agent" / "learnings",
             self.agent_root / "agent" / "entities",
         ]
         
-        # Session-level directories (current session only)
+        # Databases directory (SHARED across ALL agents - reusable)
+        # /databases/{connection_name}/ with schema.md and samples.md
+        databases_dirs = [
+            self.databases_root,  # /databases/
+        ]
+        
+        # Session-level directories (under /agents/{agent_id}/sessions/{session_id}/)
         session_dirs = [
             self.shell_root / "session" / "workspace",
             self.shell_root / "session" / "history",
-            self.shell_root / "session" / "pending_context",  # For multi-turn conversation state (session-specific)
+            self.shell_root / "session" / "pending_context",  # For multi-turn conversation state
             self.shell_root / ".index",
         ]
         
-        all_dirs = user_dirs + agent_dirs + session_dirs
+        all_dirs = user_dirs + agent_dirs + databases_dirs + session_dirs
         for d in all_dirs:
             d.mkdir(parents=True, exist_ok=True)
         
@@ -194,8 +225,8 @@ class AgentShell:
         if not pending_context.exists():
             pending_context.write_text("", encoding="utf-8")
         
-        # Create user preferences file if not exists (ONLY file in /user/)
-        user_prefs = self.user_root / "user" / "preferences.md"
+        # Create user preferences file if not exists (directly under /users/{user_email}/)
+        user_prefs = self.user_root / "preferences.md"
         if not user_prefs.exists():
             user_prefs.write_text(f"""# User Preferences
 
@@ -223,17 +254,21 @@ class AgentShell:
 **Session:** {self.session_id}
 **Created:** {datetime.now().isoformat()}
 
-## Directory Structure (Hierarchical)
+## Directory Structure (NEW - Separated Users, Agents, and Databases)
 
-### User Level (ONLY preferences - shared across ALL agents)
+### User Level (shared across ALL agents)
 - `/user/preferences.md` - User display/notification preferences
 
-### Agent Level (persistent across sessions for THIS agent)
+### Agent Level (separate from users, persistent across sessions)
 - `/agent/facts/` - Agent-specific facts, API keys, credentials
 - `/agent/learnings/` - Patterns and insights
 - `/agent/entities/` - Known entities
 
-### Session Level (current session only)
+### Databases Level (SHARED/REUSABLE across ALL agents)
+- `/databases/{{connection_name}}/schema.md` - Database schema
+- `/databases/{{connection_name}}/samples.md` - Sample data
+
+### Session Level (current session)
 - `/session/workspace/` - Scratchpad for current task
 - `/session/history/` - Session history
 - `/session/conversations/` - [VIRTUAL] Past chat history (read-only)
@@ -251,10 +286,11 @@ class AgentShell:
 
 ## Tips
 
-1. User preferences go to `/user/preferences.md`
+1. User preferences go to `/user/preferences.md` (shared across all agents)
 2. API keys and facts go to `/agent/facts/` (persists across sessions)
-3. Use `/session/workspace/` for temporary work
-4. Use `semgrep` when exact grep fails
+3. Database schema/sample files are at `/databases/{{conn}}/` (SHARED, read with cat)
+4. Use `/session/workspace/` for temporary work
+5. Use `semgrep` when exact grep fails
 """, encoding="utf-8")
     
     def run(self, command: str) -> str:
@@ -372,24 +408,30 @@ class AgentShell:
         parts = [p for p in virtual.split("/") if p and p != "."]
         clean_path = "/" + "/".join(parts)
         
-        # Map virtual path to real path based on hierarchy:
-        # /user/...    -> user_root/user/...
-        # /agent/...   -> agent_root/agent/...
-        # /session/... -> shell_root/session/...
-        # /...         -> shell_root/... (default, for backwards compat)
+        # Map virtual path to real path based on NEW hierarchy:
+        # /user/...      -> users/{user_email}/...     (user_root)
+        # /agent/...     -> agents/{agent_id}/agent/...  (agent_root/agent)
+        # /session/...   -> agents/{agent_id}/sessions/{session_id}/session/... (shell_root/session)
+        # /databases/... -> databases/{connection_name}/... (databases_root - SHARED)
+        # /...           -> shell_root/... (default, for backwards compat)
         
         if clean_path == "/":
             return self.shell_root
         elif clean_path.startswith("/user/") or clean_path == "/user":
             sub_path = clean_path[5:].lstrip("/")  # Remove "/user" prefix
             if sub_path:
-                return self.user_root / "user" / sub_path
-            return self.user_root / "user"
+                return self.user_root / sub_path
+            return self.user_root
         elif clean_path.startswith("/agent/") or clean_path == "/agent":
             sub_path = clean_path[6:].lstrip("/")  # Remove "/agent" prefix
             if sub_path:
                 return self.agent_root / "agent" / sub_path
             return self.agent_root / "agent"
+        elif clean_path.startswith("/databases/") or clean_path == "/databases":
+            sub_path = clean_path[10:].lstrip("/")  # Remove "/databases" prefix
+            if sub_path:
+                return self.databases_root / sub_path
+            return self.databases_root
         elif clean_path.startswith("/session/") or clean_path == "/session":
             sub_path = clean_path[8:].lstrip("/")  # Remove "/session" prefix
             if sub_path:
@@ -407,13 +449,23 @@ class AgentShell:
         """Convert real path to virtual path."""
         resolved = real_path.resolve()
         
-        # Check if it's under user_root/user
+        # Check if it's under user_root (users/{user_email}/)
         try:
-            rel = resolved.relative_to(self.user_root / "user")
+            rel = resolved.relative_to(self.user_root)
             rel_str = str(rel).replace("\\", "/")
             if rel_str == "." or rel_str == "":
                 return "/user"
             return "/user/" + rel_str
+        except ValueError:
+            pass
+        
+        # Check if it's under databases_root (SHARED)
+        try:
+            rel = resolved.relative_to(self.databases_root)
+            rel_str = str(rel).replace("\\", "/")
+            if rel_str == "." or rel_str == "":
+                return "/databases"
+            return "/databases/" + rel_str
         except ValueError:
             pass
         
@@ -451,8 +503,8 @@ class AgentShell:
         """Check if path is inside any of the allowed sandboxes."""
         try:
             resolved_path = path.resolve()
-            # Check if inside user_root, agent_root, or shell_root
-            for root in [self.user_root, self.agent_root, self.shell_root]:
+            # Check if inside user_root, agent_root, shell_root, or databases_root
+            for root in [self.user_root, self.agent_root, self.shell_root, self.databases_root]:
                 try:
                     resolved_path.relative_to(root.resolve())
                     return True

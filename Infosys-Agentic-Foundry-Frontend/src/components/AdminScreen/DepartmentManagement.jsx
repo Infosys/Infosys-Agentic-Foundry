@@ -3,7 +3,7 @@ import styles from "./AgentAssignment.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
 import useFetch from "../../Hooks/useAxios";
 import { APIs } from "../../constant";
-import Cookies from "js-cookie";
+import { getRoleFromToken } from "../../utils/jwtUtils";
 import Loader from "../commonComponents/Loader";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
@@ -24,16 +24,16 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
   const [deptRoles, setDeptRoles] = useState([]);
   const [newRoleName, setNewRoleName] = useState("");
   const [saveLoading, setSaveLoading] = useState(false);
-  
+
   // Modal state for creating/editing department
   const [showForm, setShowForm] = useState(false);
   const [isAddDepartment, setIsAddDepartment] = useState(true);
   const [editDepartment, setEditDepartment] = useState(null);
-  
+
   const { addMessage } = useMessage();
   const { fetchData, postData, deleteData } = useFetch();
-  
-  const role = Cookies.get("role");
+
+  const role = getRoleFromToken();
   const normalizedRole = role ? role.toUpperCase().replace(/[\s_-]/g, "") : "";
   const isSuperAdmin = normalizedRole === "SUPERADMIN";
   const isAdmin = normalizedRole === "ADMIN";
@@ -48,7 +48,7 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
       if (Array.isArray(resp)) source = resp;
       else if (Array.isArray(resp?.departments)) source = resp.departments;
       else if (Array.isArray(resp?.data)) source = resp.data;
-      
+
       const normalized = source.map((item, idx) => {
         if (typeof item === "string") {
           return { id: `dept-${idx}`, department_name: item };
@@ -58,9 +58,9 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
           department_name: item.department_name || item.name || ""
         };
       }).filter(d => d.department_name);
-      
+
       setDepartments(normalized);
-      
+
       // Auto-select first department if available
       if (normalized.length > 0 && !selectedDepartment) {
         setSelectedDepartment(normalized[0]);
@@ -235,13 +235,13 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
         return;
       }
       addMessage(response?.message || `Department "${deptName}" deleted successfully`, "success");
-      
+
       // If the deleted department was selected, clear selection
       if (selectedDepartment?.department_name === deptName) {
         setSelectedDepartment(null);
         setDeptRoles([]);
       }
-      
+
       // Reload departments list
       await loadDepartments();
     } catch (err) {
@@ -279,7 +279,7 @@ const DepartmentManagement = ({ externalSearchTerm = "", onPlusClickRef, onClear
           fetchDepartmentsAfterFormClose={fetchDepartmentsAfterFormClose}
         />
       )}
-      
+
       {loading && <Loader />}
 
       <div className={styles.deptManagementContainer}>

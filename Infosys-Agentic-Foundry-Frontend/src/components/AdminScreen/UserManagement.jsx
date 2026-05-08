@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
-import Cookies from "js-cookie";
 import { APIs } from "../../constant";
+import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
 import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
 import Toggle from "../commonComponents/Toggle";
@@ -21,8 +21,8 @@ import "../../iafComponents/GlobalComponents/DisplayCard/DisplayCard1.css";
  * Exposes renderDepartmentDropdown via ref for parent to render next to search
  */
 const UserManagement = forwardRef(({ externalSearchTerm = "", onReady }, ref) => {
-  const loggedInDepartment = Cookies.get("department") || "";
-  const userRole = Cookies.get("role") || "";
+  const loggedInDepartment = getDepartmentFromToken();
+  const userRole = getRoleFromToken();
   const isSuperAdmin = userRole.toLowerCase() === "superadmin" || userRole.toLowerCase() === "super_admin";
 
   // State
@@ -105,6 +105,17 @@ const UserManagement = forwardRef(({ externalSearchTerm = "", onReady }, ref) =>
     if (selectedDepartment) {
       fetchUsers();
     }
+  }, [selectedDepartment, fetchUsers]);
+
+  // Refresh user list when a registration request is approved
+  useEffect(() => {
+    const handleNotificationAction = (e) => {
+      if (e.detail?.action === "approved" && selectedDepartment) {
+        fetchUsers();
+      }
+    };
+    window.addEventListener("notificationAction", handleNotificationAction);
+    return () => window.removeEventListener("notificationAction", handleNotificationAction);
   }, [selectedDepartment, fetchUsers]);
 
   /**

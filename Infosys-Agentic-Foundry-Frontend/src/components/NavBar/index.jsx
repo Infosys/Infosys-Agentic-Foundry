@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import styles from "../../css_modules/NavBar.module.css";
 import SVGIcons from "../../Icons/SVGIcons";
 import { NavLink, useLocation } from "react-router-dom";
@@ -13,6 +13,7 @@ import { useVersion } from "../../context/VersionContext";
 import useFetch from "../../Hooks/useAxios";
 import { useMessage } from "../../Hooks/MessageContext";
 import { useTheme } from "../../Hooks/ThemeContext";
+import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
 import PermissionsModal from "./PermissionsModal";
 
 export default function NavBar() {
@@ -20,39 +21,62 @@ export default function NavBar() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [isNavCollapsed, setIsNavCollapsed] = useState(true);
+  const [isChatbotHidden, setIsChatbotHidden] = useState(false);
+
+  // Listen for chatbot hide event
+  useEffect(() => {
+    const handleChatbotHidden = () => setIsChatbotHidden(true);
+    window.addEventListener("floatingChatBotHidden", handleChatbotHidden);
+    return () => window.removeEventListener("floatingChatBotHidden", handleChatbotHidden);
+  }, []);
+  const [pendingNotifCount, setPendingNotifCount] = useState(0);
   const userMenuRef = useRef(null);
   const location = useLocation();
   const { user, role: authRole, logout, isAuthenticated } = useAuth();
-  const { postData } = useFetch();
+  const { postData, fetchData } = useFetch();
   const { addMessage } = useMessage();
   const { mkDocsInternalPath } = useApiUrl();
   const { combinedVersion } = useVersion();
   const displayName = user?.name || user || "";
-  const role = authRole || Cookies.get("role");
-  const department = Cookies.get("department") || "";
+  const role = authRole || getRoleFromToken();
+  const department = getDepartmentFromToken();
   const isAdmin = role && role.toUpperCase() === "ADMIN";
   const isSuperAdmin = role && role.toUpperCase() === "SUPERADMIN";
-  const isUser = role && role.toUpperCase() === "USER";
   const { hasPermission } = usePermissions();
   const { theme, toggleTheme } = useTheme();
 
-  // Permission-based visibility checks for navigation items
-  // Using hasPermission(key, false) - if permission key not in API response, hide by default
-  // Only show when permission explicitly exists and is true
-  const canViewTools = hasPermission("read_access.tools", false);
-  const canViewAgents = hasPermission("read_access.agents", false);
+  // Permission-based visibility check - only canAddTools is needed for Resource Dashboard nav item
   const canAddTools = hasPermission("add_access.tools", false);
-  const canUpdateTools = hasPermission("update_access.tools", false);
-  const canViewDataConnectors = hasPermission("data_connector_access", false);
-  const canViewEvaluation = hasPermission("evaluation_access", false);
-  const canViewGroundTruth = hasPermission("evaluation_access", false);
-  const canExecuteAgents = hasPermission("execute_access.agents", false);
-  const canViewVault = hasPermission("vault_access", false);
-  const canViewKnowledgeBase = hasPermission("knowledgebase_access", false);
-  const canExecuteChat = hasPermission("execute_access.agents", false);
 
-  // Compute if ALL permissions are OFF - user should only see Files
-  const allPermissionsOff = !canViewTools && !canViewAgents && !canViewDataConnectors && !canViewEvaluation && !canViewGroundTruth && !canExecuteAgents && !canViewVault && !canViewKnowledgeBase && !canExecuteChat;
+  // Fetch pending notification count for Admin nav badge
+  const loadNotifCount = useCallback(async () => {
+    try {
+      const response = await fetchData(APIs.GET_REGISTRATION_REQUESTS);
+      const list = response?.requests ?? response?.data?.requests ?? (Array.isArray(response) ? response : []);
+      const count = list.filter((r) => r.status?.toLowerCase() === "pending").length;
+      setPendingNotifCount(count);
+    } catch {
+      setPendingNotifCount(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadNotifCount();
+    }
+  }, [isAdmin, loadNotifCount]);
+
+  // Refresh badge count when a notification is approved/rejected
+  useEffect(() => {
+    const handleNotificationAction = () => {
+      if (isAdmin) {
+        loadNotifCount();
+      }
+    };
+    window.addEventListener("notificationAction", handleNotificationAction);
+    return () => window.removeEventListener("notificationAction", handleNotificationAction);
+  }, [isAdmin, loadNotifCount]);
 
   // Set data attribute for collapsed state
   useEffect(() => {
@@ -134,6 +158,12 @@ export default function NavBar() {
 
   const handleGrafanaClick = () => {
     window.open(grafanaDashboardUrl, "_blank");
+  };
+
+  const handleRestoreChatbot = () => {
+    setIsChatbotHidden(false);
+    // Dispatch custom event to notify FloatingChatBot
+    window.dispatchEvent(new CustomEvent("restoreFloatingChatBot"));
   };
 
   const handleHelpClick = () => {
@@ -266,8 +296,8 @@ export default function NavBar() {
         {/* Main Navigation */}
         <nav className={styles.nav}>
           <ul>
-            {/* Chat - Show based on execute_access.agents permission (Landing Page) */}
-            {canExecuteAgents && (
+            {/* Chat (Landing Page) - Only show if agent execute access is enabled */}
+            {hasPermission("execute_access.agents", true) && (
               <li>
                 {mainNavLink(
                   "/",
@@ -280,7 +310,7 @@ export default function NavBar() {
               </li>
             )}
 
-            {/* Tools - Always show in nav, access controlled at card level */}
+            {/* Tools */}
             <li>
               {mainNavLink(
                 "/tools",
@@ -292,7 +322,7 @@ export default function NavBar() {
               )}
             </li>
 
-            {/* Servers - Always show in nav, access controlled at card level */}
+            {/* Servers */}
             <li>
               {mainNavLink(
                 "/servers",
@@ -304,7 +334,7 @@ export default function NavBar() {
               )}
             </li>
 
-            {/* Agents - Always show in nav, access controlled at card level */}
+            {/* Agents */}
             <li>
               {mainNavLink(
                 "/agent",
@@ -316,59 +346,53 @@ export default function NavBar() {
               )}
             </li>
 
-            {/* Pipeline - Always show in nav, access controlled at card level */}
+            {/* Workflow */}
             <li>
               {mainNavLink(
-                "/pipeline",
+                "/workflows",
                 <>
                   <SVGIcons icon="fa-project-diagram" />
-                  <span>Pipeline</span>
+                  <span>Workflows</span>
                 </>,
-                "Pipeline",
+                "Workflows",
               )}
             </li>
 
-            {/* Vault/Secret - Show based on vault_access permission */}
-            {canViewVault && (
-              <li>
-                {mainNavLink(
-                  "/secret",
-                  <>
-                    <SVGIcons icon="vault-lock" />
-                    <span>Vault</span>
-                  </>,
-                  "Vault",
-                )}
-              </li>
-            )}
+            {/* Vault/Secret */}
+            <li>
+              {mainNavLink(
+                "/secret",
+                <>
+                  <SVGIcons icon="vault-lock" />
+                  <span>Vault</span>
+                </>,
+                "Vault",
+              )}
+            </li>
 
-            {/* Data Connectors - Show based on data_connector_access permission */}
-            {canViewDataConnectors && (
-              <li>
-                {mainNavLink(
-                  "/dataconnector",
-                  <>
-                    <SVGIcons icon="data-connectors" />
-                    <span>Data Connectors</span>
-                  </>,
-                  "Data Connectors",
-                )}
-              </li>
-            )}
+            {/* Data Connectors */}
+            <li>
+              {mainNavLink(
+                "/dataconnector",
+                <>
+                  <SVGIcons icon="data-connectors" />
+                  <span>Data Connectors</span>
+                </>,
+                "Data Connectors",
+              )}
+            </li>
 
-            {/* Knowledge Base - Show based on knowledge_base_access permission */}
-            {canViewKnowledgeBase && (
-              <li>
-                {mainNavLink(
-                  "/knowledge-base",
-                  <>
-                    <SVGIcons icon="knowledge-base" />
-                    <span>Knowledge Base</span>
-                  </>,
-                  "Knowledge Base",
-                )}
-              </li>
-            )}
+            {/* Knowledge Base */}
+            <li>
+              {mainNavLink(
+                "/knowledge-base",
+                <>
+                  <SVGIcons icon="knowledge-base" />
+                  <span>Knowledge Base</span>
+                </>,
+                "Knowledge Base",
+              )}
+            </li>
 
             {/* Resource Dashboard - Show if user has tools create permission */}
             {canAddTools && (
@@ -384,27 +408,30 @@ export default function NavBar() {
               </li>
             )}
 
-            {/* Evaluation - Show for non-USER roles based on evaluation_access permission */}
-            {canViewEvaluation && (
-              <li>
-                {mainNavLink(
-                  "/evaluation",
-                  <>
-                    <SVGIcons icon="clipboard-check" />
-                    <span>Evaluation</span>
-                  </>,
-                  "Evaluation",
-                )}
-              </li>
-            )}
+            {/* Evaluation */}
+            <li>
+              {mainNavLink(
+                "/evaluation",
+                <>
+                  <SVGIcons icon="clipboard-check" />
+                  <span>Evaluation</span>
+                </>,
+                "Evaluation",
+              )}
+            </li>
 
             {/* Admin - Show only for Admin role */}
             {isAdmin && (
-              <li>
+              <li className={styles.hasBadge}>
                 {mainNavLink(
                   "/admin",
                   <>
-                    <SVGIcons icon="person-circle" />
+                    <b className={styles.navIconWrapper}>
+                      <SVGIcons icon="person-circle" />
+                      {pendingNotifCount > 0 && (
+                        <i className={styles.navBadge}>{pendingNotifCount}</i>
+                      )}
+                    </b>
                     <span>Admin</span>
                   </>,
                   "Admin",
@@ -423,6 +450,35 @@ export default function NavBar() {
                 "Files",
               )}
             </li>
+
+            {/* Show AI Assistant - Only when chatbot is hidden */}
+            {isChatbotHidden && (
+              <li>
+                <button
+                  type="button"
+                  className={styles.navButton}
+                  onClick={handleRestoreChatbot}
+                  title="Show AI Assistant"
+                >
+                  <SVGIcons icon="chat-bubble" />
+                  <span>Show Assistant</span>
+                </button>
+              </li>
+            )}
+
+            {/* Requests - Hidden for SuperAdmin role */}
+            {!isSuperAdmin && (
+              <li>
+                {mainNavLink(
+                  "/requests",
+                  <>
+                    <SVGIcons icon="send" />
+                    <span>Requests</span>
+                  </>,
+                  "Requests",
+                )}
+              </li>
+            )}
           </ul>
         </nav>
 

@@ -12,7 +12,7 @@ OpenTelemetry is a comprehensive observability framework designed to provide dee
 
 ### OpenTelemetry Workflow
 
-OpenTelemetry is an open-source, vendor-neutral framework for collecting, processing, and exporting telemetry data (logs, traces, and metrics) from applications. This framework provides a standardized approach to observability that works across different programming languages, platforms, and cloud environments. Below is the comprehensive flowchart illustrating the telemetry pipeline:
+OpenTelemetry is an open-source, vendor-neutral framework for collecting, processing, and exporting telemetry data (logs, traces, and metrics) from applications. This framework provides a standardized approach to observability that works across different programming languages, platforms, and cloud environments. Below is the comprehensive flowchart illustrating the telemetry workflow:
 
 <style>
 .flow-mini {
@@ -78,7 +78,7 @@ Below is a detailed explanation of each stage in the telemetry workflow:
 
 ### Data Collection & Monitoring
 
-The telemetry pipeline encompasses several critical phases that ensure comprehensive observability:
+The telemetry workflow encompasses several critical phases that ensure comprehensive observability:
 
 - **Data Collection - Comprehensive Instrumentation**: 
 
@@ -126,6 +126,6 @@ Implementing comprehensive telemetry provides numerous advantages for modern sof
 
     Comprehensive logging and tracing support regulatory compliance requirements and provide detailed audit trails for security, performance, and operational governance.
 
-By leveraging the powerful combination of OpenTelemetry, Elasticsearch, and Grafana, organizations can build robust, scalable observability pipelines that provide deep insights into system behavior, enable proactive monitoring, and support data-driven optimization decisions for maintaining high-performing, reliable systems.
+By leveraging the powerful combination of OpenTelemetry, Elasticsearch, and Grafana, organizations can build robust, scalable observability workflows that provide deep insights into system behavior, enable proactive monitoring, and support data-driven optimization decisions for maintaining high-performing, reliable systems.
 
 ---

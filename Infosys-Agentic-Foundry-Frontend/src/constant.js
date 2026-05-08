@@ -5,6 +5,10 @@ import pkg from "../package.json";
 // Ensure cookie scoping is applied before any Cookies.get() at module level
 patchCookiesForPortScoping();
 
+// Runtime environment config injected by nginx (from runtime-config.js)
+// Falls back to process.env for local development
+export const env = window._env_ || {};
+
 export const APP_VERSION = pkg.version;
 
 export const BOT = "bot";
@@ -28,7 +32,7 @@ export const CUSTOM_TEMPLATE = "custom_template";
 export const REACT_CRITIC_AGENT = "react_critic_agent";
 export const PLANNER_EXECUTOR_AGENT = "planner_executor_agent";
 export const HYBRID_AGENT = "hybrid_agent";
-export const PIPELINE_AGENT = "pipeline";
+export const WORKFLOW_AGENT = "workflow";
 
 export const like = "like";
 export const regenerate = "regenerate";
@@ -36,15 +40,19 @@ export const dislike = "submit_feedback";
 
 export const CHAT_BOT_DATA = "CHAT_BOT_DATA";
 
-export const BASE_URL = process.env.REACT_APP_BASE_URL;
+export const BASE_URL = env.REACT_APP_BASE_URL || process.env.REACT_APP_BASE_URL ;
 
-export const mkDocs_baseURL = process.env.REACT_APP_MKDOCS_BASE_URL;
+export const mkDocs_baseURL = env.REACT_APP_MKDOCS_BASE_URL || process.env.REACT_APP_MKDOCS_BASE_URL;
 
-export const liveTrackingUrl = process.env.REACT_APP_LIVE_TRACKING_URL;
+export const liveTrackingUrl = env.REACT_APP_LIVE_TRACKING_URL || process.env.REACT_APP_LIVE_TRACKING_URL;
 
-export const grafanaDashboardUrl = process.env.REACT_APP_GRAFANA_DASHBOARD_URL;
+export const grafanaDashboardUrl = env.REACT_APP_GRAFANA_DASHBOARD_URL || process.env.REACT_APP_GRAFANA_DASHBOARD_URL;
 
-export const TOOL_CHAT_PIPELINE_ID = process.env.REACT_APP_TOOL_CHAT_PIPELINE_ID || "ppl_3d53da95-ec3d-4fc4-bbc7-b1e3250ca96f";
+// Default blocked SQL commands for data connectors
+export const DEFAULT_BLOCKED_SQL_COMMANDS = [
+  "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE",
+  "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "REVOKE", "COMMIT", "ROLLBACK",
+];
 
 export const APIs = {
   RESTART_SERVER: "/utility/vm/restart-server",
@@ -72,12 +80,17 @@ export const APIs = {
   LOGIN: "/auth/login",
   LOGOUT: "/auth/logout",
   REGISTER: "/auth/register",
+  REGISTER_SUPERADMIN: "/auth/register-superadmin",
+  SUPERADMIN_EXISTS: "/auth/superadmin/exists",
   ASSIGN_ROLE_DEPARTMENT: "/auth/assign-role-department",
   UPDATE_PASSWORD_ROLE: "/auth/update-password",
   CHANGE_PASSWORD: "/auth/change-password",
   GUEST_LOGIN: "/auth/guest-login",
   REFRESH_TOKEN: "/auth/refresh-token",
   GET_ADMIN_CONTACTS: "/auth/admin-contacts",
+  GET_REGISTRATION_REQUESTS: "/auth/registration-requests",
+  APPROVE_REGISTRATION_REQUEST: "/auth/registration-requests/approve",
+  REJECT_REGISTRATION_REQUEST: "/auth/registration-requests/reject",
 
   //Utility APIs
   GET_VERSION: "/utility/get/version",
@@ -88,6 +101,7 @@ export const APIs = {
   UPLOAD_FILES: "/utility/files/user-uploads/upload/",
   GET_ALLUPLOADFILELIST: "/utility/files/user-uploads/get-file-structure/",
   DOWNLOAD_FILE: "/utility/files/user-uploads/download",
+  UTILITY_FILES_PREFIX: "/utility/files/",
   DELETE_FILE: "/utility/files/user-uploads/delete/",
   // Knowledge Base APIs
   KB_UPLOAD_DOCUMENTS: "/utility/knowledge-base/documents/upload",
@@ -98,6 +112,16 @@ export const APIs = {
   KB_DELETE: "/utility/remove-knowledgebases",
   KB_UPDATE_SHARING: "/utility/knowledge-base/",
   
+  CONVERSATION_CLEANUP_STATUS: "/utility/conversation-cleanup/status",
+  CONVERSATION_CLEANUP: "/utility/conversation-cleanup",
+
+  // System Cleanup & Backup APIs
+  BACKUP_AND_EXPORT: "/utility/backup-and-export",
+  CLEANUP_PREVIEW: "/utility/cleanup/preview",
+  CLEANUP_EXECUTE: "/utility/cleanup/execute",
+  CLEANUP_REPORT_DOWNLOAD: "/utility/cleanup/report/download/",
+  CLEANUP_REPORTS_LIST: "/utility/cleanup/reports/list",
+
   TRANSCRIBE_AUDIO: "/utility/transcribe/",
   LIST_ALL_MARKDOWN_FILES: "/utility/docs/list-all-markdown-files",
   LIST_MARKDOWN_FILES_IN_DIRECTORY: "/utility/docs/list-markdown-files-in-directory/{dir_name}",
@@ -118,7 +142,7 @@ export const APIs = {
   CONSISTENCY_PREVIEW_RESPONSES: "/evaluation/consistency/preview-responses",
   CONSISTENCY_RERUN_RESPONSES: "/evaluation/consistency/rerun-response",
   CONSISTENCY_APPROVE_RESPONSES: "/evaluation/consistency/approve-responses",
-  CONSISTENCY_DELETE_AGENT: "/evaluation/delete-agent/",
+  CONSISTENCY_DELETE_AGENT: "/evaluation/delete-agent",
   CONSISTENCY_AVAILABLE_AGENTS: "/evaluation/available_agents/",
   CONSISTENCY_GENERATE_UPDATE_PREVIEW: "/evaluation/generate-update-preview/",
   ROBUSTNESS_PREVIEW_QUERIES: "/evaluation/robustness/preview-queries/",
@@ -135,6 +159,8 @@ export const APIs = {
   SUGGESTIONS: "/chat/auto-suggest-agent-queries",
   // Memory store example endpoint
   MEMORY_STORE_EXAMPLE: "/chat/memory/store-example",
+  // Viber agent ID for floating chatbot
+  GET_VIBER_AGENT_ID: "/agents/viber-agent-id",
 
   // Tools APIs
   GET_TOOLS_SEARCH_PAGINATED: "/tools/get/search-paginated/",
@@ -143,18 +169,41 @@ export const APIs = {
   ADD_TOOLS_MESSAGE_QUEUE: "/tools/add-message-queue",
   GET_TOOLS_BY_LIST: "/tools/get/by-list",
   UPDATE_TOOLS: "/tools/update/",
-  DELETE_TOOLS: "/tools/delete/",
+  DELETE_TOOLS: "/tools/delete",
   // Validator-specific tool segregation
   // Backend expected to return only non-validator tools for existing endpoints.
   // New endpoints explicitly differentiate validator tools so UI can fetch them for validation patterns.
   GET_VALIDATOR_TOOLS: "/tools/validators/get",
   TOOLS_BY_TAGS: "/tools/get/by-tags",
   GET_TOOLS_BY_ID: "/tools/get/",
+
+  // Tool Version Management APIs
+  TOOL_VERSION_SAVE: "/tools/generate/versions/save",
+  TOOL_VERSION_LIST: "/tools/generate/versions/list/",
+  TOOL_VERSION_GET: "/tools/generate/versions/get/",
+  TOOL_VERSION_CURRENT: "/tools/generate/versions/current/",
+  TOOL_VERSION_SWITCH: "/tools/generate/versions/switch",
+  TOOL_VERSION_LABEL: "/tools/generate/versions/label",
+  TOOL_VERSION_DELETE: "/tools/generate/versions/delete",
+  TOOL_VERSION_CLEAR: "/tools/generate/versions/clear/",
+  TOOL_VERSION_COUNT: "/tools/generate/versions/count/",
+  TOOL_CONVERSATION_HISTORY: "/tools/generate/conversation/history/",
+  TOOL_CONVERSATION_LATEST_CODE: "/tools/generate/conversation/latest-code/",
+  TOOL_CONVERSATION_CLEAR: "/tools/generate/conversation/clear/",
+
   TOOLS_RECYCLE_BIN: "/tools/recycle-bin/get",
+  TOOLS_RECYCLE_BIN_VERSIONS: "/tools/recycle-bin/versions",
+  TOOLS_RECYCLE_BIN_TOOL_VERSIONS: "/tools/recycle-bin/",
   RESTORE_TOOLS: "/tools/recycle-bin/restore/",
+  RESTORE_TOOL_VERSION: "/tools/recycle-bin/versions/restore/",
   DELETE_TOOLS_PERMANENTLY: "/tools/recycle-bin/permanent-delete/",
+  DELETE_TOOL_VERSION_PERMANENTLY: "/tools/recycle-bin/versions/permanent-delete/",
   EXECUTE_CODE: "/tools/execute",
+  EXPORT_TOOLS: "/tools/export",
+  IMPORT_TOOLS_PREVIEW: "/tools/import-preview",
+  IMPORT_TOOLS: "/tools/import",
   INLINE_MCP_RUN: "/tools/inline-mcp/run",
+  INLINE_MCP_RUN_REMOTE: "/tools/inline-mcp/run-remote",
 
   // Agents APIs
   ONBOARD_AGENTS: "/agents/onboard",
@@ -162,7 +211,7 @@ export const APIs = {
   GET_AGENTS_BY_ID: "/agents/get/",
   GET_AGENTS_BY_LIST: "/agents/get/by-list",
   UPDATE_AGENTS: "/agents/update",
-  DELETE_AGENTS: "/agents/delete/",
+  DELETE_AGENTS: "/agents/delete",
   GET_AGENTS_SEARCH_PAGINATED: "/agents/get/search-paginated/",
   GET_AGENTS_BY_TAGS: "/agents/get/by-tags",
   AGENTS_RECYCLE_BIN: "/agents/recycle-bin/get",
@@ -170,6 +219,18 @@ export const APIs = {
   DELETE_AGENTS_PERMANENTLY: "/agents/recycle-bin/permanent-delete/",
   EXPORT_AGENTS: "/agents/export",
   GET_TOOLS_MAPPED_BY_AGENT: "/agents/tools-mapped/",
+
+  // Sharing APIs
+  GET_TOOL_SHARING: "/tools/",           // GET /tools/{tool_id}/sharing-info
+  UPDATE_TOOL_SHARING: "/tools/",         // PUT /tools/{tool_id}/sharing
+  GET_AGENT_SHARING: "/agents/",          // GET /agents/{agent_id}/sharing-info
+  UPDATE_AGENT_SHARING: "/agents/",       // PUT /agents/{agent_id}/sharing
+  GET_SERVER_SHARING: "/tools/mcp/",      // GET /tools/mcp/{mcp_tool_id}/sharing-info
+  UPDATE_SERVER_SHARING: "/tools/mcp/",   // PUT /tools/mcp/{mcp_tool_id}/sharing
+  GET_KB_SHARING: "/utility/knowledge-base/",     // GET /utility/knowledge-base/{kb_id}/sharing-info
+  UPDATE_KB_SHARING: "/utility/knowledge-base/",   // PUT /utility/knowledge-base/{kb_id}/sharing
+  GET_WORKFLOW_SHARING: "/workflows/",    // GET /workflows/{workflow_id}/sharing
+  UPDATE_WORKFLOW_SHARING: "/workflows/", // PUT /workflows/{workflow_id}/sharing
 
   // MCP Server Recycle Bin APIs
   SERVERS_RECYCLE_BIN: "/tools/mcp/recycle-bin/get",
@@ -198,6 +259,7 @@ export const APIs = {
   GROUP_ADD_SECRET: "/groups/{group_name}/secrets",
   GROUP_UPDATE_SECRET: "/groups/{group_name}/secrets/{key_name}",
   GROUP_DELETE_SECRET: "/groups/{group_name}/secrets/{key_name}",
+  GROUP_DELETE_SECRETS_BULK: "/groups/{group_name}/secrets/delete-bulk",
   GET_GROUP_SECRETS: "/groups/{group_name}/secrets",
   GROUP_SECRETS_GET: "/groups/{group_name}/secrets/{key_name}",
 
@@ -232,6 +294,10 @@ export const APIs = {
   REMOVE_USER_FROM_ACCESS_KEY: "/resource-allocation/access-keys/",
   UPDATE_USER_ACCESS: "/resource-allocation/access-keys/",
   BULK_ASSIGN_VALUES: "/resource-allocation/access-keys/",
+
+  // My Requests APIs
+  GET_MY_REQUESTS: "/auth/my-requests",
+  REQUEST_DEPARTMENT_ACCESS: "/auth/request-department-access",
 
   // Department Management APIs
   GET_DEPARTMENTS: "/auth/departments",
@@ -268,9 +334,14 @@ export const APIs = {
   MCP_DELETE_TOOLS: "/tools/mcp/delete/",
   MCP_GET_ALL_SERVERS: "/tools/mcp/get/search-paginated/",
   MCP_UPDATE_SERVER: "/tools/mcp/update/",
+  MCP_UPDATE_REMOTE_URL: "/tools/mcp/update-remote-url/",
   MCP_SERVERS_UNUSED: "/tools/mcp/unused/get",
   MCP_LIVE_TOOL_DETAIL: "/tools/mcp/get/live-tool-details/",
   MCP_GET_SERVER_BY_ID: "/tools/mcp/get/",
+  MCP_EXPORT_SERVERS: "/tools/mcp/export",
+  MCP_IMPORT_SERVERS: "/tools/mcp/import",
+  MCP_TEST_TOOL: "/tools/mcp/test/",
+  MCP_UPDATE_MODULE_CONFIG: "/tools/mcp/update-module-config/",
    MCP_CONVERSION_GENERATE_SERVER: "/mcp-conversion/generate-server-from-all",
 
   //Data Connector APIs
@@ -284,6 +355,16 @@ export const APIs = {
   MONGODB_CONNECTIONS: "/data-connector/connections/mongodb",
   MONGODB_OPERATION: "/data-connector/mongodb-operation/",
   ACTIVATE_CONNECTION: "/data-connector/connect-by-name",
+  // DB Details, Blocked Commands & Schema APIs
+  GET_DB_DETAILS: "/data-connector/get-db-details/",                 // GET /data-connector/get-db-details/{connection_name}
+  GET_BLOCKED_COMMANDS: "/data-connector/blocked-commands/",         // GET /data-connector/blocked-commands/{connection_name}
+  UPDATE_BLOCKED_COMMANDS: "/data-connector/blocked-commands/",      // PUT /data-connector/blocked-commands/{connection_name}
+  REGENERATE_SCHEMA_SAMPLES: "/data-connector/regenerate-schema-samples/", // POST /data-connector/regenerate-schema-samples/{connection_name}
+  STORE_DB_SCHEMA: "/data-connector/store-db-schema",
+  STORE_DB_SAMPLES: "/data-connector/store-db-samples",
+  LIST_DB_FILES: "/data-connector/list-db-files",
+  CLEAR_DB_FILES: "/data-connector/clear-db-files/",                // DELETE /data-connector/clear-db-files/{connection_name}
+  CLEAR_ALL_DB_FILES: "/data-connector/clear-all-db-files",
 
   // Secrets APIs
   ADD_SECRET: "/secrets/create",
@@ -298,23 +379,23 @@ export const APIs = {
   PUBLIC_SECRETS_GET: "/secrets/public/get",
   HEALTH_SECRETS: "/secrets/health",
 
-  // Pipeline APIs
-  PIPELINE_CREATE: "/pipelines/create",
-  PIPELINE_GET_ALL: "/pipelines/get",
-  PIPELINE_CHAT: "/tools/generate/pipeline/chat",
+  // Workflow APIs
+  WORKFLOW_CREATE: "/workflows/create",
+  WORKFLOW_GET_ALL: "/workflows/get",
+  WORKFLOW_CHAT: "/tools/generate/workflow/chat",
   CONVERSATION_HISTORY: "/tools/generate/conversation/history/",
   DELETE_TOOL_BOT_CONVERSATION: "/tools/generate/conversation/clear/{session_id}",
-  PIPELINE_GET_PAGINATED: "/pipelines/get/search-paginated/",
-  PIPELINE_GET_BY_ID: "/pipelines/get/",
-  PIPELINE_UPDATE: "/pipelines/update/",
-  PIPELINE_DELETE: "/pipelines/delete/",
-  PIPELINE_EXECUTE: "/pipelines/{pipeline_id}/execute",
-  PIPELINE_EXECUTE_SYNC: "/pipelines/{pipeline_id}/execute/sync",
-  PIPELINE_RESUME: "/pipelines/executions/{execution_id}/resume",
-  PIPELINE_EXECUTION_STATUS: "/pipelines/executions/{execution_id}/status",
-  PIPELINE_GET_EXECUTIONS: "/pipelines/{pipeline_id}/executions",
-  PIPELINE_AVAILABLE_AGENTS: "/pipelines/available-agents",
-  PIPELINE_GET_BY_NAME: "/pipelines/get-by-name",
+  WORKFLOW_GET_PAGINATED: "/workflows/get/search-paginated/",
+  WORKFLOW_GET_BY_ID: "/workflows/get/",
+  WORKFLOW_UPDATE: "/workflows/update/",
+  WORKFLOW_DELETE: "/workflows/delete/",
+  WORKFLOW_EXECUTE: "/workflows/{workflow_id}/execute",
+  WORKFLOW_EXECUTE_SYNC: "/workflows/{workflow_id}/execute/sync",
+  WORKFLOW_RESUME: "/workflows/executions/{execution_id}/resume",
+  WORKFLOW_EXECUTION_STATUS: "/workflows/executions/{execution_id}/status",
+  WORKFLOW_GET_EXECUTIONS: "/workflows/{workflow_id}/executions",
+  WORKFLOW_AVAILABLE_AGENTS: "/workflows/available-agents",
+  WORKFLOW_GET_BY_NAME: "/workflows/get-by-name",
 };
 
 // export const sessionId = "test_101";
@@ -405,13 +486,14 @@ export const systemPromptPlannerExecutorAgents = [
 // Buttons are displayed from right to left in the order specified
 export const card_config = {
   agent: {
-    footerButtons: [{ type: "delete", visible: true }],
+    footerButtons: [{ type: "share", visible: true }, { type: "delete", visible: true }],
   },
   tool: {
-    footerButtons: [{ type: "delete", visible: true }],
+    footerButtons: [{ type: "share", visible: true }, { type: "delete", visible: true }],
   },
   server: {
     footerButtons: [
+      { type: "share", visible: true },
       { type: "delete", visible: true },
       { type: "view", visible: true },
     ],
@@ -424,6 +506,12 @@ export const card_config = {
   },
   department: {
     footerButtons: [{ type: "delete", visible: true }],
+  },
+  "knowledge base": {
+    footerButtons: [{ type: "share", visible: true }, { type: "delete", visible: true }],
+  },
+  workflow: {
+    footerButtons: [{ type: "share", visible: true }, { type: "delete", visible: true }],
   },
   recycleAgents: {
     footerButtons: [], // No buttons for recycled agents
@@ -511,7 +599,7 @@ export const chat_screen_config = {
     },
   },
   langgraph: {
-    mentionAgentTypes: ["meta_agent", "pipeline", "planner_meta_agent", "planner_executor_agent", "multi_agent", "react_agent", "react_critic_agent"],
+    mentionAgentTypes: ["meta_agent", "workflow", "planner_meta_agent", "planner_executor_agent", "multi_agent", "react_agent", "react_critic_agent"],
     meta_agent: {
       planVerifier: false,
       toolVerifier: true,
@@ -574,7 +662,7 @@ export const chat_screen_config = {
       showMentionButton: true,
       criticSliders: true,
     },
-    pipeline: {
+    workflow: {
       planVerifier: false,
       toolVerifier: false,
       validator: false,

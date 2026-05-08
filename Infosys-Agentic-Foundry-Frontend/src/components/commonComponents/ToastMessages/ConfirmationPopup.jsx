@@ -3,11 +3,11 @@ import ReactDOM from "react-dom";
 import style from "./ConfirmationPopup.module.css";
 import IAFButton from "../../../iafComponents/GlobalComponents/Buttons/Button";
 
-const ConfirmationModal = ({ message, onConfirm, setShowConfirmation }) => {
+const ConfirmationModal = ({ message, onConfirm, setShowConfirmation, loading = false, confirmLabel = "Confirm", cancelLabel = "Cancel", hideCancel = false }) => {
   const modalRef = useRef(null);
 
   const hanleClose = () => {
-    setShowConfirmation(false);
+    if (!loading) setShowConfirmation(false);
   };
 
   return ReactDOM.createPortal(
@@ -15,11 +15,13 @@ const ConfirmationModal = ({ message, onConfirm, setShowConfirmation }) => {
       <div ref={modalRef} className={style.modal} onClick={(e) => e.stopPropagation()}>
         <p>{message}</p>
         <div className={style.buttons}>
-          <IAFButton type="danger" onClick={hanleClose} aria-label="Confirm">
-            Cancel
-          </IAFButton>
-          <IAFButton type="primary" onClick={onConfirm} aria-label="Cancel">
-            Confirm
+          {!hideCancel && (
+            <IAFButton type="danger" onClick={hanleClose} aria-label="Cancel" disabled={loading}>
+              {cancelLabel}
+            </IAFButton>
+          )}
+          <IAFButton type="primary" onClick={onConfirm} aria-label="Confirm" disabled={loading} loading={loading}>
+            {confirmLabel}
           </IAFButton>
         </div>
       </div>

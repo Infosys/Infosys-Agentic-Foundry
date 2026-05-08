@@ -228,7 +228,7 @@ The chatbot maintains a version history of your code:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/tools/generate/pipeline/chat` | POST | Initiate tool creation from chat |
+| `/tools/generate/workflow/chat` | POST | Initiate tool creation from chat |
 
 
 ---

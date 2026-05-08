@@ -1,7 +1,8 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import json
 import asyncio
-from typing import Any, Dict, List, Optional, AsyncGenerator, Literal
+import os
+from typing import Any, Dict, List, Optional, AsyncGenerator, Literal, Callable
 
 from openai import AzureOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletionChunk
@@ -15,6 +16,217 @@ from telemetry_wrapper import logger as log
 # Define a type for the streaming chunks for better clarity
 # You can customize this structure to fit your frontend's needs
 StreamChunkType = Dict[str, Any]
+
+# Global hook registry for post-completion callbacks
+_post_completion_hooks: List[Callable] = []
+
+def register_post_completion_hook(hook: Callable):
+    """
+    Register a hook to be called after every LLM completion.
+    Hook signature: async def hook(response, agent_context: Dict) -> None
+    
+    Args:
+        hook: Async function that takes (response, agent_context) as arguments
+    """
+    if hook not in _post_completion_hooks:
+        _post_completion_hooks.append(hook)
+        log.info(f"✅ [HookRegistry] Registered post-completion hook: {hook.__name__}")
+        log.info(f"📊 [HookRegistry] Total hooks registered: {len(_post_completion_hooks)}")
+    else:
+        log.warning(f"⚠️ [HookRegistry] Hook {hook.__name__} already registered")
+
+def unregister_post_completion_hook(hook: Callable):
+    """Unregister a previously registered hook"""
+    if hook in _post_completion_hooks:
+        _post_completion_hooks.remove(hook)
+        log.info(f"[AzureAIModelService] Unregistered post-completion hook: {hook.__name__}")
+
+
+async def token_usage_logging_hook(response, agent_context: Dict[str, Any]):
+    """
+    Post-completion hook for logging token usage from LLM calls (both proxy and direct).
+    
+    This hook is automatically called after every LLM completion when registered.
+    Uses the standalone tracker to log to PostgreSQL database WITH AUTOMATIC CATEGORIZATION.
+    
+    Args:
+        response: The LLM response object (ChatCompletion) with .usage attribute
+        agent_context: Dictionary containing agent_id, session_id, user_id, model_name
+    """
+    try:
+        use_litellm_proxy = os.getenv("USE_LITELLM_PROXY_FLAG", "false").lower() == "true"
+        log.info(f"🔍 [TokenUsageHook] Starting hook - USE_LITELLM_PROXY_FLAG={use_litellm_proxy}")
+        
+        # Debug: Print complete response structure
+        log.info(f"📦 [TokenUsageHook] Response type: {type(response)}")
+        log.info(f"📦 [TokenUsageHook] Response has 'usage': {hasattr(response, 'usage')}")
+        
+        # Try to print the full response object (with truncation for safety)
+        try:
+            response_str = str(response)
+            if len(response_str) > 2000:
+                log.info(f"📦 [TokenUsageHook] Complete response (truncated): {response_str[:2000]}...")
+            else:
+                log.info(f"📦 [TokenUsageHook] Complete response: {response_str}")
+        except Exception as print_err:
+            log.warning(f"⚠️ [TokenUsageHook] Could not print response: {print_err}")
+        
+        # Use standalone tracker (no litellm_backend dependency!)
+        from litellm_standalone_tracker import log_token_usage
+        log.info(f"✅ [TokenUsageHook] Using standalone tracker to log tokens")
+        
+        # 🆕 AUTOMATIC CATEGORIZATION
+        from call_categorizer import auto_categorize_llm_call
+        categorization = auto_categorize_llm_call()
+        log.info(f"🏷️ [TokenUsageHook] Auto-categorized: {categorization}")
+        
+        # 🆕 Extract user_id from session context (OpenTelemetry tracking)
+        from telemetry_wrapper import SessionContext
+        session_ctx = SessionContext.get()
+        
+        # 🔍 DEBUG: Log the ENTIRE session context tuple to see all values
+        log.info(f"🔍 [TokenUsageHook] FULL Session Context Tuple: {session_ctx}")
+        log.info(f"🔍 [TokenUsageHook] Tuple length: {len(session_ctx) if session_ctx else 0}")
+        
+        user_id_from_session = session_ctx[0] if session_ctx[0] != 'Unassigned' else None  # user_id is first element
+        session_id_from_session = session_ctx[1] if session_ctx[1] != 'Unassigned' else None  # session_id is second
+        agent_id_from_session = session_ctx[3] if session_ctx[3] != 'Unassigned' else None  # agent_id is fourth
+        tool_id_from_session = session_ctx[5] if session_ctx[5] != 'Unassigned' else None  # tool_id is sixth
+        tool_name_from_session = session_ctx[6] if session_ctx[6] != 'Unassigned' else None  # tool_name is seventh
+        deployment_model_from_session = session_ctx[7] if session_ctx[7] != 'Unassigned' else None  # model_used is eighth
+        
+        log.info(f"📋 [TokenUsageHook] Session context: user_id={user_id_from_session}, session_id={session_id_from_session}, agent_id={agent_id_from_session}, tool_id={tool_id_from_session}, tool_name={tool_name_from_session}")
+        
+        # Extract token usage
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        cached_tokens = 0
+        model_name = None
+        
+        if hasattr(response, 'usage'):
+            usage = response.usage
+            log.info(f"📊 [TokenUsageHook] Usage object found: {usage}")
+            log.info(f"📊 [TokenUsageHook] Usage type: {type(usage)}")
+            
+            prompt_tokens = getattr(usage, 'prompt_tokens', 0)
+            completion_tokens = getattr(usage, 'completion_tokens', 0)
+            total_tokens = getattr(usage, 'total_tokens', 0)
+            cached_tokens = getattr(usage, 'cached_tokens', 0)
+            
+            log.info(f"📊 [TokenUsageHook] Direct extraction: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}, cached={cached_tokens}")
+            
+            if not cached_tokens:
+                prompt_tokens_details = getattr(usage, 'prompt_tokens_details', None)
+                log.info(f"📊 [TokenUsageHook] Prompt tokens details: {prompt_tokens_details}")
+                if prompt_tokens_details:
+                    cached_tokens = getattr(prompt_tokens_details, 'cached_tokens', 0)
+                    log.info(f"📊 [TokenUsageHook] Cached tokens from details: {cached_tokens}")
+        else:
+            log.warning(f"⚠️ [TokenUsageHook] Response does NOT have 'usage' attribute!")
+            log.warning(f"⚠️ [TokenUsageHook] Available attributes: {[attr for attr in dir(response) if not attr.startswith('_')]}")
+        
+        # Extract model name from response or agent context
+        if hasattr(response, 'model'):
+            model_name = response.model
+            log.info(f"📊 [TokenUsageHook] Model name from response: {model_name}")
+        elif agent_context.get('model_name'):
+            model_name = agent_context.get('model_name')
+            log.info(f"📊 [TokenUsageHook] Model name from agent context: {model_name}")
+        else:
+            log.warning(f"⚠️ [TokenUsageHook] No model name found in response or context!")
+        
+        if total_tokens > 0:
+            log.info(
+                f"📊 [TokenUsageHook] Final extracted values: prompt={prompt_tokens}, cached={cached_tokens}, "
+                f"completion={completion_tokens}, total={total_tokens}, model={model_name}"
+            )
+            
+            log.info(f"💾 [TokenUsageHook] Attempting to log to database...")
+            log.info(f"💾 [TokenUsageHook] Agent context: {agent_context}")
+            log.info(f"💾 [TokenUsageHook] Model name to log: {model_name or agent_context.get('model_name')}")
+            
+            # Merge context: prioritize agent_context, fallback to session context
+            log.info(f"🔍 [TokenUsageHook] agent_context.get('session_id'): {agent_context.get('session_id')} (type: {type(agent_context.get('session_id'))})")
+            log.info(f"🔍 [TokenUsageHook] session_id_from_session: {session_id_from_session} (type: {type(session_id_from_session)})")
+            
+            final_user_id = agent_context.get('user_id') or user_id_from_session
+            final_session_id = agent_context.get('session_id') or session_id_from_session
+            final_agent_id = agent_context.get('agent_id') or agent_id_from_session
+            final_tool_id = categorization.get('tool_id') or tool_id_from_session
+            final_tool_name = categorization.get('tool_name') or tool_name_from_session
+            
+            # If tool_id is a UUID string, don't use it (database expects integer ID, not UUID)
+            if final_tool_id and isinstance(final_tool_id, str) and '-' in final_tool_id:
+                log.info(f"💾 [TokenUsageHook] Skipping UUID tool_id (database expects integer): {final_tool_id}")
+                final_tool_id = None
+            
+            log.info(f"💾 [TokenUsageHook] Final context: user_id={final_user_id}, session_id={final_session_id} (type: {type(final_session_id)}), agent_id={final_agent_id}, tool_id={final_tool_id}, tool_name={final_tool_name}")
+            
+            # Use standalone tracker WITH AUTO-CATEGORIZATION
+            await log_token_usage(
+                model_name=model_name or agent_context.get('model_name'),
+                deployment_model=deployment_model_from_session,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cached_tokens=cached_tokens,
+                agent_id=final_agent_id,
+                agent_name=None,
+                session_id=final_session_id,
+                user_id=final_user_id,
+                request_id=agent_context.get('request_id'),
+                status="success",
+                # 🆕 ADD AUTOMATIC CATEGORIZATION
+                call_category=categorization.get('call_category'),
+                call_sub_category=categorization.get('call_sub_category'),
+                call_operation=categorization.get('call_operation'),
+                agent_type=categorization.get('agent_type'),
+                agent_component=categorization.get('agent_component'),
+                evaluation_type=categorization.get('evaluation_type'),
+                tool_id=final_tool_id,
+                tool_name=final_tool_name,
+            )
+            log.info(
+                f"✅ [TokenUsageHook] Successfully logged to DB: Agent={agent_context.get('agent_id')}, "
+                f"Category={categorization.get('call_category')}, SubCategory={categorization.get('call_sub_category')}, "
+                f"Model={model_name or agent_context.get('model_name')}, Total={total_tokens}"
+            )
+
+            # Feed per-call data into the per-request accumulator so the endpoint
+            # can later inject per-query totals into the LangGraph checkpoint and DB.
+            if final_session_id:
+                from litellm_standalone_tracker import record_to_accumulator, calculate_cost
+                call_model = model_name or agent_context.get('model_name')
+                costs = calculate_cost(call_model, prompt_tokens, completion_tokens, cached_tokens,
+                                       fallback_model=deployment_model_from_session)
+                record_to_accumulator(final_session_id, {
+                    "model":             call_model,
+                    "agent_name":        agent_context.get('agent_name'),
+                    "prompt_tokens":     prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens":      total_tokens,
+                    "cached_tokens":     cached_tokens,
+                    "prompt_cost":       costs["prompt_cost"],
+                    "completion_cost":   costs["completion_cost"],
+                    "cached_cost":       costs["cached_cost"],
+                    "total_cost":        costs["total_cost"],
+                    "call_category":     categorization.get('call_category'),
+                    "call_sub_category": categorization.get('call_sub_category'),
+                    "status":            "success",
+                })
+                log.info(
+                    f"📥 [TokenUsageHook] Appended to per-query accumulator: "
+                    f"session={final_session_id}, model={call_model}, "
+                    f"total={total_tokens}, cost=${costs['total_cost']:.8f}"
+                )
+            else:
+                log.debug("⏭️  [TokenUsageHook] No session_id — cannot append to accumulator")
+        else:
+            log.warning(f"⚠️ [TokenUsageHook] Total tokens is 0 or negative - skipping DB logging")
+            
+    except Exception as e:
+        log.error(f"❌ [TokenUsageHook] Error: {e}", exc_info=True)
 
 class AzureAIModelService(BaseAIModelService):
     """
@@ -55,6 +267,28 @@ class AzureAIModelService(BaseAIModelService):
             azure_endpoint=self._api_base
         )
         log.info(f"[AzureAIModelService] Initialized.")
+
+    async def _trigger_post_completion_hooks(self, response, agent_context: Dict[str, Any]):
+        """
+        Trigger all registered post-completion hooks.
+        
+        Args:
+            response: The LLM response object (has .usage attribute with token info)
+            agent_context: Dictionary containing agent_id, session_id, user_id, model_name, etc.
+        """
+        log.info(f"🪝 [HookTrigger] Triggering {len(_post_completion_hooks)} registered hook(s)")
+        
+        if not _post_completion_hooks:
+            log.warning(f"⚠️ [HookTrigger] No hooks registered!")
+            return
+        
+        for hook in _post_completion_hooks:
+            try:
+                log.info(f"🪝 [HookTrigger] Executing hook: {hook.__name__}")
+                await hook(response, agent_context)
+                log.info(f"✅ [HookTrigger] Hook {hook.__name__} completed successfully")
+            except Exception as e:
+                log.error(f"❌ [HookTrigger] Error in hook {hook.__name__}: {e}", exc_info=True)
 
     async def astream(
         self,
@@ -259,6 +493,7 @@ class AzureAIModelService(BaseAIModelService):
                     "messages": conversation_history,
                     "temperature": self._temperature,
                     # "stream": True  # ENABLE STREAMING
+                    # "stream_options": {"include_usage": True}  # Include token usage in streaming response
                 }
 
                 if self._tools_json_schema:
@@ -269,9 +504,29 @@ class AzureAIModelService(BaseAIModelService):
                 log.info(f"[Agent Stream] Iteration {iteration}: Requesting stream...")
                 # Emit Thinking started event
                 
+                # Get agent context and add as extra headers for LiteLLM tracking
+                from src.models.guardrail_aware_llm import _ctx_from_session
+                agent_ctx = _ctx_from_session()
+                extra_headers = {}
+                if agent_ctx.get('agent_id'):
+                    extra_headers['x-agent-id'] = agent_ctx['agent_id']
+                if agent_ctx.get('agent_name'):
+                    extra_headers['x-agent-name'] = agent_ctx['agent_name']
+                if agent_ctx.get('session_id'):
+                    extra_headers['x-session-id'] = agent_ctx['session_id']
+                if agent_ctx.get('user_id'):
+                    extra_headers['x-user-id'] = agent_ctx['user_id']
+                
+                if extra_headers:
+                    completion_params['extra_headers'] = extra_headers
+                
                 # Use ASYNC client here
                 stream = await self._async_client.chat.completions.create(**completion_params)
                 response_message: ChatCompletionMessage = stream.choices[0].message
+                
+                # Trigger post-completion hooks for token logging
+                await self._trigger_post_completion_hooks(stream, agent_ctx)
+                
                 # # Storage for reconstructing the streamed message
                 # collected_content: List[str] = []
                 # collected_tool_calls: Dict[int, Dict[str, str]] = {}  # Index -> {id, name, arguments}
@@ -705,8 +960,28 @@ class AzureAIModelService(BaseAIModelService):
                     completion_params["parallel_tool_calls"] = parallel_tool_calls
 
                 log.info(f"\n[Agent] Iteration {iteration}: Calling LLM with {len(conversation_history)} messages...")
+                
+                # Get agent context and add as extra headers for LiteLLM tracking
+                from src.models.guardrail_aware_llm import _ctx_from_session
+                agent_ctx = _ctx_from_session()
+                extra_headers = {}
+                if agent_ctx.get('agent_id'):
+                    extra_headers['x-agent-id'] = agent_ctx['agent_id']
+                if agent_ctx.get('agent_name'):
+                    extra_headers['x-agent-name'] = agent_ctx['agent_name']
+                if agent_ctx.get('session_id'):
+                    extra_headers['x-session-id'] = agent_ctx['session_id']
+                if agent_ctx.get('user_id'):
+                    extra_headers['x-user-id'] = agent_ctx['user_id']
+                
+                if extra_headers:
+                    completion_params['extra_headers'] = extra_headers
+                
                 response = await asyncio.to_thread(self._client.chat.completions.create, **completion_params)
                 response_message: ChatCompletionMessage = response.choices[0].message
+
+                # Trigger post-completion hooks for token logging
+                await self._trigger_post_completion_hooks(response, agent_ctx)
 
                 # Add LLM's message to current turn and full history
                 current_turn_messages.append(response_message.model_dump(exclude_unset=True))

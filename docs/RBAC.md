@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Infosys Agent Foundry (IAF) implements a comprehensive **Role-Based Access Control (RBAC)** system that governs access to all platform resources. The system is organized around `departments`, where each department has its own set of `roles` and `permissions`, providing fine-grained control over who can view, create, update, delete, and execute tools, agents, pipelines, and other resources.
+The Infosys Agent Foundry (IAF) implements a comprehensive **Role-Based Access Control (RBAC)** system that governs access to all platform resources. The system is organized around `departments`, where each department has its own set of `roles` and `permissions`, providing fine-grained control over who can view, create, update, delete, and execute tools, agents, workflows, and other resources.
 
 **Key Principles**
 
@@ -10,8 +10,9 @@ The Infosys Agent Foundry (IAF) implements a comprehensive **Role-Based Access C
 - `Role-based permissions`: Each role within a department has a configurable permission matrix.
 - `Hierarchical authority`: SuperAdmin > Admin > Developer > User.
 - `Cross-department sharing`: Resources can be made public or shared with specific departments.
-- `Cascade sharing`: Sharing an agent or pipeline automatically shares its dependent resources.
+- `Cascade sharing`: Sharing an agent or workflow automatically shares its dependent resources.
 - `Audit trail`: Every action is logged for security and compliance.
+- `Notification-driven approvals`: New user registrations trigger notification emails to department admins and SuperAdmin for approval. 
 
 ---
 
@@ -19,11 +20,13 @@ The Infosys Agent Foundry (IAF) implements a comprehensive **Role-Based Access C
 
 **1. Departments**
 
-Departments are the `top-level organizational unit`. Every resource (tools, agents, pipelines, knowledge bases, etc.) belongs to a department, and users operate within the context of a department.
+Departments are the `top-level organizational unit`. Every resource (tools, agents, MCP servers, workflows, knowledge bases, etc.) belongs to a department, and users operate within the context of a department.
 
 - A `default "General" department` is automatically created on first server startup.
 - Only the `SuperAdmin` can create or delete departments.
 - Each department maintains its own allowed roles and corresponding permissions.
+- When a new department is created, three `default roles` are automatically added: `Admin`, `Developer`, and `User` — each with pre-configured default permissions.
+- The `Admin` role `cannot be deleted` from any department.
 
 **2. Roles**
 
@@ -32,9 +35,9 @@ Roles define the level of access a user has within a department.
 | Role | Description |
 |------|-------------|
 | `SuperAdmin` | Platform-wide access. Not tied to any single department. Centralized control over all departments. |
-| `Admin` | Highest authority within a department. Manages users, roles, permissions, groups, and resources within their own department. |
-| `Developer` | Full CRUD and execute access on tools, agents, and pipelines within their department. |
-| `User` | Read and execute access on agents and pipelines only (by default). |
+| `Admin` | Highest authority within a department. Manages users, roles, permissions, groups, and resources within their own department. Cannot be deleted from any department.|
+| `Developer` | Full CRUD and execute access on tools, agents, and workflows within their department. |
+| `User` | Read and execute access on agents and workflows only (by default). |
 
 !!! Note
     A member can have **only one role per department** but may have accounts in **multiple departments**.
@@ -46,9 +49,9 @@ SuperAdmin (Level 3) ──── Platform-wide, all permissions
     │
     ├── Admin (Level 2) ──── Department-wide, manages users/roles/permissions
     │       │
-    │       ├── Developer (Level 1) ──── Full CRUD + Execute on tools, agents, pipelines
+    │       ├── Developer (Level 1) ──── Full CRUD + Execute on tools, agents, workflows
     │       │
-    │       └── User (Level 0) ──── Read + Execute agents/pipelines only
+    │       └── User (Level 0) ──── Read + Execute agents/workflows only
     │
     └── (Can manage any department)
 ```
@@ -59,32 +62,52 @@ SuperAdmin (Level 3) ──── Platform-wide, all permissions
 
 **1. Registration**
 
--  Users register with `email`, `username`, and `password`.
--  After registration, users are in a `pending` state — they are not assigned to any department or role yet.
--  Users must contact a `SuperAdmin` or `department Admin` to get assigned a role in a department.
-   - SuperAdmin can assign any role in any department.
-   - Admin can only assign roles within their own department.
--  A dedicated `Contact Page` is available for registered users to reach out to admins.
-   - A contact list of SuperAdmin and department Admin contacts is available to help users reach out.
+-  Users register with `email`, `username`, and `password`, and `department` (or a list of departments).
+-  Upon registration, a `notification` in Admin/SuperAdmin tab and an `email` is automatically sent to the `Admin(s)` of the selected department(s) and the `SuperAdmin`.
+-  The user remains in a `pending` state until an Admin or SuperAdmin approves them.
+-  Admin or SuperAdmin approves the user by `assigning a role` in that department via the `Notifications tab`. An email will be sent to the user upon approval.
+-  `Multiple approvals` can be processed at a time — admins can approve several pending users in bulk.
+-  Once approved with a role, the user can log in.
 
-**2. Login**
+**2. Notifications Tab**
+
+A dedicated `Notifications tab` is available for `Admin` and `SuperAdmin` users.
+
+- When a new user registers and selects a department, a notification appears in the Notifications tab for the department's Admin(s) and the SuperAdmin.
+- From this tab, Admin/SuperAdmin can `approve` the user by assigning them a role in the department.
+- Multiple pending user approvals can be handled at once.
+- SuperAdmin receives notifications for registrations across `all departments`.
+- Admin receives notifications only for their `own department`.
+
+**3. Login**
 
 -  Users log in with `email`, `password`, and `department`.
 -  Department selection is `required` for all users except SuperAdmin.
 -  SuperAdmin can log in `with or without` specifying a department (department is optional for SuperAdmin).
 -  Users must have `active status` to log in (both globally and within the department).
 
-**3. SuperAdmin Bootstrap (First-Time Setup)**
+**4. Request Department Access**
 
-When the platform is set up for the first time:
+After logging in, users can request access to additional departments from the `Requests tab`.
 
--  The `first registered person` becomes the `SuperAdmin`.
+- Any authenticated user can submit a request to join another department.
+- The request is sent to the `Admin(s)` of the target department and the `SuperAdmin` for review.
+- Admins review and approve or reject requests via the `Notifications tab`.
+- Upon approval, the user is assigned a role in the requested department.
+
+**5. SuperAdmin Bootstrap (First-Time Setup)**
+
+When the platform has `no SuperAdmin` or `no users exist` in the database:
+
+-  The registration page automatically becomes a `SuperAdmin registration`.
+-  The user provides `email`, `username`, and `password` only (no department selection).
+-  This user is registered as the `SuperAdmin` with platform-wide access.
 -  The default `"General"` department is created automatically with default roles:
    - `Admin` — Full permissions within department + Admin Tab
    - `Developer` — Full permissions within department
    - `User` — Agent read + execute only
 
-**4. Password Management**
+**6. Password Management**
 
 | Feature | Description |
 |---------|-------------|
@@ -101,6 +124,7 @@ When the platform is set up for the first time:
 - `Name`: `General`
 - `Auto-created` on server startup.
 - `Default roles`: Admin, Developer, User (with pre-configured default permissions for each).
+- The `Admin` role cannot be deleted from any department.
 
 ### 2. Department Operations
 
@@ -117,19 +141,25 @@ When the platform is set up for the first time:
 | Operation | Who Can Do It | Description |
 |-----------|---------------|-------------|
 | `Add Role to Department` | Admin (own dept) / SuperAdmin | Adds an allowed role (Admin/Developer/User) to a department. Default permissions are auto-assigned. |
-| `Remove Role from Department` | Admin (own dept) / SuperAdmin | Removes a role from a department. |
+| `Remove Role from Department` | Admin (own dept) / SuperAdmin | Removes a role from a department. **Admin role cannot be removed.** |
 | `List Department Roles` | Admin (own dept) / SuperAdmin | View all roles configured for a department. |
 
-### 4. User Management Within Departments
+!!! Warning
+    The **Admin** role is a protected default role and **cannot be deleted** from any department.
+
+### 4. Default Roles on Department Creation
+
+When a new department is created, the following roles are automatically provisioned with default permissions:
+
+| Role | Auto-Created | Can Be Deleted |
+|------|:------------:|:--------------:|
+| `Admin` | ✅ | ❌ (Protected) |
+| `Developer` | ✅ | ✅ |
+| `User` | ✅ | ✅ |
+
+### 5. User Management Within Departments
 
 Admins have three categories of user management (accessible from the `Admin Tab`):
-
-**User Assignment**:
-
-- Assign roles to registered users within the department.
-- SuperAdmin can assign any role in any department.
-- Admin can only assign roles within their own department.
-
 
 **User Update**:
 
@@ -155,18 +185,18 @@ Each role within a department has a configurable permission matrix:
 
 **CRUD & Execute Permissions (Resource-Level)**
 
-Each of the following permissions can be toggled independently for `Tools` and `Agents`:
+Each of the following permissions can be toggled independently for `Tools`, `Agents`,  `MCP Servers` and `workflows`:
 
 | Permission | Controls |
 |------------|----------|
-| `Read Access` | View tools/agents (and servers/pipelines) |
-| `Add Access` | Create tools/agents |
-| `Update Access` | Modify tools/agents |
-| `Delete Access` | Delete tools/agents |
-| `Execute Access` | Execute/run tools/agents |
+| `Read Access` | View resource details |
+| `Add Access` | Create new resources |
+| `Update Access` | Modify existing resources |
+| `Delete Access` | Delete resources |
+| `Execute Access` | Execute/run resources |
 
-!!! Important 
-    Servers currently follow the **same permissions as tools**, and Pipelines currently follow the **same permissions as agents**. Separate permissions for Servers and Pipelines will be introduced in the next release.
+!!! Note
+    `MCP Servers` and `Workflows` each have their own **separate permission set** — they no longer inherit permissions from Tools or Agents. `Export Agents` access is a standalone toggle permission.
 
 **Chat/Execution Toggle Permissions**
 
@@ -193,6 +223,7 @@ These permissions are standalone and do not depend on other permissions:
 | `Vault Access` | Access to secrets/vault management |
 | `Data Connector Access` | Access to data connector features |
 | `Knowledge Base Access` | Access to knowledge base management |
+| `Export Agents Access` | Access to export agent features |
 
 **Special Permissions (Implied)**
 
@@ -219,9 +250,18 @@ Read Access (Agents) ◄── Add Access (Agents)
                                                   ◄── File Context
                                                   ◄── Canvas View
                                                   ◄── Context
+Read Access (MCP Servers) ◄── Add Access (MCP Servers)
+                          ◄── Update Access (MCP Servers)
+                          ◄── Delete Access (MCP Servers)
+                          ◄── Execute Access (MCP Servers)
+
+Read Access (Workflows) ◄── Add Access (Workflows)
+                        ◄── Update Access (Workflows)
+                        ◄── Delete Access (Workflows)
+                        ◄── Execute Access (Workflows)
 ```
 
-**Validation Rule**: `Read Access` is a `prerequisite` — you cannot grant `Add`, `Update`, `Delete`, or `Execute` access for a resource type (Tools/Agents) unless `Read Access` is enabled for that same resource type.
+**Validation Rule**: `Read Access` is a `prerequisite` — you cannot grant `Add`, `Update`, `Delete`, or `Execute` access for a resource type unless `Read Access` is enabled for that same resource type.
 
 **3. Default Permissions by Role**
 
@@ -238,6 +278,26 @@ When a role is added to a department, default permissions are auto-assigned:
     | Execute Access | ✅ | ✅ | ❌ |
 
 === "Agents Permissions"
+
+    | Permission | Admin | Developer | User |
+    |------------|:-----:|:---------:|:----:|
+    | Read Access | ✅ | ✅ | ✅ |
+    | Add Access | ✅ | ✅ | ❌ |
+    | Update Access | ✅ | ✅ | ❌ |
+    | Delete Access | ✅ | ✅ | ❌ |
+    | Execute Access | ✅ | ✅ | ✅ |
+
+=== "MCP Servers Permissions"
+
+    | Permission | Admin | Developer | User |
+    |------------|:-----:|:---------:|:----:|
+    | Read Access | ✅ | ✅ | ❌ |
+    | Add Access | ✅ | ✅ | ❌ |
+    | Update Access | ✅ | ✅ | ❌ |
+    | Delete Access | ✅ | ✅ | ❌ |
+    | Execute Access | ✅ | ✅ | ❌ |
+
+=== "Workflows Permissions"
 
     | Permission | Admin | Developer | User |
     |------------|:-----:|:---------:|:----:|
@@ -268,6 +328,7 @@ When a role is added to a department, default permissions are auto-assigned:
     | Vault Access | ✅ | ✅ | ❌ |
     | Data Connector Access | ✅ | ✅ | ❌ |
     | Knowledge Base Access | ✅ | ✅ | ❌ |
+    | Export Agents Access | ✅ | ✅ | ❌ |
 
 **4 Managing Permissions**
 
@@ -283,63 +344,52 @@ When a role is added to a department, default permissions are auto-assigned:
 
 ## Sharing Across Departments
 
-Resources can be made accessible to other departments through two mechanisms:
+Resources can be shared with other departments using the `Share button` available on resource cards (Tools, MCP Servers, Agents, Workflows, Knowledge Bases).
 
 **1. Public Access**
 
-Marking a resource as `Public` makes it `read-accessible` to `all departments`.
+Marking a resource as `Public` makes it `visible and read-accessible` to `all departments`.
 
-- Available for: `Tools`, `MCP Servers`, `Agents`, `Knowledge Bases`, `Pipelines` (coming soon).
+- Available for: `Tools`, `MCP Servers`, `Agents`, `Workflows`, `Knowledge Bases`.
+- Use the `Share button` on any resource card and select `Make Public`.
 
 **2. Department-Specific Sharing**
 
-Using the `Shared with Departments` setting, a resource can be shared with `specific departments` only.
+Using the `Share button`, a resource can be shared with `specific departments` only.
 
-- Available for: `Tools`, `MCP Servers`, `Agents`, `Knowledge Bases`, `Pipelines` (coming soon).
+- Available for: `Tools`, `MCP Servers`, `Agents`, `Workflows`, `Knowledge Bases`.
+- Use the `Share button` on any resource card and select the target department(s).
 - `Public` and `Shared with Departments` are `mutually exclusive` — a public resource is already accessible to all, so specifying departments is redundant.
 
-**3. Cascade Sharing**
-
-When a higher-level resource is shared, its dependent resources are `automatically shared` as well:
-
-**Agent Sharing Cascade**
-
-```
-Agent (shared/public)
-  ├── Regular Tools ──── automatically shared/public
-  ├── MCP Servers ──── automatically shared/public
-  └── Knowledge Bases ──── automatically shared/public
-```
-
-**Pipeline Sharing Cascade (Coming Soon)**
-
-```
-Pipeline (shared/public)
-  └── Agents
-        ├── Regular Tools ──── automatically shared/public
-        ├── MCP Servers ──── automatically shared/public
-        └── Knowledge Bases ──── automatically shared/public
-```
-
-**4. Sharing Operations**
+**3. Sharing Operations**
 
 **Agent Sharing**
 
 | Operation | Description |
 |-----------|-------------|
-| `Share Agent` | Share an agent with specific departments. This cascades sharing to the agent's tools, MCP servers, and knowledge bases. |
+| `Share Agent` | Share an agent with specific departments via the Share button. |
 | `Unshare Agent` | Remove sharing of an agent from a specific department. |
 | `View Sharing Info` | View the current sharing configuration for an agent. |
 | `View Shared Agents` | View agents that have been shared with the current user's department. |
 
+**Workflow Sharing**
+
+| Operation | Description |
+|-----------|-------------|
+| `Share Workflow` | Share a workflow with specific departments via the Share button. |
+| `Unshare Workflow` | Remove sharing of a workflow from a specific department. |
+| `View Sharing Info` | View the current sharing configuration for a workflow. |
+| `View Shared Workflows` | View workflows that have been shared with the current user's department. |
+
 **Tool & MCP Server Sharing**
 
-Sharing is managed via the `Public` and `Shared with Departments` settings during tool/server creation and update operations.
+Sharing is managed via the `Share button` on Tool and MCP Server cards, allowing you to make them public or share with specific departments.
 
 **Knowledge Base Sharing**
 
 | Operation | Description |
 |-----------|-------------|
+| `Share Knowledge Base` | Share a knowledge base with specific departments via the Share button. |
 | `Update KB Sharing` | Update the sharing settings for a knowledge base. |
 | `Upload KB with Sharing` | Upload a knowledge base with sharing options configured. |
 
@@ -455,20 +505,29 @@ These decorators use a `ToolUserContext` that is automatically injected at runti
 
 ## Dynamic UI Visibility
 
-The UI dynamically shows or hides `tabs and features` based on the logged-in user's permissions:
+The UI dynamically shows or hides `tabs and features` based on the logged-in user's permissions.
+
+**Resource Cards Visibility**
+
+All resource cards (`Tools`, `Agents`, `MCP Servers`, `Workflows`, `Knowledge Bases`) are `visible to all users` on the UI regardless of their permissions. However, users can only `view the data inside` a resource card when they have `Read Access` for that resource type. Without Read Access, the card is visible but the detailed content within is restricted.
+
+**Tab & Feature Visibility**
 
 | UI Element | Required Permission |
 |------------|-------------------|
 | `Tools tab` | Read Access (Tools) |
 | `Agents tab` | Read Access (Agents) |
-| `Servers tab` | Read Access (Tools) — follows tools permission |
-| `Pipelines tab` | Read Access (Agents) — follows agents permission |
+| `Servers tab` | Read Access (MCP Servers) |
+| `Workflows tab` | Read Access (Workflows) |
+| `Export Agents tab` | Export Agents Access |
 | `Evaluation tab` | Evaluation Access |
 | `Vault tab` | Vault Access |
 | `Data Connectors tab` | Data Connector Access |
 | `Knowledge Base tab` | Knowledge Base Access |
 | `Resource Dashboard` | Add Access (Tools) or Update Access (Tools) |
 | `Admin tab` | Admin or SuperAdmin role |
+| `Notifications tab` | Admin or SuperAdmin role |
+| `Requests tab` | Any authenticated user |
 | `Execution Steps (chat)` | Execution Steps |
 | `Tool Verifier (chat)` | Tool Verifier |
 | `Plan Verifier (chat)` | Plan Verifier |
@@ -480,6 +539,20 @@ The UI dynamically shows or hides `tabs and features` based on the logged-in use
 | `Permissions page` | Available in Profile tab for all authenticated users |
 
 Users will `only see` the tabs and features they have permission for. The permissions page in the Profile tab allows any logged-in user to view their own permission set.
+
+---
+
+## SuperAdmin TTL Cleanup
+
+SuperAdmin has access to a dedicated endpoint for `manual data cleanup (TTL)` across the platform.
+
+| Feature | Description |
+|---------|-------------|
+| `Manual TTL Cleanup` | SuperAdmin can trigger a manual cleanup of old chat histories across `all departments`. |
+| `Scope` | Cleans up expired/old chat history data for every department in the platform. |
+| `Access` | Available to `SuperAdmin only`. |
+
+This provides SuperAdmin with direct control over data retention and storage management without waiting for automated TTL expiration processes.
 
 ---
 
@@ -500,13 +573,14 @@ File context access is controlled by the `File Context` permission.
 
 **SuperAdmin Rules**
 
-- First registered user becomes SuperAdmin.
+- When no SuperAdmin exists or no users are in the database, the registration page becomes a SuperAdmin registration (email, username, password only).
 - Has platform-wide access — all permission checks return `true`.
 - Can log in without specifying a department.
 - Can create/delete departments.
 - Can assign any role in any department.
 - Can disable users globally.
 - Is the only role that can modify Admin role permissions.
+- Can manually trigger TTL cleanup of old chat histories across all departments.
 - Cannot create or update groups (not tied to any department).
 
 **Admin Rules**
@@ -514,27 +588,42 @@ File context access is controlled by the `File Context` permission.
 - Highest authority within their own department.
 - Can manage users, roles, and permissions in their department only.
 - Cannot modify Admin role permissions — only SuperAdmin can.
+- Cannot delete the Admin role from any department.
 - Cannot disable SuperAdmin users.
 - Cannot disable themselves.
+- Receives notifications when new users register for their department.
+
+**Registration & Approval Rules**
+
+- Users register with email, username, password, and department(s).
+- Registration sends a notification to the selected department's Admin(s) and SuperAdmin.
+- Admin/SuperAdmin approves users by assigning a role in the department via the Notifications tab.
+- Multiple user approvals can be processed at a time.
+- Users remain in a pending state until approved.
+
+**Department Rules**
+
+- When a new department is created, default roles (`Admin`, `Developer`, `User`) are automatically added.
+- The `Admin` role is protected and cannot be deleted from any department.
 
 **Sharing Rules**
 
+- A `Share button` is available on resource cards (Tools, MCP Servers, Agents, Workflows, Knowledge Bases) for sharing to specific departments or making public.
 - `Public` and `Shared with Departments` are mutually exclusive.
-- Sharing an agent cascades to its tools, MCP servers, and knowledge bases.
-- Sharing a pipeline cascades to its agents and their resources (coming soon).
 - Shared resources provide read-only access to target departments.
 
 **Permission Rules**
 
 - `Read` permission is a prerequisite for `Create`, `Update`, `Delete`, and `Execute` permissions.
 - Chat toggle permissions (Execution Steps, Tool Verifier, etc.) require `Execute Agents` permission.
-- Servers currently follow tool permissions; pipelines currently follow agent permissions. Separate permissions will be introduced in the next release.
+- `MCP Servers` and `Workflows` each have their own separate permission sets. `Export Agents` access is a standalone toggle.
 - Resource Dashboard requires tool create/update permission.
 - Vault operations require `Vault Access` permission.
+- Resource cards are visible to all users; Read Access controls whether users can view the data inside.
 
 **Tool/Agent Update Rules**
 
 - Tools and MCP servers bound to an agent cannot be updated — must remove from agent first.
-- Agents bound to a pipeline cannot be updated independently.
+- Agents bound to a workflow cannot be updated independently.
 
 ---

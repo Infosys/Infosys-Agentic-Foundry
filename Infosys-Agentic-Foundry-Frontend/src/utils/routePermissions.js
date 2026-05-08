@@ -1,4 +1,4 @@
-import Cookies from "js-cookie";
+import { getRoleFromToken } from "./jwtUtils";
 
 /**
  * Route permission configuration
@@ -6,16 +6,16 @@ import Cookies from "js-cookie";
  * Using hasPermission(key, true) - if permission not in API response, show by default
  */
 export const getAvailableRoutes = (hasPermission) => {
-  const role = Cookies.get("role");
+  const role = getRoleFromToken();
   const isAdminRole = role && (role.toUpperCase() === "ADMIN" || role.toUpperCase() === "SUPERADMIN");
   const isSuperAdmin = role && role.toUpperCase() === "SUPERADMIN";
 
   return [
     { path: "/", permission: hasPermission("execute_access.agents", true), label: "Chat" },
     { path: "/tools", permission: hasPermission("read_access.tools", true), label: "Tools" },
-    { path: "/servers", permission: hasPermission("read_access.tools", true), label: "Servers" },
+    { path: "/servers", permission: hasPermission("read_access.mcp_servers", true), label: "Servers" },
     { path: "/agent", permission: hasPermission("read_access.agents", true), label: "Agents" },
-    { path: "/pipeline", permission: hasPermission("read_access.agents", true), label: "Pipeline" },
+    { path: "/workflows", permission: hasPermission("read_access.workflows", true), label: "Workflows" },
     { path: "/secret", permission: hasPermission("vault_access", true), label: "Vault" },
     { path: "/dataconnector", permission: hasPermission("data_connector_access", true), label: "Data Connectors" },
     { path: "/knowledge-base", permission: hasPermission("knowledgebase_access", true), label: "Knowledge Base" },

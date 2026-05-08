@@ -1,6 +1,6 @@
 # Server-Sent Events (SSE) Streaming
 
-Server-Sent Events (SSE) is a web technology that enables real-time, one-way communication from the server to the client. In the context of the Infy Agent Framework, SSE streams each step of the agent's internal processing to the user interface as it happens, providing complete visibility into the agent's execution pipeline.
+Server-Sent Events (SSE) is a web technology that enables real-time, one-way communication from the server to the client. In the context of the Infy Agent Framework, SSE streams each step of the agent's internal processing to the user interface as it happens, providing complete visibility into the agent's execution workflow.
 
 ## The Importance of SSE in Agent Frameworks
 
@@ -21,7 +21,7 @@ The implementation of SSE streaming transforms the user experience in several ke
 
 - **Enhanced User Experience**: Instead of waiting for a final response with no feedback, users see each processing step unfold in real-time, creating an interactive and engaging experience.
 
-- **Complete Visibility**: The entire agent execution pipeline becomes transparent, allowing users to understand how their query is being processed and what decisions the agent is making.
+- **Complete Visibility**: The entire agent execution workflow becomes transparent, allowing users to understand how their query is being processed and what decisions the agent is making.
 
 - **Improved Debugging**: When issues arise, developers and users can immediately identify where in the process the failure occurred, dramatically reducing troubleshooting time.
 
@@ -50,7 +50,7 @@ SSE streaming has been implemented across all major agent templates in the frame
 
 ## Detailed Node Descriptions
 
-The streaming nodes represent different stages of agent processing, each serving a specific purpose in the execution pipeline:
+The streaming nodes represent different stages of agent processing, each serving a specific purpose in the execution workflow:
 
 - **Generating Context** handles the loading and summarization of conversation history, ensuring the agent has proper context for decision-making. Users can see how previous interactions influence current processing.
 

@@ -5,13 +5,15 @@ import SVGIcons from "../../Icons/SVGIcons";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField";
 import { APIs } from "../../constant";
 import { copyToClipboard } from "../../utils/clipboardUtils";
-import Cookies from "js-cookie";
+import { getRoleFromToken, getEmailFromToken } from "../../utils/jwtUtils";
 import Loader from "../commonComponents/Loader";
 import SubHeader from "../commonComponents/SubHeader";
 import { useMessage } from "../../Hooks/MessageContext";
 import useFetch from "../../Hooks/useAxios";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 import Button from "../../iafComponents/GlobalComponents/Buttons/Button";
+import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox";
+// ConfirmationModal already imported above
 import CodeEditor from "../commonComponents/CodeEditor";
 import codeEditorStyles from "../commonComponents/CodeEditor.module.css";
 
@@ -36,7 +38,7 @@ const Vault = () => {
   const { permissions, loading: permissionsLoading, hasPermission } = usePermissions();
   const lastRowRef = useRef(null);
   const { postData, putData, deleteData, fetchData } = useFetch();
-  const role = Cookies.get("role");
+  const role = getRoleFromToken();
   const { addMessage } = useMessage();
   // Separate caches for each tab to prevent value interchange
   const privateVaultCache = useRef({});
@@ -167,12 +169,15 @@ const Vault = () => {
   };
 
   const [rows, setRows] = useState(() => {
-    const role = Cookies.get("role");
+    const role = getRoleFromToken();
     return role?.toUpperCase() === "GUEST" ? [] : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }];
   });
   const [activeTab, setActiveTab] = useState("Private");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [deleteIndex, setDeleteIndex] = useState(null);
+  const [selectedPwd, setSelectedPwd] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [availableGroups, setAvailableGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [selectedGroupObj, setSelectedGroupObj] = useState(null);
@@ -189,6 +194,8 @@ const Vault = () => {
     setLoading(true);
     // Clear search term when switching tabs
     setSearchTerm("");
+    // Clear selection when switching tabs
+    setSelectedPwd([]);
     // Clear all scts and timers when tab changes
     clearAllSctsFromCache();
 
@@ -373,7 +380,7 @@ print(fetch_weather("New York"))`;
     }
 
     const res = {
-      user_email: Cookies.get("email"),
+      user_email: getEmailFromToken(),
       key_name: row.name,
       key_value: row.value,
     };
@@ -488,8 +495,8 @@ print(fetch_weather("New York"))`;
     }
 
     const res = {
-      user_email: Cookies.get("email"),
-      key_name: rowToDelete.name,
+      user_email: getEmailFromToken(),
+      key_names: [rowToDelete.name],
     };
 
     let response;
@@ -498,7 +505,7 @@ print(fetch_weather("New York"))`;
       await response;
       updatedRows.splice(index, 1);
       setRows(updatedRows.length ? updatedRows : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]);
-      addMessage(response.message, "success");
+      addMessage(response.message || response.status_message, "success");
     } catch (error) {
       console.error("Error deleting secret:", error);
       addMessage("Error deleting secret.", "error");
@@ -521,7 +528,7 @@ print(fetch_weather("New York"))`;
       return;
     }
 
-    const res = { key_name: rowToDelete.name };
+    const res = { key_names: [rowToDelete.name] };
 
     let response;
     try {
@@ -529,7 +536,7 @@ print(fetch_weather("New York"))`;
       await response;
       updatedRows.splice(index, 1);
       setRows(updatedRows.length ? updatedRows : [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]);
-      addMessage(response.message, "success");
+      addMessage(response.message || response.status_message, "success");
     } catch (error) {
       console.error("Error deleting secret:", error);
       addMessage("Error deleting secret.", "error");
@@ -538,6 +545,16 @@ print(fetch_weather("New York"))`;
       setShowConfirmation(false);
       setDeleteIndex(null);
     }
+  };
+
+  const deleteGroupSecret = async (groupName, keyNames = []) => {
+    if (!groupName || !Array.isArray(keyNames) || keyNames.length === 0) {
+      throw new Error("Group name and at least one key name are required");
+    }
+    const apiUrl = APIs.GROUP_DELETE_SECRETS_BULK
+      .replace("{group_name}", encodeURIComponent(groupName));
+    const payload = { key_names: keyNames };
+    return await deleteData(apiUrl, payload);
   };
 
   const deleteGroupRow = async (index) => {
@@ -561,21 +578,14 @@ print(fetch_weather("New York"))`;
     }
 
     try {
-      // Use the group-specific endpoint for deleting
-      const apiUrl = APIs.GROUP_DELETE_SECRET
-        .replace("{group_name}", encodeURIComponent(selectedGroup))
-        .replace("{key_name}", encodeURIComponent(rowToDelete.originalName || rowToDelete.name));
-      const response = await deleteData(apiUrl);
-
-      // Check for successful response - API might return different response formats
-      if (response === true || response?.success === true || response?.status === "success" || (response && typeof response === "object" && Object.keys(response).length === 0)) {
-        // Refresh the group to ensure UI is in sync with server
+      // Use the bulk endpoint for single or multiple deletes
+      const response = await deleteGroupSecret(selectedGroup, [rowToDelete.originalName || rowToDelete.name]);
+      if (response?.success || response?.status === "success") {
         await loadGroupData(selectedGroup);
         addMessage("Group secret deleted successfully", "success");
       } else {
-        // Unexpected delete response format; still refresh in case the delete actually worked
         await loadGroupData(selectedGroup);
-        addMessage("Delete operation completed", "success");
+        addMessage(response?.message || response?.status_message || "Delete operation completed", "success");
       }
     } catch (error) {
       console.error("Error deleting group secret:", error);
@@ -591,6 +601,13 @@ print(fetch_weather("New York"))`;
   const handleDeleteClick = (index) => {
     const row = rows[index];
     if (!row.isSaved || (role && role?.toUpperCase() === "GUEST")) return;
+    // Creator cannot delete their own secrets
+    const currentUserEmail = getEmailFromToken().trim().toLowerCase();
+    const secretCreator = (row.created_by || "").trim().toLowerCase();
+    if (secretCreator && currentUserEmail && secretCreator === currentUserEmail) {
+      addMessage("You cannot delete a secret that you created.", "error");
+      return;
+    }
     setDeleteIndex(index);
     setShowConfirmation(true);
   };
@@ -628,7 +645,7 @@ print(fetch_weather("New York"))`;
     }
 
     const res = {
-      user_email: Cookies.get("email"),
+      user_email: getEmailFromToken(),
       key_name: row.name,
       key_value: row.value,
     };
@@ -739,7 +756,7 @@ print(fetch_weather("New York"))`;
 
       const apiUrl = APIs.SECRETS_GET;
       const payload = {
-        user_email: Cookies.get("email"),
+        user_email: getEmailFromToken(),
         key_name: name,
       };
 
@@ -1052,7 +1069,7 @@ print(fetch_weather("New York"))`;
     try {
       const apiUrl = APIs.GET_SECRETS;
       const payload = {
-        user_email: Cookies.get("email"),
+        user_email: getEmailFromToken(),
       };
       const response = await postData(apiUrl, payload);
 
@@ -1101,8 +1118,8 @@ print(fetch_weather("New York"))`;
 
   const fetchAvailableGroups = async () => {
     try {
-      const userEmail = Cookies.get("email");
-      const userRole = Cookies.get("role");
+      const userEmail = getEmailFromToken();
+      const userRole = getRoleFromToken();
 
       if (!userEmail) {
         addMessage("User email not found. Please log in again.", "error");
@@ -1310,6 +1327,106 @@ print(fetch_weather("New York"))`;
     setSearchTerm("");
   };
 
+  // Multi-select handlers for vault secrets
+  const handleSecretSelectChange = (secretName, checked) => {
+    setSelectedPwd((prev) =>
+      checked ? [...prev, secretName] : prev.filter((n) => n !== secretName)
+    );
+  };
+
+  const savedRows = rows.filter((r) => r.isSaved);
+  const isAllPwdSelected = savedRows.length > 0 && savedRows.every((r) => selectedPwd.includes(r.name));
+  const isPartialPwdSelected = !isAllPwdSelected && savedRows.some((r) => selectedPwd.includes(r.name));
+
+  const handleSelectAllPwd = () => {
+    if (isAllPwdSelected) {
+      setSelectedPwd([]);
+    } else {
+      setSelectedPwd(savedRows.map((r) => r.name));
+    }
+  };
+
+  // Bulk delete secrets handler
+  const handleBulkDeletePwd = async () => {
+    if (selectedPwd.length === 0) return;
+    // Filter out secrets created by the current user (creator cannot delete own items)
+    const currentUserEmail = getEmailFromToken().trim().toLowerCase();
+    const ownSecrets = selectedPwd.filter((name) => {
+      const row = rows.find((r) => r.name === name);
+      return row && (row.created_by || "").trim().toLowerCase() === currentUserEmail;
+    });
+    const deletableSecrets = selectedPwd.filter((name) => {
+      const row = rows.find((r) => r.name === name);
+      return !row || (row.created_by || "").trim().toLowerCase() !== currentUserEmail;
+    });
+    if (ownSecrets.length > 0) {
+      addMessage(`${ownSecrets.length} secret(s) created by you were skipped. You cannot delete your own secrets.`, "error");
+    }
+    if (deletableSecrets.length === 0) {
+      setSelectedPwd([]);
+      setShowBulkDeleteModal(false);
+      return;
+    }
+    setBulkDeleteLoading(true);
+    try {
+      const res = {
+        user_email: getEmailFromToken(),
+        key_names: deletableSecrets,
+      };
+      let response = null;
+      const groupDeleteResults = [];
+      if (activeTab === LABELS.PRIVATE) {
+        response = await deleteData(APIs.DELETE_SECRET, res);
+        if (response?.status_message || response?.message) {
+          addMessage(response.status_message || response.message, response?.success === false ? "error" : "success");
+        }
+      } else if (activeTab === LABELS.PUBLIC) {
+        response = await deleteData(APIs.PUBLIC_DELETE_SECRET, res);
+        if (response?.status_message || response?.message) {
+          addMessage(response.status_message || response.message, response?.success === false ? "error" : "success");
+        }
+      } else if (activeTab === LABELS.GROUP && selectedGroupObj) {
+        // Group secrets delete - one by one as they use path-based API
+        for (const secretName of deletableSecrets) {
+          const apiUrl = APIs.GROUP_DELETE_SECRET
+            ?.replace("{group_name}", encodeURIComponent(selectedGroup))
+            ?.replace("{key_name}", encodeURIComponent(secretName));
+          if (apiUrl) {
+            const groupResp = await deleteData(apiUrl);
+            groupDeleteResults.push({ name: secretName, ...groupResp });
+            if (groupResp?.status_message || groupResp?.message) {
+              addMessage(`${secretName}: ${groupResp.status_message || groupResp.message}`, groupResp?.success === false ? "error" : "success");
+            }
+          }
+        }
+      }
+
+      // Fallback generic message if no status_message was shown
+      if (
+        (!response || (!response?.status_message && !response?.message)) &&
+        (groupDeleteResults.length === 0 || !groupDeleteResults.some(r => r.status_message || r.message))
+      ) {
+        addMessage(`${deletableSecrets.length} secret(s) deleted successfully`, "success");
+      }
+      setSelectedPwd([]);
+      // Refresh data by removing deleted rows from state
+      setRows((prevRows) => {
+        const remaining = prevRows.filter((r) => !deletableSecrets.includes(r.name));
+        return remaining.length > 0
+          ? remaining
+          : role?.toUpperCase() !== "GUEST"
+            ? [{ name: "", value: "", isSaved: false, isMasked: false, isUpdated: false, originalName: "", originalValue: "" }]
+            : [];
+      });
+    } catch (error) {
+      console.error("Error bulk deleting secrets:", error);
+      addMessage("Error deleting secrets.", "error");
+    } finally {
+      setBulkDeleteLoading(false);
+      setShowBulkDeleteModal(false);
+    }
+  };
+
   return (
     <>
       {loading && <Loader />}
@@ -1322,6 +1439,12 @@ print(fetch_weather("New York"))`;
           clearSearch={clearSearch}
           showRefreshButton={false}
           showPlusButton={false}
+          showSelectAll={role?.toUpperCase() === "ADMIN" && savedRows.length > 1}
+          isAllSelected={isAllPwdSelected}
+          isPartiallySelected={isPartialPwdSelected}
+          onSelectAll={handleSelectAllPwd}
+          selectedCount={selectedPwd.length}
+          onDeleteSelected={role?.toUpperCase() === "ADMIN" ? () => setShowBulkDeleteModal(true) : null}
         />
 
         {/* Tabs Section */}
@@ -1499,9 +1622,25 @@ print(fetch_weather("New York"))`;
                         return (
                           <div className={styles.savedSctCard} key={originalIndex} ref={isLast ? lastRowRef : null}>
                             <div className={styles.savedSctRow}>
-                              <span className={styles.savedSctName}>{row.name}</span>
+                              {role?.toUpperCase() === "ADMIN" && (
+                                <CheckBox
+                                  checked={selectedPwd.includes(row.name)}
+                                  onChange={(checked) => handleSecretSelectChange(row.name, checked)}
+                                />
+                              )}
+                              <span className={styles.savedSctName} title={row.name}>{row.name}</span>
+                              <button
+                                className={styles.copyNameBtn}
+                                title="Copy secret name"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const success = await copyToClipboard(row.name);
+                                  if (success) addMessage("Secret name copied", "success");
+                                }}>
+                                <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
+                              </button>
                               <span className={styles.savedSctDivider}></span>
-                              <span className={styles.savedSctValue}>
+                              <span className={styles.savedSctValue} title="Click the eye icon to reveal the value">
                                 ••••••••••••••••••
                               </span>
                               <div className={styles.sctCardActions}>
@@ -1526,39 +1665,62 @@ print(fetch_weather("New York"))`;
                                   <SVGIcons icon="eye" width={16} height={16} color="currentColor" />
                                 </button>
 
-                                {/* Delete Button */}
-                                <button
-                                  className={`${styles.actionBtn} ${styles.deleteBtn}`}
-                                  title={role && role?.toUpperCase() === "GUEST" ? "Guests are not allowed to delete secrets." : "Delete"}
-                                  onClick={() => handleDeleteClick(originalIndex)}
-                                  disabled={role && role?.toUpperCase() === "GUEST"}>
-                                  <SVGIcons icon="trash" width={16} height={16} color="currentColor" />
-                                </button>
+                                {/* Delete Button - hidden when row is selected */}
+                                {!selectedPwd.includes(row.name) && (
+                                  <button
+                                    className={`${styles.actionBtn} ${styles.deleteBtn}`}
+                                    title={role && role?.toUpperCase() === "GUEST" ? "Guests are not allowed to delete secrets." : "Delete"}
+                                    onClick={() => handleDeleteClick(originalIndex)}
+                                    disabled={role && role?.toUpperCase() === "GUEST"}>
+                                    <SVGIcons icon="trash" width={16} height={16} color="currentColor" />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
                         );
                       }
 
-                      // Revealed saved secret - editable value with update/cancel when changed
                       if (row.isSaved && !row.isMasked) {
                         const revealedValue = getVaultCache(activeTab).current[originalIndex] || row.value || "";
                         return (
                           <div className={`${styles.savedSctCard} ${styles.revealedCard}`} key={originalIndex} ref={isLast ? lastRowRef : null}>
                             <div className={styles.savedSctRow}>
-                              <span className={styles.savedSctName}>{row.name}</span>
+                              <span className={styles.savedSctName} title={row.name}>{row.name}</span>
+                              <button
+                                className={styles.copyNameBtn}
+                                title="Copy secret name"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const success = await copyToClipboard(row.name);
+                                  if (success) addMessage("Secret name copied", "success");
+                                }}>
+                                <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
+                              </button>
                               <span className={styles.savedSctDivider}></span>
                               <input
                                 type="text"
-                                value={row.value || revealedValue}
+                                value={row.isUpdated ? row.value : (row.value || revealedValue)}
                                 onChange={(e) => {
                                   const newValue = e.target.value.substring(0, MAX_VALUE_LENGTH);
                                   handleInputChange(originalIndex, "value", newValue);
                                 }}
                                 className={`${styles.inlineInput} ${styles.valueInput}`}
                                 placeholder="Secret value"
+                                title={row.isUpdated ? row.value : (row.value || revealedValue)}
                                 disabled={role?.toUpperCase() === "GUEST"}
                               />
+                              <button
+                                className={styles.copyNameBtn}
+                                title="Copy secret value"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const val = row.isUpdated ? row.value : (row.value || revealedValue);
+                                  const success = await copyToClipboard(val);
+                                  if (success) addMessage("Secret value copied", "success");
+                                }}>
+                                <SVGIcons icon="copy" width={14} height={14} color="currentColor" />
+                              </button>
                               <div className={styles.sctCardActions}>
                                 {row.isUpdated ? (
                                   <>
@@ -1710,6 +1872,14 @@ print(fetch_weather("New York"))`;
           }
           onConfirm={handleConfirmDelete}
           setShowConfirmation={setShowConfirmation}
+        />
+      )}
+
+      {showBulkDeleteModal && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete ${selectedPwd.length} selected secret(s)? This action cannot be undone.`}
+          onConfirm={handleBulkDeletePwd}
+          setShowConfirmation={setShowBulkDeleteModal}
         />
       )}
     </>

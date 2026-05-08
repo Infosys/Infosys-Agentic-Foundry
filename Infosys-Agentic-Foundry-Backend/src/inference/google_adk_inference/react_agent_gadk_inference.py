@@ -35,7 +35,8 @@ class ReactAgentGADKInference(BaseAgentGADKInference):
         Includes evaluator agent when evaluation_flag is enabled.
         """
         tool_ids = agent_config["TOOLS_INFO"]
-        tools = await self._get_tools_instances(tool_ids=tool_ids)
+        tool_versions = agent_config.get("TOOLS_WITH_VERSIONS", {})
+        tools = await self._get_tools_instances(tool_ids=tool_ids, tool_versions=tool_versions)
         memory_management_tools = await self._get_memory_management_tools_instances(allow_union_annotation=False)
         agent_name = await self.agent_service.agent_service_utils._normalize_agent_name(agent_name=agent_config["AGENT_NAME"])
 

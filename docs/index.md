@@ -56,11 +56,11 @@ Each agent can be equipped with the following components to extend its capabilit
 
 ---
 
-**2. Agent Pipelines**
+**2. Agent Workflows**
 
-Agent Pipelines allow you to orchestrate multiple agents into complex, multi-step workflows using a visual drag-and-drop builder. Instead of manually coordinating agent calls, you define a pipeline that automatically routes data between agents based on your configured flow — with conditional branching, input/output management, and reusable configurations.
+Agent Workflows allow you to orchestrate multiple agents into complex, multi-step workflows using a visual drag-and-drop builder. Instead of manually coordinating agent calls, you define a workflow that automatically routes data between agents based on your configured flow — with conditional branching, input/output management, and reusable configurations.
 
-[:material-pipe: Agent Pipelines](Agent_Pipelines.md){ .md-button .md-button--primary }
+[:material-pipe: Agent Workflows](Agent_Workflows.md){ .md-button .md-button--primary }
 
 ---
 
@@ -264,7 +264,7 @@ The following are sample use cases categorized by domain:
    The framework goes beyond agent creation with a rich set of built-in platform features:
 
    * `Seven Agent Templates:` React, React Critic, Multi Agent, Planner Executor, Meta, Planner Meta, and Hybrid — each designed for different workflow patterns.
-   * `Agent Pipelines:` Visual drag-and-drop builder for designing multi-agent workflows with conditional branching and reusable configurations.
+   * `Agent Workflows:` Visual drag-and-drop builder for designing multi-agent workflows with conditional branching and reusable configurations.
    * `MCP Registry:` Model Context Protocol integration for connecting agents to external tools and services with real-time discovery and enterprise security.
    * `Memory Management:` Semantic memory for cross-session fact storage and episodic memory for few-shot learning from past conversations.
    * `Knowledge Base:` Upload PDFs and text documents as domain-specific knowledge sources for inference.
@@ -322,9 +322,9 @@ Follow these steps to set up your environment, create agents, and start using th
 :   Build your AI agent by selecting a template (React, React Critic, Multi Agent, Planner Executor, Meta, Planner Meta, or Hybrid), adding tools, and configuring its role and persona.
 :   [:octicons-arrow-right-24: Agent Configuration](agent_config/Overview.md)
 
-**Step 9 — Build Agent Pipelines** *(Optional)*
+**Step 9 — Build Agent Workflows** *(Optional)*
 :   For multi-agent workflows, use the visual builder to connect agents with conditional branching, input/output management, and reusable configurations.
-:   [:octicons-arrow-right-24: Agent Pipelines](Agent_Pipelines.md)
+:   [:octicons-arrow-right-24: Agent Workflows](Agent_Workflows.md)
 
 **Step 10 — Start Using the Agent**
 :   Select your agent in the Inference section and start querying. Use Canvas Screen for visualizations, Tool Interrupt for step-by-step control, and Knowledge Base selection for contextual answers.
@@ -390,13 +390,13 @@ Follow these steps to set up your environment, create agents, and start using th
 
     [:octicons-arrow-right-24: Tools Configuration](tools_config/tools.md)
 
--   :material-pipe:{ .lg .middle } **Agent Pipelines**
+-   :material-pipe:{ .lg .middle } **Agent Workflows**
 
     ---
 
     Visually build multi-agent workflows with drag-and-drop
 
-    [:octicons-arrow-right-24: Agent Pipelines](Agent_Pipelines.md)
+    [:octicons-arrow-right-24: Agent Workflows](Agent_Workflows.md)
 
 -   :material-chat-processing:{ .lg .middle } **Inference**
 

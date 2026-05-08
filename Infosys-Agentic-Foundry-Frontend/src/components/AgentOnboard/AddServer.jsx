@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import styles from "../../css_modules/ToolOnboarding.module.css";
 import { useToolsAgentsService } from "../../services/toolService";
-import { copyToClipboard } from "../../utils/clipboardUtils";
-import Cookies from "js-cookie";
+import { copyToClipboard, downloadAsFile } from "../../utils/clipboardUtils";
+import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
 import { useMcpServerService } from "../../services/serverService";
 import { useMessage } from "../../Hooks/MessageContext";
 import TagSelector from "../commonComponents/TagSelector/TagSelector.jsx";
-import DepartmentSelector from "../commonComponents/DepartmentSelector/DepartmentSelector.jsx";
 import useFetch from "../../Hooks/useAxios.js";
 import { APIs } from "../../constant";
 import { useErrorHandler } from "../../Hooks/useErrorHandler";
@@ -18,23 +18,28 @@ import Loader from "../commonComponents/Loader.jsx";
 import CodeEditor from "../commonComponents/CodeEditor.jsx";
 import DeleteModal from "../commonComponents/DeleteModal.jsx";
 import { useAuth } from "../../context/AuthContext";
+import { usePermissions } from "../../context/PermissionsContext";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import UploadBox from "../commonComponents/UploadBox.jsx";
 import TextareaWithActions from "../commonComponents/TextareaWithActions";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
-import Toggle from "../commonComponents/Toggle";
 import AccessControlGuide from "../commonComponents/AccessControlGuide";
+import { encodePassword } from "../../utils/encodeUtils";
 
-export default function AddServer({ editMode = false, serverData = null, onClose, setRefreshPaginated = () => { }, recycle = false, setRestoreData = () => { }, readOnly: readOnlyProp = false }) {
+export default function AddServer({ editMode = false, serverData = null, onClose, setRefreshPaginated = () => { }, recycle = false, setRestoreData = () => { }, readOnly = false }) {
   const { addServer } = useToolsAgentsService();
   const { postData, deleteData, fetchData } = useFetch();
-  const { getAllServers, updateServer, getServerById } = useMcpServerService();
+  const { getAllServers, updateServer, updateRemoteMcpUrl, updateModuleConfig, getServerById, deleteServer: deleteServerService } = useMcpServerService();
   const user = { isAdmin: true, teams: ["dev", "ops"], team_ids: ["dev", "ops"] };
   const isAdmin = Boolean(user && (user.isAdmin || user.is_admin));
   const userTeams = user?.teams || user?.team_ids || [];
 
+  const { hasPermission } = usePermissions();
+  const canDeleteServers = typeof hasPermission === "function" ? hasPermission("delete_access.mcp_servers") : false;
+
   // Combine recycle and readOnly props into a single flag for disabling form fields
-  const isReadOnly = recycle || Boolean(readOnlyProp);
+  const isReadOnly = recycle || Boolean(readOnly);
 
   // ============ State for Dynamic Mode Management ============
   const [currentMode, setCurrentMode] = useState(editMode ? "update" : "create");
@@ -46,6 +51,9 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   // Derived server data: state first (updated after create), then prop (passed from parent on edit)
   const effectiveServerData = currentServerData || serverData || {};
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [serverRestoreConflict, setServerRestoreConflict] = useState(null);
+  const [serverRestoreNewName, setServerRestoreNewName] = useState("");
   const [serverType, setServerType] = useState("code");
   const [serverName, setServerName] = useState("");
   const [moduleName, setModuleName] = useState("");
@@ -61,19 +69,29 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   const [popupContent, setPopupContent] = useState("");
   const [copiedStates, setCopiedStates] = useState({});
   const [showAccessControlInfo, setShowAccessControlInfo] = useState(false);
+  const [showRemoteMcpHelp, setShowRemoteMcpHelp] = useState(false);
   const { addMessage, setShowPopup } = useMessage();
   const { handleApiError, handleError } = useErrorHandler();
-  const userName = Cookies.get("userName");
+  const userName = getUserNameFromToken();
   const creatorEmail =
     (effectiveServerData &&
       (effectiveServerData.created_by || effectiveServerData.user_email_id || effectiveServerData.createdBy || (effectiveServerData.raw && (effectiveServerData.raw.created_by || effectiveServerData.raw.user_email_id)))) ||
-    Cookies.get("email") ||
-    Cookies.get("userName") ||
+    getEmailFromToken() ||
+    getUserNameFromToken() ||
     "";
 
   const teamOptions = userTeams.map((t) => ({ label: t, value: t }));
 
-  const prefillDoneRef = useRef(false);
+  const prefillDoneRef = useRef(null); // Stores server ID after prefill, null when not prefilled
+
+  // Sync currentServerData when serverData prop changes (e.g., after API fetch on card click)
+  useEffect(() => {
+    if (serverData && Object.keys(serverData).length > 0) {
+      setCurrentServerData(serverData);
+      setCurrentMode("update");
+      prefillDoneRef.current = null; // Reset to allow prefill for new server
+    }
+  }, [serverData]);
 
   // TagSelector state (new pattern matching ToolOnBoarding)
   const [selectedTagsForSelector, setSelectedTagsForSelector] = useState([]);
@@ -101,20 +119,16 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setNonRemovableTags(nonGeneralCount > 0 ? [] : [general]);
   };
 
-  const [command, setCommand] = useState("Python");
+  const [command, setCommand] = useState("python");
   const [externalArgs, setExternalArgs] = useState("");
 
   const [vaultValue, setVaultValue] = useState("");
   const [vaultOptions, setVaultOptions] = useState([]);
+  const [headerRows, setHeaderRows] = useState([{ name: "", value: "" }]);
+  const [showHeadersSection, setShowHeadersSection] = useState(false);
+  const [headersError, setHeadersError] = useState("");
   const [updateModal, setUpdateModal] = useState(false);
   const [loadingEndpoints, setLoadingEndpoints] = useState(false);
-  const [isPublic, setIsPublic] = useState(false);
-  const [sharedDepartments, setSharedDepartments] = useState([]);
-  const [departmentsList, setDepartmentsList] = useState([]);
-  const [departmentsLoading, setDepartmentsLoading] = useState(false);
-  // Store departments before clearing when toggling to public
-  const previousDepartmentsRef = React.useRef([]);
-  const loggedInDepartment = Cookies.get("department") || "";
   const { logout } = useAuth();
   const handleLoginButton = (e) => {
     e.preventDefault();
@@ -123,7 +137,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
 
   const serverIdForPrefill = effectiveServerData?.id || effectiveServerData?.tool_id || null;
   useEffect(() => {
-    prefillDoneRef.current = false;
+    prefillDoneRef.current = null; // Reset to allow prefill
     // Set General tag as default when in add mode
     if (isCreateMode) {
       (async () => {
@@ -149,36 +163,13 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     }
   }, [isCreateMode, serverIdForPrefill, fetchData]);
 
-  // Fetch departments for shared departments dropdown
-  useEffect(() => {
-    const fetchDepartments = async () => {
-      setDepartmentsLoading(true);
-      try {
-        const response = await fetchData(APIs.GET_DEPARTMENTS_LIST);
-        if (response && Array.isArray(response)) {
-          setDepartmentsList(response.map((dept) => dept.department_name || dept.name || dept));
-        } else if (response?.departments && Array.isArray(response.departments)) {
-          setDepartmentsList(response.departments.map((dept) => dept.department_name || dept.name || dept));
-        } else {
-          setDepartmentsList([]);
-        }
-      } catch {
-        console.error("Failed to fetch departments");
-        setDepartmentsList([]);
-      } finally {
-        setDepartmentsLoading(false);
-      }
-    };
-    fetchDepartments();
-  }, [fetchData]);
-
   useEffect(() => {
     if (serverType !== "active") return;
 
     const loadVaultOptions = async () => {
       setLoadingEndpoints(true);
       try {
-        const payload = { user_email: Cookies.get("email") };
+        const payload = { user_email: getEmailFromToken() };
         const data = await postData(APIs.GET_SECRETS, payload);
 
         let options = [];
@@ -211,12 +202,15 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   }, [serverType]);
 
   // Recycle bin functions - Restore and Delete permanently
-  const restoreServer = async () => {
+  const restoreServer = async (overrideName) => {
     setSubmitting(true);
     try {
       const serverId = serverData?.tool_id || serverData?.id;
-      const url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(Cookies.get("email"))}`;
-      const response = await postData(url);
+      let url = `${APIs.RESTORE_SERVERS}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
+      const nameToUse = overrideName || serverRestoreNewName.trim();
+      if (nameToUse) url += `&new_name=${encodeURIComponent(nameToUse)}`;
+      const response = await postData(url, undefined, { silent: true });
+      setServerRestoreNewName("");
       if (response?.is_restored) {
         addMessage(response?.message || "Server restored successfully", "success");
         setRestoreData(response);
@@ -226,9 +220,51 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       }
     } catch (error) {
       handleApiError(error, { context: "AddServer.restoreServer" });
-      addMessage(error?.response?.data?.detail || "Failed to restore server", "error");
+      const detail = error?.response?.data?.detail;
+      if (detail?.name_conflict) {
+        setServerRestoreConflict(detail);
+      } else {
+        const errMsg = typeof detail === "string" ? detail : detail?.message || error?.message || "Failed to restore server";
+        addMessage(errMsg, "error");
+      }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDeleteServerFromModal = async () => {
+    const serverId = effectiveServerData?.tool_id || effectiveServerData?.id || serverData?.tool_id || serverData?.id;
+    if (!serverId) return;
+
+    const isAdmin = getRoleFromToken().toLowerCase() === "admin";
+    const emailId = getEmailFromToken();
+
+    const data = {
+      user_email_id: emailId,
+      is_admin: isAdmin,
+    };
+
+    try {
+      setSubmitting(true);
+      const response = await deleteServerService(data, serverId);
+
+      if (response && typeof response !== "string") {
+        const statusMsg = response.status_message || response.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(response.results) && response.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+
+      setShowDeleteConfirm(false);
+      setSubmitting(false);
+      onClose();
+      setRefreshPaginated((prev) => !prev);
+    } catch (e) {
+      console.error("Delete server error:", e);
+      addMessage("Failed to delete server", "error");
+      setSubmitting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -236,18 +272,19 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setSubmitting(true);
     try {
       const serverId = serverData?.tool_id || serverData?.id;
-      const url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(Cookies.get("email"))}`;
+      const url = `${APIs.DELETE_SERVERS_PERMANENTLY}${serverId}?user_email_id=${encodeURIComponent(getEmailFromToken())}`;
       const response = await deleteData(url);
-      if (response?.is_delete || response?.is_deleted) {
-        addMessage(response?.message || "Server deleted permanently", "success");
+      if (response?.is_delete) {
+        const statusMsg = response?.status_message || response?.message;
+        if (statusMsg) addMessage(statusMsg, "success");
         setRestoreData(response);
         onClose();
       } else {
-        addMessage(response?.message || "Failed to delete server", "error");
+        const statusMsg = response?.status_message || response?.message;
+        if (statusMsg) addMessage(statusMsg, "error");
       }
     } catch (error) {
       handleApiError(error, { context: "AddServer.deleteServerPermanently" });
-      addMessage(error?.response?.data?.detail || "Failed to delete server", "error");
     } finally {
       setSubmitting(false);
     }
@@ -311,6 +348,13 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       }
     } else if (serverType === "active") {
       if (!endpoint.trim()) return "Endpoint URL is required for active servers.";
+      // Validate header rows (optional — skip fully empty rows)
+      for (const row of headerRows) {
+        const hasName = row.name.trim().length > 0;
+        const hasValue = row.value.trim().length > 0;
+        if (hasName && !hasValue) return `Header "${row.name}" is missing a value.`;
+        if (!hasName && hasValue) return "A header row has a value but no header name.";
+      }
     } else if (serverType === "external") {
       if (!moduleName.trim()) return "Module Name is required for external servers.";
     }
@@ -338,7 +382,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         // Switch to update mode with fresh data
         setCurrentMode("update");
         setCurrentServerData(server);
-        prefillDoneRef.current = false;
+        prefillDoneRef.current = null; // Reset to allow prefill for new server
 
         // Update form with fresh server data
         const raw = server.raw || server || {};
@@ -366,8 +410,40 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           setCodeContent(code);
           setCodeFile(null);
         } else if (mappedType === "active") {
-          const ep = raw.mcp_url || server.endpoint || "";
+          const endpointCandidates = [raw.mcp_url, raw.mcp_config && raw.mcp_config.url, server.endpoint, raw.endpoint, raw.mcp_config && raw.mcp_config.mcp_url];
+          const ep = endpointCandidates.find((c) => typeof c === "string" && c.trim().length > 0) || "";
           setEndpoint(ep);
+          // Extract vaultValue from mcp_config.headers.Authorization
+          const headers = (raw.mcp_config && raw.mcp_config.headers) || (server.mcp_config && server.mcp_config.headers) || server.headers || raw.headers;
+          if (headers) {
+            const authHeader = headers.Authorization || headers.authorization;
+            if (typeof authHeader === "string" && authHeader.startsWith("VAULT::")) {
+              const vaultFromHeader = authHeader.replace("VAULT::", "");
+              if (vaultFromHeader) {
+                setVaultValue(vaultFromHeader);
+                setVaultOptions((prevOptions) => {
+                  const hasValue = prevOptions.some((opt) => opt.value === vaultFromHeader);
+                  if (!hasValue) {
+                    return [...prevOptions, { label: vaultFromHeader, value: vaultFromHeader }];
+                  }
+                  return prevOptions;
+                });
+              }
+            }
+            // Load non-vault-managed headers into header rows
+            // Only exclude the exact vault-managed entry: key "Authorization" with VAULT:: prefix
+            const nonAuthEntries = Object.entries(headers).filter(
+              ([k, v]) => !(k === "Authorization" && typeof v === "string" && v.startsWith("VAULT::"))
+            );
+            if (nonAuthEntries.length > 0) {
+              setHeaderRows(nonAuthEntries.map(([k, v]) => ({ name: k, value: String(v) })));
+              setShowHeadersSection(true);
+            } else {
+              setHeaderRows([{ name: "", value: "" }]);
+            }
+          } else {
+            setHeaderRows([{ name: "", value: "" }]);
+          }
         } else if (mappedType === "external") {
           setModuleName(
             (server.mcp_config && Array.isArray(server.mcp_config.args) && server.mcp_config.args.length > 1 ? server.mcp_config.args[1] : "") || ""
@@ -461,24 +537,31 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         tool_name: serverName.trim(),
         tool_description: description.trim(),
         mcp_type,
-        created_by: Cookies.get("email") || "Guest",
+        created_by: getEmailFromToken() || "Guest",
         mcp_url: mcp_type === "url" ? endpoint.trim() : "",
         mcp_module_name: mcp_type === "module" ? moduleName.trim() : "",
-        code_content: mcp_type === "file" && !codeFile ? codeContent.trim() : "",
+        code_content: mcp_type === "file" && !codeFile ? encodePassword(codeContent.trim()) : "",
         mcp_file: mcp_type === "file" && codeFile ? codeFile : undefined,
         tag_ids: selectedTagIds,
-        is_public: isPublic,
-        shared_with_departments: isPublic ? [] : sharedDepartments,
-        ...(serverType === "external" ? { command, externalArgs } : {}),
+        ...(serverType === "external" ? { mcp_command: command, externalArgs } : {}),
         ...(serverType === "active" && vaultValue ? { vault_id: vaultValue } : {}),
       };
       if (!payload.mcp_file) delete payload.mcp_file;
-      // PATCH: Always include Authorization header for REMOTE (active) server
-      if (serverType === "active" && vaultValue && typeof vaultValue === "string" && vaultValue.trim().length > 0) {
-        payload.mcp_config = payload.mcp_config || {};
-        payload.mcp_config.headers = payload.mcp_config.headers || {};
-        payload.mcp_config.headers.Authorization = `VAULT::${vaultValue}`;
-        // Remove vault_id from payload for REMOTE add, only use header
+      // Build merged headers: vault Authorization + custom header rows for REMOTE (active) server
+      if (serverType === "active") {
+        const mergedHeaders = {};
+        if (vaultValue && typeof vaultValue === "string" && vaultValue.trim().length > 0) {
+          mergedHeaders.Authorization = `VAULT::${vaultValue}`;
+        }
+        for (const row of headerRows) {
+          if (row.name.trim() && row.value.trim()) {
+            mergedHeaders[row.name.trim()] = row.value.trim();
+          }
+        }
+        if (Object.keys(mergedHeaders).length > 0) {
+          payload.mcp_config = payload.mcp_config || {};
+          payload.mcp_config.headers = mergedHeaders;
+        }
         if (payload.vault_id) delete payload.vault_id;
       }
 
@@ -490,8 +573,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         // Try all possible locations for server ID
         const serverId = response?.result?.tool_id || "";
 
-        console.log("[AddServer] Extracted serverId:", serverId); // Debug log
-
         if (serverId) {
           const success = await refreshServerDataAndStayOpen(serverId, "created");
           if (success) {
@@ -500,7 +581,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         }
 
         // Fallback: If serverId not found or refresh fails, still refresh paginated list
-        console.log("[AddServer] Auto-transition failed, calling setRefreshPaginated in fallback");
         const msg = response?.result?.message || response?.message || "Server added successfully!";
         addMessage(msg, "success");
 
@@ -522,6 +602,9 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         setCodeFile(null);
         setCodeContent("");
         setSelectedTagsForSelector([]);
+        setHeaderRows([{ name: "", value: "" }]);
+        setShowHeadersSection(false);
+        setHeadersError("");
 
         onClose?.();
       } else {
@@ -547,7 +630,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     setError("");
     setSubmitting(true);
     try {
-      const is_admin = Cookies.get("role")?.toLowerCase() === "admin";
+      const is_admin = getRoleFromToken().toLowerCase() === "admin";
       const mcp_type = serverType === "active" ? "url" : serverType === "code" ? "file" : "module";
       const selectedTagIds = selectedTagsForSelector.map((tag) => tag.tag_id || tag.tagId);
       // Use derived effectiveServerData (state-first, then prop) — same pattern as ToolOnBoarding's editTool
@@ -570,7 +653,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       const mcp_module_name = mcp_type === "module" ? moduleName?.trim() || effectiveServerData?.mcp_module_name || (effectiveServerData?.raw && effectiveServerData.raw.mcp_module_name) || "" : "";
       const code_content =
         mcp_type === "file" && !codeFile
-          ? codeContent?.trim() || effectiveServerData?.codeContent || effectiveServerData?.code_content || (effectiveServerData?.raw && (effectiveServerData.raw.codeContent || effectiveServerData.raw.code_content)) || ""
+          ? encodePassword(codeContent?.trim() || effectiveServerData?.codeContent || effectiveServerData?.code_content || (effectiveServerData?.raw && (effectiveServerData.raw.codeContent || effectiveServerData.raw.code_content)) || "")
           : "";
       const payload = {
         is_admin,
@@ -578,26 +661,161 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         tool_name,
         tool_description,
         mcp_type,
-        created_by: Cookies.get("email") || "Guest",
-        user_email_id: Cookies.get("email") || "Guest",
+        created_by: getEmailFromToken() || "Guest",
+        user_email_id: getEmailFromToken() || "Guest",
         mcp_url,
         mcp_module_name,
         code_content,
         tag_ids: selectedTagIds,
         updated_tag_id_list: selectedTagIds,
-        is_public: isPublic,
-        shared_with_departments: isPublic ? [] : sharedDepartments,
-        ...(serverType === "external" ? { command, externalArgs } : {}),
+        ...(serverType === "external" ? { mcp_command: command, externalArgs } : {}),
         ...(serverType === "active" && vaultValue ? { vault_id: vaultValue } : {}),
       };
-      // --- PATCH: Always include Authorization header for REMOTE (active) server ---
-      if (serverType === "active" && vaultValue && typeof vaultValue === "string" && vaultValue.trim().length > 0) {
-        payload.mcp_config = payload.mcp_config || {};
-        payload.mcp_config.headers = { Authorization: `VAULT::${vaultValue}` };
-        // Remove vault_id from payload for REMOTE update, only use header
+      // --- Build merged headers for REMOTE (active) server ---
+      if (serverType === "active") {
+        const mergedHeaders = {};
+        if (vaultValue && typeof vaultValue === "string" && vaultValue.trim().length > 0) {
+          mergedHeaders.Authorization = `VAULT::${vaultValue}`;
+        }
+        for (const row of headerRows) {
+          if (row.name.trim() && row.value.trim()) {
+            mergedHeaders[row.name.trim()] = row.value.trim();
+          }
+        }
+        if (Object.keys(mergedHeaders).length > 0) {
+          payload.mcp_config = payload.mcp_config || {};
+          payload.mcp_config.headers = mergedHeaders;
+        }
         if (payload.vault_id) delete payload.vault_id;
       }
       if (selectedTeam) payload.team_id = selectedTeam;
+
+      // Catalog remote MCP (`mcp_url_*`): dedicated URL / headers update (PUT .../update-remote-url/{tool_id})
+      const isCatalogUrlMcp = /^mcp_url_/i.test(String(id));
+      if (isUpdateMode && serverType === "active" && isCatalogUrlMcp) {
+        const ed = effectiveServerData?.raw || effectiveServerData || {};
+        const endpointCandidates = [
+          ed.mcp_url,
+          ed.mcp_config && ed.mcp_config.url,
+          effectiveServerData.endpoint,
+          ed.endpoint,
+          ed.mcp_config && ed.mcp_config.mcp_url,
+        ];
+        const priorEndpoint = (endpointCandidates.find((c) => typeof c === "string" && c.trim().length > 0) || "").trim();
+        const hdrs =
+          (ed.mcp_config && ed.mcp_config.headers) ||
+          (effectiveServerData.mcp_config && effectiveServerData.mcp_config.headers) ||
+          effectiveServerData.headers ||
+          ed.headers;
+        let priorVault = "";
+        if (hdrs) {
+          const authHeader = hdrs.Authorization || hdrs.authorization;
+          if (typeof authHeader === "string" && authHeader.startsWith("VAULT::")) {
+            priorVault = authHeader.slice("VAULT::".length);
+          }
+        }
+        priorVault = priorVault.trim();
+        // Build prior custom headers object (all non-Authorization headers)
+        const priorCustomObj = {};
+        if (hdrs && typeof hdrs === "object") {
+          for (const [k, v] of Object.entries(hdrs)) {
+            // Only exclude the exact vault-managed entry
+            if (!(k === "Authorization" && typeof v === "string" && v.startsWith("VAULT::"))) {
+              priorCustomObj[k] = v;
+            }
+          }
+        }
+        // Build current custom headers object from rows
+        const curCustomObj = {};
+        for (const row of headerRows) {
+          if (row.name.trim() && row.value.trim()) {
+            curCustomObj[row.name.trim()] = row.value.trim();
+          }
+        }
+        const curEp = (endpoint?.trim() || "").trim();
+        const curVault = vaultValue && String(vaultValue).trim() ? String(vaultValue).trim() : "";
+        const urlChanged = curEp !== priorEndpoint;
+        const vaultChanged = curVault !== priorVault;
+        const headersChanged = JSON.stringify(curCustomObj) !== JSON.stringify(priorCustomObj);
+        if (urlChanged || vaultChanged || headersChanged) {
+          if (urlChanged && !curEp) {
+            safeSetError("Endpoint URL cannot be empty.");
+            setSubmitting(false);
+            return;
+          }
+          const remotePayload = {
+            user_email_id: getEmailFromToken() || "Guest",
+            is_admin,
+          };
+          if (urlChanged) remotePayload.mcp_url = curEp;
+          if (vaultChanged || headersChanged) {
+            const mergedHeaders = {};
+            if (curVault) mergedHeaders.Authorization = `VAULT::${curVault}`;
+            Object.assign(mergedHeaders, curCustomObj);
+            remotePayload.headers = mergedHeaders;
+          }
+          let remoteRes;
+          try {
+            remoteRes = await updateRemoteMcpUrl(id, remotePayload);
+          } catch (remoteErr) {
+            const extracted = handleApiError(remoteErr, { context: "AddServer.handleUpdate.remoteUrl" });
+            safeSetError(extracted?.userMessage || extracted?.message || "Failed to update remote MCP URL");
+            setSubmitting(false);
+            return;
+          }
+          const remoteOk =
+            remoteRes &&
+            (remoteRes?.status === "success" ||
+              remoteRes?.is_update === true ||
+              remoteRes?.is_updated === true ||
+              remoteRes?.success === true);
+          if (!remoteOk) {
+            const msg =
+              (typeof remoteRes === "string" && remoteRes) ||
+              remoteRes?.detail ||
+              remoteRes?.message ||
+              "Failed to update remote MCP URL or headers";
+            safeSetError(msg);
+            setSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      // External (module) servers: update module name and command via dedicated endpoint
+      if (isUpdateMode && serverType === "external") {
+        const moduleConfigPayload = {
+          is_admin,
+          user_email_id: getEmailFromToken() || "Guest",
+          mcp_module_name: moduleName?.trim() || "",
+          mcp_command: command || "python",
+        };
+        try {
+          const moduleRes = await updateModuleConfig(id, moduleConfigPayload);
+          const moduleOk =
+            moduleRes &&
+            (moduleRes?.status === "success" ||
+              moduleRes?.is_update === true ||
+              moduleRes?.is_updated === true ||
+              moduleRes?.success === true);
+          if (!moduleOk) {
+            const msg =
+              (typeof moduleRes === "string" && moduleRes) ||
+              moduleRes?.detail ||
+              moduleRes?.message ||
+              "Failed to update module configuration";
+            safeSetError(msg);
+            setSubmitting(false);
+            return;
+          }
+        } catch (moduleErr) {
+          const extracted = handleApiError(moduleErr, { context: "AddServer.handleUpdate.moduleConfig" });
+          safeSetError(extracted?.userMessage || extracted?.message || "Failed to update module configuration");
+          setSubmitting(false);
+          return;
+        }
+      }
+
       let sendPayload = payload;
       if (codeFile) {
         const fd = new FormData();
@@ -725,10 +943,14 @@ export default function AddServer({ editMode = false, serverData = null, onClose
 
   React.useEffect(() => {
     if (!isUpdateMode || !currentServerData) return;
-    if (prefillDoneRef.current) return;
+
+    // Use server ID to track if we've already prefilled this specific server
+    const serverId = currentServerData?.tool_id || currentServerData?.id;
+    const lastPrefillId = prefillDoneRef.current;
+    if (lastPrefillId === serverId) return;
 
     setLoadingEndpoints(true);
-    prefillDoneRef.current = true;
+    prefillDoneRef.current = serverId; // Store server ID instead of boolean
     const serverData = currentServerData;
     const raw = serverData.raw || serverData || {};
     const rawTags = serverData.tags || raw.tags || serverData.tag_ids || raw.tag_ids || [];
@@ -749,13 +971,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     );
     setDescription(serverData.description || serverData.tool_description || raw.tool_description || "");
     setSelectedTeam(serverData.team_id || raw.team_id || "");
-
-    // Prefill is_public and shared_with_departments
-    const serverIsPublic = serverData.is_public === true || raw.is_public === true;
-    setIsPublic(serverIsPublic);
-    const serverDepartments = serverData.shared_with_departments || raw.shared_with_departments || [];
-    setSharedDepartments(serverDepartments);
-    previousDepartmentsRef.current = serverDepartments;
 
     // small helper to normalize args[1] or other string candidates
     const normalizeCandidate = (c) => {
@@ -794,12 +1009,8 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       // Check both Authorization and authorization fields
       if (headers) {
         const authHeader = headers.Authorization || headers.authorization;
-        if (typeof authHeader === "string") {
-          if (authHeader.startsWith("VAULT::")) {
-            vaultFromHeader = authHeader.replace("VAULT::", "");
-          } else {
-            vaultFromHeader = authHeader;
-          }
+        if (typeof authHeader === "string" && authHeader.startsWith("VAULT::")) {
+          vaultFromHeader = authHeader.replace("VAULT::", "");
         }
       }
 
@@ -814,6 +1025,22 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           }
           return prevOptions;
         });
+      }
+
+      // Load non-vault-managed headers into header rows
+      // Only exclude the exact vault-managed entry: key "Authorization" with VAULT:: prefix
+      if (headers && typeof headers === "object") {
+        const nonAuthEntries = Object.entries(headers).filter(
+          ([k, v]) => !(k === "Authorization" && typeof v === "string" && v.startsWith("VAULT::"))
+        );
+        if (nonAuthEntries.length > 0) {
+          setHeaderRows(nonAuthEntries.map(([k, v]) => ({ name: k, value: String(v) })));
+          setShowHeadersSection(true);
+        } else {
+          setHeaderRows([{ name: "", value: "" }]);
+        }
+      } else {
+        setHeaderRows([{ name: "", value: "" }]);
       }
     } else if (mappedType === "code") {
       const codeCandidates = [
@@ -832,7 +1059,12 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       setCodeFile(null);
       setEndpoint("");
     } else if (mappedType === "external") {
-      setCommand(serverData.command || raw.command || "python");
+      setCommand(
+        serverData.mcp_command || raw.mcp_command ||
+        (serverData.mcp_config && serverData.mcp_config.command) ||
+        (raw.mcp_config && raw.mcp_config.command) ||
+        serverData.command || raw.command || "python"
+      );
       // Patch: Try all possible sources for externalArgs
       setExternalArgs(
         serverData.externalArgs || raw.externalArgs || raw.args || (raw.mcp_config && raw.mcp_config.args && (raw.mcp_config.args[2] || raw.mcp_config.args[1])) || "",
@@ -873,7 +1105,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         setNonRemovableTags([generalInTags]);
       }
     } else {
-      console.log("[AddServer] No tags to set. rawTags:", rawTags);
     }
 
     // Turn off loading state after all initialization is complete
@@ -912,7 +1143,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   const renderActiveSection = () => (
     <div className="formSection">
       <div className={styles.configRow}>
-        <div className="formGroup" style={{ flex: '0 0 30%' }}>
+        <div className="formGroup" style={{ flex: "0 0 30%" }}>
           <NewCommonDropdown
             label="Header"
             options={vaultOptions.map((option) => option.label)}
@@ -921,6 +1152,8 @@ export default function AddServer({ editMode = false, serverData = null, onClose
               const found = vaultOptions.find((option) => option.label === label);
               setVaultValue(found ? found.value : "");
             }}
+            onClear={() => setVaultValue("")}
+            showSelectedOnTop={!!vaultValue}
             placeholder="Select Header"
             style={{
               ...dropdownCommonStyle,
@@ -936,18 +1169,137 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           <label className={"label-desc"} htmlFor="endpoint">
             Endpoint URL <span className="required">*</span>
           </label>
-          <input
-            id="endpoint"
-            className="input"
-            value={endpoint}
-            onChange={(e) => setEndpoint(e.target.value)}
-            placeholder="Http://Localhost:5000/Mcp"
-            aria-label="Endpoint URL"
-            disabled={isReadOnly}
-            readOnly={isReadOnly}
-          />
+          <div className={styles.remoteEndpointRow}>
+            <input
+              id="endpoint"
+              className={`input ${styles.remoteEndpointFlexInput}`}
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder="Http://Localhost:5000/Mcp"
+              aria-label="Endpoint URL"
+              disabled={isReadOnly}
+              readOnly={isReadOnly}
+            />
+            <div className={styles.remoteEndpointIconGroup}>
+              <button
+                type="button"
+                className={styles.infoIcon}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowRemoteMcpHelp(true);
+                }}
+                title="Remote MCP URLs: use HTTPS in production; internal hosts need correct proxy/ingress. Tap for full guidance."
+                aria-label="Remote MCP endpoint URL help">
+                <SVGIcons icon="info-modern" width={16} height={16} />
+              </button>
+              <button type="button" className={styles.playIcon} onClick={handlePlayClickRemote} title="Load tools" style={{ display: isReadOnly ? "none" : undefined }}>
+                <SVGIcons icon="lucide-play" width={16} height={16} stroke="var(--icon-color)" fill="none" />
+              </button>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  className={styles.copyIcon}
+                  onClick={() => handleCopy("endpoint-url", endpoint)}
+                  title="Copy"
+                  disabled={!endpoint || endpoint.trim() === ""}
+                  style={{
+                    opacity: !endpoint || endpoint.trim() === "" ? 0.4 : 1,
+                    cursor: !endpoint || endpoint.trim() === "" ? "not-allowed" : "pointer",
+                  }}>
+                  <SVGIcons icon="fa-regular fa-copy" width={16} height={16} fill="var(--icon-color)" />
+                </button>
+              )}
+            </div>
+            <span className={`${styles.copiedText} ${copiedStates["endpoint-url"] ? styles.visible : styles.hidden}`}>Text Copied!</span>
+          </div>
         </div>
       </div>
+
+      {/* Collapsible HTTP Headers section */}
+      <div className={styles.headersToggleRow}>
+        <button
+          type="button"
+          className={styles.headersToggleBtn}
+          onClick={() => setShowHeadersSection((prev) => !prev)}
+          aria-expanded={showHeadersSection}
+          disabled={isReadOnly && headerRows.every((r) => !r.name.trim() && !r.value.trim())}>
+          {showHeadersSection ? "– Hide" : "+ Show"} HTTP Headers
+        </button>
+        <span className={styles.optionalLabel}>(Optional)</span>
+      </div>
+
+      {showHeadersSection && (
+        <div className={styles.headersCard}>
+          <div className={styles.headersCardHeader}>
+            <span className={styles.headersCardTitle}>HTTP Headers</span>
+            <button
+              type="button"
+              className={styles.headersInfoBtn}
+              title="Header values can be plain text or VAULT::SECRET_NAME to reference a vault secret."
+              aria-label="HTTP Headers info">
+              <SVGIcons icon="info-modern" width={14} height={14} />
+            </button>
+          </div>
+
+          {headerRows.map((row, idx) => (
+            <div className={styles.headersRow} key={idx}>
+              <input
+                className={`input ${styles.headersNameInput}`}
+                value={row.name}
+                onChange={(e) => {
+                  const updated = [...headerRows];
+                  updated[idx] = { ...updated[idx], name: e.target.value };
+                  setHeaderRows(updated);
+                  setHeadersError("");
+                }}
+                placeholder="Header Name (e.g., Authorization)"
+                disabled={isReadOnly}
+                readOnly={isReadOnly}
+                aria-label={`Header name ${idx + 1}`}
+              />
+              <input
+                className={`input ${styles.headersValueInput}`}
+                value={row.value}
+                onChange={(e) => {
+                  const updated = [...headerRows];
+                  updated[idx] = { ...updated[idx], value: e.target.value };
+                  setHeaderRows(updated);
+                  setHeadersError("");
+                }}
+                placeholder="Value or VAULT::SECRET_NAME"
+                disabled={isReadOnly}
+                readOnly={isReadOnly}
+                aria-label={`Header value ${idx + 1}`}
+              />
+              {!isReadOnly && headerRows.length > 1 && (
+                <button
+                  type="button"
+                  className={styles.headersRemoveBtn}
+                  onClick={() => {
+                    setHeaderRows(headerRows.filter((_, i) => i !== idx));
+                    setHeadersError("");
+                  }}
+                  title="Remove header"
+                  aria-label={`Remove header ${idx + 1}`}>
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+
+          {!isReadOnly && (
+            <button
+              type="button"
+              className={styles.headersAddBtn}
+              onClick={() => setHeaderRows([...headerRows, { name: "", value: "" }])}
+              aria-label="Add header row">
+              + Add Header
+            </button>
+          )}
+
+          {headersError && <span className={styles.headersErrorText}>{headersError}</span>}
+        </div>
+      )}
     </div>
   );
 
@@ -957,10 +1309,10 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         <div className="formGroup" style={{ flex: '0 0 30%' }}>
           <NewCommonDropdown
             label="Command"
-            options={["python"]}
+            options={["python", "npx"]}
             selected={command}
-            onSelect={() => setCommand("python")}
-            placeholder="python"
+            onSelect={(val) => setCommand(val)}
+            placeholder="Select command"
             style={dropdownCommonStyle}
             disabled={isReadOnly}
           />
@@ -986,14 +1338,17 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   );
 
   const handleCopy = async (key, text) => {
-    const success = await copyToClipboard(text);
-    if (success) {
+    const result = await copyToClipboard(text);
+    if (result === "success") {
       setCopiedStates((prev) => ({ ...prev, [key]: true }));
       setTimeout(() => {
         setCopiedStates((prev) => ({ ...prev, [key]: false }));
       }, 2000);
+    } else if (result === "too_large") {
+      addMessage("Code is too large to copy. Downloading as file instead...", "error");
+      downloadAsFile(text, "code.py");
     } else {
-      console.error("Failed to copy text to clipboard");
+      addMessage("Failed to copy text to clipboard", "error");
     }
   };
   const handleZoomClick = (title, content) => {
@@ -1037,6 +1392,19 @@ export default function AddServer({ editMode = false, serverData = null, onClose
       setShowExecutorPanel(true); // ExecutorPanel will auto-introspect (autoExecute)
     } else {
       setExecuteTrigger((c) => c + 1); // force re-run / re-introspect
+    }
+  };
+
+  const handlePlayClickRemote = () => {
+    if (!endpoint.trim()) {
+      addMessage("Please provide an endpoint URL to load tools", "error");
+      setShowPopup(true);
+      return;
+    }
+    if (!showExecutorPanel) {
+      setShowExecutorPanel(true);
+    } else {
+      setExecuteTrigger((c) => c + 1);
     }
   };
 
@@ -1174,7 +1542,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
           <IAFButton type="secondary" onClick={deleteServerPermanently} aria-label="Delete" disabled={submitting}>
             {submitting ? "Deleting..." : "Delete"}
           </IAFButton>
-          <IAFButton type="primary" onClick={restoreServer} aria-label="Restore Server" disabled={submitting}>
+          <IAFButton type="primary" onClick={() => restoreServer()} aria-label="Restore Server" disabled={submitting}>
             {submitting ? "Restoring..." : "Restore"}
           </IAFButton>
         </>
@@ -1185,42 +1553,9 @@ export default function AddServer({ editMode = false, serverData = null, onClose
     // ReadOnly mode - hide toggles and show only Close button
     return (
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "16px" }}>
-        {/* Left side: Toggle - On/Off style (hidden in readOnly mode) */}
-        {!readOnlyProp && (
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0, overflowX: "auto", overflowY: "hidden", paddingBottom: "4px", scrollbarWidth: "thin" }}>
-          <span style={{ fontSize: "13px", color: "var(--content-color)", whiteSpace: "nowrap", flexShrink: 0 }}>
-            Share with All Departments
-          </span>
-          <Toggle
-            value={isPublic}
-            onChange={(e) => {
-              const newIsPublic = e.target.checked;
-              setIsPublic(newIsPublic);
-              if (newIsPublic) {
-                // When toggling to public, save current departments and clear
-                previousDepartmentsRef.current = sharedDepartments;
-                setSharedDepartments([]);
-              } else {
-                // When toggling back to private, restore previous departments
-                setSharedDepartments(previousDepartmentsRef.current);
-              }
-            }}
-            disabled={isReadOnly}
-          />
-          <span style={{
-            fontSize: "12px",
-            color: isPublic ? "#37acea" : "var(--muted)",
-            fontWeight: isPublic ? "600" : "400",
-            minWidth: "28px",
-            flexShrink: 0
-          }}>
-            {isPublic ? "ON" : "OFF"}
-          </span>
-        </div>
-        )}
         {/* Right side: Buttons */}
-        <div style={{ display: "flex", gap: "12px", flexShrink: 0, marginLeft: readOnlyProp ? "auto" : undefined }}>
-          {readOnlyProp ? (
+        <div style={{ display: "flex", gap: "12px", flexShrink: 0, marginLeft: "auto" }}>
+          {readOnly ? (
             <IAFButton type="secondary" onClick={handleCancel} aria-label="Close">
               Close
             </IAFButton>
@@ -1229,6 +1564,17 @@ export default function AddServer({ editMode = false, serverData = null, onClose
               <IAFButton type="secondary" onClick={handleCancel} aria-label="Cancel" disabled={submitting}>
                 Cancel
               </IAFButton>
+              {/* Delete Button - shown for all roles with delete permission in update mode */}
+              {isUpdateMode && !recycle && !readOnly && canDeleteServers && (
+                <IAFButton
+                  type="primary"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  aria-label="Delete this server"
+                  disabled={submitting}
+                >
+                  Delete
+                </IAFButton>
+              )}
               <IAFButton
                 type="primary"
                 onClick={() => {
@@ -1248,11 +1594,37 @@ export default function AddServer({ editMode = false, serverData = null, onClose
 
   // ============ Render Side Panel (Executor) ============
   const renderSidePanel = () => {
-    if (!(serverType === "code" && showExecutorPanel && !codeFile)) return null;
-    return <ExecutorPanel code={codeContent} autoExecute={true} executeTrigger={executeTrigger} onClose={() => setShowExecutorPanel(false)} mode="server" />;
+    if (!showExecutorPanel) return null;
+    if (serverType === "code" && !codeFile) {
+      return (
+        <ExecutorPanel
+          key="executor-local"
+          code={codeContent}
+          autoExecute={true}
+          executeTrigger={executeTrigger}
+          onClose={() => setShowExecutorPanel(false)}
+          mode="server"
+        />
+      );
+    }
+    if (serverType === "active") {
+      return (
+        <ExecutorPanel
+          key="executor-remote"
+          mode="remote"
+          remoteEndpoint={endpoint}
+          vaultValue={vaultValue}
+          customHeaders={headerRows}
+          autoExecute={true}
+          executeTrigger={executeTrigger}
+          onClose={() => setShowExecutorPanel(false)}
+        />
+      );
+    }
+    return null;
   };
 
-  const showSplitLayout = serverType === "code" && showExecutorPanel;
+  const showSplitLayout = showExecutorPanel && ((serverType === "code" && !codeFile) || serverType === "active");
 
   return (
     <>
@@ -1272,7 +1644,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         onClose={handleCancel}
         title={isUpdateMode ? serverName : "Add Server"}
         headerInfo={getHeaderInfo()}
-        footer={readOnlyProp ? null : renderFooter()}
+        footer={readOnly ? undefined : renderFooter()}
         loading={submitting || loadingEndpoints}
         splitLayout={showSplitLayout}
         sidePanel={renderSidePanel()}
@@ -1314,6 +1686,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                         setCodeFile(null);
                         setCodeContent("");
                         setError("");
+                        setShowExecutorPanel(false);
                       }}
                       placeholder="-- Select --"
                       style={{
@@ -1338,7 +1711,7 @@ export default function AddServer({ editMode = false, serverData = null, onClose
                       onChange={(e) => setServerName(e.target.value)}
                       disabled={editMode || isReadOnly}
                       readOnly={isReadOnly}
-                      placeholder={serverType === "external" ? "Enter MCP Module Name" : "Enter Server Name"}
+                      placeholder={serverType === "external" ? "Enter MCP Server Name" : "Enter Server Name"}
                       aria-label={serverType === "external" ? "Module Name" : "Server Name"}
                       required
                     />
@@ -1364,21 +1737,11 @@ export default function AddServer({ editMode = false, serverData = null, onClose
               {serverType === "active" && renderActiveSection()}
               {serverType === "external" && renderExternalSection()}
 
-              {/* Configuration Section - Tags & Departments */}
+              {/* Configuration Section - Tags */}
               <div className="formSection">
                 <div className={styles.configRow}>
                   {/* Tags Section */}
                   <TagSelector selectedTags={selectedTagsForSelector} onTagsChange={handleTagsChange} nonRemovableTags={nonRemovableTags} disabled={isReadOnly} />
-                  {/* Departments Section - Using DepartmentSelector component */}
-                  {!isPublic && (
-                    <DepartmentSelector
-                      selectedDepartments={sharedDepartments}
-                      onChange={setSharedDepartments}
-                      departmentsList={departmentsList.filter(dept => dept !== loggedInDepartment)}
-                      disabled={isReadOnly}
-                      loading={departmentsLoading}
-                    />
-                  )}
                 </div>
               </div>
             </div >
@@ -1386,12 +1749,70 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         </form >
       </FullModal >
 
-      {/* Access Control Guide Modal */}
-      < AccessControlGuide
-        isOpen={showAccessControlInfo}
-        onClose={() => setShowAccessControlInfo(false)
-        }
-      />
+      {/* Remote MCP endpoint URL — guidance (not the generic access-control doc) */}
+      <DeleteModal show={showRemoteMcpHelp} onClose={() => setShowRemoteMcpHelp(false)} overlayZIndex={1000020}>
+        <div style={{ textAlign: "left", maxWidth: "520px" }}>
+          <h3 style={{ marginTop: 0, marginBottom: "12px", fontSize: "1.1rem" }}>Remote MCP endpoint URL</h3>
+          <p style={{ margin: "0 0 12px", lineHeight: 1.55, color: "var(--content-color, inherit)" }}>
+            Use a <strong>secure URL</strong> for remote MCP servers: prefer <strong>HTTPS</strong> in production. Plain HTTP is only appropriate for tightly controlled local or lab setups.
+          </p>
+          <p style={{ margin: "0 0 12px", lineHeight: 1.55, color: "var(--content-color, inherit)" }}>
+            If the MCP server is <strong>hosted internally</strong> (private network, VPN-only, or no public DNS), our platform must be able to reach it. Work with your <strong>network or platform team</strong> to configure <strong>proxy, ingress, or API gateway</strong> rules, TLS, and allowlists. Misconfigured or missing proxy paths are a frequent reason <strong>Load tools</strong> or execution fails even when the URL works from your laptop.
+          </p>
+          <p style={{ margin: "0 0 16px", lineHeight: 1.55, color: "var(--content-color, inherit)" }}>
+            If you still see errors after verifying the URL and headers, <strong>contact your team</strong> (platform / integration support) with the endpoint, what you tried, and any error message shown in the UI or API response.
+          </p>
+          <IAFButton type="primary" onClick={() => setShowRemoteMcpHelp(false)} aria-label="Close help">
+            Got it
+          </IAFButton>
+        </div>
+      </DeleteModal>
+
+      {/* Access Control Guide Modal (code snippet / decorators) */}
+      <AccessControlGuide isOpen={showAccessControlInfo} onClose={() => setShowAccessControlInfo(false)} />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete "${serverName || "this server"}"? This action cannot be undone.`}
+          onConfirm={handleDeleteServerFromModal}
+          setShowConfirmation={setShowDeleteConfirm}
+        />
+      )}
+
+      {/* Rename-on-conflict dialog (recycle bin restore) */}
+      {serverRestoreConflict && ReactDOM.createPortal(
+        <div className={styles.renameOverlay}
+          onClick={() => { setServerRestoreConflict(null); setServerRestoreNewName(""); }}>
+          <div className={styles.renameDialog} onClick={(e) => e.stopPropagation()}>
+            <h3 className={styles.renameTitle}>Name Already In Use</h3>
+            <p className={styles.renameMessage}>{serverRestoreConflict.message}</p>
+            {serverRestoreConflict.conflicting_resource && Object.keys(serverRestoreConflict.conflicting_resource).length > 0 && (
+              <p className={styles.renameConflictInfo}>
+                Active server: <strong>{serverRestoreConflict.conflicting_resource.tool_name || serverRestoreConflict.conflicting_resource.name}</strong>
+                {serverRestoreConflict.conflicting_resource.created_by && <> &mdash; created by <strong>{serverRestoreConflict.conflicting_resource.created_by}</strong></>}
+              </p>
+            )}
+            <div className={styles.renameFieldGroup}>
+              <label className="label-desc">New name</label>
+              <input
+                className="input"
+                type="text"
+                placeholder={serverRestoreConflict.suggested_name || ""}
+                value={serverRestoreNewName}
+                onChange={(e) => setServerRestoreNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && serverRestoreNewName.trim()) { setServerRestoreConflict(null); restoreServer(serverRestoreNewName.trim()); } }}
+                autoFocus
+              />
+            </div>
+            <div className={styles.renameActions}>
+              <IAFButton type="secondary" onClick={() => { setServerRestoreConflict(null); setServerRestoreNewName(""); }}>Cancel</IAFButton>
+              <IAFButton type="primary" disabled={submitting || !serverRestoreNewName.trim()} onClick={() => { setServerRestoreConflict(null); restoreServer(serverRestoreNewName.trim()); }}>Restore</IAFButton>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }

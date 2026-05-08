@@ -1,17 +1,18 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import SVGIcons from "../../Icons/SVGIcons";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button";
 import useFetch from "../../Hooks/useAxios";
 import { APIs } from "../../constant";
 import styles from "./ChangePasswordModal.module.css";
+import { encodePassword } from "../../utils/encodeUtils";
 
 const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
   const { postData } = useFetch();
 
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -20,9 +21,9 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
   const [success, setSuccess] = useState("");
 
   const [touched, setTouched] = useState({
-    currentPassword: false,
-    newPassword: false,
-    confirmPassword: false,
+    currentPwd: false,
+    newPwd: false,
+    confirmPwd: false,
   });
 
   const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/;
@@ -37,23 +38,23 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
 
   const validateConfirmPassword = (password) => {
     if (!password) return "Please confirm your password";
-    if (password !== newPassword) return "Passwords do not match";
+    if (password !== newPwd) return "Passwords do not match";
     return "";
   };
 
-  const isFormValid = 
-    currentPassword.trim() !== "" &&
-    newPassword.trim() !== "" &&
-    confirmPassword.trim() !== "" &&
-    !validateNewPassword(newPassword) &&
-    !validateConfirmPassword(confirmPassword);
+  const isFormValid =
+    currentPwd.trim() !== "" &&
+    newPwd.trim() !== "" &&
+    confirmPwd.trim() !== "" &&
+    !validateNewPassword(newPwd) &&
+    !validateConfirmPassword(confirmPwd);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setTouched({
-      currentPassword: true,
-      newPassword: true,
-      confirmPassword: true,
+      currentPwd: true,
+      newPwd: true,
+      confirmPwd: true,
     });
 
     if (!isFormValid) {
@@ -67,20 +68,20 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
 
     try {
       const response = await postData(APIs.CHANGE_PASSWORD, {
-        current_password: currentPassword,
-        new_password: newPassword,
+        current_password: encodePassword(currentPwd),
+        new_password: encodePassword(newPwd),
       });
 
       setSuccess(response?.message || response?.detail || "Password changed successfully! Redirecting to login...");
-      
+
       setTimeout(() => {
         onSuccess();
       }, 2000);
     } catch (err) {
-      const apiError = err?.response?.data?.detail || 
-                       err?.response?.data?.message || 
-                       err?.message || 
-                       "Failed to change password. Please try again.";
+      const apiError = err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to change password. Please try again.";
       setError(apiError);
     } finally {
       setIsLoading(false);
@@ -98,7 +99,7 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
           <SVGIcons icon="lock" width={24} height={24} stroke="var(--accent)" />
           <h2 className={styles.title}>Password Reset Required</h2>
         </div>
-        
+
         <p className={styles.description}>
           Your administrator has reset your password. Please set a new password to continue.
         </p>
@@ -117,8 +118,8 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
               <input
                 type={showCurrentPassword ? "text" : "password"}
                 className={styles.input}
-                value={currentPassword}
-                onChange={(e) => { setCurrentPassword(e.target.value); if (!touched.currentPassword) setTouched((prev) => ({ ...prev, currentPassword: true })); }}
+                value={currentPwd}
+                onChange={(e) => { setCurrentPwd(e.target.value); if (!touched.currentPwd) setTouched((prev) => ({ ...prev, currentPwd: true })); }}
                 onBlur={() => handleBlur("currentPassword")}
                 placeholder="Enter temporary password from admin"
                 autoComplete="current-password"
@@ -129,15 +130,15 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
                 onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                 aria-label={showCurrentPassword ? "Hide password" : "Show password"}
               >
-                <SVGIcons 
-                  icon={showCurrentPassword ? "eye-off" : "eye"} 
-                  width={18} 
-                  height={18} 
-                  stroke="var(--muted)" 
+                <SVGIcons
+                  icon={showCurrentPassword ? "eye-off" : "eye"}
+                  width={18}
+                  height={18}
+                  stroke="var(--muted)"
                 />
               </button>
             </div>
-            {touched.currentPassword && !currentPassword && (
+            {touched.currentPwd && !currentPwd && (
               <span className={styles.errorText}>Current password is required</span>
             )}
           </div>
@@ -148,9 +149,9 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
               <input
                 type={showNewPassword ? "text" : "password"}
                 className={styles.input}
-                value={newPassword}
-                onChange={(e) => { setNewPassword(e.target.value); if (!touched.newPassword) setTouched((prev) => ({ ...prev, newPassword: true })); }}
-                onBlur={() => handleBlur("newPassword")}
+                value={newPwd}
+                onChange={(e) => { setNewPwd(e.target.value); if (!touched.newPwd) setTouched((prev) => ({ ...prev, newPwd: true })); }}
+                onBlur={() => handleBlur("newPwd")}
                 placeholder="Enter new password"
                 autoComplete="new-password"
               />
@@ -160,16 +161,16 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
                 onClick={() => setShowNewPassword(!showNewPassword)}
                 aria-label={showNewPassword ? "Hide password" : "Show password"}
               >
-                <SVGIcons 
-                  icon={showNewPassword ? "eye-off" : "eye"} 
-                  width={18} 
-                  height={18} 
-                  stroke="var(--muted)" 
+                <SVGIcons
+                  icon={showNewPassword ? "eye-off" : "eye"}
+                  width={18}
+                  height={18}
+                  stroke="var(--muted)"
                 />
               </button>
             </div>
-            {touched.newPassword && validateNewPassword(newPassword) && (
-              <span className={styles.errorText}>{validateNewPassword(newPassword)}</span>
+            {touched.newPwd && validateNewPassword(newPwd) && (
+              <span className={styles.errorText}>{validateNewPassword(newPwd)}</span>
             )}
           </div>
 
@@ -179,9 +180,9 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
               <input
                 type={showConfirmPassword ? "text" : "password"}
                 className={styles.input}
-                value={confirmPassword}
-                onChange={(e) => { setConfirmPassword(e.target.value); if (!touched.confirmPassword) setTouched((prev) => ({ ...prev, confirmPassword: true })); }}
-                onBlur={() => handleBlur("confirmPassword")}
+                value={confirmPwd}
+                onChange={(e) => { setConfirmPwd(e.target.value); if (!touched.confirmPwd) setTouched((prev) => ({ ...prev, confirmPwd: true })); }}
+                onBlur={() => handleBlur("confirmPwd")}
                 placeholder="Confirm new password"
                 autoComplete="new-password"
               />
@@ -191,16 +192,16 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 aria-label={showConfirmPassword ? "Hide password" : "Show password"}
               >
-                <SVGIcons 
-                  icon={showConfirmPassword ? "eye-off" : "eye"} 
-                  width={18} 
-                  height={18} 
-                  stroke="var(--muted)" 
+                <SVGIcons
+                  icon={showConfirmPassword ? "eye-off" : "eye"}
+                  width={18}
+                  height={18}
+                  stroke="var(--muted)"
                 />
               </button>
             </div>
-            {touched.confirmPassword && validateConfirmPassword(confirmPassword) && (
-              <span className={styles.errorText}>{validateConfirmPassword(confirmPassword)}</span>
+            {touched.confirmPwd && validateConfirmPassword(confirmPwd) && (
+              <span className={styles.errorText}>{validateConfirmPassword(confirmPwd)}</span>
             )}
           </div>
 
@@ -210,10 +211,10 @@ const ChangePasswordModal = ({ onSuccess, onClose, userEmail }) => {
           <div className={styles.requirements}>
             <p className={styles.requirementsTitle}>Password must contain:</p>
             <ul className={styles.requirementsList}>
-              <li className={newPassword.length >= 8 ? styles.valid : ""}>At least 8 characters</li>
-              <li className={/[A-Z]/.test(newPassword) ? styles.valid : ""}>One uppercase letter</li>
-              <li className={/\d/.test(newPassword) ? styles.valid : ""}>One number</li>
-              <li className={/[!@#$%^&*()_+[\]{};':"\\|,.<>/?]/.test(newPassword) ? styles.valid : ""}>One special character</li>
+              <li className={newPwd.length >= 8 ? styles.valid : ""}>At least 8 characters</li>
+              <li className={/[A-Z]/.test(newPwd) ? styles.valid : ""}>One uppercase letter</li>
+              <li className={/\d/.test(newPwd) ? styles.valid : ""}>One number</li>
+              <li className={/[!@#$%^&*()_+[\]{};':"\\|,.<>/?]/.test(newPwd) ? styles.valid : ""}>One special character</li>
             </ul>
           </div>
 

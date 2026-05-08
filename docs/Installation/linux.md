@@ -622,7 +622,7 @@ Install Git using your OS package manager:
       batch:
 
     service:
-      pipelines:
+      workflows:
         traces:
           receivers: [otlp]
           processors: [batch]

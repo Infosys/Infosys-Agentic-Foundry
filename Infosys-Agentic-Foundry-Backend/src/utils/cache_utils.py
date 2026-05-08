@@ -76,12 +76,13 @@ def cache_result(ttl: int = 300, namespace: str = "default", lock_timeout: int =
     def decorator(func: Callable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            log.info("------- CACHING STARTED -------")
             client = await _resolve_cache_client()
             if client is None:
                 if cache_config.ENABLE_CACHING:
                     log.warning("Caching enabled but Redis client unavailable; executing function directly")
                 return await func(*args, **kwargs)
+            
+            log.info("------- CACHING STARTED -------")
 
             key = await make_cache_key(namespace, func, *args, **kwargs)
             lock_key = key + ":lock"

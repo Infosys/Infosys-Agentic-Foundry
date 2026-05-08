@@ -77,6 +77,8 @@ def validate_read_access_prerequisite(permissions_request) -> None:
     # Check if read access is disabled for both tools and agents
     read_tools_disabled = not read_access.tools
     read_agents_disabled = not read_access.agents
+    read_mcp_servers_disabled = not read_access.mcp_servers
+    read_workflows_disabled = not read_access.workflows
     
     # Define the permissions that require read access as prerequisite
     permission_fields = ['add_access', 'update_access', 'delete_access', 'execute_access']
@@ -94,6 +96,16 @@ def validate_read_access_prerequisite(permissions_request) -> None:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Cannot grant {field_name}.agents permission without read_access.agents enabled"
+                )
+            if permission.mcp_servers and read_mcp_servers_disabled:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot grant {field_name}.mcp_servers permission without read_access.mcp_servers enabled"
+                )
+            if permission.workflows and read_workflows_disabled:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot grant {field_name}.workflows permission without read_access.workflows enabled"
                 )
 
 async def validate_read_access_for_patch(
@@ -119,10 +131,14 @@ async def validate_read_access_for_patch(
         # Read access is being updated, use the new values
         effective_read_tools = permissions_request.read_access.tools
         effective_read_agents = permissions_request.read_access.agents
+        effective_read_mcp_servers = permissions_request.read_access.mcp_servers
+        effective_read_workflows = permissions_request.read_access.workflows
     else:
         # Read access not being updated, use current values
         effective_read_tools = current_permissions.read_access.tools
         effective_read_agents = current_permissions.read_access.agents
+        effective_read_mcp_servers = current_permissions.read_access.mcp_servers
+        effective_read_workflows = current_permissions.read_access.workflows
     
     # Define the permissions that require read access as prerequisite
     permission_fields = ['add_access', 'update_access', 'delete_access', 'execute_access']
@@ -141,6 +157,16 @@ async def validate_read_access_for_patch(
                     status_code=400,
                     detail=f"Cannot grant {field_name}.agents permission without read_access.agents enabled. Enable read_access.agents first."
                 )
+            if permission.mcp_servers and not effective_read_mcp_servers:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot grant {field_name}.mcp_servers permission without read_access.mcp_servers enabled. Enable read_access.mcp_servers first."
+                )
+            if permission.workflows and not effective_read_workflows:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot grant {field_name}.workflows permission without read_access.workflows enabled. Enable read_access.workflows first."
+                )
 
 def validate_special_access_permissions(permissions_request) -> None:
     """
@@ -152,9 +178,13 @@ def validate_special_access_permissions(permissions_request) -> None:
     execute_access = getattr(permissions_request, 'execute_access', None)
     add_access = getattr(permissions_request, 'add_access', None)
     update_access = getattr(permissions_request, 'update_access', None)
+    read_access = getattr(permissions_request, 'read_access', None)
     
     # Check if execute access for agents is disabled
     execute_agents_disabled = execute_access is None or not execute_access.agents
+    
+    # Check if read access for agents is disabled (for export_agents_access prerequisite)
+    read_agents_disabled = read_access is None or not read_access.agents
     
     # # Check if add/update access for tools is disabled
     # add_tools_disabled = add_access is None or not add_access.tools
@@ -182,13 +212,17 @@ def validate_special_access_permissions(permissions_request) -> None:
                 detail=f"Cannot grant {display_name} without execute_access.agents enabled. Enable execute_access.agents first."
             )
     
+    # Check export_agents_access prerequisite: requires read_access.agents
+    export_agents_access = getattr(permissions_request, 'export_agents_access', None)
+    if export_agents_access is True and read_agents_disabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot grant export_agents_access without read_access.agents enabled. Enable read_access.agents first."
+        )
+    
     # # Check vault access prerequisite
     # vault_access = getattr(permissions_request, 'vault_access', None)
     # if vault_access is True and vault_tools_access_disabled:
-    #     raise HTTPException(
-    #         status_code=400,
-    #         detail="Cannot grant vault_access without add_access.tools or update_access.tools enabled. Enable at least one of these permissions first."
-    #     )
 
 async def validate_special_access_for_patch(
     permissions_request: UpdateRolePermissionsRequest,
@@ -213,6 +247,12 @@ async def validate_special_access_for_patch(
         effective_execute_agents = permissions_request.execute_access.agents
     else:
         effective_execute_agents = current_permissions.execute_access.agents
+    
+    # Determine effective read access for agents (for export_agents_access prerequisite)
+    if permissions_request.read_access is not None:
+        effective_read_agents = permissions_request.read_access.agents
+    else:
+        effective_read_agents = current_permissions.read_access.agents
     
     # # Determine effective add/update access for tools (either from request or current permissions)
     # if permissions_request.add_access is not None:
@@ -244,6 +284,14 @@ async def validate_special_access_for_patch(
                 status_code=400,
                 detail=f"Cannot grant {display_name} without execute_access.agents enabled. Enable execute_access.agents first."
             )
+    
+    # Check export_agents_access prerequisite: requires read_access.agents
+    export_agents_access = getattr(permissions_request, 'export_agents_access', None)
+    if export_agents_access is True and not effective_read_agents:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot grant export_agents_access without read_access.agents enabled. Enable read_access.agents first."
+        )
     
     # # Check vault access prerequisite
     # vault_access = getattr(permissions_request, 'vault_access', None)

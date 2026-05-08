@@ -24,13 +24,27 @@ const FeedbackDetailModal = ({ feedback, onClose }) => {
     </div>
   );
 
+  // Derive status label and style from 3-state status field
+  const getStatusDisplay = () => {
+    switch (feedback.status) {
+      case "approve":
+        return { label: "Approved", className: styles.statusApproved };
+      case "reject":
+        return { label: "Rejected", className: styles.statusRejected };
+      case "pending":
+      default:
+        return { label: "Pending", className: styles.statusPending };
+    }
+  };
+  const statusDisplay = getStatusDisplay();
+
   // Header info chips
   const headerInfo = [
     { label: "Agent", value: feedback.agent_name || "--" },
     {
       label: "Status",
-      value: feedback.approved ? "Approved" : "Pending",
-      className: feedback.approved ? styles.statusApproved : styles.statusPending
+      value: statusDisplay.label,
+      className: statusDisplay.className
     },
   ];
 
@@ -43,17 +57,6 @@ const FeedbackDetailModal = ({ feedback, onClose }) => {
       headerInfo={headerInfo}
     >
       <div className={styles.detailContent}>
-        {/* Response ID and Agent Info */}
-        <div className={styles.infoBar}>
-          <div className={styles.infoItem}>
-            <span className={styles.infoLabel}>Response ID:</span>
-            <span className={styles.infoValue}>{feedback.response_id || "--"}</span>
-          </div>
-          <div className={styles.infoItem}>
-            <span className={styles.infoLabel}>Agent:</span>
-            <span className={styles.infoValue}>{feedback.agent_name || "--"}</span>
-          </div>
-        </div>
 
         {/* Original Query Section */}
         <div className={styles.section}>
@@ -180,11 +183,16 @@ const FeedbackDetailModal = ({ feedback, onClose }) => {
             Approval Status
           </h3>
           <div className={styles.statusDisplay}>
-            <span className={`${styles.statusBadgeLarge} ${feedback.approved ? styles.statusApproved : styles.statusPending}`}>
-              {feedback.approved ? (
+            <span className={`${styles.statusBadgeLarge} ${statusDisplay.className}`}>
+              {feedback.status === "approve" ? (
                 <>
                   <SVGIcons icon="check" width={16} height={16} />
                   Approved
+                </>
+              ) : feedback.status === "reject" ? (
+                <>
+                  <SVGIcons icon="close" width={16} height={16} />
+                  Rejected
                 </>
               ) : (
                 <>
@@ -194,9 +202,11 @@ const FeedbackDetailModal = ({ feedback, onClose }) => {
               )}
             </span>
             <p className={styles.statusHint}>
-              {feedback.approved
+              {feedback.status === "approve"
                 ? "This feedback has been approved and included in agent learning."
-                : "This feedback is pending review and not yet included in agent learning."}
+                : feedback.status === "reject"
+                  ? "This feedback has been rejected and excluded from agent learning."
+                  : "This feedback is pending review and not yet included in agent learning."}
             </p>
           </div>
         </div>

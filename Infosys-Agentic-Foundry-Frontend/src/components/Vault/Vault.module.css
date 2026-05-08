@@ -1049,6 +1049,30 @@
   text-overflow: ellipsis;
 }
 
+.copyNameBtn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease, background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.savedSctRow:hover .copyNameBtn {
+  opacity: 1;
+}
+
+.copyNameBtn:hover {
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
 .savedSctDivider {
   width: 2px;
   height: 28px;

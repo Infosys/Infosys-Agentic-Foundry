@@ -195,8 +195,8 @@ export const useChatServices = () => {
   // Delete uploaded chat file
   const deleteChatFile = async (filePath) => {
     try {
-      const apiUrl = `${APIs.DELETE_FILE}?file_path=${encodeURIComponent(filePath)}`;
-      const response = await deleteData(apiUrl);
+      const apiUrl = APIs.DELETE_FILE;
+      const response = await deleteData(apiUrl, { file_paths: [filePath] });
       if (response) {
         return response;
       } else {

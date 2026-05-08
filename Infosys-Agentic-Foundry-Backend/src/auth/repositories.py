@@ -278,11 +278,11 @@ class UserRepository:
             return False
 
     async def validate_department_exists(self, department_name: str) -> bool:
-        """Validate if department exists in departments table"""
+        """Validate if department exists in departments table (case-insensitive)"""
         if not department_name:
             return True  # Allow None/empty department
             
-        query = "SELECT COUNT(*) FROM departments WHERE department_name = $1"
+        query = "SELECT COUNT(*) FROM departments WHERE LOWER(department_name) = LOWER($1)"
         try:
             async with self.pool.acquire() as conn:
                 count = await conn.fetchval(query, department_name)
@@ -961,6 +961,23 @@ class UserDepartmentMappingRepository:
         }
 
 
+    async def get_department_admin_emails(self, department_name: str) -> List[str]:
+        """Get email addresses of all Admins in a department and all SuperAdmins."""
+        query = f"""
+        SELECT DISTINCT udm.mail_id
+        FROM {self.table_name} udm
+        WHERE (udm.department_name = $1 AND udm.role = 'Admin' AND udm.is_active = TRUE)
+           OR (udm.department_name IS NULL AND udm.role = 'SuperAdmin' AND udm.is_active = TRUE)
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+                return [row['mail_id'] for row in rows]
+        except Exception as e:
+            log.error(f"Error getting admin emails for department {department_name}: {e}")
+            return []
+
+
 class ApprovalPermissionRepository:
     """Repository for approval permission management"""
     
@@ -1343,7 +1360,7 @@ class RoleRepository:
         """
         try:
             async with self.pool.acquire() as conn:
-                # Create role_access table with JSONB permission fields for tools and agents
+                # Create role_access table with JSONB permission fields for tools, agents, mcp_servers and workflows
                 # References departments table as foreign key for clean department-based access control
                 # Note: created_by does NOT reference login_credential to allow system-generated entries
                 role_access_query = f"""
@@ -1351,11 +1368,11 @@ class RoleRepository:
                     id SERIAL PRIMARY KEY,
                     department_name VARCHAR(50) NOT NULL,
                     role_name VARCHAR(50) NOT NULL,
-                    read_access JSONB DEFAULT '{{"tools": false, "agents": false}}'::jsonb,
-                    add_access JSONB DEFAULT '{{"tools": false, "agents": false}}'::jsonb,
-                    update_access JSONB DEFAULT '{{"tools": false, "agents": false}}'::jsonb,
-                    delete_access JSONB DEFAULT '{{"tools": false, "agents": false}}'::jsonb,
-                    execute_access JSONB DEFAULT '{{"tools": false, "agents": false}}'::jsonb,
+                    read_access JSONB DEFAULT '{{"tools": false, "agents": false, "mcp_servers": false, "workflows": false}}'::jsonb,
+                    add_access JSONB DEFAULT '{{"tools": false, "agents": false, "mcp_servers": false, "workflows": false}}'::jsonb,
+                    update_access JSONB DEFAULT '{{"tools": false, "agents": false, "mcp_servers": false, "workflows": false}}'::jsonb,
+                    delete_access JSONB DEFAULT '{{"tools": false, "agents": false, "mcp_servers": false, "workflows": false}}'::jsonb,
+                    execute_access JSONB DEFAULT '{{"tools": false, "agents": false, "mcp_servers": false, "workflows": false}}'::jsonb,
                     execution_steps_access BOOLEAN DEFAULT false,
                     tool_verifier_flag_access BOOLEAN DEFAULT false,
                     plan_verifier_flag_access BOOLEAN DEFAULT false,
@@ -1368,6 +1385,7 @@ class RoleRepository:
                     file_context_access BOOLEAN DEFAULT false,
                     canvas_view_access BOOLEAN DEFAULT false,
                     context_access BOOLEAN DEFAULT false,
+                    export_agents_access BOOLEAN DEFAULT false,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     created_by TEXT,
@@ -1447,6 +1465,68 @@ class RoleRepository:
                 except Exception as e:
                     log.debug(f"New access columns may already exist: {e}")
 
+                # Add export_agents_access column (for existing databases)
+                try:
+                    await conn.execute(f"ALTER TABLE {self.role_access_table} ADD COLUMN IF NOT EXISTS export_agents_access BOOLEAN DEFAULT false")
+                    log.info("Added export_agents_access column to existing table")
+                except Exception as e:
+                    log.debug(f"export_agents_access column may already exist: {e}")
+
+                # Migration: Add mcp_servers and workflows keys to existing JSONB permission fields
+                try:
+                    jsonb_permission_fields = ['read_access', 'add_access', 'update_access', 'delete_access', 'execute_access']
+                    for field in jsonb_permission_fields:
+                        # Add mcp_servers key if not present
+                        await conn.execute(f"""
+                            UPDATE {self.role_access_table}
+                            SET {field} = {field} || '{{"mcp_servers": false}}'::jsonb
+                            WHERE NOT ({field} ? 'mcp_servers')
+                        """)
+                        # Add workflows key if not present
+                        await conn.execute(f"""
+                            UPDATE {self.role_access_table}
+                            SET {field} = {field} || '{{"workflows": false}}'::jsonb
+                            WHERE NOT ({field} ? 'workflows')
+                        """)
+                    log.info("Migration: Added mcp_servers and workflows keys to JSONB permission fields")
+                except Exception as e:
+                    log.debug(f"JSONB migration for mcp_servers/workflows may have already completed: {e}")
+
+                # One-time patch: legacy DBs already had mcp_servers=false for all roles; enable full MCP matrix for Admin/Developer
+                try:
+                    await conn.execute("""
+                        CREATE TABLE IF NOT EXISTS role_access_migrations (
+                            migration_id VARCHAR(100) PRIMARY KEY,
+                            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    ins = await conn.fetchrow(
+                        """
+                        INSERT INTO role_access_migrations (migration_id)
+                        VALUES ('enable_admin_developer_mcp_servers_v1')
+                        ON CONFLICT (migration_id) DO NOTHING
+                        RETURNING migration_id
+                        """
+                    )
+                    if ins:
+                        await conn.execute(f"""
+                            UPDATE {self.role_access_table}
+                            SET
+                                read_access = jsonb_set(read_access, '{{mcp_servers}}', 'true'::jsonb, true),
+                                add_access = jsonb_set(add_access, '{{mcp_servers}}', 'true'::jsonb, true),
+                                update_access = jsonb_set(update_access, '{{mcp_servers}}', 'true'::jsonb, true),
+                                delete_access = jsonb_set(delete_access, '{{mcp_servers}}', 'true'::jsonb, true),
+                                execute_access = jsonb_set(execute_access, '{{mcp_servers}}', 'true'::jsonb, true),
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE LOWER(role_name) IN ('admin', 'developer')
+                        """)
+                        log.info(
+                            "Migration enable_admin_developer_mcp_servers_v1: set mcp_servers=true "
+                            "on all CRUD/execute JSON fields for Admin and Developer roles"
+                        )
+                except Exception as e:
+                    log.debug(f"role_access_migrations / admin mcp patch may have already completed: {e}")
+
                 # Migration: Clean up any old foreign key constraints from previous implementations
                 try:
                     await conn.execute(f"ALTER TABLE {self.role_access_table} DROP CONSTRAINT IF EXISTS role_access_role_name_fkey")
@@ -1468,7 +1548,7 @@ class RoleRepository:
 
     async def role_exists(self, role_name: str, department_name: str) -> bool:
         """Check if role exists in a specific department's roles JSONB array"""
-        query = f"SELECT roles FROM departments WHERE department_name = $1"
+        query = f"SELECT roles FROM departments WHERE LOWER(department_name) = LOWER($1)"
         try:
             async with self.pool.acquire() as conn:
                 department_roles = await conn.fetchval(query, department_name)
@@ -1509,6 +1589,7 @@ class RoleRepository:
                                   knowledgebase_access: bool = None,
                                   validator_access: bool = None, file_context_access: bool = None,
                                   canvas_view_access: bool = None, context_access: bool = None,
+                                  export_agents_access: bool = None,
                                   created_by: str = None) -> bool:
         """Set permissions for a role in a specific department"""
         # First check if role exists in the department
@@ -1517,7 +1598,7 @@ class RoleRepository:
             return False
             
         # Check if department exists
-        dept_exists_query = "SELECT COUNT(*) FROM departments WHERE department_name = $1"
+        dept_exists_query = "SELECT COUNT(*) FROM departments WHERE LOWER(department_name) = LOWER($1)"
         async with self.pool.acquire() as conn:
             dept_count = await conn.fetchval(dept_exists_query, department_name)
             if dept_count == 0:
@@ -1525,7 +1606,7 @@ class RoleRepository:
                 return False
 
         # Default permission structure
-        default_permission = {"tools": False, "agents": False}
+        default_permission = {"tools": False, "agents": False, "mcp_servers": False, "workflows": False}
         
         # Use provided permissions or defaults
         read_perm = read_access if read_access else default_permission
@@ -1545,11 +1626,12 @@ class RoleRepository:
         file_context_access_val = file_context_access if file_context_access is not None else False
         canvas_view_access_val = canvas_view_access if canvas_view_access is not None else False
         context_access_val = context_access if context_access is not None else False
+        export_agents_access_val = export_agents_access if export_agents_access is not None else False
 
         # Insert or update role permissions
         upsert_query = f"""
-        INSERT INTO {self.role_access_table} (department_name, role_name, read_access, add_access, update_access, delete_access, execute_access, execution_steps_access, tool_verifier_flag_access, plan_verifier_flag_access, online_evaluation_flag_access, evaluation_access, vault_access, data_connector_access, knowledgebase_access, validator_access, file_context_access, canvas_view_access, context_access, created_by)
-        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        INSERT INTO {self.role_access_table} (department_name, role_name, read_access, add_access, update_access, delete_access, execute_access, execution_steps_access, tool_verifier_flag_access, plan_verifier_flag_access, online_evaluation_flag_access, evaluation_access, vault_access, data_connector_access, knowledgebase_access, validator_access, file_context_access, canvas_view_access, context_access, export_agents_access, created_by)
+        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         ON CONFLICT (department_name, role_name) 
         DO UPDATE SET 
             read_access = EXCLUDED.read_access,
@@ -1569,6 +1651,7 @@ class RoleRepository:
             file_context_access = EXCLUDED.file_context_access,
             canvas_view_access = EXCLUDED.canvas_view_access,
             context_access = EXCLUDED.context_access,
+            export_agents_access = EXCLUDED.export_agents_access,
             updated_at = CURRENT_TIMESTAMP
         """
         try:
@@ -1581,7 +1664,7 @@ class RoleRepository:
                                  tool_verifier_access, plan_verifier_access, online_evaluation_flag,
                                  evaluation_access_val, vault_access_val, data_connector_access_val,
                                  knowledgebase_access_val, validator_access_val, file_context_access_val, canvas_view_access_val,
-                                 context_access_val, created_by)
+                                 context_access_val, export_agents_access_val, created_by)
                 log.info(f"Permissions set for role '{role_name}' in department '{department_name}'")
                 return True
         except Exception as e:
@@ -1595,7 +1678,7 @@ class RoleRepository:
             return False
             
         # Check if department exists
-        dept_exists_query = "SELECT COUNT(*) FROM departments WHERE department_name = $1"
+        dept_exists_query = "SELECT COUNT(*) FROM departments WHERE LOWER(department_name) = LOWER($1)"
         async with self.pool.acquire() as conn:
             dept_count = await conn.fetchval(dept_exists_query, department_name)
             if dept_count == 0:
@@ -1611,7 +1694,7 @@ class RoleRepository:
         for perm_name, perm_value in permissions.items():
             if perm_value is not None and perm_name.endswith('_access'):
                 param_count += 1
-                if perm_name in ['execution_steps_access', 'tool_verifier_flag_access', 'plan_verifier_flag_access', 'online_evaluation_flag_access', 'evaluation_access', 'vault_access', 'data_connector_access', 'knowledgebase_access', 'validator_access', 'file_context_access', 'canvas_view_access', 'context_access']:
+                if perm_name in ['execution_steps_access', 'tool_verifier_flag_access', 'plan_verifier_flag_access', 'online_evaluation_flag_access', 'evaluation_access', 'vault_access', 'data_connector_access', 'knowledgebase_access', 'validator_access', 'file_context_access', 'canvas_view_access', 'context_access', 'export_agents_access']:
                     # Handle boolean fields
                     update_fields.append(f"{perm_name} = ${param_count}")
                     params.append(perm_value)
@@ -1659,6 +1742,7 @@ class RoleRepository:
                    ra.tool_verifier_flag_access, ra.plan_verifier_flag_access, ra.online_evaluation_flag_access,
                    ra.evaluation_access, ra.vault_access, ra.data_connector_access, ra.knowledgebase_access,
                    ra.validator_access, ra.file_context_access, ra.canvas_view_access, ra.context_access,
+                   ra.export_agents_access,
                    ra.created_at, ra.updated_at, ra.created_by
             FROM {self.role_access_table} ra
             WHERE ra.department_name = $1
@@ -1672,6 +1756,7 @@ class RoleRepository:
                    ra.tool_verifier_flag_access, ra.plan_verifier_flag_access, ra.online_evaluation_flag_access,
                    ra.evaluation_access, ra.vault_access, ra.data_connector_access, ra.knowledgebase_access,
                    ra.validator_access, ra.file_context_access, ra.canvas_view_access, ra.context_access,
+                   ra.export_agents_access,
                    ra.created_at, ra.updated_at, ra.created_by
             FROM {self.role_access_table} ra
             ORDER BY ra.department_name, ra.role_name
@@ -1692,11 +1777,11 @@ class RoleRepository:
             # Default roles with JSON permissions structure
             default_roles_permissions = {
                 "User": {
-                    "read_access": {"tools": True, "agents": True},
-                    "add_access": {"tools": False, "agents": False},
-                    "update_access": {"tools": False, "agents": False},
-                    "delete_access": {"tools": False, "agents": False},
-                    "execute_access": {"tools": False, "agents": False},
+                    "read_access": {"tools": True, "agents": True, "mcp_servers": False, "workflows": False},
+                    "add_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
+                    "update_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
+                    "delete_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
+                    "execute_access": {"tools": False, "agents": False, "mcp_servers": False, "workflows": False},
                     "execution_steps_access": False,
                     "tool_verifier_flag_access": False,
                     "plan_verifier_flag_access": False,
@@ -1708,14 +1793,15 @@ class RoleRepository:
                     "validator_access": False,
                     "file_context_access": False,
                     "canvas_view_access": False,
-                    "context_access": False
+                    "context_access": False,
+                    "export_agents_access": False
                 },
                 "Developer": {
-                    "read_access": {"tools": True, "agents": True},
-                    "add_access": {"tools": True, "agents": True},
-                    "update_access": {"tools": True, "agents": True},
-                    "delete_access": {"tools": True, "agents": True},
-                    "execute_access": {"tools": True, "agents": True},
+                    "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "add_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "update_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "delete_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "execute_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
                     "execution_steps_access": True,
                     "tool_verifier_flag_access": True,
                     "plan_verifier_flag_access": True,
@@ -1727,14 +1813,15 @@ class RoleRepository:
                     "validator_access": True,
                     "file_context_access": True,
                     "canvas_view_access": True,
-                    "context_access": True
+                    "context_access": True,
+                    "export_agents_access": True
                 },
                 "Admin": {
-                    "read_access": {"tools": True, "agents": True},
-                    "add_access": {"tools": True, "agents": True},
-                    "update_access": {"tools": True, "agents": True},
-                    "delete_access": {"tools": True, "agents": True},
-                    "execute_access": {"tools": True, "agents": True},
+                    "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "add_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "update_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "delete_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "execute_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
                     "execution_steps_access": True,
                     "tool_verifier_flag_access": True,
                     "plan_verifier_flag_access": True,
@@ -1746,14 +1833,15 @@ class RoleRepository:
                     "validator_access": True,
                     "file_context_access": True,
                     "canvas_view_access": True,
-                    "context_access": True
+                    "context_access": True,
+                    "export_agents_access": True
                 },
                 "SuperAdmin": {
-                    "read_access": {"tools": True, "agents": True},
-                    "add_access": {"tools": True, "agents": True},
-                    "update_access": {"tools": True, "agents": True},
-                    "delete_access": {"tools": True, "agents": True},
-                    "execute_access": {"tools": True, "agents": True},
+                    "read_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "add_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "update_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "delete_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
+                    "execute_access": {"tools": True, "agents": True, "mcp_servers": True, "workflows": True},
                     "execution_steps_access": True,
                     "tool_verifier_flag_access": True,
                     "plan_verifier_flag_access": True,
@@ -1765,7 +1853,8 @@ class RoleRepository:
                     "validator_access": True,
                     "file_context_access": True,
                     "canvas_view_access": True,
-                    "context_access": True
+                    "context_access": True,
+                    "export_agents_access": True
                 }
             }
 
@@ -1822,6 +1911,7 @@ class RoleRepository:
                         file_context_access=permissions["file_context_access"],
                         canvas_view_access=permissions["canvas_view_access"],
                         context_access=permissions["context_access"],
+                        export_agents_access=permissions["export_agents_access"],
                         created_by=system_user
                     )
                     log.info(f"Default permissions set for role '{role_name}' in department 'General'")
@@ -1945,8 +2035,8 @@ class DepartmentRepository:
             return []
 
     async def department_exists(self, department_name: str) -> bool:
-        """Check if a department exists"""
-        query = f"SELECT COUNT(*) FROM {self.departments_table} WHERE department_name = $1"
+        """Check if a department exists (case-insensitive)"""
+        query = f"SELECT COUNT(*) FROM {self.departments_table} WHERE LOWER(department_name) = LOWER($1)"
         
         try:
             async with self.pool.acquire() as conn:
@@ -1962,7 +2052,7 @@ class DepartmentRepository:
         try:
             async with self.pool.acquire() as conn:
                 # Check if the role is in the department's allowed roles list
-                query = f"SELECT roles FROM {self.departments_table} WHERE department_name = $1"
+                query = f"SELECT roles FROM {self.departments_table} WHERE LOWER(department_name) = LOWER($1)"
                 result = await conn.fetchrow(query, department_name)
                 
                 if result and result['roles']:
@@ -2006,8 +2096,8 @@ class DepartmentRepository:
             return False
 
     async def get_department_by_name(self, department_name: str):
-        """Get a specific department by name"""
-        query = f"SELECT * FROM {self.departments_table} WHERE department_name = $1"
+        """Get a specific department by name (case-insensitive)"""
+        query = f"SELECT * FROM {self.departments_table} WHERE LOWER(department_name) = LOWER($1)"
         
         try:
             async with self.pool.acquire() as conn:
@@ -2269,7 +2359,7 @@ class DepartmentRepository:
         This method handles cascade delete from:
         LOGIN DB: userdepartmentmapping, role_access, user_access_keys
         MAIN DB: tool_table, mcp_tool_table, agent_table, tool_department_sharing, agent_department_sharing,
-                 access_key_definitions, tool_access_key_mapping, groups, group_secrets, pipelines_table,
+                 access_key_definitions, tool_access_key_mapping, groups, group_secrets, workflows_table,
                  db_connections_table, public_keys, user_secrets, agent_evaluations, user_agent_access,
                  tag_tool_mapping_table, tag_agentic_app_mapping_table, tool_agent_mapping_table
                  + Dynamic tables: table_{agent_id} (chat history tables for each agent)
@@ -2391,12 +2481,12 @@ class DepartmentRepository:
                     )
                     deletion_stats['db_connections_table'] = result.split()[-1] if result else '0'
                     
-                    # Delete pipelines_table
+                    # Delete workflows_table
                     result = await conn.execute(
-                        "DELETE FROM pipelines_table WHERE department_name = $1",
+                        "DELETE FROM workflows_table WHERE department_name = $1",
                         department_name
                     )
-                    deletion_stats['pipelines_table'] = result.split()[-1] if result else '0'
+                    deletion_stats['workflows_table'] = result.split()[-1] if result else '0'
                     
                     # FIRST: Get tool_ids from both tool_table and mcp_tool_table (needed for tag_tool_mapping_table)
                     tool_ids = await conn.fetch(
@@ -3048,3 +3138,173 @@ class UserAccessKeyRepository:
         except Exception as e:
             log.error(f"Error deleting all user entries for access key '{access_key}': {e}")
             return 0
+
+
+class RegistrationRequestRepository:
+    """Repository for registration request operations using registration_requests table"""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+        self.table_name = TableNames.REGISTRATION_REQUESTS.value
+
+    async def create_table_if_not_exists(self):
+        """Create registration_requests table if it doesn't exist"""
+        create_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {self.table_name} (
+            id SERIAL PRIMARY KEY,
+            email_id TEXT NOT NULL,
+            user_name TEXT NOT NULL,
+            password TEXT NOT NULL,
+            department_name VARCHAR(50) NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            assigned_role VARCHAR(50),
+            reviewed_by TEXT,
+            reviewed_at TIMESTAMP,
+            rejection_reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT {self.table_name}_status_check CHECK (status IN ('pending', 'approved', 'rejected'))
+        );
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(create_table_query)
+                # Create indexes for faster lookups
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_dept_status "
+                    f"ON {self.table_name} (department_name, status)"
+                )
+                await conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_email_status "
+                    f"ON {self.table_name} (email_id, status)"
+                )
+            log.info(f"Table '{self.table_name}' created successfully or already exists.")
+        except Exception as e:
+            log.error(f"Error creating table '{self.table_name}': {e}")
+            raise
+
+    async def create_request(self, email_id: str, user_name: str, password_hash: str, department_name: str) -> Optional[int]:
+        """Create a new registration request. Returns the request ID."""
+        query = f"""
+        INSERT INTO {self.table_name} (email_id, user_name, password, department_name, status)
+        VALUES ($1, $2, $3, $4, 'pending')
+        RETURNING id
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(query, email_id, user_name, password_hash, department_name)
+                return result['id'] if result else None
+        except Exception as e:
+            log.error(f"Error creating registration request: {e}")
+            return None
+
+    async def get_pending_by_department(self, department_name: str) -> List[Dict[str, Any]]:
+        """Get all pending registration requests for a department"""
+        query = f"""
+        SELECT id, email_id, user_name, department_name, status, assigned_role,
+               reviewed_by, reviewed_at, rejection_reason, created_at
+        FROM {self.table_name}
+        WHERE department_name = $1 AND status = 'pending'
+        ORDER BY created_at ASC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, department_name)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching pending requests for department {department_name}: {e}")
+            return []
+
+    async def get_all_pending(self) -> List[Dict[str, Any]]:
+        """Get all pending registration requests (SuperAdmin view)"""
+        query = f"""
+        SELECT id, email_id, user_name, department_name, status, assigned_role,
+               reviewed_by, reviewed_at, rejection_reason, created_at
+        FROM {self.table_name}
+        WHERE status = 'pending'
+        ORDER BY department_name, created_at ASC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching all pending requests: {e}")
+            return []
+
+    async def get_request_by_id(self, request_id: int) -> Optional[Dict[str, Any]]:
+        """Get a registration request by its ID"""
+        query = f"""
+        SELECT id, email_id, user_name, password, department_name, status, assigned_role,
+               reviewed_by, reviewed_at, rejection_reason, created_at
+        FROM {self.table_name}
+        WHERE id = $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, request_id)
+                return dict(row) if row else None
+        except Exception as e:
+            log.error(f"Error fetching registration request {request_id}: {e}")
+            return None
+
+    async def approve_request(self, request_id: int, role: str, reviewed_by: str) -> bool:
+        """Approve a registration request with an assigned role"""
+        query = f"""
+        UPDATE {self.table_name}
+        SET status = 'approved', assigned_role = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP
+        WHERE id = $3 AND status = 'pending'
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, role, reviewed_by, request_id)
+                return result == "UPDATE 1"
+        except Exception as e:
+            log.error(f"Error approving registration request {request_id}: {e}")
+            return False
+
+    async def reject_request(self, request_id: int, reviewed_by: str, rejection_reason: str = None) -> bool:
+        """Reject a registration request"""
+        query = f"""
+        UPDATE {self.table_name}
+        SET status = 'rejected', reviewed_by = $1, reviewed_at = CURRENT_TIMESTAMP, rejection_reason = $2
+        WHERE id = $3 AND status = 'pending'
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(query, reviewed_by, rejection_reason, request_id)
+                return result == "UPDATE 1"
+        except Exception as e:
+            log.error(f"Error rejecting registration request {request_id}: {e}")
+            return False
+
+    async def has_pending_request(self, email_id: str, department_name: str) -> bool:
+        """Check if a pending request already exists for this email+department"""
+        query = f"""
+        SELECT 1 FROM {self.table_name}
+        WHERE email_id = $1 AND department_name = $2 AND status = 'pending'
+        LIMIT 1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(query, email_id, department_name)
+                return result is not None
+        except Exception as e:
+            log.error(f"Error checking pending request: {e}")
+            return False
+
+    async def get_requests_by_email(self, email_id: str) -> List[Dict[str, Any]]:
+        """Get all registration requests for an email (any status)"""
+        query = f"""
+        SELECT id, email_id, user_name, department_name, status, assigned_role,
+               reviewed_by, reviewed_at, rejection_reason, created_at
+        FROM {self.table_name}
+        WHERE email_id = $1
+        ORDER BY created_at DESC
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, email_id)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            log.error(f"Error fetching requests for email {email_id}: {e}")
+            return []

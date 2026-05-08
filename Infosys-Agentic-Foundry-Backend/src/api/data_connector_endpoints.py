@@ -1,9 +1,10 @@
 # © 2024-25 Infosys Limited, Bangalore, India. All Rights Reserved.
 import os
 import uuid
+import base64
 import sqlite3 # For SQLite specific operations
 import asyncpg 
-from typing import Dict, Optional, Any, Union
+from typing import Dict, Optional, Any, Union, List
 from bson import ObjectId # For MongoDB ObjectId handling
 from sqlalchemy import create_engine, text # For SQL Alchemy engine
 from sqlalchemy.exc import SQLAlchemyError # For SQL Alchemy exceptions
@@ -149,6 +150,8 @@ async def connect_to_database_endpoint(
         # created_by: str = Form(...),  # <--- make sure to include this
         sql_file: Union[UploadFile, str, None] = File(None),
         created_by: Optional[str]= Form(None),
+        blocked_sql_commands: Optional[str] = Form(None, description="JSON array of SQL keywords to block (e.g., '[\"DELETE\", \"DROP\"]'). If not provided, defaults apply."),
+        connection_description: Optional[str] = Form(None, description="Description of the database connection"),
         db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
         authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
         user_data: User = Depends(get_current_user)
@@ -163,6 +166,9 @@ async def connect_to_database_endpoint(
     - host, port, username etc.: Connection details.
     - flag_for_insert_into_db_connections_table: Flag to save config to DB.
     - sql_file: Optional SQL file for SQLite.
+    - blocked_sql_commands: JSON array of SQL keywords to block for this connection.
+                            Default: ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "REVOKE"]
+    - connection_description: Description of the database connection.
     - db_connection_manager: Dependency-injected MultiDBConnectionRepository.
 
     Returns:
@@ -181,6 +187,13 @@ async def connect_to_database_endpoint(
     user_session = request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
     password = password or user_pwd
+
+    # Decode base64-encoded PWD from frontend
+    if password:
+        try:
+            password = base64.b64decode(password).decode('utf-8')
+        except Exception:
+            raise HTTPException(status_code=400, detail="Password must be base64 encoded.")
 
     # Get restricted database name from environment variable
     RESTRICTED_DATABASE = os.getenv("DATABASE", "agentic_workflow_as_service_database")
@@ -269,6 +282,17 @@ async def connect_to_database_endpoint(
             raise HTTPException(status_code=500, detail=f"db_type name is incorrect:- mentioned is {db_type}")
     
         if flag_for_insert_into_db_connections_table == "1":
+            # Parse blocked_sql_commands if provided as JSON string
+            parsed_blocked_commands = None
+            if blocked_sql_commands:
+                try:
+                    import json as json_mod
+                    parsed_blocked_commands = json_mod.loads(blocked_sql_commands)
+                    if not isinstance(parsed_blocked_commands, list):
+                        parsed_blocked_commands = None
+                except:
+                    parsed_blocked_commands = None
+            
             connection_data = {
                 "connection_id": str(uuid.uuid4()),
                 "connection_name": name,
@@ -279,14 +303,35 @@ async def connect_to_database_endpoint(
                 "connection_password": config.get("password", ""),
                 "connection_database_name": config.get("database", ""),
                 "connection_created_by": config.get("created_by", ""),
+                "blocked_sql_commands": parsed_blocked_commands,
+                "connection_description": connection_description,
                 "department_name": user_data.department_name
             }
             result = await db_connection_manager.insert_into_db_connections_table(connection_data)
+            
+            # Auto-generate schema and samples — Temporarily disabled, will be used later
+            # schema_samples_result = None
+            # try:
+            #     from src.inference.database_tools_cache import auto_generate_schema_and_samples
+            #     schema_samples_result = await auto_generate_schema_and_samples(
+            #         connection_name=name,
+            #         db_type=db_type,
+            #         connection_manager=manager,
+            #         department=user_data.department_name
+            #     )
+            #     log.info(f"[DATA_CONNECTOR] Auto-generated schema/samples for {name}: {schema_samples_result.get('status')}")
+            # except Exception as schema_error:
+            #     log.warning(f"[DATA_CONNECTOR] Failed to auto-generate schema/samples for {name}: {schema_error}")
+            #     schema_samples_result = {"status": "error", "message": str(schema_error)}
+            
             if result.get("is_created"):
-                return {
+                response_data = {
                     "message": f"Connected to {db_type} database '{database}' and saved configuration.",
                     **result
                 }
+                # if schema_samples_result:
+                #     response_data["schema_samples"] = schema_samples_result
+                return response_data
             else:
                 return {
                     "message": f"Connected to {db_type} database '{database}', but failed to save configuration.",
@@ -1377,3 +1422,429 @@ async def connect_by_connection_name(
             status_code=500, 
             detail="An unexpected error occurred while connecting to the database. Please contact support if the issue persists."
         )
+
+
+@router.post("/store-db-schema")
+async def store_database_schema(
+    request: Request,
+    connection_name: str = Form(...),
+    schema_text: str = Form(...),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Store database schema to a file (SHARED/REUSABLE across all agents).
+    
+    Any agent can read this using: cat /databases/{connection_name}/schema.md
+    
+    Parameters:
+    - connection_name: The database connection name
+    - schema_text: The schema text (markdown format)
+    
+    Returns:
+    - Dict with storage status and file path
+    """
+    try:
+        from src.inference.database_tools_cache import save_database_schema
+        
+        result = save_database_schema(
+            connection_name=connection_name,
+            schema_text=schema_text,
+            department=user_data.department_name
+        )
+        
+        return result
+        
+    except Exception as e:
+        log.error(f"Error storing database schema for {connection_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store database schema: {str(e)}"
+        )
+
+
+@router.post("/store-db-samples")
+async def store_database_samples(
+    request: Request,
+    connection_name: str = Form(...),
+    samples_text: str = Form(...),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Store database sample data to a file (SHARED/REUSABLE across all agents).
+    
+    Any agent can read this using: cat /databases/{connection_name}/samples.md
+    
+    Parameters:
+    - connection_name: The database connection name
+    - samples_text: The sample data text (markdown format)
+    
+    Returns:
+    - Dict with storage status and file path
+    """
+    try:
+        from src.inference.database_tools_cache import save_database_samples
+        
+        result = save_database_samples(
+            connection_name=connection_name,
+            samples_text=samples_text,
+            department=user_data.department_name
+        )
+        
+        return result
+        
+    except Exception as e:
+        log.error(f"Error storing database samples for {connection_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store database samples: {str(e)}"
+        )
+
+
+@router.get("/list-db-files")
+async def list_database_files(
+    connection_name: str = None,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    List all database schema/sample files.
+    
+    If connection_name is provided, lists files for that connection only.
+    Otherwise, lists all connections and their files.
+    
+    Parameters:
+    - connection_name: Optional - specific connection to list
+    
+    Returns:
+    - List of file info dicts with name and virtual_path
+    """
+    try:
+        from src.inference.database_tools_cache import get_database_files, list_database_connections
+        
+        files = get_database_files(connection_name, department=user_data.department_name)
+        connections = list_database_connections(department=user_data.department_name)
+        
+        return {
+            "status": "success",
+            "connections": connections,
+            "files": files
+        }
+        
+    except Exception as e:
+        log.error(f"Error listing database files: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list database files: {str(e)}"
+        )
+
+
+# =============================================================================
+# get-db-details endpoint — Temporarily disabled, will be used later
+# =============================================================================
+# @router.get("/get-db-details/{connection_name}")
+# async def get_database_details(
+#     connection_name: str,
+#     db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
+#     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+#     user_data: User = Depends(get_current_user)
+# ):
+#     """
+#     Get the schema, sample data, blocked commands and default commands for a specific database connection.
+#
+#     Parameters:
+#     - connection_name: The database connection name
+#
+#     Returns:
+#     - Dict with schema content, samples content, blocked commands and default commands
+#     """
+#     try:
+#         from src.inference.database_tools_cache import get_database_directory
+#
+#         db_dir = get_database_directory(connection_name, department=user_data.department_name)
+#         schema_file = db_dir / "schema.md"
+#         samples_file = db_dir / "samples.md"
+#
+#         schema_content = None
+#         samples_content = None
+#
+#         if schema_file.exists():
+#             schema_content = schema_file.read_text(encoding="utf-8")
+#         if samples_file.exists():
+#             samples_content = samples_file.read_text(encoding="utf-8")
+#
+#         if schema_content is None and samples_content is None:
+#             raise HTTPException(
+#                 status_code=404,
+#                 detail=f"No schema or samples files found for connection '{connection_name}'"
+#             )
+#
+#         # Fetch blocked commands for this connection
+#         default_blocked_commands = [
+#             "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE",
+#             "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "REVOKE", "COMMIT", "ROLLBACK"
+#         ]
+#         blocked_commands = None
+#         try:
+#             blocked_commands = await db_connection_manager.get_blocked_sql_commands(connection_name)
+#         except Exception as bc_err:
+#             log.warning(f"Could not fetch blocked commands for {connection_name}: {bc_err}")
+#
+#         return {
+#             "status": "success",
+#             "connection_name": connection_name,
+#             "schema": schema_content,
+#             "samples": samples_content,
+#             "schema_exists": schema_content is not None,
+#             "samples_exists": samples_content is not None,
+#             "blocked_commands": blocked_commands if blocked_commands else default_blocked_commands,
+#             "is_custom_blocked": blocked_commands is not None,
+#             "default_blocked_commands": default_blocked_commands
+#         }
+#
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         log.error(f"Error reading schema/samples for {connection_name}: {e}")
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Failed to read schema/samples: {str(e)}"
+#         )
+
+
+@router.delete("/clear-db-files/{connection_name}")
+async def clear_database_files(
+    connection_name: str,
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Clear all files for a specific database connection.
+    
+    Parameters:
+    - connection_name: The database connection name
+    
+    Returns:
+    - Dict with clear status
+    """
+    try:
+        from src.inference.database_tools_cache import clear_database_files
+        
+        success = clear_database_files(connection_name, department=user_data.department_name)
+        
+        return {
+            "status": "success" if success else "error",
+            "message": f"Database files cleared for {connection_name}" if success else "Failed to clear files",
+            "connection_name": connection_name
+        }
+        
+    except Exception as e:
+        log.error(f"Error clearing database files for {connection_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear database files: {str(e)}"
+        )
+
+
+@router.delete("/clear-all-db-files")
+async def clear_all_database_files_endpoint(
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Clear all database schema/sample files for ALL connections.
+    
+    Returns:
+    - Dict with clear status
+    """
+    try:
+        from src.inference.database_tools_cache import clear_all_database_files
+        
+        success = clear_all_database_files(department=user_data.department_name)
+        
+        return {
+            "status": "success" if success else "error",
+            "message": "All database files cleared" if success else "Failed to clear files"
+        }
+        
+        
+    except Exception as e:
+        log.error(f"Error clearing all database files: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear all database files: {str(e)}"
+        )
+
+
+# =============================================================================
+# regenerate-schema-samples endpoint — Temporarily disabled, will be used later
+# =============================================================================
+# @router.post("/regenerate-schema-samples/{connection_name}")
+# async def regenerate_schema_samples_endpoint(
+#     connection_name: str,
+#     db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
+#     authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+#     user_data: User = Depends(get_current_user)
+# ):
+#     """
+#     Regenerate schema and sample files for an existing database connection.
+#
+#     This is useful when:
+#     - Database schema has changed (new tables, columns)
+#     - Sample data needs to be refreshed
+#     - Schema/samples files were accidentally deleted
+#
+#     Parameters:
+#     - connection_name: The database connection name
+#
+#     Returns:
+#     - Dict with regeneration status and file paths
+#     """
+#     try:
+#         # Get connection config to determine db_type
+#         config = await db_connection_manager.get_connection_config(connection_name)
+#
+#         if not config:
+#             raise HTTPException(
+#                 status_code=404,
+#                 detail=f"Connection '{connection_name}' not found"
+#             )
+#
+#         db_type = config.get("db_type", "sqlite")
+#         manager = get_connection_manager()
+#
+#         # Build department-qualified key (engines are stored as name_department)
+#         user_department = user_data.department_name
+#         name_with_dept = f"{connection_name}_{user_department}"
+#
+#         # Check if connection is active, if not try to connect
+#         if db_type.lower() == "mongodb":
+#             if connection_name not in manager.mongo_clients and name_with_dept not in manager.mongo_clients:
+#                 raise HTTPException(
+#                     status_code=400,
+#                     detail=f"Connection '{connection_name}' is not active. Please connect first using /connect-by-name"
+#                 )
+#         else:
+#             if connection_name not in manager.sql_engines and name_with_dept not in manager.sql_engines:
+#                 raise HTTPException(
+#                     status_code=400,
+#                     detail=f"Connection '{connection_name}' is not active. Please connect first using /connect-by-name"
+#                 )
+#
+#         # Regenerate schema and samples
+#         from src.inference.database_tools_cache import auto_generate_schema_and_samples
+#
+#         result = await auto_generate_schema_and_samples(
+#             connection_name=connection_name,
+#             db_type=db_type,
+#             connection_manager=manager,
+#             department=user_data.department_name
+#         )
+#
+#         return {
+#             "status": result.get("status"),
+#             "message": f"Schema and samples regenerated for {connection_name}",
+#             "connection_name": connection_name,
+#             "database_type": db_type,
+#             **result
+#         }
+#
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         log.error(f"Error regenerating schema/samples for {connection_name}: {e}")
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Failed to regenerate schema/samples: {str(e)}"
+#         )
+
+
+# =============================================================================
+# BLOCKED SQL COMMANDS MANAGEMENT
+# =============================================================================
+
+@router.get("/blocked-commands/{connection_name}")
+async def get_blocked_commands_endpoint(
+    connection_name: str,
+    db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Get the blocked SQL commands for a specific database connection.
+    
+    Args:
+        connection_name: Name of the database connection
+        
+    Returns:
+        Dict with blocked commands list or default commands if not configured
+    """
+    try:
+        blocked_commands = await db_connection_manager.get_blocked_sql_commands(connection_name)
+        
+        # Default blocked commands if not configured
+        default_blocked = [
+            "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", 
+            "TRUNCATE", "EXEC", "EXECUTE", "GRANT", "REVOKE", "COMMIT", "ROLLBACK"
+        ]
+        
+        return {
+            "connection_name": connection_name,
+            "blocked_commands": blocked_commands if blocked_commands else default_blocked,
+            "is_custom": blocked_commands is not None,
+            "default_commands": default_blocked
+        }
+        
+    except Exception as e:
+        log.error(f"Error fetching blocked commands for {connection_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch blocked commands: {str(e)}"
+        )
+
+
+@router.put("/blocked-commands/{connection_name}")
+async def update_blocked_commands_endpoint(
+    connection_name: str,
+    blocked_commands: List[str],
+    db_connection_manager: MultiDBConnectionRepository = Depends(ServiceProvider.get_multi_db_connection_manager),
+    authorization_service: AuthorizationService = Depends(ServiceProvider.get_authorization_service),
+    user_data: User = Depends(get_current_user)
+):
+    """
+    Update the blocked SQL commands for a specific database connection.
+    
+    Args:
+        connection_name: Name of the database connection
+        blocked_commands: List of SQL keywords to block (e.g., ["DELETE", "DROP", "TRUNCATE"])
+        
+    Returns:
+        Dict with update status
+    """
+    # Check permissions - use data connector access check (consistent with /connect endpoint)
+    has_access = await authorization_service.check_data_connector_access(user_data.role, user_data.department_name)
+    if not has_access:
+        raise HTTPException(status_code=403, detail="You don't have permission to update data connections")
+    
+    try:
+        result = await db_connection_manager.update_blocked_sql_commands(connection_name, blocked_commands)
+        
+        if result.get("success"):
+            return {
+                "status": "success",
+                "connection_name": connection_name,
+                "blocked_commands": blocked_commands,
+                "message": result.get("message")
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error updating blocked commands for {connection_name}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update blocked commands: {str(e)}"
+        )
+

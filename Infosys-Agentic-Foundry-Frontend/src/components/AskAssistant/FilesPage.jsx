@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import styles from "./FilesPage.module.css";
 import Loader from "../commonComponents/Loader.jsx";
-import { BASE_URL, APIs } from "../../constant.js";
+import { APIs } from "../../constant.js";
 import useFetch from "../../Hooks/useAxios.js";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import DocViewerModal from "../DocViewerModal/DocViewerModal.jsx";
@@ -10,7 +10,9 @@ import { sanitizeFormField, isValidEvent } from "../../utils/sanitization.js";
 import TextField from "../../iafComponents/GlobalComponents/TextField/TextField.jsx";
 import IAFButton from "../../iafComponents/GlobalComponents/Buttons/Button.jsx";
 import UploadBox from "../commonComponents/UploadBox.jsx";
-
+import CheckBox from "../../iafComponents/GlobalComponents/CheckBox/CheckBox.jsx";
+import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
+import { getRoleFromToken } from "../../utils/jwtUtils";
 /**
  * FilesPage - A full-screen modal for managing user files
  * Following the modal pattern used by AgentForm, ToolOnBoarding, etc.
@@ -33,6 +35,10 @@ function MessageUpdateform(props) {
   const [showFile, setShowFile] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState({ folderPath: "", fileName: "" });
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const role = getRoleFromToken();
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   const { fetchData, getSessionId, postData, deleteData } = useFetch();
   const { addMessage } = useMessage();
@@ -72,7 +78,7 @@ function MessageUpdateform(props) {
   // Supported file extensions
   const SUPPORTED_EXTENSIONS = showKnowledge
     ? [".pdf", ".txt"]
-    : [".pdf", ".docx", ".ppt", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img", ".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar", ".eml"];
+    : [".pdf", ".docx", ".ppt", ".pptx", ".txt", ".xlsx", ".msg", ".json", ".img", ".db", ".jpg", ".png", ".jpeg", ".csv", ".pkl", ".zip", ".tar", ".eml", ".md"];
 
   const isSupportedFile = (file) => {
     const fileName = file.name.toLowerCase();
@@ -169,22 +175,23 @@ function MessageUpdateform(props) {
   const confirmDelete = async () => {
     const { folderPath, fileName } = deleteTarget;
     const isRootFile = folderPath === "__files__";
-    const url = isRootFile
-      ? `${APIs.DELETE_FILE}?file_path=${encodeURIComponent(fileName)}`
-      : `${APIs.DELETE_FILE}?file_path=${encodeURIComponent(folderPath)}/${encodeURIComponent(fileName)}`;
+    const filePath = isRootFile ? fileName : `${folderPath}/${fileName}`;
 
     setLoading(true);
     setShowDeleteConfirm(false);
     try {
-      const deleteResponse = await deleteData(url, { maxBodyLength: Infinity });
+      const deleteResponse = await deleteData(APIs.DELETE_FILE, { file_paths: [filePath] });
       if (deleteResponse) {
-        addMessage(deleteResponse.info || "File deleted successfully", "success");
-        refreshFiles();
-      } else {
-        addMessage("Delete failed", "error");
+        const statusMsg = deleteResponse.status_message || deleteResponse.message || deleteResponse.info;
+        const result = deleteResponse.results?.[0];
+        const hasFailure = result && result.is_delete === false;
+        if (statusMsg) {
+          addMessage(statusMsg, hasFailure ? "error" : "success");
+        }
+        if (!hasFailure) refreshFiles();
       }
     } catch (error) {
-      addMessage(error?.response?.data?.detail || "Error deleting file", "error");
+      // silent catch
     } finally {
       setLoading(false);
       setDeleteTarget({ folderPath: "", fileName: "" });
@@ -522,6 +529,60 @@ function MessageUpdateform(props) {
     setSearchValue("");
   };
 
+  // File multi-select handlers
+  const handleFileSelectChange = (fullPath, checked) => {
+    setSelectedFiles((prev) =>
+      checked ? [...prev, fullPath] : prev.filter((p) => p !== fullPath)
+    );
+  };
+
+  const handleSelectAllFiles = () => {
+    const currentFiles = currentFolderContents?.files || [];
+    const allSelected = currentFiles.length > 0 && currentFiles.every((f) => selectedFiles.includes(f.fullPath));
+    if (allSelected) {
+      // Deselect all current files
+      const currentPaths = new Set(currentFiles.map((f) => f.fullPath));
+      setSelectedFiles((prev) => prev.filter((p) => !currentPaths.has(p)));
+    } else {
+      // Select all current files
+      const currentPaths = currentFiles.map((f) => f.fullPath);
+      setSelectedFiles((prev) => [...new Set([...prev, ...currentPaths])]);
+    }
+  };
+
+  const isAllFilesSelected = (() => {
+    const currentFiles = currentFolderContents?.files || [];
+    return currentFiles.length > 0 && currentFiles.every((f) => selectedFiles.includes(f.fullPath));
+  })();
+
+  const isPartialFilesSelected = (() => {
+    const currentFiles = currentFolderContents?.files || [];
+    return !isAllFilesSelected && currentFiles.some((f) => selectedFiles.includes(f.fullPath));
+  })();
+
+  // Bulk delete files handler
+  const handleBulkDeleteFiles = async () => {
+    if (selectedFiles.length === 0) return;
+    setBulkDeleteLoading(true);
+
+    try {
+      const deleteResponse = await deleteData(APIs.DELETE_FILE, { file_paths: selectedFiles });
+      if (deleteResponse) {
+        const statusMsg = deleteResponse.status_message || deleteResponse.message;
+        if (statusMsg) {
+          const hasAnyFailure = Array.isArray(deleteResponse.results) && deleteResponse.results.some((r) => r.is_delete === false);
+          addMessage(statusMsg, hasAnyFailure ? "error" : "success");
+        }
+      }
+    } catch (error) {
+      // silent catch
+    }
+    setSelectedFiles([]);
+    setShowBulkDeleteModal(false);
+    setBulkDeleteLoading(false);
+    refreshFiles();
+  };
+
   // Can view file types - includes documents, images, and spreadsheets
   const canViewFile = (fileName) => {
     const ext = fileName.split(".").pop()?.toLowerCase();
@@ -616,12 +677,12 @@ function MessageUpdateform(props) {
                         type="button"
                         className={`${styles.folderItem} ${selectedFolder === "__root__" ? styles.folderItemActive : ""}`}
                         onClick={() => setSelectedFolder("__root__")}
-                        title="Root Directory">
+                        title="user_uploads">
                         <div className={styles.folderItemLeft}>
                           <span className={styles.folderItemIcon}>
                             <SVGIcons icon="folder-blue" width={16} height={16} color={selectedFolder === "__root__" ? "var(--app-primary-color)" : "var(--icon-color)"} />
                           </span>
-                          <span className={styles.folderItemName}>Root Directory</span>
+                          <span className={styles.folderItemName}>user_uploads</span>
                         </div>
                         <span className={styles.folderItemCount}>{responseData.__files__?.length || 0}</span>
                       </button>
@@ -660,15 +721,42 @@ function MessageUpdateform(props) {
                       </button>
                     )}
                     <h3 className={styles.filesPanelTitle}>
-                      {selectedFolder === "__all__" ? "All Files" : selectedFolder === "__root__" ? "Root Directory" : selectedFolder.split("/").pop()}
+                      {selectedFolder === "__all__" ? "All Files" : selectedFolder === "__root__" ? "User Uploads" : selectedFolder.split("/").pop()}
                     </h3>
+                    {/* Delete button in header row - top right end */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", marginLeft: "auto" }}>
+                      {role?.toUpperCase() === "ADMIN" && selectedFiles.length > 0 && (
+                        <IAFButton
+                          type="primary"
+                          style={{ backgroundColor: "#ef4444", borderColor: "#ef4444", padding: "4px 12px", fontSize: "13px" }}
+                          onClick={() => setShowBulkDeleteModal(true)}
+                          icon={<SVGIcons icon="trash" width={14} height={14} color="#fff" />}
+                        >
+                          Delete ({selectedFiles.length})
+                        </IAFButton>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Select All row - above the file list */}
+                  {role?.toUpperCase() === "ADMIN" && currentFolderContents.files.length > 1 && (
+                    <div style={{ display: "flex", alignItems: "center", padding: "6px 4px" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                        <CheckBox
+                          checked={isAllFilesSelected}
+                          indeterminate={isPartialFilesSelected}
+                          onChange={handleSelectAllFiles}
+                        />
+                        <span style={{ fontSize: "13px", color: "var(--content-color)" }}>Select All</span>
+                      </label>
+                    </div>
+                  )}
 
                   {/* Breadcrumb path */}
                   {selectedFolder !== "__all__" && selectedFolder !== "__root__" && (
                     <div className={styles.breadcrumb}>
                       <button type="button" className={styles.breadcrumbItem} onClick={() => setSelectedFolder("__root__")}>
-                        Root
+                        user_uploads
                       </button>
                       {selectedFolder.split("/").map((part, idx, arr) => (
                         <span key={idx} className={styles.breadcrumbSeparator}>
@@ -724,6 +812,12 @@ function MessageUpdateform(props) {
                         {currentFolderContents.files.map((file, index) => (
                           <div key={`${file.fullPath}-${index}`} className={styles.fileItem}>
                             <div className={styles.fileItemLeft}>
+                              {role?.toUpperCase() === "ADMIN" && (
+                                <CheckBox
+                                  checked={selectedFiles.includes(file.fullPath)}
+                                  onChange={(checked) => handleFileSelectChange(file.fullPath, checked)}
+                                />
+                              )}
                               <div className={styles.fileItemIcon}>
                                 <SVGIcons icon={getFileIcon(file.name)} width={20} height={20} color="#0073CF" />
                               </div>
@@ -822,7 +916,7 @@ function MessageUpdateform(props) {
                 id="filesPageUpload"
                 className={styles.dragDropInput}
                 onChange={handleFileChange}
-                accept={showKnowledge ? ".pdf,.txt" : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml"}
+                accept={showKnowledge ? ".pdf,.txt" : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml,.md"}
                 multiple={!showKnowledge}
                 style={{ display: "none" }}
               />
@@ -846,7 +940,7 @@ function MessageUpdateform(props) {
                 onRemoveFile={(index) => handleRemoveFile(index)}
                 loading={loading || kbloader}
                 fileInputId="filesPageUpload"
-                acceptedFileTypes={showKnowledge ? ".pdf,.txt" : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml"}
+                acceptedFileTypes={showKnowledge ? ".pdf,.txt" : ".pdf,.docx,.pptx,.txt,.xlsx,.msg,.json,.img,.db,.jpg,.png,.jpeg,.csv,.pkl,.zip,.tar,.eml,.md"}
                 supportedText={showKnowledge ? "Supported: PDF, TXT" : "PDF, DOCX, PPTX, TXT, XLSX, JSON, CSV, Images & more"}
                 dragText="Drop files here"
                 uploadText="Click to upload"
@@ -900,6 +994,14 @@ function MessageUpdateform(props) {
             </div>
           </div>
         </div>
+      )}
+
+      {showBulkDeleteModal && (
+        <ConfirmationModal
+          message={`Are you sure you want to delete ${selectedFiles.length} selected file(s)? This action cannot be undone.`}
+          onConfirm={handleBulkDeleteFiles}
+          setShowConfirmation={setShowBulkDeleteModal}
+        />
       )}
     </>
   );

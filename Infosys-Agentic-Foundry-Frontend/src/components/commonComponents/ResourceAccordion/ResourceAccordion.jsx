@@ -10,14 +10,16 @@ import SVGIcons from "../../../Icons/SVGIcons";
  * @param {function} props.onRemoveResource - Callback to remove a resource
  * @param {function} props.onClearAll - Callback to clear all resources
  */
-const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAll, onResourceClick, disabled = false }) => {
+const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAll, onResourceClick, disabled = false, resourcePermissions = {}, toolVersions = {} }) => {
   // Group resources by type (tools, servers, agents, validators)
   const groupedResources = selectedResources.reduce((acc, resource) => {
-    // Determine resource type based on available properties
+    // Determine resource type based on available properties.
     let type = "tools"; // default type
 
     if (resource.kb_id || resource.kb_name) {
       type = "knowledgebases";
+    } else if (resource.db_connection_name) {
+      type = "databases";
     } else if (resource.server_id || resource.server_name) {
       type = "servers";
     } else if (resource.agent_id || resource.agent_name || resource.agentic_application_id || resource.agentic_application_name) {
@@ -47,6 +49,7 @@ const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAl
     agents: true,
     validators: true,
     knowledgebases: true,
+    databases: true,
   });
 
   // Toggle accordion expansion
@@ -70,6 +73,8 @@ const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAl
         return "clipboard-check";
       case "knowledgebases":
         return "knowledge-base";
+      case "databases":
+        return "server";
       default:
         return "wrench";
     }
@@ -88,6 +93,8 @@ const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAl
         return "Validators";
       case "knowledgebases":
         return "Knowledge Bases";
+      case "databases":
+        return "Database Connections";
       default:
         return type.toUpperCase();
     }
@@ -95,16 +102,16 @@ const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAl
 
   // Get resource name safely
   const getResourceName = (resource) => {
-    return resource.tool_name || resource.name || resource.server_name || resource.agent_name || resource.agentic_application_name || resource.validator_name || resource.kb_name || "Unknown";
+    return resource.tool_name || resource.name || resource.server_name || resource.agent_name || resource.agentic_application_name || resource.validator_name || resource.kb_name || resource.db_connection_name || "Unknown";
   };
 
   // Get resource ID safely
   const getResourceId = (resource) => {
-    return resource.tool_id || resource.id || resource.server_id || resource.agent_id || resource.agentic_application_id || resource.validator_id || resource.kb_id;
+    return resource.tool_id || resource.id || resource.server_id || resource.agent_id || resource.agentic_application_id || resource.validator_id || resource.kb_id || resource.db_connection_name;
   };
 
   // Define fixed order for resource types (only show if they have values)
-  const resourceTypeOrder = ["tools", "servers", "knowledgebases", "agents", "validators"];
+  const resourceTypeOrder = ["tools", "servers", "knowledgebases", "databases", "agents", "validators"];
   const orderedResourceTypes = resourceTypeOrder.filter((type) => groupedResources[type] && groupedResources[type].length > 0);
 
   if (orderedResourceTypes.length === 0) {
@@ -151,12 +158,16 @@ const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAl
                 <div className={styles.pillsContainer}>
                   {resources.map((resource) => {
                     const isKnowledgeBase = type === "knowledgebases";
-                    const clickHandler = !isKnowledgeBase && onResourceClick ? () => onResourceClick(resource) : undefined;
+                    const isDatabase = type === "databases";
+                    // Check per-type read permission (default true if not provided)
+                    const hasTypePermission = resourcePermissions[type] !== undefined ? resourcePermissions[type] : true;
+                    const clickHandler = !isKnowledgeBase && !isDatabase && onResourceClick && hasTypePermission ? () => onResourceClick(resource) : undefined;
+                    const isRestricted = !hasTypePermission;
                     return (
                       <div
                         key={getResourceId(resource)}
-                        className={`${styles.resourcePill} ${clickHandler ? styles.clickable : ""}`}
-                        title={getResourceName(resource)}
+                        className={`${styles.resourcePill} ${clickHandler ? styles.clickable : ""} ${isRestricted ? styles.restricted : ""}`}
+                        title={isRestricted ? "You don't have read access to this resource" : getResourceName(resource)}
                         onClick={clickHandler}
                         role={clickHandler ? "button" : undefined}
                         tabIndex={clickHandler ? 0 : undefined}
@@ -166,7 +177,13 @@ const ResourceAccordion = ({ selectedResources = [], onRemoveResource, onClearAl
                             clickHandler();
                           }
                         }}>
-                        <span className={styles.pillText}>{getResourceName(resource)}</span>
+                        <span className={styles.pillText}>
+                          {getResourceName(resource)}
+                          {/* Always show version inline with tool name */}
+                          {type === "tools" && toolVersions[getResourceId(resource)] && (
+                            <span className={styles.versionTag}>{toolVersions[getResourceId(resource)]}</span>
+                          )}
+                        </span>
                         {onRemoveResource && (
                           <button
                             type="button"

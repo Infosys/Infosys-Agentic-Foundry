@@ -10,7 +10,7 @@ import { setSessionStart } from "../../Hooks/useAutoLogout";
 import useErrorHandler from "../../Hooks/useErrorHandler";
 import axios from "axios";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
-import ContactModal from "./ContactModal";
+import { encodePassword } from "../../utils/encodeUtils";
 import "./login.css";
 
 function LoginScreen() {
@@ -19,10 +19,8 @@ function LoginScreen() {
   const { handleApiError } = useErrorHandler(); // centralized handlers
 
   // numeric constants to avoid magic-number lint errors
-  const AUTOFILL_TIMEOUT_MS = 100;
-  const AUTOFILL_FOCUS_TIMEOUT_MS = 50;
   const PASSWORD_MIN = 6;
-  const PASSWORD_MAX = 15;
+  const PASSWORD_MAX = 50;
   const CLEAR_MSG_TIMEOUT_MS = 3000;
 
   const [email, setEmail] = useState("");
@@ -50,48 +48,62 @@ function LoginScreen() {
   // conflict / pending credentials
   const [pendingCredentials, setPendingCredentials] = useState(null);
   const [showConflictModal, setShowConflictModal] = useState(false);
-
-  // contact modal state
-  const [showContactModal, setShowContactModal] = useState(false);
-
-  // Password change modal state (when must_change_password is true)
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [changePasswordEmail, setChangePasswordEmail] = useState("");
-  const [currentPasswordInput, setCurrentPasswordInput] = useState("");
-  const [newPasswordInput, setNewPasswordInput] = useState("");
-  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+  const [currentPwdInput, setCurrentPwdInput] = useState("");
+  const [newPwdInput, setNewPwdInput] = useState("");
+  const [confirmPwdInput, setConfirmPwdInput] = useState("");
   const [showCurrentPwd, setShowCurrentPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
   const [changePasswordError, setChangePasswordError] = useState("");
   const [changePasswordSuccess, setChangePasswordSuccess] = useState("");
-  // Temporary token for change-password API call (not stored in cookies to prevent auto-login)
   const tempAuthTokenRef = useRef(null);
 
   // Function to check for autofilled values (stable via useCallback)
+  // Validates DOM-read values against strict allowlist to mitigate XSS risk
   const checkForAutofill = useCallback(() => {
     const emailInput = document.querySelector('input[name="Email"]');
-    if (emailInput && emailInput.value && emailInput.value !== email) {
-      const emailValue = emailInput.value;
-      setEmail(emailValue);
+    if (!emailInput || !emailInput.value || emailInput.value === email) return;
 
-      // Validate the autofilled email without triggering onChange
-      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-      if (emailValue) {
-        if (!emailRegex.test(emailValue)) {
-          setErrEmail("Please enter a valid email address");
-        } else {
-          setErrEmail("");
-        }
-      }
+    // Strict allowlist: only permit valid email characters (alphanumeric, @, ., _, +, -)
+    const emailAllowlist = /^[a-zA-Z0-9._%+@-]+$/;
+    const rawValue = String(emailInput.value).substring(0, 254).trim();
+    if (!rawValue || !emailAllowlist.test(rawValue)) return;
 
-      // Clear validation error if email is filled
-      if (validationError && emailValue) {
-        setValidationError("");
-      }
+    setEmail(rawValue);
+
+    // Validate the autofilled email format
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(rawValue)) {
+      setErrEmail("Please enter a valid email address");
+    } else {
+      setErrEmail("");
+    }
+
+    // Clear validation error if email is filled
+    if (validationError && rawValue) {
+      setValidationError("");
     }
   }, [email, validationError]);
+
+  // Check if superadmin exists — if not, redirect to register page
+  useEffect(() => {
+    let mounted = true;
+    const checkSuperadmin = async () => {
+      try {
+        const response = await axios.get(`${BASE_URL}${APIs.SUPERADMIN_EXISTS}`);
+        if (mounted && response.data?.superadmin_exists === false) {
+          navigate("/infy-agent/service-register", { replace: true });
+        }
+      } catch (err) {
+        console.error("Failed to check superadmin existence:", err);
+      }
+    };
+    checkSuperadmin();
+    return () => { mounted = false; };
+  }, [navigate]);
 
   // Fetch departments (domains) for the dropdown using direct axios to avoid auth interceptor issues
   useEffect(() => {
@@ -137,18 +149,26 @@ function LoginScreen() {
   // Check for autofilled values periodically
   // (effect depends on stable checkForAutofill via useCallback)
   useEffect(() => {
-    // Check for autofill after component mounts and when page loads
-    const timeoutId = setTimeout(checkForAutofill, AUTOFILL_TIMEOUT_MS);
+    // Check for autofill after component mounts using rAF (avoids setTimeout sink)
+    let rafId = requestAnimationFrame(() => {
+      rafId = requestAnimationFrame(checkForAutofill);
+    });
+    let focusTimerId = null;
 
     // Add event listeners for when autofill might occur
     const handlePageLoad = () => checkForAutofill();
-    const handleFocus = () => setTimeout(checkForAutofill, AUTOFILL_FOCUS_TIMEOUT_MS);
+    const handleFocus = () => {
+      // Clear any pending focus rAF before scheduling a new one
+      if (focusTimerId) cancelAnimationFrame(focusTimerId);
+      focusTimerId = requestAnimationFrame(checkForAutofill);
+    };
 
     window.addEventListener("load", handlePageLoad);
     document.addEventListener("focusin", handleFocus);
 
     return () => {
-      clearTimeout(timeoutId);
+      cancelAnimationFrame(rafId);
+      if (focusTimerId) cancelAnimationFrame(focusTimerId);
       window.removeEventListener("load", handlePageLoad);
       document.removeEventListener("focusin", handleFocus);
     };
@@ -206,9 +226,7 @@ function LoginScreen() {
       if (value?.length < PASSWORD_MIN) {
         setErrPass(`Password must be atleast ${PASSWORD_MIN} characters long`);
       } else if (value?.length > PASSWORD_MAX) {
-        setErrPass("Password is too long");
-      } else if (!passwordRegex.test(value)) {
-        setErrPass("Password must have 1 letter,1 number and 1 special character");
+        setErrPass(`Password must be at most ${PASSWORD_MAX} characters long`);
       } else {
         setErrPass("");
       }
@@ -249,7 +267,7 @@ function LoginScreen() {
         // Send selected department to backend using correct payload
         const users = await postData(APIs.LOGIN, {
           email_id: actualEmailValue,
-          password: passwordRef.current,
+          password: encodePassword(passwordRef.current),
           department_name: selectedDepartment,
         });
 
@@ -321,17 +339,17 @@ function LoginScreen() {
     // Validate passwords
     const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/;
 
-    if (!currentPasswordInput || !newPasswordInput || !confirmPasswordInput) {
+    if (!currentPwdInput || !newPwdInput || !confirmPwdInput) {
       setChangePasswordError("All fields are required");
       return;
     }
 
-    if (!passwordRegex.test(newPasswordInput)) {
+    if (!passwordRegex.test(newPwdInput)) {
       setChangePasswordError("Password must be at least 8 characters, include one uppercase, one number, and one special character");
       return;
     }
 
-    if (newPasswordInput !== confirmPasswordInput) {
+    if (newPwdInput !== confirmPwdInput) {
       setChangePasswordError("New passwords do not match");
       return;
     }
@@ -345,7 +363,7 @@ function LoginScreen() {
       const token = tempAuthTokenRef.current;
       const headers = { "Content-Type": "application/json", accept: "application/json" };
       if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await axios.post(`${BASE_URL}${APIs.CHANGE_PASSWORD}`, { current_password: currentPasswordInput, new_password: newPasswordInput }, { headers });
+      const res = await axios.post(`${BASE_URL}${APIs.CHANGE_PASSWORD}`, { current_password: encodePassword(currentPwdInput), new_password: encodePassword(newPwdInput) }, { headers });
       const response = res?.data;
 
       setChangePasswordSuccess(response?.message || response?.detail || "Password changed successfully! Please login with your new password.");
@@ -353,9 +371,9 @@ function LoginScreen() {
       // Reset form and close modal after delay
       setTimeout(() => {
         setShowChangePasswordModal(false);
-        setCurrentPasswordInput("");
-        setNewPasswordInput("");
-        setConfirmPasswordInput("");
+        setCurrentPwdInput("");
+        setNewPwdInput("");
+        setConfirmPwdInput("");
         setChangePasswordSuccess("");
         // Clear the password field so user can enter new password
         passwordRef.current = "";
@@ -450,13 +468,13 @@ function LoginScreen() {
     if (!pendingCredentials) return;
     const creds = pendingCredentials;
     setShowConflictModal(false);
-    // Use existing onSubmit pipeline but with forceReplace pre step
+    // Use existing onSubmit workflow but with forceReplace pre step
     // We'll call the same API manually to respect existing backend flow
     (async () => {
       try {
         const users = await postData(APIs.LOGIN, {
           email_id: creds.email,
-          password: creds.password,
+          password: encodePassword(creds.password),
           department_name: creds.department_name || selectedDepartment,
         });
         if (users?.approval) {
@@ -560,8 +578,8 @@ function LoginScreen() {
             placeholder="Email"
             value={email}
             onChange={(e) => emailChange(e.target.value)}
-            onFocus={() => setTimeout(checkForAutofill, AUTOFILL_TIMEOUT_MS)}
-            onBlur={() => setTimeout(checkForAutofill, AUTOFILL_TIMEOUT_MS)}
+            onFocus={checkForAutofill}
+            onBlur={checkForAutofill}
             tabIndex={1}
             autoComplete="username"
             onKeyDown={(e) => {
@@ -589,7 +607,7 @@ function LoginScreen() {
             className="input inputWithIcon inputPassword"
             placeholder="Password"
             autoComplete="current-password"
-            maxLength={18}
+            maxLength={PASSWORD_MAX}
             onChange={(e) => passwordChange(e.target.value)}
             tabIndex={2}
             onFocus={() => setHasPasswordInput(true)}
@@ -650,14 +668,6 @@ function LoginScreen() {
           >
             Register
           </button>
-          <button
-            type="button"
-            className="secondaryBtn"
-            onClick={() => setShowContactModal(true)}
-            tabIndex={5}
-          >
-            Contact
-          </button>
         </div>
         <button type="submit" className="submitBtn" tabIndex={6}>
           Sign In
@@ -698,12 +708,6 @@ function LoginScreen() {
         </div>
       )}
 
-      {/* Contact Modal */}
-      <ContactModal
-        isOpen={showContactModal}
-        onClose={() => setShowContactModal(false)}
-      />
-
       {/* Change Password Modal (when must_change_password is true) - rendered via portal */}
       {showChangePasswordModal && createPortal(
         <div className="changePasswordOverlay" role="dialog" aria-modal="true">
@@ -717,8 +721,8 @@ function LoginScreen() {
                   <input
                     type={showCurrentPwd ? "text" : "password"}
                     className="changePasswordInput"
-                    value={currentPasswordInput}
-                    onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                    value={currentPwdInput}
+                    onChange={(e) => setCurrentPwdInput(e.target.value)}
                     placeholder="Current Password"
                     autoComplete="current-password"
                   />
@@ -738,8 +742,8 @@ function LoginScreen() {
                   <input
                     type={showNewPwd ? "text" : "password"}
                     className="changePasswordInput"
-                    value={newPasswordInput}
-                    onChange={(e) => { setNewPasswordInput(e.target.value); setChangePasswordError(""); }}
+                    value={newPwdInput}
+                    onChange={(e) => { setNewPwdInput(e.target.value); setChangePasswordError(""); }}
                     placeholder="New Password"
                     autoComplete="new-password"
                   />
@@ -751,7 +755,7 @@ function LoginScreen() {
                     <SVGIcons icon={showNewPwd ? "eye-off" : "eye"} width={18} height={18} stroke="var(--muted)" />
                   </button>
                 </div>
-                {newPasswordInput && !/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/.test(newPasswordInput) && (
+                {newPwdInput && !/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+[\]{};':"\\|,.<>/?]).{8,}$/.test(newPwdInput) && (
                   <span className="changePasswordFieldError">Must be at least 8 characters, include one uppercase letter, one number, and one special character</span>
                 )}
               </div>
@@ -762,8 +766,8 @@ function LoginScreen() {
                   <input
                     type={showConfirmPwd ? "text" : "password"}
                     className="changePasswordInput"
-                    value={confirmPasswordInput}
-                    onChange={(e) => { setConfirmPasswordInput(e.target.value); setChangePasswordError(""); }}
+                    value={confirmPwdInput}
+                    onChange={(e) => { setConfirmPwdInput(e.target.value); setChangePasswordError(""); }}
                     placeholder="Confirm New Password"
                     autoComplete="new-password"
                   />
@@ -775,7 +779,7 @@ function LoginScreen() {
                     <SVGIcons icon={showConfirmPwd ? "eye-off" : "eye"} width={18} height={18} stroke="var(--muted)" />
                   </button>
                 </div>
-                {confirmPasswordInput && confirmPasswordInput !== newPasswordInput && (
+                {confirmPwdInput && confirmPwdInput !== newPwdInput && (
                   <span className="changePasswordFieldError">Passwords do not match</span>
                 )}
               </div>
@@ -788,7 +792,7 @@ function LoginScreen() {
               <button
                 type="submit"
                 className="changePasswordSubmitBtn"
-                disabled={changePasswordLoading || !currentPasswordInput || !newPasswordInput || !confirmPasswordInput}
+                disabled={changePasswordLoading || !currentPwdInput || !newPwdInput || !confirmPwdInput}
               >
                 {changePasswordLoading ? "Updating..." : "Update Password"}
               </button>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Cookies from "js-cookie";
 import axios from "axios";
+import { getDepartmentFromToken, getRoleFromToken } from "../../utils/jwtUtils";
 
 import styles from "./AgentAssignment.module.css";
 import { useMessage } from "../../Hooks/MessageContext";
@@ -53,12 +54,20 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
       execute_access: "execute_access",
     };
 
+    // Display name mapping for entity keys
+    const entityDisplayNameMap = {
+      tools: "Tools",
+      agents: "Agents",
+      mcp_servers: "MCP Servers",
+      workflows: "Workflows",
+    };
+
     // Build Tools and Agents categories from nested access objects
     accessCategories.forEach((accessType) => {
       if (perms[accessType] && typeof perms[accessType] === "object") {
         Object.keys(perms[accessType]).forEach((entity) => {
-          // Capitalize first letter for display (tools -> Tools, agents -> Agents)
-          const categoryName = entity.charAt(0).toUpperCase() + entity.slice(1);
+          // Use display name map for proper casing, fallback to capitalize first letter
+          const categoryName = entityDisplayNameMap[entity] || entity.charAt(0).toUpperCase() + entity.slice(1);
           if (!dynamicPermissions[categoryName]) {
             dynamicPermissions[categoryName] = {};
           }
@@ -67,9 +76,18 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
       }
     });
 
+    // Inject export_agents_access directly into the Agents category
+    if (typeof perms.export_agents_access === "boolean") {
+      if (!dynamicPermissions["Agents"]) {
+        dynamicPermissions["Agents"] = {};
+      }
+      dynamicPermissions["Agents"]["export_agents_access"] = Boolean(perms.export_agents_access);
+    }
+
     // Build other categories from standalone permission flags
+    // Exclude export_agents_access since it's handled above
     const standalonePermissions = Object.keys(perms).filter(
-      (key) => !accessCategories.includes(key) && typeof perms[key] === "boolean"
+      (key) => !accessCategories.includes(key) && key !== "export_agents_access" && typeof perms[key] === "boolean"
     );
 
     // Group standalone permissions by category
@@ -108,6 +126,8 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
     // Ensure key permission categories always exist with expected permissions
     // These are core permissions that should always be visible in the UI
     const ensuredPermissions = {
+      "MCP Servers": ["read", "create", "update", "delete"],
+      "Workflows": ["read", "create", "update", "delete"],
       "Other Features": ["vault_access", "data_connector_access", "evaluation_access", "knowledgebase_access"],
       "Chat": ["execution_steps_access", "tool_verifier_flag_access", "plan_verifier_flag_access", "online_evaluation_flag_access", "validator_access", "file_context_access", "canvas_view_access", "context_access"],
     };
@@ -119,8 +139,30 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
       permKeys.forEach((permKey) => {
         // Only add if not already present from API
         if (!(permKey in dynamicPermissions[category])) {
-          // Check if API returned this permission at root level
-          dynamicPermissions[category][permKey] = perms[permKey] === true;
+          // For nested entity categories, check the corresponding access object
+          const reverseEntityMap = {
+            "MCP Servers": "mcp_servers",
+            "Workflows": "workflows",
+            "Tools": "tools",
+            "Agents": "agents",
+          };
+          const entityKey = reverseEntityMap[category];
+          const reverseAccessMap = {
+            read: "read_access",
+            create: "add_access",
+            update: "update_access",
+            delete: "delete_access",
+            execute_access: "execute_access",
+          };
+          const accessKey = reverseAccessMap[permKey];
+
+          if (entityKey && accessKey && perms[accessKey] && typeof perms[accessKey] === "object") {
+            // Check nested access value (e.g., perms.read_access.mcp_servers)
+            dynamicPermissions[category][permKey] = perms[accessKey][entityKey] === true;
+          } else {
+            // Check if API returned this permission at root level
+            dynamicPermissions[category][permKey] = perms[permKey] === true;
+          }
         }
       });
     });
@@ -252,7 +294,7 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
         };
 
         // --- CASCADING LOGIC: Agents create/update enables Tools read for admin/superadmin ---
-        const userRole = Cookies.get("role");
+        const userRole = getRoleFromToken();
         const isAdminOrSuper = userRole && ["admin", "superadmin"].includes(userRole.toLowerCase().replace(/\s|_/g, ""));
         if (
           isAdminOrSuper &&
@@ -265,6 +307,22 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
           updates["Tools"] = {
             ...prev["Tools"],
             read: true,
+          };
+        }
+
+        // When delete is enabled, also enable update
+        if (permission === "delete" && newValue && "update" in (prev[category] || {})) {
+          updates[category] = {
+            ...updates[category],
+            update: true,
+          };
+        }
+
+        // When update is disabled, also disable delete
+        if (permission === "update" && !newValue && "delete" in (prev[category] || {})) {
+          updates[category] = {
+            ...updates[category],
+            delete: false,
           };
         }
 
@@ -318,27 +376,31 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
         permissionsData[accessKey] = {};
       });
 
-      // Populate Tools and Agents permissions
-      ["Tools", "Agents"].forEach((category) => {
-        if (permissions[category]) {
-          const entityKey = category.toLowerCase();
-          Object.keys(permissions[category]).forEach((perm) => {
-            const apiAccessKey = accessMapping[perm];
-            if (apiAccessKey) {
-              permissionsData[apiAccessKey][entityKey] = permissions[category][perm] || false;
-            }
-          });
-        }
-      });
+      // Known nested entity categories (only these go into nested access objects)
+      const nestedEntityCategories = ["tools", "agents", "mcp_servers", "workflows"];
 
-      // Add standalone permissions from other categories
-      Object.keys(permissions).forEach((category) => {
-        if (category !== "Tools" && category !== "Agents") {
-          Object.keys(permissions[category]).forEach((perm) => {
-            // These are direct boolean flags in the API
-            permissionsData[perm] = permissions[category][perm] || false;
-          });
-        }
+      // Reverse mapping from display name to entity key for save
+      const categoryToEntityKey = {
+        "Tools": "tools",
+        "Agents": "agents",
+        "MCP Servers": "mcp_servers",
+        "Workflows": "workflows",
+      };
+
+      // Process each category
+      Object.entries(permissions).forEach(([category, perms]) => {
+        const entityKey = categoryToEntityKey[category] || category.toLowerCase();
+        const isNestedEntity = nestedEntityCategories.includes(entityKey);
+
+        Object.entries(perms).forEach(([permKey, permValue]) => {
+          if (isNestedEntity && accessMapping[permKey]) {
+            // This is a nested access permission (Tools/Agents/MCP Servers/Workflows)
+            permissionsData[accessMapping[permKey]][entityKey] = Boolean(permValue);
+          } else {
+            // This is a standalone boolean permission (goes at top level)
+            permissionsData[permKey] = Boolean(permValue);
+          }
+        });
       });
 
       const response = await postData(APIs.SET_ROLE_PERMISSIONS, permissionsData);
@@ -438,6 +500,8 @@ const RolePermissionsSection = ({ selectedRole, userDepartment }) => {
       const iconMap = {
         tools: "fa-screwdriver-wrench",
         agents: "fa-robot",
+        "mcp servers": "server",
+        workflows: "fa-project-diagram",
         vault: "vault-lock",
         "data connectors": "data-connectors",
         evaluation: "clipboard-check",
@@ -531,9 +595,9 @@ const RoleAgentAssignment = ({ externalSearchTerm = "", onPlusClickRef, onClearS
   const { addMessage } = useMessage();
   const { postData, deleteData, fetchData } = useFetch();
 
-  // Get user's department and role from cookies
-  const userDepartment = Cookies.get("department");
-  const userRole = Cookies.get("role");
+  // Get user's department and role from token
+  const userDepartment = getDepartmentFromToken();
+  const userRole = getRoleFromToken();
 
   // Check if user is Super Admin
   const isSuperAdmin = userRole?.toLowerCase().replace(/[\s_-]/g, "") === "superadmin";

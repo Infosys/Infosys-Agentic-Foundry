@@ -17,7 +17,7 @@ Exported agents are useful for:
 
 **Key Features:**
 
-- **SSE Streaming**: The exported agents include Server-Sent Events (SSE) support for real-time inference streaming, enabling pipeline-based processing and live response streaming
+- **SSE Streaming**: The exported agents include Server-Sent Events (SSE) support for real-time inference streaming, enabling workflow-based processing and live response streaming
 - **Validator Support**: Built-in validator configurations are included in the export, ensuring workflow integrity and data validation across agent operations
 - **Tool Dependency Export**: All tool dependencies and base requirements are automatically packaged with the agent export, ensuring complete portability
 
