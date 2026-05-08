@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 import NewCommonDropdown from "../commonComponents/NewCommonDropdown";
 import styles from "../../css_modules/ToolOnboarding.module.css";
 import { useToolsAgentsService } from "../../services/toolService";
-import { copyToClipboard } from "../../utils/clipboardUtils";
+import { copyToClipboard, downloadAsFile } from "../../utils/clipboardUtils";
 import { getRoleFromToken, getEmailFromToken, getUserNameFromToken } from "../../utils/jwtUtils";
 import SVGIcons from "../../Icons/SVGIcons.js";
 import ZoomPopup from "../commonComponents/ZoomPopup.jsx";
@@ -573,8 +573,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         // Try all possible locations for server ID
         const serverId = response?.result?.tool_id || "";
 
-        console.log("[AddServer] Extracted serverId:", serverId); // Debug log
-
         if (serverId) {
           const success = await refreshServerDataAndStayOpen(serverId, "created");
           if (success) {
@@ -583,7 +581,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         }
 
         // Fallback: If serverId not found or refresh fails, still refresh paginated list
-        console.log("[AddServer] Auto-transition failed, calling setRefreshPaginated in fallback");
         const msg = response?.result?.message || response?.message || "Server added successfully!";
         addMessage(msg, "success");
 
@@ -1108,7 +1105,6 @@ export default function AddServer({ editMode = false, serverData = null, onClose
         setNonRemovableTags([generalInTags]);
       }
     } else {
-      console.log("[AddServer] No tags to set. rawTags:", rawTags);
     }
 
     // Turn off loading state after all initialization is complete
@@ -1342,14 +1338,17 @@ export default function AddServer({ editMode = false, serverData = null, onClose
   );
 
   const handleCopy = async (key, text) => {
-    const success = await copyToClipboard(text);
-    if (success) {
+    const result = await copyToClipboard(text);
+    if (result === "success") {
       setCopiedStates((prev) => ({ ...prev, [key]: true }));
       setTimeout(() => {
         setCopiedStates((prev) => ({ ...prev, [key]: false }));
       }, 2000);
+    } else if (result === "too_large") {
+      addMessage("Code is too large to copy. Downloading as file instead...", "error");
+      downloadAsFile(text, "code.py");
     } else {
-      console.error("Failed to copy text to clipboard");
+      addMessage("Failed to copy text to clipboard", "error");
     }
   };
   const handleZoomClick = (title, content) => {

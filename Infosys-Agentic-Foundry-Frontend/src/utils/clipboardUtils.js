@@ -11,17 +11,27 @@
  * 5. User denied clipboard permissions
  */
 
+// Max safe size for clipboard copy (100KB) to prevent browser freeze/crash
+// Even the modern clipboard API can cause memory pressure and crash tabs with very large text
+const MAX_COPY_SIZE = 100 * 1024;
+
 /**
  * Copy text to clipboard with fallback support
  * @param {string} text - The text to copy
- * @returns {Promise<boolean>} - Whether the copy was successful
+ * @returns {Promise<"success"|"too_large"|"failed">} - Result of the copy operation
  */
 export const copyToClipboard = async (text) => {
+  // Guard: block ALL clipboard methods for very large text to prevent browser crash
+  if (text && text.length > MAX_COPY_SIZE) {
+    console.warn(`Text too large to copy (${(text.length / 1024).toFixed(0)}KB). Limit is ${MAX_COPY_SIZE / 1024}KB. Use download instead.`);
+    return "too_large";
+  }
+
   // Modern async clipboard API (requires HTTPS or localhost)
   if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
     try {
       await navigator.clipboard.writeText(text);
-      return true;
+      return "success";
     } catch (err) {
       // Fall through to legacy method if permission denied or focus lost
       console.warn("Clipboard API failed, trying fallback:", err);
@@ -43,10 +53,31 @@ export const copyToClipboard = async (text) => {
     textArea.select();
     const success = document.execCommand("copy");
     document.body.removeChild(textArea);
-    return success;
+    return success ? "success" : "failed";
   } catch (err) {
     console.error("Fallback copy failed:", err);
-    return false;
+    return "failed";
+  }
+};
+
+/**
+ * Download text content as a file — fallback when clipboard copy is not possible
+ * @param {string} text - The text content to download
+ * @param {string} [filename="code.py"] - The filename for the download
+ */
+export const downloadAsFile = (text, filename = "code.py") => {
+  try {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("Download failed:", err);
   }
 };
 

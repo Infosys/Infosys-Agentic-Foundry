@@ -26,7 +26,7 @@ import AccessControlGuide from "../commonComponents/AccessControlGuide";
 import { FullModal } from "../../iafComponents/GlobalComponents/FullModal";
 
 import { sanitizeFormField, isValidEvent } from "../../utils/sanitization";
-import { copyToClipboard } from "../../utils/clipboardUtils";
+import { copyToClipboard, downloadAsFile } from "../../utils/clipboardUtils";
 import { encodePassword } from "../../utils/encodeUtils";
 import ConfirmationModal from "../commonComponents/ToastMessages/ConfirmationPopup";
 
@@ -1106,14 +1106,17 @@ function ToolOnBoarding(props) {
   };
 
   const handleCopy = async (key, text) => {
-    const success = await copyToClipboard(text);
-    if (success) {
+    const result = await copyToClipboard(text);
+    if (result === "success") {
       setCopiedStates((prev) => ({ ...prev, [key]: true }));
       setTimeout(() => {
         setCopiedStates((prev) => ({ ...prev, [key]: false }));
       }, COPY_FEEDBACK_MS);
+    } else if (result === "too_large") {
+      addMessage("Code is too large to copy. Downloading as file instead...", "error");
+      downloadAsFile(text, `${formData.name || "code"}.py`);
     } else {
-      console.error("Failed to copy text to clipboard");
+      addMessage("Failed to copy text to clipboard", "error");
     }
   };
 
