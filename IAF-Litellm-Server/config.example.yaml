@@ -1,0 +1,111 @@
+# LiteLLM Proxy Configuration Example
+#
+# INSTRUCTIONS:
+# 1. Copy this file to 'config.yaml'
+# 2. Replace all placeholder values with your actual API keys and endpoints
+# 3. Enable RAI guardrails via .env (GUARDRAILS_PRE_CALL_ENABLED / GUARDRAILS_POST_CALL_ENABLED)
+# 4. Never commit config.yaml to git (it's in .gitignore)
+
+model_list:
+  # gpt-4o with multiple keys for redundancy
+  # (add more entries with the same model_name to load-balance across keys/regions)
+  - model_name: gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      base_model: gpt-4o
+      api_base: https://YOUR_AZURE_ENDPOINT.openai.azure.com/
+      api_key: YOUR_AZURE_API_KEY
+      client: azure
+    model_info:
+      tpm: 1200000
+      rpm: 500
+
+  - model_name: gpt-5-chat
+    litellm_params:
+      model: azure/gpt-5-chat
+      base_model: gpt-5-chat
+      api_base: https://YOUR_AZURE_ENDPOINT.openai.azure.com/
+      api_key: YOUR_AZURE_API_KEY
+      client: azure
+      # Increase if your network/proxy adds latency; avoids APITimeoutError → cooldown of a lone deployment
+      timeout: 180
+    model_info:
+      tpm: 150000
+      rpm: 600
+
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: azure/gpt-5-mini
+      base_model: gpt-5-mini
+      api_base: https://YOUR_AZURE_ENDPOINT.openai.azure.com/
+      api_key: YOUR_AZURE_API_KEY
+      client: azure
+      timeout: 180
+    model_info:
+      tpm: 120000
+      rpm: 500
+
+  - model_name: gpt-5-nano
+    litellm_params:
+      model: azure/gpt-5-nano
+      base_model: gpt-5-nano
+      api_base: https://YOUR_AZURE_ENDPOINT.openai.azure.com/
+      api_key: YOUR_AZURE_API_KEY
+      client: azure
+      timeout: 180
+    model_info:
+      tpm: 100000
+      rpm: 500
+
+
+general_settings:
+  store_model_in_db: false
+  disable_spend_logs: true
+
+
+litellm_settings:
+  fallbacks:
+    - {gpt-4o: [gpt-5-mini]}
+    - {gpt-35-turbo: [gpt-4o]}
+    - {gpt-4.1: [gpt-4o]}
+    - {gpt-5-chat: [gpt-4o]}
+    - {gpt-5-mini: [gpt-4o]}
+    - {gpt-5-nano: [gpt-5-mini, gpt-4o]}
+  context_window_fallbacks:
+    - {gpt-4o: [gpt-5-chat]}
+  # Default fallback should have higher rate limits
+  default_fallbacks: [gpt-4o]
+  drop_params: false
+  logging: true
+
+
+proxy_config:
+  http_proxy: ""
+  https_proxy: ""                              # e.g. "http://your-corp-proxy:443"
+  no_proxy: "localhost,127.0.0.1"
+
+
+router_settings:
+  routing_strategy: "usage-based-routing-v2"   # supports TPM/RPM tracking & load balancing
+  num_retries: 3
+  enable_pre_call_checks: true                 # check available TPM/RPM before routing
+  retry_policy:
+    ContentPolicyViolationErrorRetries: 0      # don't retry on guardrail violations
+    BadRequestErrorRetries: 0
+    TimeoutErrorRetries: 3
+    InternalServerErrorRetries: 3
+    RateLimitErrorRetries: 3
+  allowed_fails_policy:
+    ContentPolicyViolationErrorAllowedFails: 0
+  allowed_fails: 0
+  cooldown_time: 60                            # seconds a deployment is sidelined after a failure
+
+
+ollama_settings:
+  enable_auto_discovery: false                 # true to auto-discover local Ollama models at startup
+  base_url: "http://localhost:11434"
+
+
+# Guardrails: enable/disable in .env — GUARDRAILS_PRE_CALL_ENABLED, GUARDRAILS_POST_CALL_ENABLED.
+# If you use LiteLLM Proxy with custom guardrails, add a `guardrails:` list per LiteLLM docs
+# (guardrail class, mode, guardrail_on_fail). Runtime RAI on/off is still controlled by .env.
