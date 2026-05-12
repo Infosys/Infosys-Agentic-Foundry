@@ -1,0 +1,75 @@
+# ==============================================================
+#  Grafana — GCP (GKE) — Deployment Template
+#
+#  PURPOSE:
+#  Deploys Grafana to GKE for metrics and log visualization.
+#  The admin password is read from the Kubernetes Secret
+#  'infra-secrets' (key: grafana-admin-password) — no
+#  credentials are stored in this file.
+#
+#  HOW TO USE:
+#  1. Replace every <PLACEHOLDER> below with your actual value.
+#  2. Create the infra-secrets Secret first (if not already done):
+#
+#     kubectl apply -f k8s/infra/infra-secrets-template.yaml
+#
+#  3. Apply this manifest:
+#
+#     kubectl apply -f k8s/infra/gcp/iaf-grafana.yaml
+#
+#  PLACEHOLDERS:
+#  <YOUR_NAMESPACE>   Kubernetes namespace (must match the
+#                     namespace where infra-secrets was created)
+#  <GRAFANA_IMAGE>    Full image reference, e.g.:
+#                       - Public:   grafana/grafana:11.2.0
+#                       - Internal: <your-registry>/grafana:<tag>
+# ==============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: <YOUR_NAMESPACE>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: <GRAFANA_IMAGE>
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: infra-secrets
+              key: grafana-admin-password
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: <YOUR_NAMESPACE>
+  annotations:
+    cloud.google.com/<load-balancer-type>: "Internal"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 3000
+    targetPort: 3000
+  selector:
+    app: grafana

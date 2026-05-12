@@ -1,0 +1,98 @@
+# ==============================================================
+#  Phoenix (Arize) — Azure (AKS) — Deployment Template
+#
+#  PURPOSE:
+#  Deploys the Arize Phoenix LLM observability service to AKS.
+#  The database connection URL is read from the Kubernetes Secret
+#  'infra-secrets' (key: phoenix-db-url) — no credentials are
+#  stored in this file.
+#
+#  HOW TO USE:
+#  1. Replace every <PLACEHOLDER> below with your actual value.
+#  2. Create the infra-secrets Secret first (if not already done):
+#
+#     kubectl apply -f k8s/infra/infra-secrets-template.yaml
+#
+#  3. Apply this manifest:
+#
+#     kubectl apply -f k8s/infra/azure/iaf-arpx.yaml
+#
+#  PLACEHOLDERS:
+#  <YOUR_NAMESPACE>    Kubernetes namespace where Phoenix runs
+#                      (must match the namespace in infra-secrets-template.yaml)
+#  <PHOENIX_IMAGE>     Full image reference, e.g.:
+#                        - Public:   arizephoenix/phoenix:latest
+#                        - Internal: <your-registry>/arizephoenix/phoenix:<tag>
+# ==============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phoenix
+  namespace: <YOUR_NAMESPACE>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phoenix
+  template:
+    metadata:
+      labels:
+        app: phoenix
+    spec:
+      containers:
+        - name: phoenix
+          image: <PHOENIX_IMAGE>
+          ports:
+            - name: http
+              containerPort: 6006
+            - name: grpc
+              containerPort: 4317
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: PHOENIX_SQL_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: infra-secrets
+                  key: phoenix-db-url
+            - name: PHOENIX_PORT
+              value: "6006"
+            - name: PHOENIX_GRPC_PORT
+              value: "4317"
+            - name: PHOENIX_WORKING_DIR
+              value: "/mnt/data"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          volumeMounts:
+            - mountPath: /mnt/data
+              name: phoenix-data
+      volumes:
+        - name: phoenix-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phoenix
+  namespace: <YOUR_NAMESPACE>
+  annotations:
+    service.beta.kubernetes.io/<load-balencer>: "true"
+spec:
+  selector:
+    app: phoenix
+  ports:
+    - name: http
+      protocol: TCP
+      port: 6006
+      targetPort: 6006
+    - name: grpc
+      protocol: TCP
+      port: 4317
+      targetPort: 4317
+  type: LoadBalancer

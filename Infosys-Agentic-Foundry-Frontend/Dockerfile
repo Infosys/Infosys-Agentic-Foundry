@@ -21,11 +21,6 @@ RUN npm run build --verbose
 # Stage 2: Serve the app using Nginx
 FROM nginx:alpine
 
-# Disable SSL verification for apk (corporate proxy issue)
-# RUN echo "http://dl-cdn.alpinelinux.org/alpine/v3.23/main" > /etc/apk/repositories && \
-#     echo "http://dl-cdn.alpinelinux.org/alpine/v3.23/community" >> /etc/apk/repositories && \
-#     apk add --no-cache --allow-untrusted gettext
-
 # Copy build output to Nginx's public directory
 COPY --from=build /app/build /usr/share/nginx/html
 

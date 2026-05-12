@@ -1,0 +1,615 @@
+# ============================================================
+#  TEMPLATE: Build and Deploy to AKS (Azure Kubernetes Service)
+#
+#  HOW TO USE THIS TEMPLATE:
+#  1. Search for every occurrence of <PLACEHOLDER> below and
+#     replace it with your actual value.
+#  2. Add the required GitHub Secrets listed in the SECRETS
+#     section to your repository before running this pipeline.
+#  3. Ensure your self-hosted runner has the correct label and
+#     all required tools installed (az CLI, docker, kubectl,
+#     kubelogin).
+#  4. Rename this file to deploy-aks.yml and place it in
+#     .github/workflows/ in your repository.
+# ============================================================
+
+name: Build and Deploy to AKS
+
+# ── Triggers ─────────────────────────────────────────────────
+# Auto-trigger on push to your branch, or run manually.
+on:
+  push:
+    branches:
+      - '<YOUR_BRANCH_NAME>'        # ← Change to your deployment branch (e.g. main, develop)
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: 'Manual version input (informational only)'
+        required: false
+        default: 'latest'
+
+# ── Pipeline-level environment variables ─────────────────────
+# Non-sensitive values are read from GitHub Variables (vars.*)
+# Sensitive values are read from GitHub Secrets (secrets.*)
+# Nothing is hardcoded here — safe to commit to public GitHub.
+env:
+  # ── Non-sensitive config → stored as GitHub Variables ────────
+  # GitHub Repo → Settings → Secrets and variables → Variables → New repository variable
+  AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}  # e.g. myregistry.azurecr.io
+  RESOURCE_GROUP:            ${{ vars.RESOURCE_GROUP }}            # e.g. my-rg-prod
+  CLUSTER_NAME:              ${{ vars.CLUSTER_NAME }}              # e.g. aks-my-cluster
+  NAMESPACE:                 ${{ vars.NAMESPACE }}                 # K8s namespace for the app
+  DEPLOY_NAME:               ${{ vars.DEPLOY_NAME }}               # K8s Deployment name
+  CONTAINER_NAME:            ${{ vars.CONTAINER_NAME }}            # Container name inside the pod
+  SHORT_NAME:                ${{ vars.SHORT_NAME }}                # Short name for ACR image tagging
+
+  # ── Fixed infra values — no change needed ────────────────────
+  INFRA_NAMESPACE_1: 'kafkatest'       # Namespace for ES, OTel, Phoenix, Grafana
+  INFRA_NAMESPACE_2: 'iafv4'          # Namespace for Redis
+  INFRA_PATH: 'k8s/infra/azure'       # Azure-specific LB annotations pre-configured
+
+# ── GITHUB VARIABLES (non-sensitive) ─────────────────────────
+# GitHub Repo → Settings → Secrets and variables → Variables → New repository variable
+#
+#   Variable Name              Example Value
+#   ─────────────────────────────────────────────────────────
+#   AZURE_CONTAINER_REGISTRY   myregistry.azurecr.io
+#   RESOURCE_GROUP             my-resource-group
+#   CLUSTER_NAME               aks-my-cluster
+#   NAMESPACE                  my-app-namespace
+#   DEPLOY_NAME                my-deployment
+#   CONTAINER_NAME             my-container
+#   SHORT_NAME                 my-app
+#
+# ── GITHUB SECRETS (sensitive) ───────────────────────────────
+# GitHub Repo → Settings → Secrets and variables → Actions → New repository secret
+#
+#   Secret Name               What to Put
+#   ─────────────────────────────────────────────────────────
+#   AZURE_CLIENT_ID           Service Principal Application (Client) ID
+#   AZURE_CLIENT_SECRET       Service Principal Client Secret
+#   AZURE_TENANT_ID           Azure Active Directory Tenant ID
+#   AZURE_SUBSCRIPTION_ID     Azure Subscription ID
+#   APP_ENV_FILE              Full content of your application .env file
+# ─────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ============================================================
+  # JOB 1 — deployInfra
+  # Deploys shared infrastructure services to the cluster.
+  # Skips any service that already exists (idempotent).
+  # Outputs the LoadBalancer IPs of each infra service so the
+  # deploy job can inject them into the application secret.
+  # ============================================================
+  deployInfra:
+    name: Deploy Infrastructure Services
+    runs-on: [self-hosted, Linux, X64, '<YOUR_RUNNER_LABEL>']  # ← Change to your runner label
+    permissions:
+      contents: read
+    outputs:
+      ELASTICSEARCH_IP:  ${{ steps.collect_ips.outputs.ELASTICSEARCH_IP }}
+      OTEL_COLLECTOR_IP: ${{ steps.collect_ips.outputs.OTEL_COLLECTOR_IP }}
+      PHOENIX_IP:        ${{ steps.collect_ips.outputs.PHOENIX_IP }}
+      GRAFANA_IP:        ${{ steps.collect_ips.outputs.GRAFANA_IP }}
+      REDIS_IP:          ${{ steps.collect_ips.outputs.REDIS_IP }}
+
+    steps:
+
+      # ── 1. Checkout ──────────────────────────────────────────
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # ── 2. Azure Login ───────────────────────────────────────
+      # Authenticates using a Service Principal stored in GitHub Secrets.
+      - name: Azure login
+        shell: bash
+        run: |
+          az logout || true
+          az account clear || true
+          az login --service-principal \
+            --username "${{ secrets.AZURE_CLIENT_ID }}" \
+            --password "${{ secrets.AZURE_CLIENT_SECRET }}" \
+            --tenant  "${{ secrets.AZURE_TENANT_ID }}"
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      # ── 3. kubelogin ─────────────────────────────────────────
+      # Required for AKS clusters with Azure AD / OIDC auth.
+      - name: Set up kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: 'v0.0.25'         # Pin a version for reproducibility
+
+      # ── 4. AKS Context ───────────────────────────────────────
+      # Configures kubectl to talk to your AKS cluster.
+      - name: Get Kubernetes context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name:   ${{ env.CLUSTER_NAME }}
+          admin:          'false'
+          use-kubelogin:  'true'
+
+      # ── 5. Namespaces ─────────────────────────────────────────
+      # Creates infra namespaces if they do not already exist.
+      - name: Ensure Infrastructure Namespaces Exist
+        run: |
+          kubectl create namespace ${{ env.INFRA_NAMESPACE_1 }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace ${{ env.INFRA_NAMESPACE_2 }} --dry-run=client -o yaml | kubectl apply -f -
+
+      # ── 6. Elasticsearch ─────────────────────────────────────
+      # Applies the Elasticsearch StatefulSet manifest only on first run.
+      - name: Apply Elasticsearch
+        run: |
+          if kubectl get statefulset elasticsearch -n ${{ env.INFRA_NAMESPACE_1 }} > /dev/null 2>&1; then
+            echo "INFO: Elasticsearch already exists — skipping."
+          else
+            echo "INFO: Deploying Elasticsearch ..."
+            kubectl apply -f ${{ env.INFRA_PATH }}/iaf-es.yaml
+            echo "INFO: Elasticsearch applied successfully."
+          fi
+
+      # ── 7. Wait for Elasticsearch IP ─────────────────────────
+      # Polls up to 6 minutes (36 × 10s) for the LoadBalancer IP.
+      # The IP is needed to configure the OpenTelemetry Collector.
+      - name: Wait for Elasticsearch LoadBalancer IP
+        id: wait_es_ip
+        run: |
+          echo "--- Waiting for Elasticsearch LoadBalancer IP ---"
+          IP=""
+          for i in $(seq 1 36); do
+            IP=$(kubectl get svc elasticsearch -n ${{ env.INFRA_NAMESPACE_1 }} \
+                  -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$IP" ]; then
+              break
+            fi
+            echo "  Attempt $i/36 — not ready yet, retrying in 10s..."
+            sleep 10
+          done
+          if [ -n "$IP" ]; then
+            echo "SUCCESS: Elasticsearch IP => $IP"
+            echo "ELASTICSEARCH_IP=$IP" >> "$GITHUB_OUTPUT"
+          else
+            echo "ERROR: Could not obtain Elasticsearch IP after 6 minutes."
+            exit 1
+          fi
+
+      # ── 8. OpenTelemetry Collector ────────────────────────────
+      # Injects the Elasticsearch IP into the OTel manifest before applying.
+      - name: Apply OpenTelemetry Collector
+        run: |
+          ES_IP="${{ steps.wait_es_ip.outputs.ELASTICSEARCH_IP }}"
+          echo "INFO: Using Elasticsearch endpoint => http://${ES_IP}:9200"
+          if kubectl get deployment opentelemetry-collector -n ${{ env.INFRA_NAMESPACE_1 }} > /dev/null 2>&1; then
+            echo "INFO: OpenTelemetry Collector already exists — skipping."
+          else
+            echo "INFO: Deploying OpenTelemetry Collector ..."
+            sed "s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g" ${{ env.INFRA_PATH }}/iaf-otel.yaml | kubectl apply -f -
+            echo "INFO: OpenTelemetry Collector applied with ES endpoint http://${ES_IP}:9200"
+          fi
+
+      # ── 9. Phoenix (Arize) ────────────────────────────────────
+      - name: Apply Phoenix (Arize LLM Observability)
+        run: |
+          if kubectl get deployment phoenix -n ${{ env.INFRA_NAMESPACE_1 }} > /dev/null 2>&1; then
+            echo "INFO: Phoenix already exists — skipping."
+          else
+            echo "INFO: Deploying Phoenix ..."
+            kubectl apply -f ${{ env.INFRA_PATH }}/iaf-arpx.yaml
+            echo "INFO: Phoenix applied successfully."
+          fi
+
+      # ── 10. Grafana ───────────────────────────────────────────
+      - name: Apply Grafana
+        run: |
+          if kubectl get deployment grafana -n ${{ env.INFRA_NAMESPACE_1 }} > /dev/null 2>&1; then
+            echo "INFO: Grafana already exists — skipping."
+          else
+            echo "INFO: Deploying Grafana ..."
+            kubectl apply -f ${{ env.INFRA_PATH }}/iaf-grafana.yaml
+            echo "INFO: Grafana applied successfully."
+          fi
+
+      # ── 11. Redis ─────────────────────────────────────────────
+      - name: Apply Redis
+        run: |
+          if kubectl get deployment redis -n ${{ env.INFRA_NAMESPACE_2 }} > /dev/null 2>&1; then
+            echo "INFO: Redis already exists — skipping."
+          else
+            echo "INFO: Deploying Redis ..."
+            kubectl apply -f ${{ env.INFRA_PATH }}/iaf-redis.yaml
+            echo "INFO: Redis applied successfully."
+          fi
+
+      # ── 12. Collect all IPs ───────────────────────────────────
+      # Waits for LoadBalancer IPs of all infra services.
+      # Sets UNKNOWN if a service does not get an IP in 6 minutes.
+      - name: Wait for All Infrastructure Service IPs
+        id: collect_ips
+        run: |
+          wait_for_ip() {
+            local SVC="$1"
+            local NS="$2"
+            local VAR="$3"
+            local IP=""
+            echo "--- Waiting for IP: service/$SVC in namespace $NS ---"
+            for i in $(seq 1 36); do
+              IP=$(kubectl get svc "$SVC" -n "$NS" \
+                    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              if [ -n "$IP" ]; then
+                break
+              fi
+              echo "  Attempt $i/36 — not ready yet, retrying in 10s..."
+              sleep 10
+            done
+            if [ -n "$IP" ]; then
+              echo "SUCCESS: $SVC => $IP"
+              echo "$VAR=$IP" >> "$GITHUB_OUTPUT"
+            else
+              echo "WARNING: Could not get IP for $SVC after 6 min. Setting UNKNOWN."
+              echo "$VAR=UNKNOWN" >> "$GITHUB_OUTPUT"
+            fi
+          }
+
+          wait_for_ip "elasticsearch"           "${{ env.INFRA_NAMESPACE_1 }}" "ELASTICSEARCH_IP"
+          wait_for_ip "opentelemetry-collector" "${{ env.INFRA_NAMESPACE_1 }}" "OTEL_COLLECTOR_IP"
+          wait_for_ip "phoenix"                 "${{ env.INFRA_NAMESPACE_1 }}" "PHOENIX_IP"
+          wait_for_ip "grafana"                 "${{ env.INFRA_NAMESPACE_1 }}" "GRAFANA_IP"
+          wait_for_ip "redis"                   "${{ env.INFRA_NAMESPACE_2 }}" "REDIS_IP"
+
+      # ── 13. Print Summary ─────────────────────────────────────
+      - name: Print Infrastructure IP Summary
+        run: |
+          echo "======================================================"
+          echo "        INFRASTRUCTURE SERVICE IP SUMMARY"
+          echo "======================================================"
+          echo "  Elasticsearch           : ${{ steps.collect_ips.outputs.ELASTICSEARCH_IP }}:9200"
+          echo "  OpenTelemetry Collector : ${{ steps.collect_ips.outputs.OTEL_COLLECTOR_IP }}:4318/4319/4320"
+          echo "  Phoenix (Arize)         : ${{ steps.collect_ips.outputs.PHOENIX_IP }}:6006"
+          echo "  Grafana                 : ${{ steps.collect_ips.outputs.GRAFANA_IP }}:3000"
+          echo "  Redis                   : ${{ steps.collect_ips.outputs.REDIS_IP }}:6379"
+          echo "======================================================"
+
+
+  # ============================================================
+  # JOB 2 — buildImage
+  # Builds the Docker image and pushes it to Azure Container
+  # Registry (ACR), tagged with the Git commit SHA for
+  # full traceability.
+  # ============================================================
+  buildImage:
+    name: Build and Push Docker Image
+    needs: deployInfra
+    runs-on: [self-hosted, Linux, X64, '<YOUR_RUNNER_LABEL>']  # ← Change to your runner label
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+
+      # ── 1. Print Infra IPs (pre-build info) ──────────────────
+      - name: Show Infrastructure IPs (pre-build summary)
+        run: |
+          echo "======================================================"
+          echo "     INFRA SERVICE IPs (available for this build)"
+          echo "======================================================"
+          echo "  Elasticsearch           : ${{ needs.deployInfra.outputs.ELASTICSEARCH_IP }}:9200"
+          echo "  OpenTelemetry Collector : ${{ needs.deployInfra.outputs.OTEL_COLLECTOR_IP }}:4318/4319/4320"
+          echo "  Phoenix (Arize)         : ${{ needs.deployInfra.outputs.PHOENIX_IP }}:6006"
+          echo "  Grafana                 : ${{ needs.deployInfra.outputs.GRAFANA_IP }}:3000"
+          echo "  Redis                   : ${{ needs.deployInfra.outputs.REDIS_IP }}:6379"
+          echo "======================================================"
+          echo "  These IPs will be injected into the app secret"
+          echo "  during the deploy job."
+          echo "======================================================"
+
+      # ── 2. Checkout ──────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 3. Azure Login ───────────────────────────────────────
+      - name: Azure login
+        shell: bash
+        run: |
+          az logout || true
+          az account clear || true
+          az login --service-principal \
+            --username "${{ secrets.AZURE_CLIENT_ID }}" \
+            --password "${{ secrets.AZURE_CLIENT_SECRET }}" \
+            --tenant  "${{ secrets.AZURE_TENANT_ID }}"
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      # ── 4. Build and Push Docker Image ───────────────────────
+      # Logs in to ACR, builds the image, and pushes it.
+      # The image is tagged with the git commit SHA for traceability.
+      - name: Build and Push Docker Image to ACR
+        run: |
+          ACR_NAME=$(echo "${{ env.AZURE_CONTAINER_REGISTRY }}" | cut -d'.' -f1)
+          ACR_IMG="${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.SHORT_NAME }}:${{ github.sha }}"
+
+          echo "INFO: Logging in to ACR: $ACR_NAME ..."
+          az acr login --name "$ACR_NAME"
+
+          echo "INFO: Building image => $ACR_IMG ..."
+          docker build --shm-size=8g -t "$ACR_IMG" .
+
+          echo "INFO: Pushing image => $ACR_IMG ..."
+          docker push "$ACR_IMG"
+          echo "INFO: Image pushed successfully."
+
+
+  # ============================================================
+  # JOB 3 — deploy
+  # Deploys the application to AKS.
+  # - Creates the app namespace if it does not exist.
+  # - Builds a Kubernetes Secret from the .env file and injects
+  #   the live infra service IPs (from deployInfra outputs).
+  # - On first run: creates the Deployment + LoadBalancer Service.
+  # - On subsequent runs: updates the container image only.
+  # - Waits for rollout, then prints a full deployment summary.
+  # - On failure: auto-prints pod logs and events for debugging.
+  # ============================================================
+  deploy:
+    name: Deploy to AKS
+    needs: [deployInfra, buildImage]
+    runs-on: [self-hosted, Linux, X64, '<YOUR_RUNNER_LABEL>']  # ← Change to your runner label
+    permissions:
+      actions:  read
+      contents: read
+
+    steps:
+
+      # ── 1. Checkout ──────────────────────────────────────────
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # ── 2. Azure Login ───────────────────────────────────────
+      - name: Azure login
+        shell: bash
+        run: |
+          az logout || true
+          az account clear || true
+          az login --service-principal \
+            --username "${{ secrets.AZURE_CLIENT_ID }}" \
+            --password "${{ secrets.AZURE_CLIENT_SECRET }}" \
+            --tenant  "${{ secrets.AZURE_TENANT_ID }}"
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      # ── 3. kubelogin ─────────────────────────────────────────
+      - name: Set up kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: 'v0.0.25'
+
+      # ── 4. AKS Context ───────────────────────────────────────
+      - name: Get Kubernetes context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name:   ${{ env.CLUSTER_NAME }}
+          admin:          'false'
+          use-kubelogin:  'true'
+
+      # ── 5. App Namespace ──────────────────────────────────────
+      - name: Ensure App Namespace Exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      # ── 6. Kubernetes Secret ──────────────────────────────────
+      # Reads APP_ENV_FILE secret, cleans it (removes duplicates,
+      # strips quotes/whitespace/comments), then appends the live
+      # infra service IPs collected by the deployInfra job.
+      # The result becomes the Kubernetes Secret named 'app-env'.
+      - name: Create / Update Kubernetes Secret (with infra IPs injected)
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.APP_ENV_FILE }}
+          ELASTICSEARCH_IP:  ${{ needs.deployInfra.outputs.ELASTICSEARCH_IP }}
+          OTEL_COLLECTOR_IP: ${{ needs.deployInfra.outputs.OTEL_COLLECTOR_IP }}
+          PHOENIX_IP:        ${{ needs.deployInfra.outputs.PHOENIX_IP }}
+          GRAFANA_IP:        ${{ needs.deployInfra.outputs.GRAFANA_IP }}
+          REDIS_IP:          ${{ needs.deployInfra.outputs.REDIS_IP }}
+        run: |
+          echo "=== Processing environment file ==="
+          if [ -z "$ENV_FILE_CONTENT" ]; then
+            echo "ERROR: APP_ENV_FILE secret is empty. Please add it in GitHub Secrets."
+            exit 1
+          fi
+
+          # Write, deduplicate, and sanitize the env file
+          printf "%s" "$ENV_FILE_CONTENT" > .env.temp
+          awk -F= '!seen[$1]++' .env.temp > .env.cleaned
+          sed 's/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/="\(.*\)"$/=\1/; s/='\''\(.*\)'\''$/=\1/; /^$/d; /^#/d' \
+            .env.cleaned > .env.k8s
+
+          echo "=== Injecting infra service IPs ==="
+          printf '%s\n' \
+            "PHOENIX_COLLECTOR_ENDPOINT=http://${PHOENIX_IP}:6006" \
+            "PHOENIX_GRPC_PORT=50051" \
+            "REDIS_HOST=${REDIS_IP}" \
+            "REDIS_PORT=6379" \
+            "REDIS_DB=0" \
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OTEL_COLLECTOR_IP}:4318/v1/traces" \
+            "USE_HTTP=True" \
+            "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_HTTP=http://${OTEL_COLLECTOR_IP}:4320/v1/logs" \
+            "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_GRPC=${OTEL_COLLECTOR_IP}:4319" \
+            "ELASTICSEARCH_HOST=${ELASTICSEARCH_IP}" \
+            "ELASTICSEARCH_URL=http://${ELASTICSEARCH_IP}:9200" \
+            "GRAFANA_URL=http://${GRAFANA_IP}:3000" >> .env.k8s
+
+          # Final deduplication: last value wins for any duplicate key
+          tac .env.k8s | awk -F= '!seen[$1]++' | tac > .env.final
+          mv .env.final .env.k8s
+
+          echo "=== Final secret keys (after deduplication) ==="
+          cut -d= -f1 .env.k8s
+
+          kubectl create secret generic app-env \
+            --from-env-file=.env.k8s \
+            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+          rm -f .env.temp .env.cleaned .env.k8s
+
+      # ── 7. Deploy ─────────────────────────────────────────────
+      # First run  → creates the Deployment and LoadBalancer Service.
+      # Subsequent → updates the container image only (no downtime).
+      - name: Check if Deployment Exists and Deploy
+        run: |
+          VAR_IMAGE="${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.SHORT_NAME }}:${{ github.sha }}"
+
+          if kubectl get deployment ${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} > /dev/null 2>&1; then
+            echo "=== Deployment already exists. Updating image only ==="
+            kubectl set image deployment/${{ env.DEPLOY_NAME }} \
+              ${{ env.CONTAINER_NAME }}="$VAR_IMAGE" \
+              -n ${{ env.NAMESPACE }}
+          else
+            echo "=== First-time deployment. Creating Deployment and Service ==="
+            cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ env.DEPLOY_NAME }}
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: ${{ env.DEPLOY_NAME }}
+            template:
+              metadata:
+                labels:
+                  app: ${{ env.DEPLOY_NAME }}
+              spec:
+                containers:
+                  - name: ${{ env.CONTAINER_NAME }}
+                    image: ${VAR_IMAGE}
+                    ports:
+                      - containerPort: 8000
+                    envFrom:
+                      - secretRef:
+                          name: app-env    # Populated from APP_ENV_FILE secret + infra IPs
+                    resources:
+                      requests:
+                        memory: "512Mi"
+                        cpu: "250m"
+                      limits:
+                        memory: "2Gi"
+                        cpu: "1000m"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${{ env.DEPLOY_NAME }}
+            namespace: ${{ env.NAMESPACE }}
+            annotations:
+              # Restricts the LB to internal traffic only.
+              # Remove this annotation for public internet access.
+              service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+          spec:
+            selector:
+              app: ${{ env.DEPLOY_NAME }}
+            ports:
+              - protocol: TCP
+                port: 8000
+                targetPort: 8000
+            type: LoadBalancer
+          EOF
+          fi
+
+      # ── 8. Wait and Verify ────────────────────────────────────
+      # Waits up to 5 minutes for the rollout to succeed,
+      # then prints deployment / pod / service status and recent logs.
+      - name: Wait and Check Deployment
+        run: |
+          echo "INFO: Waiting for deployment rollout ..."
+          kubectl rollout status deployment/${{ env.DEPLOY_NAME }} \
+            -n ${{ env.NAMESPACE }} --timeout=5m
+
+          echo "=== Deployment Status ==="
+          kubectl get deployment -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
+
+          echo "=== Pod Status ==="
+          kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
+
+          echo "=== Service Status ==="
+          kubectl get svc -n ${{ env.NAMESPACE }} ${{ env.DEPLOY_NAME }}
+
+          POD_NAME=$(kubectl get pods -n ${{ env.NAMESPACE }} \
+                      -l app=${{ env.DEPLOY_NAME }} \
+                      -o jsonpath="{.items[0].metadata.name}")
+          if [ -n "$POD_NAME" ]; then
+            echo "=== Pod Logs (last 100 lines) ==="
+            kubectl logs "$POD_NAME" -n ${{ env.NAMESPACE }} --tail=100 || echo "No logs available yet."
+          fi
+
+      # ── 9. Get App Endpoint ───────────────────────────────────
+      # Polls until the app LoadBalancer IP is assigned.
+      - name: Get App Service Endpoint
+        id: app_ip
+        run: |
+          echo "=== Waiting for App LoadBalancer IP ==="
+          APP_IP=""
+          for i in $(seq 1 36); do
+            APP_IP=$(kubectl get svc ${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} \
+                      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$APP_IP" ]; then
+              break
+            fi
+            echo "  Attempt $i/36 — retrying in 10s..."
+            sleep 10
+          done
+          echo "APP_SERVICE_IP=$APP_IP" >> "$GITHUB_OUTPUT"
+
+      # ── 10. Final Summary ─────────────────────────────────────
+      - name: Final Deployment Summary
+        run: |
+          echo "======================================================"
+          echo "              FULL DEPLOYMENT SUMMARY"
+          echo "======================================================"
+          echo "  [Infrastructure]"
+          echo "  Elasticsearch           : ${{ needs.deployInfra.outputs.ELASTICSEARCH_IP }}:9200"
+          echo "  OpenTelemetry Collector : ${{ needs.deployInfra.outputs.OTEL_COLLECTOR_IP }}:4318/4319/4320"
+          echo "  Phoenix (Arize)         : ${{ needs.deployInfra.outputs.PHOENIX_IP }}:6006"
+          echo "  Grafana                 : ${{ needs.deployInfra.outputs.GRAFANA_IP }}:3000"
+          echo "  Redis                   : ${{ needs.deployInfra.outputs.REDIS_IP }}:6379"
+          echo ""
+          echo "  [Application]"
+          echo "  Deployment : ${{ env.DEPLOY_NAME }}"
+          echo "  Namespace  : ${{ env.NAMESPACE }}"
+          echo "  Image      : ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.SHORT_NAME }}:${{ github.sha }}"
+          echo "  Endpoint   : http://${{ steps.app_ip.outputs.APP_SERVICE_IP }}:8000"
+          echo "======================================================"
+
+      # ── 11. Debug on Failure ──────────────────────────────────
+      # Only runs when a previous step fails.
+      # Prints pod descriptions, events, current logs, and
+      # previous container logs to help diagnose the issue.
+      - name: Debug Deployment Failure
+        if: failure()
+        run: |
+          echo "=== DEBUGGING DEPLOYMENT FAILURE ==="
+
+          echo "=== All Pods in Namespace ==="
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+
+          echo "=== Recent Events ==="
+          kubectl get events -n ${{ env.NAMESPACE }} \
+            --sort-by='.lastTimestamp' | tail -n 30
+
+          POD_NAME=$(kubectl get pods -n ${{ env.NAMESPACE }} \
+                      -l app=${{ env.DEPLOY_NAME }} \
+                      -o jsonpath="{.items[0].metadata.name}")
+
+          if [ -n "$POD_NAME" ]; then
+            echo "=== Pod Description ==="
+            kubectl describe pod "$POD_NAME" -n ${{ env.NAMESPACE }}
+
+            echo "=== Current Container Logs ==="
+            kubectl logs "$POD_NAME" -n ${{ env.NAMESPACE }} --tail=100 \
+              || echo "No current logs available."
+
+            echo "=== Previous Container Logs (if pod restarted) ==="
+            kubectl logs "$POD_NAME" -n ${{ env.NAMESPACE }} --previous --tail=100 \
+              || echo "No previous logs available."
+          else
+            echo "No pod found with label app=${{ env.DEPLOY_NAME }}"
+          fi

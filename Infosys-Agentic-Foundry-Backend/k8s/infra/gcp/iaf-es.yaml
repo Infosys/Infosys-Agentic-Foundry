@@ -1,0 +1,91 @@
+# ==============================================================
+#  Elasticsearch — GCP (GKE) — Deployment Template
+#
+#  PURPOSE:
+#  Deploys a single-node Elasticsearch instance to GKE.
+#  Used by the OpenTelemetry Collector to store log and trace
+#  data. No credentials required (xpack.security disabled).
+#
+#  HOW TO USE:
+#  1. Replace every <PLACEHOLDER> below with your actual value.
+#  2. Apply this manifest:
+#
+#     kubectl apply -f k8s/infra/gcp/iaf-es.yaml
+#
+#  PLACEHOLDERS:
+#  <YOUR_NAMESPACE>       Kubernetes namespace (must match the
+#                         namespace used in iaf-otel.yaml so the
+#                         OTel collector can reach Elasticsearch)
+#  <ELASTICSEARCH_IMAGE>  Full image reference, e.g.:
+#                           - Public:   docker.elastic.co/elasticsearch/elasticsearch:8.14.0
+#                           - Internal: <your-registry>/elasticsearch:<tag>
+# ==============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <YOUR_NAMESPACE>
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: <YOUR_NAMESPACE>
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+      - name: elasticsearch
+        image: <ELASTICSEARCH_IMAGE>
+        ports:
+        - containerPort: 9200
+          name: http
+        - containerPort: 9300
+          name: transport
+        env:
+        - name: discovery.type
+          value: single-node
+        - name: ES_JAVA_OPTS
+          value: "-Xms2g -Xmx2g"
+        - name: xpack.security.enabled
+          value: "false"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        volumeMounts:
+        - name: es-data
+          mountPath: /usr/share/elasticsearch/data
+      volumes:
+      - name: es-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: <YOUR_NAMESPACE>
+  annotations:
+    cloud.google.com/<load-balancer-type>: "Internal"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 9200
+    targetPort: 9200
+    name: http
+  - port: 9300
+    targetPort: 9300
+    name: transport
+  selector:
+    app: elasticsearch

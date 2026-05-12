@@ -1,0 +1,391 @@
+# ============================================================
+#  TEMPLATE: Build and Deploy Frontend to GKE (Google Kubernetes Engine)
+#
+#  HOW TO USE THIS TEMPLATE:
+#  1. Search for every occurrence of <PLACEHOLDER> below and
+#     replace it with your actual value.
+#  2. Add the required GitHub Secrets listed in the SECRETS
+#     section to your repository before running this pipeline.
+#  3. Ensure your self-hosted runner has the correct label and
+#     all required tools installed (gcloud CLI, docker, kubectl,
+#     gke-gcloud-auth-plugin).
+#  4. Rename this file to deploy-gke-frontend.yml and place it
+#     in .github/workflows/ in your repository.
+#
+#  FRONTEND NOTES:
+#  - This pipeline does NOT deploy infrastructure services
+#    (Elasticsearch, OTel, Phoenix, Grafana, Redis). Those are
+#    only needed by the backend. Frontend only needs its own
+#    environment variables (e.g. API base URL, feature flags).
+#  - The frontend container serves on port 80 (nginx default).
+#  - The env file secret (FRONTEND_ENV_FILE_GCP) should contain
+#    KEY=VALUE pairs for your frontend runtime config.
+#  - AGENT_PATH is the path on the runner where the frontend
+#    source code resides (set as an env var on the runner VM
+#    or replace with the actual directory path).
+# ============================================================
+
+name: Build and Deploy Frontend to GKE
+
+# ── Triggers ─────────────────────────────────────────────────
+# Auto-trigger on push to your branch, or run manually.
+on:
+  push:
+    branches:
+      - '<YOUR_BRANCH_NAME>'          # ← Change to your deployment branch (e.g. main, develop)
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: 'Manual version input (informational only)'
+        required: false
+        default: 'latest'
+
+# ── Pipeline-level environment variables ─────────────────────
+# Non-sensitive values are read from GitHub Variables (vars.*)
+# Sensitive values are read from GitHub Secrets (secrets.*)
+# Nothing is hardcoded here — safe to commit to public GitHub.
+env:
+  # ── Non-sensitive config → stored as GitHub Variables ────────
+  # GitHub Repo → Settings → Secrets and variables → Variables → New repository variable
+  GCP_PROJECT_ID:    ${{ vars.GCP_PROJECT_ID }}    # e.g. my-project-123456
+  GKE_CLUSTER_NAME:  ${{ vars.GKE_CLUSTER_NAME }}  # e.g. gke-my-cluster
+  GKE_ZONE:          ${{ vars.GKE_ZONE }}           # e.g. us-central1-a or us-central1
+  ARTIFACT_REGISTRY: ${{ vars.ARTIFACT_REGISTRY }}  # e.g. us-central1-docker.pkg.dev/my-project/my-repo
+  NAMESPACE:         ${{ vars.NAMESPACE }}           # K8s namespace for the frontend app
+  DEPLOY_NAME:       ${{ vars.DEPLOY_NAME }}         # K8s Deployment name
+  CONTAINER_NAME:    ${{ vars.CONTAINER_NAME }}      # Container name inside the pod
+  SHORT_NAME:        ${{ vars.SHORT_NAME }}          # Short name for Artifact Registry image tagging
+
+# ── GITHUB VARIABLES (non-sensitive) ─────────────────────────
+# GitHub Repo → Settings → Secrets and variables → Variables → New repository variable
+#
+#   Variable Name       Example Value
+#   ──────────────────────────────────────────────────────────
+#   GCP_PROJECT_ID      my-project-123456
+#   GKE_CLUSTER_NAME    gke-my-cluster
+#   GKE_ZONE            us-central1-a
+#   ARTIFACT_REGISTRY   us-central1-docker.pkg.dev/my-project/my-repo
+#   NAMESPACE           my-frontend-namespace
+#   DEPLOY_NAME         my-frontend-deployment
+#   CONTAINER_NAME      my-frontend-container
+#   SHORT_NAME          my-frontend
+#
+# ── GITHUB SECRETS (sensitive) ───────────────────────────────
+# GitHub Repo → Settings → Secrets and variables → Actions → New repository secret
+#
+#   Secret Name            What to Put
+#   ──────────────────────────────────────────────────────────
+#   FRONTEND_ENV_FILE_GCP  Full content of your frontend .env file
+#                          (KEY=VALUE pairs, e.g. REACT_APP_API_URL=http://...)
+#   GCP_SA_KEY             Base64-encoded GCP Service Account JSON key
+#                          (only needed if runner is NOT pre-authenticated)
+#
+# NOTE: This pipeline uses a pre-authenticated self-hosted runner
+# (gcloud is already authenticated on the runner VM). If your runner
+# is NOT pre-authenticated, add a GCP_SA_KEY secret (base64-encoded
+# service account JSON) and add an authentication step using:
+#   uses: google-github-actions/auth@v2
+# ─────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ============================================================
+  # JOB 1 — buildImage
+  # Builds the frontend Docker image and pushes it to Google
+  # Artifact Registry, tagged with the Git commit SHA for
+  # full traceability.
+  # ============================================================
+  buildImage:
+    name: Build and Push Docker Image
+    runs-on: [self-hosted, '<YOUR_RUNNER_LABEL>']       # ← Change to your runner label
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+
+      # ── 1. Checkout ──────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── 2. Authenticate Docker with Artifact Registry ────────
+      # Configures Docker to use gcloud credentials for pushing
+      # to Google Artifact Registry.
+      - name: Authenticate Docker with Artifact Registry
+        run: |
+          REGISTRY_HOST=$(echo "${{ env.ARTIFACT_REGISTRY }}" | cut -d'/' -f1)
+          echo "INFO: Configuring Docker auth for $REGISTRY_HOST ..."
+          sudo gcloud auth configure-docker "$REGISTRY_HOST" --quiet
+
+      # ── 3. Build Docker Image ────────────────────────────────
+      # Tagged with the git commit SHA for traceability.
+      # Uses $AGENT_PATH as the build context (path to frontend source).
+      - name: Build Docker Image
+        run: |
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.SHORT_NAME }}:${{ github.sha }}"
+          echo "INFO: Building frontend image => $IMAGE ..."
+          cd "$AGENT_PATH"         # ← AGENT_PATH must be set on the runner VM pointing to frontend source
+          sudo docker build --shm-size=8g -t "$IMAGE" .
+          echo "INFO: Build complete."
+
+      # ── 4. Push Docker Image ─────────────────────────────────
+      - name: Push Docker Image to Artifact Registry
+        run: |
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.SHORT_NAME }}:${{ github.sha }}"
+          echo "INFO: Pushing frontend image => $IMAGE ..."
+          sudo docker push "$IMAGE"
+          echo "INFO: Frontend image pushed to Artifact Registry successfully."
+
+
+  # ============================================================
+  # JOB 2 — deploy
+  # Deploys the frontend application to GKE.
+  # - Creates the app namespace if it does not exist.
+  # - Builds a Kubernetes Secret from the frontend .env file
+  #   (no infra IPs injected — frontend does not use them).
+  # - On first run: creates the Deployment + LoadBalancer Service
+  #   with containerPort 80 (GCP internal LB).
+  # - On subsequent runs: updates the container image only.
+  # - Waits for rollout, then prints a full deployment summary.
+  # - On failure: auto-prints pod logs and events for debugging.
+  # ============================================================
+  deploy:
+    name: Deploy Frontend to GKE
+    needs: buildImage
+    runs-on: [self-hosted, '<YOUR_RUNNER_LABEL>']       # ← Change to your runner label
+    permissions:
+      actions:  read
+      contents: read
+
+    steps:
+
+      # ── 1. Checkout ──────────────────────────────────────────
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # ── 2. Fix kubectl Permissions ───────────────────────────
+      # Required on some GCP self-hosted runners where kubectl
+      # is installed without execute permission for the runner user.
+      - name: Fix kubectl Permissions
+        run: |
+          sudo chmod +x /usr/local/bin/kubectl
+          sudo chmod 755 /usr/local/bin/kubectl
+
+      # ── 3. GKE Context ───────────────────────────────────────
+      # Configures kubectl to talk to your GKE cluster.
+      - name: Authenticate with GKE and get cluster credentials
+        run: |
+          echo "INFO: Fetching credentials for cluster ${{ env.GKE_CLUSTER_NAME }} ..."
+          sudo gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} \
+            --zone    ${{ env.GKE_ZONE }} \
+            --project ${{ env.GCP_PROJECT_ID }}
+
+      # ── 4. Debug Cluster Connectivity ────────────────────────
+      # Verifies that kubectl can reach the cluster before deploying.
+      - name: Verify Cluster Connectivity
+        run: |
+          echo "=== kubectl current context ==="
+          sudo kubectl config current-context
+          echo "=== Cluster info ==="
+          sudo kubectl cluster-info
+          echo "=== Cluster nodes ==="
+          sudo kubectl get nodes
+
+      # ── 5. App Namespace ──────────────────────────────────────
+      - name: Ensure Namespace Exists
+        run: |
+          sudo kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | sudo kubectl apply -f -
+
+      # ── 6. Kubernetes Secret ──────────────────────────────────
+      # Reads FRONTEND_ENV_FILE_GCP secret, deduplicates and sanitizes it
+      # (removes duplicate keys, strips quotes/whitespace/comments),
+      # then creates/updates the Kubernetes Secret 'frontend-env'.
+      # No infra service IPs are injected — frontend does not need them.
+      - name: Create / Update Kubernetes Secret
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.FRONTEND_ENV_FILE_GCP }}
+        run: |
+          echo "=== Processing frontend environment file ==="
+          if [ -z "$ENV_FILE_CONTENT" ]; then
+            echo "ERROR: FRONTEND_ENV_FILE_GCP secret is empty. Please add it in GitHub Secrets."
+            exit 1
+          fi
+
+          printf "%s" "$ENV_FILE_CONTENT" > .env.temp
+          if ! grep -qE '^[A-Za-z_][A-Za-z0-9_]*=.*$' .env.temp; then
+            echo "ERROR: FRONTEND_ENV_FILE_GCP does not contain valid KEY=VALUE pairs."
+            exit 1
+          fi
+
+          awk -F= '!seen[$1]++' .env.temp > .env.cleaned
+          sed 's/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/="\(.*\)"$/=\1/; s/='\''\(.*\)'\''$/=\1/; /^$/d; /^#/d' \
+            .env.cleaned > .env.k8s
+
+          echo "=== Final secret keys ==="
+          cut -d= -f1 .env.k8s
+
+          sudo kubectl create secret generic frontend-env \
+            --from-env-file=.env.k8s \
+            -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | sudo kubectl apply --validate=false -f -
+
+          rm -f .env.temp .env.cleaned .env.k8s
+
+      # ── 7. Deploy ─────────────────────────────────────────────
+      # First run  → creates the Deployment and LoadBalancer Service.
+      # Subsequent → updates the container image only (no downtime).
+      # Frontend serves on port 80 (nginx).
+      - name: Check if Deployment Exists and Deploy
+        run: |
+          IMAGE_NAME="${{ env.ARTIFACT_REGISTRY }}/${{ env.SHORT_NAME }}:${{ github.sha }}"
+          export IMAGE_NAME
+
+          if sudo kubectl get deployment ${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} > /dev/null 2>&1; then
+            echo "=== Deployment already exists. Updating image only ==="
+            sudo kubectl set image deployment/${{ env.DEPLOY_NAME }} \
+              ${{ env.CONTAINER_NAME }}="$IMAGE_NAME" \
+              -n ${{ env.NAMESPACE }}
+          else
+            echo "=== First-time deployment. Creating Deployment and Service ==="
+            envsubst <<'EOF' | sudo kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${{ env.DEPLOY_NAME }}
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: ${{ env.DEPLOY_NAME }}
+            template:
+              metadata:
+                labels:
+                  app: ${{ env.DEPLOY_NAME }}
+              spec:
+                containers:
+                  - name: ${{ env.CONTAINER_NAME }}
+                    image: ${IMAGE_NAME}
+                    ports:
+                      - containerPort: 80
+                    envFrom:
+                      - secretRef:
+                          name: frontend-env    # Populated from FRONTEND_ENV_FILE_GCP secret
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "125m"
+                      limits:
+                        memory: "512Mi"
+                        cpu: "500m"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${{ env.DEPLOY_NAME }}
+            namespace: ${{ env.NAMESPACE }}
+            annotations:
+              # Restricts the LB to internal VPC traffic only.
+              # Remove this annotation for public internet access.
+              cloud.google.com/load-balancer-type: "Internal"
+          spec:
+            selector:
+              app: ${{ env.DEPLOY_NAME }}
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+            type: LoadBalancer
+          EOF
+          fi
+
+      # ── 8. Wait and Check Deployment ─────────────────────────
+      # Waits up to 5 minutes for the rollout to succeed,
+      # then prints deployment / pod / service status.
+      - name: Wait and Check Deployment
+        run: |
+          echo "INFO: Waiting for frontend deployment rollout ..."
+          sudo kubectl rollout status deployment/${{ env.DEPLOY_NAME }} \
+            -n ${{ env.NAMESPACE }} --timeout=5m
+
+          echo "=== Deployment Status ==="
+          sudo kubectl get deployment -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
+
+          echo "=== Pod Status ==="
+          sudo kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
+
+          echo "=== Service Status ==="
+          sudo kubectl get svc -n ${{ env.NAMESPACE }} ${{ env.DEPLOY_NAME }}
+
+      # ── 9. Verify Application ─────────────────────────────────
+      - name: Verify Application
+        run: |
+          echo "INFO: Verifying frontend application ..."
+          sudo kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
+          sudo kubectl logs -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} --tail=100 \
+            || echo "No logs available yet."
+
+      # ── 10. Get App Endpoint ──────────────────────────────────
+      # Polls until the frontend LoadBalancer IP is assigned.
+      # GKE internal LBs provide an IP (not a DNS hostname).
+      - name: Get Service Endpoint
+        id: app_ip
+        run: |
+          echo "=== Waiting for Frontend LoadBalancer IP ==="
+          APP_IP=""
+          for i in $(seq 1 36); do
+            APP_IP=$(sudo kubectl get svc ${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} \
+                      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$APP_IP" ]; then
+              break
+            fi
+            echo "  Attempt $i/36 — retrying in 10s..."
+            sleep 10
+          done
+          echo "APP_SERVICE_IP=$APP_IP" >> "$GITHUB_OUTPUT"
+          echo "Frontend endpoint: http://${APP_IP}:80"
+
+      # ── 11. Final Summary ─────────────────────────────────────
+      - name: Final Deployment Summary
+        run: |
+          echo "======================================================"
+          echo "          FRONTEND DEPLOYMENT SUMMARY"
+          echo "======================================================"
+          echo "  [Frontend Application]"
+          echo "  Deployment : ${{ env.DEPLOY_NAME }}"
+          echo "  Namespace  : ${{ env.NAMESPACE }}"
+          echo "  Image      : ${{ env.ARTIFACT_REGISTRY }}/${{ env.SHORT_NAME }}:${{ github.sha }}"
+          echo "  Endpoint   : http://${{ steps.app_ip.outputs.APP_SERVICE_IP }}:80"
+          echo "======================================================"
+
+      # ── 12. Debug on Failure ──────────────────────────────────
+      # Only runs when a previous step fails.
+      - name: Debug Deployment Failure
+        if: failure()
+        run: |
+          echo "=== DEBUGGING FRONTEND DEPLOYMENT FAILURE ==="
+
+          echo "=== All Pods in Namespace ==="
+          sudo kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+
+          echo "=== Recent Events ==="
+          sudo kubectl get events -n ${{ env.NAMESPACE }} \
+            --sort-by='.lastTimestamp' | tail -n 30
+
+          POD_NAME=$(sudo kubectl get pods -n ${{ env.NAMESPACE }} \
+                      -l app=${{ env.DEPLOY_NAME }} \
+                      -o jsonpath="{.items[0].metadata.name}")
+
+          if [ -n "$POD_NAME" ]; then
+            echo "=== Pod Description ==="
+            sudo kubectl describe pod "$POD_NAME" -n ${{ env.NAMESPACE }}
+
+            echo "=== Current Container Logs ==="
+            sudo kubectl logs "$POD_NAME" -n ${{ env.NAMESPACE }} --tail=100 \
+              || echo "No current logs available."
+
+            echo "=== Previous Container Logs (if pod restarted) ==="
+            sudo kubectl logs "$POD_NAME" -n ${{ env.NAMESPACE }} --previous --tail=100 \
+              || echo "No previous logs available."
+          else
+            echo "No pod found with label app=${{ env.DEPLOY_NAME }}"
+          fi

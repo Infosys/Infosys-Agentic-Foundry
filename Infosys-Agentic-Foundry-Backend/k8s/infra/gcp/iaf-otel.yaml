@@ -1,0 +1,139 @@
+# ==============================================================
+#  OpenTelemetry Collector — GCP (GKE) — Deployment Template
+#
+#  PURPOSE:
+#  Deploys the OpenTelemetry Collector to GKE. It receives
+#  traces, metrics, and logs from the IAF backend (via OTLP)
+#  and exports them to Elasticsearch.
+#
+#  HOW TO USE:
+#  1. Replace every <PLACEHOLDER> below with your actual value.
+#  2. ELASTICSEARCH_ENDPOINT inside the ConfigMap is replaced
+#     automatically at pipeline runtime by the deploy script
+#     (envsubst). Do NOT replace it manually here.
+#  3. Apply this manifest:
+#
+#     kubectl apply -f k8s/infra/gcp/iaf-otel.yaml
+#
+#  PLACEHOLDERS:
+#  <YOUR_NAMESPACE>        Kubernetes namespace (must match the
+#                          namespace used in iaf-es.yaml so the
+#                          collector can reach Elasticsearch)
+#  <OTEL_COLLECTOR_IMAGE>  Full image reference, e.g.:
+#                            - Public:   otel/opentelemetry-collector-contrib:0.130.1
+#                            - Internal: <your-registry>/otel-collector-contrib:<tag>
+#
+#  RUNTIME SUBSTITUTION (pipeline-managed):
+#  ELASTICSEARCH_ENDPOINT  Set automatically by the deploy
+#                          script from the Elasticsearch
+#                          Service LB IP — do not edit here.
+# ==============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <YOUR_NAMESPACE>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: <YOUR_NAMESPACE>
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4319
+          http:
+            endpoint: 0.0.0.0:4320
+    exporters:
+      debug:
+        verbosity: detailed
+      elasticsearch:
+        endpoints: ["http://ELASTICSEARCH_ENDPOINT:9200"]
+        sending_queue:
+          enabled: true
+    processors:
+      batch:
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug, elasticsearch]
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          level: basic
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opentelemetry-collector
+  namespace: <YOUR_NAMESPACE>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opentelemetry-collector
+  template:
+    metadata:
+      labels:
+        app: opentelemetry-collector
+    spec:
+      containers:
+      - name: otel-collector
+        image: <OTEL_COLLECTOR_IMAGE>
+        args: ["--config=/etc/otel-collector-config.yaml"]
+        ports:
+          - name: otlp-grpc
+            containerPort: 4319
+          - name: otlp-http
+            containerPort: 4320
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+          - name: config
+            mountPath: /etc/otel-collector-config.yaml
+            subPath: otel-collector-config.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentelemetry-collector
+  namespace: <YOUR_NAMESPACE>
+  annotations:
+    cloud.google.com/<load-balancer-type>: "Internal"
+spec:
+  type: LoadBalancer
+  selector:
+    app: opentelemetry-collector
+  ports:
+    - name: otlp-grpc
+      protocol: TCP
+      port: 4319
+      targetPort: 4319
+    - name: otlp-http
+      protocol: TCP
+      port: 4320
+      targetPort: 4320
