@@ -584,6 +584,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#installing-python-312-from-os-packages-example-rhel9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installing Python 3.12 from OS Packages (Example: RHEL9)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#installing-python-with-pyenv-on-rhel" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -643,6 +654,28 @@
     <span class="md-ellipsis">
       
         Configuration Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#litellm-proxy-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLM Proxy Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#knowledgebase-server-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Knowledgebase Server Setup
       
     </span>
   </a>
@@ -1036,6 +1069,34 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../MultiCloud_deployment/multicloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Cloud CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -3088,6 +3149,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#installing-python-312-from-os-packages-example-rhel9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installing Python 3.12 from OS Packages (Example: RHEL9)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#installing-python-with-pyenv-on-rhel" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3147,6 +3219,28 @@
     <span class="md-ellipsis">
       
         Configuration Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#litellm-proxy-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLM Proxy Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#knowledgebase-server-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Knowledgebase Server Setup
       
     </span>
   </a>
@@ -3359,7 +3453,7 @@
 <p><strong>System Requirements</strong></p>
 <ul>
 <li><strong>sudo privileges</strong> (for installing system packages)</li>
-<li><strong>Python 3.11 or higher</strong> (for backend)</li>
+<li><strong>Python 3.12</strong> (for backend)</li>
 <li><strong>NodeJS version 22 or higher</strong>  </li>
 <li><strong>NPM version 10.9.2 or higher</strong> ( comes bundled with NodeJs) </li>
 <li><strong>Git</strong> (optional, for cloning the repository)</li>
@@ -3373,13 +3467,19 @@
 <span class="c1"># or</span>
 python3<span class="w"> </span>--version
 </code></pre></div>
-<p>Make sure it is <strong>3.11 or higher</strong>. If it's not, you'll need to update your Python version.</p>
+<p>Make sure it is <strong>3.12</strong>. If it's not, you'll need to update your Python version.</p>
 <p><strong>Python Installation Options</strong></p>
-<p>There are 2 ways to install the required Python version:</p>
+<p>There are 3 ways to install the required Python version:</p>
 <ol>
 <li><strong>Install</strong> - Install a required greenlisted Python version</li>
 <li><strong>Use pyenv</strong> - Update the Python version using pyenv (recommended)</li>
+<li><strong>Install from OS packages</strong> - Install Python 3.12 using your OS package manager</li>
 </ol>
+<h2 id="installing-python-312-from-os-packages-example-rhel9">Installing Python 3.12 from OS Packages (Example: RHEL9)</h2>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>groupinstall<span class="w"> </span><span class="s2">&quot;Development Tools&quot;</span>
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>openssl-devel<span class="w"> </span>bzip2-devel<span class="w"> </span>libffi-devel<span class="w"> </span>zlib-devel<span class="w"> </span>readline-devel<span class="w"> </span>sqlite-devel
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>python3.12<span class="w"> </span>-y
+</code></pre></div>
 <h2 id="installing-python-with-pyenv-on-rhel">Installing Python with pyenv on RHEL</h2>
 <p>To install pyenv on Red Hat Enterprise Linux (RHEL), follow these steps. pyenv lets you easily install and switch between multiple Python versions.</p>
 <p><strong>Step 1: Install Required Dependencies</strong></p>
@@ -3411,8 +3511,8 @@ sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> <
 <div class="highlight"><pre><span></span><code>pyenv<span class="w"> </span>--version
 </code></pre></div>
 <p><strong>Step 5: Install Python Version</strong></p>
-<p>Install the required Python version (example with Python &gt;=3.11.8 or &lt;3.13):</p>
-<div class="highlight"><pre><span></span><code>pyenv<span class="w"> </span>install<span class="w"> </span><span class="m">3</span>.11.8
+<p>Install the required Python version (example with Python 3.12):</p>
+<div class="highlight"><pre><span></span><code>pyenv<span class="w"> </span>install<span class="w"> </span><span class="m">3</span>.12
 </code></pre></div>
 <p>You can also install other versions as needed:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># List available Python versions</span>
@@ -3423,7 +3523,7 @@ pyenv<span class="w"> </span>install<span class="w"> </span><span class="m">3</s
 </code></pre></div>
 <p><strong>Step 6: Set Global Python Version</strong></p>
 <p>Set the installed Python version as your global default:</p>
-<div class="highlight"><pre><span></span><code>pyenv<span class="w"> </span>global<span class="w"> </span><span class="m">3</span>.11.8
+<div class="highlight"><pre><span></span><code>pyenv<span class="w"> </span>global<span class="w"> </span><span class="m">3</span>.12
 </code></pre></div>
 <p>Verify the installation:</p>
 <div class="highlight"><pre><span></span><code>python<span class="w"> </span>--version
@@ -3566,35 +3666,214 @@ Configure Frontend to Connect to Backend</p>
 <div class="highlight"><pre><span></span><code><span class="c1">// Replace with your actual backend server IP address and port</span>
 <span class="nx">REACT_APP_BASE_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;http://your-backend-server-ip:your-backend-port&quot;</span><span class="p">;</span>
 </code></pre></div>
-<p><strong>Configure Backend CORS Settings</strong></p>
-<p>In the backend <code>.env</code> file (<code>Infosys-Agentic-Foundry-Backend/.env</code>), set the allowed frontend origins:</p>
+<hr />
+<h2 id="litellm-proxy-setup">LiteLLM Proxy Setup</h2>
+<p>The LiteLLM proxy acts as a unified gateway for all LLM API calls, enabling load balancing, fallback models, and centralized configuration. This section covers how to set up and run the LiteLLM proxy as a Linux service.</p>
+<p><strong>Installation</strong></p>
+<p><strong>1. Navigate to the project directory:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>llmproxy
+</code></pre></div>
+<p><strong>2. Create and activate a virtual environment:</strong></p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>venv
+<span class="nb">source</span><span class="w"> </span>venv/bin/activate
+</code></pre></div>
+<p><strong>3. Install dependencies:</strong></p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>uv
+uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+</code></pre></div>
+<p><strong>4. Configure environment and config:</strong></p>
+<p>Configure both <code>.env</code> and <code>config.yaml</code> based on the provided <code>.example</code> files in the repository.</p>
+<p><strong>5. Enable the firewall port:</strong></p>
+<p>Ensure port <strong>8080</strong> (or your configured port) is accessible:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:3"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">UFW</label><label for="__tabbed_1_2">firewalld</label><label for="__tabbed_1_3">iptables</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>ufw<span class="w"> </span>allow<span class="w"> </span><span class="m">8080</span>/tcp
+sudo<span class="w"> </span>ufw<span class="w"> </span>reload
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--permanent<span class="w"> </span>--add-port<span class="o">=</span><span class="m">8080</span>/tcp
+sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--reload
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>iptables<span class="w"> </span>-A<span class="w"> </span>INPUT<span class="w"> </span>-p<span class="w"> </span>tcp<span class="w"> </span>--dport<span class="w"> </span><span class="m">8080</span><span class="w"> </span>-j<span class="w"> </span>ACCEPT
+sudo<span class="w"> </span>iptables-save<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/iptables/rules.v4
+</code></pre></div>
+</div>
+</div>
+</div>
+<p><strong>Hosting as a Linux Service (systemd)</strong></p>
+<p><strong>1. Create the service file:</strong></p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/systemd/system/llmproxy.service
+</code></pre></div>
+<p>Paste the following content:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[Unit]</span>
+<span class="na">Description</span><span class="o">=</span><span class="s">Litellm FastAPI Application</span>
+<span class="na">After</span><span class="o">=</span><span class="s">network.target</span>
+
+<span class="k">[Service]</span>
+<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/home/your-username/llmproxy</span>
+<span class="na">ExecStart</span><span class="o">=</span><span class="s">/home/your-username/llmproxy/venv/bin/litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">VIRTUAL_ENV=/home/your-username/llmproxy/venv</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">PATH=/home/your-username/llmproxy/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</span>
+<span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
+<span class="na">User</span><span class="o">=</span><span class="s">your-username</span>
+
+<span class="c1"># Logging</span>
+<span class="na">StandardOutput</span><span class="o">=</span><span class="s">journal</span>
+<span class="na">StandardError</span><span class="o">=</span><span class="s">journal</span>
+
+<span class="k">[Install]</span>
+<span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Update the paths to match your environment.</p>
+</div>
+<p><strong>2. Start and enable the service:</strong></p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>llmproxy.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>llmproxy.service
+</code></pre></div>
+<p><strong>3. Check status and view logs:</strong></p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>llmproxy.service
+journalctl<span class="w"> </span>-u<span class="w"> </span>llmproxy.service<span class="w"> </span>-f
+</code></pre></div>
+<p><strong>Useful Commands</strong></p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Start service</td>
+<td><code>sudo systemctl start llmproxy.service</code></td>
+</tr>
+<tr>
+<td>Stop service</td>
+<td><code>sudo systemctl stop llmproxy.service</code></td>
+</tr>
+<tr>
+<td>Restart service</td>
+<td><code>sudo systemctl restart llmproxy.service</code></td>
+</tr>
+<tr>
+<td>Check status</td>
+<td><code>sudo systemctl status llmproxy.service</code></td>
+</tr>
+<tr>
+<td>View live logs</td>
+<td><code>journalctl -u llmproxy.service -f</code></td>
+</tr>
+<tr>
+<td>Enable on boot</td>
+<td><code>sudo systemctl enable llmproxy.service</code></td>
+</tr>
+<tr>
+<td>Disable on boot</td>
+<td><code>sudo systemctl disable llmproxy.service</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="knowledgebase-server-setup">Knowledgebase Server Setup</h2>
+<p>The knowledgebase server handles document retrieval and RAG capabilities.</p>
+<p><strong>Configure .env</strong></p>
+<p>Create a <code>.env</code> file in the knowledgebase server directory by copying the contents of <code>.env.example</code>:</p>
+<div class="highlight"><pre><span></span><code># Database Configuration
+POSTGRESQL_HOST=vm-ip
+POSTGRESQL_PORT=&#39;5432&#39;
+DATABASE=&#39;agentic_workflow_as_service_database&#39;
+POSTGRESQL_USER=&#39;postgres&#39;
+POSTGRESQL_PASSWORD=&#39;postgres&#39;
+
+# Model Server Configuration
+MODEL_SERVER_URL=&#39;http://vm-ip:5500&#39;
+
+# KB Server Configuration
+KB_SERVER_PORT=8003 # or any other port
+
+HTTP_PROXY=&#39;&#39;   # should be empty
+HTTPS_PROXY=&#39;&#39;  # should be empty
+
+NO_PROXY=&#39;vm-ip&#39;
+</code></pre></div>
+<p><strong>Hosting as a Linux Service (systemd)</strong></p>
+<p>Create a systemd service file:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/systemd/system/knowledgebase.service
+</code></pre></div>
+<p>Paste the following content:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[Unit]</span>
+<span class="na">Description</span><span class="o">=</span><span class="s">Knowledgebase Server</span>
+<span class="na">After</span><span class="o">=</span><span class="s">network.target</span>
+
+<span class="k">[Service]</span>
+<span class="na">WorkingDirectory</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/knowledgebase_server</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">NO_PROXY=localhost,127.0.0.1</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">VIRTUAL_ENV=/home/your-username/your-project-directory/knowledgebase_server/venv</span>
+<span class="na">Environment</span><span class="o">=</span><span class="s">PATH=/home/your-username/your-project-directory/knowledgebase_server/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</span>
+
+<span class="na">ExecStart</span><span class="o">=</span><span class="s">/home/your-username/your-project-directory/knowledgebase_server/venv/bin/python main.py</span>
+<span class="na">Restart</span><span class="o">=</span><span class="s">always</span>
+<span class="na">User</span><span class="o">=</span><span class="s">your-username</span>
+<span class="na">StandardOutput</span><span class="o">=</span><span class="s">journal</span>
+<span class="na">StandardError</span><span class="o">=</span><span class="s">journal</span>
+
+<span class="k">[Install]</span>
+<span class="na">WantedBy</span><span class="o">=</span><span class="s">multi-user.target</span>
+</code></pre></div>
+<p>Enable and start the service:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>knowledgebase.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>knowledgebase.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>knowledgebase.service
+</code></pre></div>
+<hr />
+<p><strong>Configure Backend Settings</strong></p>
+<p>In the backend <code>.env</code> file (<code>Infosys-Agentic-Foundry-Backend/.env</code>), set the frontend URL:</p>
 <div class="highlight"><pre><span></span><code># Add your frontend IP address
 UI_CORS_IP=&quot;&lt;your-frontend-server-ip&gt;&quot;
 
 # Add your frontend IP with port number
 UI_CORS_IP_WITH_PORT=&quot;&lt;your-frontend-server-ip:your-frontend-port&gt;&quot;
 </code></pre></div>
-<p>If you want to let other UI connect to the backend, Update the backend server file (typically <code>run_server.py</code> or <code>main.py</code>):</p>
-<div class="highlight"><pre><span></span><code><span class="n">origins</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="c1"># Replace with your actual frontend server IP and port</span>
-    <span class="s2">&quot;http://your-frontend-server-ip:your-frontend-port&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;http://localhost:3000&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;http://localhost:6002&quot;</span><span class="p">,</span>
-    <span class="c1"># Add additional origins as needed</span>
-<span class="p">]</span>
-</code></pre></div>
 <h2 id="environment-configuration">Environment Configuration</h2>
 <p><strong>Backend Environment Variables</strong></p>
-<p>Create <code>.env</code> file in backend directory:</p>
-<div class="highlight"><pre><span></span><code>nano<span class="w"> </span>Infosys-Agentic-Foundry-Backend/.env
-</code></pre></div>
-<p>Add the following content (replace with your actual values):</p>
-<div class="highlight"><pre><span></span><code><span class="nv">DEBUG</span><span class="o">=</span>False
-<span class="c1"># Replace with your actual API keys and configuration</span>
-<span class="nv">API_KEY</span><span class="o">=</span>your_actual_api_key_here
-<span class="nv">DATABASE_URL</span><span class="o">=</span>your_database_url_here
-<span class="nv">SECRET_KEY</span><span class="o">=</span>your_secret_key_here
-</code></pre></div>
+<p>Copy content of <code>.env.example</code> and make a <code>.env</code> file in your backend directory (<code>Infosys-Agentic-Foundry-Backend/.env</code>), then make sure the following variables are set appropriately:</p>
+<p><strong>a. LLM API Keys:</strong>
+You only need to provide at least 1 API key and models for the LLM that you would like to use from Azure OpenAI, OpenAI, Google, LiteLLM, etc. It is not necessary to provide all of them.</p>
+<p><strong>b. Secrets and Authentication:</strong>
+You can generate the key for secrets master key and JWT authentication with the output you get by executing <code>generate_master_secret_key.py</code> file.
+<div class="highlight"><pre><span></span><code><span class="nv">SECRETS_MASTER_KEY</span><span class="o">=</span><span class="s2">&quot;&quot;</span>
+<span class="nv">AUTH_JWT_SECRET</span><span class="o">=</span><span class="s2">&quot;&quot;</span>
+</code></pre></div></p>
+<p><strong>c. Configure PostgreSQL:</strong>
+<div class="highlight"><pre><span></span><code><span class="nv">POSTGRESQL_HOST</span><span class="o">=</span>localhost
+<span class="nv">POSTGRESQL_PORT</span><span class="o">=</span><span class="m">5432</span>
+<span class="nv">POSTGRESQL_USER</span><span class="o">=</span>postgres
+<span class="nv">POSTGRESQL_PASSWORD</span><span class="o">=</span>postgres
+<span class="c1"># Disables ssl in postgres connection string for inference</span>
+<span class="nv">DISABLE_SSL_FOR_CHAT_CONNECTIONS</span><span class="o">=</span>True
+</code></pre></div></p>
+<p><strong>d. Configure Redis:</strong>
+<div class="highlight"><pre><span></span><code><span class="nv">REDIS_HOST</span><span class="o">=</span>localhost
+<span class="nv">REDIS_PORT</span><span class="o">=</span><span class="m">6379</span>
+<span class="nv">REDIS_DB</span><span class="o">=</span><span class="m">0</span>
+<span class="c1"># Setup your redis password here</span>
+<span class="nv">REDIS_PASSWORD</span><span class="o">=</span>&lt;your-password&gt;
+<span class="nv">CACHE_EXPIRY_TIME</span><span class="o">=</span><span class="m">900</span>
+</code></pre></div></p>
+<p><strong>e. Configure Model Server:</strong>
+<div class="highlight"><pre><span></span><code><span class="nv">MODEL_SERVER_URL</span><span class="o">=</span><span class="s2">&quot;http://&lt;vm-ip&gt;:5500&quot;</span>
+<span class="nv">MODEL_SERVER_HOST</span><span class="o">=</span>&lt;vm-ip&gt;
+<span class="nv">MODEL_SERVER_PORT</span><span class="o">=</span><span class="m">5500</span>
+</code></pre></div></p>
+<p><strong>f. Configure Knowledgebase Server:</strong>
+<div class="highlight"><pre><span></span><code><span class="nv">KB_SERVER_ENDPOINT</span><span class="o">=</span><span class="s2">&quot;http://&lt;vm-ip&gt;:8003&quot;</span>
+</code></pre></div></p>
 <p><strong>Frontend Environment Variables</strong></p>
 <p>Create <code>.env</code> file in frontend directory:</p>
 <div class="highlight"><pre><span></span><code>nano<span class="w"> </span>Infosys-Agentic-Foundry-Frontend/.env
