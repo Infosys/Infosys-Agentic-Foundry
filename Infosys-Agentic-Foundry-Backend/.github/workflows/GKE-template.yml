@@ -45,9 +45,9 @@ env:
   SHORT_NAME:        ${{ vars.SHORT_NAME }}          # Short name for Artifact Registry image tagging
 
   # ── Fixed infra values — no change needed ────────────────────
-  INFRA_NAMESPACE_1: 'kafkatest'     # Namespace for ES, OTel, Phoenix, Grafana
-  INFRA_NAMESPACE_2: 'iafv4'        # Namespace for Redis
-  INFRA_PATH: 'k8s/infra/gcp'       # GCP-specific LB annotations pre-configured
+ INFRA_NAMESPACE_1: 'your-namespace-1'   # Namespace for ES, OTel, Phoenix, Grafana
+ INFRA_NAMESPACE_2: 'your-namespace-2'   # Namespace for Redis
+ INFRA_PATH: 'k8s/infra/gcp'            # GCP-specific LB annotations pre-configured
 
 # ── GITHUB VARIABLES (non-sensitive) ─────────────────────────
 # GitHub Repo → Settings → Secrets and variables → Variables → New repository variable

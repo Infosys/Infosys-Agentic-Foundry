@@ -1,5 +1,5 @@
 # ============================================================
-#  TEMPLATE: Build and Deploy to EKS (Internal — via JFrog Artifactory)
+#  TEMPLATE: Build and Deploy to EKS (Amazon Elastic Kubernetes Service)
 #
 #  HOW TO USE THIS TEMPLATE:
 #  1. Search for every occurrence of <PLACEHOLDER> below and
@@ -9,17 +9,11 @@
 #  3. Ensure your self-hosted runner has the correct label and
 #     all required tools installed (aws CLI, docker, kubectl,
 #     envsubst, nslookup).
-#  4. Rename this file to deploy-eks-internal.yml and place it
-#     in .github/workflows/ in your repository.
-#
-#  INTERNAL FLOW (JFrog Artifactory as intermediate registry):
-#  buildImage:
-#    Step 1 → Build Docker image and push to JFrog Artifactory
-#    Step 2 → Configure AWS credentials (with internal CA SSL env vars)
-#    Step 3 → Pull image from JFrog, retag, and push to ECR
+#  4. Rename this file to deploy-eks.yml and place it in
+#     .github/workflows/ in your repository.
 # ============================================================
 
-name: Build and Deploy to EKS (Internal)
+name: Build and Deploy to EKS
 
 # ── Triggers ─────────────────────────────────────────────────
 # Auto-trigger on push to your branch, or run manually.
@@ -49,15 +43,10 @@ env:
   CONTAINER_NAME:   ${{ vars.CONTAINER_NAME }}     # Container name inside the pod
   SHORT_NAME:       ${{ vars.SHORT_NAME }}         # Short name for ECR image tagging
 
-  # ── JFrog Artifactory config ──────────────────────────────────
-  JFROG_REGISTRY:    'infyartifactory.jfrog.io'       # JFrog Docker registry hostname
-  JFROG_REPO:        'infyagenticrepo'                 # JFrog repository name
-  JFROG_IMAGE_NAME:  'iafbackend'                      # Image name inside JFrog repo
-
   # ── Fixed infra values — no change needed ────────────────────
-  INFRA_NAMESPACE_1: 'kafkatest'      # Namespace for ES, OTel, Phoenix, Grafana
-  INFRA_NAMESPACE_2: 'iafv4'         # Namespace for Redis
-  INFRA_PATH: 'k8s/infra/aws'        # AWS-specific LB annotations pre-configured
+ INFRA_NAMESPACE_1: 'your-namespace-1'   # Namespace for ES, OTel, Phoenix, Grafana
+ INFRA_NAMESPACE_2: 'your-namespace-2'   # Namespace for Redis
+ INFRA_PATH: 'k8s/infra/aws'            # AWS-specific LB annotations pre-configured
 
 # ── GITHUB VARIABLES (non-sensitive) ─────────────────────────
 # GitHub Repo → Settings → Secrets and variables → Variables → New repository variable
@@ -82,8 +71,6 @@ env:
 #   AWS_SESSION_TOKEN     Session token (if using temporary/assumed-role credentials)
 #   AWS_REGION            AWS region where ECR and EKS are hosted (e.g. us-east-1)
 #   APP_ENV_FILE          Full content of your application .env file
-#   JFROG_USERNAME        JFrog Artifactory username
-#   JFROG_TOKEN           JFrog Artifactory access token / API key
 # ─────────────────────────────────────────────────────────────
 
 jobs:
@@ -274,22 +261,13 @@ jobs:
 
 
   # ============================================================
-  # JOB 2 — buildImage (Internal / JFrog flow)
-  #
-  # Internal image promotion flow:
-  #   1. Build Docker image and push to JFrog Artifactory.
-  #   2. Configure AWS credentials with internal CA SSL environment
-  #      variables (required for corporate networks with custom CA
-  #      bundles that would otherwise break HTTPS calls to AWS APIs).
-  #   3. Pull the image from JFrog, retag it for ECR, authenticate
-  #      to ECR via aws CLI, and push the retagged image to ECR.
-  #
-  # This decoupled approach lets the internal runner build against
-  # the JFrog registry first, then promotes the image to ECR for
-  # EKS deployment — without ever building directly against ECR.
+  # JOB 2 — buildImage
+  # Builds the Docker image and pushes it to Amazon Elastic
+  # Container Registry (ECR), tagged with the Git commit SHA
+  # for full traceability.
   # ============================================================
   buildImage:
-    name: Build and Push Docker Image (via JFrog)
+    name: Build and Push Docker Image
     needs: deployInfra
     runs-on: [self-hosted, Linux, X64, '<YOUR_RUNNER_LABEL>']  # ← Change to your runner label
     permissions:
@@ -318,68 +296,49 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── 3. Build and Push to JFrog Artifactory ───────────────
-      # Logs in to the JFrog Docker registry, builds the image,
-      # and pushes it tagged with the git commit SHA.
-      - name: Build and push Docker image to JFrog Artifactory
-        env:
-          JFROG_USERNAME: ${{ secrets.JFROG_USERNAME }}
-          JFROG_TOKEN:    ${{ secrets.JFROG_TOKEN }}
-        run: |
-          JFROG_IMG="${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.JFROG_IMAGE_NAME }}:${{ github.sha }}"
-
-          echo "INFO: Logging in to JFrog Docker registry: ${{ env.JFROG_REGISTRY }} ..."
-          sudo docker login "${{ env.JFROG_REGISTRY }}" -u "$JFROG_USERNAME" -p "$JFROG_TOKEN"
-
-          echo "INFO: Building Docker image => $JFROG_IMG ..."
-          sudo docker build -t "$JFROG_IMG" .
-
-          echo "INFO: Pushing Docker image to JFrog => $JFROG_IMG ..."
-          sudo docker push "$JFROG_IMG"
-          echo "INFO: Image pushed to JFrog Artifactory successfully."
-
-      # ── 4. Configure AWS Credentials (internal — with corporate CA SSL vars) ─
-      # Uses SSL certificate environment variables required in corporate /
-      # on-premise networks with custom CA bundles that would otherwise
-      # break HTTPS calls to AWS STS / ECR APIs.
+      # ── 3. AWS Credentials ───────────────────────────────────
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
-        env:
-          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
-          SSL_CERT_FILE:      /etc/ssl/certs/ca-bundle.crt
-          CURL_CA_BUNDLE:     /etc/ssl/certs/ca-bundle.crt
-          PYTHONHTTPSVERIFY:  0
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ secrets.AWS_REGION }}
 
-      # ── 5. Pull from JFrog, Retag, and Push to ECR ───────────
-      # Pulls the image that was just pushed to JFrog, retags it
-      # using the ECR naming convention, authenticates to ECR via
-      # the AWS CLI, then pushes the image to ECR for EKS deployment.
-      - name: Pull image from JFrog, retag, and push to ECR
-        env:
-          REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-bundle.crt
-          SSL_CERT_FILE:      /etc/ssl/certs/ca-bundle.crt
+      # ── 4. Write .env file ───────────────────────────────────
+      # Writes the APP_ENV_FILE secret to a local .env file so
+      # it can be passed as a Docker build argument.
+      - name: Write .env file from secret
         run: |
-          JFROG_IMG="${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.JFROG_IMAGE_NAME }}:${{ github.sha }}"
+          echo "${{ secrets.APP_ENV_FILE }}" > .env
+
+      # ── 5. Build Docker Image ────────────────────────────────
+      # Passes the .env file as a build argument.
+      # Tagged with the git commit SHA for traceability.
+      - name: Build Docker image
+        run: |
           ECR_IMG="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "INFO: Building image => $ECR_IMG ..."
+          sudo docker build \
+            --build-arg ENV_FILE=.env \
+            -t "$ECR_IMG" .
+          echo "INFO: Build complete."
 
-          echo "INFO: Pulling image from JFrog => $JFROG_IMG ..."
-          docker pull "$JFROG_IMG"
-
-          echo "INFO: Retagging image for ECR => $ECR_IMG ..."
-          docker tag "$JFROG_IMG" "$ECR_IMG"
-
-          echo "INFO: Logging in to ECR: ${{ env.ECR_REGISTRY }} ..."
+      # ── 6. Login to ECR ──────────────────────────────────────
+      # Uses the AWS CLI to get a Docker login token for ECR.
+      - name: Login to Amazon ECR
+        run: |
+          echo "INFO: Logging in to ECR registry ${{ env.ECR_REGISTRY }} ..."
           sudo aws ecr get-login-password --region "${{ secrets.AWS_REGION }}" | \
             sudo docker login --username AWS --password-stdin "${{ env.ECR_REGISTRY }}"
 
-          echo "INFO: Pushing image to ECR => $ECR_IMG ..."
-          docker push "$ECR_IMG"
-          echo "INFO: Image pushed to ECR successfully."
+      # ── 7. Push Image to ECR ─────────────────────────────────
+      - name: Push Docker image to ECR
+        run: |
+          ECR_IMG="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "INFO: Pushing image => $ECR_IMG ..."
+          sudo docker push "$ECR_IMG"
+          echo "INFO: Image pushed successfully."
 
 
   # ============================================================
@@ -649,10 +608,6 @@ jobs:
           echo "  Namespace  : ${{ env.NAMESPACE }}"
           echo "  Image      : ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           echo "  Endpoint   : http://${{ steps.app_endpoint.outputs.APP_ENDPOINT }}:8000"
-          echo ""
-          echo "  [JFrog Source Image]"
-          echo "  Registry   : ${{ env.JFROG_REGISTRY }}"
-          echo "  Image      : ${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.JFROG_IMAGE_NAME }}:${{ github.sha }}"
           echo "======================================================"
 
       # ── 12. Debug on Failure ──────────────────────────────────
