@@ -66,7 +66,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#multi-cloud-cicd-pipeline-setup-usage-guide" class="md-skip">
+        <a href="#multi-cloud-iaf-backend-cicd-pipeline-setup-usage-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -3324,7 +3324,7 @@
 
 
 
-<h1 id="multi-cloud-cicd-pipeline-setup-usage-guide">Multi-Cloud CI/CD Pipeline — Setup &amp; Usage Guide</h1>
+<h1 id="multi-cloud-iaf-backend-cicd-pipeline-setup-usage-guide">Multi-Cloud IAF Backend CI/CD Pipeline — Setup &amp; Usage Guide</h1>
 <blockquote>
 <p><strong>Purpose:</strong> This guide helps any team set up and use the GitHub Actions CI/CD pipeline to build a Docker image, push it to a cloud container registry, deploy infrastructure services, and deploy the application to a managed Kubernetes cluster — across <strong>Azure (AKS)</strong>, <strong>AWS (EKS)</strong>, and <strong>GCP (GKE)</strong>.</p>
 </blockquote>
@@ -4383,19 +4383,19 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">        </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;latest&#39;</span>
 
 <span class="nt">env</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">AZURE_CONTAINER_REGISTRY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">acr10052.azurecr.io</span><span class="w">    </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">RESOURCE_GROUP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RG-PCS-AZ-CR-10052</span><span class="w">               </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">CLUSTER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aks-REQ0848275</span><span class="w">                      </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">NAMESPACE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iafbesysfix</span><span class="w">                            </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">DEPLOY_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iafbetest</span><span class="w">                            </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iafbackend</span><span class="w">                        </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">SHORT_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iafbetest</span><span class="w">                             </span><span class="c1"># ← Update</span>
+<span class="w">  </span><span class="nt">AZURE_CONTAINER_REGISTRY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myregistry.azurecr.io</span><span class="w">  </span><span class="c1"># ← Update (e.g. myregistry.azurecr.io)</span>
+<span class="w">  </span><span class="nt">RESOURCE_GROUP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-resource-group</span><span class="w">                 </span><span class="c1"># ← Update (e.g. my-resource-group)</span>
+<span class="w">  </span><span class="nt">CLUSTER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-aks-cluster</span><span class="w">                      </span><span class="c1"># ← Update (e.g. my-aks-cluster)</span>
+<span class="w">  </span><span class="nt">NAMESPACE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-namespace</span><span class="w">                           </span><span class="c1"># ← Update (e.g. my-namespace)</span>
+<span class="w">  </span><span class="nt">DEPLOY_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-deployment</span><span class="w">                        </span><span class="c1"># ← Update (e.g. my-deployment)</span>
+<span class="w">  </span><span class="nt">CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-container</span><span class="w">                      </span><span class="c1"># ← Update (e.g. my-container)</span>
+<span class="w">  </span><span class="nt">SHORT_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-app</span><span class="w">                                </span><span class="c1"># ← Update (e.g. my-app)</span>
 
 <span class="nt">jobs</span><span class="p">:</span>
 
 <span class="w">  </span><span class="nt">deployInfra</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deploy Infrastructure Services</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lafbe</span><span class="p p-Indicator">]</span><span class="w">       </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">    </span><span class="c1"># ← Update runner label</span>
 <span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
 <span class="w">    </span><span class="nt">outputs</span><span class="p">:</span>
@@ -4445,7 +4445,7 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">          </span><span class="no">if kubectl get statefulset elasticsearch -n kafkatest &gt; /dev/null 2&gt;&amp;1; then</span>
 <span class="w">            </span><span class="no">echo &quot;INFO: Elasticsearch already exists — skipping.&quot;</span>
 <span class="w">          </span><span class="no">else</span>
-<span class="w">            </span><span class="no">kubectl apply -f k8s/infra/iaf-es.yaml</span>
+<span class="w">            </span><span class="no">kubectl apply -f k8s/infra/azure/iaf-es.yaml</span>
 <span class="w">          </span><span class="no">fi</span>
 
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Wait for Elasticsearch IP</span>
@@ -4468,20 +4468,20 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">          </span><span class="no">if kubectl get deployment opentelemetry-collector -n kafkatest &gt; /dev/null 2&gt;&amp;1; then</span>
 <span class="w">            </span><span class="no">echo &quot;INFO: OpenTelemetry Collector already exists — skipping.&quot;</span>
 <span class="w">          </span><span class="no">else</span>
-<span class="w">            </span><span class="no">sed &quot;s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g&quot; k8s/infra/iaf-otel.yaml | kubectl apply -f -</span>
+<span class="w">            </span><span class="no">sed &quot;s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g&quot; k8s/infra/azure/iaf-otel.yaml | kubectl apply -f -</span>
 <span class="w">          </span><span class="no">fi</span>
 
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Phoenix (Arize)</span>
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-<span class="w">          </span><span class="no">kubectl get deployment phoenix -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/iaf-arpx.yaml</span>
+<span class="w">          </span><span class="no">kubectl get deployment phoenix -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/azure/iaf-arpx.yaml</span>
 
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Grafana</span>
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-<span class="w">          </span><span class="no">kubectl get deployment grafana -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/iaf-grafana.yaml</span>
+<span class="w">          </span><span class="no">kubectl get deployment grafana -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/azure/iaf-grafana.yaml</span>
 
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Redis</span>
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-<span class="w">          </span><span class="no">kubectl get deployment redis -n iafv4 &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/iaf-redis.yaml</span>
+<span class="w">          </span><span class="no">kubectl get deployment redis -n iafv4 &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/azure/iaf-redis.yaml</span>
 
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Wait for All Infra Service IPs</span>
 <span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">collect_ips</span>
@@ -4506,7 +4506,7 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">  </span><span class="nt">buildImage</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Build and Push Docker Image</span>
 <span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">deployInfra</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lafbe</span><span class="p p-Indicator">]</span><span class="w">       </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">    </span><span class="c1"># ← Update runner label</span>
 <span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
 <span class="w">      </span><span class="nt">id-token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">write</span>
@@ -4539,7 +4539,7 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">  </span><span class="nt">deploy</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deploy to AKS</span>
 <span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">deployInfra</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">buildImage</span><span class="p p-Indicator">]</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lafbe</span><span class="p p-Indicator">]</span><span class="w">       </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">    </span><span class="c1"># ← Update runner label</span>
 <span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">actions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
 <span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
@@ -4697,18 +4697,115 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">        </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;latest&#39;</span>
 
 <span class="nt">env</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">ECR_REGISTRY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">501121655816.dkr.ecr.us-east-1.amazonaws.com</span><span class="w">   </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">ECR_REPOSITORY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cs-ppcaws155-iafawsrepo</span><span class="w">                       </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">EKS_CLUSTER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eks-iaf-cluster</span><span class="w">                             </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">NAMESPACE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iaf</span><span class="w">                                                 </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">DEPLOY_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iafaws-be</span><span class="w">                                         </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iaf-be-aws</span><span class="w">                                     </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">SHORT_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iaf-be</span><span class="w">                                             </span><span class="c1"># ← Update</span>
+<span class="w">  </span><span class="nt">ECR_REGISTRY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">123456789012.dkr.ecr.us-east-1.amazonaws.com</span><span class="w">   </span><span class="c1"># ← Update (your AWS account ID + region)</span>
+<span class="w">  </span><span class="nt">ECR_REPOSITORY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-ecr-repository</span><span class="w">                             </span><span class="c1"># ← Update (e.g. my-ecr-repository)</span>
+<span class="w">  </span><span class="nt">EKS_CLUSTER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-eks-cluster</span><span class="w">                              </span><span class="c1"># ← Update (e.g. my-eks-cluster)</span>
+<span class="w">  </span><span class="nt">NAMESPACE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-namespace</span><span class="w">                                        </span><span class="c1"># ← Update (e.g. my-namespace)</span>
+<span class="w">  </span><span class="nt">DEPLOY_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-deployment</span><span class="w">                                     </span><span class="c1"># ← Update (e.g. my-deployment)</span>
+<span class="w">  </span><span class="nt">CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-container</span><span class="w">                                   </span><span class="c1"># ← Update (e.g. my-container)</span>
+<span class="w">  </span><span class="nt">SHORT_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-app</span><span class="w">                                             </span><span class="c1"># ← Update (e.g. my-app)</span>
 
 <span class="nt">jobs</span><span class="p">:</span>
+
+<span class="w">  </span><span class="nt">deployInfra</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deploy Infrastructure Services</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
+<span class="w">    </span><span class="nt">outputs</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">ELASTICSEARCH_IP</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.ELASTICSEARCH_IP }}</span>
+<span class="w">      </span><span class="nt">OTEL_COLLECTOR_IP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.OTEL_COLLECTOR_IP }}</span>
+<span class="w">      </span><span class="nt">PHOENIX_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.PHOENIX_IP }}</span>
+<span class="w">      </span><span class="nt">GRAFANA_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.GRAFANA_IP }}</span>
+<span class="w">      </span><span class="nt">REDIS_IP</span><span class="p">:</span><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.REDIS_IP }}</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Checkout source code</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Configure AWS credentials</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-actions/configure-aws-credentials@v3</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">aws-access-key-id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.AWS_ACCESS_KEY_ID }}</span>
+<span class="w">          </span><span class="nt">aws-secret-access-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.AWS_SECRET_ACCESS_KEY }}</span>
+<span class="w">          </span><span class="nt">aws-session-token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.AWS_SESSION_TOKEN }}</span>
+<span class="w">          </span><span class="nt">aws-region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.AWS_REGION }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Update kubeconfig for EKS</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">sudo aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ensure Infra Namespaces Exist</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl create namespace kafkatest --dry-run=client -o yaml | kubectl apply -f -</span>
+<span class="w">          </span><span class="no">kubectl create namespace iafv4    --dry-run=client -o yaml | kubectl apply -f -</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Elasticsearch</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">if kubectl get statefulset elasticsearch -n kafkatest &gt; /dev/null 2&gt;&amp;1; then</span>
+<span class="w">            </span><span class="no">echo &quot;INFO: Elasticsearch already exists — skipping.&quot;</span>
+<span class="w">          </span><span class="no">else</span>
+<span class="w">            </span><span class="no">kubectl apply -f k8s/infra/aws/iaf-es.yaml</span>
+<span class="w">          </span><span class="no">fi</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Wait for Elasticsearch Hostname</span>
+<span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">wait_es_ip</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">EP=&quot;&quot;</span>
+<span class="w">          </span><span class="no">for i in $(seq 1 36); do</span>
+<span class="w">            </span><span class="no">EP=$(kubectl get svc elasticsearch -n kafkatest \</span>
+<span class="w">                  </span><span class="no">-o jsonpath=&#39;{.status.loadBalancer.ingress[0].hostname}&#39; 2&gt;/dev/null || true)</span>
+<span class="w">            </span><span class="no">[ -n &quot;$EP&quot; ] &amp;&amp; break</span>
+<span class="w">            </span><span class="no">echo &quot;Attempt $i/36 — retrying in 10s...&quot;</span>
+<span class="w">            </span><span class="no">sleep 10</span>
+<span class="w">          </span><span class="no">done</span>
+<span class="w">          </span><span class="no">[ -n &quot;$EP&quot; ] || { echo &quot;ERROR: Could not get Elasticsearch hostname.&quot;; exit 1; }</span>
+<span class="w">          </span><span class="no">echo &quot;ELASTICSEARCH_IP=$EP&quot; &gt;&gt; &quot;$GITHUB_OUTPUT&quot;</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply OpenTelemetry Collector</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">ES_IP=&quot;${{ steps.wait_es_ip.outputs.ELASTICSEARCH_IP }}&quot;</span>
+<span class="w">          </span><span class="no">if kubectl get deployment opentelemetry-collector -n kafkatest &gt; /dev/null 2&gt;&amp;1; then</span>
+<span class="w">            </span><span class="no">echo &quot;INFO: OpenTelemetry Collector already exists — skipping.&quot;</span>
+<span class="w">          </span><span class="no">else</span>
+<span class="w">            </span><span class="no">sed &quot;s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g&quot; k8s/infra/aws/iaf-otel.yaml | kubectl apply -f -</span>
+<span class="w">          </span><span class="no">fi</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Phoenix (Arize)</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get deployment phoenix -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/aws/iaf-arpx.yaml</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Grafana</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get deployment grafana -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/aws/iaf-grafana.yaml</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Redis</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get deployment redis -n iafv4 &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/aws/iaf-redis.yaml</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Wait for All Infra Service Hostnames</span>
+<span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">collect_ips</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">wait_for_ep() {</span>
+<span class="w">            </span><span class="no">local SVC=&quot;$1&quot; NS=&quot;$2&quot; VAR=&quot;$3&quot; EP=&quot;&quot;</span>
+<span class="w">            </span><span class="no">for i in $(seq 1 36); do</span>
+<span class="w">              </span><span class="no">EP=$(kubectl get svc &quot;$SVC&quot; -n &quot;$NS&quot; \</span>
+<span class="w">                    </span><span class="no">-o jsonpath=&#39;{.status.loadBalancer.ingress[0].hostname}&#39; 2&gt;/dev/null || true)</span>
+<span class="w">              </span><span class="no">[ -n &quot;$EP&quot; ] &amp;&amp; break</span>
+<span class="w">              </span><span class="no">echo &quot;Attempt $i/36 — retrying in 10s...&quot;</span>
+<span class="w">              </span><span class="no">sleep 10</span>
+<span class="w">            </span><span class="no">done</span>
+<span class="w">            </span><span class="no">echo &quot;$VAR=${EP:-UNKNOWN}&quot; &gt;&gt; &quot;$GITHUB_OUTPUT&quot;</span>
+<span class="w">          </span><span class="no">}</span>
+<span class="w">          </span><span class="no">wait_for_ep &quot;elasticsearch&quot;           &quot;kafkatest&quot; &quot;ELASTICSEARCH_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ep &quot;opentelemetry-collector&quot; &quot;kafkatest&quot; &quot;OTEL_COLLECTOR_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ep &quot;phoenix&quot;                 &quot;kafkatest&quot; &quot;PHOENIX_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ep &quot;grafana&quot;                 &quot;kafkatest&quot; &quot;GRAFANA_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ep &quot;redis&quot;                   &quot;iafv4&quot;     &quot;REDIS_IP&quot;</span>
+
 <span class="w">  </span><span class="nt">buildImage</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Build and Push Docker Image</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cli1</span><span class="p p-Indicator">]</span><span class="w">       </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">deployInfra</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># ← Update runner label</span>
 <span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
 <span class="w">      </span><span class="nt">id-token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">write</span>
@@ -4744,8 +4841,8 @@ GitHub Secrets (secrets.*) ──┘
 
 <span class="w">  </span><span class="nt">deploy</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deploy to EKS</span>
-<span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">buildImage</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">cli1</span><span class="p p-Indicator">]</span><span class="w">       </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">deployInfra</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">buildImage</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># ← Update runner label</span>
 <span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">actions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
 <span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
@@ -4770,14 +4867,30 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">          </span><span class="no">kubectl get namespace ${{ env.NAMESPACE }} &gt; /dev/null 2&gt;&amp;1 || \</span>
 <span class="w">            </span><span class="no">kubectl create namespace ${{ env.NAMESPACE }}</span>
 
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create/Update Kubernetes Secret</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create/Update Kubernetes Secret (with Infra Endpoints injected)</span>
 <span class="w">        </span><span class="nt">env</span><span class="p">:</span>
 <span class="w">          </span><span class="nt">ENV_FILE_CONTENT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.IAF_BACKEND_ENV }}</span>
+<span class="w">          </span><span class="nt">ELASTICSEARCH_IP</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.ELASTICSEARCH_IP }}</span>
+<span class="w">          </span><span class="nt">OTEL_COLLECTOR_IP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.OTEL_COLLECTOR_IP }}</span>
+<span class="w">          </span><span class="nt">PHOENIX_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.PHOENIX_IP }}</span>
+<span class="w">          </span><span class="nt">GRAFANA_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.GRAFANA_IP }}</span>
+<span class="w">          </span><span class="nt">REDIS_IP</span><span class="p">:</span><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.REDIS_IP }}</span>
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
 <span class="w">          </span><span class="no">[ -z &quot;$ENV_FILE_CONTENT&quot; ] &amp;&amp; { echo &quot;ERROR: IAF_BACKEND_ENV is empty.&quot;; exit 1; }</span>
 <span class="w">          </span><span class="no">printf &quot;%s&quot; &quot;$ENV_FILE_CONTENT&quot; &gt; .env.temp</span>
 <span class="w">          </span><span class="no">awk -F= &#39;!seen[$1]++&#39; .env.temp &gt; .env.cleaned</span>
 <span class="w">          </span><span class="no">sed &#39;s/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/=&quot;\(.*\)&quot;$/=\1/; /^$/d; /^#/d&#39; .env.cleaned &gt; .env.k8s</span>
+<span class="w">          </span><span class="no">printf &#39;%s\n&#39; \</span>
+<span class="w">            </span><span class="no">&quot;PHOENIX_COLLECTOR_ENDPOINT=http://${PHOENIX_IP}:6006&quot; \</span>
+<span class="w">            </span><span class="no">&quot;REDIS_HOST=${REDIS_IP}&quot; \</span>
+<span class="w">            </span><span class="no">&quot;REDIS_PORT=6379&quot; \</span>
+<span class="w">            </span><span class="no">&quot;OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OTEL_COLLECTOR_IP}:4318/v1/traces&quot; \</span>
+<span class="w">            </span><span class="no">&quot;OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_HTTP=http://${OTEL_COLLECTOR_IP}:4320/v1/logs&quot; \</span>
+<span class="w">            </span><span class="no">&quot;OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_GRPC=${OTEL_COLLECTOR_IP}:4319&quot; \</span>
+<span class="w">            </span><span class="no">&quot;ELASTICSEARCH_URL=http://${ELASTICSEARCH_IP}:9200&quot; \</span>
+<span class="w">            </span><span class="no">&quot;GRAFANA_URL=http://${GRAFANA_IP}:3000&quot; &gt;&gt; .env.k8s</span>
+<span class="w">          </span><span class="no">tac .env.k8s | awk -F= &#39;!seen[$1]++&#39; | tac &gt; .env.final</span>
+<span class="w">          </span><span class="no">mv .env.final .env.k8s</span>
 <span class="w">          </span><span class="no">kubectl create secret generic app-env \</span>
 <span class="w">            </span><span class="no">--from-env-file=.env.k8s \</span>
 <span class="w">            </span><span class="no">-n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -</span>
@@ -4832,7 +4945,8 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">            </span><span class="no">name: ${{ env.DEPLOY_NAME }}</span>
 <span class="w">            </span><span class="no">namespace: ${{ env.NAMESPACE }}</span>
 <span class="w">            </span><span class="no">annotations:</span>
-<span class="w">              </span><span class="no">service.beta.kubernetes.io/aws-load-balancer-source-ranges: &quot;10.0.0.0/8,100.64.0.0/10&quot;</span>
+<span class="w">              </span><span class="no">service.beta.kubernetes.io/aws-load-balancer-internal: &quot;true&quot;</span>
+<span class="w">              </span><span class="no">service.beta.kubernetes.io/aws-load-balancer-source-ranges: &quot;&lt;ALLOWED_CIDR_RANGES&gt;&quot;</span>
 <span class="w">          </span><span class="no">spec:</span>
 <span class="w">            </span><span class="no">selector:</span>
 <span class="w">              </span><span class="no">app: ${{ env.DEPLOY_NAME }}</span>
@@ -4848,7 +4962,15 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
 <span class="w">          </span><span class="no">kubectl rollout status deployment/${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} --timeout=5m</span>
 <span class="w">          </span><span class="no">kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}</span>
-<span class="w">          </span><span class="no">kubectl logs -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} --tail=200</span>
+<span class="w">          </span><span class="no">kubectl get svc  -n ${{ env.NAMESPACE }} ${{ env.DEPLOY_NAME }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Debug on Failure</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure()</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get pods -n ${{ env.NAMESPACE }} -o wide</span>
+<span class="w">          </span><span class="no">kubectl get events -n ${{ env.NAMESPACE }} --sort-by=&#39;.lastTimestamp&#39; | tail -n 30</span>
+<span class="w">          </span><span class="no">POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} -o jsonpath=&quot;{.items[0].metadata.name}&quot;)</span>
+<span class="w">          </span><span class="no">[ -n &quot;$POD&quot; ] &amp;&amp; kubectl logs &quot;$POD&quot; -n ${{ env.NAMESPACE }} --tail=100 || true</span>
 </code></pre></div>
 <hr />
 <p><strong>10c. GCP — GKE</strong></p>
@@ -4866,19 +4988,116 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">        </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;latest&#39;</span>
 
 <span class="nt">env</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">GAR_LOCATION</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">us-central1</span><span class="w">                        </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">GAR_REPOSITORY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iaf-repo</span><span class="w">                         </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">GKE_CLUSTER</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gke-iaf-cluster</span><span class="w">                     </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">GKE_ZONE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">us-central1-a</span><span class="w">                          </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">NAMESPACE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iaf</span><span class="w">                                   </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">DEPLOY_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iafgcp-be</span><span class="w">                           </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iaf-be-gcp</span><span class="w">                       </span><span class="c1"># ← Update</span>
-<span class="w">  </span><span class="nt">SHORT_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">iaf-be-gcp</span><span class="w">                           </span><span class="c1"># ← Update</span>
+<span class="w">  </span><span class="nt">GAR_LOCATION</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">us-east1</span><span class="w">                           </span><span class="c1"># ← Update (e.g. us-east1, europe-west1)</span>
+<span class="w">  </span><span class="nt">GAR_REPOSITORY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-gar-repository</span><span class="w">                </span><span class="c1"># ← Update (e.g. my-gar-repository)</span>
+<span class="w">  </span><span class="nt">GKE_CLUSTER</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-gke-cluster</span><span class="w">                      </span><span class="c1"># ← Update (e.g. my-gke-cluster)</span>
+<span class="w">  </span><span class="nt">GKE_ZONE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">us-east1-b</span><span class="w">                             </span><span class="c1"># ← Update (e.g. us-east1-b)</span>
+<span class="w">  </span><span class="nt">NAMESPACE</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-namespace</span><span class="w">                          </span><span class="c1"># ← Update (e.g. my-namespace)</span>
+<span class="w">  </span><span class="nt">DEPLOY_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-deployment</span><span class="w">                       </span><span class="c1"># ← Update (e.g. my-deployment)</span>
+<span class="w">  </span><span class="nt">CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-container</span><span class="w">                     </span><span class="c1"># ← Update (e.g. my-container)</span>
+<span class="w">  </span><span class="nt">SHORT_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-app</span><span class="w">                               </span><span class="c1"># ← Update (e.g. my-app)</span>
 
 <span class="nt">jobs</span><span class="p">:</span>
+
+<span class="w">  </span><span class="nt">deployInfra</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deploy Infrastructure Services</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
+<span class="w">    </span><span class="nt">outputs</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">ELASTICSEARCH_IP</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.ELASTICSEARCH_IP }}</span>
+<span class="w">      </span><span class="nt">OTEL_COLLECTOR_IP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.OTEL_COLLECTOR_IP }}</span>
+<span class="w">      </span><span class="nt">PHOENIX_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.PHOENIX_IP }}</span>
+<span class="w">      </span><span class="nt">GRAFANA_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.GRAFANA_IP }}</span>
+<span class="w">      </span><span class="nt">REDIS_IP</span><span class="p">:</span><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.collect_ips.outputs.REDIS_IP }}</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Checkout source code</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Authenticate to Google Cloud</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">google-github-actions/auth@v2</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">credentials_json</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.GCP_SA_KEY }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Get GKE credentials</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">google-github-actions/get-gke-credentials@v2</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">cluster_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ env.GKE_CLUSTER }}</span>
+<span class="w">          </span><span class="nt">location</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ env.GKE_ZONE }}</span>
+<span class="w">          </span><span class="nt">project_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.GCP_PROJECT_ID }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ensure Infra Namespaces Exist</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl create namespace kafkatest --dry-run=client -o yaml | kubectl apply -f -</span>
+<span class="w">          </span><span class="no">kubectl create namespace iafv4    --dry-run=client -o yaml | kubectl apply -f -</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Elasticsearch</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">if kubectl get statefulset elasticsearch -n kafkatest &gt; /dev/null 2&gt;&amp;1; then</span>
+<span class="w">            </span><span class="no">echo &quot;INFO: Elasticsearch already exists — skipping.&quot;</span>
+<span class="w">          </span><span class="no">else</span>
+<span class="w">            </span><span class="no">kubectl apply -f k8s/infra/gcp/iaf-es.yaml</span>
+<span class="w">          </span><span class="no">fi</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Wait for Elasticsearch IP</span>
+<span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">wait_es_ip</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">IP=&quot;&quot;</span>
+<span class="w">          </span><span class="no">for i in $(seq 1 36); do</span>
+<span class="w">            </span><span class="no">IP=$(kubectl get svc elasticsearch -n kafkatest \</span>
+<span class="w">                  </span><span class="no">-o jsonpath=&#39;{.status.loadBalancer.ingress[0].ip}&#39; 2&gt;/dev/null || true)</span>
+<span class="w">            </span><span class="no">[ -n &quot;$IP&quot; ] &amp;&amp; break</span>
+<span class="w">            </span><span class="no">echo &quot;Attempt $i/36 — retrying in 10s...&quot;</span>
+<span class="w">            </span><span class="no">sleep 10</span>
+<span class="w">          </span><span class="no">done</span>
+<span class="w">          </span><span class="no">[ -n &quot;$IP&quot; ] || { echo &quot;ERROR: Could not get Elasticsearch IP.&quot;; exit 1; }</span>
+<span class="w">          </span><span class="no">echo &quot;ELASTICSEARCH_IP=$IP&quot; &gt;&gt; &quot;$GITHUB_OUTPUT&quot;</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply OpenTelemetry Collector</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">ES_IP=&quot;${{ steps.wait_es_ip.outputs.ELASTICSEARCH_IP }}&quot;</span>
+<span class="w">          </span><span class="no">if kubectl get deployment opentelemetry-collector -n kafkatest &gt; /dev/null 2&gt;&amp;1; then</span>
+<span class="w">            </span><span class="no">echo &quot;INFO: OpenTelemetry Collector already exists — skipping.&quot;</span>
+<span class="w">          </span><span class="no">else</span>
+<span class="w">            </span><span class="no">sed &quot;s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g&quot; k8s/infra/gcp/iaf-otel.yaml | kubectl apply -f -</span>
+<span class="w">          </span><span class="no">fi</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Phoenix (Arize)</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get deployment phoenix -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/gcp/iaf-arpx.yaml</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Grafana</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get deployment grafana -n kafkatest &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/gcp/iaf-grafana.yaml</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Apply Redis</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get deployment redis -n iafv4 &gt; /dev/null 2&gt;&amp;1 || kubectl apply -f k8s/infra/gcp/iaf-redis.yaml</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Wait for All Infra Service IPs</span>
+<span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">collect_ips</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">wait_for_ip() {</span>
+<span class="w">            </span><span class="no">local SVC=&quot;$1&quot; NS=&quot;$2&quot; VAR=&quot;$3&quot; IP=&quot;&quot;</span>
+<span class="w">            </span><span class="no">for i in $(seq 1 36); do</span>
+<span class="w">              </span><span class="no">IP=$(kubectl get svc &quot;$SVC&quot; -n &quot;$NS&quot; \</span>
+<span class="w">                    </span><span class="no">-o jsonpath=&#39;{.status.loadBalancer.ingress[0].ip}&#39; 2&gt;/dev/null || true)</span>
+<span class="w">              </span><span class="no">[ -n &quot;$IP&quot; ] &amp;&amp; break</span>
+<span class="w">              </span><span class="no">echo &quot;Attempt $i/36 — retrying in 10s...&quot;</span>
+<span class="w">              </span><span class="no">sleep 10</span>
+<span class="w">            </span><span class="no">done</span>
+<span class="w">            </span><span class="no">echo &quot;$VAR=${IP:-UNKNOWN}&quot; &gt;&gt; &quot;$GITHUB_OUTPUT&quot;</span>
+<span class="w">          </span><span class="no">}</span>
+<span class="w">          </span><span class="no">wait_for_ip &quot;elasticsearch&quot;           &quot;kafkatest&quot; &quot;ELASTICSEARCH_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ip &quot;opentelemetry-collector&quot; &quot;kafkatest&quot; &quot;OTEL_COLLECTOR_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ip &quot;phoenix&quot;                 &quot;kafkatest&quot; &quot;PHOENIX_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ip &quot;grafana&quot;                 &quot;kafkatest&quot; &quot;GRAFANA_IP&quot;</span>
+<span class="w">          </span><span class="no">wait_for_ip &quot;redis&quot;                   &quot;iafv4&quot;     &quot;REDIS_IP&quot;</span>
+
 <span class="w">  </span><span class="nt">buildImage</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Build and Push Docker Image</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gke-runner</span><span class="p p-Indicator">]</span><span class="w"> </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">deployInfra</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># ← Update runner label</span>
 <span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
 <span class="w">      </span><span class="nt">id-token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">write</span>
@@ -4906,8 +5125,8 @@ GitHub Secrets (secrets.*) ──┘
 
 <span class="w">  </span><span class="nt">deploy</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deploy to GKE</span>
-<span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">buildImage</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gke-runner</span><span class="p p-Indicator">]</span><span class="w"> </span><span class="c1"># ← Update runner label</span>
+<span class="w">    </span><span class="nt">needs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">deployInfra</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">buildImage</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">self-hosted</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">my-runner</span><span class="p p-Indicator">]</span><span class="w">  </span><span class="c1"># ← Update runner label</span>
 <span class="w">    </span><span class="nt">permissions</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">actions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
 <span class="w">      </span><span class="nt">contents</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">read</span>
@@ -4932,14 +5151,30 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">          </span><span class="no">kubectl get namespace ${{ env.NAMESPACE }} &gt; /dev/null 2&gt;&amp;1 || \</span>
 <span class="w">            </span><span class="no">kubectl create namespace ${{ env.NAMESPACE }}</span>
 
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create/Update Kubernetes Secret</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create/Update Kubernetes Secret (with Infra IPs injected)</span>
 <span class="w">        </span><span class="nt">env</span><span class="p">:</span>
 <span class="w">          </span><span class="nt">ENV_FILE_CONTENT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.APP_ENV_FILE_GCP }}</span>
+<span class="w">          </span><span class="nt">ELASTICSEARCH_IP</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.ELASTICSEARCH_IP }}</span>
+<span class="w">          </span><span class="nt">OTEL_COLLECTOR_IP</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.OTEL_COLLECTOR_IP }}</span>
+<span class="w">          </span><span class="nt">PHOENIX_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.PHOENIX_IP }}</span>
+<span class="w">          </span><span class="nt">GRAFANA_IP</span><span class="p">:</span><span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.GRAFANA_IP }}</span>
+<span class="w">          </span><span class="nt">REDIS_IP</span><span class="p">:</span><span class="w">          </span><span class="l l-Scalar l-Scalar-Plain">${{ needs.deployInfra.outputs.REDIS_IP }}</span>
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
 <span class="w">          </span><span class="no">[ -z &quot;$ENV_FILE_CONTENT&quot; ] &amp;&amp; { echo &quot;ERROR: APP_ENV_FILE_GCP is empty.&quot;; exit 1; }</span>
 <span class="w">          </span><span class="no">printf &quot;%s&quot; &quot;$ENV_FILE_CONTENT&quot; &gt; .env.temp</span>
 <span class="w">          </span><span class="no">awk -F= &#39;!seen[$1]++&#39; .env.temp &gt; .env.cleaned</span>
 <span class="w">          </span><span class="no">sed &#39;s/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/=&quot;\(.*\)&quot;$/=\1/; /^$/d; /^#/d&#39; .env.cleaned &gt; .env.k8s</span>
+<span class="w">          </span><span class="no">printf &#39;%s\n&#39; \</span>
+<span class="w">            </span><span class="no">&quot;PHOENIX_COLLECTOR_ENDPOINT=http://${PHOENIX_IP}:6006&quot; \</span>
+<span class="w">            </span><span class="no">&quot;REDIS_HOST=${REDIS_IP}&quot; \</span>
+<span class="w">            </span><span class="no">&quot;REDIS_PORT=6379&quot; \</span>
+<span class="w">            </span><span class="no">&quot;OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OTEL_COLLECTOR_IP}:4318/v1/traces&quot; \</span>
+<span class="w">            </span><span class="no">&quot;OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_HTTP=http://${OTEL_COLLECTOR_IP}:4320/v1/logs&quot; \</span>
+<span class="w">            </span><span class="no">&quot;OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_GRPC=${OTEL_COLLECTOR_IP}:4319&quot; \</span>
+<span class="w">            </span><span class="no">&quot;ELASTICSEARCH_URL=http://${ELASTICSEARCH_IP}:9200&quot; \</span>
+<span class="w">            </span><span class="no">&quot;GRAFANA_URL=http://${GRAFANA_IP}:3000&quot; &gt;&gt; .env.k8s</span>
+<span class="w">          </span><span class="no">tac .env.k8s | awk -F= &#39;!seen[$1]++&#39; | tac &gt; .env.final</span>
+<span class="w">          </span><span class="no">mv .env.final .env.k8s</span>
 <span class="w">          </span><span class="no">kubectl create secret generic app-env \</span>
 <span class="w">            </span><span class="no">--from-env-file=.env.k8s \</span>
 <span class="w">            </span><span class="no">-n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -</span>
@@ -4993,6 +5228,8 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">          </span><span class="no">metadata:</span>
 <span class="w">            </span><span class="no">name: ${{ env.DEPLOY_NAME }}</span>
 <span class="w">            </span><span class="no">namespace: ${{ env.NAMESPACE }}</span>
+<span class="w">            </span><span class="no">annotations:</span>
+<span class="w">              </span><span class="no">cloud.google.com/load-balancer-type: &quot;Internal&quot;</span>
 <span class="w">          </span><span class="no">spec:</span>
 <span class="w">            </span><span class="no">selector:</span>
 <span class="w">              </span><span class="no">app: ${{ env.DEPLOY_NAME }}</span>
@@ -5008,7 +5245,15 @@ GitHub Secrets (secrets.*) ──┘
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
 <span class="w">          </span><span class="no">kubectl rollout status deployment/${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} --timeout=5m</span>
 <span class="w">          </span><span class="no">kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}</span>
-<span class="w">          </span><span class="no">kubectl logs -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} --tail=200</span>
+<span class="w">          </span><span class="no">kubectl get svc  -n ${{ env.NAMESPACE }} ${{ env.DEPLOY_NAME }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Debug on Failure</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure()</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">kubectl get pods -n ${{ env.NAMESPACE }} -o wide</span>
+<span class="w">          </span><span class="no">kubectl get events -n ${{ env.NAMESPACE }} --sort-by=&#39;.lastTimestamp&#39; | tail -n 30</span>
+<span class="w">          </span><span class="no">POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} -o jsonpath=&quot;{.items[0].metadata.name}&quot;)</span>
+<span class="w">          </span><span class="no">[ -n &quot;$POD&quot; ] &amp;&amp; kubectl logs &quot;$POD&quot; -n ${{ env.NAMESPACE }} --tail=100 || true</span>
 </code></pre></div>
 <hr />
 <h2 id="11-how-each-job-works">11. How Each Job Works</h2>
