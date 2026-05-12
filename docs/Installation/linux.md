@@ -13,7 +13,7 @@ Ensure you have the following installed on your Linux system:
 **System Requirements**
 
 - **sudo privileges** (for installing system packages)
-- **Python 3.11 or higher** (for backend)
+- **Python 3.12** (for backend)
 - **NodeJS version 22 or higher**  
 - **NPM version 10.9.2 or higher** ( comes bundled with NodeJs) 
 - **Git** (optional, for cloning the repository)
@@ -32,14 +32,23 @@ python --version
 python3 --version
 ```
 
-Make sure it is **3.11 or higher**. If it's not, you'll need to update your Python version.
+Make sure it is **3.12**. If it's not, you'll need to update your Python version.
 
 **Python Installation Options**
 
-There are 2 ways to install the required Python version:
+There are 3 ways to install the required Python version:
 
 1. **Install** - Install a required greenlisted Python version
 2. **Use pyenv** - Update the Python version using pyenv (recommended)
+3. **Install from OS packages** - Install Python 3.12 using your OS package manager
+
+## Installing Python 3.12 from OS Packages (Example: RHEL9)
+
+```bash
+sudo dnf groupinstall "Development Tools"
+sudo dnf install openssl-devel bzip2-devel libffi-devel zlib-devel readline-devel sqlite-devel
+sudo dnf install python3.12 -y
+```
 
 ## Installing Python with pyenv on RHEL
 
@@ -94,10 +103,10 @@ pyenv --version
 
 **Step 5: Install Python Version**
 
-Install the required Python version (example with Python >=3.11.8 or <3.13):
+Install the required Python version (example with Python 3.12):
 
 ```bash
-pyenv install 3.11.8
+pyenv install 3.12
 ```
 
 You can also install other versions as needed:
@@ -115,7 +124,7 @@ pyenv install 3.12.0
 Set the installed Python version as your global default:
 
 ```bash
-pyenv global 3.11.8
+pyenv global 3.12
 ```
 
 Verify the installation:
@@ -313,9 +322,198 @@ REACT_APP_BASE_URL = "http://your-backend-server-ip:your-backend-port";
 
 ```
 
-**Configure Backend CORS Settings**
+---
 
-In the backend `.env` file (`Infosys-Agentic-Foundry-Backend/.env`), set the allowed frontend origins:
+## LiteLLM Proxy Setup
+
+The LiteLLM proxy acts as a unified gateway for all LLM API calls, enabling load balancing, fallback models, and centralized configuration. This section covers how to set up and run the LiteLLM proxy as a Linux service.
+
+
+**Installation**
+
+**1. Navigate to the project directory:**
+
+```bash
+cd llmproxy
+```
+
+**2. Create and activate a virtual environment:**
+
+```bash
+python -m venv venv
+source venv/bin/activate
+```
+
+**3. Install dependencies:**
+
+```bash
+pip install uv
+uv pip install -r requirements.txt
+```
+
+**4. Configure environment and config:**
+
+Configure both `.env` and `config.yaml` based on the provided `.example` files in the repository.
+
+**5. Enable the firewall port:**
+
+Ensure port **8080** (or your configured port) is accessible:
+
+=== "UFW"
+
+    ```bash
+    sudo ufw allow 8080/tcp
+    sudo ufw reload
+    ```
+
+=== "firewalld"
+
+    ```bash
+    sudo firewall-cmd --permanent --add-port=8080/tcp
+    sudo firewall-cmd --reload
+    ```
+
+=== "iptables"
+
+    ```bash
+    sudo iptables -A INPUT -p tcp --dport 8080 -j ACCEPT
+    sudo iptables-save | sudo tee /etc/iptables/rules.v4
+    ```
+
+**Hosting as a Linux Service (systemd)**
+
+**1. Create the service file:**
+
+```bash
+sudo nano /etc/systemd/system/llmproxy.service
+```
+
+Paste the following content:
+
+```ini
+[Unit]
+Description=Litellm FastAPI Application
+After=network.target
+
+[Service]
+WorkingDirectory=/home/your-username/llmproxy
+ExecStart=/home/your-username/llmproxy/venv/bin/litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug
+Environment=VIRTUAL_ENV=/home/your-username/llmproxy/venv
+Environment=PATH=/home/your-username/llmproxy/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Restart=always
+User=your-username
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+!!! note
+    Update the paths to match your environment.
+
+**2. Start and enable the service:**
+
+```bash
+sudo systemctl start llmproxy.service
+sudo systemctl enable llmproxy.service
+```
+
+**3. Check status and view logs:**
+
+```bash
+sudo systemctl status llmproxy.service
+journalctl -u llmproxy.service -f
+```
+
+**Useful Commands**
+
+| Action | Command |
+|--------|--------|
+| Start service | `sudo systemctl start llmproxy.service` |
+| Stop service | `sudo systemctl stop llmproxy.service` |
+| Restart service | `sudo systemctl restart llmproxy.service` |
+| Check status | `sudo systemctl status llmproxy.service` |
+| View live logs | `journalctl -u llmproxy.service -f` |
+| Enable on boot | `sudo systemctl enable llmproxy.service` |
+| Disable on boot | `sudo systemctl disable llmproxy.service` |
+
+---
+
+## Knowledgebase Server Setup
+
+The knowledgebase server handles document retrieval and RAG capabilities.
+
+**Configure .env**
+
+Create a `.env` file in the knowledgebase server directory by copying the contents of `.env.example`:
+
+```env
+# Database Configuration
+POSTGRESQL_HOST=vm-ip
+POSTGRESQL_PORT='5432'
+DATABASE='agentic_workflow_as_service_database'
+POSTGRESQL_USER='postgres'
+POSTGRESQL_PASSWORD='postgres'
+
+# Model Server Configuration
+MODEL_SERVER_URL='http://vm-ip:5500'
+
+# KB Server Configuration
+KB_SERVER_PORT=8003 # or any other port
+
+HTTP_PROXY=''   # should be empty
+HTTPS_PROXY=''  # should be empty
+
+NO_PROXY='vm-ip'
+```
+
+**Hosting as a Linux Service (systemd)**
+
+Create a systemd service file:
+
+```bash
+sudo nano /etc/systemd/system/knowledgebase.service
+```
+
+Paste the following content:
+
+```ini
+[Unit]
+Description=Knowledgebase Server
+After=network.target
+
+[Service]
+WorkingDirectory=/home/your-username/your-project-directory/knowledgebase_server
+Environment=NO_PROXY=localhost,127.0.0.1
+Environment=VIRTUAL_ENV=/home/your-username/your-project-directory/knowledgebase_server/venv
+Environment=PATH=/home/your-username/your-project-directory/knowledgebase_server/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+ExecStart=/home/your-username/your-project-directory/knowledgebase_server/venv/bin/python main.py
+Restart=always
+User=your-username
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl enable knowledgebase.service
+sudo systemctl start knowledgebase.service
+sudo systemctl status knowledgebase.service
+```
+
+---
+
+**Configure Backend Settings**
+
+In the backend `.env` file (`Infosys-Agentic-Foundry-Backend/.env`), set the frontend URL:
 
 ```env
 # Add your frontend IP address
@@ -325,38 +523,52 @@ UI_CORS_IP="<your-frontend-server-ip>"
 UI_CORS_IP_WITH_PORT="<your-frontend-server-ip:your-frontend-port>"
 ```
 
-If you want to let other UI connect to the backend, Update the backend server file (typically `run_server.py` or `main.py`):
-
-```python
-origins = [
-    # Replace with your actual frontend server IP and port
-    "http://your-frontend-server-ip:your-frontend-port",
-    "http://localhost:3000",
-    "http://localhost:6002",
-    # Add additional origins as needed
-]
-
-```
-
 ## Environment Configuration
 
 **Backend Environment Variables**
 
-Create `.env` file in backend directory:
+Copy content of `.env.example` and make a `.env` file in your backend directory (`Infosys-Agentic-Foundry-Backend/.env`), then make sure the following variables are set appropriately:
 
+**a. LLM API Keys:**
+You only need to provide at least 1 API key and models for the LLM that you would like to use from Azure OpenAI, OpenAI, Google, LiteLLM, etc. It is not necessary to provide all of them.
+
+**b. Secrets and Authentication:**
+You can generate the key for secrets master key and JWT authentication with the output you get by executing `generate_master_secret_key.py` file.
 ```bash
-nano Infosys-Agentic-Foundry-Backend/.env
+SECRETS_MASTER_KEY=""
+AUTH_JWT_SECRET=""
 ```
 
-Add the following content (replace with your actual values):
-
+**c. Configure PostgreSQL:**
 ```bash
-DEBUG=False
-# Replace with your actual API keys and configuration
-API_KEY=your_actual_api_key_here
-DATABASE_URL=your_database_url_here
-SECRET_KEY=your_secret_key_here
+POSTGRESQL_HOST=localhost
+POSTGRESQL_PORT=5432
+POSTGRESQL_USER=postgres
+POSTGRESQL_PASSWORD=postgres
+# Disables ssl in postgres connection string for inference
+DISABLE_SSL_FOR_CHAT_CONNECTIONS=True
+```
 
+**d. Configure Redis:**
+```bash
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+# Setup your redis password here
+REDIS_PASSWORD=<your-password>
+CACHE_EXPIRY_TIME=900
+```
+
+**e. Configure Model Server:**
+```bash
+MODEL_SERVER_URL="http://<vm-ip>:5500"
+MODEL_SERVER_HOST=<vm-ip>
+MODEL_SERVER_PORT=5500
+```
+
+**f. Configure Knowledgebase Server:**
+```bash
+KB_SERVER_ENDPOINT="http://<vm-ip>:8003"
 ```
 
 **Frontend Environment Variables**

@@ -12,7 +12,7 @@ Before proceeding, ensure you have the following installed:
 
 ## Required Software
 
-- Python 3.11 or higher
+- Python 3.12
 - pip (Python package manager)
 - Git (optional, for cloning the repository)
 - A code editor (e.g., VS Code is recommended, but any editor of your choice will work)
@@ -191,6 +191,190 @@ After cloning or pulling the UI code from GitHub, delete the `package-lock.json`
     ```
 - Wait for the installation to complete. This may take a few minutes.
 
+---
+
+## LiteLLM Proxy Setup
+
+The LiteLLM proxy acts as a unified gateway for all LLM API calls, enabling load balancing, fallback models, and centralized configuration. This section covers how to set up and run the LiteLLM proxy on Windows.
+
+**Installation**
+
+**1. Go to llm proxy folder:**
+
+```powershell
+cd C:\Code\llmproxy
+```
+
+**2. Create and activate a virtual environment:**
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
+```
+
+**3. Install dependencies:**
+
+```powershell
+pip install uv
+uv pip install -r requirements.txt
+```
+
+**4. Configure environment and config:**
+
+Configure both `.env` and `config.yaml` based on the provided `.example` files in the repository.
+
+**5. Enable the firewall port:**
+
+Ensure port **8080** (or your configured port) is accessible:
+
+=== "PowerShell (Run as Administrator)"
+
+    ```powershell
+    New-NetFirewallRule -DisplayName "LiteLLM Proxy" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+    ```
+
+=== "Command Prompt (Run as Administrator)"
+
+    ```cmd
+    netsh advfirewall firewall add rule name="LiteLLM Proxy" dir=in action=allow protocol=TCP localport=8080
+    ```
+
+**Hosting as a Windows Service**
+
+You can create either a **standalone** batch file for LiteLLM or **integrate** it into your existing backend startup script.
+
+=== "Option 1: Standalone `litellm_server.bat`"
+
+    Create a file named `litellm_server.bat`:
+
+    ```bat
+    @echo off
+    set PYTHONIOENCODING=utf-8
+
+    REM Change to project directory
+    cd /d "C:\Code\llmproxy\venv\Scripts"
+    call Activate
+
+    REM Get today's date in YYYY-MM-DD format
+    for /f %%i in ('powershell -Command "Get-Date -Format yyyy-MM-dd"') do set datetime=%%i
+
+    cd /d "C:\Code\llmproxy"
+
+    REM Ensure logs directory exists
+    if not exist logs mkdir logs
+
+    start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+
+    pause
+    ```
+
+=== "Option 2: Integrated in Backend `server-start.bat`"
+
+    Add LiteLLM startup to your existing backend startup script:
+
+    ```bat
+    @echo off
+
+    REM === Set environment variables ===
+    set NO_PROXY=localhost,127.0.0.1
+    set no_proxy=localhost,127.0.0.1
+    set PHOENIX_GRPC_PORT=50051
+    set PHOENIX_SQL_DATABASE_URL=postgresql://postgres:<your-postgresql-password>@localhost:5432/arize_traces
+    set PYTHONIOENCODING=utf-8
+
+    cd /d "C:\Code\llmproxy\venv\Scripts"
+    call Activate
+
+    REM Get today's date in YYYY-MM-DD format
+    for /f %%i in ('powershell -Command "Get-Date -Format yyyy-MM-dd"') do set datetime=%%i
+
+    cd /d "C:\Code\llmproxy"
+
+    REM Ensure logs directory exists
+    if not exist logs mkdir logs
+
+    start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+
+    REM Activate Python virtual environment (replace with your venv)
+    cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\venv\Scripts"
+    call Activate
+
+    REM Change to project directory (replace with your backend)
+    cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
+
+    start "" cmd /k "python -m phoenix.server.main serve"
+
+    cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\knowledgebase_server"
+
+    REM Ensure logs directory exists
+    if not exist logs mkdir logs
+
+    start cmd /k "python main.py --host 0.0.0.0 >> logs\server_%datetime%.log 2>&1"
+
+    cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
+
+    REM Ensure logs directory exists
+    if not exist logs mkdir logs
+
+    REM Start FastAPI backend
+    start cmd /k "python main.py --host 0.0.0.0 --port <your-port-number> >> logs\server_%datetime%.log 2>&1"
+
+    pause
+    ```
+
+    !!! note
+        Replace the paths above with your actual project directories if they differ.
+
+---
+
+## Knowledgebase Server Setup
+
+The knowledgebase server handles document retrieval and RAG capabilities.
+
+**Configure .env**
+
+Create a `.env` file in the knowledgebase server directory by copying the contents of `.env.example`:
+
+```env
+# Database Configuration
+POSTGRESQL_HOST=vm-ip
+POSTGRESQL_PORT='5432'
+DATABASE='agentic_workflow_as_service_database'
+POSTGRESQL_USER='postgres'
+POSTGRESQL_PASSWORD='postgres'
+
+# Model Server Configuration
+MODEL_SERVER_URL='http://vm-ip:5500'
+
+# KB Server Configuration
+KB_SERVER_PORT=8003 # or any other port
+
+HTTP_PROXY=''   # should be empty
+HTTPS_PROXY=''  # should be empty
+
+NO_PROXY='vm-ip'
+```
+
+**Running the Knowledgebase Server**
+
+You can start it individually or by adding it to `backend-start.bat`:
+
+**Standalone batch file:**
+```bat
+@echo off
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\knowledgebase_server"
+
+REM Ensure logs directory exists
+if not exist logs mkdir logs
+
+start cmd /k "python main.py --host 0.0.0.0 >> logs\server_%datetime%.log 2>&1"
+
+pause
+```
+
+Or you can create a single `backend-start.bat` batch file where everything is started at once. See [Option A: Combined Batch File (`server-start.bat`)](#option-a-combined-batch-file-server-startbat) for the single batch file setup.
+
+---
 
 ## Configuration Setup
 
@@ -205,33 +389,53 @@ REACT_APP_BASE_URL=`<your_backend_api_url>`
 
 **Backend Configuration (.env file)**
 
-Open the `.env` file in your backend project (`Infosys-Agentic-Foundry-Backend/.env`) and set the allowed frontend origins:
+Copy content of `.env.example` and make a `.env` file in your backend project (`Infosys-Agentic-Foundry-Backend/.env`), then make sure the following variables are set appropriately:
 
+**a. LLM API Keys:**
+You only need to provide at least 1 API key and models for the LLM that you would like to use from Azure OpenAI, OpenAI, Google, LiteLLM, etc. It is not necessary to provide all of them.
+
+**b. Secrets and Authentication:**
+You can generate the key for secrets master key and JWT authentication with the output you get by executing `generate_master_secret_key.py` file.
 ```env
-# Add your frontend IP address
-UI_CORS_IP=`<your_ui_url>`
+SECRETS_MASTER_KEY=""
+AUTH_JWT_SECRET=""
+```
 
-# Add your frontend IP with port number
-UI_CORS_IP_WITH_PORT=`<your_ui_url:port>`
+**c. Configure PostgreSQL:**
+```env
+POSTGRESQL_HOST=localhost
+POSTGRESQL_PORT=5432
+POSTGRESQL_USER=postgres
+POSTGRESQL_PASSWORD=postgres
+# Disables ssl in postgres connection string for inference
+DISABLE_SSL_FOR_CHAT_CONNECTIONS=True
+```
+
+**d. Configure Redis:**
+```env
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+# Setup your redis password here
+REDIS_PASSWORD=<your-password>
+CACHE_EXPIRY_TIME=900
+```
+
+**e. Configure Model Server:**
+```env
+MODEL_SERVER_URL="http://<vm-ip>:5500"
+MODEL_SERVER_HOST=<vm-ip>
+MODEL_SERVER_PORT=5500
+```
+
+**f. Configure Knowledgebase Server:**
+```env
+KB_SERVER_ENDPOINT="http://<vm-ip>:8003"
 ```
 
 **Model Server Setup**
 
 For detailed instructions on deploying and configuring your model server, refer to the [Model Server Deployment](../Model_server.md#model-server-setup-localvm-deployment) guide.
-
-**CORS Origins List**
-If you want to let other UI connect to the backend, In `run_server.py` (or `main.py`), you will find an `origins` list:
-
-```python
-origins = [
-    "http://localhost",
-    "http://localhost:3000",
-    "null",
-    # Add other origins as needed, such as your deployed frontend URL
-]
-```
-
-- If you want to allow connections to the backend from other hosts, add their IP and port numbers to this `origins` list.
 
 Make sure to update the `.env` files with your API keys and other required configuration values.
 
@@ -283,49 +487,127 @@ The React development server will start and automatically open [http://localhost
 
 **Step 1: Create a Batch File**
 
-Create a new file named `servers.bat` (you can choose any name).
+You can either create one combined batch file for both frontend and backend, or create separate batch files.
 
-Paste the following content into the file:
+**Option A: Combined Batch File (`server-start.bat`)**
 
 ```bat
-
 @echo off
+
+REM === Set environment variables ===
+set NO_PROXY=localhost,127.0.0.1
+set no_proxy=localhost,127.0.0.1
+set PHOENIX_GRPC_PORT=50051
+set PHOENIX_SQL_DATABASE_URL=postgresql://postgres:<your-postgresql-password>@localhost:5432/arize_traces
 set PYTHONIOENCODING=utf-8
-
-REM Activate Python virtual environment
-cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\.venv\Scripts"
-call activate.bat
-
-REM Change to backend project directory
-cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
-
-REM Start Phoenix Server
-start "" cmd /k "python -m phoenix.server.main serve"
-
-REM Ensure logs directory exists
-if not exist logs mkdir logs
 
 REM Get today's date in YYYY-MM-DD format
 for /f %%i in ('powershell -Command "Get-Date -Format yyyy-MM-dd"') do set datetime=%%i
 
+cd /d "C:\Infosys-Agentic-Foundry\llmproxy"
+
+REM Ensure logs directory exists
+if not exist logs mkdir logs
+
+start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+
+REM Activate Python virtual environment (replace with your venv)
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\venv\Scripts"
+call Activate
+
+REM Change to project directory (replace with your backend)
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
+
+start "" cmd /k "python -m phoenix.server.main serve"
+
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\knowledgebase_server"
+
+REM Ensure logs directory exists
+if not exist logs mkdir logs
+
+start cmd /k "python main.py --host 0.0.0.0 >> logs\server_%datetime%.log 2>&1"
+
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
+
+REM Ensure logs directory exists
+if not exist logs mkdir logs
+
 REM Start FastAPI backend and log to logs\server_YYYY-MM-DD.log
-start cmd /k "python run_server.py --host 0.0.0.0 --port <your_port_number> >> logs\server_%datetime%.log 2>&1"
+start cmd /k "python main.py --host 0.0.0.0 --port <your-port-number> >> logs\server_%datetime%.log 2>&1"
 
-REM Start Node.js frontend 
+REM Start Node.js frontend
 cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Frontend"
-start cmd /k "npm start"
 
-REM Or if you want specific port number run the below command:
-start cmd /k "set PORT=<your_port_number> && npm start"
+start cmd /k "set PORT=<your-port-number> && npm start"
+
+pause
+```
+
+**Option B: Separate Batch Files**
+
+**Frontend batch file (`ui-start.bat`):**
+
+```bat
+@echo off
+REM Start Node.js frontend
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Frontend"
+
+start cmd /k "set PORT=<your-port-number> && npm start"
+
+pause
+```
+
+**Backend batch file (`backend-start.bat`):**
+
+```bat
+@echo off
+
+REM === Set environment variables ===
+set NO_PROXY=localhost,127.0.0.1
+set no_proxy=localhost,127.0.0.1
+set PHOENIX_GRPC_PORT=50051
+set PHOENIX_SQL_DATABASE_URL=postgresql://postgres:<your-postgresql-password>@localhost:5432/arize_traces
+set PYTHONIOENCODING=utf-8
+
+REM Get today's date in YYYY-MM-DD format
+for /f %%i in ('powershell -Command "Get-Date -Format yyyy-MM-dd"') do set datetime=%%i
+
+cd /d "C:\Infosys-Agentic-Foundry\llmproxy"
+
+REM Ensure logs directory exists
+if not exist logs mkdir logs
+
+start cmd /k "litellm --config config.yaml --host 0.0.0.0 --port 8080 --debug >> logs\server_%datetime%.log 2>&1"
+
+REM Activate Python virtual environment (replace with your venv)
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\venv\Scripts"
+call Activate
+
+REM Change to project directory (replace with your backend)
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
+
+start "" cmd /k "python -m phoenix.server.main serve"
+
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend\knowledgebase_server"
+
+REM Ensure logs directory exists
+if not exist logs mkdir logs
+
+start cmd /k "python main.py --host 0.0.0.0 >> logs\server_%datetime%.log 2>&1"
+
+cd /d "C:\Infosys-Agentic-Foundry\Infosys-Agentic-Foundry-Backend"
+
+REM Ensure logs directory exists
+if not exist logs mkdir logs
+
+REM Start FastAPI backend and log to logs\server_YYYY-MM-DD.log
+start cmd /k "python main.py --host 0.0.0.0 --port <your-port-number> >> logs\server_%datetime%.log 2>&1"
 
 pause
 ```
 
 !!! warning "Important"
-    Make sure the file paths match your system's folder structure.
-
-!!! tip
-    Save the file somewhere accessible, like your desktop or project root.
+    Replace file paths, `<your-postgresql-password>`, and `<your-port-number>` as required. The batch files will be referenced for NSSM service setups below (e.g., `server-start.bat`).
 
 **Step 2: Install and Configure NSSM** 
 

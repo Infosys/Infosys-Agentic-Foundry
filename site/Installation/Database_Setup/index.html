@@ -685,17 +685,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#postgresql-database-setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PostgreSQL Database Setup
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#redis-installation-on-windows" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -860,6 +849,34 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../MultiCloud_deployment/multicloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Cloud CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2901,17 +2918,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#postgresql-database-setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PostgreSQL Database Setup
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#redis-installation-on-windows" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3001,6 +3007,8 @@
 <h1 id="database-setup-guide">Database Setup Guide</h1>
 <h2 id="postgresql-installation-on-windows-vm">PostgreSQL Installation on Windows VM</h2>
 <ol>
+<li>Go to the <a href="https://www.postgresql.org/download/windows/">PostgreSQL Windows download page</a>.</li>
+<li>Select PostgreSQL version 17.</li>
 <li>Download the PostgreSQL installation wizard and start it up.<br />
 <img alt="postgres1" src="../../images/postgres1.png" /></li>
 <li>Choose the default directory or customize as required.<br />
@@ -3021,7 +3029,7 @@
 <li>Click Next to start the installation.<br />
 <img alt="postgres9" src="../../images/postgres9.png" /></li>
 <li>After installation, a checkbox will ask if you wish to install additional tools with Stack Builder.</li>
-<li>Uncheck this as it is not necessary and likely not supported inside a VM.<br />
+<li>(Optional) You can download additional tools for this PostgreSQL installation but it is not necessary.<br />
 <img alt="postgres10" src="../../images/postgres10.png" /></li>
 </ol>
 <hr />
@@ -3138,73 +3146,31 @@ sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--reload
 <p><strong>Note</strong>: Adjust paths and version numbers as needed for your environment.</p>
 </blockquote>
 <hr />
-<h2 id="postgresql-database-setup">PostgreSQL Database Setup</h2>
 <p><strong>Environment Configuration</strong></p>
-<p>Create a <code>.env</code> file with the following variables:</p>
-<div class="highlight"><pre><span></span><code>DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
-
-# PostgreSQL Configuration
+<p>Create a <code>.env</code> file by copying the content from <code>.env.example</code> and set the following variables such as host, username, and password to connect to the required PostgreSQL DB:</p>
+<div class="highlight"><pre><span></span><code># GIVE YOUR POSTGRESQL CONFIG
 POSTGRESQL_HOST=localhost
+POSTGRESQL_PORT=5432
 POSTGRESQL_USER=postgres
 POSTGRESQL_PASSWORD=postgres
-DATABASE=your_database_name
-POSTGRESQL_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/your_database_name?sslmode=disable
+# Disables ssl in postgres connection string for inference
+DISABLE_SSL_FOR_CHAT_CONNECTIONS=True
+
+# Database name to be used
+DATABASE=agentic_workflow_as_service_database
+FEEDBACK_LEARNING_DB_NAME=feedback_learning
+EVALUATION_LOGS_DB_NAME=evaluation_logs
+RECYCLE_DB_NAME=recycle
+LOGIN_DB_NAME=login
+ARIZE_TRACES_DB_NAME=arize_traces
+# keep it &#39;low&#39; for local devices, change it to &#39;medium&#39; or &#39;high&#39; for Server/VM
+CONNECTION_POOL_SIZE=&quot;low&quot;
 </code></pre></div>
-<p><strong>Database Creation</strong></p>
-<ol>
-<li><strong>Define required databases in a list variable in <code>database_manager.py</code>:</strong></li>
-</ol>
-<div class="highlight"><pre><span></span><code><span class="n">REQUIRED_DATABASES</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">&quot;feedback_learning&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;telemetry_logs&quot;</span><span class="p">,</span> 
-    <span class="s2">&quot;agentic_workflow_as_service_database&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;login&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;logs&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;arize_traces&quot;</span>
-<span class="p">]</span>
-</code></pre></div>
-<ol>
-<li><strong>Load environment variables in <code>database_manager.py</code>:</strong></li>
-</ol>
-<div class="highlight"><pre><span></span><code><span class="n">Postgre_string</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;DATABASE_URL&quot;</span><span class="p">)</span>
-<span class="n">POSTGRESQL_HOST</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;POSTGRESQL_HOST&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-<span class="n">POSTGRESQL_USER</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;POSTGRESQL_USER&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-<span class="n">POSTGRESQL_PASSWORD</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;POSTGRESQL_PASSWORD&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-<span class="n">DATABASE</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;DATABASE&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-<span class="n">DATABASE_URL</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;POSTGRESQL_DATABASE_URL&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-</code></pre></div>
-<ol>
-<li><strong>Function to connect to postgres database in <code>database_manager.py</code>:</strong></li>
-</ol>
-<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_postgres_url</span><span class="p">():</span>
-    <span class="n">url</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">Postgre_string</span><span class="p">)</span>
-    <span class="c1"># Replace path with &#39;/postgres&#39;</span>
-    <span class="n">new_url</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="s2">&quot;/postgres&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">urlunparse</span><span class="p">(</span><span class="n">new_url</span><span class="p">)</span>
-</code></pre></div>
-<ol>
-<li>
-<p><strong>Create Databases function</strong></p>
-</li>
-<li>
-<p>The system will connect to the 'postgres' database under postgres user and create the required databases listed in <code>REQUIRED_DATABASES</code>:</p>
-</li>
-</ol>
-<div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">check_and_create_databases</span><span class="p">():</span>
-    <span class="n">conn</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncpg</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">get_postgres_url</span><span class="p">())</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">db_name</span> <span class="ow">in</span> <span class="n">REQUIRED_DATABASES</span><span class="p">:</span>
-            <span class="n">exists</span> <span class="o">=</span> <span class="k">await</span> <span class="n">conn</span><span class="o">.</span><span class="n">fetchval</span><span class="p">(</span>
-                <span class="s2">&quot;SELECT 1 FROM pg_database WHERE datname = $1&quot;</span><span class="p">,</span> <span class="n">db_name</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">exists</span><span class="p">:</span>
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database &#39;</span><span class="si">{</span><span class="n">db_name</span><span class="si">}</span><span class="s2">&#39; not found. Creating...&quot;</span><span class="p">)</span>
-                <span class="k">await</span> <span class="n">conn</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;CREATE DATABASE &quot;</span><span class="si">{</span><span class="n">db_name</span><span class="si">}</span><span class="s1">&quot;&#39;</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database &#39;</span><span class="si">{</span><span class="n">db_name</span><span class="si">}</span><span class="s2">&#39; already exists.&quot;</span><span class="p">)</span>
-    <span class="k">finally</span><span class="p">:</span>
-        <span class="k">await</span> <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-</code></pre></div>
+<blockquote>
+<p><strong>Note:</strong> For connecting to Azure PostgreSQL Database, set the SSL variable as <code>False</code>:
+<code>DISABLE_SSL_FOR_CHAT_CONNECTIONS=False</code></p>
+<p><strong>Note:</strong> The required PostgreSQL databases are automatically created according to the names given in the <code>.env</code> file. Hence, different database instances can be created by changing the names in the <code>.env</code>.</p>
+</blockquote>
 <hr />
 <h2 id="redis-installation-on-windows">Redis Installation on Windows</h2>
 <ol>
@@ -3219,6 +3185,9 @@ requirepass &lt;password&gt;
 <li>Open PowerShell or CMD <strong>inside that folder</strong>.</li>
 <li>Start Redis server:
     <div class="highlight"><pre><span></span><code>redis-server.exe redis.conf
+</code></pre></div></li>
+<li><strong>Allow connection to Redis through the firewall:</strong>
+    <div class="highlight"><pre><span></span><code><span class="n">netsh</span> <span class="n">advfirewall</span> <span class="n">firewall</span> <span class="n">add</span> <span class="n">rule</span> <span class="n">name</span><span class="p">=</span><span class="s2">&quot;Redis&quot;</span> <span class="n">dir</span><span class="p">=</span><span class="k">in</span> <span class="n">action</span><span class="p">=</span><span class="n">allow</span> <span class="n">protocol</span><span class="p">=</span><span class="n">TCP</span> <span class="n">localport</span><span class="p">=</span><span class="n">6379</span>
 </code></pre></div></li>
 </ol>
 <hr />
@@ -3253,21 +3222,24 @@ sudo<span class="w"> </span>make<span class="w"> </span>install
 <li>Edit <code>redis.conf</code> to set the following values:
     <div class="highlight"><pre><span></span><code>bind 0.0.0.0
 requirepass &lt;password&gt;
-pidfile /var/run/redis/
+dir /var/lib/redis
+</code></pre></div>
+    Find <code>pidfile</code> in <code>redis.conf</code> and edit it like below:
+    <div class="highlight"><pre><span></span><code>pidfile /var/run/redis/redis.pid
 </code></pre></div></li>
 <li>Copy the config and set permissions:
-    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/redis
-sudo<span class="w"> </span>cp<span class="w"> </span>/path/to/redis-8.2.1/redis.conf<span class="w"> </span>/etc/redis/redis.conf
-sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>projadmin:projadmin<span class="w"> </span>/etc/redis/
-
-sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/var/run/redis
-sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>projadmin:projadmin<span class="w"> </span>/var/run/redis
+    <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/redis<span class="w"> </span>/var/run/redis<span class="w"> </span>/var/lib/redis
+sudo<span class="w"> </span>chmod<span class="w"> </span><span class="m">700</span><span class="w"> </span>/var/lib/redis
+sudo<span class="w"> </span>cp<span class="w"> </span>/home/projadmin/setup/redis-8.2.1/redis.conf<span class="w"> </span>/etc/redis/redis.conf
+sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span>projadmin:projadmin<span class="w"> </span>/etc/redis/<span class="w"> </span>/var/run/redis<span class="w"> </span>/var/lib/redis
 </code></pre></div></li>
 </ol>
+<blockquote>
+<p><strong>Note:</strong> <code>projadmin</code> is the Linux VM username for RHEL9 VM and it differs according to the type of Linux OS.</p>
+</blockquote>
 <p><strong>Optional: Set Up Redis as a systemd Service</strong></p>
 <ol>
-<li>
-<p>Create a systemd service file:
+<li>Create a systemd service file:
     <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/systemd/system/redis.service
 </code></pre></div>
     Paste in the following:
@@ -3277,28 +3249,43 @@ After=network.target
 
 [Service]
 User=projadmin
+Group=projadmin
+
+# Create /run/redis at service start, owned by the service user
+RuntimeDirectory=redis
+RuntimeDirectoryMode=0755
+
+# Tell systemd where the PID file will be (under /run)
+PIDFile=/run/redis/redis.pid
+
+# Ensure Redis uses systemd supervision and stays in foreground
+
+WorkingDirectory=/var/lib/redis
 ExecStart=/usr/local/bin/redis-server /etc/redis/redis.conf
 ExecStop=/usr/local/bin/redis-cli -a &lt;password&gt; shutdown
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
-</code></pre></div></p>
-</li>
-<li>
-<p>Start and enable Redis service:
+</code></pre></div></li>
+</ol>
+<blockquote>
+<p><strong>Note:</strong> <code>User</code> and <code>Group</code> values depend on the username of the Linux VM.</p>
+</blockquote>
+<ol>
+<li>Start and enable Redis service:
     <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>redis.service
 sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>redis.service
-</code></pre></div></p>
-</li>
+</code></pre></div></li>
 <li><strong>If firewall is active, open port 6379:</strong>
     <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--permanent<span class="w"> </span>--add-port<span class="o">=</span><span class="m">6379</span>/tcp<span class="w"> </span><span class="c1">#Example for RHEL</span>
 sudo<span class="w"> </span>firewall-cmd<span class="w"> </span>--reload
-</code></pre></div><blockquote>
+</code></pre></div></li>
+</ol>
+<blockquote>
+<p><strong>Note:</strong> The firewall command differs based on the type of Linux OS.</p>
 <p><strong>Note:</strong> Update <code>User</code> and <code>&lt;password&gt;</code> in your redis configuration and service file to match your security and environment needs.</p>
 </blockquote>
-</li>
-</ol>
 
 
 

@@ -45,6 +45,7 @@ nav:
      - Autoscaling Deployment:
          - AKS Autoscaling: Installation/Autoscaling_Deployment/AKS_Autoscaling.md
          - VM Autoscaling using Docker: Installation/Autoscaling_Deployment/VM_Autoscaling.md
+     - Multi-Cloud CI/CD Pipeline: Installation/MultiCloud_deployment/multicloud.md
   - Enabling Additional LLM Models: custom_llm_models.md
   - Load Balancing & Fallback Models: Load_Balancing_Fallback.md
   - Model Server Integration: Model_server.md

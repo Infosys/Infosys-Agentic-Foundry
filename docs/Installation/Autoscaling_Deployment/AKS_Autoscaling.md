@@ -106,6 +106,14 @@ Before deploying IAF in VMs we need to have KAFKA setup, KEDA setup in AKS and L
 
 ---
 
+## Steps for Setting up LiteLLM Server in VM
+
+You can find the setup process for litellm in the below URL, follow the same and complete the setup for the litellm server in your VM.
+
+[:octicons-arrow-right-24: LiteLLM Proxy Setup](../linux.md#litellm-proxy-setup)
+
+---
+
 ## Steps for Setting up Model Server
 
 You can find the setup process for model server in the below URL, follow the same and complete the setup for model server in your VM.
@@ -118,7 +126,7 @@ You can find the setup process for model server in the below URL, follow the sam
 
 You can find the setup process for knowledge base server in the below URL, follow the same and complete the setup for knowledge base server in your VM.
 
-[:octicons-arrow-right-24: Knowledge Base Setup](../../Knowledge_Base.md)
+[:octicons-arrow-right-24: Knowledge Base Setup](../linux.md#knowledgebase-server-setup)
 
 ---
 
