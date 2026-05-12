@@ -1,4 +1,4 @@
-# Multi-Cloud CI/CD Pipeline — Setup & Usage Guide
+# Multi-Cloud IAF Backend CI/CD Pipeline — Setup & Usage Guide
 
 > **Purpose:** This guide helps any team set up and use the GitHub Actions CI/CD pipeline to build a Docker image, push it to a cloud container registry, deploy infrastructure services, and deploy the application to a managed Kubernetes cluster — across **Azure (AKS)**, **AWS (EKS)**, and **GCP (GKE)**.
 
@@ -814,19 +814,19 @@ on:
         default: 'latest'
 
 env:
-  AZURE_CONTAINER_REGISTRY: acr10052.azurecr.io    # ← Update
-  RESOURCE_GROUP: RG-PCS-AZ-CR-10052               # ← Update
-  CLUSTER_NAME: aks-REQ0848275                      # ← Update
-  NAMESPACE: iafbesysfix                            # ← Update
-  DEPLOY_NAME: iafbetest                            # ← Update
-  CONTAINER_NAME: iafbackend                        # ← Update
-  SHORT_NAME: iafbetest                             # ← Update
+  AZURE_CONTAINER_REGISTRY: myregistry.azurecr.io  # ← Update (e.g. myregistry.azurecr.io)
+  RESOURCE_GROUP: my-resource-group                 # ← Update (e.g. my-resource-group)
+  CLUSTER_NAME: my-aks-cluster                      # ← Update (e.g. my-aks-cluster)
+  NAMESPACE: my-namespace                           # ← Update (e.g. my-namespace)
+  DEPLOY_NAME: my-deployment                        # ← Update (e.g. my-deployment)
+  CONTAINER_NAME: my-container                      # ← Update (e.g. my-container)
+  SHORT_NAME: my-app                                # ← Update (e.g. my-app)
 
 jobs:
 
   deployInfra:
     name: Deploy Infrastructure Services
-    runs-on: [self-hosted, Linux, X64, lafbe]       # ← Update runner label
+    runs-on: [self-hosted, Linux, X64, my-runner]    # ← Update runner label
     permissions:
       contents: read
     outputs:
@@ -876,7 +876,7 @@ jobs:
           if kubectl get statefulset elasticsearch -n kafkatest > /dev/null 2>&1; then
             echo "INFO: Elasticsearch already exists — skipping."
           else
-            kubectl apply -f k8s/infra/iaf-es.yaml
+            kubectl apply -f k8s/infra/azure/iaf-es.yaml
           fi
 
       - name: Wait for Elasticsearch IP
@@ -899,20 +899,20 @@ jobs:
           if kubectl get deployment opentelemetry-collector -n kafkatest > /dev/null 2>&1; then
             echo "INFO: OpenTelemetry Collector already exists — skipping."
           else
-            sed "s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g" k8s/infra/iaf-otel.yaml | kubectl apply -f -
+            sed "s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g" k8s/infra/azure/iaf-otel.yaml | kubectl apply -f -
           fi
 
       - name: Apply Phoenix (Arize)
         run: |
-          kubectl get deployment phoenix -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/iaf-arpx.yaml
+          kubectl get deployment phoenix -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/azure/iaf-arpx.yaml
 
       - name: Apply Grafana
         run: |
-          kubectl get deployment grafana -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/iaf-grafana.yaml
+          kubectl get deployment grafana -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/azure/iaf-grafana.yaml
 
       - name: Apply Redis
         run: |
-          kubectl get deployment redis -n iafv4 > /dev/null 2>&1 || kubectl apply -f k8s/infra/iaf-redis.yaml
+          kubectl get deployment redis -n iafv4 > /dev/null 2>&1 || kubectl apply -f k8s/infra/azure/iaf-redis.yaml
 
       - name: Wait for All Infra Service IPs
         id: collect_ips
@@ -937,7 +937,7 @@ jobs:
   buildImage:
     name: Build and Push Docker Image
     needs: deployInfra
-    runs-on: [self-hosted, Linux, X64, lafbe]       # ← Update runner label
+    runs-on: [self-hosted, Linux, X64, my-runner]    # ← Update runner label
     permissions:
       contents: read
       id-token: write
@@ -970,7 +970,7 @@ jobs:
   deploy:
     name: Deploy to AKS
     needs: [deployInfra, buildImage]
-    runs-on: [self-hosted, Linux, X64, lafbe]       # ← Update runner label
+    runs-on: [self-hosted, Linux, X64, my-runner]    # ← Update runner label
     permissions:
       actions: read
       contents: read
@@ -1132,18 +1132,115 @@ on:
         default: 'latest'
 
 env:
-  ECR_REGISTRY: 501121655816.dkr.ecr.us-east-1.amazonaws.com   # ← Update
-  ECR_REPOSITORY: cs-ppcaws155-iafawsrepo                       # ← Update
-  EKS_CLUSTER_NAME: eks-iaf-cluster                             # ← Update
-  NAMESPACE: iaf                                                 # ← Update
-  DEPLOY_NAME: iafaws-be                                         # ← Update
-  CONTAINER_NAME: iaf-be-aws                                     # ← Update
-  SHORT_NAME: iaf-be                                             # ← Update
+  ECR_REGISTRY: 123456789012.dkr.ecr.us-east-1.amazonaws.com   # ← Update (your AWS account ID + region)
+  ECR_REPOSITORY: my-ecr-repository                             # ← Update (e.g. my-ecr-repository)
+  EKS_CLUSTER_NAME: my-eks-cluster                              # ← Update (e.g. my-eks-cluster)
+  NAMESPACE: my-namespace                                        # ← Update (e.g. my-namespace)
+  DEPLOY_NAME: my-deployment                                     # ← Update (e.g. my-deployment)
+  CONTAINER_NAME: my-container                                   # ← Update (e.g. my-container)
+  SHORT_NAME: my-app                                             # ← Update (e.g. my-app)
 
 jobs:
+
+  deployInfra:
+    name: Deploy Infrastructure Services
+    runs-on: [self-hosted, Linux, X64, my-runner]   # ← Update runner label
+    permissions:
+      contents: read
+    outputs:
+      ELASTICSEARCH_IP:  ${{ steps.collect_ips.outputs.ELASTICSEARCH_IP }}
+      OTEL_COLLECTOR_IP: ${{ steps.collect_ips.outputs.OTEL_COLLECTOR_IP }}
+      PHOENIX_IP:        ${{ steps.collect_ips.outputs.PHOENIX_IP }}
+      GRAFANA_IP:        ${{ steps.collect_ips.outputs.GRAFANA_IP }}
+      REDIS_IP:          ${{ steps.collect_ips.outputs.REDIS_IP }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          sudo aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Ensure Infra Namespaces Exist
+        run: |
+          kubectl create namespace kafkatest --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace iafv4    --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply Elasticsearch
+        run: |
+          if kubectl get statefulset elasticsearch -n kafkatest > /dev/null 2>&1; then
+            echo "INFO: Elasticsearch already exists — skipping."
+          else
+            kubectl apply -f k8s/infra/aws/iaf-es.yaml
+          fi
+
+      - name: Wait for Elasticsearch Hostname
+        id: wait_es_ip
+        run: |
+          EP=""
+          for i in $(seq 1 36); do
+            EP=$(kubectl get svc elasticsearch -n kafkatest \
+                  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -n "$EP" ] && break
+            echo "Attempt $i/36 — retrying in 10s..."
+            sleep 10
+          done
+          [ -n "$EP" ] || { echo "ERROR: Could not get Elasticsearch hostname."; exit 1; }
+          echo "ELASTICSEARCH_IP=$EP" >> "$GITHUB_OUTPUT"
+
+      - name: Apply OpenTelemetry Collector
+        run: |
+          ES_IP="${{ steps.wait_es_ip.outputs.ELASTICSEARCH_IP }}"
+          if kubectl get deployment opentelemetry-collector -n kafkatest > /dev/null 2>&1; then
+            echo "INFO: OpenTelemetry Collector already exists — skipping."
+          else
+            sed "s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g" k8s/infra/aws/iaf-otel.yaml | kubectl apply -f -
+          fi
+
+      - name: Apply Phoenix (Arize)
+        run: |
+          kubectl get deployment phoenix -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/aws/iaf-arpx.yaml
+
+      - name: Apply Grafana
+        run: |
+          kubectl get deployment grafana -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/aws/iaf-grafana.yaml
+
+      - name: Apply Redis
+        run: |
+          kubectl get deployment redis -n iafv4 > /dev/null 2>&1 || kubectl apply -f k8s/infra/aws/iaf-redis.yaml
+
+      - name: Wait for All Infra Service Hostnames
+        id: collect_ips
+        run: |
+          wait_for_ep() {
+            local SVC="$1" NS="$2" VAR="$3" EP=""
+            for i in $(seq 1 36); do
+              EP=$(kubectl get svc "$SVC" -n "$NS" \
+                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+              [ -n "$EP" ] && break
+              echo "Attempt $i/36 — retrying in 10s..."
+              sleep 10
+            done
+            echo "$VAR=${EP:-UNKNOWN}" >> "$GITHUB_OUTPUT"
+          }
+          wait_for_ep "elasticsearch"           "kafkatest" "ELASTICSEARCH_IP"
+          wait_for_ep "opentelemetry-collector" "kafkatest" "OTEL_COLLECTOR_IP"
+          wait_for_ep "phoenix"                 "kafkatest" "PHOENIX_IP"
+          wait_for_ep "grafana"                 "kafkatest" "GRAFANA_IP"
+          wait_for_ep "redis"                   "iafv4"     "REDIS_IP"
+
   buildImage:
     name: Build and Push Docker Image
-    runs-on: [self-hosted, Linux, X64, cli1]       # ← Update runner label
+    needs: deployInfra
+    runs-on: [self-hosted, Linux, X64, my-runner]   # ← Update runner label
     permissions:
       contents: read
       id-token: write
@@ -1179,8 +1276,8 @@ jobs:
 
   deploy:
     name: Deploy to EKS
-    needs: buildImage
-    runs-on: [self-hosted, Linux, X64, cli1]       # ← Update runner label
+    needs: [deployInfra, buildImage]
+    runs-on: [self-hosted, Linux, X64, my-runner]   # ← Update runner label
     permissions:
       actions: read
       contents: read
@@ -1205,14 +1302,30 @@ jobs:
           kubectl get namespace ${{ env.NAMESPACE }} > /dev/null 2>&1 || \
             kubectl create namespace ${{ env.NAMESPACE }}
 
-      - name: Create/Update Kubernetes Secret
+      - name: Create/Update Kubernetes Secret (with Infra Endpoints injected)
         env:
           ENV_FILE_CONTENT: ${{ secrets.IAF_BACKEND_ENV }}
+          ELASTICSEARCH_IP:  ${{ needs.deployInfra.outputs.ELASTICSEARCH_IP }}
+          OTEL_COLLECTOR_IP: ${{ needs.deployInfra.outputs.OTEL_COLLECTOR_IP }}
+          PHOENIX_IP:        ${{ needs.deployInfra.outputs.PHOENIX_IP }}
+          GRAFANA_IP:        ${{ needs.deployInfra.outputs.GRAFANA_IP }}
+          REDIS_IP:          ${{ needs.deployInfra.outputs.REDIS_IP }}
         run: |
           [ -z "$ENV_FILE_CONTENT" ] && { echo "ERROR: IAF_BACKEND_ENV is empty."; exit 1; }
           printf "%s" "$ENV_FILE_CONTENT" > .env.temp
           awk -F= '!seen[$1]++' .env.temp > .env.cleaned
           sed 's/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/="\(.*\)"$/=\1/; /^$/d; /^#/d' .env.cleaned > .env.k8s
+          printf '%s\n' \
+            "PHOENIX_COLLECTOR_ENDPOINT=http://${PHOENIX_IP}:6006" \
+            "REDIS_HOST=${REDIS_IP}" \
+            "REDIS_PORT=6379" \
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OTEL_COLLECTOR_IP}:4318/v1/traces" \
+            "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_HTTP=http://${OTEL_COLLECTOR_IP}:4320/v1/logs" \
+            "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_GRPC=${OTEL_COLLECTOR_IP}:4319" \
+            "ELASTICSEARCH_URL=http://${ELASTICSEARCH_IP}:9200" \
+            "GRAFANA_URL=http://${GRAFANA_IP}:3000" >> .env.k8s
+          tac .env.k8s | awk -F= '!seen[$1]++' | tac > .env.final
+          mv .env.final .env.k8s
           kubectl create secret generic app-env \
             --from-env-file=.env.k8s \
             -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
@@ -1267,7 +1380,8 @@ jobs:
             name: ${{ env.DEPLOY_NAME }}
             namespace: ${{ env.NAMESPACE }}
             annotations:
-              service.beta.kubernetes.io/aws-load-balancer-source-ranges: "10.0.0.0/8,100.64.0.0/10"
+              service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+              service.beta.kubernetes.io/aws-load-balancer-source-ranges: "<ALLOWED_CIDR_RANGES>"
           spec:
             selector:
               app: ${{ env.DEPLOY_NAME }}
@@ -1283,7 +1397,15 @@ jobs:
         run: |
           kubectl rollout status deployment/${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} --timeout=5m
           kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
-          kubectl logs -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} --tail=200
+          kubectl get svc  -n ${{ env.NAMESPACE }} ${{ env.DEPLOY_NAME }}
+
+      - name: Debug on Failure
+        if: failure()
+        run: |
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+          kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.lastTimestamp' | tail -n 30
+          POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} -o jsonpath="{.items[0].metadata.name}")
+          [ -n "$POD" ] && kubectl logs "$POD" -n ${{ env.NAMESPACE }} --tail=100 || true
 ```
 
 ---
@@ -1305,19 +1427,116 @@ on:
         default: 'latest'
 
 env:
-  GAR_LOCATION: us-central1                        # ← Update
-  GAR_REPOSITORY: iaf-repo                         # ← Update
-  GKE_CLUSTER: gke-iaf-cluster                     # ← Update
-  GKE_ZONE: us-central1-a                          # ← Update
-  NAMESPACE: iaf                                   # ← Update
-  DEPLOY_NAME: iafgcp-be                           # ← Update
-  CONTAINER_NAME: iaf-be-gcp                       # ← Update
-  SHORT_NAME: iaf-be-gcp                           # ← Update
+  GAR_LOCATION: us-east1                           # ← Update (e.g. us-east1, europe-west1)
+  GAR_REPOSITORY: my-gar-repository                # ← Update (e.g. my-gar-repository)
+  GKE_CLUSTER: my-gke-cluster                      # ← Update (e.g. my-gke-cluster)
+  GKE_ZONE: us-east1-b                             # ← Update (e.g. us-east1-b)
+  NAMESPACE: my-namespace                          # ← Update (e.g. my-namespace)
+  DEPLOY_NAME: my-deployment                       # ← Update (e.g. my-deployment)
+  CONTAINER_NAME: my-container                     # ← Update (e.g. my-container)
+  SHORT_NAME: my-app                               # ← Update (e.g. my-app)
 
 jobs:
+
+  deployInfra:
+    name: Deploy Infrastructure Services
+    runs-on: [self-hosted, Linux, X64, my-runner]  # ← Update runner label
+    permissions:
+      contents: read
+    outputs:
+      ELASTICSEARCH_IP:  ${{ steps.collect_ips.outputs.ELASTICSEARCH_IP }}
+      OTEL_COLLECTOR_IP: ${{ steps.collect_ips.outputs.OTEL_COLLECTOR_IP }}
+      PHOENIX_IP:        ${{ steps.collect_ips.outputs.PHOENIX_IP }}
+      GRAFANA_IP:        ${{ steps.collect_ips.outputs.GRAFANA_IP }}
+      REDIS_IP:          ${{ steps.collect_ips.outputs.REDIS_IP }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_ZONE }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Ensure Infra Namespaces Exist
+        run: |
+          kubectl create namespace kafkatest --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace iafv4    --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply Elasticsearch
+        run: |
+          if kubectl get statefulset elasticsearch -n kafkatest > /dev/null 2>&1; then
+            echo "INFO: Elasticsearch already exists — skipping."
+          else
+            kubectl apply -f k8s/infra/gcp/iaf-es.yaml
+          fi
+
+      - name: Wait for Elasticsearch IP
+        id: wait_es_ip
+        run: |
+          IP=""
+          for i in $(seq 1 36); do
+            IP=$(kubectl get svc elasticsearch -n kafkatest \
+                  -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            [ -n "$IP" ] && break
+            echo "Attempt $i/36 — retrying in 10s..."
+            sleep 10
+          done
+          [ -n "$IP" ] || { echo "ERROR: Could not get Elasticsearch IP."; exit 1; }
+          echo "ELASTICSEARCH_IP=$IP" >> "$GITHUB_OUTPUT"
+
+      - name: Apply OpenTelemetry Collector
+        run: |
+          ES_IP="${{ steps.wait_es_ip.outputs.ELASTICSEARCH_IP }}"
+          if kubectl get deployment opentelemetry-collector -n kafkatest > /dev/null 2>&1; then
+            echo "INFO: OpenTelemetry Collector already exists — skipping."
+          else
+            sed "s|ELASTICSEARCH_ENDPOINT|${ES_IP}|g" k8s/infra/gcp/iaf-otel.yaml | kubectl apply -f -
+          fi
+
+      - name: Apply Phoenix (Arize)
+        run: |
+          kubectl get deployment phoenix -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/gcp/iaf-arpx.yaml
+
+      - name: Apply Grafana
+        run: |
+          kubectl get deployment grafana -n kafkatest > /dev/null 2>&1 || kubectl apply -f k8s/infra/gcp/iaf-grafana.yaml
+
+      - name: Apply Redis
+        run: |
+          kubectl get deployment redis -n iafv4 > /dev/null 2>&1 || kubectl apply -f k8s/infra/gcp/iaf-redis.yaml
+
+      - name: Wait for All Infra Service IPs
+        id: collect_ips
+        run: |
+          wait_for_ip() {
+            local SVC="$1" NS="$2" VAR="$3" IP=""
+            for i in $(seq 1 36); do
+              IP=$(kubectl get svc "$SVC" -n "$NS" \
+                    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              [ -n "$IP" ] && break
+              echo "Attempt $i/36 — retrying in 10s..."
+              sleep 10
+            done
+            echo "$VAR=${IP:-UNKNOWN}" >> "$GITHUB_OUTPUT"
+          }
+          wait_for_ip "elasticsearch"           "kafkatest" "ELASTICSEARCH_IP"
+          wait_for_ip "opentelemetry-collector" "kafkatest" "OTEL_COLLECTOR_IP"
+          wait_for_ip "phoenix"                 "kafkatest" "PHOENIX_IP"
+          wait_for_ip "grafana"                 "kafkatest" "GRAFANA_IP"
+          wait_for_ip "redis"                   "iafv4"     "REDIS_IP"
+
   buildImage:
     name: Build and Push Docker Image
-    runs-on: [self-hosted, Linux, X64, gke-runner] # ← Update runner label
+    needs: deployInfra
+    runs-on: [self-hosted, Linux, X64, my-runner]  # ← Update runner label
     permissions:
       contents: read
       id-token: write
@@ -1345,8 +1564,8 @@ jobs:
 
   deploy:
     name: Deploy to GKE
-    needs: buildImage
-    runs-on: [self-hosted, Linux, X64, gke-runner] # ← Update runner label
+    needs: [deployInfra, buildImage]
+    runs-on: [self-hosted, Linux, X64, my-runner]  # ← Update runner label
     permissions:
       actions: read
       contents: read
@@ -1371,14 +1590,30 @@ jobs:
           kubectl get namespace ${{ env.NAMESPACE }} > /dev/null 2>&1 || \
             kubectl create namespace ${{ env.NAMESPACE }}
 
-      - name: Create/Update Kubernetes Secret
+      - name: Create/Update Kubernetes Secret (with Infra IPs injected)
         env:
           ENV_FILE_CONTENT: ${{ secrets.APP_ENV_FILE_GCP }}
+          ELASTICSEARCH_IP:  ${{ needs.deployInfra.outputs.ELASTICSEARCH_IP }}
+          OTEL_COLLECTOR_IP: ${{ needs.deployInfra.outputs.OTEL_COLLECTOR_IP }}
+          PHOENIX_IP:        ${{ needs.deployInfra.outputs.PHOENIX_IP }}
+          GRAFANA_IP:        ${{ needs.deployInfra.outputs.GRAFANA_IP }}
+          REDIS_IP:          ${{ needs.deployInfra.outputs.REDIS_IP }}
         run: |
           [ -z "$ENV_FILE_CONTENT" ] && { echo "ERROR: APP_ENV_FILE_GCP is empty."; exit 1; }
           printf "%s" "$ENV_FILE_CONTENT" > .env.temp
           awk -F= '!seen[$1]++' .env.temp > .env.cleaned
           sed 's/^[[:space:]]*//; s/[[:space:]]*=[[:space:]]*/=/; s/="\(.*\)"$/=\1/; /^$/d; /^#/d' .env.cleaned > .env.k8s
+          printf '%s\n' \
+            "PHOENIX_COLLECTOR_ENDPOINT=http://${PHOENIX_IP}:6006" \
+            "REDIS_HOST=${REDIS_IP}" \
+            "REDIS_PORT=6379" \
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://${OTEL_COLLECTOR_IP}:4318/v1/traces" \
+            "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_HTTP=http://${OTEL_COLLECTOR_IP}:4320/v1/logs" \
+            "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT_GRPC=${OTEL_COLLECTOR_IP}:4319" \
+            "ELASTICSEARCH_URL=http://${ELASTICSEARCH_IP}:9200" \
+            "GRAFANA_URL=http://${GRAFANA_IP}:3000" >> .env.k8s
+          tac .env.k8s | awk -F= '!seen[$1]++' | tac > .env.final
+          mv .env.final .env.k8s
           kubectl create secret generic app-env \
             --from-env-file=.env.k8s \
             -n ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
@@ -1432,6 +1667,8 @@ jobs:
           metadata:
             name: ${{ env.DEPLOY_NAME }}
             namespace: ${{ env.NAMESPACE }}
+            annotations:
+              cloud.google.com/load-balancer-type: "Internal"
           spec:
             selector:
               app: ${{ env.DEPLOY_NAME }}
@@ -1447,7 +1684,15 @@ jobs:
         run: |
           kubectl rollout status deployment/${{ env.DEPLOY_NAME }} -n ${{ env.NAMESPACE }} --timeout=5m
           kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }}
-          kubectl logs -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} --tail=200
+          kubectl get svc  -n ${{ env.NAMESPACE }} ${{ env.DEPLOY_NAME }}
+
+      - name: Debug on Failure
+        if: failure()
+        run: |
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+          kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.lastTimestamp' | tail -n 30
+          POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ env.DEPLOY_NAME }} -o jsonpath="{.items[0].metadata.name}")
+          [ -n "$POD" ] && kubectl logs "$POD" -n ${{ env.NAMESPACE }} --tail=100 || true
 ```
 
 ---
