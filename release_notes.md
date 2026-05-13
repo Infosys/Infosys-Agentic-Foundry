@@ -1,5 +1,101 @@
 # Release Notes
 
+## Version 1.9.0 - May 8, 2026
+
+### Features
+
+* **Agent & Tool Scaling: Kafka Based Message Queue & Worker Services**
+Kafka-backed asynchronous and batch inference support for agents and tools.
+Batch inference allows submission of multiple requests in a single operation.
+Standalone Agent Worker and Tool Worker services with independent configuration and health monitoring.
+Demand-based tool worker execution with parallel, non-blocking agent workers for horizontal scaling.
+
+* **Tool Versioning System**
+Comprehensive tool versioning with full version history, rollback capabilities, and version-aware agent bindings.
+Export, import, cleanup, backup, and recycle bin functionalities are fully version-aware.
+
+* **LiteLLM Proxy Server Integration**
+LLM call routing through LiteLLM proxy server, configurable via `USE_LITELLM_PROXY_FLAG` environment variable (can be enabled or disabled without code changes).
+Full cost map support across all configured models.
+
+* **Token & Cost Tracking**
+Per-request token usage and cost tracing.
+Background schedulers for automated cost aggregation and reporting.
+LLM wrapper classes for accurate token usage tracking across providers.
+
+* **Tool Code Execution Sandboxing**
+Secure sandbox environment for tool code execution.
+Restricted access to `.env` variables, internal `src` packages (except `load_model`), and environment secrets.
+
+* **Tool & MCP Server Export / Import**
+Full export and import support for tools and MCP servers.
+Versioned tool export with recycle bin conflict detection, function renaming, and import confirmation with detailed error reporting.
+
+* **Viber Agent Integration**
+Viber Chatbot Assistant with natural-language agent creation, tool discovery, knowledge-base integration, guided configuration, and agent verification.
+UI features include draggable floating icon, file upload, and session-based history.
+
+* **Cross Department Resource Sharing**
+Sharing of tools, MCP tools, knowledge bases, agents, and workflows across departments.
+
+* **Email Notifications & Multi Approval Registration**
+SMTP-based email notifications for access requests and approvals.
+Bulk approval and rejection of registration requests by Admin and SuperAdmin.
+
+* **Backup, Export & Chat History Cleanup**
+System Utility in Admin page for backing up tools, agents, MCP servers, and workflows with automatic GitHub sync.
+Admin-initiated cleanup of orphaned items with detailed preview reports for review before execution.
+SuperAdmin chat history cleanup.
+
+* **Chat File Upload for Workflows**
+File upload support during workflow-based chat inference sessions.
+
+* **MCP Server Management Enhancements**
+Improved CRUD operations for remote MCP servers including URL updates.
+npx execution support for external MCP servers.
+Auto-onboarding of pre-defined MCP servers with public visibility.
+Run button for remote MCP server connectivity testing.
+
+* **Custom Headers for MCP & Agent Inference**
+Custom HTTP header configuration for MCP server connections and agent inference middleware.
+
+* **Standalone File Server for User Uploads**
+Dedicated file server for browsing and downloading user-uploaded files without authentication.
+
+### Enhancements
+
+* **Workflow Terminology Standardization**
+Renamed "Pipelines" to "Workflows" across the entire application.
+
+* **Recycle Bin Enhancements**
+Resource recreation (agents, tools, MCP servers) permitted when existing names are present in recycle bin. Naming conflicts are resolved during restore instead of creation.
+Version-aware restore for tools.
+MCP pre-creation validation to prevent duplicate conflicts.
+
+* **RBAC Enhancements**
+Fine-grained permissions added for servers, workflows, and agent exports.
+Admin can do multi-delete operations across all resource types (agents, tools, MCP servers, workflows, knowledgebases, evaluations, groups, secrets, and access keys).
+
+* **Deployment Stability**
+Kubernetes YAML ENV override support.
+
+* **Base64 Encoding for Sensitive Data**
+Base64 encoding applied to tool and MCP tool code submissions, password fields, and all auth forms (login, signup, change password, data connectors).
+
+* **Admin Tool Flexibility**
+Admins can update tools and MCP servers while actively bound to agents.
+
+### Fixes
+
+* Resolved SAST vulnerabilities across API and UI layers.
+
+### Hotfix
+
+* **Tool Code Copy**
+Resolved an issue where large tool code could not be copied reliably. Code exceeding the supported clipboard size is now automatically exported as a downloadable Python file.
+
+---
+
 ## Version 1.8.0 - March 11, 2026
 
 ### Features
@@ -81,6 +177,8 @@ Onboarded chatbot-related resources automatically on server start.
 * Fixed missing docstrings for async tool methods.
 * Fixed improper handling of resource usernames across user preferences and resource management.
 * Corrected missing display of feedback lessons in UI-related API responses.
+
+---
 
 ## Version 1.7.0 - February 3, 2026
 
