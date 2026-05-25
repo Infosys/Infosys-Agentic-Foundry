@@ -1,13 +1,16 @@
 # --- STAGE 1: The Builder ---
 # This stage installs dependencies in a clean environment.
-FROM python:3.12-slim
+#FROM python:3.12-slim
+FROM infyartifactory.jfrog.io/infyagenticrepo/python:3.12-slim
+
 # Set the working directory
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y git
+RUN apt-get update && apt-get install -y git=1:2.39.5-0+deb12u2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install uv, our fast package installer
-RUN pip install uv
+RUN pip install uv==0.6.14
 
 # Copy only the requirements file to leverage Docker's layer caching.
 # If this file doesn't change, Docker won't reinstall everything on every build.
@@ -16,6 +19,9 @@ COPY requirements.txt .
 # Install the Python dependencies into a specific directory within the image.
 # We use --system to install them into the standard site-packages.
 RUN uv pip install --no-cache --system -r requirements.txt
+
+# Create a non-root user to avoid running the container as root
+RUN useradd --no-create-home --shell /bin/false appuser
 
 
 # --- STAGE 2: The Final Production Image ---
@@ -33,6 +39,10 @@ RUN uv pip install --no-cache --system -r requirements.txt
 
 # Copy your backend application code.
 COPY . .
+
+# Transfer ownership to non-root user and switch to it
+RUN chown -R appuser:appuser /app
+USER appuser
 
 # Expose the port that your application will run on.
 EXPOSE 8000

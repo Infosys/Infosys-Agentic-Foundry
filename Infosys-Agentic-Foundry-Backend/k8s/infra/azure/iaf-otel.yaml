@@ -92,6 +92,10 @@ spec:
       labels:
         app: opentelemetry-collector
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
       containers:
       - name: otel-collector
         image: <OTEL_COLLECTOR_IMAGE>
@@ -108,6 +112,10 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
           - name: config
             mountPath: /etc/otel-collector-config.yaml

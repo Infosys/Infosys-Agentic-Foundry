@@ -47,6 +47,10 @@ spec:
       labels:
         app: redis
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
       containers:
       - name: redis
         image: <REDIS_IMAGE>
@@ -74,6 +78,10 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
 ---
 apiVersion: v1
 kind: Service

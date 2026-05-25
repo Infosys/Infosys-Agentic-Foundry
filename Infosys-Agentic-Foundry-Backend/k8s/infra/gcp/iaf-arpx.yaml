@@ -40,6 +40,10 @@ spec:
       labels:
         app: phoenix
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
       containers:
         - name: phoenix
           image: <PHOENIX_IMAGE>
@@ -69,6 +73,10 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - mountPath: /mnt/data
               name: phoenix-data

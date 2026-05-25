@@ -42,6 +42,10 @@ spec:
       labels:
         app: elasticsearch
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 3000
       containers:
       - name: elasticsearch
         image: <ELASTICSEARCH_IMAGE>
@@ -64,6 +68,10 @@ spec:
           limits:
             memory: "4Gi"
             cpu: "2"
+        securityContext:
+          allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
         - name: es-data
           mountPath: /usr/share/elasticsearch/data

@@ -127,6 +127,67 @@
 
     >  Legacy note: If you already manually set `SECRETS_MASTER_KEY` to an alphanumeric string > 10 chars, you may keep it, but regenerating with the script improves entropy.
 
+    ### 7. Setup and Run Phoenix Server (Required for Tracing)
+    
+    Phoenix server is required for tracing and observability of agent operations. **You must start Phoenix server before running the backend application**, otherwise the backend won't be able to send traces to Phoenix.
+
+    #### Steps:
+
+    1. **Set Environment Variables**
+       
+       Before starting Phoenix server, configure the required environment variables:
+
+       **Windows (Command Prompt):**
+       ```cmd
+       set HTTP_PROXY=
+       set NO_PROXY=localhost,127.0.0.1
+       set PHOENIX_GRPC_PORT=50051
+       set PHOENIX_SQL_DATABASE_URL=postgresql://your_postgres_user:<your_postgres_password>@your_postgres_host:5432/arize_traces
+       ```
+
+       **Windows (PowerShell):**
+       ```powershell
+       $env:HTTP_PROXY=""
+       $env:NO_PROXY="localhost,127.0.0.1"
+       $env:PHOENIX_GRPC_PORT="50051"
+       $env:PHOENIX_SQL_DATABASE_URL="postgresql://your_postgres_user:<your_postgres_password>@your_postgres_host:5432/arize_traces"
+       ```
+
+       **Linux/Mac:**
+       ```bash
+       export HTTP_PROXY=
+       export NO_PROXY=localhost,127.0.0.1
+       export PHOENIX_GRPC_PORT=50051
+       export PHOENIX_SQL_DATABASE_URL=postgresql://your_postgres_user:<your_postgres_password>@your_postgres_host:5432/arize_traces
+       ```
+
+       > **Note:** Update the `PHOENIX_SQL_DATABASE_URL` with your actual PostgreSQL credentials (user, password, host, port) if different from the example.
+
+    2. **Start Phoenix Server**
+       
+       Run the following command to start the Phoenix server (ensure your virtual environment is activated):
+
+       ```bash
+       python -m phoenix.server.main serve
+       ```
+
+       Keep this terminal window open. Phoenix server will run and listen for traces from your backend application.
+
+    3. **Access Phoenix UI**
+       
+       Once Phoenix server is running, you can access the Phoenix UI in your browser at:
+       ```
+       http://localhost:6006
+       ```
+
+       The UI provides visualization of traces, spans, and observability data from your agent operations.
+
+    #### Important Notes:
+    - ⚠️ **Phoenix server must be running before starting the backend application**
+    - The backend application connects to Phoenix using the `PHOENIX_COLLECTOR_ENDPOINT` and `PHOENIX_GRPC_PORT` configured in your `.env` file
+    - Ensure the PostgreSQL database `arize_traces` exists before starting Phoenix server
+    - If Phoenix server is not running, the backend will start but traces won't be captured
+
 
 
 3. Usage
@@ -249,7 +310,13 @@
         pip install uv
         uv pip install -r requirements.txt
 
-    ### 4. To run backend-server (first activate the virtual environment)
+    ### 4. Start Phoenix Server (Required - See Section 2.7 for detailed setup)
+        # Ensure Phoenix server is running before starting the backend
+        python -m phoenix.server.main serve
+        
+        # Keep this terminal open and use a separate terminal for the backend server
+
+    ### 5. To run backend-server (first activate the virtual environment)
         python main.py
                 OR
         python run_server.py
@@ -271,7 +338,13 @@
         pip install uv
         uv pip install -r requirements.txt
 
-    ### 4. To run backend-server (first activate the virtual environment)
+    ### 4. Start Phoenix Server (Required - See Section 2.7 for detailed setup)
+        # Ensure Phoenix server is running before starting the backend
+        python -m phoenix.server.main serve
+        
+        # Keep this terminal open and use a separate terminal for the backend server
+
+    ### 5. To run backend-server (first activate the virtual environment)
         python main.py --host 0.0.0.0 --port 8000
                 OR
         python run_server.py --host 0.0.0.0 --port 8000
