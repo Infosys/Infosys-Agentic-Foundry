@@ -53,6 +53,12 @@ PREVIEW_DIR.mkdir(exist_ok=True)
 
 # Helper functions
 
+# Validates a user-provided filename to prevent path traversal outside the intended evaluation download directory.
+def validate_download_filename(file_name: str) -> str:
+    if not file_name or "/" in file_name or "\\" in file_name or ".." in file_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return file_name
+
 def get_temp_paths(agentic_application_id: str):
     """Returns paths for temporary xlsx and meta files."""
     base = RESPONSES_TEMP_DIR / f"{agentic_application_id}"
@@ -437,6 +443,9 @@ async def download_evaluation_result_endpoint(
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
+    # Validate user input before using it to construct a file path.
+    file_name = validate_download_filename(file_name)
+
     # Full path to file (assuming 'outputs' is a subdirectory in the current working directory)
     file_path = os.path.join(Path.cwd(), 'outputs', file_name)
 
@@ -476,6 +485,8 @@ async def download_groundtruth_template_endpoint(
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
+    # Validate user input before using it to construct a file path.
+    file_name = validate_download_filename(file_name)
     file_path = os.path.join(Path.cwd(), 'src/file_templates', file_name)
 
     if not os.path.exists(file_path):
@@ -623,6 +634,8 @@ async def download_consistency_template_endpoint(
     user_session = fastapi_request.cookies.get("user_session")
     update_session_context(user_session=user_session, user_id=user_id)
 
+    # Validate user input before using it to construct a file path.
+    file_name = validate_download_filename(file_name)
     file_path = os.path.join(Path.cwd(), 'src/file_templates', file_name)
 
     if not os.path.exists(file_path):
